@@ -50,10 +50,40 @@ class PlanKeeperBot:
         # logger.info(f"Received message: {user_message}")
         
         # Get the response from the LLM
-        # response = self.llm_handler.get_response(user_message)
-        response = self.plan_keeper.process_message(user_message)
+        response = self.llm_handler.get_response(user_message)
+        # response = self.plan_keeper.process_message(user_message)
 
         await update.message.reply_text(response)
+
+    def call_plan_keeper(self, llm_response: str) -> str:
+        """
+        Process user message by sending it to the LLM and executing the identified action.
+        """
+
+        # Interpret LLM response (you'll need to customize this to match your LLM's output format)
+        if "add_promise" in llm_response:
+            return self.plan_keeper.add_promise(
+                promise_text=llm_response["promise_text"],
+                num_hours_promised_per_week=llm_response["num_hours_promised_per_week"],
+                start_date=llm_response["start_date"],
+                end_date=llm_response["end_date"],
+                promise_angle=llm_response["promise_angle"],
+                promise_radius=llm_response["promise_radius"]
+            )
+        elif "add_action" in llm_response:
+            return self.plan_keeper.add_action(
+                date=llm_response["date"],
+                time=llm_response["time"],
+                promise_id=llm_response["promise_id"],
+                time_spent=llm_response["time_spent"]
+            )
+        elif "update_setting" in llm_response:
+            return self.plan_keeper.update_setting(
+                setting_key=llm_response["setting_key"],
+                setting_value=llm_response["setting_value"]
+            )
+        else:
+            return "I didn't understand your request. Can you rephrase?"
 
     def create_user_directory(self, user_id: int) -> bool:
         """Create a directory for the user if it doesn't exist and initialize files."""

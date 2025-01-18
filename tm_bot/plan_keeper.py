@@ -2,13 +2,11 @@ import os
 import csv
 import yaml
 from datetime import datetime
-from llm_handler import LLMHandler
 
 
 class PlanKeeper:
     def __init__(self, root_dir):
         self.root_dir = root_dir
-        self.llm_handler = LLMHandler()  # Initialize the LLM handler
 
     def _get_file_path(self, filename):
         """Helper to get full file path."""
@@ -60,38 +58,6 @@ class PlanKeeper:
             yaml.dump(settings, file)
 
         return f"Setting '{setting_key}' updated to '{setting_value}'."
-
-    def process_message(self, user_message):
-        """
-        Process user message by sending it to the LLM and executing the identified action.
-        """
-        # Use the LLM to determine the intent and extract necessary details
-        response = self.llm_handler.get_response(user_message)
-
-        # Interpret LLM response (you'll need to customize this to match your LLM's output format)
-        if "add_promise" in response:
-            return self.add_promise(
-                promise_text=response["promise_text"],
-                num_hours_promised_per_week=response["num_hours_promised_per_week"],
-                start_date=response["start_date"],
-                end_date=response["end_date"],
-                promise_angle=response["promise_angle"],
-                promise_radius=response["promise_radius"]
-            )
-        elif "add_action" in response:
-            return self.add_action(
-                date=response["date"],
-                time=response["time"],
-                promise_id=response["promise_id"],
-                time_spent=response["time_spent"]
-            )
-        elif "update_setting" in response:
-            return self.update_setting(
-                setting_key=response["setting_key"],
-                setting_value=response["setting_value"]
-            )
-        else:
-            return "I didn't understand your request. Can you rephrase?"
 
     def _generate_promise_id(self, promise_text):
         """

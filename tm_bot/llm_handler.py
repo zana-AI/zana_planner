@@ -51,6 +51,7 @@ class LLMHandler:
             "If you cannot determine the action, ask the user for clarification."
         ))
         self.chat_history[user_id] = ChatMessageHistory()
+        self.chat_history[user_id].add_message(system_message)
 
     def get_response(self, user_message: str, user_id: str) -> str:
         """
