@@ -11,6 +11,7 @@ from telegram.ext import (
     filters,
 )
 from telegram.request import HTTPXRequest
+from llm_handler import LLMHandler  # Import the LLM handler
 
 
 # Enable logging
@@ -27,10 +28,12 @@ class PlanKeeperBot:
     def __init__(self, token: str):
         request = HTTPXRequest(connect_timeout=10, read_timeout=20)
         self.application = Application.builder().token(token).build()
+        self.llm_handler = LLMHandler()  # Instantiate the LLM handler
+
 
         # Register handlers
         self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
     async def start(self, update: Update, context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
@@ -41,9 +44,13 @@ class PlanKeeperBot:
         else:
             await update.message.reply_text('Hi! Welcome back.')
 
-    async def echo(self, update: Update, context: CallbackContext) -> None:
-        """Echo the user message."""
-        await update.message.reply_text(update.message.text)
+    async def handle_message(self, update: Update, context: CallbackContext) -> None:
+        user_message = update.message.text
+        # logger.info(f"Received message: {user_message}")
+        
+        # Get the response from the LLM
+        response = self.llm_handler.get_response(user_message)
+        await update.message.reply_text(response)
 
     def create_user_directory(self, user_id: int) -> bool:
         """Create a directory for the user if it doesn't exist and initialize files."""

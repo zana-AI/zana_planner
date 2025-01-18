@@ -1,3 +1,6 @@
 python-telegram-bot
 PyYAML
 python-dotenv
+openai
+langchain
+langchain-community
