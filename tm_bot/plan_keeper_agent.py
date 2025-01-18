@@ -12,6 +12,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 from llm_handler import LLMHandler  # Import the LLM handler
+from plan_keeper import PlanKeeper  # Import the PlanKeeper class
 
 
 # Enable logging
@@ -29,7 +30,7 @@ class PlanKeeperBot:
         request = HTTPXRequest(connect_timeout=10, read_timeout=20)
         self.application = Application.builder().token(token).build()
         self.llm_handler = LLMHandler()  # Instantiate the LLM handler
-
+        self.plan_keeper = PlanKeeper(ROOT_DIR)  # Instantiate the PlanKeeper class
 
         # Register handlers
         self.application.add_handler(CommandHandler("start", self.start))
@@ -49,7 +50,9 @@ class PlanKeeperBot:
         # logger.info(f"Received message: {user_message}")
         
         # Get the response from the LLM
-        response = self.llm_handler.get_response(user_message)
+        # response = self.llm_handler.get_response(user_message)
+        response = self.plan_keeper.process_message(user_message)
+
         await update.message.reply_text(response)
 
     def create_user_directory(self, user_id: int) -> bool:
