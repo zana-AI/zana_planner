@@ -1,0 +1,3 @@
+python-telegram-bot
+PyYAML
+python-dotenv
