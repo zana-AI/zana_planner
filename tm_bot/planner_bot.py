@@ -172,6 +172,11 @@ class PlannerAPIBot:
             user_message = update.message.text
             user_id = update.effective_user.id
 
+            # Check if user exists, if not, call start
+            user_dir = os.path.join(ROOT_DIR, str(user_id))
+            if not os.path.exists(user_dir):
+                await self.start(update, _context)
+
             # Get the response from the LLM
             llm_response = self.llm_handler.get_response(user_message, user_id)
 
@@ -290,6 +295,7 @@ if __name__ == '__main__':
     load_dotenv()
     ROOT_DIR = os.getenv("ROOT_DIR")
     BOT_TOKEN = os.getenv("BOT_TOKEN")
+    LOG_FILE = os.getenv("LOG_FILE", "bot.log")
 
     # Enable logging
     logging.config.dictConfig({
@@ -310,7 +316,7 @@ if __name__ == '__main__':
                 'level': 'INFO',
                 'formatter': 'standard',
                 'class': 'logging.FileHandler',
-                'filename': 'bot.log',
+                'filename': LOG_FILE,
                 'mode': 'a',
             },
         },

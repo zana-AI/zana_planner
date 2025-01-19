@@ -63,7 +63,7 @@ class LLMHandler:
             "Always respond in English. "
             # f"Here are the base models for the schemas:\n{base_model_schemas}\n"
             f"Here are the API functions available:\n [{api_schema_str}]\n"
-            f"Here are the bot commands:\n{bot_commands}"
+            # f"Here are the bot commands:\n{bot_commands}"
         ))
 
         self.chat_history[user_id] = ChatMessageHistory()
