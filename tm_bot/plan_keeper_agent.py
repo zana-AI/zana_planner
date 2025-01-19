@@ -1,19 +1,22 @@
 import os
 import csv
 from urllib.parse import uses_relative
-
+import asyncio
+from datetime import datetime, time
 import yaml
 import logging
 
-from telegram import Update, Bot
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     CallbackContext,
     filters,
+    CallbackQueryHandler,
 )
 from telegram.request import HTTPXRequest
+# from langchain_openai import ChatOpenAI  # Updated import
 from llm_handler import LLMHandler  # Import the LLM handler
 from planner_api import PlannerAPI  # Import the PlannerAPI class
 
@@ -36,6 +39,95 @@ class PlannerAPIBot:
         # Register handlers
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        self.application.add_handler(CallbackQueryHandler(self.handle_time_selection))
+
+        try:
+            # Schedule nightly reminders if job queue is available
+            if self.application.job_queue:
+                self.application.job_queue.run_daily(
+                    self.send_nightly_reminders,
+                    time=time(22, 59),  # 11:15 PM
+                    days=(0, 1, 2, 3, 4, 5, 6)  # Run every day
+                )
+            else:
+                logger.warning("JobQueue not available. Install PTB with job-queue extra to use scheduled reminders.")
+        except Exception as e:
+            logger.error(f"Failed to set up job queue: {str(e)}")
+
+    async def handle_time_selection(self, update: Update, context: CallbackContext) -> None:
+        """Handle the callback when user selects time spent."""
+        query = update.callback_query
+        await query.answer()
+        
+        # Parse the callback data (format: "time_spent:promise_id:hours")
+        _, promise_id, hours = query.data.split(":")
+        
+        # Add the action using PlannerAPI
+        current_date = datetime.now()
+        self.plan_keeper.add_action(
+            user_id=query.from_user.id,
+            date=current_date.date(),
+            time=current_date.strftime("%H:%M"),
+            promise_id=promise_id,
+            time_spent=float(hours)
+        )
+        
+        await query.edit_message_text(
+            text=f"Recorded {hours} hours spent on your promise.",
+            parse_mode='Markdown'
+        )
+
+    async def send_nightly_reminders(self, context: CallbackContext) -> None:
+        """Send nightly reminders to users about their promises."""
+        # Get all user directories
+        user_dirs = [d for d in os.listdir(ROOT_DIR) if os.path.isdir(os.path.join(ROOT_DIR, d))]
+        
+        for user_id in user_dirs:
+            # Get user's promises
+            promises = self.plan_keeper.get_promises(user_id)
+            
+            if not promises:
+                continue
+                
+            # Send reminder for each promise
+            for promise in promises:
+                question = f"How many hours did you spend today on your promise: {promise['text'].replace('_', ' ')}?"
+                
+                # Create inline keyboard with time options
+                keyboard = [
+                    [
+                        InlineKeyboardButton("10 min", callback_data=f"time_spent:{promise['id']}:0.17"),
+                        InlineKeyboardButton("20 min", callback_data=f"time_spent:{promise['id']}:0.33"),
+                        InlineKeyboardButton("30 min", callback_data=f"time_spent:{promise['id']}:0.5")
+                    ],
+                    [
+                        InlineKeyboardButton("1 hrs", callback_data=f"time_spent:{promise['id']}:3"),
+                        InlineKeyboardButton("3 hrs", callback_data=f"time_spent:{promise['id']}:4"),
+                        InlineKeyboardButton("5+ hrs", callback_data=f"time_spent:{promise['id']}:5")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=question,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown'
+                    )
+                    # Wait for the user's response before sending the next question
+                    await self.wait_for_response(user_id)
+                except Exception as e:
+                    logger.error(f"Failed to send reminder to user {user_id}: {str(e)}")
+
+    async def wait_for_response(self, user_id: str) -> None:
+        """Wait for the user's response before sending the next question."""
+        while True:
+            # Check if there is a response from the user
+            user_responses = self.plan_keeper.get_user_responses(user_id)
+            if user_responses:
+                break
+            await asyncio.sleep(1)
 
     async def start(self, update: Update, _context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
@@ -49,8 +141,13 @@ class PlannerAPIBot:
     async def handle_message(self, update: Update, _context: CallbackContext) -> None:
         user_message = update.message.text
         user_id = update.effective_user.id
-        # logger.info(f"Received message: {user_message}")
-        
+
+        # Check if message is "nightly" (case insensitive)
+        if user_message.lower().strip() == "nightly":
+            await self.send_nightly_reminders(_context)
+            await update.message.reply_text("Nightly reminders sent!")
+            return
+
         # Get the response from the LLM
         llm_response = self.llm_handler.get_response(user_message, user_id)
         # response = self.plan_keeper.process_message(user_message)
@@ -138,8 +235,8 @@ class PlannerAPIBot:
 
 if __name__ == '__main__':
     from dotenv import load_dotenv
-    ROOT_DIR = os.getenv("ROOT_DIR")
     load_dotenv()
+    ROOT_DIR = os.getenv("ROOT_DIR")
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     bot = PlannerAPIBot(BOT_TOKEN)
     bot.run()
