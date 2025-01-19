@@ -21,7 +21,7 @@ from llm_handler import LLMHandler
 from planner_api import PlannerAPI
 
 
-class PlannerAPIBot:
+class PlannerTelegramBot:
     def __init__(self, token: str):
         request = HTTPXRequest(connect_timeout=10, read_timeout=20)
         self.application = Application.builder().token(token).build()
@@ -151,9 +151,14 @@ class PlannerAPIBot:
         user_id = update.effective_user.id
         promises = self.plan_keeper.get_promises(user_id)
         if not promises:
-            await update.message.reply_text("You have no promises.")
+            await update.message.reply_text("You have no promises. You want to add one? For example, you could promise to "
+                                            "'deep work 6 hours a day, 5 days a week', "
+                                            "'spend 2 hours a week on playing guitar.'")
         else:
-            formatted_promises = "\n".join([f"- {promise['text'].replace('_', ' ')}" for promise in promises])
+            # Sort promises by their angle
+            sorted_promises = sorted(promises, key=lambda p: p['angle_deg'])
+            # Numerize and format promises
+            formatted_promises = "\n".join([f"{index + 1}. {promise['text'].replace('_', ' ')}" for index, promise in enumerate(sorted_promises)])
             await update.message.reply_text(f"Your promises:\n{formatted_promises}")
 
     async def nightly_reminders(self, update: Update, _context: CallbackContext) -> None:
@@ -336,5 +341,5 @@ if __name__ == '__main__':
 
     logger = logging.getLogger(__name__)
 
-    bot = PlannerAPIBot(BOT_TOKEN)
+    bot = PlannerTelegramBot(BOT_TOKEN)
     bot.run()
