@@ -155,10 +155,10 @@ class PlannerTelegramBot:
                                             "'deep work 6 hours a day, 5 days a week', "
                                             "'spend 2 hours a week on playing guitar.'")
         else:
-            # Sort promises by their angle
-            sorted_promises = sorted(promises, key=lambda p: p['angle_deg'])
+            # Sort promises by promise_id
+            sorted_promises = sorted(promises, key=lambda p: p['id'])
             # Numerize and format promises
-            formatted_promises = "\n".join([f"{index + 1}. {promise['text'].replace('_', ' ')}" for index, promise in enumerate(sorted_promises)])
+            formatted_promises = "\n".join([f"{index + 1}. {promise['id']}: {promise['text'].replace('_', ' ')}" for index, promise in enumerate(sorted_promises)])
             await update.message.reply_text(f"Your promises:\n{formatted_promises}")
 
     async def nightly_reminders(self, update: Update, _context: CallbackContext) -> None:

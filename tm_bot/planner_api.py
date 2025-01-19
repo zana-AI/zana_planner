@@ -135,8 +135,17 @@ class PlannerAPI:
         with open(promises_file, 'r') as file:
             promises = json.load(file)
 
-        # Filter out the promise to delete
-        updated_promises = [p for p in promises if p['id'] != promise_id]
+        # Filter out the promise to delete and set a flag if found
+        promise_found = False
+        updated_promises = []
+        for promise in promises:
+            if promise['id'] == promise_id:
+                promise_found = True
+            else:
+                updated_promises.append(promise)
+
+        if not promise_found:
+            return f"Promise with ID '{promise_id}' not found."
 
         with open(promises_file, 'w') as file:
             json.dump(updated_promises, file, indent=4)
@@ -161,11 +170,16 @@ class PlannerAPI:
 
         return f"Setting '{setting_key}' updated to '{setting_value}'."
 
-    def _generate_promise_id(self, promise_text):
-        """
-        Generate a unique 12-character ID from the promise text.
-        """
-        return promise_text[:12].upper().replace(" ", "_")[:12]
+    # def _generate_promise_id(self, promise_text):
+    #     """
+    #     Generate a unique 12-character ID from the promise text.
+    #     """
+    #     return promise_text[:12].upper().replace(" ", "_")[:12]
+    def _generate_promise_id(self, user_id):
+        """Generate a unique ID for the promise."""
+        promises = self.get_promises(user_id)
+        promise_count = len(promises) + 1
+        return f"P{promise_count:02d}"
 
     def delete_action(self, user_id, date: datetime, promise_id: str):
         """
