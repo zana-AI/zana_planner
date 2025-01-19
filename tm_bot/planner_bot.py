@@ -196,7 +196,7 @@ class PlannerTelegramBot:
             # Process the LLM response
             try:
                 func_call_response = self.call_planner_api(user_id, llm_response)
-                formatted_response = self._format_response(llm_response, func_call_response)
+                formatted_response = self._format_response(llm_response['response_to_user'], func_call_response)
                 await update.message.reply_text(
                     formatted_response,
                     parse_mode='Markdown'
