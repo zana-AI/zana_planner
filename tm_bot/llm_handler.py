@@ -49,12 +49,19 @@ class LLMHandler:
             api_schema_str += f"\t{api.__name__}:\n"
             api_schema_str += str(get_function_args_info(api))
 
+        bot_commands = (
+            "/nightly - Send nightly reminders about promises\n"
+            "/week_report - Generate a weekly report of promises\n"
+            "/list_promises - List all promises for the user\n"
+        )
+
         system_message = SystemMessage(content=(
             "You are an assistant for a task management bot. "
             "When responding, return a JSON object referencing the action and any relevant fields. "
             "Always respond in English. "
-            "Here are the base models for the schemas:\n" + base_model_schemas + "\n"
-            f"Here are the API functions available:\n [{api_schema_str}]"
+            # f"Here are the base models for the schemas:\n{base_model_schemas}\n"
+            f"Here are the API functions available:\n [{api_schema_str}]\n"
+            f"Here are the bot commands:\n{bot_commands}"
         ))
 
         self.chat_history[user_id] = ChatMessageHistory()

@@ -38,6 +38,9 @@ class PlannerAPIBot:
 
         # Register handlers
         self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(CommandHandler("promises", self.list_promises))  # Add list_promises command handler
+        self.application.add_handler(CommandHandler("nightly", self.nightly_reminders))  # Add nightly command handler
+        self.application.add_handler(CommandHandler("weekly", self.weekly_report))  # Add weekly command handler
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(CallbackQueryHandler(self.handle_time_selection))
 
@@ -151,12 +154,33 @@ class PlannerAPIBot:
         else:
             await update.message.reply_text('Hi! Welcome back.')
 
+    async def list_promises(self, update: Update, _context: CallbackContext) -> None:
+        """Send a message listing all promises for the user."""
+        user_id = update.effective_user.id
+        promises = self.plan_keeper.get_promises(user_id)
+        if not promises:
+            await update.message.reply_text("You have no promises.")
+        else:
+            formatted_promises = "\n".join([f"- {promise['text'].replace('_', ' ')}" for promise in promises])
+            await update.message.reply_text(f"Your promises:\n{formatted_promises}")
+
+    async def nightly_reminders(self, update: Update, _context: CallbackContext) -> None:
+        """Handle the /nightly command to send nightly reminders."""
+        await self.send_nightly_reminders(_context)
+        await update.message.reply_text("Nightly reminders sent!")
+
+    async def weekly_report(self, update: Update, _context: CallbackContext) -> None:
+        """Handle the /weekly command to send a weekly report."""
+        user_id = update.effective_user.id
+        report = self.plan_keeper.get_weekly_report(user_id)
+        await update.message.reply_text(f"Weekly report:\n{report}")
+
     async def handle_message(self, update: Update, _context: CallbackContext) -> None:
         user_message = update.message.text
         user_id = update.effective_user.id
 
         # Check if message is "nightly" (case insensitive)
-        if user_message.lower().strip() == "nightly":
+        if user_message.lower().replace("/", "").strip() == "nightly":
             await self.send_nightly_reminders(_context)
             await update.message.reply_text("Nightly reminders sent!")
             return

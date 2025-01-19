@@ -2,13 +2,15 @@ import os
 import csv
 import yaml
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict
+from tqdm import tqdm
 
 
 class PlannerAPI:
     def __init__(self, root_dir):
         self.root_dir = root_dir
+
     def _get_file_path(self, filename, user_id):
         """Helper to get full file path."""
         return os.path.join(self.root_dir, str(user_id), filename)
@@ -164,6 +166,37 @@ class PlannerAPI:
             writer.writerows(updated_actions)
 
         return f"Action for promise ID '{promise_id}' on date '{date}' deleted successfully."
+
+    def get_weekly_report(self, user_id):
+        """
+        Generate a weekly report of promises and actions.
+        """
+        promises = self.get_promises(user_id)
+        actions = self.get_actions(user_id)
+
+        # Initialize report data
+        report_data = {promise['id']: {'text': promise['text'], 'hours_promised': promise['hours_per_week'], 'hours_spent': 0} for promise in promises}
+
+        # Calculate hours spent for each promise
+        one_week_ago = datetime.now() - timedelta(days=7)
+        for action in actions:
+            action_date = datetime.strptime(action[0], '%Y-%m-%d')
+            if action_date >= one_week_ago:
+                promise_id = action[2]
+                time_spent = float(action[3])
+                if promise_id in report_data:
+                    report_data[promise_id]['hours_spent'] += time_spent
+
+        # Generate report
+        report_lines = []
+        for promise_id, data in report_data.items():
+            hours_promised = data['hours_promised']
+            hours_spent = data['hours_spent']
+            progress = min(100, int((hours_spent / hours_promised) * 100)) if hours_promised > 0 else 0
+            progress_bar = tqdm(total=100, ncols=50, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}').format_dict['bar_format']
+            report_lines.append(f"Promise: {data['text'].replace('_', ' ')}\nProgress: {progress_bar.format(l_bar='', bar='█' * (progress // 2), n_fmt=progress, total_fmt='100')} {progress}%\n")
+
+        return "\n".join(report_lines)
 
 
 # Example Usage
