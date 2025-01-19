@@ -1,77 +1,83 @@
 import os
+from dotenv import load_dotenv
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain.memory import ChatMessageHistory
-from dotenv import load_dotenv
+from langchain.output_parsers import StructuredOutputParser, ResponseSchema
+from langchain_core.output_parsers import JsonOutputParser
+
+from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
 
 # Load environment variables
 load_dotenv()
 
+# Define the schemas list
+schemas = [LLMResponse, UserPromise, UserAction]
+
+
 class LLMHandler:
     def __init__(self):
-        # Fetch the OpenAI API key from environment variables
+        # Retrieve OpenAI API key from environment variables
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if not self.openai_key:
             raise ValueError("OpenAI API key is not set in environment variables.")
-        
-        # Initialize the LangChain OpenAI Chat Model
+
+        # Initialize the structured output parser with the defined schemas
+        # self.parser = StructuredOutputParser.from_response_schemas([LLMResponse])
+        self.parser = JsonOutputParser(pydantic_object=LLMResponse)
+
+        # Initialize the ChatOpenAI model with the correct model name
         self.chat_model = ChatOpenAI(
             openai_api_key=self.openai_key,
-            temperature=0.7,  # Adjust based on your use case
+            temperature=0.7,
             model="gpt-4o-mini"  # Specify the model
         )
-        print("LLMHandler initialized successfully")
-        
-        # Initialize chat history for the user        
-        self.chat_history = {} # ChatMessageHistory()
+
+        # Initialize chat history storage
+        self.chat_history = {}
 
     def _initialize_context(self, user_id: str) -> None:
-        """Send initial context to the LLM."""
+        base_model_schemas = ""
+        for schema in schemas:
+            base_model_schemas += f"class {schema.__name__}:\n"
+            for field_name, field in schema.model_fields.items():
+                base_model_schemas += f"\t{field_name}(description= {field.description}, type= {str(field.annotation)})\n"
+
         system_message = SystemMessage(content=(
             "You are an assistant for a task management bot. "
-            "The bot manages promises, actions, and settings for the user. "
-            "Here are the functions the bot can execute:\n"
-            "1. `add_promise`: Add a promise with the following fields:\n"
-            "   - promise_text: The text of the promise.\n"
-            "   - promise_id: A unique 12-character ID derived from the promise text.\n"
-            "   - num_hours_promised_per_week: The number of hours promised per week.\n"
-            "   - start_date: The start date of the promise (YYYY-MM-DD).\n"
-            "   - end_date: The end date of the promise (YYYY-MM-DD).\n"
-            "   - promise_angle: A value between 0 and 360 representing an angle.\n"
-            "   - promise_radius: A value between 1 and 100 representing the radius in years.\n"
-            "2. `add_action`: Log an action with the following fields:\n"
-            "   - date: The date of the action (YYYY-MM-DD).\n"
-            "   - time: The time of the action (HH:MM).\n"
-            "   - promise_id: The ID of the promise the action relates to.\n"
-            "   - time_spent: The time spent in hours.\n"
-            "3. `update_setting`: Update a setting with the following fields:\n"
-            "   - setting_key: The key of the setting to update.\n"
-            "   - setting_value: The new value for the setting.\n"
-            "When responding, return a JSON object specifying the action and required fields. "
-            "If you cannot determine the action, ask the user for clarification."
+            "When responding, return a JSON object referencing the action and any relevant fields."
+            "Here are the base models for the schemas:\n" + base_model_schemas
         ))
+
         self.chat_history[user_id] = ChatMessageHistory()
         self.chat_history[user_id].add_message(system_message)
 
     def get_response(self, user_message: str, user_id: str) -> str:
-        """
-        Sends a message to the LLM and retrieves the response.
-        """
-
-        # check if the chat history is empty
         if user_id not in self.chat_history:
             self._initialize_context(user_id)
 
         try:
             # Add the user's message to the chat history
             self.chat_history[user_id].add_message(HumanMessage(content=user_message))
-            
-            # Send the chat history to the LLM and get a response
+
+            # Get the AI's response
             response = self.chat_model(self.chat_history[user_id].messages)
-            
-            # Add the LLM's response to the chat history
+
+            # Add the AI's response to the chat history
             self.chat_history[user_id].add_message(AIMessage(content=response.content))
-            
-            return response.content
+
+            # Parse the AI's response using the structured output parser
+            parsed_response = self.parser.parse(response.content)
+
+            return parsed_response
         except Exception as e:
-            return f"An error occurred while processing your request: {e}"
+            return f"An error occurred: {str(e)}"
+
+
+# Example usage
+if __name__ == "__main__":
+    handler = LLMHandler()
+    user_id = "user123"
+    user_message = "I want to add a new promise to exercise regularly."
+    response = handler.get_response(user_message, user_id)
+    print(response)
