@@ -325,6 +325,11 @@ if __name__ == '__main__':
                 'handlers': ['default', 'file'],
                 'level': 'INFO',
                 'propagate': True
+            },
+            'httpx': {  # httpx logger
+                'handlers': ['default', 'file'],
+                'level': 'WARNING',
+                'propagate': True
             }
         }
     })
