@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Define the schemas list
 schemas = [LLMResponse] # , UserPromise, UserAction]
-api_schema = [PlannerAPI.add_promise, PlannerAPI.add_action, PlannerAPI.get_promises, PlannerAPI.get_actions,
-              PlannerAPI.update_setting, PlannerAPI.delete_promise, PlannerAPI.add_action]
+
 
 class LLMHandler:
     def __init__(self):
@@ -46,8 +45,13 @@ class LLMHandler:
                 base_model_schemas += f"\t{field_name}(description= {field.description}, type= {str(field.annotation)})\n"
 
         api_schema_str = ""
+        api_schema = [func for func in dir(PlannerAPI) if
+                      callable(getattr(PlannerAPI, func)) and not func.startswith("_")]
+
         for api in api_schema:
-            api_schema_str += f"\t {api.__name__}({get_function_args_info(api)}) \n"
+            # Retrieve the actual function object
+            func_obj = getattr(PlannerAPI, api)
+            api_schema_str += f"\t {api}({get_function_args_info(func_obj)}) \n"
 
         bot_commands = (
             "/nightly - Send nightly reminders about promises\n"

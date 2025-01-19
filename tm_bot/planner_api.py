@@ -231,6 +231,12 @@ class PlannerAPI:
 
         return "\n".join(report_lines)
 
+    def delete_all_promises(self, user_id):
+        """Delete all promises for a user."""
+        promises_file = self._get_file_path('promises.json', user_id)
+        if os.path.exists(promises_file):
+            os.remove(promises_file)
+        return "All promises deleted successfully."
 
 # Example Usage
 if __name__ == "__main__":
