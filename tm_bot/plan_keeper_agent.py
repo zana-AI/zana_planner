@@ -67,25 +67,25 @@ class PlanKeeperBot:
         """
 
         # Interpret LLM response (you'll need to customize this to match your LLM's output format)
-        if "user_promise" in llm_response:
-            user_promise = llm_response["user_promise"]
+        if llm_response["function_call"] == "add_promise":
+            func_args: dict = llm_response["function_args"]
             return self.plan_keeper.add_promise(
                 user_id=user_id,
-                promise_text=user_promise["promise_text"],
-                num_hours_promised_per_week=user_promise["num_hours_promised_per_week"],
-                start_date=user_promise["start_date"],
-                end_date=user_promise["end_date"],
-                promise_angle=user_promise["promise_angle"],
-                promise_radius=user_promise["promise_radius"]
+                promise_text=func_args.get("promise_text"),
+                num_hours_promised_per_week=func_args.get("num_hours_promised_per_week"),
+                start_date=func_args.get("start_date"),
+                end_date=func_args.get("end_date"),
+                promise_angle_deg=func_args.get("promise_angle_deg"),
+                promise_radius=func_args["promise_radius"]
             )
-        elif "user_action" in llm_response:
-            user_action = llm_response["user_action"]
+        elif llm_response["function_call"] == "add_action":
+            func_args: dict = llm_response["function_args"]
             return self.plan_keeper.add_action(
                 user_id=user_id,
-                date=user_action["date"],
-                time=uses_relative["time"],
-                promise_id=user_action["promise_id"],
-                time_spent=user_action["time_spent"]
+                date=func_args.get("date"),
+                time=func_args.get("time"),
+                promise_id=func_args.get("promise_id"),
+                time_spent=func_args.get("time_spent")
             )
         elif "update_setting" in llm_response:
             return self.plan_keeper.update_setting(

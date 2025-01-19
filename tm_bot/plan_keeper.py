@@ -3,6 +3,8 @@ import csv
 import yaml
 from datetime import datetime
 
+from typing import Optional
+
 
 class PlanKeeper:
     def __init__(self, root_dir):
@@ -12,7 +14,15 @@ class PlanKeeper:
         """Helper to get full file path."""
         return os.path.join(self.root_dir, str(user_id), filename)
 
-    def add_promise(self, user_id, promise_text, num_hours_promised_per_week, start_date, end_date, promise_angle, promise_radius):
+    def add_promise(self,
+                    user_id,
+                    promise_text: str,
+                    num_hours_promised_per_week: float,
+                    start_date: Optional[datetime] = None,
+                    end_date: Optional[datetime] = None,
+                    promise_angle_deg: int = 0,
+                    promise_radius: Optional[int] = 0
+                    ):
         """
         Add a new promise to promises.csv.
         """
@@ -30,12 +40,12 @@ class PlanKeeper:
                 num_hours_promised_per_week,
                 start_date,
                 end_date,
-                promise_angle,
+                promise_angle_deg,
                 promise_radius
             ])
         return f"Promise '{promise_text}' added successfully."
 
-    def add_action(self, user_id, date, time, promise_id, time_spent):
+    def add_action(self, user_id, date: datetime, time: str, promise_id: str, time_spent: float):
         """
         Add an action to actions.csv.
         """
@@ -44,6 +54,26 @@ class PlanKeeper:
             writer = csv.writer(file)
             writer.writerow([date, time, promise_id, time_spent])
         return f"Action logged for promise ID '{promise_id}'."
+
+    def get_promises(self, user_id):
+        """
+        Get all promises from promises.csv.
+        """
+        promises_file = self._get_file_path('promises.csv', user_id)
+        with open(promises_file, 'r') as file:
+            reader = csv.reader(file)
+            promises = [row for row in reader]
+        return promises
+
+    def get_actions(self, user_id):
+        """
+        Get all actions from actions.csv.
+        """
+        actions_file = self._get_file_path('actions.csv', user_id)
+        with open(actions_file, 'r') as file:
+            reader = csv.reader(file)
+            actions = [row for row in reader]
+        return actions
 
     def update_setting(self, user_id, setting_key, setting_value):
         """

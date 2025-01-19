@@ -5,15 +5,16 @@ from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain.memory import ChatMessageHistory
 from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 from langchain_core.output_parsers import JsonOutputParser
-
+from func_utils import get_function_args_info
 from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
-
+from plan_keeper import PlanKeeper
 # Load environment variables
 load_dotenv()
 
 # Define the schemas list
-schemas = [LLMResponse, UserPromise, UserAction]
-
+schemas = [LLMResponse] # , UserPromise, UserAction]
+api_schema = [PlanKeeper.add_promise, PlanKeeper.add_action, PlanKeeper.get_promises, PlanKeeper.get_actions,
+              PlanKeeper.update_setting]
 
 class LLMHandler:
     def __init__(self):
@@ -43,10 +44,16 @@ class LLMHandler:
             for field_name, field in schema.model_fields.items():
                 base_model_schemas += f"\t{field_name}(description= {field.description}, type= {str(field.annotation)})\n"
 
+        api_schema_str = ""
+        for api in api_schema:
+            api_schema_str += f"\t{api.__name__}:\n"
+            api_schema_str += str(get_function_args_info(api))
+
         system_message = SystemMessage(content=(
             "You are an assistant for a task management bot. "
             "When responding, return a JSON object referencing the action and any relevant fields."
-            "Here are the base models for the schemas:\n" + base_model_schemas
+            "Here are the base models for the schemas:\n" + base_model_schemas + "\n"
+            "Here are the API functions available:\n" + str(api_schema_str)
         ))
 
         self.chat_history[user_id] = ChatMessageHistory()

@@ -1,6 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import get_type_hints, Optional, Dict, Any
 from datetime import date
+import inspect
+
+from tm_bot.plan_keeper import PlanKeeper
+
 
 class UserPromise(BaseModel):
     promise_text: str = Field(..., description="The text of the promise")
@@ -22,40 +26,11 @@ class UserAction(BaseModel):
     time_spent: float = Field(..., description="Time spent in hours")
 
 class LLMResponse(BaseModel):
-    user_promise: Optional[UserPromise] = Field(None, description="Promise object")
-    user_action: Optional[UserAction] = Field(None, description="Action object")
-    update_setting: Optional[dict] = Field(None, description="Setting dictionary")
-    response_to_user: str = Field(..., description="Response to the user")
+    # user_promise: Optional[UserPromise] = Field(None, description="Promise object")
+    # user_action: Optional[UserAction] = Field(None, description="Action object")
+    # update_setting: Optional[dict] = Field(None, description="Setting dictionary")
+    function_call: Optional[str] = Field(None, description="Function name to call")
+    function_args: Optional[dict] = Field(None, description="Function arguments")
+    response_to_user: str = Field(..., description="Short response to the user (Obligatory)")
 
 
-# utils.py
-
-from typing import List, Type
-from langchain.output_parsers import ResponseSchema
-from pydantic import BaseModel
-
-def generate_response_schemas(model: Type[BaseModel]) -> List[ResponseSchema]:
-    """
-    Generates a list of ResponseSchema instances from a given Pydantic BaseModel.
-
-    Args:
-        model (Type[BaseModel]): The Pydantic model to generate schemas from.
-
-    Returns:
-        List[ResponseSchema]: A list of ResponseSchema instances.
-    """
-    response_schemas = []
-    for field_name, field in model.model_fields.items():
-        description = field.description or "No description provided."
-        response_schemas.append(
-            ResponseSchema(
-                name=field_name,
-                description=description
-            )
-        )
-    return response_schemas
-
-if __name__ == "__main__":
-    response_schemas = generate_response_schemas(LLMResponse)
-    for schema in response_schemas:
-        print(schema)
