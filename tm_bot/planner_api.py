@@ -42,7 +42,7 @@ class PlannerAPI:
             if not isinstance(num_hours_promised_per_week, (int, float)) or num_hours_promised_per_week <= 0:
                 raise ValueError("Hours promised must be a positive number")
 
-            promise_id = self._generate_promise_id(promise_text)
+            promise_id = self._generate_promise_id(user_id=user_id)
             promises_file = self._get_file_path('promises.json', user_id)
 
             if not start_date:
