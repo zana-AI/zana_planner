@@ -233,7 +233,7 @@ class PlannerTelegramBot:
                 formatted_response = str(func_call_response)
 
             return (
-                f"*LLM Response:*\n`{llm_response}`\n\n"
+                f"*Zana:*\n`{llm_response}`\n\n"
                 f"*Result:*\n{formatted_response}"
             )
         except Exception as e:
