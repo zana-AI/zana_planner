@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
@@ -11,6 +12,8 @@ from planner_api import PlannerAPI
 # Load environment variables
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 # Define the schemas list
 schemas = [LLMResponse] # , UserPromise, UserAction]
 api_schema = [PlannerAPI.add_promise, PlannerAPI.add_action, PlannerAPI.get_promises, PlannerAPI.get_actions,
@@ -18,24 +21,23 @@ api_schema = [PlannerAPI.add_promise, PlannerAPI.add_action, PlannerAPI.get_prom
 
 class LLMHandler:
     def __init__(self):
-        # Retrieve OpenAI API key from environment variables
-        self.openai_key = os.getenv("OPENAI_API_KEY")
-        if not self.openai_key:
-            raise ValueError("OpenAI API key is not set in environment variables.")
+        try:
+            self.openai_key = os.getenv("OPENAI_API_KEY")
+            if not self.openai_key:
+                raise ValueError("OpenAI API key is not set in environment variables.")
 
-        # Initialize the structured output parser with the defined schemas
-        # self.parser = StructuredOutputParser.from_response_schemas([LLMResponse])
-        self.parser = JsonOutputParser(pydantic_object=LLMResponse)
-
-        # Initialize the ChatOpenAI model with the correct model name
-        self.chat_model = ChatOpenAI(
-            openai_api_key=self.openai_key,
-            temperature=0.7,
-            model="gpt-4o-mini"  # Specify the model
-        )
-
-        # Initialize chat history storage
-        self.chat_history = {}
+            self.parser = JsonOutputParser(pydantic_object=LLMResponse)
+            
+            self.chat_model = ChatOpenAI(
+                openai_api_key=self.openai_key,
+                temperature=0.7,
+                model="gpt-4o-mini"
+            )
+            
+            self.chat_history = {}
+        except Exception as e:
+            logger.error(f"Failed to initialize LLMHandler: {str(e)}")
+            raise
 
     def _initialize_context(self, user_id: str) -> None:
         base_model_schemas = ""
@@ -68,25 +70,36 @@ class LLMHandler:
         self.chat_history[user_id].add_message(system_message)
 
     def get_response(self, user_message: str, user_id: str) -> str:
-        if user_id not in self.chat_history:
-            self._initialize_context(user_id)
-
         try:
+            if user_id not in self.chat_history:
+                self._initialize_context(user_id)
+
             # Add the user's message to the chat history
             self.chat_history[user_id].add_message(HumanMessage(content=user_message))
 
             # Get the AI's response
-            response = self.chat_model(self.chat_history[user_id].messages)
+            try:
+                response = self.chat_model(self.chat_history[user_id].messages)
+            except Exception as e:
+                logger.error(f"Error getting LLM response: {str(e)}")
+                return {"error": "model_error", "function_call": "handle_error", 
+                        "response_to_user": "I'm having trouble understanding that. Could you rephrase?"}
 
             # Add the AI's response to the chat history
             self.chat_history[user_id].add_message(AIMessage(content=response.content))
 
-            # Parse the AI's response using the structured output parser
-            parsed_response = self.parser.parse(response.content)
+            # Parse the response
+            try:
+                return self.parser.parse(response.content)
+            except Exception as e:
+                logger.error(f"Error parsing response: {str(e)}")
+                return {"error": "parsing_error", "function_call": "handle_error", 
+                        "response_to_user": "I couldn't process that correctly. Please try again."}
 
-            return parsed_response
         except Exception as e:
-            return f"An error occurred: {str(e)}"
+            logger.error(f"Unexpected error in get_response: {str(e)}")
+            return {"error": "unexpected_error", "function_call": "handle_error", 
+                    "response_to_user": "Something went wrong. Please try again later."}
 
 
 # Example usage

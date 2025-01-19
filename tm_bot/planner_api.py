@@ -9,11 +9,19 @@ from tqdm import tqdm
 
 class PlannerAPI:
     def __init__(self, root_dir):
+        if not os.path.exists(root_dir):
+            raise FileNotFoundError(f"Root directory does not exist: {root_dir}")
         self.root_dir = root_dir
 
     def _get_file_path(self, filename, user_id):
         """Helper to get full file path."""
-        return os.path.join(self.root_dir, str(user_id), filename)
+        try:
+            path = os.path.join(self.root_dir, str(user_id), filename)
+            if not os.path.exists(os.path.dirname(path)):
+                raise FileNotFoundError(f"User directory does not exist for user_id: {user_id}")
+            return path
+        except Exception as e:
+            raise FileNotFoundError(f"Error accessing file path: {str(e)}")
 
     def add_promise(self,
                     user_id,
@@ -27,39 +35,50 @@ class PlannerAPI:
         """
         Add a new promise to promises.json.
         """
-        promise_id = self._generate_promise_id(promise_text)
-        promises_file = self._get_file_path('promises.json', user_id)
+        try:
+            # Validate inputs
+            if not promise_text or not isinstance(promise_text, str):
+                raise ValueError("Promise text must be a non-empty string")
+            if not isinstance(num_hours_promised_per_week, (int, float)) or num_hours_promised_per_week <= 0:
+                raise ValueError("Hours promised must be a positive number")
 
-        if not start_date:
-            start_date = datetime.now().date()
-        if not end_date: # end of the current year
-            end_date = datetime(datetime.now().year, 12, 31).date()
+            promise_id = self._generate_promise_id(promise_text)
+            promises_file = self._get_file_path('promises.json', user_id)
 
-        # Load existing promises
-        if os.path.exists(promises_file):
-            with open(promises_file, 'r') as file:
-                promises = json.load(file)
-        else:
-            promises = []
+            if not start_date:
+                start_date = datetime.now().date()
+            if not end_date: # end of the current year
+                end_date = datetime(datetime.now().year, 12, 31).date()
 
-        # Create new promise object
-        new_promise = {
-            'id': promise_id,
-            'text': promise_text.replace(" ", "_"),
-            'hours_per_week': num_hours_promised_per_week,
-            'start_date': str(start_date),
-            'end_date': str(end_date),
-            'angle_deg': promise_angle_deg,
-            'radius': promise_radius
-        }
+            # Load existing promises
+            if os.path.exists(promises_file):
+                with open(promises_file, 'r') as file:
+                    promises = json.load(file)
+            else:
+                promises = []
 
-        promises.append(new_promise)
+            # Create new promise object
+            new_promise = {
+                'id': promise_id,
+                'text': promise_text.replace(" ", "_"),
+                'hours_per_week': num_hours_promised_per_week,
+                'start_date': str(start_date),
+                'end_date': str(end_date),
+                'angle_deg': promise_angle_deg,
+                'radius': promise_radius
+            }
 
-        # Save updated promises
-        with open(promises_file, 'w') as file:
-            json.dump(promises, file, indent=4)
+            promises.append(new_promise)
 
-        return f"Promise '{promise_text}' added successfully."
+            # Save updated promises
+            with open(promises_file, 'w') as file:
+                json.dump(promises, file, indent=4)
+
+            return f"Promise '{promise_text}' added successfully."
+
+        except (ValueError, FileNotFoundError) as e:
+            # logger.error(f"Error in add_promise: {str(e)}")
+            raise RuntimeError(f"Failed to add promise: {str(e)}")
 
     def add_action(self, user_id, date: datetime, time: str, promise_id: str, time_spent: float):
         """

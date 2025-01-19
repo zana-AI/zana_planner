@@ -2,11 +2,12 @@ import os
 import csv
 from urllib.parse import uses_relative
 import asyncio
-from datetime import datetime, time
+from datetime import datetime
 import yaml
 import logging
+import logging.config
 
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -16,17 +17,8 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from telegram.request import HTTPXRequest
-# from langchain_openai import ChatOpenAI  # Updated import
-from llm_handler import LLMHandler  # Import the LLM handler
-from planner_api import PlannerAPI  # Import the PlannerAPI class
-
-
-# Enable logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+from llm_handler import LLMHandler
+from planner_api import PlannerAPI
 
 
 class PlannerAPIBot:
@@ -176,44 +168,67 @@ class PlannerAPIBot:
         await update.message.reply_text(f"Weekly report:\n{report}")
 
     async def handle_message(self, update: Update, _context: CallbackContext) -> None:
-        user_message = update.message.text
-        user_id = update.effective_user.id
+        try:
+            user_message = update.message.text
+            user_id = update.effective_user.id
 
-        # Check if message is "nightly" (case insensitive)
-        if user_message.lower().replace("/", "").strip() == "nightly":
-            await self.send_nightly_reminders(_context)
-            await update.message.reply_text("Nightly reminders sent!")
-            return
+            # Get the response from the LLM
+            llm_response = self.llm_handler.get_response(user_message, user_id)
 
-        # Get the response from the LLM
-        llm_response = self.llm_handler.get_response(user_message, user_id)
-        # response = self.plan_keeper.process_message(user_message)
+            # Check for errors in LLM response
+            if "error" in llm_response:
+                await update.message.reply_text(
+                    llm_response["response_to_user"],
+                    parse_mode='Markdown'
+                )
+                return
 
-        # Process the LLM response
+            # Process the LLM response
+            try:
+                func_call_response = self.call_planner_api(user_id, llm_response)
+                formatted_response = self._format_response(llm_response, func_call_response)
+                await update.message.reply_text(
+                    formatted_response,
+                    parse_mode='Markdown'
+                )
+            except ValueError as e:
+                await update.message.reply_text(
+                    f"⚠️ Invalid input: {str(e)}",
+                    parse_mode='Markdown'
+                )
+                logger.error(f"Validation error for user {user_id}: {str(e)}")
+            except Exception as e:
+                await update.message.reply_text(
+                    "❌ Sorry, I couldn't complete that action. Please try again.",
+                    parse_mode='Markdown'
+                )
+                logger.error(f"Error processing request for user {user_id}: {str(e)}")
 
-        func_call_response = self.call_planner_api(user_id, llm_response)
-        # Process list/dict responses for better readability
-        if isinstance(func_call_response, (list, dict)):
-            if isinstance(func_call_response, list):
-                # Format list items with newlines and bullet points
-                formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
-                func_call_response = formatted_response
-            elif isinstance(func_call_response, dict):
-                # Format dictionary items with newlines and key-value pairs
-                formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
-                func_call_response = formatted_response
-        logger.info(f"func_call_response: {func_call_response}")
-        # Format the LLM response as code block for better readability in Telegram
-        formatted_llm = f"*LLM Response:*\n`{llm_response}`"
-        
-        # Format the function response with proper line breaks and markdown
-        formatted_func = f"\n\n*Result:*\n{func_call_response}"
-        
-        # Send formatted message using Telegram's markdown parsing
-        await update.message.reply_text(
-            formatted_llm + formatted_func,
-            parse_mode='Markdown'
-        )
+        except Exception as e:
+            await update.message.reply_text(
+                "🔧 Something went wrong. Please try again later.",
+                parse_mode='Markdown'
+            )
+            logger.error(f"Unexpected error handling message from user {user_id}: {str(e)}")
+
+    def _format_response(self, llm_response, func_call_response):
+        """Format the response for Telegram."""
+        try:
+            if isinstance(func_call_response, (list, dict)):
+                if isinstance(func_call_response, list):
+                    formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
+                else:
+                    formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
+            else:
+                formatted_response = str(func_call_response)
+
+            return (
+                f"*LLM Response:*\n`{llm_response}`\n\n"
+                f"*Result:*\n{formatted_response}"
+            )
+        except Exception as e:
+            logger.error(f"Error formatting response: {str(e)}")
+            return "Error formatting response"
 
     def call_planner_api(self, user_id, llm_response: str) -> str:
         """
@@ -275,5 +290,40 @@ if __name__ == '__main__':
     load_dotenv()
     ROOT_DIR = os.getenv("ROOT_DIR")
     BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+    # Enable logging
+    logging.config.dictConfig({
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'standard': {
+                'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+            },
+        },
+        'handlers': {
+            'default': {
+                'level': 'INFO',
+                'formatter': 'standard',
+                'class': 'logging.StreamHandler',
+            },
+            'file': {
+                'level': 'INFO',
+                'formatter': 'standard',
+                'class': 'logging.FileHandler',
+                'filename': 'bot.log',
+                'mode': 'a',
+            },
+        },
+        'loggers': {
+            '': {  # root logger
+                'handlers': ['default', 'file'],
+                'level': 'INFO',
+                'propagate': True
+            }
+        }
+    })
+
+    logger = logging.getLogger(__name__)
+
     bot = PlannerAPIBot(BOT_TOKEN)
     bot.run()
