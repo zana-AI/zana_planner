@@ -9,7 +9,6 @@ from typing import Optional, List, Dict
 class PlannerAPI:
     def __init__(self, root_dir):
         self.root_dir = root_dir
-
     def _get_file_path(self, filename, user_id):
         """Helper to get full file path."""
         return os.path.join(self.root_dir, str(user_id), filename)
@@ -28,7 +27,7 @@ class PlannerAPI:
         """
         promise_id = self._generate_promise_id(promise_text)
         promises_file = self._get_file_path('promises.json', user_id)
-        
+
         if not start_date:
             start_date = datetime.now().date()
         if not end_date: # end of the current year
@@ -79,6 +78,24 @@ class PlannerAPI:
             promises = json.load(file)
         return promises
 
+    def get_promise_hours(self, user_id, promise_id: str) -> Optional[float]:
+        """
+        Get the number of hours promised per week for a specific promise.
+        """
+        promises_file = self._get_file_path('promises.json', user_id)
+
+        if not os.path.exists(promises_file):
+            return None
+
+        with open(promises_file, 'r') as file:
+            promises = json.load(file)
+
+        for promise in promises:
+            if promise['id'] == promise_id:
+                return promise.get('hours_per_week')
+
+        return None
+
     def get_actions(self, user_id):
         """Get all actions from actions.csv."""
         actions_file = self._get_file_path('actions.csv', user_id)
@@ -86,11 +103,11 @@ class PlannerAPI:
             reader = csv.reader(file)
             actions = [row for row in reader]
         return actions
-    
+
     def delete_promise(self, user_id, promise_id: str):
         """Delete a promise from promises.json."""
         promises_file = self._get_file_path('promises.json', user_id)
-        
+
         if not os.path.exists(promises_file):
             return f"No promises file found for user '{user_id}'"
 

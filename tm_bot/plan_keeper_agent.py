@@ -41,18 +41,18 @@ class PlannerAPIBot:
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(CallbackQueryHandler(self.handle_time_selection))
 
-        try:
-            # Schedule nightly reminders if job queue is available
-            if self.application.job_queue:
-                self.application.job_queue.run_daily(
-                    self.send_nightly_reminders,
-                    time=time(22, 59),  # 11:15 PM
-                    days=(0, 1, 2, 3, 4, 5, 6)  # Run every day
-                )
-            else:
-                logger.warning("JobQueue not available. Install PTB with job-queue extra to use scheduled reminders.")
-        except Exception as e:
-            logger.error(f"Failed to set up job queue: {str(e)}")
+        # try:
+        #     # Schedule nightly reminders if job queue is available
+        #     if self.application.job_queue:
+        #         self.application.job_queue.run_daily(
+        #             self.send_nightly_reminders,
+        #             time=time(22, 59),  # 11:15 PM
+        #             days=(0, 1, 2, 3, 4, 5, 6)  # Run every day
+        #         )
+        #     else:
+        #         logger.warning("JobQueue not available. Install PTB with job-queue extra to use scheduled reminders.")
+        # except Exception as e:
+        #     logger.error(f"Failed to set up job queue: {str(e)}")
 
     async def handle_time_selection(self, update: Update, context: CallbackContext) -> None:
         """Handle the callback when user selects time spent."""
@@ -77,6 +77,28 @@ class PlannerAPIBot:
             parse_mode='Markdown'
         )
 
+    def create_time_options(self, promise_id: str, hours_per_day: float):
+        """Create inline keyboard with time options."""
+        def format_time_option(hours):
+            if hours == 0:
+                return "0 hrs", "🚫"
+            elif hours < 1:
+                minutes = round(hours * 60 / 5) * 5
+                return f"{minutes} min", "⏳"
+            else:
+                rounded_hours = round(hours * 2) / 2  # Round to nearest 0.5 hours
+                return f"{rounded_hours:.1f} hrs", "🎉"
+
+        time_options = [0, hours_per_day * 0.5, hours_per_day, hours_per_day * 1.5, hours_per_day * 2, hours_per_day * 2.5]
+        keyboard = [
+            [
+                InlineKeyboardButton(f"{format_time_option(option)[1]} {format_time_option(option)[0]}", callback_data=f"time_spent:{promise_id}:{option:.2f}")
+                for option in time_options[i:i + 3]
+            ]
+            for i in range(0, len(time_options), 3)
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
     async def send_nightly_reminders(self, context: CallbackContext) -> None:
         """Send nightly reminders to users about their promises."""
         # Get all user directories
@@ -93,20 +115,11 @@ class PlannerAPIBot:
             for promise in promises:
                 question = f"How many hours did you spend today on your promise: {promise['text'].replace('_', ' ')}?"
                 
+                # Calculate suggested hours based on the number of hours promised per week
+                hours_per_day = promise['hours_per_week'] / 7
+                
                 # Create inline keyboard with time options
-                keyboard = [
-                    [
-                        InlineKeyboardButton("10 min", callback_data=f"time_spent:{promise['id']}:0.17"),
-                        InlineKeyboardButton("20 min", callback_data=f"time_spent:{promise['id']}:0.33"),
-                        InlineKeyboardButton("30 min", callback_data=f"time_spent:{promise['id']}:0.5")
-                    ],
-                    [
-                        InlineKeyboardButton("1 hrs", callback_data=f"time_spent:{promise['id']}:3"),
-                        InlineKeyboardButton("3 hrs", callback_data=f"time_spent:{promise['id']}:4"),
-                        InlineKeyboardButton("5+ hrs", callback_data=f"time_spent:{promise['id']}:5")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                reply_markup = self.create_time_options(promise['id'], hours_per_day)
                 
                 try:
                     await context.bot.send_message(
