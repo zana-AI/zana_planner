@@ -51,7 +51,8 @@ class LLMHandler:
 
         system_message = SystemMessage(content=(
             "You are an assistant for a task management bot. "
-            "When responding, return a JSON object referencing the action and any relevant fields."
+            "When responding, return a JSON object referencing the action and any relevant fields. "
+            "Always respond in English. "
             "Here are the base models for the schemas:\n" + base_model_schemas + "\n"
             f"Here are the API functions available:\n [{api_schema_str}]"
         ))

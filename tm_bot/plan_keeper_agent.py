@@ -56,10 +56,30 @@ class PlannerAPIBot:
         # response = self.plan_keeper.process_message(user_message)
 
         # Process the LLM response
-        func_call_response = self.call_planner_api(user_id, llm_response)
-        logger.info(f"func_call_response: {func_call_response}")
 
-        await update.message.reply_text(str(llm_response) + "\n" + str(func_call_response))
+        func_call_response = self.call_planner_api(user_id, llm_response)
+        # Process list/dict responses for better readability
+        if isinstance(func_call_response, (list, dict)):
+            if isinstance(func_call_response, list):
+                # Format list items with newlines and bullet points
+                formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
+                func_call_response = formatted_response
+            elif isinstance(func_call_response, dict):
+                # Format dictionary items with newlines and key-value pairs
+                formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
+                func_call_response = formatted_response
+        logger.info(f"func_call_response: {func_call_response}")
+        # Format the LLM response as code block for better readability in Telegram
+        formatted_llm = f"*LLM Response:*\n`{llm_response}`"
+        
+        # Format the function response with proper line breaks and markdown
+        formatted_func = f"\n\n*Result:*\n{func_call_response}"
+        
+        # Send formatted message using Telegram's markdown parsing
+        await update.message.reply_text(
+            formatted_llm + formatted_func,
+            parse_mode='Markdown'
+        )
 
     def call_planner_api(self, user_id, llm_response: str) -> str:
         """

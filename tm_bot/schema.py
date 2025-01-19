@@ -30,7 +30,7 @@ class LLMResponse(BaseModel):
     # user_action: Optional[UserAction] = Field(None, description="Action object")
     # update_setting: Optional[dict] = Field(None, description="Setting dictionary")
     function_call: Optional[str] = Field(None, description="Function name to call")
-    function_args: Optional[dict] = Field(None, description="Function arguments")
+    function_args: Optional[dict] = Field(None, description="Function arguments if any")
     response_to_user: str = Field(..., description="Short response to the user (Obligatory)")
 
 
