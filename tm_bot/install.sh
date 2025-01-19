@@ -18,6 +18,14 @@ else
     echo ".env file already exists. Skipping creation."
 fi
 
+# Check if the USERS_DATA_DIR directory exists, if not create it
+if [ ! -d "USERS_DATA_DIR" ]; then
+    echo "Creating USERS_DATA_DIR directory..."
+    mkdir USERS_DATA_DIR
+else
+    echo "USERS_DATA_DIR directory already exists. Skipping creation."
+fi
+
 # Check if the virtual environment already exists
 if [ ! -d ".venv" ]; then
     # Create a virtual environment in the root folder of the repo

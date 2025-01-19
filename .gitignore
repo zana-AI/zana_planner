@@ -3,4 +3,5 @@
 .env
 *.pyc
 /TEMP_*
+/USERS_DATA_DIR
 /temp_*

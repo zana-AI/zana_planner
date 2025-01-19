@@ -201,10 +201,12 @@ class PlannerAPI:
 
 # Example Usage
 if __name__ == "__main__":
-    ROOT_DIR = r'C:\Users\Mohamed CHETOUANI\Dropbox\Javad_plan\TEMP_USER_DIR'
+    from dotenv import load_dotenv
+    load_dotenv()
+    ROOT_DIR = os.getenv("ROOT_DIR")
     keeper = PlannerAPI(ROOT_DIR)
 
-    # Simulated user message
-    user_message = "I want to add a promise to read for 10 hours a week starting next Monday."
-    result = keeper.process_message(user_message)
+    user_id = "test_user"
+    result = keeper.get_promises(user_id)
+
     print(result)
