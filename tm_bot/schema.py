@@ -3,7 +3,7 @@ from typing import get_type_hints, Optional, Dict, Any
 from datetime import date
 import inspect
 
-from tm_bot.plan_keeper import PlanKeeper
+from planner_api import PlannerAPI
 
 
 class UserPromise(BaseModel):

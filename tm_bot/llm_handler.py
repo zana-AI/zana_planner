@@ -7,14 +7,14 @@ from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 from langchain_core.output_parsers import JsonOutputParser
 from func_utils import get_function_args_info
 from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
-from plan_keeper import PlanKeeper
+from planner_api import PlannerAPI
 # Load environment variables
 load_dotenv()
 
 # Define the schemas list
 schemas = [LLMResponse] # , UserPromise, UserAction]
-api_schema = [PlanKeeper.add_promise, PlanKeeper.add_action, PlanKeeper.get_promises, PlanKeeper.get_actions,
-              PlanKeeper.update_setting]
+api_schema = [PlannerAPI.add_promise, PlannerAPI.add_action, PlannerAPI.get_promises, PlannerAPI.get_actions,
+              PlannerAPI.update_setting, PlannerAPI.delete_promise, PlannerAPI.add_action]
 
 class LLMHandler:
     def __init__(self):
@@ -53,7 +53,7 @@ class LLMHandler:
             "You are an assistant for a task management bot. "
             "When responding, return a JSON object referencing the action and any relevant fields."
             "Here are the base models for the schemas:\n" + base_model_schemas + "\n"
-            "Here are the API functions available:\n" + str(api_schema_str)
+            f"Here are the API functions available:\n [{api_schema_str}]"
         ))
 
         self.chat_history[user_id] = ChatMessageHistory()

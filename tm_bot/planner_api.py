@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 
-class PlanKeeper:
+class PlannerAPI:
     def __init__(self, root_dir):
         self.root_dir = root_dir
 
@@ -56,9 +56,7 @@ class PlanKeeper:
         return f"Action logged for promise ID '{promise_id}'."
 
     def get_promises(self, user_id):
-        """
-        Get all promises from promises.csv.
-        """
+        """Get all promises from promises.csv."""
         promises_file = self._get_file_path('promises.csv', user_id)
         with open(promises_file, 'r') as file:
             reader = csv.reader(file)
@@ -66,14 +64,30 @@ class PlanKeeper:
         return promises
 
     def get_actions(self, user_id):
-        """
-        Get all actions from actions.csv.
-        """
+        """Get all actions from actions.csv."""
         actions_file = self._get_file_path('actions.csv', user_id)
         with open(actions_file, 'r') as file:
             reader = csv.reader(file)
             actions = [row for row in reader]
         return actions
+    
+    def delete_promise(self, user_id, promise_id: str):
+        """Delete a promise from promises.csv."""
+        promises_file = self._get_file_path('promises.csv', user_id)
+        updated_promises = []
+
+        with open(promises_file, 'r') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                if row[0] != promise_id:  # Keep all promises except the one to delete
+                    updated_promises.append(row)
+
+        with open(promises_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(updated_promises)
+
+        return f"Promise with ID '{promise_id}' deleted successfully."
+    
 
     def update_setting(self, user_id, setting_key, setting_value):
         """
@@ -99,11 +113,49 @@ class PlanKeeper:
         """
         return promise_text[:12].upper().replace(" ", "_")[:12]
 
+    def delete_promise(self, user_id, promise_id: str):
+        """
+        Delete a promise from promises.csv.
+        """
+        promises_file = self._get_file_path('promises.csv', user_id)
+        updated_promises = []
+
+        with open(promises_file, 'r') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                if row[0] != promise_id:  # Keep all promises except the one to delete
+                    updated_promises.append(row)
+
+        with open(promises_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(updated_promises)
+
+        return f"Promise with ID '{promise_id}' deleted successfully."
+
+    def delete_action(self, user_id, date: datetime, promise_id: str):
+        """
+        Delete an action from actions.csv.
+        """
+        actions_file = self._get_file_path('actions.csv', user_id)
+        updated_actions = []
+
+        with open(actions_file, 'r') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                if not (row[0] == date and row[2] == promise_id):  # Keep all actions except the one to delete
+                    updated_actions.append(row)
+
+        with open(actions_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(updated_actions)
+
+        return f"Action for promise ID '{promise_id}' on date '{date}' deleted successfully."
+
 
 # Example Usage
 if __name__ == "__main__":
     ROOT_DIR = r'C:\Users\Mohamed CHETOUANI\Dropbox\Javad_plan\TEMP_USER_DIR'
-    keeper = PlanKeeper(ROOT_DIR)
+    keeper = PlannerAPI(ROOT_DIR)
 
     # Simulated user message
     user_message = "I want to add a promise to read for 10 hours a week starting next Monday."

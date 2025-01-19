@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 from llm_handler import LLMHandler  # Import the LLM handler
-from plan_keeper import PlanKeeper  # Import the PlanKeeper class
+from planner_api import PlannerAPI  # Import the PlannerAPI class
 
 
 # Enable logging
@@ -26,12 +26,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class PlanKeeperBot:
+class PlannerAPIBot:
     def __init__(self, token: str):
         request = HTTPXRequest(connect_timeout=10, read_timeout=20)
         self.application = Application.builder().token(token).build()
         self.llm_handler = LLMHandler()  # Instantiate the LLM handler
-        self.plan_keeper = PlanKeeper(ROOT_DIR)  # Instantiate the PlanKeeper class
+        self.plan_keeper = PlannerAPI(ROOT_DIR)  # Instantiate the PlannerAPI class
 
         # Register handlers
         self.application.add_handler(CommandHandler("start", self.start))
@@ -56,43 +56,33 @@ class PlanKeeperBot:
         # response = self.plan_keeper.process_message(user_message)
 
         # Process the LLM response
-        func_call_response = self.call_plan_keeper(user_id, llm_response)
+        func_call_response = self.call_planner_api(user_id, llm_response)
         logger.info(f"func_call_response: {func_call_response}")
 
-        await update.message.reply_text(llm_response)
+        await update.message.reply_text(str(llm_response) + "\n" + str(func_call_response))
 
-    def call_plan_keeper(self, user_id, llm_response: str) -> str:
+    def call_planner_api(self, user_id, llm_response: str) -> str:
         """
         Process user message by sending it to the LLM and executing the identified action.
         """
+        try:
+            # Interpret LLM response (you'll need to customize this to match your LLM's output format)
+            # Get the function name and arguments from the LLM response
+            function_name = llm_response.get("function_call")
+            func_args = llm_response.get("function_args", {})
 
-        # Interpret LLM response (you'll need to customize this to match your LLM's output format)
-        if llm_response["function_call"] == "add_promise":
-            func_args: dict = llm_response["function_args"]
-            return self.plan_keeper.add_promise(
-                user_id=user_id,
-                promise_text=func_args.get("promise_text"),
-                num_hours_promised_per_week=func_args.get("num_hours_promised_per_week"),
-                start_date=func_args.get("start_date"),
-                end_date=func_args.get("end_date"),
-                promise_angle_deg=func_args.get("promise_angle_deg"),
-                promise_radius=func_args["promise_radius"]
-            )
-        elif llm_response["function_call"] == "add_action":
-            func_args: dict = llm_response["function_args"]
-            return self.plan_keeper.add_action(
-                user_id=user_id,
-                date=func_args.get("date"),
-                time=func_args.get("time"),
-                promise_id=func_args.get("promise_id"),
-                time_spent=func_args.get("time_spent")
-            )
-        elif "update_setting" in llm_response:
-            return self.plan_keeper.update_setting(
-                user_id=user_id,
-                setting_key=llm_response["setting_key"],
-                setting_value=llm_response["setting_value"]
-            )
+            # Add user_id to function arguments
+            func_args["user_id"] = user_id
+
+            # Get the corresponding method from plan_keeper
+            if hasattr(self.plan_keeper, function_name):
+                method = getattr(self.plan_keeper, function_name)
+                # Call the method with unpacked arguments
+                return method(**func_args)
+            else:
+                return f"Function {function_name} not found in PlannerAPI"
+        except Exception as e:
+            return f"Error executing function: {str(e)}"
         return None
 
     def create_user_directory(self, user_id: int) -> bool:
@@ -131,5 +121,5 @@ if __name__ == '__main__':
     ROOT_DIR = os.getenv("ROOT_DIR")
     load_dotenv()
     BOT_TOKEN = os.getenv("BOT_TOKEN")
-    bot = PlanKeeperBot(BOT_TOKEN)
+    bot = PlannerAPIBot(BOT_TOKEN)
     bot.run()
