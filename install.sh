@@ -2,10 +2,10 @@
 
 # Update package list and install Python and pip
 echo "Updating package list..."
-sudo apt-get update
+sudo apt update
 
 echo "Installing Python and pip..."
-sudo apt-get install -y python3 python3-pip
+sudo apt install -y python3 python3-pip tmux
 
 # Create a virtual environment in the root folder of the repo
 echo "Creating a virtual environment..."
