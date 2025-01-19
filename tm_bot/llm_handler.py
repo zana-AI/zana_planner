@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain.memory import ChatMessageHistory
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 from langchain_core.output_parsers import JsonOutputParser
 from func_utils import get_function_args_info
 from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
@@ -48,8 +47,7 @@ class LLMHandler:
 
         api_schema_str = ""
         for api in api_schema:
-            api_schema_str += f"\t{api.__name__}:\n"
-            api_schema_str += str(get_function_args_info(api))
+            api_schema_str += f"\t {api.__name__}({get_function_args_info(api)}) \n"
 
         bot_commands = (
             "/nightly - Send nightly reminders about promises\n"
@@ -61,8 +59,14 @@ class LLMHandler:
             "You are an assistant for a task management bot. "
             "When responding, return a JSON object referencing the action and any relevant fields. "
             "Always respond in English. "
+            "The output should be structured as follows: \n"
+            "{\n"
+            "\t\"function_call\": \"function_name\",\n"
+            "\t\"function_args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"},\n"
+            "\t\"response_to_user\": \"Response to the user\"\n"
+            "}\n"
             # f"Here are the base models for the schemas:\n{base_model_schemas}\n"
-            f"Here are the API functions available:\n [{api_schema_str}]\n"
+            f"Here are the list of API functions available:\n [{api_schema_str}]\n"
             # f"Here are the bot commands:\n{bot_commands}"
         ))
 
