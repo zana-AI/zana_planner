@@ -109,6 +109,7 @@ class PlannerAPI:
         actions_df['date'] = pd.to_datetime(actions_df['date']).dt.date
         actions_df['time'] = pd.to_datetime(actions_df['time']).dt.time
         actions_df['datetime'] = pd.to_datetime(actions_df['date'].astype(str) + ' ' + actions_df['time'].astype(str))
+        actions_df['time_spent'] = actions_df['time_spent'].astype(float)
 
         # Get the promise details
         promise = next((p for p in promises if p['id'] == promise_id), None)
