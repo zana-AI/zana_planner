@@ -106,6 +106,7 @@ class PlannerAPI:
         actions = self.get_actions(user_id)
         # convert actions to pandas dataframe
         actions_df = pd.DataFrame(actions, columns=['date', 'time', 'promise_id', 'time_spent'])
+        actions_df['date'] = pd.to_datetime(actions_df['date'])
 
         # Get the promise details
         promise = next((p for p in promises if p['id'] == promise_id), None)
