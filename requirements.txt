@@ -7,3 +7,4 @@ langchain-community
 langchain-openai
 pydantic
 requests==2.31.0
+pandas

@@ -72,32 +72,36 @@ class PlannerTelegramBot:
             parse_mode='Markdown'
         )
 
-    def create_time_options(self, promise_id: str, hours_per_day: float):
-        """Create inline keyboard with time options."""
-        def format_time_option(hours):
-            if hours == 0:
-                return "0 hrs", "🚫"
-            elif hours < 1:
-                minutes = round(hours * 60 / 5) * 5
-                return f"{minutes} min", "⏳"
-            else:
-                rounded_hours = round(hours * 2) / 2  # Round to nearest 0.5 hours
-                return f"{rounded_hours:.1f} hrs", "🎉"
+    # def create_time_options(self, promise_id: str, hours_per_day: float):
+    #     """Create inline keyboard with time options."""
+    #     def format_time_option(hours):
+    #         if hours == 0:
+    #             return "0 hrs", "🚫"
+    #         elif hours < 1:
+    #             minutes = round(hours * 60 / 5) * 5
+    #             return f"{minutes} min", "⏳"
+    #         else:
+    #             rounded_hours = round(hours * 2) / 2  # Round to nearest 0.5 hours
+    #             return f"{rounded_hours:.1f} hrs", "🎉"
+    #
+    #     time_options = [0, hours_per_day * 0.5, hours_per_day, hours_per_day * 1.5, hours_per_day * 2, hours_per_day * 2.5]
+    #     # time_options = ...
+    #     keyboard = [
+    #         [
+    #             InlineKeyboardButton(f"{format_time_option(option)[1]} {format_time_option(option)[0]}", callback_data=f"time_spent:{promise_id}:{option:.2f}")
+    #             for option in time_options[i:i + 3]
+    #         ]
+    #         for i in range(0, len(time_options), 3)
+    #     ]
+    #     return InlineKeyboardMarkup(keyboard)
 
-        time_options = [0, hours_per_day * 0.5, hours_per_day, hours_per_day * 1.5, hours_per_day * 2, hours_per_day * 2.5]
-        keyboard = [
-            [
-                InlineKeyboardButton(f"{format_time_option(option)[1]} {format_time_option(option)[0]}", callback_data=f"time_spent:{promise_id}:{option:.2f}")
-                for option in time_options[i:i + 3]
-            ]
-            for i in range(0, len(time_options), 3)
-        ]
-        return InlineKeyboardMarkup(keyboard)
-
-    async def send_nightly_reminders(self, context: CallbackContext) -> None:
+    async def send_nightly_reminders(self, context: CallbackContext, user_id=None) -> None:
         """Send nightly reminders to users about their promises."""
-        # Get all user directories
-        user_dirs = [d for d in os.listdir(ROOT_DIR) if os.path.isdir(os.path.join(ROOT_DIR, d))]
+        if user_id is not None:
+            user_dirs = [str(user_id)]
+        else:
+            # Get all user directories
+            user_dirs = [d for d in os.listdir(ROOT_DIR) if os.path.isdir(os.path.join(ROOT_DIR, d))]
         
         for user_id in user_dirs:
             # Get user's promises
@@ -108,13 +112,50 @@ class PlannerTelegramBot:
                 
             # Send reminder for each promise
             for promise in promises:
-                question = f"How many hours did you spend today on your promise: {promise['text'].replace('_', ' ')}?"
+                promise_id = promise['id']
+                promise_progress_this_week = self.plan_keeper.get_promise_weekly_progress(user_id, promise_id)
+                recurring = promise['recurring']
+                if not recurring and promise_progress_this_week >= 1:
+                    continue
+
+                question = (
+                    f"How much time did you spend today on: "
+                    f"*{promise['text'].replace('_', ' ')}*?"
+                )
                 
                 # Calculate suggested hours based on the number of hours promised per week
                 hours_per_day = promise['hours_per_week'] / 7
                 
                 # Create inline keyboard with time options
-                reply_markup = self.create_time_options(promise['id'], hours_per_day)
+                # reply_markup = self.create_time_options(promise['id'], hours_per_day)
+                time_options = [0,
+                                max(hours_per_day * 0.5, 5/60),
+                                max(hours_per_day, 10/60),
+                                max(hours_per_day * 1.5, 15/60),
+                                max(hours_per_day * 2, 20/60),
+                                max(hours_per_day * 2.5, 25/60)
+                                ]
+                if recurring:
+                    time_options = [0, 0.5 * 7 * hours_per_day, 1 * 7 * hours_per_day]
+                time_options_str = []
+                for ii in range(len(time_options)):
+                    if time_options[ii] < 1:
+                        minutes = round(time_options[ii] * 60 / 5) * 5
+                        time_options_str.append(f"{minutes} min")
+                    else:
+                        rounded_hours = round(time_options[ii] * 2) / 2
+                        time_options_str.append(f"{rounded_hours:.1f} hrs")
+
+                # time_options = ...
+                keyboard = [
+                    [
+                        InlineKeyboardButton(f"{time_options_str[i]}",
+                                             callback_data=f"time_spent:{promise_id}:{option:.2f}")
+                        for option in time_options[i:i + 3]
+                    ]
+                    for i in range(0, len(time_options), 3)
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
                 
                 try:
                     await context.bot.send_message(
@@ -155,15 +196,25 @@ class PlannerTelegramBot:
                                             "'deep work 6 hours a day, 5 days a week', "
                                             "'spend 2 hours a week on playing guitar.'")
         else:
+            formatted_promises = ""
             # Sort promises by promise_id
             sorted_promises = sorted(promises, key=lambda p: p['id'])
-            # Numerize and format promises
-            formatted_promises = "\n".join([f"{index + 1}. {promise['id']}: {promise['text'].replace('_', ' ')}" for index, promise in enumerate(sorted_promises)])
+            for index, promise in enumerate(sorted_promises):
+                # Numerize and format promises
+                promised_hours = promise['hours_per_week']
+                promise_progress = self.plan_keeper.get_promise_weekly_progress(user_id, promise['id'])
+                recurring = promise['recurring']
+                # if not recurring:
+                formatted_promises += f"* {promise['id']}: {promise['text'].replace('_', ' ')}\n"
+                formatted_promises += f"  - Progress: {promise_progress * 100:.1f}% ({promise_progress * promised_hours:.1f}/{promised_hours} hours)\n"
+
+            # formatted_promises = "\n".join([f"* #{promise['id']}: {promise['text'].replace('_', ' ')}" for index, promise in enumerate(sorted_promises)])
             await update.message.reply_text(f"Your promises:\n{formatted_promises}")
 
     async def nightly_reminders(self, update: Update, _context: CallbackContext) -> None:
         """Handle the /nightly command to send nightly reminders."""
-        await self.send_nightly_reminders(_context)
+        uses_id = update.effective_user.id
+        await self.send_nightly_reminders(_context, user_id=uses_id)
         await update.message.reply_text("Nightly reminders sent!")
 
     async def weekly_report(self, update: Update, _context: CallbackContext) -> None:

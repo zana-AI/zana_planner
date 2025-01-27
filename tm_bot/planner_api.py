@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from tqdm import tqdm
+import pandas as pd
 
 
 class PlannerAPI:
@@ -27,6 +28,7 @@ class PlannerAPI:
                     user_id,
                     promise_text: str,
                     num_hours_promised_per_week: float,
+                    recurring: bool = False,
                     start_date: Optional[datetime] = None,
                     end_date: Optional[datetime] = None,
                     promise_angle_deg: int = 0,
@@ -42,7 +44,12 @@ class PlannerAPI:
             if not isinstance(num_hours_promised_per_week, (int, float)) or num_hours_promised_per_week <= 0:
                 raise ValueError("Hours promised must be a positive number")
 
-            promise_id = self._generate_promise_id(user_id=user_id)
+            if recurring:
+                promise_type = 'P'
+            else:
+                promise_type = 'T'
+
+            promise_id = self._generate_promise_id(user_id=user_id, promise_type=promise_type)
             promises_file = self._get_file_path('promises.json', user_id)
 
             if not start_date:
@@ -62,6 +69,7 @@ class PlannerAPI:
                 'id': promise_id,
                 'text': promise_text.replace(" ", "_"),
                 'hours_per_week': num_hours_promised_per_week,
+                'recurring': recurring,
                 'start_date': str(start_date),
                 'end_date': str(end_date),
                 'angle_deg': promise_angle_deg,
@@ -90,6 +98,38 @@ class PlannerAPI:
             writer.writerow([date, time, promise_id, time_spent])
         return f"Action logged for promise ID '{promise_id}'."
 
+    def get_promise_weekly_progress(self, user_id, promise_id: str) -> float:
+        """
+        Get the weekly progress of a promise.
+        """
+        promises = self.get_promises(user_id)
+        actions = self.get_actions(user_id)
+        # convert actions to pandas dataframe
+        actions_df = pd.DataFrame(actions, columns=['date', 'time', 'promise_id', 'time_spent'])
+
+        # Get the promise details
+        promise = next((p for p in promises if p['id'] == promise_id), None)
+        if not promise:
+            #return f"Promise with ID '{promise_id}' not found."
+            return 0.
+
+        # Calculate hours spent for the promise
+        # promise_start_date = datetime.strptime(promise['start_date'], '%Y-%m-%d').date()
+        # promise_end_date = datetime.strptime(promise['end_date'], '%Y-%m-%d').date()
+        promise_hours_per_week = promise['hours_per_week']
+
+        # current week
+        current_week_start = datetime.now().date() - timedelta(days=datetime.now().weekday())
+        current_week_end = current_week_start + timedelta(days=6)
+        # filter actions for the current week
+        current_week_actions = actions_df[(actions_df['date'] >= current_week_start)
+                                          & (actions_df['date'] <= current_week_end)
+                                          & (actions_df['promise_id'] == promise_id)]
+        current_week_hours_spent = current_week_actions['time_spent'].sum()
+
+        progress_this_week = round(current_week_hours_spent / (promise_hours_per_week + 1e-6), 2)
+        return progress_this_week
+
     def get_promises(self, user_id) -> List[Dict]:
         """Get all promises from promises.json."""
         promises_file = self._get_file_path('promises.json', user_id)
@@ -97,6 +137,9 @@ class PlannerAPI:
             return []
         with open(promises_file, 'r') as file:
             promises = json.load(file)
+        for p in promises:
+            if 'recurring' not in p:
+                p['recurring'] = p['id'].startswith('P')
         return promises
 
     def get_promise_hours(self, user_id, promise_id: str) -> Optional[float]:
@@ -175,11 +218,18 @@ class PlannerAPI:
     #     Generate a unique 12-character ID from the promise text.
     #     """
     #     return promise_text[:12].upper().replace(" ", "_")[:12]
-    def _generate_promise_id(self, user_id):
+    def _generate_promise_id(self, user_id, promise_type='P'):
         """Generate a unique ID for the promise."""
+        last_id = 0
         promises = self.get_promises(user_id)
-        promise_count = len(promises) + 1
-        return f"P{promise_count:02d}"
+        if promises:
+            try:
+                promise_ids = [p['id'] for p in promises if p['id'].startswith(promise_type)]
+                numeric_ids = [int(p_id[1:]) for p_id in promise_ids]
+                last_id = sorted(numeric_ids)[-1]
+            except Exception as e:
+                pass
+        return f"{promise_type}{(last_id+1):02d}"
 
     def delete_action(self, user_id, date: datetime, promise_id: str):
         """
