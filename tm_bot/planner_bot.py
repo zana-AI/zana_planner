@@ -206,7 +206,7 @@ class PlannerTelegramBot:
                 recurring = promise['recurring']
                 # if not recurring:
                 formatted_promises += f"* {promise['id']}: {promise['text'].replace('_', ' ')}\n"
-                formatted_promises += f"  - Progress: {promise_progress * 100:.1f}% ({promise_progress * promised_hours:.1f}/{promised_hours} hours)\n"
+                # formatted_promises += f"  - Progress: {promise_progress * 100:.1f}% ({promise_progress * promised_hours:.1f}/{promised_hours} hours)\n"
 
             # formatted_promises = "\n".join([f"* #{promise['id']}: {promise['text'].replace('_', ' ')}" for index, promise in enumerate(sorted_promises)])
             await update.message.reply_text(f"Your promises:\n{formatted_promises}")

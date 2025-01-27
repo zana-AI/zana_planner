@@ -282,9 +282,22 @@ class PlannerAPI:
             hours_promised = data['hours_promised']
             hours_spent = data['hours_spent']
             progress = min(100, int((hours_spent / hours_promised) * 100)) if hours_promised > 0 else 0
-            progress_bar = tqdm(total=10, ncols=50, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}').format_dict['bar_format']
-            report_lines.append(f"Promise: {data['text'].replace('_', ' ')}\nProgress: {progress_bar.format(l_bar='', bar='█' * (progress // 2), n_fmt=progress, total_fmt='100')} {progress}%\n")
 
+            # Define the bar width (e.g., 10 characters max)
+            bar_width = 10
+            filled_length = (progress * bar_width) // 100  # Calculate the number of filled blocks
+            empty_length = bar_width - filled_length  # Calculate the remaining empty space
+
+            # Create the progress bar
+            progress_bar = f"{'█' * filled_length}{' ' * empty_length}"  # Shorter progress bar
+
+            # Append the report line
+            report_lines.append(
+                f"* #{promise_id} **{data['text'].replace('_', ' ')}**\n"
+                f"[{progress_bar}] {progress}% ({hours_spent:.1f}/{hours_promised:.1f} h)"
+            )
+
+        # Join and display the report
         return "\n".join(report_lines)
 
     def delete_all_promises(self, user_id):
