@@ -282,7 +282,7 @@ class PlannerAPI:
             hours_promised = data['hours_promised']
             hours_spent = data['hours_spent']
             progress = min(100, int((hours_spent / hours_promised) * 100)) if hours_promised > 0 else 0
-            progress_bar = tqdm(total=100, ncols=50, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}').format_dict['bar_format']
+            progress_bar = tqdm(total=10, ncols=50, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}').format_dict['bar_format']
             report_lines.append(f"Promise: {data['text'].replace('_', ' ')}\nProgress: {progress_bar.format(l_bar='', bar='█' * (progress // 2), n_fmt=progress, total_fmt='100')} {progress}%\n")
 
         return "\n".join(report_lines)
