@@ -114,14 +114,14 @@ class PlannerAPI:
             #return f"Promise with ID '{promise_id}' not found."
             return 0.
 
-        # Calculate hours spent for the promise
-        # promise_start_date = datetime.strptime(promise['start_date'], '%Y-%m-%d').date()
-        # promise_end_date = datetime.strptime(promise['end_date'], '%Y-%m-%d').date()
+        # Extract promised hours per week
         promise_hours_per_week = promise['hours_per_week']
 
-        # current week
-        current_week_start = datetime.now().date() - timedelta(days=datetime.now().weekday())
-        current_week_end = current_week_start + timedelta(days=6)
+        # Calculate the current week's start and end (Monday at 3 AM)
+        now = datetime.now() - timedelta(hours=3)
+        current_week_start = (now - timedelta(days=now.weekday()))
+        current_week_end = current_week_start + timedelta(days=7) - timedelta(seconds=1)
+
         # filter actions for the current week
         current_week_actions = actions_df[(actions_df['date'] >= current_week_start)
                                           & (actions_df['date'] <= current_week_end)
