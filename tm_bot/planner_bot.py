@@ -135,7 +135,7 @@ class PlannerTelegramBot:
                                 max(hours_per_day * 2, 20/60),
                                 max(hours_per_day * 2.5, 25/60)
                                 ]
-                if recurring:
+                if not recurring:
                     time_options = [0, 0.5 * 7 * hours_per_day, 1 * 7 * hours_per_day]
                 time_options_str = []
                 for ii in range(len(time_options)):
@@ -149,9 +149,9 @@ class PlannerTelegramBot:
                 # time_options = ...
                 keyboard = [
                     [
-                        InlineKeyboardButton(f"{time_options_str[i]}",
+                        InlineKeyboardButton(f"{time_options_str[jj + i]}",
                                              callback_data=f"time_spent:{promise_id}:{option:.2f}")
-                        for option in time_options[i:i + 3]
+                        for jj, option in enumerate(time_options[i:i + 3])
                     ]
                     for i in range(0, len(time_options), 3)
                 ]
