@@ -68,7 +68,7 @@ class PlannerTelegramBot:
         )
         
         await query.edit_message_text(
-            text=f"Recorded {hours} hours spent on your promise.",
+            text=f"Recorded {hours} hours spent on promise {promise_id}.",
             parse_mode='Markdown'
         )
 
