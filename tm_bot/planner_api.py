@@ -107,6 +107,8 @@ class PlannerAPI:
         # convert actions to pandas dataframe
         actions_df = pd.DataFrame(actions, columns=['date', 'time', 'promise_id', 'time_spent'])
         actions_df['date'] = pd.to_datetime(actions_df['date']).dt.date
+        actions_df['time'] = pd.to_datetime(actions_df['time']).dt.time
+        actions_df['datetime'] = pd.to_datetime(actions_df['date'].astype(str) + ' ' + actions_df['time'].astype(str))
 
         # Get the promise details
         promise = next((p for p in promises if p['id'] == promise_id), None)
@@ -123,9 +125,11 @@ class PlannerAPI:
         current_week_end = current_week_start + timedelta(days=7) - timedelta(seconds=1)
 
         # filter actions for the current week
-        current_week_actions = actions_df[(actions_df['date'] >= current_week_start)
-                                          & (actions_df['date'] <= current_week_end)
-                                          & (actions_df['promise_id'] == promise_id)]
+        current_week_actions = actions_df[
+                        (actions_df['datetime'] >= current_week_start) &
+                        (actions_df['datetime'] <= current_week_end) &
+                        (actions_df['promise_id'] == promise_id)
+        ]
         current_week_hours_spent = current_week_actions['time_spent'].sum()
 
         progress_this_week = round(current_week_hours_spent / (promise_hours_per_week + 1e-6), 2)
