@@ -66,11 +66,14 @@ class PlannerTelegramBot:
             promise_id=promise_id,
             time_spent=float(hours)
         )
-        
-        await query.edit_message_text(
-            text=f"Recorded {hours} hours spent on promise {promise_id}.",
-            parse_mode='Markdown'
-        )
+
+        if float(hours) > 0:
+            await query.edit_message_text(
+                text=f"Spent {hours} hours on #{promise_id}.",
+                parse_mode='Markdown'
+            )
+        else: # delete the message
+            await query.delete_message()
 
     # def create_time_options(self, promise_id: str, hours_per_day: float):
     #     """Create inline keyboard with time options."""
@@ -260,14 +263,14 @@ class PlannerTelegramBot:
                 logger.error(f"Validation error for user {user_id}: {str(e)}")
             except Exception as e:
                 await update.message.reply_text(
-                    "❌ Sorry, I couldn't complete that action. Please try again.",
+                    f"❌ Sorry, I couldn't complete that action. Please try again. Error: {str(e)}",
                     parse_mode='Markdown'
                 )
                 logger.error(f"Error processing request for user {user_id}: {str(e)}")
 
         except Exception as e:
             await update.message.reply_text(
-                "🔧 Something went wrong. Please try again later.",
+                f"🔧 Something went wrong. Please try again later. Error: {str(e)}",
                 parse_mode='Markdown'
             )
             logger.error(f"Unexpected error handling message from user {user_id}: {str(e)}")

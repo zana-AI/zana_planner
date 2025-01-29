@@ -82,7 +82,7 @@ class PlannerAPI:
             with open(promises_file, 'w') as file:
                 json.dump(promises, file, indent=4)
 
-            return f"Promise '{promise_text}' added successfully."
+            return f"#{promise_id} Promise '{promise_text}' added successfully."
 
         except (ValueError, FileNotFoundError) as e:
             # logger.error(f"Error in add_promise: {str(e)}")
