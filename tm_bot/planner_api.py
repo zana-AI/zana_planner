@@ -102,6 +102,9 @@ class PlannerAPI:
         if not any(p['id'] == promise_id for p in promises):
             return f"Promise with ID '{promise_id}' not found."
 
+        if time_spent <= 0:
+            return "Time spent must be a positive number."
+
         actions_file = self._get_file_path('actions.csv', user_id)
         date = datetime.now().date()
         time = datetime.now().strftime("%H:%M")
