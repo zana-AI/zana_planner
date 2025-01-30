@@ -88,11 +88,17 @@ class PlannerAPI:
             # logger.error(f"Error in add_promise: {str(e)}")
             raise RuntimeError(f"Failed to add promise: {str(e)}")
 
-    def add_action(self, user_id, date: datetime, time: str, promise_id: str, time_spent: float):
+    def add_action(self, user_id, promise_id: str, time_spent: float):
         """
         Add an action to actions.csv.
+        Args:
+            user_id: The ID of the user.
+            promise_id: The ID of the promise.
+            time_spent: The amount of time spent on the action.
         """
         actions_file = self._get_file_path('actions.csv', user_id)
+        date = datetime.now().date()
+        time = datetime.now().strftime("%H:%M")
         with open(actions_file, 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([date, time, promise_id, time_spent])

@@ -61,8 +61,6 @@ class PlannerTelegramBot:
         current_date = datetime.now()
         self.plan_keeper.add_action(
             user_id=query.from_user.id,
-            date=current_date.date(),
-            time=current_date.strftime("%H:%M"),
             promise_id=promise_id,
             time_spent=float(hours)
         )
@@ -168,18 +166,18 @@ class PlannerTelegramBot:
                         parse_mode='Markdown'
                     )
                     # Wait for the user's response before sending the next question
-                    await self.wait_for_response(user_id)
+                    # await self.wait_for_response(user_id)
                 except Exception as e:
                     logger.error(f"Failed to send reminder to user {user_id}: {str(e)}")
 
-    async def wait_for_response(self, user_id: str) -> None:
-        """Wait for the user's response before sending the next question."""
-        while True:
-            # Check if there is a response from the user
-            user_responses = self.plan_keeper.get_user_responses(user_id)
-            if user_responses:
-                break
-            await asyncio.sleep(1)
+    # async def wait_for_response(self, user_id: str) -> None:
+    #     """Wait for the user's response before sending the next question."""
+    #     while True:
+    #         # Check if there is a response from the user
+    #         user_responses = self.plan_keeper.get_user_responses(user_id)
+    #         if user_responses:
+    #             break
+    #         await asyncio.sleep(1)
 
     async def start(self, update: Update, _context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
@@ -293,14 +291,17 @@ class PlannerTelegramBot:
             logger.error(f"Error formatting response: {str(e)}")
             return "Error formatting response"
 
-    def call_planner_api(self, user_id, llm_response: str) -> str:
+    def call_planner_api(self, user_id, llm_response: dict) -> str:
         """
         Process user message by sending it to the LLM and executing the identified action.
         """
         try:
             # Interpret LLM response (you'll need to customize this to match your LLM's output format)
             # Get the function name and arguments from the LLM response
-            function_name = llm_response.get("function_call")
+            function_name = llm_response.get("function_call", None)
+            if function_name is None:
+                return ""
+
             func_args = llm_response.get("function_args", {})
 
             # Add user_id to function arguments
@@ -311,8 +312,6 @@ class PlannerTelegramBot:
                 method = getattr(self.plan_keeper, function_name)
                 # Call the method with unpacked arguments
                 return method(**func_args)
-            elif function_name is None:
-                return ""
             else:
                 return f"Function {function_name} not found in PlannerAPI"
         except Exception as e:

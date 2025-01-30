@@ -77,7 +77,7 @@ class LLMHandler:
         self.chat_history[user_id] = ChatMessageHistory()
         self.chat_history[user_id].add_message(system_message)
 
-    def get_response(self, user_message: str, user_id: str) -> str:
+    def get_response(self, user_message: str, user_id: str) -> dict:
         try:
             if user_id not in self.chat_history:
                 self._initialize_context(user_id)
@@ -112,8 +112,8 @@ class LLMHandler:
 
 # Example usage
 if __name__ == "__main__":
-    handler = LLMHandler()
-    user_id = "user123"
-    user_message = "I want to add a new promise to exercise regularly."
-    response = handler.get_response(user_message, user_id)
-    print(response)
+    _handler = LLMHandler()
+    _user_id = "user123"
+    _user_message = "I want to add a new promise to exercise regularly."
+    _response = _handler.get_response(_user_message, _user_id)
+    print(_response)
