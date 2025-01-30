@@ -1,9 +1,9 @@
 import os
 import logging
 from dotenv import load_dotenv
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
-from langchain.memory import ChatMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import JsonOutputParser
 from func_utils import get_function_args_info
 from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
