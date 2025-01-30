@@ -222,7 +222,7 @@ class PlannerTelegramBot:
         """Handle the /weekly command to send a weekly report."""
         user_id = update.effective_user.id
         report = self.plan_keeper.get_weekly_report(user_id)
-        await update.message.reply_text(f"Weekly report:\n{report}")
+        await update.message.reply_text(f"Weekly report:\n{report}", parse_mode='Markdown')
 
     async def handle_message(self, update: Update, _context: CallbackContext) -> None:
         try:

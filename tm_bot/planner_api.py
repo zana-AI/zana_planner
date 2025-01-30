@@ -304,12 +304,12 @@ class PlannerAPI:
             empty_length = bar_width - filled_length  # Calculate the remaining empty space
 
             # Create the progress bar
-            progress_bar = f"{'█' * filled_length}{' ' * empty_length}"  # Shorter progress bar
+            progress_bar = f"{'█' * filled_length}{'_' * empty_length}"  # Shorter progress bar
 
             # Append the report line
             report_lines.append(
-                f"* #{promise_id} **{data['text'].replace('_', ' ')}**\n"
-                f"[{progress_bar}] {progress}% ({hours_spent:.1f}/{hours_promised:.1f} h)"
+                f"🔸 #{promise_id} **{data['text'].replace('_', ' ')}**:\n"
+                f"`[{progress_bar}] {progress}%` ({hours_spent:.1f}/{hours_promised:.1f} h)"
             )
 
         # Join and display the report
