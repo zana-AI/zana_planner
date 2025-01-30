@@ -132,11 +132,11 @@ class PlannerTelegramBot:
                 # Create inline keyboard with time options
                 # reply_markup = self.create_time_options(promise['id'], hours_per_day)
                 time_options = [0,
-                                max(hours_per_day * 0.5, 5/60),
-                                max(hours_per_day, 10/60),
-                                max(hours_per_day * 1.5, 15/60),
-                                max(hours_per_day * 2, 20/60),
-                                max(hours_per_day * 2.5, 25/60)
+                                max(hours_per_day * 0.25, 5/60),
+                                max(hours_per_day * 0.5, 10/60),
+                                max(hours_per_day * 1, 15/60),
+                                min(max(hours_per_day * 2, 20/60), 8),
+                                min(max(hours_per_day * 3, 25/60), 12),
                                 ]
                 if not recurring:
                     time_options = [0, 0.5 * 7 * hours_per_day, 1 * 7 * hours_per_day]
@@ -278,18 +278,17 @@ class PlannerTelegramBot:
     def _format_response(self, llm_response, func_call_response):
         """Format the response for Telegram."""
         try:
-            if isinstance(func_call_response, (list, dict)):
-                if isinstance(func_call_response, list):
-                    formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
-                else:
-                    formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
+            if isinstance(func_call_response, list):
+                formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
+            elif isinstance(func_call_response, dict):
+                formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
             else:
                 formatted_response = str(func_call_response)
 
-            return (
-                f"*Zana:*\n`{llm_response}`\n\n"
-                f"*Result:*\n{formatted_response}"
-            )
+            full_response = f"*Zana:*\n`{llm_response}`\n\n"
+            if formatted_response:
+                full_response += f"*Log:*\n{formatted_response}"
+            return full_response
         except Exception as e:
             logger.error(f"Error formatting response: {str(e)}")
             return "Error formatting response"
@@ -312,6 +311,8 @@ class PlannerTelegramBot:
                 method = getattr(self.plan_keeper, function_name)
                 # Call the method with unpacked arguments
                 return method(**func_args)
+            elif function_name is None:
+                return ""
             else:
                 return f"Function {function_name} not found in PlannerAPI"
         except Exception as e:
