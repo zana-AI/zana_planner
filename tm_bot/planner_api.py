@@ -88,14 +88,20 @@ class PlannerAPI:
             # logger.error(f"Error in add_promise: {str(e)}")
             raise RuntimeError(f"Failed to add promise: {str(e)}")
 
-    def add_action(self, user_id, promise_id: str, time_spent: float):
+    def add_action(self, user_id, promise_id: str, time_spent: float) -> str:
         """
         Add an action to actions.csv.
         Args:
-            user_id: The ID of the user.
-            promise_id: The ID of the promise.
-            time_spent: The amount of time spent on the action.
+           - user_id: The ID of the user.
+           - promise_id: The ID of the promise.
+           - time_spent: The amount of time spent on the action.
+        Returns: A message indicating the success or failure of the action addition.
         """
+        # Validate the promise ID
+        promises = self.get_promises(user_id)
+        if not any(p['id'] == promise_id for p in promises):
+            return f"Promise with ID '{promise_id}' not found."
+
         actions_file = self._get_file_path('actions.csv', user_id)
         date = datetime.now().date()
         time = datetime.now().strftime("%H:%M")

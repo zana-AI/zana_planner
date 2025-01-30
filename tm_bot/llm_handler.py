@@ -53,12 +53,6 @@ class LLMHandler:
             func_obj = getattr(PlannerAPI, api)
             api_schema_str += f"\t {api}({get_function_args_info(func_obj)}) \n"
 
-        bot_commands = (
-            "/nightly - Send nightly reminders about promises\n"
-            "/week_report - Generate a weekly report of promises\n"
-            "/list_promises - List all promises for the user\n"
-        )
-
         system_message = SystemMessage(content=(
             "You are an assistant for a task management bot. "
             "When responding, return a JSON object referencing the action and any relevant fields. "
