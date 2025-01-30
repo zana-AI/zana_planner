@@ -30,9 +30,10 @@ class PlannerTelegramBot:
 
         # Register handlers
         self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("promises", self.list_promises))  # Add list_promises command handler
-        self.application.add_handler(CommandHandler("nightly", self.nightly_reminders))  # Add nightly command handler
-        self.application.add_handler(CommandHandler("weekly", self.weekly_report))  # Add weekly command handler
+        self.application.add_handler(CommandHandler("promises", self.list_promises))  # list_promises command handler
+        self.application.add_handler(CommandHandler("nightly", self.nightly_reminders))  # nightly command handler
+        self.application.add_handler(CommandHandler("weekly", self.weekly_report))  # weekly command handler
+        self.application.add_handler(CommandHandler("zana", self.plan_by_zana))  # zana command handler
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(CallbackQueryHandler(self.handle_time_selection))
 
@@ -224,6 +225,17 @@ class PlannerTelegramBot:
         report = self.plan_keeper.get_weekly_report(user_id)
         await update.message.reply_text(f"Weekly report:\n{report}", parse_mode='Markdown')
 
+    async def plan_by_zana(self, update: Update, _context: CallbackContext) -> None:
+        user_id = update.effective_user.id
+        recommended_actions = self.llm_handler.get_response_custom("What should I do today?"
+                                                            "Recommend actions for me based on the promises, and the weekly report."
+                                                            "I expect the output to be a list of actions like:"
+                                                            "1. [5h] Deep work on promise #P31"
+                                                            "2. [0.5h] Exercise for 30 minutes this evening #P62",
+                                                            user_id)
+        formatted_actions = "".join([f"* {action}" for action in recommended_actions])
+        await update.message.reply_text(f"Recommended actions for today:\n{formatted_actions}", parse_mode='Markdown')
+
     async def handle_message(self, update: Update, _context: CallbackContext) -> None:
         try:
             user_message = update.message.text
@@ -234,8 +246,7 @@ class PlannerTelegramBot:
             if not os.path.exists(user_dir):
                 await self.start(update, _context)
 
-            # Get the response from the LLM
-            llm_response = self.llm_handler.get_response(user_message, user_id)
+            llm_response = self.llm_handler.get_response_api(user_message, user_id)
 
             # Check for errors in LLM response
             if "error" in llm_response:

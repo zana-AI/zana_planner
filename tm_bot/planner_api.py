@@ -214,7 +214,7 @@ class PlannerAPI:
         with open(promises_file, 'w') as file:
             json.dump(updated_promises, file, indent=4)
 
-        return f"Promise with ID '{promise_id}' deleted successfully."
+        return f"Promise #{promise_id} deleted successfully."
 
     def update_setting(self, user_id, setting_key, setting_value):
         """
