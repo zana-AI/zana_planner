@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from tqdm import tqdm
 import pandas as pd
+from schema import UserAction
 
 
 class PlannerAPI:
@@ -188,6 +189,29 @@ class PlannerAPI:
             reader = csv.reader(file)
             actions = [row for row in reader]
         return actions
+
+    def get_actions_df(self, user_id) -> pd.DataFrame:
+        """Get all actions from actions.csv as a pandas dataframe."""
+        actions_file = self._get_file_path('actions.csv', user_id)
+        if not os.path.exists(actions_file):
+            return pd.DataFrame(columns=['date', 'time', 'promise_id', 'time_spent'])
+        actions_df = pd.read_csv(actions_file, names=['date', 'time', 'promise_id', 'time_spent'])
+        return actions_df
+
+    def get_last_action_on_promise(self, user_id, promise_id: str) -> Optional[UserAction]:
+        """
+        Get the last action for a specific promise.
+        """
+        actions = self.get_actions_df(user_id)
+        last_action = actions[actions['promise_id'] == promise_id].sort_values('date', ascending=False).head(1)
+        if last_action.empty:
+            return None
+        return UserAction(
+            action_date=last_action['date'].values[0],
+            action_time=last_action['time'].values[0],
+            promise_id=last_action['promise_id'].values[0],
+            time_spent=last_action['time_spent'].values[0]
+        )
 
     def delete_promise(self, user_id, promise_id: str):
         """Delete a promise from promises.json."""

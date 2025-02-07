@@ -3,8 +3,6 @@ from typing import get_type_hints, Optional, Dict, Any
 from datetime import date
 import inspect
 
-from planner_api import PlannerAPI
-
 
 class UserPromise(BaseModel):
     promise_text: str = Field(..., description="The text of the promise")
