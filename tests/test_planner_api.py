@@ -150,8 +150,8 @@ class TestPlannerAPI(unittest.TestCase):
         # Add a promise, log two actions, and then ensure the last action is retrieved.
         add_result = self.planner.add_promise(self.user_id, "Last Action", 10.0)
         promise_id = add_result.split()[0].lstrip("#")
-        # self.planner.add_action(self.user_id, promise_id, 2.0)
-        # time.sleep(2)  # Ensure the second action has a later timestamp.
+        self.planner.add_action(self.user_id, promise_id, 2.0)
+        time.sleep(2)  # Ensure the second action has a later timestamp.
         self.planner.add_action(self.user_id, promise_id, 4.0)
         last_action = self.planner.get_last_action_on_promise(self.user_id, promise_id)
         self.assertIsNotNone(last_action)

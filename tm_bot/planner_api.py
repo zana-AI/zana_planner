@@ -108,7 +108,7 @@ class PlannerAPI:
 
         actions_file = self._get_file_path('actions.csv', user_id)
         date = datetime.now().date()
-        time = datetime.now().strftime("%H:%M")
+        time = datetime.now().strftime("%H:%M:%S")
         with open(actions_file, 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([date, time, promise_id, time_spent])
@@ -200,10 +200,15 @@ class PlannerAPI:
 
     def get_last_action_on_promise(self, user_id, promise_id: str) -> Optional[UserAction]:
         """
-        Get the last action for a specific promise.
+        Get the last action for a specific promise by considering both date and time.
         """
         actions = self.get_actions_df(user_id)
-        last_action = actions[actions['promise_id'] == promise_id].sort_values('date', ascending=False).head(1)
+        if actions.empty:
+            return None
+        # Combine 'date' and 'time' into a new 'datetime' column.
+        actions['datetime'] = pd.to_datetime(actions['date'] + ' ' + actions['time'])
+        # Filter actions for the given promise_id and sort by the combined datetime column.
+        last_action = actions[actions['promise_id'] == promise_id].sort_values('datetime', ascending=False).head(1)
         if last_action.empty:
             return None
         return UserAction(
