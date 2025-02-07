@@ -1,5 +1,6 @@
 import os
 import csv
+import subprocess
 from urllib.parse import uses_relative
 import asyncio
 from datetime import datetime
@@ -50,115 +51,188 @@ class PlannerTelegramBot:
         # except Exception as e:
         #     logger.error(f"Failed to set up job queue: {str(e)}")
 
+    def beautify_time(self, time: float) -> str:
+        """Convert a float time value in hours to a human-readable string."""
+        hours = int(time)
+        minutes = int((time - hours) * 60)
+        if hours == 0 and minutes == 0:
+            return "0 min"
+        elif hours == 0:
+            return f"{minutes} min"
+        else:  # show something like "3:45" for 3 hours and 45 minutes
+            return f"{hours}:{minutes:02d} hrs"
+
+    def round_time(self, time: float) -> float:
+        """Round a time value to the nearest 15 minutes."""
+        hours = int(time)
+        minutes = int((time - hours) * 60)
+        if hours <= 0 and minutes <= 0:
+            return 0
+        elif hours == 0:
+            return round(minutes / 5) * 5 / 60
+        else:
+            return hours + round(minutes / 5) * 5 / 60
+
+    # Example helper function to create the inline keyboard
+    def create_time_options(self, promise_id: str, hpd_base: float, latest_record: float) -> InlineKeyboardMarkup:
+        """
+        Create an inline keyboard with two rows:
+          - Row 1: Three buttons showing:
+              [0 hrs] [<sensible default> hrs] [<latest record> hrs]
+          - Row 2: Two adjustment buttons for the third option:
+              [-5 min] and [+10 min]
+        hpd_base is a default sensible value (for example, hours per day based on the weekly promise)
+        latest_record is the most recent logged time.
+        """
+        # First row buttons
+        button_zero = InlineKeyboardButton("0 hrs", callback_data=f"time_spent:{promise_id}:0.00")
+        button_latest = InlineKeyboardButton(self.beautify_time(latest_record),
+                                             callback_data=f"time_spent:{promise_id}:{latest_record:.5f}")
+        hpd_base_rounded = self.round_time(hpd_base)
+        button_default = InlineKeyboardButton(self.beautify_time(hpd_base_rounded),
+                                              callback_data=f"time_spent:{promise_id}:{hpd_base_rounded:.5f}")
+        row1 = [button_zero, button_latest, button_default]
+
+        # Second row: adjustment buttons for the third option (latest_record)
+        adjust_minus = InlineKeyboardButton("-5 min",
+                                            callback_data=f"update_time_spent:{promise_id}:{-5/60:.5f}")
+        adjust_plus = InlineKeyboardButton("+10 min",
+                                           callback_data=f"update_time_spent:{promise_id}:{10/60:.5f}")
+        row2 = [adjust_minus, adjust_plus]
+
+        return InlineKeyboardMarkup([row1, row2])
+
+    # Revised callback handler for time selection
     async def handle_time_selection(self, update: Update, context: CallbackContext) -> None:
-        """Handle the callback when user selects time spent."""
+        """
+        Handle the callback when a user selects or adjusts the time spent.
+
+        Callback data format:
+          - For registering an action: "time_spent:<promise_id>:<value>"
+          - For adjusting the third option: "update_time_spent:<promise_id>:<new_value>"
+        """
         query = update.callback_query
         await query.answer()
-        
-        # Parse the callback data (format: "time_spent:promise_id:hours")
-        _, promise_id, hours = query.data.split(":")
-        
-        # Add the action using PlannerAPI
-        current_date = datetime.now()
-        self.plan_keeper.add_action(
-            user_id=query.from_user.id,
-            promise_id=promise_id,
-            time_spent=float(hours)
-        )
 
-        if float(hours) > 0:
-            await query.edit_message_text(
-                text=f"Spent {hours} hours on #{promise_id}.",
-                parse_mode='Markdown'
-            )
-        else: # delete the message
-            await query.delete_message()
+        # Parse the callback data
+        data_parts = query.data.split(":")
+        if len(data_parts) != 3:
+            return  # Invalid callback data format
 
-    # def create_time_options(self, promise_id: str, hours_per_day: float):
-    #     """Create inline keyboard with time options."""
-    #     def format_time_option(hours):
-    #         if hours == 0:
-    #             return "0 hrs", "🚫"
-    #         elif hours < 1:
-    #             minutes = round(hours * 60 / 5) * 5
-    #             return f"{minutes} min", "⏳"
-    #         else:
-    #             rounded_hours = round(hours * 2) / 2  # Round to nearest 0.5 hours
-    #             return f"{rounded_hours:.1f} hrs", "🎉"
-    #
-    #     time_options = [0, hours_per_day * 0.5, hours_per_day, hours_per_day * 1.5, hours_per_day * 2, hours_per_day * 2.5]
-    #     # time_options = ...
-    #     keyboard = [
-    #         [
-    #             InlineKeyboardButton(f"{format_time_option(option)[1]} {format_time_option(option)[0]}", callback_data=f"time_spent:{promise_id}:{option:.2f}")
-    #             for option in time_options[i:i + 3]
-    #         ]
-    #         for i in range(0, len(time_options), 3)
-    #     ]
-    #     return InlineKeyboardMarkup(keyboard)
+        action_type, promise_id, value_str = data_parts
+        try:
+            value = float(value_str)  # the time spent value
+        except ValueError:
+            return  # Could not parse a number
+
+        # If the callback is for updating (adjusting) the third button's value:
+        if action_type == "update_time_spent":
+            # Retrieve the current keyboard from the message
+            keyboard = query.message.reply_markup.inline_keyboard
+            # convert tuple to list
+            keyboard = [list(row) for row in keyboard]
+            # Assume the first row holds the time selection buttons;
+            # we want to update the third button (index 2) in that row.
+            if len(keyboard) > 0 and len(keyboard[0]) >= 3:
+                try:
+                    ref_value = float(keyboard[0][2].callback_data.split(":")[2])  # Extract the current value from the button text
+                    new_value = self.round_time(ref_value + value)  # Adjust the value
+                    new_button = InlineKeyboardButton(
+                        text=self.beautify_time(new_value),
+                        callback_data=f"time_spent:{promise_id}:{new_value:.5f}"
+                    )
+                    keyboard[0][2] = new_button
+                    # Optionally, you might also update the adjustment buttons in row 2
+                    # to reflect the new value if desired.
+                    await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+                except Exception as e:
+                    logger.error(f"Error updating message: {str(e)}")
+            return  # Do not register the action yet.
+
+        # Else, if the callback is from the first row (confirming the time selection)
+        elif action_type == "time_spent":
+            # When a valid time option is selected (greater than 0), register the action.
+            if value > 0:
+                # Register the action (e.g., using your PlannerAPI's add_action method)
+                self.plan_keeper.add_action(
+                    user_id=query.from_user.id,
+                    promise_id=promise_id,
+                    time_spent=value
+                )
+                await query.edit_message_text(
+                    text=f"Spent {self.beautify_time(value)} on #{promise_id}.",
+                    parse_mode='Markdown'
+                )
+            else:
+                # If 0 is selected, consider it a cancellation and delete the message.
+                await query.delete_message()
 
     async def send_nightly_reminders(self, context: CallbackContext, user_id=None) -> None:
-        """Send nightly reminders to users about their promises."""
+        """
+        Send nightly reminders to users about their promises.
+        If user_id is provided, only that user is targeted; otherwise, all user directories under ROOT_DIR are processed.
+        """
+        # Determine which user directories to use.
         if user_id is not None:
             user_dirs = [str(user_id)]
         else:
-            # Get all user directories
             user_dirs = [d for d in os.listdir(ROOT_DIR) if os.path.isdir(os.path.join(ROOT_DIR, d))]
         
         for user_id in user_dirs:
-            # Get user's promises
+            # Get all promises for the current user.
             promises = self.plan_keeper.get_promises(user_id)
-            
             if not promises:
                 continue
-                
+
             # Send reminder for each promise
             for promise in promises:
                 promise_id = promise['id']
-                promise_progress_this_week = self.plan_keeper.get_promise_weekly_progress(user_id, promise_id)
-                recurring = promise['recurring']
-                if not recurring and promise_progress_this_week >= 1:
+                # Skip non-recurring promises that have already reached full weekly progress.
+                promise_progress = self.plan_keeper.get_promise_weekly_progress(user_id, promise_id)
+                if not promise.get('recurring', False) and promise_progress >= 1:
                     continue
 
+                # Get the latest action for the promise.
+                last_action = self.plan_keeper.get_last_action_on_promise(user_id, promise_id)
+                if last_action:
+                    # last_action is a UserAction instance.
+                    last_time_spent = float(last_action.time_spent)
+                    try:
+                        last_date = datetime.strptime(last_action.action_date, '%Y-%m-%d')
+                    except Exception:
+                        last_date = datetime.now()
+                    days_passed = (datetime.now() - last_date).days
+                else:
+                    last_time_spent = 0
+                    days_passed = -1
+
+                # Prepare the reminder question.
                 question = (
                     f"How much time did you spend today on: "
                     f"*{promise['text'].replace('_', ' ')}*?"
                 )
-                
-                # Calculate suggested hours based on the number of hours promised per week
-                hours_per_day = promise['hours_per_week'] / 7
-                
-                # Create inline keyboard with time options
-                # reply_markup = self.create_time_options(promise['id'], hours_per_day)
-                time_options = [0,
-                                max(hours_per_day * 0.25, 5/60),
-                                max(hours_per_day * 0.5, 10/60),
-                                max(hours_per_day * 1, 15/60),
-                                min(max(hours_per_day * 2, 20/60), 8),
-                                min(max(hours_per_day * 3, 25/60), 12),
-                                ]
-                if not recurring:
-                    time_options = [0, 0.5 * 7 * hours_per_day, 1 * 7 * hours_per_day]
-                time_options_str = []
-                for ii in range(len(time_options)):
-                    if time_options[ii] < 1:
-                        minutes = round(time_options[ii] * 60 / 5) * 5
-                        time_options_str.append(f"{minutes} min")
-                    else:
-                        rounded_hours = round(time_options[ii] * 2) / 2
-                        time_options_str.append(f"{rounded_hours:.1f} hrs")
 
-                # time_options = ...
-                keyboard = [
-                    [
-                        InlineKeyboardButton(f"{time_options_str[jj + i]}",
-                                             callback_data=f"time_spent:{promise_id}:{option:.2f}")
-                        for jj, option in enumerate(time_options[i:i + 3])
-                    ]
-                    for i in range(0, len(time_options), 3)
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
+                # Calculate a sensible default value (hpd_base):
+                # If there is a last action, use its value; otherwise, use hours_per_week divided by 7.
+                if last_time_spent > 0:
+                    hpd_base = last_time_spent
+                else:
+                    hpd_base = promise['hours_per_week'] / 7
+
+                # For non-recurring promises, you might want to scale the suggested time differently.
+                if not promise.get('recurring', False):
+                    default_time = 0.5 * 7 * hpd_base  # For example, half a week's worth.
+                    latest_time = 1 * 7 * hpd_base  # One week's worth.
+                else:
+                    default_time = hpd_base
+                    latest_time = last_time_spent if last_time_spent > 0 else hpd_base
+
+                # Build the inline keyboard.
+                # This helper function creates:
+                #   - First row: [0 hrs] [default_time hrs] [latest_time hrs]
+                #   - Second row: adjustment buttons for the third option (-5 min, +10 min)
+                reply_markup = self.create_time_options(promise_id, default_time, latest_time)
+
                 try:
                     await context.bot.send_message(
                         chat_id=user_id,
@@ -166,19 +240,8 @@ class PlannerTelegramBot:
                         reply_markup=reply_markup,
                         parse_mode='Markdown'
                     )
-                    # Wait for the user's response before sending the next question
-                    # await self.wait_for_response(user_id)
                 except Exception as e:
                     logger.error(f"Failed to send reminder to user {user_id}: {str(e)}")
-
-    # async def wait_for_response(self, user_id: str) -> None:
-    #     """Wait for the user's response before sending the next question."""
-    #     while True:
-    #         # Check if there is a response from the user
-    #         user_responses = self.plan_keeper.get_user_responses(user_id)
-    #         if user_responses:
-    #             break
-    #         await asyncio.sleep(1)
 
     async def start(self, update: Update, _context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
@@ -364,8 +427,9 @@ if __name__ == '__main__':
     from dotenv import load_dotenv
     load_dotenv()
     ROOT_DIR = os.getenv("ROOT_DIR")
+    ROOT_DIR = os.path.abspath(subprocess.check_output(f'echo {ROOT_DIR}', shell=True).decode().strip())
     BOT_TOKEN = os.getenv("BOT_TOKEN")
-    LOG_FILE = os.getenv("LOG_FILE", "bot.log")
+    LOG_FILE = os.getenv("LOG_FILE", os.path.abspath(os.path.join(__file__, '../..', 'bot.log')))
 
     # Enable logging
     logging.config.dictConfig({
