@@ -35,6 +35,7 @@ class PlannerTelegramBot:
         self.application.add_handler(CommandHandler("nightly", self.nightly_reminders))  # nightly command handler
         self.application.add_handler(CommandHandler("weekly", self.weekly_report))  # weekly command handler
         self.application.add_handler(CommandHandler("zana", self.plan_by_zana))  # zana command handler
+        self.application.add_handler(CommandHandler("pomodoro", self.pomodoro))  # pomodoro command handler
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(CallbackQueryHandler(self.handle_promise_callback))
 
@@ -127,10 +128,25 @@ class PlannerTelegramBot:
 
         # Parse the callback data
         data_parts = query.data.split(":")
+        action_type = data_parts[0]
+
+        if action_type == "pomodoro_start":
+            await self.start_pomodoro_timer(query, context)
+        elif action_type == "pomodoro_pause":
+            await query.edit_message_text(
+                text="Pomodoro Timer Paused.",
+                parse_mode='Markdown'
+            )
+        elif action_type == "pomodoro_stop":
+            await query.edit_message_text(
+                text="Pomodoro Timer Stopped.",
+                parse_mode='Markdown'
+            )
+
         if len(data_parts) < 2:
             return  # Invalid callback data format
         
-        action_type, promise_id = data_parts[:2]
+        promise_id = data_parts[1]
 
         if action_type == "remind_next_week":
             # Update the promise's start date to the beginning of next week
@@ -186,7 +202,7 @@ class PlannerTelegramBot:
                 parse_mode='Markdown'
             )
             return
-        
+
         try:
             value_str = data_parts[2]
             value = float(value_str)  # the time spent value
@@ -234,8 +250,6 @@ class PlannerTelegramBot:
             else:
                 # If 0 is selected, consider it a cancellation and delete the message.
                 await query.delete_message()
-
-
 
     async def send_nightly_reminders(self, context: CallbackContext, user_id=None) -> None:
         """
@@ -548,6 +562,47 @@ class PlannerTelegramBot:
     def run(self):
         """Start the bot."""
         self.application.run_polling()
+
+    async def pomodoro(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /pomodoro command to start a Pomodoro timer."""
+        keyboard = [
+            [
+                InlineKeyboardButton("Start", callback_data="pomodoro_start"),
+                InlineKeyboardButton("Pause", callback_data="pomodoro_pause"),
+                InlineKeyboardButton("Stop", callback_data="pomodoro_stop"),
+            ]
+        ]
+        await update.message.reply_text(
+            "Pomodoro Timer: 25:00",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def start_pomodoro_timer(self, query, context):
+        """Start the Pomodoro timer."""
+        total_time = 25 # minutes
+        interval = 5  # seconds
+        for remaining in range(total_time * 60, 0, -interval):
+            minutes, seconds = divmod(remaining, 60)
+            timer_text = f"Pomodoro Timer: **{minutes:02}:{seconds:02}**"
+            try:
+                await query.edit_message_text(
+                    text=timer_text,
+                    parse_mode='Markdown'
+                )
+                await asyncio.sleep(interval)
+            except Exception as e:
+                break  # Exit the loop if the message is deleted or another error occurs
+
+        await query.edit_message_text(
+            text="Pomodoro Timer (25min) Finished! 🎉",
+            parse_mode='Markdown'
+        )
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="Time's up! Take a break or start another session.",
+            parse_mode='Markdown'
+        )
 
 
 if __name__ == '__main__':
