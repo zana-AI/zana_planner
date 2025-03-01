@@ -196,8 +196,9 @@ class PlannerAPI:
         actions_file = self._get_file_path('actions.csv', user_id)
         if not os.path.exists(actions_file):
             return pd.DataFrame(columns=['date', 'time', 'promise_id', 'time_spent'])
-        actions_df = pd.read_csv(actions_file, names=['date', 'time', 'promise_id', 'time_spent'])
-        return actions_df
+        df = pd.read_csv(actions_file, names=['date', 'time', 'promise_id', 'time_spent'])
+        df['time'] = pd.to_datetime(df['time'], errors='coerce', infer_datetime_format=True).dt.strftime("%H:%M:%S")
+        return df
 
     def get_last_action_on_promise(self, user_id, promise_id: str) -> Optional[UserAction]:
         """
