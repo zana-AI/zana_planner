@@ -295,14 +295,14 @@ class PlannerTelegramBot:
             week_start = week_start - timedelta(days=7)
         # For the header, we use the reference time as the end of the range.
         week_end = report_ref_time
-        date_range_str = f"{week_start.strftime('%Y-%m-%d')} - {week_end.strftime('%Y-%m-%d')}"
+        date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
 
         # Create a refresh button whose callback data includes the user_id and report_ref_time (as epoch).
         refresh_callback_data = f"refresh_weekly:{user_id}:{int(report_ref_time.timestamp())}"
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Refresh", callback_data=refresh_callback_data)]])
 
         await update.message.reply_text(
-            f"Weekly report: {date_range_str}\n\n{report}",
+            f"Weekly: {date_range_str}\n\n{report}",
             reply_markup=keyboard,
             parse_mode='Markdown'
         )
@@ -329,12 +329,12 @@ class PlannerTelegramBot:
         if report_ref_time < week_start:
             week_start = week_start - timedelta(days=7)
         week_end = report_ref_time
-        date_range_str = f"{week_start.strftime('%Y-%m-%d %H:%M')} - {week_end.strftime('%Y-%m-%d %H:%M')}"
+        date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
 
         # Preserve the same refresh callback data.
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Refresh", callback_data=query.data)]])
         await query.edit_message_text(
-            f"Weekly report for week: {date_range_str}\n\n{report}",
+            f"Weekly: {date_range_str}\n\n{report}",
             reply_markup=keyboard,
             parse_mode='Markdown'
         )
