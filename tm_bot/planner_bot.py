@@ -36,7 +36,7 @@ class PlannerTelegramBot:
         self.application.add_handler(CommandHandler("weekly", self.weekly_report))  # weekly command handler
         self.application.add_handler(CommandHandler("zana", self.plan_by_zana))  # zana command handler
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-        self.application.add_handler(CallbackQueryHandler(self.handle_time_selection))
+        self.application.add_handler(CallbackQueryHandler(self.handle_promise_callback))
 
         # try:
         #     # Schedule nightly reminders if job queue is available
@@ -91,29 +91,34 @@ class PlannerTelegramBot:
         hpd_base_rounded = self.round_time(hpd_base)
         button_default = InlineKeyboardButton(self.beautify_time(hpd_base_rounded),
                                               callback_data=f"time_spent:{promise_id}:{hpd_base_rounded:.5f}")
-        row1 = [button_zero, button_latest, button_default]
 
         # Second row: adjustment buttons for the third option (latest_record)
         adjust_minus = InlineKeyboardButton("-5 min",
                                             callback_data=f"update_time_spent:{promise_id}:{-5/60:.5f}")
         adjust_plus = InlineKeyboardButton("+10 min",
                                            callback_data=f"update_time_spent:{promise_id}:{10/60:.5f}")
-        remind_next_week = InlineKeyboardButton("Remind me next week",
+        remind_next_week = InlineKeyboardButton("Remind next week",
                                                 callback_data=f"remind_next_week:{promise_id}")
         delete_promise = InlineKeyboardButton("Delete",
                                               callback_data=f"delete_promise:{promise_id}")
-        row2 = [adjust_minus, adjust_plus, remind_next_week, delete_promise]
+
+        row1 = [button_zero, button_default, adjust_minus, adjust_plus]
+        row2 = [remind_next_week, delete_promise]
 
         return InlineKeyboardMarkup([row1, row2])
 
-    # Revised callback handler for time selection
-    async def handle_time_selection(self, update: Update, context: CallbackContext) -> None:
+    # Revised callback handler for promise-related actions
+    async def handle_promise_callback(self, update: Update, context: CallbackContext) -> None:
         """
-        Handle the callback when a user selects or adjusts the time spent.
+        Handle the callback when a user selects or adjusts the time spent, or performs other actions on promises.
 
         Callback data format:
           - For registering an action: "time_spent:<promise_id>:<value>"
           - For adjusting the third option: "update_time_spent:<promise_id>:<new_value>"
+          - For deleting a promise: "delete_promise:<promise_id>"
+          - For confirming deletion: "confirm_delete:<promise_id>"
+          - For canceling deletion: "cancel_delete:<promise_id>"
+          - For reminding next week: "remind_next_week:<promise_id>"
         """
         query = update.callback_query
         await query.answer()
@@ -136,11 +141,38 @@ class PlannerTelegramBot:
             return
 
         elif action_type == "delete_promise":
-            # Delete the promise
+            # Retrieve the current keyboard from the message
+            keyboard = list(query.message.reply_markup.inline_keyboard)  # Convert tuple to list
+            # Add confirmation buttons to the second row
+            confirm_buttons = [
+                InlineKeyboardButton("Yes (delete)", callback_data=f"confirm_delete:{promise_id}"),
+                InlineKeyboardButton("No (cancel)", callback_data=f"cancel_delete:{promise_id}")
+            ]
+            # Keep the first row and add the confirmation buttons as a new row
+            keyboard.append(confirm_buttons)
+            await query.edit_message_text(
+                text=query.message.text_markdown,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            return
+
+        elif action_type == "confirm_delete":
+            # Delete the promise after confirmation
             result = self.plan_keeper.delete_promise(query.from_user.id, promise_id)
             await query.edit_message_text(
                 text=result,
                 parse_mode='Markdown'
+            )
+            return
+
+        elif action_type == "cancel_delete":
+            # Cancel the delete action
+            await query.edit_message_text(
+                text=query.message.text_markdown,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(query.message.reply_markup.inline_keyboard[:-1])
+
             )
             return
         
