@@ -376,11 +376,11 @@ class PlannerAPI:
 
             # Determine the diamond emoji based on progress
             if progress < 30:
-                diamond = "⚠️"  # Red warning # diamond = "🔺"
+                diamond = "🔴"  # Red warning # diamond = "🔺"
             elif progress < 60:
-                diamond = "🔸"
+                diamond = "⚠️"
             elif progress < 90:
-                diamond = "🔹"
+                diamond = "🔄"
             else:
                 diamond = "✅"  # Green check
 
