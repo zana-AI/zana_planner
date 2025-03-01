@@ -374,8 +374,18 @@ class PlannerAPI:
             empty_length = bar_width - filled_length
             progress_bar = f"{'█' * filled_length}{'_' * empty_length}"
 
+            # Determine the diamond emoji based on progress
+            if progress < 30:
+                diamond = "⚠️"  # Red warning # diamond = "🔺"
+            elif progress < 60:
+                diamond = "🔸"
+            elif progress < 90:
+                diamond = "🔹"
+            else:
+                diamond = "✅"  # Green check
+
             report_lines.append(
-                f"🔸 #{promise_id} **{data['text'].replace('_', ' ')}**:\n"
+                f"{diamond} #{promise_id} **{data['text'].replace('_', ' ')}**:\n"
                 f"`[{progress_bar}] {progress}%` ({hours_spent:.1f}/{hours_promised:.1f} h)"
             )
 
