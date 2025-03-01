@@ -9,7 +9,7 @@ from func_utils import get_function_args_info
 from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
 from planner_api import PlannerAPI
 # Load environment variables
-load_dotenv()
+# load_dotenv()
 
 logger = logging.getLogger(__name__)
 
