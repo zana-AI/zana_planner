@@ -112,7 +112,7 @@ class LLMHandler:
             self.chat_history[user_id].add_message(HumanMessage(content=user_message))
 
             try:
-                response = self.chat_model([self.system_message_main] + self.chat_history[user_id].messages)
+                response = self.chat_model(self.chat_history[user_id].messages)
             except Exception as e:
                 logger.error(f"Error getting LLM response: {str(e)}")
                 return "I'm having trouble understanding that. Could you rephrase?"

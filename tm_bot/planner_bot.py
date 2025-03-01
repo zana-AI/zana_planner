@@ -431,14 +431,52 @@ class PlannerTelegramBot:
 
     async def plan_by_zana(self, update: Update, _context: CallbackContext) -> None:
         user_id = update.effective_user.id
-        recommended_actions = self.llm_handler.get_response_custom("What should I do today?"
-                                                            "Recommend actions for me based on the promises, and the weekly report."
-                                                            "I expect the output to be a list of actions like:"
-                                                            "1. [5h] Deep work on promise #P31"
-                                                            "2. [0.5h] Exercise for 30 minutes this evening #P62",
-                                                            user_id)
-        formatted_actions = "".join([f"* {action}" for action in recommended_actions])
-        await update.message.reply_text(f"Recommended actions for today:\n{formatted_actions}", parse_mode='Markdown')
+        promises = self.plan_keeper.get_promises(user_id)
+        
+        if not promises:
+            await update.message.reply_text("You have no promises to report on.")
+            return
+
+        # Generate reports for all promises
+        reports = []
+        for promise in promises:
+            report = self.plan_keeper.get_promise_report(user_id, promise['id'])
+            reports.append(report)
+
+        # Concatenate all reports
+        full_report = "\n\n".join(reports)
+
+        # Create a creative prompt for the LLM
+        prompt = (
+            "Here is a detailed report of my current promises and progress:\n\n"
+            f"'''{full_report}\n\n'''"
+            f"And today is {datetime.now().strftime('%A %d-%B-%Y %H:%M')}. "
+            "Based on this report, please provide insights on what the user should focus on today. "
+            "Your response should follow a format similar to this example:\n\n"
+            "--------------------------------------------------\n"
+            "**Focus Areas + Actionable Steps for Today: [Date]**\n\n"
+            "#### 1. [Promise Title]\n"
+            "- Current Status: [current progress] (e.g., 10.0/30.0 hours this week, 33%).\n"
+            "- Actionable Step: [Suggest a concrete step].\n\n"
+            "#### 2. [Another Promise Title]\n"
+            "- Current Status: [progress details].\n"
+            "- Actionable Step: [Action recommendation].\n\n"
+            "### Motivational Reminder\n"
+            "Include a brief, uplifting message to encourage progress.\n\n"
+            "### Today’s Focus Summary\n"
+            "Summarize key focus areas and recommended time allocations.\n"
+            "--------------------------------------------------\n\n"
+            "Keep the tone creative, motivational, and succinct!"
+        )
+
+        # Get insights from the LLM handler
+        insights = self.llm_handler.get_response_custom(prompt, user_id)
+
+        # Send the insights to the user
+        await update.message.reply_text(
+            f"Insights from Zana:\n{insights}",
+            parse_mode='Markdown'
+        )
 
     async def handle_message(self, update: Update, _context: CallbackContext) -> None:
         try:

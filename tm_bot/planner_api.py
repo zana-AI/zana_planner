@@ -519,10 +519,9 @@ class PlannerAPI:
         report = (
             f"**Report #{promise_id}**\n"
             f"*{promise['text'].replace('_', ' ')}*\n"
-            f"**Hours Promised:** {promise_hours_per_week:.1f} hours/week\n"
-            f"**Total Hours Spent:** {total_hours_spent:.1f} hours\n"
-            f"**Progress This Week:** {current_week_hours_spent:.1f}/{promise_hours_per_week:.1f} hours "
-            f"({progress_this_week * 100:.0f}%)\n"
+            f"**You promised:** {promise_hours_per_week:.1f} hours/week\n"
+            f"**This week:** {current_week_hours_spent:.1f}/{promise_hours_per_week:.1f} hours "
+            f"**Total {total_hours_spent:.1f} hours spent** since {promise['start_date']}\n({progress_this_week * 100:.0f}%)\n"
             f"**Streak:** {streak_str}{recent_actions_str}"
         )
 
