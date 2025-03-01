@@ -197,7 +197,11 @@ class PlannerAPI:
         if not os.path.exists(actions_file):
             return pd.DataFrame(columns=['date', 'time', 'promise_id', 'time_spent'])
         df = pd.read_csv(actions_file, names=['date', 'time', 'promise_id', 'time_spent'])
+        # Fix the time format to HH:MM:SS
         df['time'] = pd.to_datetime(df['time'], errors='coerce', infer_datetime_format=True).dt.strftime("%H:%M:%S")
+        # Create a new 'datetime' column by combining the 'date' and 'time' columns.
+        df['datetime'] = pd.to_datetime(df['date'] + ' ' + df['time'], errors='coerce', infer_datetime_format=True)
+        df['time_spent'] = pd.to_numeric(df['time_spent'], errors='coerce').fillna(0) # Ensure time_spent is numeric
         return df
 
     def get_last_action_on_promise(self, user_id, promise_id: str) -> Optional[UserAction]:
@@ -423,6 +427,106 @@ class PlannerAPI:
             json.dump(promises, file, indent=4)
 
         return f"Promise #{promise_id} start date updated to {new_start_date}."
+
+    def get_promise_streak(self, user_id, promise_id: str) -> int:
+        """
+        Calculate the current streak of actions for a promise.
+        """
+        actions_df = self.get_actions_df(user_id)
+
+        actions = actions_df[actions_df['promise_id'] == promise_id].sort_values('datetime', ascending=False)
+        # keep unique dates only
+        actions = actions.drop_duplicates('date', keep='last')
+
+        if actions.empty:
+            return 0
+
+        # check if the last action was today
+        current_date = datetime.now().date()
+        last_action_date = actions['datetime'].iloc[0].date()
+        streak = 0
+        if last_action_date != current_date and last_action_date != current_date - timedelta(days=1):
+            # count negative streak
+            while last_action_date < current_date:
+                streak -= 1
+                current_date -= timedelta(days=1)
+        else:
+            if last_action_date == current_date - timedelta(days=1):
+                current_date -= timedelta(days=1)
+            for _, row in actions.iterrows():
+                action_date = row['datetime'].date()
+                if action_date == current_date:
+                    streak += 1
+                    current_date -= timedelta(days=1)
+                else:
+                    break
+        return streak
+
+    def get_promise_report(self, user_id, promise_id: str) -> str:
+        """
+        Generate a report for a specific promise.
+        """
+        promises = self.get_promises(user_id)
+        actions_df = self.get_actions_df(user_id)
+
+        # Get the promise details
+        promise = next((p for p in promises if p['id'] == promise_id), None)
+        if not promise:
+            return f"Promise with ID '{promise_id}' not found."
+
+        # Extract promised hours per week
+        promise_hours_per_week = promise['hours_per_week']
+
+        # Calculate the current week's start and end (Monday at 3 AM)
+        now = datetime.now() - timedelta(hours=3)
+        current_week_start = (now - timedelta(days=now.weekday()))
+        current_week_end = current_week_start + timedelta(days=7) - timedelta(seconds=1)
+
+        # filter actions for the current week
+        current_week_actions = actions_df[
+                        (actions_df['datetime'] >= current_week_start) &
+                        (actions_df['datetime'] <= current_week_end) &
+                        (actions_df['promise_id'] == promise_id)
+        ]
+        current_week_hours_spent = current_week_actions['time_spent'].sum()
+
+        progress_this_week = round(current_week_hours_spent / (promise_hours_per_week + 1e-6), 2)
+
+        # Calculate the total hours spent on the promise
+        total_hours_spent = actions_df[actions_df['promise_id'] == promise_id]['time_spent'].sum()
+
+        # Calculate the current streak
+        streak = self.get_promise_streak(user_id, promise_id)
+        if streak < 0:
+            streak_str = f"{-streak} days since last action"
+        elif streak == 0:
+            streak_str = "🆕 No actions yet"
+        else:
+            streak_str = f"🔥 {streak} day{'s' if streak > 1 else ''} in a row"
+
+        # Get the 3 most recent actions for this promise
+        recent_actions = actions_df[actions_df['promise_id'] == promise_id].sort_values('datetime', ascending=False).head(3)
+        
+        # Format recent actions for display
+        recent_actions_str = ""
+        if not recent_actions.empty:
+            recent_actions_str = "\n**Recent Actions:**"
+            for _, action in recent_actions.iterrows():
+                date_str = action['datetime'].strftime("%a %Y-%m-%d")
+                recent_actions_str += f"\n- {date_str}: spent {action['time_spent']:.1f} hours"
+        
+        # Build the report text
+        report = (
+            f"**Report #{promise_id}**\n"
+            f"*{promise['text'].replace('_', ' ')}*\n"
+            f"**Hours Promised:** {promise_hours_per_week:.1f} hours/week\n"
+            f"**Total Hours Spent:** {total_hours_spent:.1f} hours\n"
+            f"**Progress This Week:** {current_week_hours_spent:.1f}/{promise_hours_per_week:.1f} hours "
+            f"({progress_this_week * 100:.0f}%)\n"
+            f"**Streak:** {streak_str}{recent_actions_str}"
+        )
+
+        return report
 
 # Example Usage
 if __name__ == "__main__":

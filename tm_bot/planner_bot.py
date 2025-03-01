@@ -101,9 +101,11 @@ class PlannerTelegramBot:
                                                 callback_data=f"remind_next_week:{promise_id}")
         delete_promise = InlineKeyboardButton("Delete",
                                               callback_data=f"delete_promise:{promise_id}")
+        report_button = InlineKeyboardButton("Report",
+                                             callback_data=f"report_promise:{promise_id}")
 
         row1 = [button_zero, button_default, adjust_minus, adjust_plus]
-        row2 = [remind_next_week, delete_promise]
+        row2 = [remind_next_week, delete_promise, report_button]
 
         return InlineKeyboardMarkup([row1, row2])
 
@@ -173,6 +175,15 @@ class PlannerTelegramBot:
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup(query.message.reply_markup.inline_keyboard[:-1])
 
+            )
+            return
+        
+        elif action_type == "report_promise":
+            # Generate a report for the promise
+            report = self.plan_keeper.get_promise_report(query.from_user.id, promise_id)
+            await query.edit_message_text(
+                text=report,
+                parse_mode='Markdown'
             )
             return
         
