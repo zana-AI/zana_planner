@@ -327,7 +327,7 @@ class PlannerAPI:
             week_start = week_start - timedelta(days=7)
 
         promises = self.get_promises(user_id)
-        actions = self.get_actions(user_id)
+        actions_df = self.get_actions_df(user_id)
 
         # Initialize report data.
         report_data = {
@@ -339,24 +339,28 @@ class PlannerAPI:
             for promise in promises
         }
 
-        # Process each action (assuming action is a list: [date, time, promise_id, time_spent]).
-        for action in actions:
-            date_time_str = f"{action[0]} {action[1]}"
-            for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
-                try:
-                    action_dt = datetime.strptime(date_time_str, fmt)
-                    break
-                except ValueError:
-                    action_dt = None
-            if action_dt is None:
-                continue
+        # Create a datetime column by combining date and time.
+        # errors='coerce' converts unparseable rows to NaT.
+        actions_df['datetime'] = pd.to_datetime(
+            actions_df['date'] + ' ' + actions_df['time'],
+            errors='coerce', infer_datetime_format=True
+        )
 
-            # Only count actions between week_start and the reference time.
-            if week_start <= action_dt <= now:
-                promise_id = action[2]
-                time_spent = float(action[3])
-                if promise_id in report_data:
-                    report_data[promise_id]['hours_spent'] += time_spent
+        # Drop rows with unparseable datetime.
+        actions_df = actions_df.dropna(subset=['datetime'])
+
+        # Ensure time_spent is numeric.
+        actions_df['time_spent'] = pd.to_numeric(actions_df['time_spent'], errors='coerce').fillna(0)
+
+        # Filter actions between week_start and now.
+        filtered_actions = actions_df[(actions_df['datetime'] >= week_start) & (actions_df['datetime'] <= now)]
+
+        # Accumulate hours for each promise.
+        for _, row in filtered_actions.iterrows():
+            promise_id = row['promise_id']
+            time_spent = float(row['time_spent'])
+            if promise_id in report_data:
+                report_data[promise_id]['hours_spent'] += time_spent
 
         # Build the report text.
         report_lines = []
