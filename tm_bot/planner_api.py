@@ -4,7 +4,6 @@ import yaml
 import json
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
-from tqdm import tqdm
 import pandas as pd
 from schema import UserAction
 
@@ -119,13 +118,15 @@ class PlannerAPI:
         Get the weekly progress of a promise.
         """
         promises = self.get_promises(user_id)
-        actions = self.get_actions(user_id)
-        # convert actions to pandas dataframe
-        actions_df = pd.DataFrame(actions, columns=['date', 'time', 'promise_id', 'time_spent'])
-        actions_df['date'] = pd.to_datetime(actions_df['date']).dt.date
-        actions_df['time'] = pd.to_datetime(actions_df['time']).dt.time
-        actions_df['datetime'] = pd.to_datetime(actions_df['date'].astype(str) + ' ' + actions_df['time'].astype(str))
-        actions_df['time_spent'] = actions_df['time_spent'].astype(float)
+        actions_df = self.get_actions_df(user_id)
+
+        try:
+            actions_df['date'] = pd.to_datetime(actions_df['date']).dt.date
+            actions_df['time'] = pd.to_datetime(actions_df['time']).dt.time
+            actions_df['datetime'] = pd.to_datetime(actions_df['date'].astype(str) + ' ' + actions_df['time'].astype(str))
+            actions_df['time_spent'] = actions_df['time_spent'].astype(float)
+        except Exception as e:
+            pass
 
         # Get the promise details
         promise = next((p for p in promises if p['id'] == promise_id), None)
@@ -275,11 +276,6 @@ class PlannerAPI:
 
         return f"Setting '{setting_key}' updated to '{setting_value}'."
 
-    # def _generate_promise_id(self, promise_text):
-    #     """
-    #     Generate a unique 12-character ID from the promise text.
-    #     """
-    #     return promise_text[:12].upper().replace(" ", "_")[:12]
     def _generate_promise_id(self, user_id, promise_type='P'):
         """Generate a unique ID for the promise."""
         last_id = 0
