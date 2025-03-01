@@ -98,7 +98,11 @@ class PlannerTelegramBot:
                                             callback_data=f"update_time_spent:{promise_id}:{-5/60:.5f}")
         adjust_plus = InlineKeyboardButton("+10 min",
                                            callback_data=f"update_time_spent:{promise_id}:{10/60:.5f}")
-        row2 = [adjust_minus, adjust_plus]
+        remind_next_week = InlineKeyboardButton("Remind me next week",
+                                                callback_data=f"remind_next_week:{promise_id}")
+        delete_promise = InlineKeyboardButton("Delete",
+                                              callback_data=f"delete_promise:{promise_id}")
+        row2 = [adjust_minus, adjust_plus, remind_next_week, delete_promise]
 
         return InlineKeyboardMarkup([row1, row2])
 
@@ -167,6 +171,25 @@ class PlannerTelegramBot:
                 # If 0 is selected, consider it a cancellation and delete the message.
                 await query.delete_message()
 
+        elif action_type == "remind_next_week":
+            # Update the promise's start date to the beginning of next week
+            next_monday = (datetime.now() + timedelta(days=(7 - datetime.now().weekday()))).date()
+            self.plan_keeper.update_promise_start_date(query.from_user.id, promise_id, next_monday)
+            await query.edit_message_text(
+                text=f"Promise #{promise_id} will be reminded next week.",
+                parse_mode='Markdown'
+            )
+            return
+
+        elif action_type == "delete_promise":
+            # Delete the promise
+            result = self.plan_keeper.delete_promise(query.from_user.id, promise_id)
+            await query.edit_message_text(
+                text=result,
+                parse_mode='Markdown'
+            )
+            return
+
     async def send_nightly_reminders(self, context: CallbackContext, user_id=None) -> None:
         """
         Send nightly reminders to users about their promises.
@@ -187,6 +210,12 @@ class PlannerTelegramBot:
             # Send reminder for each promise
             for promise in promises:
                 promise_id = promise['id']
+                
+                # Check if the promise's start date is in the future
+                start_date = datetime.strptime(promise['start_date'], '%Y-%m-%d').date()
+                if start_date > datetime.now().date():
+                    continue
+
                 # Skip non-recurring promises that have already reached full weekly progress.
                 promise_progress = self.plan_keeper.get_promise_weekly_progress(user_id, promise_id)
                 if not promise.get('recurring', False) and promise_progress >= 1:

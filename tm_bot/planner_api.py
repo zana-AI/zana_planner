@@ -320,7 +320,7 @@ class PlannerAPI:
             reference_time = datetime.now()
         now = reference_time
 
-        # Compute the current week’s Monday at 3:00 AM.
+        # Compute the current week's Monday at 3:00 AM.
         monday = now - timedelta(days=now.weekday())
         week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
         # If the current time is before Monday 3 AM (e.g., early Monday), use the previous Monday.
@@ -338,6 +338,7 @@ class PlannerAPI:
                 'hours_spent': 0
             }
             for promise in promises
+            if datetime.strptime(promise['start_date'], '%Y-%m-%d').date() <= now.date()  # Check start date
         }
 
         # Create a datetime column by combining date and time.
@@ -398,6 +399,30 @@ class PlannerAPI:
         if os.path.exists(promises_file):
             os.remove(promises_file)
         return "All promises deleted successfully."
+
+    def update_promise_start_date(self, user_id, promise_id: str, new_start_date: datetime.date) -> str:
+        """Update the start date of a promise."""
+        promises_file = self._get_file_path('promises.json', user_id)
+        if not os.path.exists(promises_file):
+            return f"No promises file found for user '{user_id}'"
+
+        with open(promises_file, 'r') as file:
+            promises = json.load(file)
+
+        promise_found = False
+        for promise in promises:
+            if promise['id'] == promise_id:
+                promise['start_date'] = str(new_start_date)
+                promise_found = True
+                break
+
+        if not promise_found:
+            return f"Promise with ID '{promise_id}' not found."
+
+        with open(promises_file, 'w') as file:
+            json.dump(promises, file, indent=4)
+
+        return f"Promise #{promise_id} start date updated to {new_start_date}."
 
 # Example Usage
 if __name__ == "__main__":
