@@ -120,11 +120,32 @@ class PlannerTelegramBot:
 
         # Parse the callback data
         data_parts = query.data.split(":")
-        if len(data_parts) != 3:
+        if len(data_parts) < 2:
             return  # Invalid callback data format
+        
+        action_type, promise_id = data_parts[:2]
 
-        action_type, promise_id, value_str = data_parts
+        if action_type == "remind_next_week":
+            # Update the promise's start date to the beginning of next week
+            next_monday = (datetime.now() + timedelta(days=(7 - datetime.now().weekday()))).date()
+            self.plan_keeper.update_promise_start_date(query.from_user.id, promise_id, next_monday)
+            await query.edit_message_text(
+                text=f"#{promise_id} will be silent until monday.",
+                parse_mode='Markdown'
+            )
+            return
+
+        elif action_type == "delete_promise":
+            # Delete the promise
+            result = self.plan_keeper.delete_promise(query.from_user.id, promise_id)
+            await query.edit_message_text(
+                text=result,
+                parse_mode='Markdown'
+            )
+            return
+        
         try:
+            value_str = data_parts[2]
             value = float(value_str)  # the time spent value
         except ValueError:
             return  # Could not parse a number
@@ -171,24 +192,7 @@ class PlannerTelegramBot:
                 # If 0 is selected, consider it a cancellation and delete the message.
                 await query.delete_message()
 
-        elif action_type == "remind_next_week":
-            # Update the promise's start date to the beginning of next week
-            next_monday = (datetime.now() + timedelta(days=(7 - datetime.now().weekday()))).date()
-            self.plan_keeper.update_promise_start_date(query.from_user.id, promise_id, next_monday)
-            await query.edit_message_text(
-                text=f"Promise #{promise_id} will be reminded next week.",
-                parse_mode='Markdown'
-            )
-            return
 
-        elif action_type == "delete_promise":
-            # Delete the promise
-            result = self.plan_keeper.delete_promise(query.from_user.id, promise_id)
-            await query.edit_message_text(
-                text=result,
-                parse_mode='Markdown'
-            )
-            return
 
     async def send_nightly_reminders(self, context: CallbackContext, user_id=None) -> None:
         """
