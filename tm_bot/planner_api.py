@@ -205,8 +205,20 @@ class PlannerAPI:
         actions = self.get_actions_df(user_id)
         if actions.empty:
             return None
-        # Combine 'date' and 'time' into a new 'datetime' column.
-        actions['datetime'] = pd.to_datetime(actions['date'] + ' ' + actions['time'])
+
+        # Helper to parse a combined date-time string.
+        def parse_dt(dt_str):
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+                try:
+                    return datetime.strptime(dt_str, fmt)
+                except ValueError:
+                    continue
+            raise ValueError(f"Unrecognized datetime format: {dt_str}")
+
+        # Create a new 'datetime' column by combining the 'date' and 'time' columns.
+        combined = actions['date'] + ' ' + actions['time']
+        actions['datetime'] = combined.apply(parse_dt)
+
         # Filter actions for the given promise_id and sort by the combined datetime column.
         last_action = actions[actions['promise_id'] == promise_id].sort_values('datetime', ascending=False).head(1)
         if last_action.empty:
@@ -300,7 +312,7 @@ class PlannerAPI:
 
         return f"Action for promise ID '{promise_id}' on date '{date}' deleted successfully."
 
-    def get_weekly_report(self, user_id, reference_time=None):
+    def get_weekly_report(self, user_id):
         """
         Generate a weekly report of promises and actions.
         Only includes actions from the current week (starting Monday at 3:00 AM)
