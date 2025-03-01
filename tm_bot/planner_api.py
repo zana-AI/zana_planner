@@ -300,48 +300,68 @@ class PlannerAPI:
 
         return f"Action for promise ID '{promise_id}' on date '{date}' deleted successfully."
 
-    def get_weekly_report(self, user_id):
+    def get_weekly_report(self, user_id, reference_time=None):
         """
         Generate a weekly report of promises and actions.
+        Only includes actions from the current week (starting Monday at 3:00 AM)
+        based on the provided reference_time (or current time if None).
         """
+
+        if reference_time is None:
+            reference_time = datetime.now()
+        now = reference_time
+
+        # Compute the current week’s Monday at 3:00 AM.
+        monday = now - timedelta(days=now.weekday())
+        week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
+        # If the current time is before Monday 3 AM (e.g., early Monday), use the previous Monday.
+        if now < week_start:
+            week_start = week_start - timedelta(days=7)
+
         promises = self.get_promises(user_id)
         actions = self.get_actions(user_id)
 
-        # Initialize report data
-        report_data = {promise['id']: {'text': promise['text'], 'hours_promised': promise['hours_per_week'], 'hours_spent': 0} for promise in promises}
+        # Initialize report data.
+        report_data = {
+            promise['id']: {
+                'text': promise['text'],
+                'hours_promised': promise['hours_per_week'],
+                'hours_spent': 0
+            }
+            for promise in promises
+        }
 
-        # Calculate hours spent for each promise
-        one_week_ago = datetime.now() - timedelta(days=7)
+        # Process each action (assuming action is a list: [date, time, promise_id, time_spent]).
         for action in actions:
-            action_date = datetime.strptime(action[0], '%Y-%m-%d')
-            if action_date >= one_week_ago:
+            try:
+                action_dt = datetime.strptime(action[0] + " " + action[1], "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+
+            # Only count actions between week_start and the reference time.
+            if week_start <= action_dt <= now:
                 promise_id = action[2]
                 time_spent = float(action[3])
                 if promise_id in report_data:
                     report_data[promise_id]['hours_spent'] += time_spent
 
-        # Generate report
+        # Build the report text.
         report_lines = []
         for promise_id, data in report_data.items():
             hours_promised = data['hours_promised']
             hours_spent = data['hours_spent']
             progress = min(100, int((hours_spent / hours_promised) * 100)) if hours_promised > 0 else 0
 
-            # Define the bar width (e.g., 10 characters max)
             bar_width = 10
-            filled_length = (progress * bar_width) // 100  # Calculate the number of filled blocks
-            empty_length = bar_width - filled_length  # Calculate the remaining empty space
+            filled_length = (progress * bar_width) // 100
+            empty_length = bar_width - filled_length
+            progress_bar = f"{'█' * filled_length}{'_' * empty_length}"
 
-            # Create the progress bar
-            progress_bar = f"{'█' * filled_length}{'_' * empty_length}"  # Shorter progress bar
-
-            # Append the report line
             report_lines.append(
                 f"🔸 #{promise_id} **{data['text'].replace('_', ' ')}**:\n"
                 f"`[{progress_bar}] {progress}%` ({hours_spent:.1f}/{hours_promised:.1f} h)"
             )
 
-        # Join and display the report
         return "\n".join(report_lines)
 
     def delete_all_promises(self, user_id):

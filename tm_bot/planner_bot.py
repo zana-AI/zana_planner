@@ -3,7 +3,7 @@ import csv
 import subprocess
 from urllib.parse import uses_relative
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import yaml
 import logging
 import logging.config
@@ -283,10 +283,61 @@ class PlannerTelegramBot:
         await update.message.reply_text("Nightly reminders sent!")
 
     async def weekly_report(self, update: Update, _context: CallbackContext) -> None:
-        """Handle the /weekly command to send a weekly report."""
+        """Handle the /weekly command to send a weekly report with a refresh button."""
         user_id = update.effective_user.id
-        report = self.plan_keeper.get_weekly_report(user_id)
-        await update.message.reply_text(f"Weekly report:\n{report}", parse_mode='Markdown')
+        report_ref_time = datetime.now()
+        report = self.plan_keeper.get_weekly_report(user_id, reference_time=report_ref_time)
+
+        # Compute week boundaries based on report_ref_time.
+        monday = report_ref_time - timedelta(days=report_ref_time.weekday())
+        week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
+        if report_ref_time < week_start:
+            week_start = week_start - timedelta(days=7)
+        # For the header, we use the reference time as the end of the range.
+        week_end = report_ref_time
+        date_range_str = f"{week_start.strftime('%Y-%m-%d')} - {week_end.strftime('%Y-%m-%d')}"
+
+        # Create a refresh button whose callback data includes the user_id and report_ref_time (as epoch).
+        refresh_callback_data = f"refresh_weekly:{user_id}:{int(report_ref_time.timestamp())}"
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Refresh", callback_data=refresh_callback_data)]])
+
+        await update.message.reply_text(
+            f"Weekly report: {date_range_str}\n\n{report}",
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+    
+    async def refresh_weekly_report(self, update: Update, context: CallbackContext) -> None:
+        """Handle refresh callback to update the weekly report using the original reference time."""
+        query = update.callback_query
+        await query.answer()
+
+        # Callback data format: "refresh_weekly:<user_id>:<ref_timestamp>"
+        parts = query.data.split(":")
+        if len(parts) != 3:
+            return
+
+        user_id = parts[1]
+        ref_timestamp = int(parts[2])
+        report_ref_time = datetime.fromtimestamp(ref_timestamp)
+
+        report = self.plan_keeper.get_weekly_report(user_id, reference_time=report_ref_time)
+
+        # Recompute the date range.
+        monday = report_ref_time - timedelta(days=report_ref_time.weekday())
+        week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
+        if report_ref_time < week_start:
+            week_start = week_start - timedelta(days=7)
+        week_end = report_ref_time
+        date_range_str = f"{week_start.strftime('%Y-%m-%d %H:%M')} - {week_end.strftime('%Y-%m-%d %H:%M')}"
+
+        # Preserve the same refresh callback data.
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Refresh", callback_data=query.data)]])
+        await query.edit_message_text(
+            f"Weekly report for week: {date_range_str}\n\n{report}",
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
 
     async def plan_by_zana(self, update: Update, _context: CallbackContext) -> None:
         user_id = update.effective_user.id
