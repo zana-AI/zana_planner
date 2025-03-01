@@ -379,15 +379,15 @@ class PlannerAPI:
             if progress < 30:
                 diamond = "🔴"  # Red warning # diamond = "🔺"
             elif progress < 60:
-                diamond = "⚠️"
+                diamond = "🟠"
             elif progress < 90:
-                diamond = "🔄"
+                diamond = "🟡"
             else:
                 diamond = "✅"  # Green check
 
             report_lines.append(
-                f"{diamond} #{promise_id} **{data['text'].replace('_', ' ')}**:\n"
-                f"`[{progress_bar}] {progress}%` ({hours_spent:.1f}/{hours_promised:.1f} h)"
+                f"{diamond} #{promise_id} **{data['text'][:36].replace('_', ' ')}**:\n"
+                f" └──`[{progress_bar}] {progress:2d}%` ({hours_spent:.1f}/{hours_promised:.1f} h)"
             )
 
         return "\n".join(report_lines)
