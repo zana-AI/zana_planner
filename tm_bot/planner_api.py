@@ -312,7 +312,7 @@ class PlannerAPI:
 
         return f"Action for promise ID '{promise_id}' on date '{date}' deleted successfully."
 
-    def get_weekly_report(self, user_id):
+    def get_weekly_report(self, user_id, reference_time=None):
         """
         Generate a weekly report of promises and actions.
         Only includes actions from the current week (starting Monday at 3:00 AM)
