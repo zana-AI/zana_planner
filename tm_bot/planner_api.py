@@ -345,9 +345,14 @@ class PlannerAPI:
 
         # Process each action (assuming action is a list: [date, time, promise_id, time_spent]).
         for action in actions:
-            try:
-                action_dt = datetime.strptime(action[0] + " " + action[1], "%Y-%m-%d %H:%M")
-            except ValueError:
+            date_time_str = f"{action[0]} {action[1]}"
+            for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    action_dt = datetime.strptime(date_time_str, fmt)
+                    break
+                except ValueError:
+                    action_dt = None
+            if action_dt is None:
                 continue
 
             # Only count actions between week_start and the reference time.
