@@ -88,13 +88,14 @@ class PlannerAPI:
             # logger.error(f"Error in add_promise: {str(e)}")
             raise RuntimeError(f"Failed to add promise: {str(e)}")
 
-    def add_action(self, user_id, promise_id: str, time_spent: float) -> str:
+    def add_action(self, user_id, promise_id: str, time_spent: float, action_datetime: Optional[datetime] = None) -> str:
         """
         Add an action to actions.csv.
         Args:
            - user_id: The ID of the user.
            - promise_id: The ID of the promise.
            - time_spent: The amount of time spent on the action.
+           - action_datetime: The datetime of the action (optional, defaults to now).
         Returns: A message indicating the success or failure of the action addition.
         """
         # Validate the promise ID
@@ -105,9 +106,22 @@ class PlannerAPI:
         if time_spent <= 0:
             return "Time spent must be a positive number."
 
+            # If action_datetime is provided and is aware, use its timezone for now.
+        if action_datetime and isinstance(action_datetime, datetime):
+            now = datetime.now(tz=action_datetime.tzinfo) if action_datetime.tzinfo else datetime.now()
+        else:
+            now = datetime.now()
+
+            # Use action_datetime if provided and within the past day; otherwise, use now.
+        if action_datetime and isinstance(action_datetime, datetime) and (
+                now - timedelta(days=1) <= action_datetime <= now):
+            dt = action_datetime
+        else:
+            dt = now
+
         actions_file = self._get_file_path('actions.csv', user_id)
-        date = datetime.now().date()
-        time = datetime.now().strftime("%H:%M:%S")
+        date = dt.date()
+        time = dt.strftime("%H:%M:%S")
         with open(actions_file, 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([date, time, promise_id, time_spent])

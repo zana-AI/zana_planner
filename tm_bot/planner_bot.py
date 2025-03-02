@@ -219,13 +219,13 @@ class PlannerTelegramBot:
             # we want to update the third button (index 2) in that row.
             if len(keyboard) > 0 and len(keyboard[0]) >= 3:
                 try:
-                    ref_value = float(keyboard[0][2].callback_data.split(":")[2])  # Extract the current value from the button text
+                    ref_value = float(keyboard[0][1].callback_data.split(":")[2])  # Extract the current value from the button text
                     new_value = self.round_time(ref_value + value)  # Adjust the value
                     new_button = InlineKeyboardButton(
                         text=self.beautify_time(new_value),
                         callback_data=f"time_spent:{promise_id}:{new_value:.5f}"
                     )
-                    keyboard[0][2] = new_button
+                    keyboard[0][1] = new_button
                     # Optionally, you might also update the adjustment buttons in row 2
                     # to reflect the new value if desired.
                     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
@@ -241,7 +241,8 @@ class PlannerTelegramBot:
                 self.plan_keeper.add_action(
                     user_id=query.from_user.id,
                     promise_id=promise_id,
-                    time_spent=value
+                    time_spent=value,
+                    action_datetime=query.message.date
                 )
                 await query.edit_message_text(
                     text=f"Spent {self.beautify_time(value)} on #{promise_id}.",
