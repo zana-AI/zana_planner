@@ -130,3 +130,56 @@ def delete_confirmation_kb(promise_id: str) -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(buttons)
+
+def preping_kb(promise_id: str, snooze_min: int = 30):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Start ⏱",     callback_data=encode_cb("preping_start",  pid=promise_id)),
+            InlineKeyboardButton("Not today 🙅", callback_data=encode_cb("preping_skip",   pid=promise_id)),
+        ],
+        [
+            InlineKeyboardButton(f"Snooze {snooze_min}m", callback_data=encode_cb("preping_snooze", pid=promise_id, m=snooze_min)),
+            InlineKeyboardButton("More…",                  callback_data=encode_cb("open_time",      pid=promise_id)),
+        ],
+    ])
+
+def session_running_kb(session_id: str):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Pause ⏸️",  callback_data=encode_cb("session_pause",  s=session_id)),
+            InlineKeyboardButton("Finish ✅", callback_data=encode_cb("session_finish_open", s=session_id)),
+        ],
+        [
+            InlineKeyboardButton("+15m",      callback_data=encode_cb("session_plus",  s=session_id, v=0.25)),
+            InlineKeyboardButton("+30m",      callback_data=encode_cb("session_plus",  s=session_id, v=0.50)),
+            InlineKeyboardButton("Snooze 10m",callback_data=encode_cb("session_snooze",s=session_id, m=10)),
+        ],
+    ])
+
+def session_paused_kb(session_id: str):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Resume ▶️", callback_data=encode_cb("session_resume", s=session_id)),
+            InlineKeyboardButton("Finish ✅", callback_data=encode_cb("session_finish_open", s=session_id)),
+        ],
+        [
+            InlineKeyboardButton("Snooze 10m", callback_data=encode_cb("session_snooze", s=session_id, m=10)),
+        ],
+    ])
+
+def session_finish_confirm_kb(session_id: str, proposed_h: float):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(f"Looks right ✅ ({beautify_time(proposed_h)})",
+                                 callback_data=encode_cb("session_finish_confirm", s=session_id, v=proposed_h)),
+            InlineKeyboardButton("Adjust…",    callback_data=encode_cb("session_adjust_open", s=session_id, v=proposed_h)),
+        ]
+    ])
+
+def session_adjust_kb(session_id: str, base_h: float):
+    # e.g., chips: 15m · 30m · 45m · 1h  (+ Custom later)
+    chips = [0.25, 0.5, 0.75, 1.0]
+    row = [InlineKeyboardButton(beautify_time(h), callback_data=encode_cb("session_adjust_set", s=session_id, v=h)) for h in chips]
+    return InlineKeyboardMarkup([row])
+
+

@@ -18,10 +18,12 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 from llm_handler import LLMHandler
+from models.models import Action
 from services.planner_api_adapter import PlannerAPIAdapter
 from utils.time_utils import beautify_time, round_time, get_week_range
 from ui.messages import nightly_card_text, weekly_report_text, promise_report_text
-from ui.keyboards import nightly_card_kb, weekly_report_kb, time_options_kb, pomodoro_kb, delete_confirmation_kb
+from ui.keyboards import nightly_card_kb, weekly_report_kb, time_options_kb, pomodoro_kb, delete_confirmation_kb, \
+    session_adjust_kb, session_finish_confirm_kb, session_paused_kb, session_running_kb, preping_kb
 from cbdata import encode_cb, decode_cb
 from infra.scheduler import schedule_user_daily
 from zana_planner.tm_bot.utils_storage import create_user_directory
@@ -44,6 +46,7 @@ class PlannerTelegramBot:
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("promises", self.list_promises))  # list_promises command handler
         self.application.add_handler(CommandHandler("nightly", self.nightly_reminders))  # nightly command handler
+        self.application.add_handler(CommandHandler("morning", self.morning_reminders))
         self.application.add_handler(CommandHandler("weekly", self.weekly_report))  # weekly command handler
         self.application.add_handler(CommandHandler("zana", self.plan_by_zana))  # zana command handler
         self.application.add_handler(CommandHandler("pomodoro", self.pomodoro))  # pomodoro command handler
@@ -62,6 +65,46 @@ class PlannerTelegramBot:
         settings = self.plan_keeper.settings_repo.get_settings(user_id)
         settings.timezone = tzname
         self.plan_keeper.settings_repo.save_settings(settings)
+
+    def bootstrap_schedule_existing_users(self):
+        """
+        On bot startup, (re)schedule nightly jobs for all existing users found under root_dir.
+        Safe to run multiple times; it removes any prior job with the same name first.
+        """
+        jq = self.application.job_queue
+        for entry in os.listdir(self.root_dir):
+            user_path = os.path.join(self.root_dir, entry)
+            if not os.path.isdir(user_path):
+                continue
+            try:
+                user_id = int(entry)
+            except ValueError:
+                continue
+
+            tzname = self.get_user_timezone(user_id) or "UTC"
+
+            # make it idempotent
+            job_name = f"nightly-{user_id}"
+            for j in jq.get_jobs_by_name(job_name):
+                j.schedule_removal()
+
+            schedule_user_daily(
+                jq,
+                user_id=user_id,
+                tz=tzname,
+                callback=self.scheduled_morning_reminders_for_one,
+                hh=8, mm=30,
+                name_prefix="morning",
+            )
+
+            schedule_user_daily(
+                jq,
+                user_id=user_id,
+                tz=tzname,
+                callback=self.scheduled_nightly_reminders_for_one,
+                hh=22, mm=59,
+                name_prefix="nightly",
+            )
 
     async def cmd_settimezone(self, update, context):
         user_id = update.effective_user.id
@@ -123,7 +166,6 @@ class PlannerTelegramBot:
             reply_markup=ReplyKeyboardRemove(),
         )
 
-    # Revised callback handler for promise-related actions
     async def handle_promise_callback(self, update: Update, context: CallbackContext) -> None:
         """
         Handle the callback when a user selects or adjusts the time spent, or performs other actions on promises.
@@ -198,7 +240,7 @@ class PlannerTelegramBot:
 
             )
             return
-        
+
         elif action == "report_promise":
             # Generate a report for the promise
             report = self.plan_keeper.get_promise_report(query.from_user.id, promise_id)
@@ -255,50 +297,316 @@ class PlannerTelegramBot:
                 # If 0 is selected, consider it a cancellation and delete the message.
                 await query.delete_message()
 
+        elif action == "show_more":
+            user_id = update.effective_user.id
+            tzname = self.get_user_timezone(user_id)
+            user_now = datetime.now(ZoneInfo(tzname))
+
+            # read offset & batch (defaults)
+            try:
+                offset = int(cb.get("o") or 0)
+            except Exception:
+                offset = 0
+            try:
+                batch = int(cb.get("n") or 5)
+            except Exception:
+                batch = 5
+
+            ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id, user_now, n=1000)
+            total = len(ranked)
+            if offset >= total:
+                await query.edit_message_text("✅ That’s all for today.")
+                return
+
+            # slice the next chunk
+            chunk = ranked[offset: offset + batch]
+
+            # send items (each with time options)
+            for p in chunk:
+                weekly_h = float(getattr(p, "hours_per_week", 0.0) or 0.0)
+                base_day_h = weekly_h / 7.0
+                last = self.plan_keeper.get_last_action_on_promise(user_id, p.id)
+                curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
+
+                kb = time_options_kb(p.id, curr_h=curr_h, base_day_h=base_day_h, weekly_h=weekly_h)
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"How much time did you spend today on *{p.text}*?",
+                    reply_markup=kb,
+                    parse_mode="Markdown",
+                )
+
+            # update the header's button (this callback came from that message)
+            new_offset = offset + len(chunk)
+            remaining = max(0, total - new_offset)
+            if remaining > 0:
+                await query.edit_message_reply_markup(
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton(
+                            f"Show more ({remaining})",
+                            callback_data=encode_cb("show_more", o=new_offset, n=batch)
+                        )
+                    ]])
+                )
+            else:
+                await query.edit_message_text("✅ That’s all for today.")
+            return
+
+        # in handle_promise_callback
+        elif action == "session_start":
+            user_id = update.effective_user.id
+            # If SessionsService exists:
+            # sess = self.plan_keeper.sessions_service.start(user_id, promise_id)
+            await query.answer("Timer started")
+            # (optional) edit message to show a “running” status or send a new session card
+            return
+
+        cb = decode_cb(query.data)
+        a, p, s = cb.get("a"), cb.get("p"), cb.get("s")
+        v = cb.get("v")
+        m = cb.get("m")  # minutes for snooze
+        user_id = query.from_user.id
+        user_now, _tzname = self._get_user_now(user_id)
+
+        # === Pre-ping ===
+        if a == "preping_start":
+            # create session, start ticker, swap to running UI
+            sess = self.plan_keeper.sessions_service.start(user_id, p)  # returns Session (with session_id)
+            # persist message_id so ticker can edit this message
+            await query.edit_message_text(
+                text=self._session_text(sess, elapsed="00:00:00"),
+                reply_markup=session_running_kb(sess.session_id),
+                parse_mode="Markdown",
+            )
+            self._schedule_session_ticker(sess)  # run_repeating every 5–15s
+            return
+
+        if a == "preping_skip":
+            # mark skip (optional: append Action with 0h & action="skip_today")
+            self.plan_keeper.actions_repo.append_action(
+                Action(user_id=user_id, promise_id=p, action="skip", time_spent=0.0, at=user_now)
+            )
+            await query.edit_message_text("Noted. We’ll skip this one today. ✅")
+            return
+
+        if a == "preping_snooze":
+            minutes = int(m or 30)
+            when = user_now + timedelta(minutes=minutes)
+            self._schedule_one_pre_ping(user_id, p, when)  # helper added below
+            await query.edit_message_text(f"#{p.title()} snoozed for {minutes}m. ⏰")
+            return
+
+        if a == "open_time":
+            promise = self.plan_keeper.get_promise(user_id, p)
+            weekly_h = self._hours_per_week_of(promise)
+            base_day_h = weekly_h / 7.0
+            curr_h = self._last_hours_or(user_id, p, fallback=base_day_h)
+
+            kb = time_options_kb(
+                promise_id=p,
+                curr_h=curr_h,
+                base_day_h=base_day_h,
+                weekly_h=weekly_h,
+                show_timer=True,  # if you want the Start ⏱ row
+            )
+            await query.edit_message_reply_markup(reply_markup=kb)
+            return
+
+        # === Session lifecycle ===
+        if a == "session_pause":
+            sess = self.plan_keeper.sessions_service.pause(user_id, s)
+            self._stop_ticker(s)  # stop repeating job
+            await query.edit_message_reply_markup(reply_markup=session_paused_kb(s))
+            return
+
+        if a == "session_resume":
+            sess = self.plan_keeper.sessions_service.resume(user_id, s)
+            self._schedule_session_ticker(sess)
+            await query.edit_message_reply_markup(reply_markup=session_running_kb(s))
+            return
+
+        if a == "session_plus":
+            # bump the “effective elapsed” accounting inside the session
+            self.plan_keeper.sessions_service.bump(user_id, s, float(v or 0.0))  # implement optional bump()
+            await query.answer(f"Added {beautify_time(float(v))}")
+            return
+
+        if a == "session_snooze":
+            minutes = int(m or 10)
+            self.plan_keeper.sessions_service.pause(user_id, s)
+            self._stop_ticker(s)
+            self._schedule_session_resume(user_id, s, user_now + timedelta(minutes=minutes))
+            await query.edit_message_reply_markup(reply_markup=session_paused_kb(s))
+            await query.answer(f"Snoozed {minutes}m")
+            return
+
+        # === Finish flow ===
+        if a == "session_finish_open":
+            sess = self.plan_keeper.sessions_service.peek(user_id, s)  # read without finishing
+            proposed_h = self._session_effective_hours(sess)
+            await query.edit_message_reply_markup(reply_markup=session_finish_confirm_kb(s, proposed_h))
+            return
+
+        if a == "session_finish_confirm":
+            logged = self.plan_keeper.sessions_service.finish(user_id, s, override_hours=float(v))
+            self._stop_ticker(s)
+            await query.edit_message_text(f"Logged {beautify_time(float(v))} for *{logged.promise_id}*. ✅",
+                                          parse_mode="Markdown")
+            return
+
+        if a == "session_adjust_open":
+            await query.edit_message_reply_markup(reply_markup=session_adjust_kb(s, base_h=float(v or 0.5)))
+            return
+
+        if a == "session_adjust_set":
+            logged = self.plan_keeper.sessions_service.finish(user_id, s, override_hours=float(v))
+            self._stop_ticker(s)
+            await query.edit_message_text(f"Logged {beautify_time(float(v))}. ✅")
+            return
+
+    def _get_user_now(self, user_id: int):
+        """Return (now_in_user_tz, tzname)."""
+        tzname = self.get_user_timezone(user_id) or "UTC"
+        return datetime.now(ZoneInfo(tzname)), tzname
+
+    @staticmethod
+    def _hours_per_week_of(promise) -> float:
+        """Extract hours_per_week whether promise is a dict or a dataclass."""
+        try:
+            return float(getattr(promise, "hours_per_week"))
+        except Exception:
+            return float((promise or {}).get("hours_per_week", 0.0) or 0.0)
+
+    def _last_hours_or(self, user_id: int, promise_id: str, fallback: float) -> float:
+        last = self.plan_keeper.get_last_action_on_promise(user_id, promise_id)
+        try:
+            return float(getattr(last, "time_spent", fallback) or fallback)
+        except Exception:
+            return fallback
+
+    def _schedule_one_pre_ping(self, user_id: int, promise_id: str, when_dt: datetime):
+        """Schedule a single pre-ping message (Start / Not today / Snooze / More…)."""
+        name = f"preping-{user_id}-{promise_id}-{int(when_dt.timestamp())}"
+        # remove any previous job with the same name to keep idempotent
+        for j in self.application.job_queue.get_jobs_by_name(name):
+            j.schedule_removal()
+        self.application.job_queue.run_once(
+            self.pre_ping_one, when=when_dt,
+            data={"user_id": user_id, "promise_id": promise_id},
+            name=name,
+        )
+
+    def _schedule_session_ticker(self, sess):  # TODO: implement later
+        return
+
+    def _stop_ticker(self, session_id: str):  # TODO: implement later
+        return
+
+    def _session_text(self, sess, elapsed: str) -> str:
+        return (f"⏱ *Session for #{sess.promise_id}: {self.plan_keeper.promises_repo.get_promise(sess.user_id, sess.promise_id).text}*"
+                f"\nStarted {sess.started_at.strftime('%H:%M')} | Elapsed: {elapsed}")
+
+    async def pre_ping_one(self, context):
+        """Job callback: send the pre-ping card."""
+        user_id = context.job.data["user_id"]
+        promise_id = context.job.data["promise_id"]
+        # resolve promise text
+        p = self.plan_keeper.get_promise(user_id, promise_id)
+        title = getattr(p, "text", None) or (p.get("text") if isinstance(p, dict) else f"#{promise_id}")
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"*{title}* — ready to start?",
+            reply_markup=preping_kb(promise_id),  # from ui.keyboards
+            parse_mode="Markdown",
+        )
+
     async def send_nightly_reminders(self, context: CallbackContext, user_id=None) -> None:
         """
         Send nightly reminders to users about their promises using the new services.
         """
         # Determine which user directories to use.
-        if user_id is not None:
-            user_dirs = [str(user_id)]
-        else:
-            user_dirs = [d for d in os.listdir(self.root_dir) if os.path.isdir(os.path.join(self.root_dir, d))]
-        
-        for user_id in user_dirs:
-            try:
-                # Get top 3 promises for nightly reminders
-                top_promises = self.plan_keeper.reminders_service.select_nightly_top(int(user_id), datetime.now(), 3)
-                
-                if not top_promises:
-                    continue
+        user_id_int = int(user_id)
+        tzname = self.get_user_timezone(user_id_int)
+        user_now = datetime.now(ZoneInfo(tzname))
 
-                # Create nightly reminder message
-                user_id_int = int(user_id)
-                await context.bot.send_message(
-                    chat_id=user_id_int,
-                    text="🌙 *Nightly Reminders*\nHere are today’s top 3:",
-                    parse_mode='Markdown'
-                )
+        # get a bigger ranked list, then slice
+        ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id_int, user_now, n=1000)
+        if not ranked:
+            return
 
-                for p in top_promises:
-                    print(f"working on promise {p.id}")
-                    # sensible defaults for the chips
-                    hours_per_week = (getattr(p, "hours_per_week", 0) or 0)
-                    last = self.plan_keeper.get_last_action_on_promise(user_id_int, p.id)
-                    last_hours = float(getattr(last, "time_spent", 0.0) or 0.0)
+        top3, rest = ranked[:3], ranked[3:]
 
-                    kb = time_options_kb(p.id, last_hours, hours_per_week)
-
-                    await context.bot.send_message(
-                        chat_id=user_id_int,
-                        text=f"How much time did you spend today on: \n*{p.id}: {p.text.replace('_', ' ')}*?",
-                        reply_markup=kb,
-                        parse_mode='Markdown'
+        # (optional) header message with "Show more"
+        if rest:
+            await context.bot.send_message(
+                chat_id=user_id_int,
+                text="🌙 *Nightly reminders*\nHere are today’s top 3. Tap “Show more” for additional suggestions.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        f"Show more ({len(rest)})",
+                        callback_data=encode_cb("show_more", o=3, n=5)  # offset=3, batch=5
                     )
+                ]]),
+                parse_mode="Markdown",
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=user_id_int,
+                text="🌙 *Nightly reminders*",
+                parse_mode="Markdown",
+            )
 
-            except Exception as e:
-                logger.error(f"Failed to send reminder to user {user_id}: {str(e)}")
+        # send 3 separate messages with time options
+        for p in top3:
+            weekly_h = float(getattr(p, "hours_per_week", 0.0) or 0.0)
+            base_day_h = weekly_h / 7.0
+            last = self.plan_keeper.get_last_action_on_promise(user_id_int, p.id)
+            curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
+
+            kb = time_options_kb(p.id, curr_h=curr_h, base_day_h=base_day_h, weekly_h=weekly_h)
+            await context.bot.send_message(
+                chat_id=user_id_int,
+                text=f"How much time did you spend today on *{p.text}*?",
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+
+    async def send_morning_reminders(self, context, user_id: int):
+        user_id = int(user_id)
+        tzname = self.get_user_timezone(user_id) or "UTC"
+        user_now = datetime.now(ZoneInfo(tzname))
+
+        # rank a larger list once, then slice top 3 (reuse your reminders_service)
+        ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id, user_now, n=1000)
+        if not ranked:
+            return
+
+        top3 = ranked[:3]
+
+        # header (different copy than nightly)
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "☀️ *Morning Focus*\n"
+                "Here are the top 3 to prioritize today. Pick a quick time or adjust, then get rolling."
+            ),
+            parse_mode="Markdown",
+        )
+
+        # per-promise cards with choices
+        for p in top3:
+            weekly_h = float(getattr(p, "hours_per_week", 0.0) or 0.0)
+            base_day_h = weekly_h / 7.0
+
+            last = self.plan_keeper.get_last_action_on_promise(user_id, p.id)
+            curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
+
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"🌸 What about *{p.text}* today? Ready to start?",
+                reply_markup=preping_kb(p.id, snooze_min=30),
+                parse_mode="Markdown",
+            )
 
     async def start(self, update: Update, _context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
@@ -309,8 +617,17 @@ class PlannerTelegramBot:
         else:
             await update.message.reply_text('Hi! Welcome back.')
 
-        # (Re)Schedule this user's nightly job at 22:59 in their timezone
         tzname = self.get_user_timezone(user_id)
+        schedule_user_daily(
+            self.application.job_queue,
+            user_id=user_id,
+            tz=tzname,
+            callback=self.scheduled_morning_reminders_for_one,
+            hh=8, mm=30,
+            name_prefix="morning",
+        )
+
+        # (Re)Schedule this user's nightly job at 22:59 in their timezone
         schedule_user_daily(
             self.application.job_queue,
             user_id,
@@ -322,23 +639,14 @@ class PlannerTelegramBot:
         )
         logger.info(f"Scheduled nightly reminders at 22:59 {tzname} for user {user_id}")
 
-        # self.application.job_queue.run_daily(
-        #     self.test_nightly_message,
-        #     time=time(11, 45, tzinfo=ZoneInfo(tzname)),
-        #     days=(0, 1, 2, 3, 4, 5, 6),
-        #     name=job_name,
-        #     data={"user_id": user_id},
-        # )
-        # await update.message.reply_text(f"✅ Scheduled a test auto message")
-
-    # async def test_nightly_message(self, context: CallbackContext) -> None:
-    #     user_id = context.job.data["user_id"]
-    #     await context.bot.send_message(chat_id=user_id, text="🌙 Hello from nightly job!")
-
     async def scheduled_nightly_reminders_for_one(self, context: CallbackContext) -> None:
         user_id = context.job.data["user_id"]
         logger.info(f"Running scheduled nightly reminder for user {user_id}")
         await self.send_nightly_reminders(context, user_id=user_id)
+
+    async def scheduled_morning_reminders_for_one(self, context):
+        user_id = context.job.data["user_id"]
+        await self.send_morning_reminders(context, user_id=user_id)
 
     async def list_promises(self, update: Update, _context: CallbackContext) -> None:
         """Send a message listing all promises for the user."""
@@ -368,13 +676,16 @@ class PlannerTelegramBot:
         """Handle the /nightly command to send nightly reminders."""
         uses_id = update.effective_user.id
         await self.send_nightly_reminders(_context, user_id=uses_id)
-        await update.message.reply_text("Nightly reminders sent!")
+        # await update.message.reply_text("Nightly reminders sent!")
+
+    async def morning_reminders(self, update, context):
+        await self.send_morning_reminders(context, user_id=update.effective_user.id)
 
     async def weekly_report(self, update: Update, _context: CallbackContext) -> None:
         """Handle the /weekly command to send a weekly report with a refresh button."""
         user_id = update.effective_user.id
         report_ref_time = datetime.now()
-        
+
         # Get weekly summary using the new service
         summary = self.plan_keeper.reports_service.get_weekly_summary(user_id, report_ref_time)
         report = weekly_report_text(summary)
@@ -391,7 +702,7 @@ class PlannerTelegramBot:
             reply_markup=keyboard,
             parse_mode='Markdown'
         )
-    
+
     async def refresh_weekly_report(self, update: Update, context: CallbackContext) -> None:
         """Handle refresh callback to update the weekly report using the original reference time."""
         query = update.callback_query
@@ -423,7 +734,7 @@ class PlannerTelegramBot:
     async def plan_by_zana(self, update: Update, _context: CallbackContext) -> None:
         user_id = update.effective_user.id
         promises = self.plan_keeper.get_promises(user_id)
-        
+
         if not promises:
             await update.message.reply_text("You have no promises to report on.")
             return
@@ -562,8 +873,6 @@ class PlannerTelegramBot:
             return f"Error executing function: {str(e)}"
         return None
 
-
-
     def run(self):
         """Start the bot."""
         self.application.run_polling()
@@ -652,4 +961,5 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
 
     bot = PlannerTelegramBot(BOT_TOKEN, ROOT_DIR)
+    bot.bootstrap_schedule_existing_users()
     bot.run()

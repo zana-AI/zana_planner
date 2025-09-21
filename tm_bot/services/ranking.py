@@ -54,47 +54,77 @@ class RankingService:
         return score
 
     def _get_weekly_deficit(self, promise: Promise, actions: List, now: datetime) -> float:
-        """Calculate how behind the promise is this week."""
-        # Get week boundaries (Monday at 3 AM)
+        """Calculate how behind the promise is this week"""
+        tz = now.tzinfo  # may be None; if not None, we’ll localize naive datetimes to this tz
+
+        def as_tz(dt: datetime) -> datetime:
+            if tz is None:  # all naive: keep as-is
+                return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+            # now is aware -> make dt aware in same tz if it’s naive, or convert if aware in another tz
+            return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
+
+        # week start: Monday 03:00 in user's tz (or naive if tz is None)
         monday = now - timedelta(days=now.weekday())
         week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
         if now < week_start:
             week_start -= timedelta(days=7)
-        
-        # Calculate hours spent this week
-        weekly_actions = [a for a in actions 
-                         if a.promise_id == promise.id 
-                         and week_start <= a.at <= now]
-        hours_spent = sum(a.time_spent for a in weekly_actions)
-        
-        # Calculate expected hours by now (proportional to week progress)
-        week_progress = (now - week_start).total_seconds() / (7 * 24 * 3600)
-        expected_hours = promise.hours_per_week * week_progress
-        
-        # Return deficit (positive if behind, negative if ahead)
-        return max(0, expected_hours - hours_spent)
 
-    def _get_recency_decay(self, promise: Promise, actions: List, now: datetime) -> float:
+        # ensure both bounds are in the same tz domain as the actions we’ll compare to
+        now_local = as_tz(now)
+        week_start_local = as_tz(week_start)
+
+        # hours spent this week for this promise
+        weekly_actions = [
+            a for a in actions
+            if a.promise_id == promise.id and week_start_local <= as_tz(a.at) <= now_local
+        ]
+        hours_spent = sum(float(getattr(a, "time_spent", 0.0) or 0.0) for a in weekly_actions)
+
+        # expected by proportional progress through the week
+        week_seconds = 7 * 24 * 3600
+        progress = (now_local - week_start_local).total_seconds() / week_seconds
+        progress = max(0.0, min(1.0, progress))  # clamp
+
+        hpw = float(getattr(promise, "hours_per_week", 0.0) or 0.0)
+        expected_hours = hpw * progress
+
+        # positive if behind, 0 if on/ahead
+        return max(0.0, expected_hours - hours_spent)
+
+    def _get_recency_decay(self, promise: Promise, actions: list, now: datetime) -> float:
         """Calculate recency decay score (higher if not touched recently)."""
+        # keep only this promise's actions
         promise_actions = [a for a in actions if a.promise_id == promise.id]
-        
         if not promise_actions:
-            # Never worked on - high priority
-            return 3.0
-        
-        # Get most recent action
-        most_recent = max(promise_actions, key=lambda a: a.at)
-        days_since = (now - most_recent.at).days
-        
-        # Exponential decay: score decreases as days since last action increases
-        if days_since == 0:
-            return 0.0  # Worked on today
-        elif days_since == 1:
-            return 1.0  # Worked on yesterday
-        elif days_since <= 3:
-            return 2.0  # Worked on within 3 days
+            return 3.0  # never worked on -> high priority
+
+        # Normalize datetimes to the tz of 'now' (or keep naive if 'now' is naive)
+        tz = now.tzinfo
+
+        def as_tz(dt: datetime) -> datetime:
+            if tz is None:
+                # controller is using naive 'now' -> keep everything naive
+                return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+            # controller is using aware 'now' -> localize/convert actions to the same tz
+            return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
+
+        now_local = as_tz(now)
+        # Find most recent action in the same tz domain
+        most_recent = max(promise_actions, key=lambda a: as_tz(a.at))
+        last_at_local = as_tz(most_recent.at)
+
+        # Days since last action (>= 0)
+        delta_days = max(0, (now_local.date() - last_at_local.date()).days)
+
+        # Piecewise scoring (cap at 3.0)
+        if delta_days == 0:
+            return 0.0  # touched today
+        elif delta_days == 1:
+            return 1.0  # yesterday
+        elif delta_days <= 3:
+            return 2.0  # within 3 days
         else:
-            return min(3.0, days_since * 0.5)  # Cap at 3.0
+            return min(3.0, delta_days * 0.5)
 
     def _get_touched_today_penalty(self, promise: Promise, actions: List, now: datetime) -> float:
         """Calculate penalty for already working on this promise today."""
