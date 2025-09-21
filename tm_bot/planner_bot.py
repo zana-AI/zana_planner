@@ -2,12 +2,12 @@ import os
 import subprocess
 from urllib.parse import uses_relative
 import asyncio
-from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta, time
 import logging
 import logging.config
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -26,6 +26,11 @@ from cbdata import encode_cb, decode_cb
 from infra.scheduler import schedule_user_daily
 from zana_planner.tm_bot.utils_storage import create_user_directory
 
+try:
+    from zoneinfo import ZoneInfo
+    from timezonefinder import TimezoneFinder
+except ImportError:
+    print("Error: Make sure all packages are installed: `pip install timezonefinder tzdata`")
 
 class PlannerTelegramBot:
     def __init__(self, token: str, root_dir: str):
@@ -44,6 +49,8 @@ class PlannerTelegramBot:
         self.application.add_handler(CommandHandler("pomodoro", self.pomodoro))  # pomodoro command handler
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(CallbackQueryHandler(self.handle_promise_callback))
+        self.application.add_handler(CommandHandler("settimezone", self.cmd_settimezone))
+        self.application.add_handler(MessageHandler(filters.LOCATION, self.on_location_shared))
 
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings repository."""
@@ -56,6 +63,65 @@ class PlannerTelegramBot:
         settings.timezone = tzname
         self.plan_keeper.settings_repo.save_settings(settings)
 
+    async def cmd_settimezone(self, update, context):
+        user_id = update.effective_user.id
+        if context.args:
+            tzname = context.args[0]
+            # validate
+            try:
+                ZoneInfo(tzname)
+            except Exception:
+                await update.message.reply_text(
+                    "Invalid timezone. Example: /settimezone Europe/Paris"
+                )
+                return
+            # save
+            settings = self.plan_keeper.settings_repo.get_settings(user_id)
+            settings.timezone = tzname
+            self.plan_keeper.settings_repo.save_settings(settings)
+            # reschedule nightly/morning jobs if you have them
+            await self._reschedule_user_jobs(user_id, tzname)
+            await update.message.reply_text(f"Timezone set to {tzname}")
+            return
+
+        # Ask for location
+        kb = ReplyKeyboardMarkup(
+            [[KeyboardButton("Share location", request_location=True)]],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+            input_field_placeholder="Tap to share your location…",
+        )
+        await update.message.reply_text(
+            "Please share your location once so I can set your timezone.",
+            reply_markup=kb,
+        )
+
+    async def on_location_shared(self, update, context):
+        user_id = update.effective_user.id
+        loc = update.effective_message.location
+        if not loc:
+            return
+
+        tf = TimezoneFinder()
+        tzname = tf.timezone_at(lat=loc.latitude, lng=loc.longitude)
+        if not tzname:
+            await update.message.reply_text(
+                "Sorry, I couldn't detect your timezone. "
+                "You can set it manually, e.g. /settimezone Europe/Paris",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+
+        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        settings.timezone = tzname
+        self.plan_keeper.settings_repo.save_settings(settings)
+
+        # await self._reschedule_user_jobs(user_id, tzname)
+
+        await update.message.reply_text(
+            f"Timezone set to {tzname}. I’ll schedule reminders in your local time.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
     # Revised callback handler for promise-related actions
     async def handle_promise_callback(self, update: Update, context: CallbackContext) -> None:
