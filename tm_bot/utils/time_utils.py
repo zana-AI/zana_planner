@@ -1,6 +1,7 @@
 # utils_time.py
 from datetime import datetime, timedelta
 
+
 def beautify_time(hours: float) -> str:
     """Convert float hours to human-friendly text."""
     h = int(hours)
@@ -11,6 +12,7 @@ def beautify_time(hours: float) -> str:
         return f"{m} min"
     return f"{h}:{m:02d} hrs"
 
+
 def round_time(hours: float, step_min: int = 5) -> float:
     """Round float hours to the nearest step (default 5 minutes)."""
     if hours <= 0:
@@ -19,6 +21,7 @@ def round_time(hours: float, step_min: int = 5) -> float:
     m = int(round((hours - h) * 60))
     m = round(m / step_min) * step_min
     return h + m / 60.0
+
 
 def get_week_range(reference: datetime, week_start_hour: int = 3):
     """Return (week_start, week_end) given a reference datetime."""

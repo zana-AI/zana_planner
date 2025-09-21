@@ -6,8 +6,8 @@ from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import JsonOutputParser
 from func_utils import get_function_args_info
-from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
-from planner_api import PlannerAPI
+from schema import UserAction, LLMResponse  # Ensure this path is correct
+from services.planner_api_adapter import PlannerAPIAdapter
 # Load environment variables
 # load_dotenv()
 
@@ -47,12 +47,12 @@ class LLMHandler:
                 base_model_schemas += f"\t{field_name}(description= {field.description}, type= {str(field.annotation)})\n"
 
         api_schema_str = ""
-        api_schema = [func for func in dir(PlannerAPI) if
-                      callable(getattr(PlannerAPI, func)) and not func.startswith("_")]
+        api_schema = [func for func in dir(PlannerAPIAdapter) if
+                      callable(getattr(PlannerAPIAdapter, func)) and not func.startswith("_")]
 
         for api in api_schema:
             # Retrieve the actual function object
-            func_obj = getattr(PlannerAPI, api)
+            func_obj = getattr(PlannerAPIAdapter, api)
             api_schema_str += f"\t {api}({get_function_args_info(func_obj)}) \n"
 
         self.system_message_main = SystemMessage(content=(

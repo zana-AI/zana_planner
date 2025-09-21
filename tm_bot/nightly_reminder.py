@@ -1,7 +1,7 @@
 import os
 import time
 from datetime import datetime, timedelta
-from planner_api import PlannerAPI
+from services.planner_api_adapter import PlannerAPIAdapter
 
 def nightly(user_id: str, num_promises: int = 3):
     """
@@ -13,7 +13,7 @@ def nightly(user_id: str, num_promises: int = 3):
     """
     # Initialize the PlannerAPI
     root_dir = os.getenv("ROOT_DIR")
-    planner_api = PlannerAPI(root_dir)
+    planner_api = PlannerAPIAdapter(root_dir)
 
     # Get the user's promises
     promises = planner_api.get_promises(user_id)
