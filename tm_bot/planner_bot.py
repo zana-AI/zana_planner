@@ -3,7 +3,8 @@ import csv
 import subprocess
 from urllib.parse import uses_relative
 import asyncio
-from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, time
 import yaml
 import logging
 import logging.config
@@ -20,6 +21,7 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 from llm_handler import LLMHandler
 from planner_api import PlannerAPI
+from utils_time import beautify_time, round_time, get_week_range
 
 
 class PlannerTelegramBot:
@@ -39,40 +41,23 @@ class PlannerTelegramBot:
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(CallbackQueryHandler(self.handle_promise_callback))
 
-        # try:
-        #     # Schedule nightly reminders if job queue is available
-        #     if self.application.job_queue:
-        #         self.application.job_queue.run_daily(
-        #             self.send_nightly_reminders,
-        #             time=time(22, 59),  # 11:15 PM
-        #             days=(0, 1, 2, 3, 4, 5, 6)  # Run every day
-        #         )
-        #     else:
-        #         logger.warning("JobQueue not available. Install PTB with job-queue extra to use scheduled reminders.")
-        # except Exception as e:
-        #     logger.error(f"Failed to set up job queue: {str(e)}")
+    def get_user_timezone(self, user_id: int) -> str:
+        settings_path = os.path.join(ROOT_DIR, str(user_id), 'settings.yaml')
+        if os.path.exists(settings_path):
+            with open(settings_path, 'r') as f:
+                data = yaml.safe_load(f) or {}
+            return data.get('timezone', 'Europe/Paris')
+        return 'Europe/Paris'
 
-    def beautify_time(self, time: float) -> str:
-        """Convert a float time value in hours to a human-readable string."""
-        hours = int(time)
-        minutes = int((time - hours) * 60)
-        if hours == 0 and minutes == 0:
-            return "0 min"
-        elif hours == 0:
-            return f"{minutes} min"
-        else:  # show something like "3:45" for 3 hours and 45 minutes
-            return f"{hours}:{minutes:02d} hrs"
-
-    def round_time(self, time: float) -> float:
-        """Round a time value to the nearest 15 minutes."""
-        hours = int(time)
-        minutes = int((time - hours) * 60)
-        if hours <= 0 and minutes <= 0:
-            return 0
-        elif hours == 0:
-            return round(minutes / 5) * 5 / 60
-        else:
-            return hours + round(minutes / 5) * 5 / 60
+    def set_user_timezone(self, user_id: int, tzname: str) -> None:
+        settings_path = os.path.join(ROOT_DIR, str(user_id), 'settings.yaml')
+        data = {}
+        if os.path.exists(settings_path):
+            with open(settings_path, 'r') as f:
+                data = yaml.safe_load(f) or {}
+        data['timezone'] = tzname
+        with open(settings_path, 'w') as f:
+            yaml.safe_dump(data, f)
 
     # Example helper function to create the inline keyboard
     def create_time_options(self, promise_id: str, hpd_base: float, latest_record: float) -> InlineKeyboardMarkup:
@@ -87,10 +72,10 @@ class PlannerTelegramBot:
         """
         # First row buttons
         button_zero = InlineKeyboardButton("0 hrs", callback_data=f"time_spent:{promise_id}:0.00")
-        button_latest = InlineKeyboardButton(self.beautify_time(latest_record),
+        button_latest = InlineKeyboardButton(beautify_time(latest_record),
                                              callback_data=f"time_spent:{promise_id}:{latest_record:.5f}")
-        hpd_base_rounded = self.round_time(hpd_base)
-        button_default = InlineKeyboardButton(self.beautify_time(hpd_base_rounded),
+        hpd_base_rounded = round_time(hpd_base)
+        button_default = InlineKeyboardButton(beautify_time(hpd_base_rounded),
                                               callback_data=f"time_spent:{promise_id}:{hpd_base_rounded:.5f}")
 
         # Second row: adjustment buttons for the third option (latest_record)
@@ -220,9 +205,9 @@ class PlannerTelegramBot:
             if len(keyboard) > 0 and len(keyboard[0]) >= 3:
                 try:
                     ref_value = float(keyboard[0][1].callback_data.split(":")[2])  # Extract the current value from the button text
-                    new_value = self.round_time(ref_value + value)  # Adjust the value
+                    new_value = round_time(ref_value + value)  # Adjust the value
                     new_button = InlineKeyboardButton(
-                        text=self.beautify_time(new_value),
+                        text=beautify_time(new_value),
                         callback_data=f"time_spent:{promise_id}:{new_value:.5f}"
                     )
                     keyboard[0][1] = new_button
@@ -245,7 +230,7 @@ class PlannerTelegramBot:
                     action_datetime=query.message.date
                 )
                 await query.edit_message_text(
-                    text=f"Spent {self.beautify_time(value)} on #{promise_id}.",
+                    text=f"Spent {beautify_time(value)} on #{promise_id}.",
                     parse_mode='Markdown'
                 )
             else:
@@ -343,6 +328,40 @@ class PlannerTelegramBot:
         else:
             await update.message.reply_text('Hi! Welcome back.')
 
+        # (Re)Schedule this user’s nightly job at 22:59 in their timezone
+        tzname = self.get_user_timezone(user_id)
+        job_name = f"nightly-{user_id}"
+        # clear any previous job with same name
+        for j in self.application.job_queue.get_jobs_by_name(job_name):
+            j.schedule_removal()
+
+        self.application.job_queue.run_daily(
+            self.scheduled_nightly_reminders_for_one,
+            time=time(22, 59, tzinfo=ZoneInfo(tzname)),
+            days=(0, 1, 2, 3, 4, 5, 6),
+            name=job_name,
+            data={"user_id": user_id}
+        )
+        logger.info(f"Scheduled nightly reminders at 22:59 {tzname} for user {user_id}")
+
+        # self.application.job_queue.run_daily(
+        #     self.test_nightly_message,
+        #     time=time(11, 45, tzinfo=ZoneInfo(tzname)),
+        #     days=(0, 1, 2, 3, 4, 5, 6),
+        #     name=job_name,
+        #     data={"user_id": user_id},
+        # )
+        # await update.message.reply_text(f"✅ Scheduled a test auto message")
+
+    # async def test_nightly_message(self, context: CallbackContext) -> None:
+    #     user_id = context.job.data["user_id"]
+    #     await context.bot.send_message(chat_id=user_id, text="🌙 Hello from nightly job!")
+
+    async def scheduled_nightly_reminders_for_one(self, context: CallbackContext) -> None:
+        user_id = context.job.data["user_id"]
+        logger.info(f"Running scheduled nightly reminder for user {user_id}")
+        await self.send_nightly_reminders(context, user_id=user_id)
+
     async def list_promises(self, update: Update, _context: CallbackContext) -> None:
         """Send a message listing all promises for the user."""
         user_id = update.effective_user.id
@@ -380,12 +399,7 @@ class PlannerTelegramBot:
         report = self.plan_keeper.get_weekly_report(user_id, reference_time=report_ref_time)
 
         # Compute week boundaries based on report_ref_time.
-        monday = report_ref_time - timedelta(days=report_ref_time.weekday())
-        week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
-        if report_ref_time < week_start:
-            week_start = week_start - timedelta(days=7)
-        # For the header, we use the reference time as the end of the range.
-        week_end = report_ref_time
+        week_start, week_end = get_week_range(report_ref_time)
         date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
 
         # Create a refresh button whose callback data includes the user_id and report_ref_time (as epoch).
@@ -415,11 +429,7 @@ class PlannerTelegramBot:
         report = self.plan_keeper.get_weekly_report(user_id, reference_time=report_ref_time)
 
         # Recompute the date range.
-        monday = report_ref_time - timedelta(days=report_ref_time.weekday())
-        week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
-        if report_ref_time < week_start:
-            week_start = week_start - timedelta(days=7)
-        week_end = report_ref_time
+        week_start, week_end = get_week_range(report_ref_time)
         date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
 
         # Preserve the same refresh callback data.

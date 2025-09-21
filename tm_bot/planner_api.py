@@ -11,7 +11,8 @@ from schema import UserAction
 class PlannerAPI:
     def __init__(self, root_dir):
         if not os.path.exists(root_dir):
-            raise FileNotFoundError(f"Root directory does not exist: {root_dir}")
+            os.makedirs(root_dir, exist_ok=True)
+            print(f"Directory {root_dir} created")
         self.root_dir = root_dir
 
     def _get_file_path(self, filename, user_id):
