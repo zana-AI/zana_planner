@@ -331,7 +331,7 @@ class PlannerTelegramBot:
                 kb = time_options_kb(p.id, curr_h=curr_h, base_day_h=base_day_h, weekly_h=weekly_h)
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text=f"How much time did you spend today on *{p.text}*?",
+                    text=f"How much time did you spend today on *{p.text.replace('_', ' ')}*?",
                     reply_markup=kb,
                     parse_mode="Markdown",
                 )

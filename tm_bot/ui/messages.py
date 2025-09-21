@@ -70,7 +70,7 @@ def weekly_report_text(summary: dict) -> str:
             emoji = "✅"
         
         text += f"{emoji} #{promise_id} *{data['text'][:36].replace('_', ' ')}*:\n"
-        text += f" └── `[{progress_bar}] {progress:2d}%` ({hours_spent:.1f}/{hours_promised:.1f} h)\n\n"
+        text += f" └─ `[{progress_bar}] {progress:2d}%` ({hours_spent:.1f}/{hours_promised:.1f} h)\n"
     
     return text
 
