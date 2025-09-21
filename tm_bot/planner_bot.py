@@ -26,7 +26,7 @@ from ui.keyboards import nightly_card_kb, weekly_report_kb, time_options_kb, pom
     session_adjust_kb, session_finish_confirm_kb, session_paused_kb, session_running_kb, preping_kb
 from cbdata import encode_cb, decode_cb
 from infra.scheduler import schedule_user_daily
-from zana_planner.tm_bot.utils_storage import create_user_directory
+from utils_storage import create_user_directory
 
 try:
     from zoneinfo import ZoneInfo
