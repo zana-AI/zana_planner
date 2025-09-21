@@ -66,17 +66,10 @@ class PlannerTelegramBot:
         await query.answer()
 
         # Parse the callback data using new format
-        try:
-            cb_data = decode_cb(query.data)
-            action = cb_data.get("a")
-            promise_id = cb_data.get("p")
-            value = cb_data.get("v")
-        except Exception:
-            # Fallback to legacy format
-            data_parts = query.data.split(":")
-            action = data_parts[0] if len(data_parts) > 0 else None
-            promise_id = data_parts[1] if len(data_parts) > 1 else None
-            value = float(data_parts[2]) if len(data_parts) > 2 else None
+        cb = decode_cb(query.data)
+        action = cb.get("a")
+        promise_id = cb.get("p")
+        value = cb.get("v")
 
         if action == "pomodoro_start":
             await self.start_pomodoro_timer(query, context)
@@ -106,8 +99,8 @@ class PlannerTelegramBot:
             keyboard = list(query.message.reply_markup.inline_keyboard)  # Convert tuple to list
             # Add confirmation buttons to the second row
             confirm_buttons = [
-                InlineKeyboardButton("Yes (delete)", callback_data=f"confirm_delete:{promise_id}"),
-                InlineKeyboardButton("No (cancel)", callback_data=f"cancel_delete:{promise_id}")
+                InlineKeyboardButton("Yes (delete)", callback_data=encode_cb("confirm_delete", pid=promise_id)),
+                InlineKeyboardButton("No (cancel)", callback_data=encode_cb("cancel_delete", pid=promise_id)),
             ]
             # Keep the first row and add the confirmation buttons as a new row
             keyboard.append(confirm_buttons)
@@ -300,12 +293,12 @@ class PlannerTelegramBot:
         await query.answer()
 
         # Callback data format: "refresh_weekly:<user_id>:<ref_timestamp>"
-        parts = query.data.split(":")
-        if len(parts) != 3:
+        payload = decode_cb(query.data)
+        if payload.get("a") != "weekly_refresh":
             return
 
-        user_id = parts[1]
-        ref_timestamp = int(parts[2])
+        user_id = payload.get("p") or str(update.effective_user.id)
+        ref_timestamp = int(payload["t"])  # ensure keyboard passes 't'
         report_ref_time = datetime.fromtimestamp(ref_timestamp)
 
         report = self.plan_keeper.get_weekly_report(user_id, reference_time=report_ref_time)
@@ -315,10 +308,10 @@ class PlannerTelegramBot:
         date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
 
         # Preserve the same refresh callback data.
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Refresh", callback_data=query.data)]])
+        refresh_btn = InlineKeyboardButton("Refresh", callback_data=encode_cb("weekly_refresh", pid=str(user_id), t=str(ref_timestamp)))
         await query.edit_message_text(
             f"Weekly: {date_range_str}\n\n{report}",
-            reply_markup=keyboard,
+            reply_markup=InlineKeyboardMarkup([[refresh_btn]]),
             parse_mode='Markdown'
         )
 
