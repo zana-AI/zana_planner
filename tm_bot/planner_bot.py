@@ -64,6 +64,9 @@ class PlannerTelegramBot:
         """
         query = update.callback_query
         await query.answer()
+        cb = decode_cb(query.data)
+        current_s = cb.get("c")  # string or None
+        user_id = query.from_user.id
 
         # Parse the callback data using new format
         cb = decode_cb(query.data)
@@ -140,10 +143,32 @@ class PlannerTelegramBot:
             return
 
         # Handle time-related actions
-        if action == "update_time_spent" and value is not None:
-            # Update time adjustment - this would need more complex logic to update the keyboard
-            # For now, just acknowledge the action
-            await query.answer("Time adjusted")
+        elif action == "update_time_spent" and value is not None:
+            try:
+                curr = float(current_s or 0.0)
+            except Exception:
+                curr = 0.0
+            delta = float(value)
+            if curr <= 0.5:
+                new_curr = max(0.0, round_time(curr + delta, step_min=5))
+            else:
+                new_curr = round_time(curr + delta, step_min=15)
+
+            base_h=0
+            try:
+                old_cb_data = query.message.reply_markup.inline_keyboard[0][1].callback_data
+                old_cb_dict = old_cb_data.split("&")
+                old_time = [float(pd[2:]) for pd in old_cb_dict if pd.startswith("v=")]
+                base_h = old_time[0] if old_time else 0.0
+            except Exception:
+                pass
+
+            last = self.plan_keeper.get_last_action_on_promise(user_id, promise_id)
+            last_h = float(getattr(last, "time_spent", 0.0) or 0.0)
+
+            kb = time_options_kb(promise_id, new_curr, base_h)
+            await query.edit_message_reply_markup(reply_markup=kb)
+            await query.answer(f"{beautify_time(new_curr)} selected")
             return
 
         elif action == "time_spent" and value is not None:
@@ -183,15 +208,29 @@ class PlannerTelegramBot:
                     continue
 
                 # Create nightly reminder message
-                message_text = nightly_card_text(int(user_id), top_promises, datetime.now())
-                keyboard = nightly_card_kb(top_promises, has_more=False)
-
+                user_id_int = int(user_id)
                 await context.bot.send_message(
-                    chat_id=user_id,
-                    text=message_text,
-                    reply_markup=keyboard,
+                    chat_id=user_id_int,
+                    text="🌙 *Nightly Reminders*\nHere are today’s top 3:",
                     parse_mode='Markdown'
                 )
+
+                for p in top_promises:
+                    print(f"working on promise {p.id}")
+                    # sensible defaults for the chips
+                    hours_per_week = (getattr(p, "hours_per_week", 0) or 0)
+                    last = self.plan_keeper.get_last_action_on_promise(user_id_int, p.id)
+                    last_hours = float(getattr(last, "time_spent", 0.0) or 0.0)
+
+                    kb = time_options_kb(p.id, last_hours, hours_per_week)
+
+                    await context.bot.send_message(
+                        chat_id=user_id_int,
+                        text=f"How much time did you spend today on: \n*{p.id}: {p.text.replace('_', ' ')}*?",
+                        reply_markup=kb,
+                        parse_mode='Markdown'
+                    )
+
             except Exception as e:
                 logger.error(f"Failed to send reminder to user {user_id}: {str(e)}")
 

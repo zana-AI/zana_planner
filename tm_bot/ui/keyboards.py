@@ -53,45 +53,58 @@ def weekly_report_kb(ref_time) -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton("🔄 Refresh", callback_data=refresh_callback)]]
     return InlineKeyboardMarkup(buttons)
 
+def _adaptive_step_min(curr_h: float, base_day_h: float) -> int:
+    """Return an adaptive step in minutes based on current/base size."""
+    m = max(curr_h, base_day_h) * 60
+    if m < 20:   return 5
+    if m < 45:   return 10
+    if m < 120:  return 15
+    if m < 240:  return 30
+    return 60
 
-def time_options_kb(promise_id: str, hpd_base: float, latest_record: float) -> InlineKeyboardMarkup:
-    """Create time selection keyboard for promise actions."""
-    # First row buttons
-    button_zero = InlineKeyboardButton("0 hrs", callback_data=encode_cb("time_spent", promise_id, 0.0))
-    button_latest = InlineKeyboardButton(
-        beautify_time(latest_record),
-        callback_data=encode_cb("time_spent", promise_id, latest_record)
-    )
-    hpd_base_rounded = round_time(hpd_base)
-    button_default = InlineKeyboardButton(
-        beautify_time(hpd_base_rounded),
-        callback_data=encode_cb("time_spent", promise_id, hpd_base_rounded)
-    )
+def time_options_kb(
+    promise_id: str,
+    curr_h: float,
+    base_day_h: float,
+    weekly_h: float | None = None,   # pass hours_per_week if you have it
+) -> InlineKeyboardMarkup:
+    """
+    Row 1:  🙅 None | 🟢 <current> | 🏁 max
+    Row 2:  Skip (wk) | -X | +2X   (X is adaptive)
+    """
+    # Robust inputs
+    base_day_h = max(0.0, float(base_day_h or 0.0))
+    weekly_h   = float(weekly_h) if weekly_h is not None else base_day_h * 7.0
 
-    # Second row: adjustment buttons for the third option (latest_record)
-    adjust_minus = InlineKeyboardButton(
-        "-5 min",
-        callback_data=encode_cb("update_time_spent", promise_id, -5/60)
-    )
-    adjust_plus = InlineKeyboardButton(
-        "+10 min",
-        callback_data=encode_cb("update_time_spent", promise_id, 10/60)
-    )
-    remind_next_week = InlineKeyboardButton(
-        "Remind next week",
-        callback_data=encode_cb("remind_next_week", promise_id)
-    )
-    delete_promise = InlineKeyboardButton(
-        "Delete",
-        callback_data=encode_cb("delete_promise", promise_id)
-    )
-    report_button = InlineKeyboardButton(
-        "Report",
-        callback_data=encode_cb("report_promise", promise_id)
-    )
+    if curr_h <= 0.5:
+        curr_h = max(0.0, round_time(curr_h, step_min=5))
+    else:
+        curr_h = round_time(curr_h, step_min=15)
 
-    row1 = [button_zero, button_default, adjust_minus, adjust_plus]
-    row2 = [remind_next_week, delete_promise, report_button]
+    # Max: cap to 7h/day for big workloads; otherwise let small quotas reach their whole weekly target.
+    # e.g. deep work 35h/wk -> max 7h; call family 1h/wk -> max 1h
+    max_h = round_time(max(base_day_h, min(weekly_h, 7.0)), step_min=15)
+
+    # Adaptive delta
+    step_min   = _adaptive_step_min(curr_h, base_day_h)
+    delta_h    = step_min / 60.0
+    two_delta  = 2 * delta_h
+
+    # Row 1 — one-tap logs
+    row1 = [
+        InlineKeyboardButton("🙅 None",                callback_data=encode_cb("time_spent", pid=promise_id, value=0.0)),
+        InlineKeyboardButton(f"🟢 {beautify_time(curr_h)}",
+                                                     callback_data=encode_cb("time_spent", pid=promise_id, value=curr_h)),
+        InlineKeyboardButton(f"🏁 {beautify_time(max_h)}",
+                                                     callback_data=encode_cb("time_spent", pid=promise_id, value=max_h)),
+    ]
+
+    # Row 2 — skip week (use your existing action) + adaptive −X / +2X
+    row2 = [
+        InlineKeyboardButton("⏭️ Skip (wk)",          callback_data=encode_cb("remind_next_week", pid=promise_id)),
+        InlineKeyboardButton(f"-{int(step_min)}m",     callback_data=encode_cb("update_time_spent", pid=promise_id, value=-delta_h,  c=curr_h)),
+        InlineKeyboardButton(f"+{int(2*step_min)}m",   callback_data=encode_cb("update_time_spent", pid=promise_id, value= two_delta, c=curr_h)),
+    ]
 
     return InlineKeyboardMarkup([row1, row2])
 

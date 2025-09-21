@@ -136,8 +136,8 @@ class PlannerAPIAdapter:
         # Return in legacy UserAction format
         from schema import UserAction
         return UserAction(
-            action_date=action.at.date(),
-            action_time=action.at.time().strftime("%H:%M:%S"),
+            action_date=str(action.at.date()),
+            action_time=str(action.at.time().strftime("%H:%M:%S")),
             promise_id=action.promise_id,
             time_spent=action.time_spent
         )

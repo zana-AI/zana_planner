@@ -2,6 +2,7 @@
 from urllib.parse import urlencode, parse_qsl
 
 def encode_cb(action: str, pid: str | None = None, value: float | None = None, **extra) -> str:
+    """Encode callback data for use in Telegram inline keyboards."""
     d = {"a": action}
     if pid is not None:
         d["p"] = str(pid)
@@ -12,6 +13,7 @@ def encode_cb(action: str, pid: str | None = None, value: float | None = None, *
     return urlencode(d)
 
 def decode_cb(data: str) -> dict:
+    """Decode callback data from Telegram inline keyboards."""
     if "=" in data:  # new format
         q = dict(parse_qsl(data))
         out = {"a": q.get("a"), "p": q.get("p")}
