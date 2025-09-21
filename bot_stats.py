@@ -93,7 +93,7 @@ def main():
 
     # pretty print
     print(f"== Zana Planner usage stats ==")
-    print(f"Data dir:    {report['data_dir']}")
+    print(f"Data dir:    ***{report['data_dir'][-19:]}")
     print(f"Generated:   {report['generated_at']}")
     print()
     print(f"Total users: {report['total_users']}")
