@@ -26,14 +26,9 @@ class PlannerAPI:
             raise FileNotFoundError(f"Error accessing file path: {str(e)}")
 
     def add_promise(self,
-                    user_id,
-                    promise_text: str,
-                    num_hours_promised_per_week: float,
-                    recurring: bool = False,
-                    start_date: Optional[datetime] = None,
-                    end_date: Optional[datetime] = None,
-                    promise_angle_deg: int = 0,
-                    promise_radius: Optional[int] = 0
+                    user_id, promise_text: str, num_hours_promised_per_week: float, recurring: bool = False,
+                    start_date: Optional[datetime] = None, end_date: Optional[datetime] = None,
+                    promise_angle_deg: int = 0, promise_radius: Optional[int] = 0
                     ):
         """
         Add a new promise to promises.json.

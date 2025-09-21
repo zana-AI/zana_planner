@@ -1,5 +1,4 @@
 import os
-import csv
 import subprocess
 from urllib.parse import uses_relative
 import asyncio
@@ -22,6 +21,7 @@ from telegram.request import HTTPXRequest
 from llm_handler import LLMHandler
 from planner_api import PlannerAPI
 from utils_time import beautify_time, round_time, get_week_range
+from zana_planner.tm_bot.utils_storage import create_user_directory
 
 
 class PlannerTelegramBot:
@@ -322,7 +322,7 @@ class PlannerTelegramBot:
     async def start(self, update: Update, _context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
         user_id = update.effective_user.id
-        created = self.create_user_directory(user_id)
+        created = create_user_directory(ROOT_DIR,  user_id)
         if created:
             await update.message.reply_text('Hi! Welcome to plan keeper. Your user directory has been created.')
         else:
@@ -582,31 +582,7 @@ class PlannerTelegramBot:
             return f"Error executing function: {str(e)}"
         return None
 
-    def create_user_directory(self, user_id: int) -> bool:
-        """Create a directory for the user if it doesn't exist and initialize files."""
-        user_dir = os.path.join(ROOT_DIR, str(user_id))
-        if not os.path.exists(user_dir):
-            os.makedirs(user_dir)
-            self.initialize_files(user_dir)
-            return True
-        return False
 
-    def initialize_files(self, user_dir: str) -> None:
-        """Initialize the required files in the user's directory."""
-        promises_file = os.path.join(user_dir, 'promises.csv')
-        actions_file = os.path.join(user_dir, 'actions.csv')
-        settings_file = os.path.join(user_dir, 'settings.yaml')
-
-        # Create promises.csv and actions.csv with headers
-        for file_path in [promises_file, actions_file]:
-            with open(file_path, 'w', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(['id', 'content'])  # Example headers, adjust as needed
-
-        # Create settings.yaml with default settings
-        default_settings = {'setting1': 'value1', 'setting2': 'value2'}  # Example settings, adjust as needed
-        with open(settings_file, 'w') as file:
-            yaml.dump(default_settings, file)
 
     def run(self):
         """Start the bot."""
