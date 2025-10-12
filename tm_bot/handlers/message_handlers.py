@@ -372,6 +372,15 @@ class MessageHandlers:
         callback_handlers = CallbackHandlers(self.plan_keeper, self.application)
         await callback_handlers.send_morning_reminders(context, user_id)
     
+    async def scheduled_noon_cleanup_for_one(self, context: CallbackContext) -> None:
+        """Scheduled callback for noon cleanup of unread morning messages."""
+        user_id = context.job.data["user_id"]
+        logger.info(f"Running scheduled noon cleanup for user {user_id}")
+        
+        # Delegate to callback handlers which has the implementation
+        callback_handlers = CallbackHandlers(self.plan_keeper, self.application)
+        await callback_handlers.cleanup_unread_morning_messages(context, user_id)
+    
     async def scheduled_nightly_reminders_for_one(self, context: CallbackContext) -> None:
         """Scheduled callback for nightly reminders."""
         user_id = context.job.data["user_id"]

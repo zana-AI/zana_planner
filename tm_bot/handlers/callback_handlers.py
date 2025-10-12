@@ -69,6 +69,34 @@ class CallbackHandlers:
             data={"user_id": user_id, "promise_id": promise_id},
             name=name,
         )
+
+    async def cleanup_unread_morning_messages(self, context: CallbackContext, user_id: int) -> None:
+        """Clean up morning reminder messages that haven't been interacted with."""
+        try:
+            if 'morning_messages' not in self.application.bot_data:
+                return
+                
+            user_messages = self.application.bot_data['morning_messages'].get(user_id, [])
+            message_ids = [msg_info['message_id'] for msg_info in user_messages]
+            for msg_id in message_ids:
+                try:
+                    # Try to delete the message
+                    # If it was edited (user interacted), this will fail
+                    await context.bot.delete_message(
+                        chat_id=user_id,
+                        message_id=msg_id,
+                    )
+                    logger.info(f"Deleted unread morning message {msg_id} for user {user_id}")
+                except Exception as e:
+                    # Message was likely edited (user interacted) or already deleted
+                    logger.debug(f"Could not delete message {msg_id}: {str(e)}")
+            
+            # Clear stored message IDs for this user
+            if user_id in self.application.bot_data['morning_messages']:
+                del self.application.bot_data['morning_messages'][user_id]
+                
+        except Exception as e:
+            logger.error(f"Error during noon cleanup for user {user_id}: {str(e)}")
     
     def _schedule_session_ticker(self, sess):
         """Schedule session ticker."""
@@ -549,11 +577,14 @@ class CallbackHandlers:
         
         # header (different copy than nightly)
         header_message = get_message("morning_header", user_lang, date=user_now.strftime("%A"))
-        await context.bot.send_message(
+        header_msg = await context.bot.send_message(
             chat_id=user_id,
             text=header_message,
             parse_mode="Markdown",
         )
+        
+        # Store header message ID for cleanup
+        self._store_morning_message_id(user_id, header_msg.message_id, "header")
         
         # per-promise cards with choices
         for p in top3:
@@ -564,12 +595,31 @@ class CallbackHandlers:
             curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
             
             message = get_message("morning_question", user_lang, promise_text=p.text)
-            await context.bot.send_message(
+            msg = await context.bot.send_message(
                 chat_id=user_id,
                 text=message,
                 reply_markup=preping_kb(p.id, snooze_min=30),
                 parse_mode="Markdown",
             )
+            
+            # Store message ID for cleanup
+            self._store_morning_message_id(user_id, msg.message_id, p.id)
+
+    def _store_morning_message_id(self, user_id: int, message_id: int, promise_id: str) -> None:
+        """Store morning message ID for later cleanup."""
+        # Store in a simple file or database
+        # For now, we'll use a simple approach with bot_data
+        if 'morning_messages' not in self.application.bot_data:
+            self.application.bot_data['morning_messages'] = {}
+        
+        if user_id not in self.application.bot_data['morning_messages']:
+            self.application.bot_data['morning_messages'][user_id] = []
+        
+        self.application.bot_data['morning_messages'][user_id].append({
+            'message_id': message_id,
+            'promise_id': promise_id,
+            'sent_at': datetime.now()
+        })
 
     async def _handle_refresh_weekly(self, query, context: CallbackContext, user_lang: Language):
         """Handle weekly report refresh."""

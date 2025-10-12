@@ -2,7 +2,7 @@
 Refactored Telegram bot for the planner application.
 This version uses separated concerns with internationalization support.
 """
-
+import datetime
 import os
 import subprocess
 import logging
@@ -111,22 +111,25 @@ class PlannerTelegramBot:
 
             # Schedule morning reminders
             schedule_user_daily(
-                jq,
-                user_id=user_id,
-                tz=tzname,
+                jq, user_id=user_id, tz=tzname,
                 callback=self.message_handlers.scheduled_morning_reminders_for_one,
-                hh=8, mm=30,
-                name_prefix="morning",
+                hh=8, mm=30, name_prefix="morning",
+            )
+
+            now = datetime.datetime.now()
+            # Schedule noon cleanup 
+            schedule_user_daily(
+                jq, user_id=user_id, tz=tzname,
+                callback=self.message_handlers.scheduled_noon_cleanup_for_one,
+                # hh=23, mm=2, name_prefix="noon_cleanup",
+                hh=now.hour, mm=now.minute + 1, name_prefix="noon_cleanup",
             )
 
             # Schedule nightly reminders
             schedule_user_daily(
-                jq,
-                user_id=user_id,
-                tz=tzname,
+                jq, user_id=user_id, tz=tzname,
                 callback=self.message_handlers.scheduled_nightly_reminders_for_one,
-                hh=22, mm=59,
-                name_prefix="nightly",
+                hh=22, mm=59, name_prefix="nightly",
             )
 
     def run(self) -> None:
