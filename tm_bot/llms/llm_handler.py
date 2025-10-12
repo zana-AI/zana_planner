@@ -108,8 +108,11 @@ class LLMHandler:
                 return self.parser.parse(response.content)
             except Exception as e:
                 logger.error(f"Error parsing response: {str(e)}")
-                return {"error": "parsing_error", "function_call": "handle_error", 
-                        "response_to_user": f"LLM Error: {str(e)}"}
+                # Return the raw response content wrapped in the expected format
+                return {
+                    "function_call": "handle_error", 
+                    "response_to_user": response.content
+                }
 
         except Exception as e:
             logger.error(f"Unexpected error in get_response: {str(e)}")
@@ -135,7 +138,8 @@ class LLMHandler:
                 return self.parser.parse(response.content)
             except Exception as e:
                 logger.error(f"Error parsing response: {str(e)}")
-                return f"LLM Error: {str(e)}"
+                # Return the raw response content directly
+                return response.content
 
         except Exception as e:
             logger.error(f"Unexpected error in get_response: {str(e)}")

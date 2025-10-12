@@ -816,7 +816,7 @@ class PlannerTelegramBot:
                 logger.error(f"Validation error for user {user_id}: {str(e)}")
             except Exception as e:
                 await update.message.reply_text(
-                    f"❌ Sorry, I couldn't complete that action. Please try again. Error: {str(e)}",
+                    f"❌ Sorry, I couldn't complete this action. Please try again.\nError: {str(e)}",
                     parse_mode='Markdown'
                 )
                 logger.error(f"Error processing request for user {user_id}: {str(e)}")
