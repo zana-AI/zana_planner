@@ -62,6 +62,7 @@ class ActionsRepository:
             )
             if df.empty:
                 return []
+            df = df.dropna(how="any")  # drop malformed lines silently
 
             # Combine date + time to a timestamp (naive)
             dt = pd.to_datetime(df["date"] + " " + df["time"], errors="coerce")

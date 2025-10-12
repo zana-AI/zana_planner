@@ -11,7 +11,7 @@ from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
 
-from i18n.translations import get_message, get_user_language, Language
+from handlers.messages_store import get_message, get_user_language, Language
 from services.planner_api_adapter import PlannerAPIAdapter
 from models.models import Action
 from utils.time_utils import beautify_time, round_time

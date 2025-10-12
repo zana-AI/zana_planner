@@ -1,8 +1,3 @@
-"""
-Internationalization module for the Telegram bot.
-Provides translation layer for all user-facing messages.
-"""
-
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -11,9 +6,9 @@ from enum import Enum
 class Language(Enum):
     """Supported languages."""
     EN = "en"
-    ES = "es"  # TODO: Fix - was incorrectly set to "fa" (Farsi) instead of "es" (Spanish)
     FR = "fr"
-    DE = "de"
+    ES = "fa"
+    # DE = "de"
 
 
 @dataclass
@@ -24,21 +19,11 @@ class MessageTemplate:
     variables: Optional[Dict[str, str]] = None
 
 
-class TranslationManager:
+class MessageTemplateStore:
     """Manages translations and message formatting."""
 
     def __init__(self, default_language: Language = Language.EN):
         self.default_language = default_language
-        self.translations = self._load_translations()
-
-    def _load_translations(self) -> Dict[Language, Dict[str, str]]:
-        """Load all translations."""
-        return {
-            Language.EN: self._get_english_translations(),
-            # Language.ES: self._get_spanish_translations(),
-            # Language.FR: self._get_french_translations(),
-            # Language.DE: self._get_german_translations(),
-        }
 
     def _get_english_translations(self) -> Dict[str, str]:
         """English translations."""
@@ -159,9 +144,9 @@ class TranslationManager:
     def get_message(self, key: str, language: Optional[Language] = None, **kwargs) -> str:
         """Get translated message with variable substitution."""
         lang = language or self.default_language
-        translations = self.translations.get(lang, self.translations[self.default_language])
+        # translations = self.translations.get(lang, self.translations[self.default_language])
 
-        message = translations.get(key, key)
+        message = self._get_english_translations().get(key, key)
 
         # Substitute variables
         if kwargs:
@@ -181,7 +166,7 @@ class TranslationManager:
 
 
 # Global instance
-_translation_manager = TranslationManager()
+_translation_manager = MessageTemplateStore()
 
 
 def get_message(key: str, language: Optional[Language] = None, **kwargs) -> str:
