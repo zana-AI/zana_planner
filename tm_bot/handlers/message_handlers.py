@@ -355,18 +355,18 @@ class MessageHandlers:
     
     async def _reschedule_user_jobs(self, user_id: int, tzname: str) -> None:
         """Reschedule user jobs with new timezone."""
-        # Implementation for rescheduling jobs
+        # TODO: Implementation for rescheduling jobs
         pass
     
     async def send_nightly_reminders(self, context: CallbackContext, user_id: int = None) -> None:
         """Send nightly reminders to users about their promises."""
-        # This method will be implemented in the callback handlers module
+        # TODO: This method will be implemented in the callback handlers module
         # as it requires access to callback handling logic
         pass
     
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""
-        # This method will be implemented in the callback handlers module
+        # TODO: This method will be implemented in the callback handlers module
         # as it requires access to callback handling logic
         pass
     

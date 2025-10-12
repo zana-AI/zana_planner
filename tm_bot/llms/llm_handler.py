@@ -83,6 +83,7 @@ class LLMHandler:
             f"Here are the list of API functions available:\n [{api_schema_str}]\n"
         ))
 
+        # TODO: Uncomment these lines to enable chat history with system messages
         # self.chat_history[user_id] = ChatMessageHistory()
         # self.chat_history[user_id].add_message(system_message_main)
         # self.chat_history[user_id].add_message(system_message_api)
@@ -90,6 +91,7 @@ class LLMHandler:
     def get_response_api(self, user_message: str, user_id: str) -> dict:
         try:
             if user_id not in self.chat_history:
+                # TODO: Uncomment to enable per-user context initialization
                 # self._initialize_context(user_id)
                 self.chat_history[user_id] = ChatMessageHistory()
 

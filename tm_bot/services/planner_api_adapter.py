@@ -133,8 +133,9 @@ class PlannerAPIAdapter:
         if not action:
             return None
         
+        # TODO: Fix import - should be from llms.schema import UserAction
         # Return in legacy UserAction format
-        from schema import UserAction
+        from llms.schema import UserAction  # TODO: Fix import path
         return UserAction(
             action_date=str(action.at.date()),
             action_time=str(action.at.time().strftime("%H:%M:%S")),

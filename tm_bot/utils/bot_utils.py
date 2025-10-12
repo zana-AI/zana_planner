@@ -195,9 +195,9 @@ class BotUtils:
     
     @staticmethod
     def calculate_effective_hours(session) -> float:
-        """Calculate effective hours for a session. TODO: implement proper calculation."""
-        # Placeholder implementation
-        return 0.5
+        """Calculate effective hours for a session."""
+        # TODO: implement proper session effective hours calculation
+        return 0.5  # Placeholder implementation
     
     @staticmethod
     def parse_callback_data(query_data: str) -> Dict[str, Any]:

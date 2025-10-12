@@ -67,6 +67,7 @@ def time_options_kb(
     curr_h: float,
     base_day_h: float,
     weekly_h: float | None = None,   # pass hours_per_week if you have it
+    show_timer: bool = False,  # TODO: Implement show_timer functionality
 ) -> InlineKeyboardMarkup:
     """
     Row 1:  🙅 None | 🟢 <current> | 🏁 max

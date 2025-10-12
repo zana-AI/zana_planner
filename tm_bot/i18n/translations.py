@@ -11,7 +11,7 @@ from enum import Enum
 class Language(Enum):
     """Supported languages."""
     EN = "en"
-    ES = "fa"
+    ES = "es"  # TODO: Fix - was incorrectly set to "fa" (Farsi) instead of "es" (Spanish)
     FR = "fr"
     DE = "de"
 
@@ -460,7 +460,7 @@ class TranslationManager:
 
     def get_user_language(self, user_id: int) -> Language:
         """Get user's preferred language. For now, returns default language."""
-        # TODO: Implement user language preference storage
+        # TODO: Implement user language preference storage in settings repository
         return self.default_language
 
 

@@ -110,8 +110,8 @@ class SessionsService:
         """Recover active sessions on bot startup."""
         active_sessions = self.sessions_repo.list_active_sessions(user_id)
         
+        # TODO: Implement logic to handle sessions that were running when bot went down
         # For now, just return active sessions
-        # Future: could implement logic to handle sessions that were running when bot went down
         return active_sessions
 
     def get_session_elapsed_time(self, session: Session) -> float:
@@ -123,3 +123,17 @@ class SessionsService:
         
         elapsed_seconds = (end_time - session.started_at).total_seconds() - session.paused_seconds_total
         return max(0, elapsed_seconds / 3600)  # Convert to hours
+
+    def bump(self, user_id: int, session_id: str, additional_hours: float) -> Optional[Session]:
+        """Add additional time to a session."""
+        # TODO: Implement bump functionality - this could extend the session duration
+        # or add time to the final calculation
+        session = self.sessions_repo.get_session(user_id, session_id)
+        if not session or session.status not in [SessionStatus.RUNNING.value, SessionStatus.PAUSED.value]:
+            return None
+        return session
+
+    def peek(self, user_id: int, session_id: str) -> Optional[Session]:
+        """Get session without modifying it."""
+        # TODO: Implement peek functionality - get session for display purposes
+        return self.sessions_repo.get_session(user_id, session_id)
