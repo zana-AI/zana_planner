@@ -20,6 +20,7 @@ from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily
 from utils_storage import create_user_directory
+from handlers.callback_handlers import CallbackHandlers
 
 logger = logging.getLogger(__name__)
 
@@ -357,18 +358,18 @@ class MessageHandlers:
         """Reschedule user jobs with new timezone."""
         # TODO: Implementation for rescheduling jobs
         pass
-    
+
     async def send_nightly_reminders(self, context: CallbackContext, user_id: int = None) -> None:
         """Send nightly reminders to users about their promises."""
-        # TODO: This method will be implemented in the callback handlers module
-        # as it requires access to callback handling logic
-        pass
-    
+        # Delegate to callback handlers which has the implementation
+        callback_handlers = CallbackHandlers(self.plan_keeper, self.application)
+        await callback_handlers.send_nightly_reminders(context, user_id)
+
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""
-        # TODO: This method will be implemented in the callback handlers module
-        # as it requires access to callback handling logic
-        pass
+        # Delegate to callback handlers which has the implementation
+        callback_handlers = CallbackHandlers(self.plan_keeper, self.application)
+        await callback_handlers.send_morning_reminders(context, user_id)
     
     async def scheduled_nightly_reminders_for_one(self, context: CallbackContext) -> None:
         """Scheduled callback for nightly reminders."""
