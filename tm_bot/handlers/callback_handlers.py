@@ -257,7 +257,11 @@ class CallbackHandlers:
                 time_spent=value,
                 action_datetime=query.message.date
             )
-            message = get_message("time_spent", user_lang, time=beautify_time(value), promise_id=promise_id)
+            promise = self.plan_keeper.get_promise(query.from_user.id, promise_id)
+            promise_text = promise.text if promise else f"#{promise_id}"
+            message = get_message("time_spent", user_lang, time=beautify_time(value),
+                                  date=query.message.date.strftime("%A"),
+                                  promise_id=promise_id, promise_text=promise_text)
             await query.edit_message_text(text=message, parse_mode='Markdown')
         else:
             # If 0 is selected, consider it a cancellation and delete the message.
@@ -493,7 +497,7 @@ class CallbackHandlers:
         
         # (optional) header message with "Show more"
         if rest:
-            header_message = get_message("nightly_header_with_more", user_lang)
+            header_message = get_message("nightly_header_with_more", user_lang, date=user_now.strftime("%A, %d %B %Y"))
             button_text = get_message("show_more_button", user_lang, count=len(rest))
             await context.bot.send_message(
                 chat_id=user_id_int,
@@ -544,7 +548,7 @@ class CallbackHandlers:
         top3 = ranked[:3]
         
         # header (different copy than nightly)
-        header_message = get_message("morning_header", user_lang)
+        header_message = get_message("morning_header", user_lang, date=user_now.strftime("%A"))
         await context.bot.send_message(
             chat_id=user_id,
             text=header_message,

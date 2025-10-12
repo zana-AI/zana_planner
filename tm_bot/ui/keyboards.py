@@ -136,12 +136,12 @@ def preping_kb(promise_id: str, snooze_min: int = 30):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Start ⏱",     callback_data=encode_cb("preping_start",  pid=promise_id)),
+            InlineKeyboardButton(f"Snooze {snooze_min}m", callback_data=encode_cb("preping_snooze", pid=promise_id, m=snooze_min)),
             InlineKeyboardButton("Not today 🙅", callback_data=encode_cb("preping_skip",   pid=promise_id)),
         ],
-        [
-            InlineKeyboardButton(f"Snooze {snooze_min}m", callback_data=encode_cb("preping_snooze", pid=promise_id, m=snooze_min)),
-            InlineKeyboardButton("More…",                  callback_data=encode_cb("open_time",      pid=promise_id)),
-        ],
+        # [
+        #     InlineKeyboardButton("More…",                  callback_data=encode_cb("open_time",      pid=promise_id)),
+        # ],
     ])
 
 def session_running_kb(session_id: str):

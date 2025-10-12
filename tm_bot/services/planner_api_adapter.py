@@ -74,6 +74,10 @@ class PlannerAPIAdapter:
         except (ValueError, FileNotFoundError) as e:
             raise RuntimeError(f"Failed to add promise: {str(e)}")
 
+    def get_promise(self, user_id: int, promise_id: str) -> Optional[Promise]:
+        """Get a specific promise by ID."""
+        return self.promises_repo.get_promise(user_id, promise_id)
+
     def get_promises(self, user_id) -> List[Dict]:
         """Get all promises for a user (legacy format)."""
         promises = self.promises_repo.list_promises(user_id)

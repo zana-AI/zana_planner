@@ -50,13 +50,14 @@ class MessageHandlers:
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
         
-        created = create_user_directory(self.root_dir, user_id)
-        if created:
+        create_user_directory(self.root_dir, user_id)
+        existing_promises = self.plan_keeper.get_promises(user_id)
+        if len(existing_promises) == 0:
             message = get_message("welcome_new", user_lang)
         else:
             message = get_message("welcome_return", user_lang)
         
-        await update.message.reply_text(message)
+        await update.message.reply_text(message, parse_mode='Markdown')
         
         tzname = self.get_user_timezone(user_id)
         schedule_user_daily(
