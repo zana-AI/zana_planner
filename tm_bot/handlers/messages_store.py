@@ -1,14 +1,14 @@
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
+from handlers.translator import translate_text
 
 
 class Language(Enum):
     """Supported languages."""
     EN = "en"
+    FA = "fa"
     FR = "fr"
-    ES = "fa"
-    # DE = "de"
 
 
 @dataclass
@@ -22,8 +22,9 @@ class MessageTemplate:
 class MessageTemplateStore:
     """Manages translations and message formatting."""
 
-    def __init__(self, default_language: Language = Language.EN):
+    def __init__(self, default_language: Language = Language.EN, settings_repo=None):
         self.default_language = default_language
+        self.settings_repo = settings_repo
 
     def _get_english_translations(self) -> Dict[str, str]:
         """English translations."""
@@ -139,16 +140,18 @@ class MessageTemplateStore:
             "time_minutes": "{minutes}m",
             "time_hours": "{hours}h",
             "time_hours_minutes": "{hours}h {minutes}m",
+            
+            # Language selection
+            "language_set": "Language set to {lang}",
+            "choose_language": "Choose bot language",
         }
 
     def get_message(self, key: str, language: Optional[Language] = None, **kwargs) -> str:
         """Get translated message with variable substitution."""
         lang = language or self.default_language
-        # translations = self.translations.get(lang, self.translations[self.default_language])
-
         message = self._get_english_translations().get(key, key)
 
-        # Substitute variables
+        # Substitute variables first
         if kwargs:
             try:
                 message = message.format(**kwargs)
@@ -157,23 +160,48 @@ class MessageTemplateStore:
                 import logging
                 logging.warning(f"Missing variable {e} for message key '{key}' in language {lang.value}")
 
+        # Translate if not English
+        if lang != Language.EN:
+            message = translate_text(message, lang, "en")
+
         return message
 
     def get_user_language(self, user_id: int) -> Language:
-        """Get user's preferred language. For now, returns default language."""
-        # TODO: Implement user language preference storage in settings repository
+        """Get user's preferred language from settings repository."""
+        if self.settings_repo:
+            try:
+                settings = self.settings_repo.get_settings(user_id)
+                # Convert string to Language enum
+                for lang in Language:
+                    if lang.value == settings.language:
+                        return lang
+            except Exception:
+                pass
         return self.default_language
 
 
-# Global instance
-_translation_manager = MessageTemplateStore()
+# Global instance - will be initialized with settings_repo when needed
+_translation_manager = None
 
 
 def get_message(key: str, language: Optional[Language] = None, **kwargs) -> str:
     """Convenience function to get translated message."""
+    if _translation_manager is None:
+        # Fallback to default if not initialized
+        temp_manager = MessageTemplateStore()
+        return temp_manager.get_message(key, language, **kwargs)
     return _translation_manager.get_message(key, language, **kwargs)
 
 
 def get_user_language(user_id: int) -> Language:
     """Convenience function to get user's language."""
+    if _translation_manager is None:
+        # Fallback to default if not initialized
+        return Language.EN
     return _translation_manager.get_user_language(user_id)
+
+
+def initialize_message_store(settings_repo):
+    """Initialize the global message store with settings repository."""
+    global _translation_manager
+    _translation_manager = MessageTemplateStore(settings_repo=settings_repo)

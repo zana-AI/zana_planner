@@ -184,3 +184,13 @@ def session_adjust_kb(session_id: str, base_h: float):
     return InlineKeyboardMarkup([row])
 
 
+def language_selection_kb() -> InlineKeyboardMarkup:
+    """Create keyboard for language selection."""
+    buttons = [
+        [InlineKeyboardButton("English", callback_data=encode_cb("set_language", lang="en"))],
+        [InlineKeyboardButton("فارسی (Persian)", callback_data=encode_cb("set_language", lang="fa"))],
+        [InlineKeyboardButton("Français (French)", callback_data=encode_cb("set_language", lang="fr"))]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+

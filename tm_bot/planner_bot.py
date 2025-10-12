@@ -22,6 +22,7 @@ from llms.llm_handler import LLMHandler
 from services.planner_api_adapter import PlannerAPIAdapter
 from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
+from handlers.messages_store import initialize_message_store
 from utils.bot_utils import BotUtils
 from infra.scheduler import schedule_user_daily
 
@@ -54,6 +55,9 @@ class PlannerTelegramBot:
         # Store plan_keeper in bot_data for access by handlers
         self.application.bot_data['plan_keeper'] = self.plan_keeper
 
+        # Initialize message store with settings repository
+        initialize_message_store(self.plan_keeper.settings_repo)
+
         # Register all handlers
         self._register_handlers()
 
@@ -68,6 +72,7 @@ class PlannerTelegramBot:
         self.application.add_handler(CommandHandler("zana", self.message_handlers.plan_by_zana))
         self.application.add_handler(CommandHandler("pomodoro", self.message_handlers.pomodoro))
         self.application.add_handler(CommandHandler("settimezone", self.message_handlers.cmd_settimezone))
+        self.application.add_handler(CommandHandler("language", self.message_handlers.cmd_language))
 
         # Message handlers
         self.application.add_handler(
@@ -122,7 +127,7 @@ class PlannerTelegramBot:
                 jq, user_id=user_id, tz=tzname,
                 callback=self.message_handlers.scheduled_noon_cleanup_for_one,
                 # hh=23, mm=2, name_prefix="noon_cleanup",
-                hh=now.hour, mm=now.minute + 1, name_prefix="noon_cleanup",
+                hh=12, mm=00, name_prefix="noon_cleanup",
             )
 
             # Schedule nightly reminders

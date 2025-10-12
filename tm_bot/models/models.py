@@ -32,6 +32,7 @@ class UserSettings:
     timezone: str = "Europe/Paris"
     nightly_hh: int = 22
     nightly_mm: int = 0
+    language: str = "en"  # "en", "fa", "fr"
 
 
 @dataclass

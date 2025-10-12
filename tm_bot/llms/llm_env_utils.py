@@ -32,8 +32,8 @@ def load_llm_env():
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
     tmp.write(base64.b64decode(creds_b64))
     tmp.close()
-    # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"E:\workspace\ZanaAI\zana_planner\demo_features\vertex-access.json"
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+    # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"E:\workspace\ZanaAI\zana_planner\demo_features\vertex-access.json"
 
     return {
         "GCP_PROJECT_ID": project_id,

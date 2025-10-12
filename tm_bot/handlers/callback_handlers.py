@@ -17,7 +17,8 @@ from models.models import Action
 from utils.time_utils import beautify_time, round_time
 from ui.keyboards import (
     time_options_kb, session_running_kb, session_paused_kb, 
-    session_finish_confirm_kb, session_adjust_kb, preping_kb
+    session_finish_confirm_kb, session_adjust_kb, preping_kb,
+    language_selection_kb
 )
 from cbdata import encode_cb, decode_cb
 
@@ -189,6 +190,8 @@ class CallbackHandlers:
             await self._handle_session_adjust_set(query, session_id, value, user_lang)
         elif action == "refresh_weekly":
             await self._handle_refresh_weekly(query, context, user_lang)
+        elif action == "set_language":
+            await self._handle_set_language(query)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -626,3 +629,27 @@ class CallbackHandlers:
         # TODO: Implement weekly report refresh functionality
         user_id = query.from_user.id
         await query.answer("Weekly report refreshed!")
+    
+    async def _handle_set_language(self, query):
+        """Handle language selection."""
+        user_id = query.from_user.id
+        try:
+            selected_lang = query.data.split("&")[1].split("=")[1].strip("")
+        except Exception:
+            selected_lang = query.from_user.language_code
+        
+        # Save language to settings
+        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        settings.language = selected_lang
+        self.plan_keeper.settings_repo.save_settings(settings)
+        
+        # Send confirmation message in selected language
+        confirmation_message = get_message("language_set", selected_lang, lang=selected_lang)
+        await query.edit_message_text(text=confirmation_message, parse_mode='Markdown')
+        
+        # Check if this is a new user (no promises) and show welcome message
+        promises = self.plan_keeper.get_promises(user_id)
+        if len(promises) == 0:
+            # This is a new user, show welcome message
+            welcome_message = get_message("welcome_new", selected_lang)
+            await query.message.reply_text(welcome_message, parse_mode='Markdown')

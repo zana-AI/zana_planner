@@ -12,11 +12,12 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardB
 from telegram.ext import CallbackContext
 
 from handlers.messages_store import get_message, get_user_language
+from handlers.translator import translate_text
 from services.planner_api_adapter import PlannerAPIAdapter
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
 from ui.messages import weekly_report_text
-from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb
+from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily
 from utils_storage import create_user_directory
@@ -52,6 +53,17 @@ class MessageHandlers:
         
         create_user_directory(self.root_dir, user_id)
         existing_promises = self.plan_keeper.get_promises(user_id)
+        
+        # Check if user has language preference set
+        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        if len(existing_promises) == 0 and (not hasattr(settings, 'language') or settings.language == "en"):
+            # New user without language preference - show language selection
+            message = get_message("choose_language", user_lang)
+            keyboard = language_selection_kb()
+            await update.message.reply_text(message, reply_markup=keyboard, parse_mode='Markdown')
+            return
+        
+        # Existing user or user with language preference
         if len(existing_promises) == 0:
             message = get_message("welcome_new", user_lang)
         else:
@@ -297,7 +309,8 @@ class MessageHandlers:
             # Process the LLM response
             try:
                 func_call_response = self.call_planner_api(user_id, llm_response)
-                formatted_response = self._format_response(llm_response['response_to_user'], func_call_response)
+                tt = translate_text(llm_response['response_to_user'], user_lang.value, "en")
+                formatted_response = self._format_response(tt, func_call_response)
                 await update.message.reply_text(
                     formatted_response,
                     parse_mode='Markdown'
@@ -391,3 +404,12 @@ class MessageHandlers:
         """Scheduled callback for morning reminders."""
         user_id = context.job.data["user_id"]
         await self.send_morning_reminders(context, user_id=user_id)
+    
+    async def cmd_language(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /language command to change language preference."""
+        user_id = update.effective_user.id
+        user_lang = get_user_language(user_id)
+        
+        message = get_message("choose_language", user_lang)
+        keyboard = language_selection_kb()
+        await update.message.reply_text(message, reply_markup=keyboard, parse_mode='Markdown')
