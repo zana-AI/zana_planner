@@ -1,36 +1,48 @@
 import os
+import sys
+from pathlib import Path
 import logging
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import JsonOutputParser
-from func_utils import get_function_args_info
-from schema import UserPromise, UserAction, LLMResponse  # Ensure this path is correct
-from planner_api import PlannerAPI
-# Load environment variables
+from llms.func_utils import get_function_args_info
+from llms.schema import UserAction, LLMResponse  # Ensure this path is correct
 # load_dotenv()
+# sys.path.append(str(Path(__file__).parent.parent))
+# sys.path.append(str(Path(__file__).parent.parent.parent))
+from services.planner_api_adapter import PlannerAPIAdapter
+from langchain_google_vertexai import ChatVertexAI
+from llms.llm_env_utils import load_llm_env
 
 logger = logging.getLogger(__name__)
 
 # Define the schemas list
-schemas = [LLMResponse] # , UserPromise, UserAction]
+schemas = [LLMResponse]  # , UserPromise, UserAction]
 
 
 class LLMHandler:
     def __init__(self):
         try:
-            self.openai_key = os.getenv("OPENAI_API_KEY")
-            if not self.openai_key:
-                raise ValueError("OpenAI API key is not set in environment variables.")
+            cfg = load_llm_env()  # returns dict with project, location, model
+
+            if cfg.get("OPENAI_API_KEY", ""):
+                self.chat_model = ChatOpenAI(
+                    openai_api_key=cfg["OPENAI_API_KEY"],
+                    temperature=0.7,
+                    model="gpt-4o-mini"
+                )
+
+            elif cfg.get("GCP_PROJECT_ID", ""):
+                self.chat_model = ChatVertexAI(
+                    model=cfg["GCP_GEMINI_MODEL"],
+                    project=cfg["GCP_PROJECT_ID"],
+                    location=cfg["GCP_LOCATION"],
+                    temperature=0.7,
+                )
 
             self.parser = JsonOutputParser(pydantic_object=LLMResponse)
-            
-            self.chat_model = ChatOpenAI(
-                openai_api_key=self.openai_key,
-                temperature=0.7,
-                model="gpt-4o-mini"
-            )
             
             self.chat_history = {}
 
@@ -47,12 +59,12 @@ class LLMHandler:
                 base_model_schemas += f"\t{field_name}(description= {field.description}, type= {str(field.annotation)})\n"
 
         api_schema_str = ""
-        api_schema = [func for func in dir(PlannerAPI) if
-                      callable(getattr(PlannerAPI, func)) and not func.startswith("_")]
+        api_schema = [func for func in dir(PlannerAPIAdapter) if
+                      callable(getattr(PlannerAPIAdapter, func)) and not func.startswith("_")]
 
         for api in api_schema:
             # Retrieve the actual function object
-            func_obj = getattr(PlannerAPI, api)
+            func_obj = getattr(PlannerAPIAdapter, api)
             api_schema_str += f"\t {api}({get_function_args_info(func_obj)}) \n"
 
         self.system_message_main = SystemMessage(content=(
@@ -71,6 +83,7 @@ class LLMHandler:
             f"Here are the list of API functions available:\n [{api_schema_str}]\n"
         ))
 
+        # TODO: Uncomment these lines to enable chat history with system messages
         # self.chat_history[user_id] = ChatMessageHistory()
         # self.chat_history[user_id].add_message(system_message_main)
         # self.chat_history[user_id].add_message(system_message_api)
@@ -78,6 +91,7 @@ class LLMHandler:
     def get_response_api(self, user_message: str, user_id: str) -> dict:
         try:
             if user_id not in self.chat_history:
+                # TODO: Uncomment to enable per-user context initialization
                 # self._initialize_context(user_id)
                 self.chat_history[user_id] = ChatMessageHistory()
 
@@ -96,8 +110,11 @@ class LLMHandler:
                 return self.parser.parse(response.content)
             except Exception as e:
                 logger.error(f"Error parsing response: {str(e)}")
-                return {"error": "parsing_error", "function_call": "handle_error", 
-                        "response_to_user": f"LLM Error: {str(e)}"}
+                # Return the raw response content wrapped in the expected format
+                return {
+                    "function_call": "handle_error", 
+                    "response_to_user": response.content
+                }
 
         except Exception as e:
             logger.error(f"Unexpected error in get_response: {str(e)}")
@@ -123,11 +140,13 @@ class LLMHandler:
                 return self.parser.parse(response.content)
             except Exception as e:
                 logger.error(f"Error parsing response: {str(e)}")
-                return f"LLM Error: {str(e)}"
+                # Return the raw response content directly
+                return response.content
 
         except Exception as e:
             logger.error(f"Unexpected error in get_response: {str(e)}")
             return f"Something went wrong. Error: {str(e)}"
+
 
 # Example usage
 if __name__ == "__main__":

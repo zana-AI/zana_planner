@@ -14,13 +14,13 @@ from datetime import datetime, timedelta, date
 import yaml
 tm_bot_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tm_bot"))
 sys.path.append(tm_bot_dir)
-from planner_api import PlannerAPI
+from tm_bot.services.planner_api_adapter import PlannerAPIAdapter
 
 
 # ---------------------------
 # TEST SUITE WITH RANDOM 8-DIGIT USER ID
 # ---------------------------
-class TestPlannerAPI(unittest.TestCase):
+class TestPlannerAPIAdapter(unittest.TestCase):
     def setUp(self):
         # Generate a random 8-digit user id as a string
         self.user_id = str(random.randint(10 ** 7, 10 ** 8 - 1))
@@ -30,7 +30,7 @@ class TestPlannerAPI(unittest.TestCase):
         self.user_dir = os.path.join(self.temp_dir, self.user_id)
         os.makedirs(self.user_dir, exist_ok=True)
         # Initialize the PlannerAPI with the temporary directory.
-        self.planner = PlannerAPI(self.temp_dir)
+        self.planner = PlannerAPIAdapter(self.temp_dir)
         # Explanation:
         # Here we ensure that each test works in isolation with its own random user.
 
