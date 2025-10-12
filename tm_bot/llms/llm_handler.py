@@ -1,36 +1,48 @@
 import os
+import sys
+from pathlib import Path
 import logging
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import JsonOutputParser
-from func_utils import get_function_args_info
-from schema import UserAction, LLMResponse  # Ensure this path is correct
-from services.planner_api_adapter import PlannerAPIAdapter
-# Load environment variables
+from llms.func_utils import get_function_args_info
+from llms.schema import UserAction, LLMResponse  # Ensure this path is correct
 # load_dotenv()
+# sys.path.append(str(Path(__file__).parent.parent))
+# sys.path.append(str(Path(__file__).parent.parent.parent))
+from services.planner_api_adapter import PlannerAPIAdapter
+from langchain_google_vertexai import ChatVertexAI
+from llms.llm_env_utils import load_llm_env
 
 logger = logging.getLogger(__name__)
 
 # Define the schemas list
-schemas = [LLMResponse] # , UserPromise, UserAction]
+schemas = [LLMResponse]  # , UserPromise, UserAction]
 
 
 class LLMHandler:
     def __init__(self):
         try:
-            self.openai_key = os.getenv("OPENAI_API_KEY")
-            if not self.openai_key:
-                raise ValueError("OpenAI API key is not set in environment variables.")
+            cfg = load_llm_env()  # returns dict with project, location, model
+
+            if cfg.get("OPENAI_API_KEY", ""):
+                self.chat_model = ChatOpenAI(
+                    openai_api_key=cfg["OPENAI_API_KEY"],
+                    temperature=0.7,
+                    model="gpt-4o-mini"
+                )
+
+            elif cfg.get("GCP_PROJECT_ID", ""):
+                self.chat_model = ChatVertexAI(
+                    model=cfg["GCP_GEMINI_MODEL"],
+                    project=cfg["GCP_PROJECT_ID"],
+                    location=cfg["GCP_LOCATION"],
+                    temperature=0.7,
+                )
 
             self.parser = JsonOutputParser(pydantic_object=LLMResponse)
-            
-            self.chat_model = ChatOpenAI(
-                openai_api_key=self.openai_key,
-                temperature=0.7,
-                model="gpt-4o-mini"
-            )
             
             self.chat_history = {}
 
@@ -128,6 +140,7 @@ class LLMHandler:
         except Exception as e:
             logger.error(f"Unexpected error in get_response: {str(e)}")
             return f"Something went wrong. Error: {str(e)}"
+
 
 # Example usage
 if __name__ == "__main__":

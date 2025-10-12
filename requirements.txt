@@ -5,6 +5,8 @@ openai
 langchain
 langchain-community
 langchain-openai
+langchain-google-vertexai
+google-cloud-aiplatform
 pydantic
 requests==2.31.0
 pandas

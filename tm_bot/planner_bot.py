@@ -17,7 +17,7 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from telegram.request import HTTPXRequest
-from llm_handler import LLMHandler
+from llms.llm_handler import LLMHandler
 from models.models import Action
 from services.planner_api_adapter import PlannerAPIAdapter
 from utils.time_utils import beautify_time, round_time, get_week_range
