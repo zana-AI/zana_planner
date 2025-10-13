@@ -289,11 +289,14 @@ class CallbackHandlers:
                 action_datetime=query.message.date
             )
             promise = self.plan_keeper.get_promise(query.from_user.id, promise_id)
-            promise_text = promise.text if promise else f"#{promise_id}"
+            promise_text = promise.text.replace("_", " ") if promise else f"#{promise_id}"
             message = get_message("time_spent", user_lang, time=beautify_time(value),
                                   date=query.message.date.strftime("%A"),
                                   promise_id=promise_id, promise_text=promise_text)
-            await query.edit_message_text(text=message, parse_mode='Markdown')
+            try:
+                await query.edit_message_text(text=message, parse_mode='Markdown')
+            except Exception:
+                await query.edit_message_text(text=message)  # no markdown
         else:
             # If 0 is selected, consider it a cancellation and delete the message.
             await query.delete_message()
