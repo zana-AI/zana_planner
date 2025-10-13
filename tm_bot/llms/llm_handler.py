@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 import logging
+from typing import List, Optional
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
@@ -70,7 +72,7 @@ class LLMHandler:
         self.system_message_main = SystemMessage(content=(
             "You are an assistant for a task management bot. "
             "When responding, return a JSON object referencing the action and any relevant fields. "
-            "Always respond in English. "
+            # "Always respond in English. "
         ))
 
         self.system_message_api = SystemMessage(content=(
@@ -80,6 +82,8 @@ class LLMHandler:
             "\t\"function_args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"},\n"
             "\t\"response_to_user\": \"Response to the user\"\n"
             "}\n"
+            "IMPORTANT: Keep JSON keys, function names, and arguments in ENGLISH and NEVER translate them. "
+            "Only the 'response_to_user' text may be localized/adapted to the user’s language and tone.\n"
             f"Here are the list of API functions available:\n [{api_schema_str}]\n"
         ))
 
@@ -146,6 +150,53 @@ class LLMHandler:
         except Exception as e:
             logger.error(f"Unexpected error in get_response: {str(e)}")
             return f"Something went wrong. Error: {str(e)}"
+
+    def translate_with_style(
+            self,
+            text: str,
+            target_lang: str,
+            user_id: str = "-1",
+            intimacy_level: int = 5,
+            examples: Optional[List[str]] = None
+    ) -> str:
+        """
+        LLM-based tone-aware translation.
+        - 'intimacy_level' controls tone (1–5). Defaults to 5 so existing calls keep working.
+        - 'examples' (optional) lets you pass few-shot style examples at call time.
+        Preserves placeholders like {hours}, {date}, #{promise_id}; instructs model not to translate JSON/code.
+        """
+        try:
+            if user_id not in self.chat_history:
+                self.chat_history[user_id] = ChatMessageHistory()
+
+            ex_block = ""
+            if examples:
+                # Join examples verbatim; keep this tiny to avoid refactors.
+                ex_block = "\n[EXAMPLES]\n" + "\n".join(examples)
+
+            style_sys = SystemMessage(content=(
+                                                  "[STYLE_TRANSLATION]\n"
+                                                  f"TARGET_LANG: {target_lang}\n"
+                                                  f"INTIMACY_LEVEL: {intimacy_level}\n"
+                                                  "Rules:\n"
+                                                  "- Preserve placeholders exactly: {like_this}, #{promise_id}.\n"
+                                                  "- Do NOT translate or alter JSON objects, code blocks, or function names.\n"
+                                                  "- Adjust tone to the given INTIMACY_LEVEL while keeping the same intent.\n"
+                                                  "- Return ONLY the adapted text (no extra commentary).\n"
+                                              ) + ex_block)
+
+            human = HumanMessage(content=f"<<TEXT_START>>\n{text}\n<<TEXT_END>>")
+
+            response = self.chat_model([style_sys] + self.chat_history[user_id].messages + [human])
+
+            self.chat_history[user_id].add_message(
+                HumanMessage(content=f"[i18n to {target_lang} L{intimacy_level}] {text}"))
+            self.chat_history[user_id].add_message(AIMessage(content=response.content))
+
+            return response.content.strip()
+        except Exception as e:
+            logger.error(f"translate_with_style failed: {e}")
+            return text
 
 
 # Example usage
