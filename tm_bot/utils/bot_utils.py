@@ -121,7 +121,7 @@ class BotUtils:
         curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
         
         kb = time_options_kb(promise.id, curr_h=curr_h, base_day_h=base_day_h, weekly_h=weekly_h)
-        message = get_message("nightly_question", user_lang, promise_text=promise.text)
+        message = get_message("nightly_question", user_lang, promise_text=promise.text.replace('_', ' '))
         
         await context.bot.send_message(
             chat_id=user_id,
@@ -154,7 +154,7 @@ class BotUtils:
             curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
             
             kb = time_options_kb(promise.id, curr_h=curr_h, base_day_h=base_day_h, weekly_h=weekly_h)
-            message = get_message("nightly_question", user_lang, promise_text=promise.text)
+            message = get_message("nightly_question", user_lang, promise_text=promise.text.replace('_', ' '))
             
             await context.bot.send_message(
                 chat_id=user_id,

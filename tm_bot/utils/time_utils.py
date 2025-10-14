@@ -29,4 +29,5 @@ def get_week_range(reference: datetime, week_start_hour: int = 3):
     week_start = monday.replace(hour=week_start_hour, minute=0, second=0, microsecond=0)
     if reference < week_start:
         week_start -= timedelta(days=7)
-    return week_start, reference
+    end_of_week = week_start + timedelta(days=7)
+    return week_start, end_of_week
