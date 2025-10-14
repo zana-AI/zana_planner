@@ -194,3 +194,81 @@ def language_selection_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def community_kb() -> InlineKeyboardMarkup:
+    """Create keyboard for main community menu."""
+    buttons = [
+        [InlineKeyboardButton("🌟 Browse Ideas", callback_data=encode_cb("browse_ideas"))],
+        [InlineKeyboardButton("🏆 Recent Achievements", callback_data=encode_cb("view_achievements"))],
+        [InlineKeyboardButton("⚙️ Sharing Settings", callback_data=encode_cb("sharing_settings"))]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def promise_ideas_list_kb(ideas, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Create keyboard for promise ideas list with pagination."""
+    buttons = []
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    
+    for i, idea in enumerate(ideas[start_idx:end_idx], start_idx):
+        button_text = f"{i+1}. {idea.text[:30]}{'...' if len(idea.text) > 30 else ''}"
+        buttons.append([InlineKeyboardButton(
+            button_text, 
+            callback_data=encode_cb("adopt_idea", idea_id=idea.id)
+        )])
+    
+    # Pagination buttons
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=encode_cb("ideas_page", page=page-1)))
+    if end_idx < len(ideas):
+        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=encode_cb("ideas_page", page=page+1)))
+    
+    if nav_buttons:
+        buttons.append(nav_buttons)
+    
+    # Back button
+    buttons.append([InlineKeyboardButton("🔙 Back to Community", callback_data=encode_cb("community_menu"))])
+    
+    return InlineKeyboardMarkup(buttons)
+
+
+def sharing_prompt_kb(promise_id: str, hours_spent: float) -> InlineKeyboardMarkup:
+    """Create keyboard for sharing prompt after time logging."""
+    buttons = [
+        [
+            InlineKeyboardButton("✅ Share Achievement", callback_data=encode_cb("share_achievement", pid=promise_id, hours=hours_spent)),
+            InlineKeyboardButton("❌ Not Now", callback_data=encode_cb("skip_sharing"))
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def sharing_settings_kb(share_data: bool) -> InlineKeyboardMarkup:
+    """Create keyboard for sharing settings."""
+    status_text = "✅ Enabled" if share_data else "❌ Disabled"
+    toggle_text = "Disable Sharing" if share_data else "Enable Sharing"
+    
+    buttons = [
+        [InlineKeyboardButton(f"Sharing: {status_text}", callback_data=encode_cb("toggle_sharing"))],
+        [InlineKeyboardButton("Set Display Name", callback_data=encode_cb("set_display_name"))],
+        [InlineKeyboardButton("🔙 Back to Community", callback_data=encode_cb("community_menu"))]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def category_filter_kb() -> InlineKeyboardMarkup:
+    """Create keyboard for filtering promise ideas by category."""
+    buttons = [
+        [InlineKeyboardButton("All Categories", callback_data=encode_cb("filter_ideas", category="all"))],
+        [InlineKeyboardButton("🏃 Health & Fitness", callback_data=encode_cb("filter_ideas", category="health"))],
+        [InlineKeyboardButton("📚 Learning", callback_data=encode_cb("filter_ideas", category="learning"))],
+        [InlineKeyboardButton("💼 Productivity", callback_data=encode_cb("filter_ideas", category="productivity"))],
+        [InlineKeyboardButton("🎨 Hobbies", callback_data=encode_cb("filter_ideas", category="hobbies"))],
+        [InlineKeyboardButton("🧘 Wellness", callback_data=encode_cb("filter_ideas", category="wellness"))],
+        [InlineKeyboardButton("👨‍👩‍👧‍👦 Relationships", callback_data=encode_cb("filter_ideas", category="relationships"))],
+        [InlineKeyboardButton("🔙 Back", callback_data=encode_cb("browse_ideas"))]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+

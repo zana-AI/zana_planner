@@ -17,7 +17,7 @@ from services.planner_api_adapter import PlannerAPIAdapter
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
 from ui.messages import weekly_report_text
-from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb
+from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, community_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily
 from utils_storage import create_user_directory
@@ -412,4 +412,13 @@ class MessageHandlers:
         
         message = get_message("choose_language", user_lang)
         keyboard = language_selection_kb()
+        await update.message.reply_text(message, reply_markup=keyboard, parse_mode='Markdown')
+    
+    async def cmd_community(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /community command to open community features."""
+        user_id = update.effective_user.id
+        user_lang = get_user_language(user_id)
+        
+        message = get_message("community_welcome", user_lang)
+        keyboard = community_kb()
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='Markdown')

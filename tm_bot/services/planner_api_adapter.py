@@ -11,10 +11,12 @@ from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.sessions_repo import SessionsRepository
+from repositories.community_repo import CommunityRepository
 from services.reports import ReportsService
 from services.ranking import RankingService
 from services.reminders import RemindersService
 from services.sessions import SessionsService
+from services.community import CommunityService
 from models.models import Promise, Action, UserSettings
 from models.enums import ActionType
 
@@ -30,12 +32,14 @@ class PlannerAPIAdapter:
         self.actions_repo = ActionsRepository(root_dir)
         self.settings_repo = SettingsRepository(root_dir)
         self.sessions_repo = SessionsRepository(root_dir)
+        self.community_repo = CommunityRepository(root_dir)
         
         # Initialize services
         self.reports_service = ReportsService(self.promises_repo, self.actions_repo)
         self.ranking_service = RankingService(self.promises_repo, self.actions_repo, self.settings_repo)
         self.reminders_service = RemindersService(self.ranking_service, self.settings_repo)
         self.sessions_service = SessionsService(self.sessions_repo, self.actions_repo)
+        self.community_service = CommunityService(self.community_repo, self.promises_repo, self.actions_repo, self.settings_repo)
 
     # Promise methods
     def add_promise(self, user_id, promise_text: str, num_hours_promised_per_week: float, 

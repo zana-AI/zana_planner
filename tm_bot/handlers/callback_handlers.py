@@ -18,7 +18,8 @@ from utils.time_utils import beautify_time, round_time
 from ui.keyboards import (
     time_options_kb, session_running_kb, session_paused_kb, 
     session_finish_confirm_kb, session_adjust_kb, preping_kb,
-    language_selection_kb
+    language_selection_kb, community_kb, promise_ideas_list_kb,
+    sharing_prompt_kb, sharing_settings_kb, category_filter_kb
 )
 from cbdata import encode_cb, decode_cb
 
@@ -192,6 +193,26 @@ class CallbackHandlers:
             await self._handle_refresh_weekly(query, context, user_lang)
         elif action == "set_language":
             await self._handle_set_language(query)
+        # Community callbacks
+        elif action == "community_menu":
+            await self.handle_community_menu(query, user_id, user_lang)
+        elif action == "browse_ideas":
+            await self.handle_browse_ideas(query, user_id, user_lang)
+        elif action == "adopt_idea":
+            idea_id = cb.get("idea_id")
+            await self.handle_adopt_idea(query, user_id, user_lang, idea_id)
+        elif action == "view_achievements":
+            await self.handle_view_achievements(query, user_id, user_lang)
+        elif action == "sharing_settings":
+            await self.handle_sharing_settings(query, user_id, user_lang)
+        elif action == "toggle_sharing":
+            await self.handle_toggle_sharing(query, user_id, user_lang)
+        elif action == "share_achievement":
+            pid = cb.get("pid")
+            hours = cb.get("hours")
+            await self.handle_share_achievement(query, user_id, user_lang, pid, hours)
+        elif action == "skip_sharing":
+            await self.handle_skip_sharing(query, user_id, user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -293,7 +314,24 @@ class CallbackHandlers:
             message = get_message("time_spent", user_lang, time=beautify_time(value),
                                   date=query.message.date.strftime("%A"),
                                   promise_id=promise_id, promise_text=promise_text)
-            await query.edit_message_text(text=message, parse_mode='Markdown')
+            try:
+                await query.edit_message_text(text=message, parse_mode='Markdown')
+            except Exception:
+                await query.edit_message_text(text=message)  #  no markdown
+            
+            # Check if user has sharing enabled and show sharing prompt
+            try:
+                settings = self.plan_keeper.settings_repo.get_settings(query.from_user.id)
+                if settings.share_data and value > 0:
+                    sharing_message = get_message("sharing_prompt", user_lang)
+                    keyboard = sharing_prompt_kb(promise_id, value)
+                    await query.message.reply_text(
+                        text=sharing_message,
+                        reply_markup=keyboard,
+                        parse_mode='Markdown'
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to show sharing prompt: {e}")
         else:
             # If 0 is selected, consider it a cancellation and delete the message.
             await query.delete_message()
@@ -607,6 +645,19 @@ class CallbackHandlers:
             
             # Store message ID for cleanup
             self._store_morning_message_id(user_id, msg.message_id, p.id)
+        
+        # Add community highlights
+        try:
+            community_inspiration = self.plan_keeper.community_service.get_daily_inspiration(limit=2)
+            if community_inspiration:
+                inspiration_message = get_message("daily_inspiration", user_lang, achievements=community_inspiration)
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=inspiration_message,
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            logger.warning(f"Failed to add community inspiration: {e}")
 
     def _store_morning_message_id(self, user_id: int, message_id: int, promise_id: str) -> None:
         """Store morning message ID for later cleanup."""
@@ -653,3 +704,80 @@ class CallbackHandlers:
             # This is a new user, show welcome message
             welcome_message = get_message("welcome_new", selected_lang)
             await query.message.reply_text(welcome_message, parse_mode='Markdown')
+    
+    async def handle_community_menu(self, query, user_id: int, user_lang: Language) -> None:
+        """Handle community menu callback."""
+        message = get_message("community_welcome", user_lang)
+        keyboard = community_kb()
+        await query.edit_message_text(message, reply_markup=keyboard, parse_mode='Markdown')
+    
+    async def handle_browse_ideas(self, query, user_id: int, user_lang: Language) -> None:
+        """Handle browse ideas callback."""
+        # Get promise ideas from community service
+        if hasattr(self.plan_keeper, 'community_service'):
+            ideas = self.plan_keeper.community_service.browse_promise_ideas()
+            if ideas:
+                message = get_message("browse_ideas_header", user_lang)
+                keyboard = promise_ideas_list_kb(ideas)
+                await query.edit_message_text(message, reply_markup=keyboard, parse_mode='Markdown')
+            else:
+                message = get_message("no_ideas_found", user_lang)
+                keyboard = community_kb()
+                await query.edit_message_text(message, reply_markup=keyboard, parse_mode='Markdown')
+        else:
+            message = "Community service not available."
+            await query.answer(message)
+    
+    async def handle_adopt_idea(self, query, user_id: int, user_lang: Language, idea_id: str) -> None:
+        """Handle adopt idea callback."""
+        if hasattr(self.plan_keeper, 'community_service'):
+            result = self.plan_keeper.community_service.adopt_promise_idea(user_id, idea_id)
+            message = get_message("idea_adopted", user_lang) + f"\n\n{result}"
+            keyboard = community_kb()
+            await query.edit_message_text(message, reply_markup=keyboard, parse_mode='Markdown')
+        else:
+            await query.answer("Community service not available.")
+    
+    async def handle_view_achievements(self, query, user_id: int, user_lang: Language) -> None:
+        """Handle view achievements callback."""
+        if hasattr(self.plan_keeper, 'community_service'):
+            achievements_text = self.plan_keeper.community_service.get_achievements_feed()
+            message = get_message("achievements_feed", user_lang, achievements=achievements_text)
+            keyboard = community_kb()
+            await query.edit_message_text(message, reply_markup=keyboard, parse_mode='Markdown')
+        else:
+            await query.answer("Community service not available.")
+    
+    async def handle_sharing_settings(self, query, user_id: int, user_lang: Language) -> None:
+        """Handle sharing settings callback."""
+        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        message = get_message("sharing_settings", user_lang)
+        keyboard = sharing_settings_kb(settings.share_data)
+        await query.edit_message_text(message, reply_markup=keyboard, parse_mode='Markdown')
+    
+    async def handle_toggle_sharing(self, query, user_id: int, user_lang: Language) -> None:
+        """Handle toggle sharing callback."""
+        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        settings.share_data = not settings.share_data
+        self.plan_keeper.settings_repo.save_settings(settings)
+        
+        if settings.share_data:
+            message = get_message("sharing_enabled", user_lang)
+        else:
+            message = get_message("sharing_disabled", user_lang)
+        
+        keyboard = sharing_settings_kb(settings.share_data)
+        await query.edit_message_text(message, reply_markup=keyboard, parse_mode='Markdown')
+    
+    async def handle_share_achievement(self, query, user_id: int, user_lang: Language, pid: str, hours: float) -> None:
+        """Handle share achievement callback."""
+        if hasattr(self.plan_keeper, 'community_service'):
+            result = self.plan_keeper.community_service.share_user_achievement(user_id, pid, hours)
+            message = get_message("achievement_shared", user_lang) + f"\n\n{result}"
+            await query.answer(message)
+        else:
+            await query.answer("Community service not available.")
+    
+    async def handle_skip_sharing(self, query, user_id: int, user_lang: Language) -> None:
+        """Handle skip sharing callback."""
+        await query.answer("Achievement not shared.")

@@ -33,6 +33,28 @@ class UserSettings:
     nightly_hh: int = 22
     nightly_mm: int = 0
     language: str = "en"  # "en", "fa", "fr"
+    share_data: bool = False
+    display_name: str = "Anonymous"  # for sharing
+
+
+@dataclass
+class PromiseIdea:
+    id: str
+    text: str
+    category: str
+    popularity: int  # number of users who adopted it
+    avg_hours_per_week: float
+    created_at: datetime
+
+
+@dataclass
+class SharedAchievement:
+    id: str
+    username: str  # can be "Anonymous" or real username
+    promise_text: str
+    hours_spent: float
+    period: str  # "this week", "today", etc
+    shared_at: datetime
 
 
 @dataclass

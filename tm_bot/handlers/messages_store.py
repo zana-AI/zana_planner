@@ -144,6 +144,22 @@ class MessageTemplateStore:
             # Language selection
             "language_set": "Language set to {lang}",
             "choose_language": "Choose bot language",
+            
+            # Community features
+            "community_welcome": "🌟 *Community Hub*\n\nExplore what others are working on and share your own achievements!",
+            "browse_ideas_header": "🌟 *Popular Promise Ideas*\n\nTap any idea to adopt it as your own promise:",
+            "achievement_shared": "🎉 Your achievement has been shared with the community!",
+            "sharing_prompt": "🎉 Great work! Want to share this achievement with the community?",
+            "daily_inspiration": "🌟 *Community Highlights*\n\n{achievements}",
+            "no_ideas_found": "No promise ideas found. Check back later!",
+            "idea_adopted": "✅ Promise idea adopted successfully!",
+            "sharing_enabled": "✅ Data sharing enabled. Your achievements will be shared anonymously.",
+            "sharing_disabled": "❌ Data sharing disabled. Your data will remain private.",
+            "display_name_prompt": "What name would you like to use when sharing achievements? (or type 'Anonymous' to stay anonymous)",
+            "display_name_set": "Display name set to '{name}'",
+            "achievements_feed": "🏆 *Recent Community Achievements*\n\n{achievements}",
+            "no_achievements": "No recent achievements to show.",
+            "sharing_settings": "⚙️ *Sharing Settings*\n\nControl how your data is shared with the community:",
         }
 
     def get_message(self, key: str, language: Optional[Language] = None, **kwargs) -> str:
