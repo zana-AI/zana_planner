@@ -311,18 +311,17 @@ class MessageHandlers:
                 func_call_response = self.call_planner_api(user_id, llm_response)
                 tt = translate_text(llm_response['response_to_user'], user_lang.value, "en")
                 formatted_response = self._format_response(tt, func_call_response)
-                await update.message.reply_text(
-                    formatted_response,
-                    parse_mode='Markdown'
-                )
             except ValueError as e:
-                message = get_message("error_invalid_input", user_lang, error=str(e))
-                await update.message.reply_text(message, parse_mode='Markdown')
+                formatted_response = get_message("error_invalid_input", user_lang, error=str(e))
                 logger.error(f"Validation error for user {user_id}: {str(e)}")
             except Exception as e:
-                message = get_message("error_general", user_lang, error=str(e))
-                await update.message.reply_text(message, parse_mode='Markdown')
+                formatted_response = get_message("error_general", user_lang, error=str(e))
                 logger.error(f"Error processing request for user {user_id}: {str(e)}")
+
+            try:
+                await update.message.reply_text(formatted_response, parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text(formatted_response)
         
         except Exception as e:
             user_lang = get_user_language(update.effective_user.id)
