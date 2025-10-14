@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from enum import Enum
 from handlers.translator import translate_text
 
+# NEW:
+from llms.llm_handler import LLMHandler
+_llm_i18n = LLMHandler()  # minimal singleton for i18n
+
 
 class Language(Enum):
     """Supported languages."""
@@ -156,13 +160,24 @@ class MessageTemplateStore:
             try:
                 message = message.format(**kwargs)
             except KeyError as e:
-                # If a variable is missing, log and return the message as-is
                 import logging
                 logging.warning(f"Missing variable {e} for message key '{key}' in language {lang.value}")
 
-        # Translate if not English
+        # NEW: LLM-based translation + tone adaptation (intimacy=5), except for JSON-like content
         if lang != Language.EN:
-            message = translate_text(message, lang, "en")
+            txt = message.strip()
+            # Minimal guard: don't translate JSON-shaped content
+            if not (txt.startswith("{") and txt.endswith("}")):
+                examples = [
+                    # L5 roast — gym
+                    "SRC: It's been 14 days since gym. Do 45 minutes today.\nTGT(L5): Two weeks off? Get your ass in there for 45 minutes today. Move.",
+                    # L3 casual — deep work
+                    "SRC: You skipped deep work yesterday. Try 60 minutes now.\nTGT(L3): Missed it yesterday—no biggie. Do a focused 60 now and you’re back. 💪",
+                    # L2 friendly — reading
+                    "SRC: Read 20 minutes to keep your streak.\nTGT(L2): 20 minutes of reading keeps your streak alive—nice and easy. You’ve got this.",
+                ]
+
+                message = _llm_i18n.translate_with_style(message, lang.value, user_id="-1", examples=examples)
 
         return message
 
