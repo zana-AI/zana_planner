@@ -68,6 +68,10 @@ class MessageTemplateStore:
             "morning_header": "☀️ *{date} Morning Focus*\nHere are the top 3 to prioritize today. Pick a quick time or adjust, then get rolling.",
             "morning_question": "🌸 What about *{promise_text}* today? Ready to start?",
 
+            # Group achievements (5pm)
+            "group_achievements_summary": "{user} logged {time_spent} today on {promise_text}!",
+            "group_achievements_broadcast": "Today @{summary}\nDont they deserve a ❤️?",
+
             # Weekly reports
             "weekly_header": "Weekly: {date_range}",
             "weekly_no_data": "No data available for this week.",

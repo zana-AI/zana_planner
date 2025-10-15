@@ -52,6 +52,7 @@ class ActionsRepository:
         if not os.path.exists(file_path):
             return []
 
+        actions: List[Action] = []
         try:
             # Legacy: 4 columns, no header
             df = pd.read_csv(
@@ -66,9 +67,8 @@ class ActionsRepository:
 
             # Combine date + time to a timestamp (naive)
             dt = pd.to_datetime(df["date"] + " " + df["time"], errors="coerce")
-            actions: List[Action] = []
             for i, row in df.iterrows():
-                at = dt.iloc[i]
+                at = dt.iloc[i-1]
                 if pd.isna(at):
                     continue  # skip malformed lines silently
 
@@ -85,8 +85,9 @@ class ActionsRepository:
                     )
                 )
             return actions
-        except Exception:
-            return []
+        except Exception as e:
+            pass
+        return actions
 
     def last_action_for_promise(self, user_id: int, promise_id: str) -> Optional[Action]:
         actions = self.list_actions(user_id)

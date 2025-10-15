@@ -137,6 +137,15 @@ class PlannerTelegramBot:
                 hh=22, mm=59, name_prefix="nightly",
             )
 
+            # Schedule 5pm group achievements broadcast
+            schedule_user_daily(
+                jq, user_id=user_id, tz=tzname,
+                callback=self.message_handlers.scheduled_group_achievements,
+                name_prefix="group_achievements",
+                # hh=17, mm=0,
+                hh=now.hour, mm=now.minute + 1,
+            )
+
     def run(self) -> None:
         """Start the bot."""
         self.application.run_polling()

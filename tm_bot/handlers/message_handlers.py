@@ -429,6 +429,86 @@ class MessageHandlers:
         """Scheduled callback for morning reminders."""
         user_id = context.job.data["user_id"]
         await self.send_morning_reminders(context, user_id=user_id)
+
+    async def scheduled_group_achievements(self, context: CallbackContext) -> None:
+        """Scheduled 5pm broadcast of user achievements into their groups.
+        For the invoking user, aggregate today's actions and post a concise summary into each group the user belongs to.
+        """
+        try:
+            user_id = int(context.job.data.get("user_id"))
+            settings = self.plan_keeper.settings_repo.get_settings(user_id)
+
+            # Skip users without promises
+            promises = self.plan_keeper.get_promises(user_id)
+            if not promises:
+                # TODO: this user has no promises set up yet: maybe we can ask them to do it?
+                return
+
+            # Skip users without groups
+            groups = getattr(settings, 'groups', []) or []
+            if not groups:
+                # TODO: this user has no groups set up yet: maybe we can ask them to do it?
+                return
+
+            # Collect today's actions (midnight → now)
+            now = datetime.now()
+            since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            actions = self.plan_keeper.actions_repo.list_actions(user_id, since=since)
+            if not actions:
+                # TODO: Handle users with promises but no actions yet (nudges / encouragements).
+                return
+
+            # Aggregate hours
+            by_promise = {}
+            total_h = 0.0
+            for a in actions:
+                total_h += float(a.time_spent or 0.0)
+                by_promise[a.promise_id] = by_promise.get(a.promise_id, 0.0) + float(a.time_spent or 0.0)
+
+            # User display
+            try:
+                user_chat = await context.bot.get_chat(user_id)
+                user_display = f"@{getattr(user_chat, 'username', '')}" if getattr(user_chat, 'username', None) \
+                    else (getattr(user_chat, 'first_name', '') or f"User {user_id}")
+            except Exception:
+                user_display = f"User {str(user_id)[:5]}"
+
+            # Top details for summary
+            # "group_achievements_summary": "{user} logged {time_spent} today on {promise_text}",
+            # parts = []
+            top = sorted(by_promise.items(), key=lambda kv: kv[1], reverse=True)[:2]
+            promise_text = "a secret promise"
+            for pid, hours in top:
+                p = self.plan_keeper.get_promise(user_id, pid)
+                if p:
+                    promise_text = p.text.replace('_', ' ')
+                # parts.append(f"{(p.text.replace('_',' '))} {hours:.1f}h")
+                break
+            # if len(by_promise) > 2:
+            #     other_sum = sum(v for _, v in list(sorted(by_promise.items(), key=lambda kv: kv[1], reverse=True))[2:])
+            #     if other_sum > 0:
+            #         parts.append(f"+{other_sum:.1f}h")
+
+            # details = (": " + ", ".join(parts)) if parts else ""
+            # Resolve language from settings/user id; falls back to EN
+            user_lang = get_user_language(user_id)
+
+            # summary_line = get_message("group_achievements_summary", user_lang, user=user_display, total=f"{total_h:.1f}", details=details)
+            summary_line = get_message("group_achievements_summary", user_lang, user=user_display, time_spent=f"{total_h:.1f}",
+                                       promise_text=promise_text)
+            broadcast_text = get_message("group_achievements_broadcast", user_lang, summary=summary_line)
+
+            # Send to each group
+            for g in groups:
+                try:
+                    chat_id = g.get('id') if isinstance(g, dict) else None
+                    if not chat_id:
+                        continue
+                    await context.bot.send_message(chat_id=chat_id, text=broadcast_text)
+                except Exception as e:
+                    logger.debug(f"Could not send achievements to group {g}: {e}")
+        except Exception as e:
+            logger.error(f"Error in scheduled_group_achievements: {e}")
     
     async def cmd_language(self, update: Update, context: CallbackContext) -> None:
         """Handle the /language command to change language preference."""
