@@ -332,7 +332,9 @@ class MessageHandlers:
     def _format_response(self, llm_response: str, func_call_response) -> str:
         """Format the response for Telegram."""
         try:
-            if isinstance(func_call_response, list):
+            if func_call_response is None:
+                return llm_response
+            elif isinstance(func_call_response, list):
                 formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
             elif isinstance(func_call_response, dict):
                 formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
