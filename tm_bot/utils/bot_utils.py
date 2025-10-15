@@ -70,7 +70,7 @@ class BotUtils:
         if user_id is None:
             user_id = update.effective_user.id
         
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         if error_type == "invalid_input":
             message = get_message("error_invalid_input", user_lang, error=error_msg)
@@ -90,7 +90,7 @@ class BotUtils:
         if user_id is None:
             user_id = query.from_user.id
         
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(query.from_user)
         message = get_message("error_general", user_lang, error=error_msg)
         await query.edit_message_text(message, parse_mode='Markdown')
         logger.error(f"Callback error for user {user_id}: {error_msg}")

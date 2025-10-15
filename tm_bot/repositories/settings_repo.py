@@ -14,6 +14,8 @@ from models.models import UserSettings
 class SettingsRepository:
     def __init__(self, root_dir: str):
         self.root_dir = root_dir
+        # Simple in-memory cache to avoid frequent disk access
+        self._cache = {}
 
     def _get_file_path(self, user_id: int) -> str:
         """Get the settings file path for a user."""
@@ -26,6 +28,10 @@ class SettingsRepository:
 
     def get_settings(self, user_id: int) -> UserSettings:
         """Get user settings, creating defaults if not found."""
+        # Return from cache if available
+        cached = self._cache.get(user_id)
+        if cached is not None:
+            return cached
         file_path = self._get_file_path(user_id)
         
         if os.path.exists(file_path):
@@ -38,18 +44,24 @@ class SettingsRepository:
                     with open(file_path, 'r') as f:
                         data = json.load(f) or {}
                 
-                return UserSettings(
+                settings = UserSettings(
                     user_id=user_id,
                     timezone=data.get('timezone', 'Europe/Paris'),
                     nightly_hh=data.get('nightly_hh', 22),
                     nightly_mm=data.get('nightly_mm', 0),
-                    language=data.get('language', 'en')
+                    language=data.get('language', 'en'),
+                    groups=data.get('groups', [])
                 )
+                # Cache and return
+                self._cache[user_id] = settings
+                return settings
             except Exception:
                 pass
         
         # Return default settings if file doesn't exist or can't be read
-        return UserSettings(user_id=user_id)
+        settings = UserSettings(user_id=user_id)
+        self._cache[user_id] = settings
+        return settings
 
     def save_settings(self, settings: UserSettings) -> None:
         """Save user settings to YAML or JSON file."""
@@ -60,8 +72,34 @@ class SettingsRepository:
             'timezone': settings.timezone,
             'nightly_hh': settings.nightly_hh,
             'nightly_mm': settings.nightly_mm,
-            'language': settings.language
+            'language': settings.language,
+            'groups': settings.groups,
         }
+        
+        # Double-check current stored data; skip write if unchanged to reduce IO
+        existing = None
+        if os.path.exists(file_path):
+            try:
+                if YAML_AVAILABLE:
+                    with open(file_path, 'r') as f:
+                        existing = yaml.safe_load(f) or {}
+                else:
+                    with open(file_path, 'r') as f:
+                        existing = json.load(f) or {}
+            except Exception:
+                existing = None
+        if isinstance(existing, dict):
+            # If nothing changed, do not write
+            if (
+                existing.get('timezone') == data['timezone'] and
+                existing.get('nightly_hh') == data['nightly_hh'] and
+                existing.get('nightly_mm') == data['nightly_mm'] and
+                existing.get('language') == data['language'] and
+                existing.get('groups') == data['groups']
+            ):
+                # Still update cache and return
+                self._cache[settings.user_id] = settings
+                return
         
         with open(file_path, 'w') as f:
             if YAML_AVAILABLE:
@@ -69,3 +107,6 @@ class SettingsRepository:
             else:
                 # Fallback to JSON
                 json.dump(data, f, indent=2)
+        
+        # Update cache after successful write
+        self._cache[settings.user_id] = settings

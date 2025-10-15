@@ -48,8 +48,9 @@ class MessageHandlers:
     
     async def start(self, update: Update, context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
-        user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user = update.effective_user
+        user_id = user.id
+        user_lang = get_user_language(user)
         
         create_user_directory(self.root_dir, user_id)
         existing_promises = self.plan_keeper.get_promises(user_id)
@@ -96,7 +97,7 @@ class MessageHandlers:
     async def list_promises(self, update: Update, context: CallbackContext) -> None:
         """Send a message listing all promises for the user."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         promises = self.plan_keeper.get_promises(user_id)
         if not promises:
@@ -128,7 +129,7 @@ class MessageHandlers:
     async def weekly_report(self, update: Update, context: CallbackContext) -> None:
         """Handle the /weekly command to send a weekly report with a refresh button."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         report_ref_time = datetime.now()
         
         # Get weekly summary using the new service
@@ -152,7 +153,7 @@ class MessageHandlers:
     async def plan_by_zana(self, update: Update, context: CallbackContext) -> None:
         """Handle the /zana command to get AI insights."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         promises = self.plan_keeper.get_promises(user_id)
         
@@ -203,7 +204,7 @@ class MessageHandlers:
     async def pomodoro(self, update: Update, context: CallbackContext) -> None:
         """Handle the /pomodoro command to start a Pomodoro timer."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         keyboard = pomodoro_kb()
         message = get_message("pomodoro_start", user_lang)
@@ -216,7 +217,7 @@ class MessageHandlers:
     async def cmd_settimezone(self, update: Update, context: CallbackContext) -> None:
         """Handle the /settimezone command."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         if context.args:
             tzname = context.args[0]
@@ -250,7 +251,7 @@ class MessageHandlers:
     async def on_location_shared(self, update: Update, context: CallbackContext) -> None:
         """Handle location sharing for timezone detection."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         loc = update.effective_message.location
         if not loc:
@@ -297,6 +298,28 @@ class MessageHandlers:
                 await self.start(update, context)
                 return
             
+            # If message is from a group/supergroup, upsert user's group entry in settings
+            if update.effective_chat and update.effective_chat.type in ['group', 'supergroup']:
+                try:
+                    settings = self.plan_keeper.settings_repo.get_settings(user_id)
+                    chat_id = update.effective_chat.id
+                    title = getattr(update.effective_chat, 'title', None)
+                    # simplify now_iso to only keep date and hour
+                    # now_iso = datetime.utcnow().isoformat()
+                    now_iso = datetime.utcnow().replace(minute=0, second=0, microsecond=0).isoformat()
+                    found = False
+                    for g in settings.groups:
+                        if isinstance(g, dict) and g.get('id') == chat_id:
+                            g['title'] = title
+                            g['last_seen'] = now_iso
+                            found = True
+                            break
+                    if not found:
+                        settings.groups.append({'id': chat_id, 'title': title, 'last_seen': now_iso})
+                    self.plan_keeper.settings_repo.save_settings(settings)
+                except Exception as e:
+                    logger.warning(f"Failed to upsert group for user {user_id}: {e}")
+            
             llm_response = self.llm_handler.get_response_api(user_message, user_id)
             
             # Check for errors in LLM response
@@ -325,7 +348,7 @@ class MessageHandlers:
                 await update.message.reply_text(formatted_response)
         
         except Exception as e:
-            user_lang = get_user_language(update.effective_user.id)
+            user_lang = get_user_language(update.effective_user)
             message = get_message("error_unexpected", user_lang, error=str(e))
             await update.message.reply_text(message, parse_mode='Markdown')
             logger.error(f"Unexpected error handling message from user {update.effective_user.id}: {str(e)}")
@@ -410,7 +433,7 @@ class MessageHandlers:
     async def cmd_language(self, update: Update, context: CallbackContext) -> None:
         """Handle the /language command to change language preference."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         message = get_message("choose_language", user_lang)
         keyboard = language_selection_kb()

@@ -24,6 +24,12 @@ def initialize_files(user_dir: str) -> None:
             writer.writerow(['id', 'content'])  # Example headers, adjust as needed
 
     # Create settings.yaml with default settings
-    default_settings = {'setting1': 'value1', 'setting2': 'value2'}  # Example settings, adjust as needed
+    default_settings = {
+        'timezone': 'Europe/Paris',
+        'nightly_hh': 22,
+        'nightly_mm': 0,
+        'language': 'en',
+        'groups': []
+    }
     with open(settings_file, 'w') as file:
         yaml.dump(default_settings, file)

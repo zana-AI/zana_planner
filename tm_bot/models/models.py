@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 @dataclass
@@ -33,6 +33,8 @@ class UserSettings:
     nightly_hh: int = 22
     nightly_mm: int = 0
     language: str = "en"  # "en", "fa", "fr"
+    # List of groups the user interacts in; each entry: {id: int, title: str|None, last_seen: ISO8601 str}
+    groups: List[Dict] = field(default_factory=list)
 
 
 @dataclass

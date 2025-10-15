@@ -130,7 +130,7 @@ class CallbackHandlers:
         await query.answer()
         
         user_id = query.from_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(query.from_user)
         
         # Parse callback data
         cb = decode_cb(query.data)
@@ -220,9 +220,9 @@ class CallbackHandlers:
         """Handle delete promise confirmation."""
         keyboard = list(query.message.reply_markup.inline_keyboard)
         confirm_buttons = [
-            InlineKeyboardButton(get_message("btn_yes_delete", get_user_language(query.from_user.id)), 
+            InlineKeyboardButton(get_message("btn_yes_delete", get_user_language(query.from_user)), 
                                callback_data=encode_cb("confirm_delete", pid=promise_id)),
-            InlineKeyboardButton(get_message("btn_no_cancel", get_user_language(query.from_user.id)), 
+            InlineKeyboardButton(get_message("btn_no_cancel", get_user_language(query.from_user)), 
                                callback_data=encode_cb("cancel_delete", pid=promise_id)),
         ]
         keyboard.append(confirm_buttons)
@@ -472,7 +472,7 @@ class CallbackHandlers:
     
     async def start_pomodoro_timer(self, query, context):
         """Start the Pomodoro timer."""
-        user_lang = get_user_language(query.from_user.id)
+        user_lang = get_user_language(query.from_user)
         total_time = 25  # minutes
         interval = 5  # seconds
         

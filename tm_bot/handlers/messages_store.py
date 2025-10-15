@@ -196,14 +196,36 @@ def get_message(key: str, language: Optional[Language] = None, **kwargs) -> str:
     return _translation_manager.get_message(key, language, **kwargs)
 
 
-def get_user_language(user: User) -> Language:
+def get_user_language(user: User|int) -> Language:
     """Convenience function to get user's language."""
-    # if _translation_manager is None:
-    #     # Fallback to default if not initialized
-    #     return Language.EN
-    # return _translation_manager.get_user_language(user_id)
-    user_lang_id = user.language_code
-    return Language(user_lang_id) if user_lang_id in [lang.value for lang in Language] else Language.EN
+    # Prefer reading from settings when only user_id (int) is available; otherwise use Telegram User.language_code
+    try:
+        if isinstance(user, int):
+            if _translation_manager is not None and _translation_manager.settings_repo is not None:
+                try:
+                    settings = _translation_manager.settings_repo.get_settings(user)
+                    for lang in Language:
+                        if lang.value == getattr(settings, 'language', None):
+                            return lang
+                except Exception:
+                    pass
+            return Language.EN
+        else:
+            user_lang_id = getattr(user, 'language_code', None)
+            if user_lang_id in [lang.value for lang in Language]:
+                return Language(user_lang_id)
+            # Fallback to settings if available even when we have a User
+            if _translation_manager is not None and _translation_manager.settings_repo is not None:
+                try:
+                    settings = _translation_manager.settings_repo.get_settings(user.id)
+                    for lang in Language:
+                        if lang.value == getattr(settings, 'language', None):
+                            return lang
+                except Exception:
+                    pass
+            return Language.EN
+    except Exception:
+        return Language.EN
 
 
 def initialize_message_store(settings_repo):
