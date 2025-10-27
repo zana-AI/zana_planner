@@ -5,6 +5,7 @@ from typing import Optional
 
 @dataclass
 class Promise:
+    user_id: str
     id: str
     text: str
     hours_per_week: float
@@ -19,7 +20,7 @@ class Promise:
 
 @dataclass
 class Action:
-    user_id: int
+    user_id: str
     promise_id: str
     action: str           # e.g., "log_time", "skip", "delete", etc.
     time_spent: float     # hours (can be 0 for skip/delete)
@@ -28,7 +29,7 @@ class Action:
 
 @dataclass
 class UserSettings:
-    user_id: int
+    user_id: str
     timezone: str = "Europe/Paris"
     nightly_hh: int = 22
     nightly_mm: int = 0
@@ -38,7 +39,7 @@ class UserSettings:
 @dataclass
 class Session:
     session_id: str
-    user_id: int
+    user_id: str
     promise_id: str
     status: str              # "running" | "paused" | "finished" | "aborted"
     started_at: datetime
