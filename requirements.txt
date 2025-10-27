@@ -11,3 +11,14 @@ pydantic
 requests==2.31.0
 pandas
 pytest
+
+# --- MongoDB persistence ---
+motor>=3.3.0          # async MongoDB driver
+pymongo>=4.6.0        # used internally by motor, safe to pin
+
+# --- Optional security/encryption ---
+argon2-cffi>=23.1.0   # for Argon2 password hashing (optional)
+cryptography>=42.0.0  # for Fernet encryption (optional)
+
+# --- Optional env helper ---
+python-dotenv>=1.0.1
