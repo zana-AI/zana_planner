@@ -289,10 +289,10 @@ class CallbackHandlers:
                 action_datetime=query.message.date
             )
             promise = self.plan_keeper.get_promise(query.from_user.id, promise_id)
-            promise_text = promise.text.replace("_", " ") if promise else f"#{promise_id}"
+            promise_text = promise.text if promise else f"#{promise_id}"
             message = get_message("time_spent", user_lang, time=beautify_time(value),
                                   date=query.message.date.strftime("%A"),
-                                  promise_id=promise_id, promise_text=promise_text)
+                                  promise_id=promise_id, promise_text=promise_text.replace("_", " "))
             try:
                 await query.edit_message_text(text=message, parse_mode='Markdown')
             except Exception:
@@ -506,9 +506,9 @@ class CallbackHandlers:
         
         # resolve promise text
         p = self.plan_keeper.get_promise(user_id, promise_id)
-        title = getattr(p, "text", None) or (p.get("text") if isinstance(p, dict) else f"#{promise_id}")
+        promise_text = getattr(p, "text", None) or (p.get("text") if isinstance(p, dict) else f"#{promise_id}")
         
-        message = get_message("session_ready", user_lang, promise_text=title)
+        message = get_message("session_ready", user_lang, promise_text=promise_text.replace('_', ' '))
         await context.bot.send_message(
             chat_id=user_id,
             text=message,
@@ -600,7 +600,7 @@ class CallbackHandlers:
             last = self.plan_keeper.get_last_action_on_promise(user_id, p.id)
             curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
             
-            message = get_message("morning_question", user_lang, promise_text=p.text)
+            message = get_message("morning_question", user_lang, promise_text=p.text.replace('_', ' '))
             msg = await context.bot.send_message(
                 chat_id=user_id,
                 text=message,

@@ -288,8 +288,9 @@ class MessageHandlers:
         try:
             user_message = update.message.text
             user_id = update.effective_user.id
-            user_lang = get_user_language(user_id)
-            
+            user_group_id = update.effective_chat.id if update.effective_chat.type in ['group', 'supergroup'] else None
+            user_lang = get_user_language(update.effective_user)
+
             # Check if user exists, if not, call start
             user_dir = os.path.join(self.root_dir, str(user_id))
             if not os.path.exists(user_dir):
@@ -332,7 +333,9 @@ class MessageHandlers:
     def _format_response(self, llm_response: str, func_call_response) -> str:
         """Format the response for Telegram."""
         try:
-            if isinstance(func_call_response, list):
+            if func_call_response is None:
+                return llm_response
+            elif isinstance(func_call_response, list):
                 formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
             elif isinstance(func_call_response, dict):
                 formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())

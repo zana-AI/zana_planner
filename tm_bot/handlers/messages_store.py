@@ -1,6 +1,9 @@
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
+
+from telegram import User
+
 from handlers.translator import translate_text
 
 
@@ -193,12 +196,14 @@ def get_message(key: str, language: Optional[Language] = None, **kwargs) -> str:
     return _translation_manager.get_message(key, language, **kwargs)
 
 
-def get_user_language(user_id: int) -> Language:
+def get_user_language(user: User) -> Language:
     """Convenience function to get user's language."""
-    if _translation_manager is None:
-        # Fallback to default if not initialized
-        return Language.EN
-    return _translation_manager.get_user_language(user_id)
+    # if _translation_manager is None:
+    #     # Fallback to default if not initialized
+    #     return Language.EN
+    # return _translation_manager.get_user_language(user_id)
+    user_lang_id = user.language_code
+    return Language(user_lang_id) if user_lang_id in [lang.value for lang in Language] else Language.EN
 
 
 def initialize_message_store(settings_repo):

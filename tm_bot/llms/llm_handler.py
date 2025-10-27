@@ -80,6 +80,8 @@ class LLMHandler:
             "\t\"function_args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"},\n"
             "\t\"response_to_user\": \"Response to the user\"\n"
             "}\n"
+            "If the user’s message is small talk, greeting, thanks, emoji-only, or unclear → DO NOT call any function. Return: function_call='no_op', response_to_user=short friendly reply.\n"
+            "If required args missing → ask a brief question.\n"
             f"Here are the list of API functions available:\n [{api_schema_str}]\n"
         ))
 
