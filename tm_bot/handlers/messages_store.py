@@ -202,8 +202,11 @@ def get_user_language(user: User) -> Language:
     #     # Fallback to default if not initialized
     #     return Language.EN
     # return _translation_manager.get_user_language(user_id)
-    user_lang_id = user.language_code
-    return Language(user_lang_id) if user_lang_id in [lang.value for lang in Language] else Language.EN
+    try:
+        user_lang_id = user.language_code
+        return Language(user_lang_id) if user_lang_id in [lang.value for lang in Language] else Language.EN
+    except Exception:
+        return Language.EN
 
 
 def initialize_message_store(settings_repo):
