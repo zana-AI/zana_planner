@@ -31,19 +31,20 @@ class PromisesRepository:
         json_path = self._get_json_file_path(user_id)
         
         if os.path.exists(csv_path):
-            return self._load_from_csv(csv_path)
+            return self._load_from_csv(user_id, csv_path)
         elif os.path.exists(json_path):
-            return self._load_from_json(json_path)
+            return self._load_from_json(user_id, json_path)
         else:
             return []
 
-    def _load_from_csv(self, file_path: str) -> List[Promise]:
+    def _load_from_csv(self, user_id: int, file_path: str) -> List[Promise]:
         """Load promises from CSV file using pandas."""
         try:
             df = pd.read_csv(file_path)
             promises: List[Promise] = []
             for _, row in df.iterrows():
                 promise = Promise(
+                    user_id=user_id,
                     id=str(row.get('id', '')),
                     text=str(row.get('text', '')),
                     hours_per_week=float(row.get('hours_per_week', 0)),
@@ -55,10 +56,11 @@ class PromisesRepository:
                 )
                 promises.append(promise)
             return promises
-        except Exception:
+        except Exception as e:
+            print(f"Error loading promises from CSV: {str(e)}")
             return []
 
-    def _load_from_json(self, file_path: str) -> List[Promise]:
+    def _load_from_json(self, uesr_id: int, file_path: str) -> List[Promise]:
         """Load promises from JSON file (legacy format)."""
         try:
             with open(file_path, 'r') as f:
@@ -67,6 +69,7 @@ class PromisesRepository:
             promises = []
             for item in data:
                 promise = Promise(
+                    user_id=uesr_id,
                     id=item.get('id', ''),
                     text=item.get('text', ''),
                     hours_per_week=float(item.get('hours_per_week', 0)),
@@ -78,7 +81,8 @@ class PromisesRepository:
                 )
                 promises.append(promise)
             return promises
-        except Exception:
+        except Exception as e:
+            print(f"Error loading promises from JSON: {str(e)}")
             return []
 
     def get_promise(self, user_id: int, promise_id: str) -> Optional[Promise]:
