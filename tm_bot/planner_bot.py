@@ -82,6 +82,33 @@ class PlannerTelegramBot:
         # Callback query handler
         self.application.add_handler(CallbackQueryHandler(self.callback_handlers.handle_promise_callback))
 
+        # Voice messages (PTT / voice notes)
+        self.application.add_handler(MessageHandler(filters.VOICE, self.message_handlers.on_voice))
+
+        # Images (photos + image docs like PNG/JPG sent as files)
+        self.application.add_handler(MessageHandler(filters.PHOTO | (filters.Document.MimeType("image/")),
+                self.message_handlers.on_image))
+
+        # Polls (receive poll messages in chats)
+        self.application.add_handler(MessageHandler(filters.POLL, self.message_handlers.on_poll_created))
+
+        # Poll answers (when users vote)
+        from telegram.ext import PollAnswerHandler
+        self.application.add_handler(PollAnswerHandler(self.message_handlers.on_poll_answer))
+
+        # “Todo list” style texts (checkboxes / markdown lists)
+        # Option A: keep your general TEXT handler and route inside it
+        # # Option B: add a thin filter for todo-like lines:
+        # from telegram.ext import MessageFilter
+        # class TodoFilter(MessageFilter):
+        #     def filter(self, message) -> bool:
+        #         t = (message.text or "").strip()
+        #         if not t: return False
+        #         # Common todo patterns: Markdown checkboxes or checkbox emojis
+        #         return any(p in t for p in ("- [ ]", "- [x]", "☐", "✅", "☑️"))
+        # todo_filter = TodoFilter()
+        # self.application.add_handler(MessageHandler(todo_filter & ~filters.COMMAND, self.message_handlers.on_todo_text))
+
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings repository."""
         return BotUtils.get_user_timezone(self.plan_keeper, user_id)

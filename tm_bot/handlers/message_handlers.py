@@ -282,7 +282,43 @@ class MessageHandlers:
                 message,
                 reply_markup=ReplyKeyboardRemove(),
             )
-    
+
+    async def on_voice(self, update: Update, context: CallbackContext):
+        # 1) get file
+        voice = update.effective_message.voice
+        file = await context.bot.get_file(voice.file_id)
+        # 2) download to temp (or your user dir)
+        path = f"/tmp/voice_{voice.file_unique_id}.ogg"
+        await file.download_to_drive(path)
+        # 3) hand off to ASR pipeline (queue/job) → return intent/result
+        await update.effective_message.reply_text("Got your voice note. But this feature is not implemented yet.")
+
+    async def on_image(self, update: Update, context: CallbackContext):
+        msg = update.effective_message
+        # Photo: pick the largest size
+        if msg.photo:
+            file_id = msg.photo[-1].file_id
+        else:
+            # Image as document (PNG/JPG)
+            file_id = msg.document.file_id
+        file = await context.bot.get_file(file_id)
+        path = f"/tmp/image_{file.file_unique_id}"
+        await file.download_to_drive(path)
+        # Hook: OCR / caption / “extract tasks”
+        await msg.reply_text("Image received. But this feature is not implemented yet.")
+
+    async def on_poll_created(self, update: Update, context: CallbackContext):
+        poll = update.effective_message.poll
+        # You can store poll.id ↔ chat/message mapping if you plan to track answers
+        await update.effective_message.reply_text(f"Poll detected: “{poll.question}”")
+
+    async def on_poll_answer(self, update: Update, context: CallbackContext):
+        await update.effective_message.reply_text("Sorry, poll answer is not implemented yet.")
+
+    async def on_todo_text(self, update: Update, context: CallbackContext):
+        # reply it's not implemented yet
+        await update.effective_message.reply_text("Sorry, todo list is not implemented yet.")
+
     async def handle_message(self, update: Update, context: CallbackContext) -> None:
         """Handle general text messages."""
         try:
