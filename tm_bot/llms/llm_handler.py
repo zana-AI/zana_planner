@@ -27,14 +27,14 @@ class LLMHandler:
         try:
             cfg = load_llm_env()  # returns dict with project, location, model
 
-            if cfg.get("OPENAI_API_KEY", ""):
-                self.chat_model = ChatOpenAI(
-                    openai_api_key=cfg["OPENAI_API_KEY"],
-                    temperature=0.7,
-                    model="gpt-4o-mini"
-                )
+            # if cfg.get("OPENAI_API_KEY", ""):
+            #     self.chat_model = ChatOpenAI(
+            #         openai_api_key=cfg["OPENAI_API_KEY"],
+            #         temperature=0.7,
+            #         model="gpt-4o-mini"
+            #     )
 
-            elif cfg.get("GCP_PROJECT_ID", ""):
+            if cfg.get("GCP_PROJECT_ID", ""):
                 self.chat_model = ChatVertexAI(
                     model=cfg["GCP_GEMINI_MODEL"],
                     project=cfg["GCP_PROJECT_ID"],
