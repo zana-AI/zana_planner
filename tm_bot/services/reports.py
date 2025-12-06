@@ -1,5 +1,8 @@
-from typing import Dict, Any
-from datetime import datetime, timedelta
+from typing import Dict, Any, List
+from datetime import datetime, timedelta, date
+import os
+import tempfile
+import uuid
 
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
@@ -39,6 +42,54 @@ class ReportsService:
                 promise_id = action.promise_id
                 if promise_id in report_data:
                     report_data[promise_id]['hours_spent'] += action.time_spent
+        
+        return report_data
+
+    def get_weekly_summary_with_sessions(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
+        """Get weekly summary data with per-day session breakdown for visualization."""
+        # Get week boundaries
+        week_start, week_end = get_week_range(ref_time)
+        
+        # Get all promises
+        promises = self.promises_repo.list_promises(user_id)
+        
+        # Get actions from this week
+        actions = self.actions_repo.list_actions(user_id, since=week_start)
+        
+        # Initialize report data
+        report_data = {}
+        for promise in promises:
+            # Check if promise is active (start date has passed)
+            if promise.start_date and promise.start_date <= ref_time.date():
+                report_data[promise.id] = {
+                    'text': promise.text,
+                    'hours_promised': promise.hours_per_week,
+                    'hours_spent': 0.0,
+                    'sessions': []  # List of {'date': date, 'hours': float}
+                }
+        
+        # Group actions by promise and date
+        actions_by_promise_date: Dict[str, Dict[date, float]] = {}
+        for action in actions:
+            if action.at >= week_start and action.at <= week_end:
+                promise_id = action.promise_id
+                if promise_id in report_data:
+                    action_date = action.at.date()
+                    if promise_id not in actions_by_promise_date:
+                        actions_by_promise_date[promise_id] = {}
+                    if action_date not in actions_by_promise_date[promise_id]:
+                        actions_by_promise_date[promise_id][action_date] = 0.0
+                    actions_by_promise_date[promise_id][action_date] += action.time_spent
+        
+        # Convert to sessions format and accumulate total hours
+        for promise_id, date_hours in actions_by_promise_date.items():
+            sessions = []
+            total_hours = 0.0
+            for action_date, hours in sorted(date_hours.items()):
+                sessions.append({'date': action_date, 'hours': hours})
+                total_hours += hours
+            report_data[promise_id]['hours_spent'] = total_hours
+            report_data[promise_id]['sessions'] = sessions
         
         return report_data
 
@@ -123,3 +174,33 @@ class ReportsService:
             # Count negative streak (days since last action)
             days_since = (current_date - last_action_date).days
             return -days_since
+
+    def generate_weekly_visualization_image(self, user_id: int, ref_time: datetime, temp_dir: str = None) -> str:
+        """
+        Generate weekly visualization image and return path to temp file.
+        
+        Args:
+            user_id: User ID
+            ref_time: Reference time for week calculation
+            temp_dir: Optional temp directory (defaults to system temp)
+        
+        Returns:
+            Path to generated image file (should be deleted after use)
+        """
+        from visualisation.vis_rects import generate_weekly_visualization
+        
+        # Get weekly summary with sessions
+        summary = self.get_weekly_summary_with_sessions(user_id, ref_time)
+        
+        # Generate unique temp filename
+        if temp_dir is None:
+            temp_dir = tempfile.gettempdir()
+        
+        # Use UUID to ensure unique filename
+        unique_id = str(uuid.uuid4())
+        image_path = os.path.join(temp_dir, f"weekly_viz_{user_id}_{unique_id}.png")
+        
+        # Generate visualization
+        generate_weekly_visualization(summary, image_path, width=1200, height=900)
+        
+        return image_path

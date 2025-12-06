@@ -126,7 +126,7 @@ class MessageHandlers:
         await self.send_morning_reminders(context, user_id=user_id)
     
     async def weekly_report(self, update: Update, context: CallbackContext) -> None:
-        """Handle the /weekly command to send a weekly report with a refresh button."""
+        """Handle the /weekly command to send a weekly report with a refresh button and visualization."""
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
         report_ref_time = datetime.now()
@@ -148,6 +148,29 @@ class MessageHandlers:
             reply_markup=keyboard,
             parse_mode='Markdown'
         )
+        
+        # Generate and send visualization image
+        image_path = None
+        try:
+            image_path = self.plan_keeper.reports_service.generate_weekly_visualization_image(
+                user_id, report_ref_time
+            )
+            if image_path and os.path.exists(image_path):
+                with open(image_path, 'rb') as photo:
+                    await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=photo
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to generate weekly visualization: {e}")
+            # Don't fail the whole command if visualization fails
+        finally:
+            # Clean up temp file
+            if image_path and os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp visualization file {image_path}: {e}")
     
     async def plan_by_zana(self, update: Update, context: CallbackContext) -> None:
         """Handle the /zana command to get AI insights."""
