@@ -27,4 +27,4 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
         run: |
-          ssh $USER@$HOST "cd $PROJECT_PATH && git pull origin master"
+          ssh -o StrictHostKeyChecking=no $USER@$HOST "cd $PROJECT_PATH && git pull"
