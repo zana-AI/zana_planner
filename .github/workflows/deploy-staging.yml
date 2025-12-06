@@ -1,4 +1,4 @@
-name: Deploy to staging on GCP
+name: Deploy to Staging on GCP
 
 on:
   push:
@@ -17,15 +17,26 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Pull code and rebuild staging
+      - name: Deploy staging
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}
-          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}   # /opt/zana-bot
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
         run: |
           ssh -o StrictHostKeyChecking=no $USER@$HOST "
             set -e
+
+            echo '[STAGING] Preparing staging data...'
+            sudo mkdir -p /srv/zana-users-staging
+            sudo rm -rf /srv/zana-users-staging/*
+            sudo cp -r /srv/zana-users/* /srv/zana-users-staging/
+
+            echo '[STAGING] Updating code...'
             cd $PROJECT_PATH
             git pull
+
+            echo '[STAGING] Rebuilding container...'
             docker compose up -d --build zana-staging
+
+            echo '[STAGING] Done.'
           "

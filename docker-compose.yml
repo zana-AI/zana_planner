@@ -31,7 +31,7 @@ services:
     env_file:
       - /opt/zana-config/.env.staging
     volumes:
-      - /srv/zana-users-staging:/app/USERS_DATA_DIR_BACKUP:rw
+      - /srv/zana-users-staging:/app/USERS_DATA_DIR:rw
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -39,7 +39,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/USERS_DATA_DIR_BACKUP') else 1)"]
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/USERS_DATA_DIR') else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
