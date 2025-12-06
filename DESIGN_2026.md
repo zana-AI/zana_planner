@@ -8,6 +8,12 @@
 |-------------------------------------------------------------------------------------|------------|----------|--------------------------------------------|
 | ☑ Visualizations: weekly stats, progress charts.             | 8          | 3h       |                                            |
 | ☐ Admin Panel to track users + hooks for sending broadcast messages.              | 8          | 5h       | helps me to feel more close to the service |
+| ☐ CI/CD and automated testing.                                                    | 3          | 3h       |                                            |
+|   ↳ ☐ Dockerization of admin panel                                               |            | 1h       | deploy admin panel as container            |
+|   ↳ ☐ Logging dashboard integration (Logtail)                                    |            | 1h       | monitor admin usage & events               |
+|   ↳ ☐ Access management for admins                                               |            | 1h       | roles, permissions                         |
+|   ↳ ☐ UI for viewing and filtering users                                         |            | 1h       | search, sorting                            |
+|   ↳ ☐ Endpoint/hooks for sending broadcast messages                              |            | 1h       | robust, with failure feedback              |
 | ☐ Agentic capabilities to enhance task management and intimacy with user.         | 7          | 10h      |                                            |
 | ☐ fix weekly report refresh bug                                                   | 6          | .5h      |                                            |
 | ☐ LLM: store conversation history + summarization + RAG if needed.                | 6          | 20h      |                                            |
@@ -19,7 +25,6 @@
 | ☐ Integrate Image understanding for image inputs.                                 | 4          | 2h       |                                            |
 | ☐ secure paths that llm calls don't leak data.                                    | 4          | 2h       |                                            |
 | ☐ Define monthly Retro                                                            | 4          | 3h       |                                            |
-| ☐ CI/CD and automated testing.                                                    | 3          | 3h       |                                            |
 | ☐ Telegram App for better UX.                                                     | 3          | 20h      |                                            |
 | ☐ a directory for each user to store their data: tasks, conversations, settings, etc. | 2          | 1h       |                                            |
 | ☐ Use Redis for caching (on top of csv/txt files).                                | 2          | 2h       |                                            |
