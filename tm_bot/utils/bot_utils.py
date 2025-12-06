@@ -4,7 +4,6 @@ Contains shared logic to avoid DRY violations.
 """
 
 import os
-import logging
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 
@@ -16,8 +15,9 @@ from services.planner_api_adapter import PlannerAPIAdapter
 from utils.time_utils import beautify_time
 from ui.keyboards import time_options_kb
 from cbdata import encode_cb
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BotUtils:

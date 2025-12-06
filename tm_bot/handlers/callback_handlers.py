@@ -4,7 +4,6 @@ Handles all callback query processing from inline keyboards.
 """
 
 import asyncio
-import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -14,15 +13,17 @@ from telegram.ext import CallbackContext
 from handlers.messages_store import get_message, get_user_language, Language
 from services.planner_api_adapter import PlannerAPIAdapter
 from models.models import Action
-from utils.time_utils import beautify_time, round_time
+from utils.time_utils import beautify_time, round_time, get_week_range
 from ui.keyboards import (
     time_options_kb, session_running_kb, session_paused_kb, 
     session_finish_confirm_kb, session_adjust_kb, preping_kb,
-    language_selection_kb
+    language_selection_kb, weekly_report_kb
 )
+from ui.messages import weekly_report_text
 from cbdata import encode_cb, decode_cb
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CallbackHandlers:
@@ -628,10 +629,35 @@ class CallbackHandlers:
         })
 
     async def _handle_refresh_weekly(self, query, context: CallbackContext, user_lang: Language):
-        """Handle weekly report refresh."""
-        # TODO: Implement weekly report refresh functionality
+        """Handle weekly report refresh - updates message with current week's data."""
         user_id = query.from_user.id
-        await query.answer("Weekly report refreshed!")
+        
+        # Get current time in user's timezone
+        user_now, _tzname = self._get_user_now(user_id)
+        
+        # Get fresh weekly summary
+        summary = self.plan_keeper.reports_service.get_weekly_summary(user_id, user_now)
+        report = weekly_report_text(summary)
+        
+        # Compute week boundaries based on current time
+        week_start, week_end = get_week_range(user_now)
+        date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
+        
+        # Create new refresh keyboard with updated timestamp
+        keyboard = weekly_report_kb(user_now)
+        
+        # Update the message
+        header = get_message("weekly_header", user_lang, date_range=date_range_str)
+        try:
+            await query.edit_message_text(
+                f"{header}\n\n{report}",
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+            await query.answer("Weekly report refreshed!")
+        except Exception as e:
+            logger.error(f"Error refreshing weekly report: {e}")
+            await query.answer("Error refreshing report. Please try again.")
     
     async def _handle_set_language(self, query):
         """Handle language selection."""

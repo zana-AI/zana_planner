@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  zana-prod:
+    image: zana-ai-bot:latest
+    container_name: zana-prod
+    env_file:
+      - /opt/zana-config/.env.prod
+    volumes:
+      - /srv/zana-users:/app/users_data:rw
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/users_data') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  zana-staging:
+    image: zana-ai-bot:latest
+    container_name: zana-staging
+    env_file:
+      - /opt/zana-config/.env.staging
+    volumes:
+      - /srv/zana-users-staging:/app/users_data:rw
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/users_data') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  zana-stats:
+    build:
+      context: .
+      dockerfile: stats_service/Dockerfile
+    container_name: zana-stats
+    ports:
+      - "8000:8000"
+    environment:
+      - USERS_DATA_DIR=/app/users_data
+      - LOGTAIL_SOURCE_TOKEN=${LOGTAIL_SOURCE_TOKEN:-}
+      - LOGTAIL_INGEST_HOST=${LOGTAIL_INGEST_HOST:-in.logtail.com}
+    volumes:
+      - /srv/zana-users:/app/users_data:ro
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

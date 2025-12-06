@@ -23,8 +23,9 @@ def round_time(hours: float, step_min: int = 5) -> float:
     return h + m / 60.0
 
 
-def get_week_range(reference: datetime, week_start_hour: int = 3):
-    """Return (week_start, week_end) given a reference datetime."""
+def get_week_range(reference: datetime, week_start_hour: int = 0):
+    """Return (week_start, week_end) given a reference datetime.
+    Week starts from Monday at the specified hour (default 0 = midnight)."""
     monday = reference - timedelta(days=reference.weekday())
     week_start = monday.replace(hour=week_start_hour, minute=0, second=0, microsecond=0)
     if reference < week_start:

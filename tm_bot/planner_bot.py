@@ -5,8 +5,6 @@ This version uses separated concerns with internationalization support.
 import datetime
 import os
 import subprocess
-import logging
-import logging.config
 
 from telegram.ext import (
     Application,
@@ -25,9 +23,9 @@ from handlers.callback_handlers import CallbackHandlers
 from handlers.messages_store import initialize_message_store
 from utils.bot_utils import BotUtils
 from infra.scheduler import schedule_user_daily
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 class PlannerTelegramBot:
     """Main Telegram bot class with separated concerns."""
@@ -175,46 +173,51 @@ def main():
     load_dotenv()
 
     ROOT_DIR = os.getenv("ROOT_DIR")
-    ROOT_DIR = os.path.abspath(subprocess.check_output(f'echo {ROOT_DIR}', shell=True).decode().strip())
+    if not ROOT_DIR:
+        logger.error("ROOT_DIR environment variable is not set")
+        raise ValueError("ROOT_DIR environment variable is required")
+    
+    # In Docker, ROOT_DIR should already be an absolute path
+    # For local development, resolve it
+    if not os.path.isabs(ROOT_DIR):
+        try:
+            ROOT_DIR = os.path.abspath(subprocess.check_output(f'echo {ROOT_DIR}', shell=True).decode().strip())
+        except Exception:
+            ROOT_DIR = os.path.abspath(ROOT_DIR)
+    
     BOT_TOKEN = os.getenv("BOT_TOKEN")
-    LOG_FILE = os.getenv("LOG_FILE", os.path.abspath(os.path.join(__file__, '../..', 'bot.log')))
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN environment variable is not set")
+        raise ValueError("BOT_TOKEN environment variable is required")
 
-    # Enable logging
-    logging.config.dictConfig({
-        'version': 1,
-        'disable_existing_loggers': False,
-        'formatters': {
-            'standard': {
-                'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-            },
-        },
-        'handlers': {
-            'default': {
-                'level': 'INFO',
-                'formatter': 'standard',
-                'class': 'logging.StreamHandler',
-            },
-            'file': {
-                'level': 'INFO',
-                'formatter': 'standard',
-                'class': 'logging.FileHandler',
-                'filename': LOG_FILE,
-                'mode': 'a',
-            },
-        },
-        'loggers': {
-            '': {  # root logger
-                'handlers': ['default', 'file'],
-                'level': 'INFO',
-                'propagate': True
-            },
-            'httpx': {  # httpx logger
-                'handlers': ['default', 'file'],
-                'level': 'WARNING',
-                'propagate': True
-            }
-        }
-    })
+    # Optional Sentry initialization (if DSN is provided)
+    SENTRY_DSN = os.getenv("SENTRY_DSN")
+    if SENTRY_DSN:
+        try:
+            import sentry_sdk
+            from sentry_sdk.integrations.logging import LoggingIntegration
+            from sentry_sdk.integrations.fastapi import FastApiIntegration
+            import logging as std_logging
+            sentry_logging = LoggingIntegration(
+                level=std_logging.INFO,  # capture >= INFO as breadcrumbs
+                event_level=std_logging.ERROR  # send >= ERROR as full Sentry events
+            )
+            sentry_sdk.init(
+                dsn=SENTRY_DSN,
+                send_default_pii=True,
+                integrations=[sentry_logging, FastApiIntegration()],
+                traces_sample_rate=1.0
+            )
+            logger.info("Sentry initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Sentry (optional): {str(e)}")
+
+    # Configure httpx logger to reduce noise
+    import logging as std_logging
+    httpx_logger = std_logging.getLogger("httpx")
+    httpx_logger.setLevel(std_logging.WARNING)
+
+    logger.info(f"Starting Zana AI bot with ROOT_DIR={ROOT_DIR}")
 
     # Create and run bot
     bot = PlannerTelegramBot(BOT_TOKEN, ROOT_DIR)

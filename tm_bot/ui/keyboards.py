@@ -49,7 +49,7 @@ def session_controls_kb(session_running: bool) -> InlineKeyboardMarkup:
 
 def weekly_report_kb(ref_time) -> InlineKeyboardMarkup:
     """Create keyboard for weekly report with refresh button."""
-    refresh_callback = encode_cb("refresh_weekly", str(int(ref_time.timestamp())))
+    refresh_callback = encode_cb("refresh_weekly", t=str(int(ref_time.timestamp())))
     buttons = [[InlineKeyboardButton("🔄 Refresh", callback_data=refresh_callback)]]
     return InlineKeyboardMarkup(buttons)
 

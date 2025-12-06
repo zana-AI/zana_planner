@@ -3,13 +3,13 @@ Translation module using Google Cloud Translation API.
 Provides caching to minimize API calls for frequently used messages.
 """
 
-import logging
 from typing import Dict, Optional
 from functools import lru_cache
 
 from llms.llm_env_utils import load_llm_env
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Translation cache to avoid repeated API calls
 _translation_cache: Dict[str, str] = {}

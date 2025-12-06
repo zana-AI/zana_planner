@@ -14,7 +14,6 @@ Unified MongoDB persistence for tm_bot using Motor (async MongoDB driver).
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Type, TypeVar
@@ -46,12 +45,12 @@ except Exception:  # pragma: no cover
 # Domain models
 from models.models import Promise, Action, Session, UserSettings
 from models.enums import ActionType, SessionStatus
+from utils.logger import get_logger
 
 
 T = TypeVar("T")
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+logger = get_logger(__name__)
 
 
 class DataManager:

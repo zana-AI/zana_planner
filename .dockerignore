@@ -1,0 +1,64 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# User data (should be mounted as volumes)
+USERS_DATA_DIR/
+/srv/zana-users/
+/srv/zana-users-staging/
+
+# Logs
+*.log
+logs/
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+TEMP_*
+temp_*
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment config (secrets)
+/opt/zana-config/
+
+# Stats service (separate build)
+stats_service/

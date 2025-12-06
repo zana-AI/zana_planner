@@ -1,7 +1,6 @@
 import os
 import sys
 from pathlib import Path
-import logging
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
@@ -15,8 +14,9 @@ from llms.schema import UserAction, LLMResponse  # Ensure this path is correct
 from services.planner_api_adapter import PlannerAPIAdapter
 from langchain_google_vertexai import ChatVertexAI
 from llms.llm_env_utils import load_llm_env
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Define the schemas list
 schemas = [LLMResponse]  # , UserPromise, UserAction]

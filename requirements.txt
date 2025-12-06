@@ -11,6 +11,13 @@ pydantic
 requests==2.31.0
 pandas
 pytest
+matplotlib
+#watchdog  # watchmedo auto-restart --pattern="*.py" --recursive python bot.py
+watchfiles  # watchfiles python bot.py
+sentry-sdk
+logtail-python
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
 
 # --- MongoDB persistence ---
 motor>=3.3.0          # async MongoDB driver

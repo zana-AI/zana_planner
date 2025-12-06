@@ -4,7 +4,6 @@ Handles all command and text message processing.
 """
 
 import os
-import logging
 from datetime import datetime
 from typing import Optional
 
@@ -22,8 +21,9 @@ from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily
 from utils_storage import create_user_directory
 from handlers.callback_handlers import CallbackHandlers
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MessageHandlers:
