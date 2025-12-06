@@ -34,7 +34,7 @@ COPY bot_stats.py ./
 
 # Make sure local bin is in PATH
 ENV PATH=/home/amiryan_j/.local/bin:$PATH
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app:/app/tm_bot
 
 # Switch to non-root user
 USER amiryan_j
