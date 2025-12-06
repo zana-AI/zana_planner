@@ -6,10 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 zana && \
-    mkdir -p /app/users_data && \
-    chown -R zana:zana /app
+# Create non-root user (matching host user UID for volume permissions)
+RUN useradd -m -u 1002 amiryan_j && \
+    mkdir -p /app/USERS_DATA_DIR && \
+    chown -R amiryan_j:amiryan_j /app
 
 # Set working directory
 WORKDIR /app
@@ -28,7 +28,7 @@ COPY tm_bot/utils/__init__.py ./tm_bot/utils/__init__.py
 ENV PYTHONPATH=/app
 
 # Switch to non-root user
-USER zana
+USER amiryan_j
 
 # Expose port
 EXPOSE 8000

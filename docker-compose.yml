@@ -1,13 +1,14 @@
-version: '3.8'
-
 services:
   zana-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: zana-ai-bot:latest
     container_name: zana-prod
     env_file:
       - /opt/zana-config/.env.prod
     volumes:
-      - /srv/zana-users:/app/users_data:rw
+      - /srv/zana-users:/app/USERS_DATA_DIR:rw
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -15,19 +16,22 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/users_data') else 1)"]
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/USERS_DATA_DIR') else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
   zana-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: zana-ai-bot:latest
     container_name: zana-staging
     env_file:
       - /opt/zana-config/.env.staging
     volumes:
-      - /srv/zana-users-staging:/app/users_data:rw
+      - /srv/zana-users-staging:/app/USERS_DATA_DIR_BACKUP:rw
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -35,7 +39,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/users_data') else 1)"]
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/USERS_DATA_DIR_BACKUP') else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -49,11 +53,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - USERS_DATA_DIR=/app/users_data
+      - USERS_DATA_DIR=/app/USERS_DATA_DIR
       - LOGTAIL_SOURCE_TOKEN=${LOGTAIL_SOURCE_TOKEN:-}
       - LOGTAIL_INGEST_HOST=${LOGTAIL_INGEST_HOST:-in.logtail.com}
     volumes:
-      - /srv/zana-users:/app/users_data:ro
+      - /srv/zana-users:/app/USERS_DATA_DIR:ro
     restart: unless-stopped
     logging:
       driver: "json-file"

@@ -30,7 +30,7 @@ CACHE_TTL = timedelta(minutes=5)
 
 def get_users_data_dir() -> str:
     """Get users data directory from environment."""
-    data_dir = os.getenv("USERS_DATA_DIR", "/app/users_data")
+    data_dir = os.getenv("USERS_DATA_DIR", "/app/USERS_DATA_DIR")
     if not os.path.exists(data_dir):
         logger.warning(f"Users data directory does not exist: {data_dir}")
     return data_dir

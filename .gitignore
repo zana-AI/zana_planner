@@ -1,6 +1,9 @@
 /.venv*
 /.idea
-*.env
+*.env*
+env.*
+*.json
+*.txt
 *.log
 *.pyc
 /TEMP_*
