@@ -1,0 +1,44 @@
+name: Deploy to staging (build + restart)
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  id-token: write   # needed for OIDC
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (metadata only)
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Build & restart staging on VM
+        run: |
+          gcloud compute ssh ${{ secrets.GCP_OSLOGIN_USER }}@${{ secrets.GCP_VM_NAME }} \
+            --zone=${{ secrets.GCP_VM_ZONE }} \
+            --command="
+              set -e
+              cd /opt/zana-bot
+              git pull origin master
+              VERSION=\$(git rev-parse --short HEAD)
+              echo Building image zana-ai-bot:\$VERSION
+              docker build -t zana-ai-bot:\$VERSION .
+              docker tag zana-ai-bot:\$VERSION zana-ai-bot:staging
+              docker compose up -d zana-staging
+            "

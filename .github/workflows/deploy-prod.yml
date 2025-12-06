@@ -1,0 +1,36 @@
+name: Promote staging to prod
+
+on:
+  workflow_dispatch:   # manual run in GitHub UI
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  promote-prod:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Authenticate to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Tag staging image as prod and restart
+        run: |
+          gcloud compute ssh ${{ secrets.GCP_OSLOGIN_USER }}@${{ secrets.GCP_VM_NAME }} \
+            --zone=${{ secrets.GCP_VM_ZONE }} \
+            --command="
+              set -e
+              cd /opt/zana-bot
+              echo Tagging zana-ai-bot:staging as zana-ai-bot:prod
+              docker tag zana-ai-bot:staging zana-ai-bot:prod
+              docker compose up -d zana-prod
+            "
