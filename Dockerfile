@@ -19,7 +19,7 @@ FROM python:3.11-slim
 
 # Create non-root user (matching host user UID for volume permissions)
 RUN useradd -m -u 1002 amiryan_j && \
-    mkdir -p /app/USERS_DATA_DIR /app/USERS_DATA_DIR_BACKUP && \
+    mkdir -p /app/USERS_DATA_DIR /app/USERS_DATA_DIR && \
     chown -R amiryan_j:amiryan_j /app
 
 # Copy Python dependencies from builder
