@@ -27,9 +27,9 @@ jobs:
             set -e
 
             echo '[STAGING] Preparing staging data...'
-            sudo mkdir -p /srv/zana-users-staging
-            sudo rm -rf /srv/zana-users-staging/*
-            sudo cp -r /srv/zana-users/* /srv/zana-users-staging/
+            mkdir -p /srv/zana-users-staging
+            rm -rf /srv/zana-users-staging/*
+            cp -r /srv/zana-users/* /srv/zana-users-staging/
 
             echo '[STAGING] Updating code...'
             cd $PROJECT_PATH
