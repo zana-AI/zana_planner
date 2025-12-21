@@ -6,6 +6,7 @@ env.*
 *.txt
 *.log
 *.pyc
+tmp*
 /TEMP_*
 /USERS_DATA_DIR
 /temp_*

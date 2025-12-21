@@ -58,6 +58,7 @@ class PlannerAPIAdapter:
                 end_date = datetime(datetime.now().year, 12, 31).date()
 
             promise = Promise(
+                user_id=str(user_id),
                 id=promise_id,
                 text=promise_text.replace(" ", "_"),
                 hours_per_week=num_hours_promised_per_week,
