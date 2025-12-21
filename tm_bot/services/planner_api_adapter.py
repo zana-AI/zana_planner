@@ -3,7 +3,7 @@ Adapter to provide compatibility with the existing PlannerAPI interface
 while using the new repository and service layers underneath.
 """
 from datetime import datetime, date
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
@@ -233,6 +233,33 @@ class PlannerAPIAdapter:
         return summary.get('streak', 0) if summary else 0
 
     # Settings methods
+    def get_settings(self, user_id) -> Dict[str, Any]:
+        """Get user settings as a dict (timezone, nightly time, language, voice mode)."""
+        settings = self.settings_repo.get_settings(int(user_id))
+        return {
+            "timezone": settings.timezone,
+            "nightly_hh": settings.nightly_hh,
+            "nightly_mm": settings.nightly_mm,
+            "language": settings.language,
+            "voice_mode": settings.voice_mode,
+        }
+
+    def get_setting(self, user_id, setting_key: str):
+        """Get a single user setting value by key (timezone, nightly_hh, nightly_mm, language, voice_mode)."""
+        settings = self.settings_repo.get_settings(int(user_id))
+        key = (setting_key or "").strip().lower()
+        if key == "timezone":
+            return settings.timezone
+        if key == "nightly_hh":
+            return settings.nightly_hh
+        if key == "nightly_mm":
+            return settings.nightly_mm
+        if key == "language":
+            return settings.language
+        if key == "voice_mode":
+            return settings.voice_mode
+        return None
+
     def update_setting(self, user_id, setting_key, setting_value):
         """Update user setting."""
         settings = self.settings_repo.get_settings(user_id)
@@ -243,9 +270,52 @@ class PlannerAPIAdapter:
             settings.nightly_hh = int(setting_value)
         elif setting_key == 'nightly_mm':
             settings.nightly_mm = int(setting_value)
+        elif setting_key == "language":
+            settings.language = str(setting_value)
+        elif setting_key == "voice_mode":
+            # expected values: None, "enabled", "disabled"
+            settings.voice_mode = None if setting_value in (None, "", "none", "null") else str(setting_value)
         
         self.settings_repo.save_settings(settings)
         return f"Setting '{setting_key}' updated to '{setting_value}'."
+
+    # Action helpers (per-day)
+    def count_actions_on_date(self, user_id, date_iso: str) -> int:
+        """Count logged actions on a specific date (YYYY-MM-DD) based on actions.csv."""
+        date_iso = (date_iso or "").strip()
+        if not date_iso:
+            return 0
+        df = self.actions_repo.get_actions_df(user_id)
+        if df is None or df.empty:
+            return 0
+        try:
+            return int((df["date"] == date_iso).sum())
+        except Exception:
+            return 0
+
+    def get_actions_on_date(self, user_id, date_iso: str) -> List[Dict[str, Any]]:
+        """Return action rows on a specific date (YYYY-MM-DD)."""
+        date_iso = (date_iso or "").strip()
+        if not date_iso:
+            return []
+        df = self.actions_repo.get_actions_df(user_id)
+        if df is None or df.empty:
+            return []
+        try:
+            sub = df[df["date"] == date_iso]
+            return sub.to_dict(orient="records")
+        except Exception:
+            return []
+
+    def count_actions_today(self, user_id) -> int:
+        """Count actions for 'today' in the user's timezone from settings."""
+        try:
+            from zoneinfo import ZoneInfo
+            tzname = self.settings_repo.get_settings(int(user_id)).timezone or "UTC"
+            today_iso = datetime.now(ZoneInfo(tzname)).strftime("%Y-%m-%d")
+        except Exception:
+            today_iso = datetime.now().strftime("%Y-%m-%d")
+        return self.count_actions_on_date(user_id, today_iso)
 
     # Utility methods
     def _generate_promise_id(self, user_id, promise_type='P'):

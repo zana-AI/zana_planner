@@ -13,10 +13,11 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_vertexai import ChatVertexAI
 from langchain_openai import ChatOpenAI
 
-from llms.agent import AgentState, create_agent_graph
+from llms.agent import AgentState, create_plan_execute_graph
 from llms.func_utils import get_function_args_info
 from llms.llm_env_utils import load_llm_env
 from llms.schema import LLMResponse, UserAction
+from llms.planning_schema import Plan
 from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
 
@@ -149,9 +150,14 @@ class LLMHandler:
             self.tools = self._build_tools(self.plan_adapter)
 
             self._initialize_context()
-            self.agent_app = create_agent_graph(
+            self.planner_parser = JsonOutputParser(pydantic_object=Plan)
+
+            self.agent_app = create_plan_execute_graph(
                 tools=self.tools,
-                model=self.chat_model,
+                planner_model=self.chat_model,   # no tools bound (planner must not call tools)
+                responder_model=self.chat_model, # no tools bound (responder must not call tools)
+                planner_prompt=self.system_message_planner_prompt,
+                emit_plan=_DEBUG_ENABLED,
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
             )
@@ -197,6 +203,34 @@ class LLMHandler:
             )
         )
 
+        # Planner prompt: must output a structured plan JSON (no chain-of-thought).
+        self.system_message_planner_prompt = (
+            "You are the PLANNER for a task management assistant.\n"
+            "Your job: produce a short, high-level plan (NOT chain-of-thought) that the executor can follow.\n"
+            "Rules:\n"
+            "- Output ONLY valid JSON.\n"
+            "- Do NOT call tools.\n"
+            "- Do NOT include any hidden reasoning; keep 'purpose' short and user-safe.\n"
+            "- Prefer using tools to read user settings and action history when needed.\n"
+            "- For questions like 'my preferred language', plan to call get_setting(setting_key='language').\n"
+            "- For questions like 'how many actions today', plan to call count_actions_today().\n"
+            "- If the request can be answered without tools, set final_response_if_no_tools.\n\n"
+            "JSON schema (informal):\n"
+            "{\n"
+            '  "steps": [\n'
+            "    {\n"
+            '      "kind": "tool" | "respond" | "ask_user",\n'
+            '      "purpose": "short reason",\n'
+            '      "tool_name": "tool_name_if_kind_tool",\n'
+            '      "tool_args": { "arg": "value" },\n'
+            '      "question": "question_if_kind_ask_user",\n'
+            '      "response_hint": "hint_if_kind_respond"\n'
+            "    }\n"
+            "  ],\n"
+            '  "final_response_if_no_tools": "optional string"\n'
+            "}\n"
+        )
+
     def _get_system_message_main(self, user_language: str = None) -> SystemMessage:
         """Get system message with language instruction if provided."""
         # Add current date and time information
@@ -234,6 +268,15 @@ class LLMHandler:
         """
         # Allow per-call progress callback; fall back to default.
         self._progress_callback = progress_callback or self._progress_callback_default
+        if _DEBUG_ENABLED and not self._progress_callback:
+            # Debug-only visibility: log high-level plan/steps and tool results (no chain-of-thought).
+            def _log_progress(event: str, payload: dict) -> None:
+                try:
+                    logger.info({"event": f"agent_progress:{event}", **(payload or {})})
+                except Exception:
+                    pass
+
+            self._progress_callback = _log_progress
 
         try:
             safe_user_id = _sanitize_user_id(user_id)
@@ -257,13 +300,21 @@ class LLMHandler:
                     }
                 )
 
-            state: AgentState = {"messages": messages, "iteration": 0}
+            state: AgentState = {
+                "messages": messages,
+                "iteration": 0,
+                "plan": None,
+                "step_idx": 0,
+                "final_response": None,
+                "planner_error": None,
+            }
             token = _current_user_id.set(safe_user_id)
             try:
                 result_state = self.agent_app.invoke(state)
             finally:
                 _current_user_id.reset(token)
             final_messages = result_state.get("messages", messages)
+            final_response = result_state.get("final_response")
 
             final_ai = self._get_last_ai(final_messages)
             last_tool_call = self._get_last_tool_call(final_messages)
@@ -307,7 +358,11 @@ class LLMHandler:
             return {
                 "function_call": last_tool_call.get("name") if last_tool_call else "no_op",
                 "function_args": last_tool_call.get("args", {}) if last_tool_call else {},
-                "response_to_user": final_ai.content if final_ai else "I'm having trouble responding right now.",
+                "response_to_user": (
+                    final_response
+                    or (final_ai.content if final_ai else None)
+                    or "I'm having trouble responding right now."
+                ),
                 "executed_by_agent": True,
                 "tool_calls": getattr(final_ai, "tool_calls", None) or [],
                 "tool_outputs": [tm.content for tm in tool_messages],
