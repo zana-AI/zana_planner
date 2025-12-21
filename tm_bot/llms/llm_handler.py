@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Callable, Dict, List, Optional
 
+from contextvars import ContextVar
+
 from langchain.tools import StructuredTool
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.output_parsers import JsonOutputParser
@@ -21,6 +23,35 @@ logger = get_logger(__name__)
 # Define the schemas list
 schemas = [LLMResponse]  # , UserPromise, UserAction]
 
+# Context var to carry the active user_id during tool execution
+_current_user_id: ContextVar[Optional[str]] = ContextVar("current_user_id", default=None)
+
+
+def _sanitize_user_id(user_id: str) -> str:
+    """Allow only digit-only user identifiers to avoid cross-user access or path abuse."""
+    if user_id is None:
+        raise ValueError("user_id is required")
+    user_id_str = str(user_id).strip()
+    if not user_id_str.isdigit():
+        raise ValueError("Invalid user_id")
+    return user_id_str
+
+
+def _wrap_tool(fn: Callable, tool_name: str) -> Callable:
+    """Wrap adapter methods to enforce the active user_id and ignore model-provided user_id."""
+
+    def wrapped(**kwargs):
+        safe_user_id = _current_user_id.get()
+        if not safe_user_id:
+            raise ValueError("No active user_id set")
+        # Strip any user_id provided by the model/tool call
+        kwargs.pop("user_id", None)
+        return fn(user_id=safe_user_id, **kwargs)
+
+    wrapped.__name__ = tool_name
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
 
 class LLMHandler:
     def __init__(
@@ -38,6 +69,7 @@ class LLMHandler:
             progress_callback: Optional callback(event, payload) for UI-agnostic progress.
         """
         try:
+            # Sanitize environment-provided ROOT_DIR early (adapter will still handle paths)
             cfg = load_llm_env()  # returns dict with project, location, model
 
             self.chat_model = None
@@ -140,7 +172,9 @@ class LLMHandler:
         self._progress_callback = progress_callback or self._progress_callback_default
 
         try:
-            prior_history = self.chat_history.get(user_id, [])
+            safe_user_id = _sanitize_user_id(user_id)
+
+            prior_history = self.chat_history.get(safe_user_id, [])
 
             messages: List[BaseMessage] = [
                 self._get_system_message_main(user_language),
@@ -150,7 +184,11 @@ class LLMHandler:
             ]
 
             state: AgentState = {"messages": messages, "iteration": 0}
-            result_state = self.agent_app.invoke(state)
+            token = _current_user_id.set(safe_user_id)
+            try:
+                result_state = self.agent_app.invoke(state)
+            finally:
+                _current_user_id.reset(token)
             final_messages = result_state.get("messages", messages)
 
             final_ai = self._get_last_ai(final_messages)
@@ -158,7 +196,7 @@ class LLMHandler:
             tool_messages = [m for m in final_messages if isinstance(m, ToolMessage)]
 
             # Update chat history with condensed human/AI turns (excluding system/tool chatter)
-            self.chat_history[user_id] = self._condense_history(final_messages)
+            self.chat_history[safe_user_id] = self._condense_history(final_messages)
 
             stop_reason = (
                 "max_iterations"
@@ -201,10 +239,12 @@ class LLMHandler:
 
     def get_response_custom(self, user_message: str, user_id: str, user_language: str = None) -> str:
         try:
-            if user_id not in self.chat_history:
-                self.chat_history[user_id] = []
+            safe_user_id = _sanitize_user_id(user_id)
 
-            history = self.chat_history[user_id]
+            if safe_user_id not in self.chat_history:
+                self.chat_history[safe_user_id] = []
+
+            history = self.chat_history[safe_user_id]
             messages: List[BaseMessage] = [HumanMessage(content=user_message)]
 
             # Add language-aware system message if language is specified
@@ -254,7 +294,7 @@ class LLMHandler:
             doc = (candidate.__doc__ or "").strip() or f"Planner action {attr_name}"
             try:
                 tool = StructuredTool.from_function(
-                    func=candidate,
+                    func=_wrap_tool(candidate, attr_name),
                     name=attr_name,
                     description=doc,
                 )
