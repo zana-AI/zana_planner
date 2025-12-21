@@ -56,4 +56,4 @@ ENV PYTHONPATH=/app:/app/tm_bot
 USER amiryan_j
 
 # Set entrypoint
-ENTRYPOINT ["python", "-m", "tm_bot.planner_bot"]
+ENTRYPOINT ["python", "-m", "tm_bot.run_bot"]
