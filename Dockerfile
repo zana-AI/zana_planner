@@ -39,8 +39,10 @@ COPY --from=builder /root/.local /home/amiryan_j/.local
 # Set working directory
 WORKDIR /app
 
-# Create VERSION file (after WORKDIR is set and directory exists)
-RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION || echo "unknown" > /app/VERSION
+# Create VERSION file and ensure it's readable by the user
+RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION && \
+    chown amiryan_j:amiryan_j /app/VERSION && \
+    chmod 644 /app/VERSION
 
 # Copy application code
 COPY tm_bot/ ./tm_bot/
