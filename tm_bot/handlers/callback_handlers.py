@@ -306,28 +306,35 @@ class CallbackHandlers:
         """Handle show more promises."""
         user_id = query.from_user.id
         user_now, _tzname = self._get_user_now(user_id)
+        current_date = user_now.date()
         
-        # read offset & batch (defaults)
-        try:
-            offset = int(cb.get("o") or 0)
-        except Exception:
-            offset = 0
+        # Reset state if it's a new day
+        self.plan_keeper.nightly_state_repo.reset_for_new_day(user_id, current_date)
+        
+        # Get already shown promise IDs for today
+        shown_promise_ids = self.plan_keeper.nightly_state_repo.get_shown_promise_ids(user_id, current_date)
+        
+        # read batch size (defaults)
         try:
             batch = int(cb.get("n") or 5)
         except Exception:
             batch = 5
         
+        # Get ranked list and filter out already shown promises
         ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id, user_now, n=1000)
-        total = len(ranked)
-        if offset >= total:
+        unshown_ranked = [p for p in ranked if p.id not in shown_promise_ids]
+        
+        if not unshown_ranked:
+            # All promises have been shown today
             message = get_message("thats_all", user_lang)
             await query.edit_message_text(message)
             return
         
-        # slice the next chunk
-        chunk = ranked[offset: offset + batch]
+        # slice the next chunk (show next batch_size items)
+        chunk = unshown_ranked[:batch]
         
         # send items (each with time options)
+        shown_ids = []
         for p in chunk:
             weekly_h = float(getattr(p, "hours_per_week", 0.0) or 0.0)
             base_day_h = weekly_h / 7.0
@@ -342,17 +349,21 @@ class CallbackHandlers:
                 reply_markup=kb,
                 parse_mode="Markdown",
             )
+            shown_ids.append(p.id)
+        
+        # Mark these promises as shown
+        if shown_ids:
+            self.plan_keeper.nightly_state_repo.mark_promises_as_shown(user_id, shown_ids, current_date)
         
         # update the header's button
-        new_offset = offset + len(chunk)
-        remaining = max(0, total - new_offset)
-        if remaining > 0:
-            button_text = get_message("show_more_button", user_lang, count=remaining)
+        remaining = unshown_ranked[len(chunk):]
+        if remaining:
+            button_text = get_message("show_more_button", user_lang, count=len(remaining))
             await query.edit_message_reply_markup(
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton(
                         button_text,
-                        callback_data=encode_cb("show_more", o=new_offset, n=batch)
+                        callback_data=encode_cb("show_more", n=batch)
                     )
                 ]])
             )
@@ -522,25 +533,48 @@ class CallbackHandlers:
         user_id_int = int(user_id)
         user_lang = get_user_language(user_id_int)
         user_now, tzname = self._get_user_now(user_id_int)
+        current_date = user_now.date()
         
-        # get a bigger ranked list, then slice
+        # Reset state if it's a new day
+        self.plan_keeper.nightly_state_repo.reset_for_new_day(user_id_int, current_date)
+        
+        # Get already shown promise IDs for today
+        shown_promise_ids = self.plan_keeper.nightly_state_repo.get_shown_promise_ids(user_id_int, current_date)
+        
+        # get a bigger ranked list, then filter out already shown promises
         ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id_int, user_now, n=1000)
         if not ranked:
             return
         
-        top3, rest = ranked[:3], ranked[3:]
+        # Filter out promises that have already been shown today
+        unshown_ranked = [p for p in ranked if p.id not in shown_promise_ids]
+        
+        if not unshown_ranked:
+            # All promises have been shown today
+            header_message = get_message("nightly_header", user_lang)
+            await context.bot.send_message(
+                chat_id=user_id_int,
+                text=header_message + "\n\nAll tasks for today have already been shown.",
+                parse_mode="Markdown",
+            )
+            return
+        
+        # Show next batch (default 3, but adjust if fewer remain)
+        batch_size = 3
+        next_batch = unshown_ranked[:batch_size]
+        remaining = unshown_ranked[batch_size:]
         
         # (optional) header message with "Show more"
-        if rest:
+        if remaining:
             header_message = get_message("nightly_header_with_more", user_lang, date=user_now.strftime("%A, %d %B %Y"))
-            button_text = get_message("show_more_button", user_lang, count=len(rest))
+            button_text = get_message("show_more_button", user_lang, count=len(remaining))
             await context.bot.send_message(
                 chat_id=user_id_int,
                 text=header_message,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton(
                         button_text,
-                        callback_data=encode_cb("show_more", o=3, n=5)
+                        callback_data=encode_cb("show_more", n=5)
                     )
                 ]]),
                 parse_mode="Markdown",
@@ -553,8 +587,9 @@ class CallbackHandlers:
                 parse_mode="Markdown",
             )
         
-        # send 3 separate messages with time options
-        for p in top3:
+        # send batch of messages with time options
+        shown_ids = []
+        for p in next_batch:
             weekly_h = float(getattr(p, "hours_per_week", 0.0) or 0.0)
             base_day_h = weekly_h / 7.0
             last = self.plan_keeper.get_last_action_on_promise(user_id_int, p.id)
@@ -568,6 +603,11 @@ class CallbackHandlers:
                 reply_markup=kb,
                 parse_mode="Markdown",
             )
+            shown_ids.append(p.id)
+        
+        # Mark these promises as shown
+        if shown_ids:
+            self.plan_keeper.nightly_state_repo.mark_promises_as_shown(user_id_int, shown_ids, current_date)
     
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""

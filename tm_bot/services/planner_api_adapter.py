@@ -11,6 +11,7 @@ from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.sessions_repo import SessionsRepository
+from repositories.nightly_state_repo import NightlyStateRepository
 from services.reports import ReportsService
 from services.ranking import RankingService
 from services.reminders import RemindersService
@@ -30,6 +31,7 @@ class PlannerAPIAdapter:
         self.actions_repo = ActionsRepository(root_dir)
         self.settings_repo = SettingsRepository(root_dir)
         self.sessions_repo = SessionsRepository(root_dir)
+        self.nightly_state_repo = NightlyStateRepository(root_dir)
         
         # Initialize services
         self.reports_service = ReportsService(self.promises_repo, self.actions_repo)
