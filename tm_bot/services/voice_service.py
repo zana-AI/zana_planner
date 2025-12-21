@@ -1,6 +1,6 @@
 """
 Voice service for speech-to-text (ASR) and text-to-speech (TTS) using Google Cloud APIs.
-Supports Eleven Labs TTS with fallback to Google Cloud TTS.
+Supports Eleven Labs TTS, OpenAI TTS, with automatic fallback to Google Cloud TTS.
 """
 
 import os
@@ -35,12 +35,13 @@ class TranscriptionResult:
 
 class VoiceService:
     """Service for voice transcription and synthesis using Google Cloud APIs.
-    Supports Eleven Labs TTS with automatic fallback to Google Cloud TTS."""
+    Supports Eleven Labs TTS, OpenAI TTS, with automatic fallback to Google Cloud TTS."""
     
     def __init__(self):
         self.project_id = project_id
         self.location = location
         self.eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
+        self.openai_api_key = cfg.get("OPENAI_API_KEY", "")
         
     def transcribe_voice(
         self, 
@@ -311,11 +312,15 @@ class VoiceService:
             base_lang = language_code.split("-")[0] if "-" in language_code else language_code
             voice_name = voice_map.get(language_code) or voice_map.get(base_lang) or "Rachel"
             
+            # Use eleven_v3 (alpha) for Persian/Farsi - supports 70+ languages with better quality
+            # For other languages, use eleven_multilingual_v2
+            model = "eleven_v3" if base_lang == "fa" else "eleven_multilingual_v2"
+            
             # Generate audio using Eleven Labs
             audio = generate(
                 text=text,
                 voice=voice_name,
-                model="eleven_multilingual_v2"  # Multilingual model
+                model=model
             )
             
             logger.debug(f"Synthesized speech with Eleven Labs for text: {text[:50]}...")
@@ -328,9 +333,83 @@ class VoiceService:
             error_str = str(e).lower()
             # Check for credit/quota related errors
             if any(keyword in error_str for keyword in ["quota", "credit", "insufficient", "401", "403", "429"]):
-                logger.warning(f"Eleven Labs API credit/quota issue: {str(e)}. Falling back to Google Cloud TTS.")
+                logger.warning(f"Eleven Labs API credit/quota issue: {str(e)}. Falling back to next TTS provider.")
             else:
-                logger.warning(f"Eleven Labs synthesis failed: {str(e)}. Falling back to Google Cloud TTS.")
+                logger.warning(f"Eleven Labs synthesis failed: {str(e)}. Falling back to next TTS provider.")
+            return None
+    
+    def _synthesize_with_openai(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
+        """
+        Synthesize text to speech using OpenAI TTS API.
+        
+        Args:
+            text: Text to synthesize (should already be cleaned)
+            language_code: Language code (e.g., "en-US", "fa-IR", "fr-FR")
+        
+        Returns:
+            Audio bytes in MP3 format, or None on failure
+        """
+        if not self.openai_api_key:
+            return None
+        
+        try:
+            from openai import OpenAI
+            from io import BytesIO
+            
+            client = OpenAI(api_key=self.openai_api_key)
+            
+            # Map language codes to OpenAI voices
+            voice_map = {
+                "en": "cedar",      # English voice
+                "en-US": "cedar",
+                "fa": "cedar",      # Multilingual voice for Farsi
+                "fa-IR": "cedar",
+                "fr": "cedar",      # Multilingual voice for French
+                "fr-FR": "cedar",
+            }
+            
+            # Get base language code
+            base_lang = language_code.split("-")[0] if "-" in language_code else language_code
+            voice_name = voice_map.get(language_code) or voice_map.get(base_lang) or "cedar"
+            
+            # Language-specific instructions
+            instructions_map = {
+                "en": "Speak English clearly, natural pace, neutral tone.",
+                "en-US": "Speak English clearly, natural pace, neutral tone.",
+                "fa": "Speak Persian (Farsi) clearly, natural pace, neutral tone.",
+                "fa-IR": "Speak Persian (Farsi) clearly, natural pace, neutral tone.",
+                "fr": "Speak French clearly, natural pace, neutral tone.",
+                "fr-FR": "Speak French clearly, natural pace, neutral tone.",
+            }
+            instructions = instructions_map.get(language_code) or instructions_map.get(base_lang) or "Speak clearly, natural pace, neutral tone."
+            
+            # Generate audio using OpenAI TTS with streaming
+            with client.audio.speech.with_streaming_response.create(
+                model="gpt-4o-mini-tts",
+                voice=voice_name,
+                input=text,
+                instructions=instructions,
+            ) as response:
+                # Stream to BytesIO instead of file
+                audio_buffer = BytesIO()
+                for chunk in response.iter_bytes():
+                    audio_buffer.write(chunk)
+                audio_buffer.seek(0)
+                audio_bytes = audio_buffer.read()
+            
+            logger.debug(f"Synthesized speech with OpenAI TTS for text: {text[:50]}...")
+            return audio_bytes
+            
+        except ImportError:
+            logger.warning("openai package not available. Install with: pip install openai")
+            return None
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check for credit/quota related errors
+            if any(keyword in error_str for keyword in ["quota", "credit", "insufficient", "401", "403", "429", "rate limit"]):
+                logger.warning(f"OpenAI TTS API credit/quota issue: {str(e)}. Falling back to next TTS provider.")
+            else:
+                logger.warning(f"OpenAI TTS synthesis failed: {str(e)}. Falling back to next TTS provider.")
             return None
     
     def _synthesize_with_google_cloud(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
@@ -397,7 +476,8 @@ class VoiceService:
     
     def synthesize_speech(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
         """
-        Synthesize text to speech using Eleven Labs (if API key available) with fallback to Google Cloud TTS.
+        Synthesize text to speech using Eleven Labs (if API key available), 
+        then OpenAI TTS (if API key available), with fallback to Google Cloud TTS.
         
         Args:
             text: Text to synthesize (will be cleaned of markdown/special chars)
@@ -418,7 +498,12 @@ class VoiceService:
             audio_bytes = self._synthesize_with_eleven_labs(cleaned_text, language_code)
             if audio_bytes:
                 return audio_bytes
-            # If Eleven Labs failed, fall through to Google Cloud
+        
+        # Try OpenAI TTS if API key is present
+        if self.openai_api_key:
+            audio_bytes = self._synthesize_with_openai(cleaned_text, language_code)
+            if audio_bytes:
+                return audio_bytes
         
         # Fallback to Google Cloud TTS (baseline)
         logger.debug("Using Google Cloud TTS (baseline fallback)")
