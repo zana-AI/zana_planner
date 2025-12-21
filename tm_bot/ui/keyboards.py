@@ -218,3 +218,22 @@ def morning_calendar_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def content_actions_kb(calendar_url: str = None, url: str = None, can_summarize: bool = False) -> InlineKeyboardMarkup:
+    """Create keyboard for content actions (calendar, summarize)."""
+    buttons = []
+    
+    if calendar_url:
+        buttons.append([InlineKeyboardButton(
+            "📅 Add to Calendar",
+            url=calendar_url
+        )])
+    
+    if can_summarize and url:
+        buttons.append([InlineKeyboardButton(
+            "📝 Summarize",
+            callback_data=encode_cb("summarize_content", url=url)
+        )])
+    
+    return InlineKeyboardMarkup(buttons) if buttons else None
+
+

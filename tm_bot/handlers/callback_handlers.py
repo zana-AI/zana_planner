@@ -200,6 +200,9 @@ class CallbackHandlers:
             await self._handle_add_to_calendar_yes(query, context, user_lang)
         elif action == "add_to_calendar_no":
             await self._handle_add_to_calendar_no(query, user_lang)
+        elif action == "summarize_content":
+            url = cb.get("url")
+            await self._handle_summarize_content(query, url, user_id, user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -855,6 +858,41 @@ class CallbackHandlers:
     async def _handle_add_to_calendar_no(self, query, user_lang: Language):
         """Handle user not wanting calendar links."""
         await query.answer("Got it! Have a productive day! 💪")
+    
+    async def _handle_summarize_content(self, query, url: str, user_id: int, user_lang: Language):
+        """Handle summarize content request."""
+        try:
+            # Answer callback to show we're processing
+            await query.answer()
+            
+            # Send processing message
+            summarizing_msg = get_message("content_summarizing", user_lang)
+            processing_msg = await query.message.reply_text(summarizing_msg)
+            
+            # Get content metadata
+            from services.content_service import ContentService
+            content_service = ContentService()
+            link_metadata = content_service.process_link(url)
+            
+            # Summarize using planner API
+            summary = self.plan_keeper.summarize_content(user_id, url, link_metadata)
+            
+            # Format and send summary
+            summary_msg = get_message("content_summary", user_lang, summary=summary)
+            
+            # Delete processing message
+            try:
+                await processing_msg.delete()
+            except Exception:
+                pass
+            
+            # Send summary
+            await query.message.reply_text(summary_msg, parse_mode='Markdown')
+        
+        except Exception as e:
+            logger.error(f"Error summarizing content for user {user_id}: {str(e)}")
+            error_msg = get_message("error_general", user_lang, error=str(e))
+            await query.message.reply_text(error_msg)
     
     async def _generate_calendar_links_via_llm(self, top3_promises: list, user_now: datetime, 
                                                tzname: str, user_id: int, user_lang: Language) -> str:

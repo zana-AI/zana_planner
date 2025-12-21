@@ -18,6 +18,9 @@ from services.content_service import ContentService
 from services.time_estimation_service import TimeEstimationService
 from models.models import Promise, Action, UserSettings
 from models.enums import ActionType
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class PlannerAPIAdapter:
@@ -442,3 +445,66 @@ class PlannerAPIAdapter:
         """Set LLM handler for time estimation service."""
         self._llm_handler = llm_handler
         self.time_estimation_service.llm_handler = llm_handler
+    
+    def summarize_content(self, user_id, url: str, content_metadata: dict) -> str:
+        """
+        Summarize content using LLM.
+        
+        Args:
+            user_id: User ID
+            url: URL of the content
+            content_metadata: Content metadata dict with title, description, type, etc.
+        
+        Returns:
+            Summary string
+        """
+        try:
+            content_type = content_metadata.get('type', 'unknown')
+            title = content_metadata.get('title', 'Content')
+            description = content_metadata.get('description', '')
+            metadata = content_metadata.get('metadata', {})
+            
+            # Build content text for summarization
+            content_text = f"Title: {title}\n\n"
+            
+            if content_type == 'youtube':
+                # For YouTube, use description and subtitles if available
+                if description:
+                    content_text += f"Description: {description}\n\n"
+                if metadata.get('has_subtitles'):
+                    content_text += "Note: This video has subtitles available.\n\n"
+                content_text += f"Video URL: {url}"
+            else:
+                # For blogs/articles, use description
+                if description:
+                    content_text += f"Content: {description}\n\n"
+                content_text += f"Article URL: {url}"
+            
+            # Build summarization prompt
+            prompt = f"""Please provide a concise summary of the following content:
+
+{content_text}
+
+Provide a summary that:
+- Captures the main points and key ideas
+- Is 2-4 sentences long
+- Helps the reader decide if they want to consume the full content
+- Is clear and informative
+
+Summary:"""
+            
+            # Call LLM
+            if self._llm_handler:
+                user_id_str = str(user_id)
+                summary = self._llm_handler.get_response_custom(prompt, user_id_str)
+                return summary
+            else:
+                # Fallback: return a basic summary from description
+                if description:
+                    # Take first 200 characters as summary
+                    return description[:200] + ("..." if len(description) > 200 else "")
+                return f"Summary of: {title}"
+        
+        except Exception as e:
+            logger.error(f"Error summarizing content: {str(e)}")
+            return f"Unable to generate summary. Error: {str(e)}"

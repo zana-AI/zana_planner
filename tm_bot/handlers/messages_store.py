@@ -180,6 +180,11 @@ class MessageTemplateStore:
             
             # Work hours suggestions
             "work_hours_suggestion": "💡 Based on your patterns, you might want to work ~{hours} hours today ({day})",
+            
+            # Content summarization
+            "content_summarizing": "📝 Generating summary...",
+            "content_summary": "📝 *Summary*\n\n{summary}",
+            "content_too_short": "This content is too short to schedule (less than 2 minutes).",
         }
 
     def get_message(self, key: str, language: Optional[Language] = None, **kwargs) -> str:

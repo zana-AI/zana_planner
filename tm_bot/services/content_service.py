@@ -41,6 +41,7 @@ class ContentService:
         """Detect the type of content from URL."""
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
+        path = parsed.path.lower()
         
         # YouTube
         if 'youtube.com' in domain or 'youtu.be' in domain:
@@ -49,6 +50,10 @@ class ContentService:
         # Podcast platforms
         if any(p in domain for p in ['spotify.com', 'apple.com/podcasts', 'podcasts.google.com', 'anchor.fm']):
             return 'podcast'
+        
+        # Substack article (has /p/ in path)
+        if 'substack.com' in domain and '/p/' in path:
+            return 'substack_article'
         
         # Blog/article platforms
         if any(p in domain for p in ['medium.com', 'substack.com', 'dev.to', 'hashnode.com']):
@@ -72,6 +77,8 @@ class ContentService:
                 return self._process_youtube(url)
             elif url_type == 'podcast':
                 return self._process_podcast(url)
+            elif url_type == 'substack_article':
+                return self._process_substack_article(url)
             else:
                 return self._process_blog(url)
         
@@ -180,6 +187,115 @@ class ContentService:
             'type': 'youtube',
             'metadata': {}
         }
+    
+    def _process_substack_article(self, url: str) -> Dict[str, any]:
+        """Extract metadata from Substack article URL."""
+        try:
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Try to get title from various meta tags
+            title = None
+            for tag in ['og:title', 'twitter:title']:
+                meta = soup.find('meta', property=tag) or soup.find('meta', attrs={'name': tag})
+                if meta:
+                    title = meta.get('content', '')
+                    break
+            
+            # Fallback to <title> tag
+            if not title:
+                title_tag = soup.find('title')
+                title = title_tag.get_text(strip=True) if title_tag else 'Substack Article'
+            
+            # Try to get description
+            description = None
+            for tag in ['og:description', 'twitter:description', 'description']:
+                meta = soup.find('meta', property=tag) or soup.find('meta', attrs={'name': tag})
+                if meta:
+                    description = meta.get('content', '')
+                    break
+            
+            # Try Substack-specific selectors for content
+            if not description:
+                # Substack-specific selectors
+                substack_selectors = [
+                    'article[data-testid="post-content"]',
+                    '.post-content',
+                    '.pencraft',
+                    '[data-testid="post-content"]',
+                    'article .pencraft',
+                    '.pencraft-text',
+                    'div[class*="post-content"]',
+                    'div[class*="pencraft"]'
+                ]
+                
+                for selector in substack_selectors:
+                    try:
+                        content = soup.select_one(selector)
+                        if content:
+                            description = content.get_text(strip=True)
+                            if description and len(description) > 50:  # Ensure we got meaningful content
+                                break
+                    except Exception:
+                        continue
+            
+            # Fallback: try to extract from meta description and estimate based on title
+            if not description or len(description.strip()) < 50:
+                # If we have a title, estimate based on it
+                if title and len(title) > 20:
+                    # Estimate: longer titles suggest longer articles
+                    estimated_words = len(title.split()) * 50  # Rough estimate
+                    description = f"{title}. Article content not fully accessible."
+                else:
+                    description = "Substack article content not fully accessible."
+            
+            # Estimate reading time (average reading speed: 200-250 words per minute)
+            word_count = len(description.split()) if description else 0
+            
+            # If word count is very low, try to estimate from title length
+            if word_count < 20 and title:
+                # Estimate based on title length - longer titles often indicate longer articles
+                title_words = len(title.split())
+                # Conservative estimate: assume at least 200 words for a Substack article
+                word_count = max(200, title_words * 30)
+                logger.info(f"Substack article: low word count, estimated {word_count} words from title")
+            
+            reading_time_hours = (word_count / 200) / 60.0  # Convert minutes to hours
+            
+            return {
+                'title': title[:200],  # Limit title length
+                'description': description[:500] if description else 'No description available',
+                'duration': reading_time_hours if reading_time_hours > 0 else None,
+                'url': url,
+                'type': 'blog',
+                'metadata': {
+                    'word_count': word_count,
+                    'estimated_reading_minutes': int((word_count / 200) + 0.5) if word_count > 0 else None
+                }
+            }
+        
+        except requests.RequestException as e:
+            logger.error(f"Error fetching Substack article URL {url}: {str(e)}")
+            return {
+                'title': 'Substack Article',
+                'description': f'Unable to fetch content: {str(e)}',
+                'duration': None,
+                'url': url,
+                'type': 'blog',
+                'metadata': {}
+            }
+        except Exception as e:
+            logger.error(f"Error processing Substack article URL {url}: {str(e)}")
+            return {
+                'title': 'Substack Article',
+                'description': f'Error processing link: {str(e)}',
+                'duration': None,
+                'url': url,
+                'type': 'blog',
+                'metadata': {}
+            }
     
     def _process_blog(self, url: str) -> Dict[str, any]:
         """Extract metadata from blog/article URL."""

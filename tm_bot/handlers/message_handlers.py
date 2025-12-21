@@ -20,7 +20,7 @@ from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
 from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
 from ui.messages import weekly_report_text
-from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb
+from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily
 from utils_storage import create_user_directory
@@ -775,15 +775,18 @@ class MessageHandlers:
             processing_msg = get_message("link_processing", user_lang, url_type=url_type)
             processing_msg_obj = await update.message.reply_text(processing_msg)
             
-            # Estimate time needed
+            # Estimate time needed (already rounded to 5 minutes by the service)
             estimated_duration = self.plan_keeper.time_estimation_service.estimate_content_duration(
                 link_metadata, user_id
             )
             
+            # Convert to minutes for display and checks
+            estimated_minutes = estimated_duration * 60 if estimated_duration else 0
+            
             # Format duration string
-            if estimated_duration:
+            if estimated_duration and estimated_duration > 0:
                 if estimated_duration < 1.0:
-                    duration_str = f"{int(estimated_duration * 60)} minutes"
+                    duration_str = f"{int(estimated_minutes)} minutes"
                 else:
                     hours = int(estimated_duration)
                     minutes = int((estimated_duration - hours) * 60)
@@ -798,30 +801,38 @@ class MessageHandlers:
             title = link_metadata.get('title', 'Content')
             description = link_metadata.get('description', 'No description available')
             
-            # Generate Google Calendar link
-            tzname = self.get_user_timezone(user_id)
-            suggested_time = suggest_time_slot(
-                estimated_duration or 0.5,  # Default to 30 min if unknown
-                preferred_hour=9,
-                preferred_minute=0
-            )
+            # Check if content is long enough for summarization (>= 5 minutes)
+            can_summarize = estimated_minutes >= 5
             
-            # Make timezone-aware if needed
-            try:
-                from zoneinfo import ZoneInfo
-                if suggested_time.tzinfo is None:
-                    tz = ZoneInfo(tzname)
-                    suggested_time = suggested_time.replace(tzinfo=tz)
-            except Exception:
-                pass  # Fallback to naive datetime
+            # Check if content is long enough for calendar (>= 2 minutes)
+            show_calendar = estimated_minutes >= 2
             
-            calendar_url = generate_google_calendar_link(
-                title=title,
-                start_time=suggested_time,
-                duration_hours=estimated_duration or 0.5,
-                description=f"{description}\n\nLink: {url}",
-                timezone=tzname
-            )
+            # Generate Google Calendar link only if needed
+            calendar_url = None
+            if show_calendar and estimated_duration:
+                tzname = self.get_user_timezone(user_id)
+                suggested_time = suggest_time_slot(
+                    estimated_duration,
+                    preferred_hour=9,
+                    preferred_minute=0
+                )
+                
+                # Make timezone-aware if needed
+                try:
+                    from zoneinfo import ZoneInfo
+                    if suggested_time.tzinfo is None:
+                        tz = ZoneInfo(tzname)
+                        suggested_time = suggested_time.replace(tzinfo=tz)
+                except Exception:
+                    pass  # Fallback to naive datetime
+                
+                calendar_url = generate_google_calendar_link(
+                    title=title,
+                    start_time=suggested_time,
+                    duration_hours=estimated_duration,
+                    description=f"{description}\n\nLink: {url}",
+                    timezone=tzname
+                )
             
             # Build response message
             summary_msg = get_message("link_summary", user_lang, 
@@ -829,10 +840,20 @@ class MessageHandlers:
                                     description=description[:300] + ('...' if len(description) > 300 else ''),
                                     duration=duration_str)
             
-            calendar_question = get_message("link_calendar_question", user_lang)
-            calendar_link_text = get_message("link_calendar_link", user_lang, calendar_url=calendar_url)
+            # Build full message
+            if show_calendar:
+                calendar_question = get_message("link_calendar_question", user_lang)
+                full_message = f"{summary_msg}\n\n{calendar_question}"
+            else:
+                too_short_msg = get_message("content_too_short", user_lang)
+                full_message = f"{summary_msg}\n\n{too_short_msg}"
             
-            full_message = f"{summary_msg}\n\n{calendar_question}\n{calendar_link_text}"
+            # Create keyboard with actions
+            keyboard = content_actions_kb(
+                calendar_url=calendar_url,
+                url=url,
+                can_summarize=can_summarize
+            )
             
             # Delete processing message and send final response
             try:
@@ -840,7 +861,12 @@ class MessageHandlers:
             except Exception:
                 pass
             
-            await update.message.reply_text(full_message, parse_mode='Markdown', disable_web_page_preview=True)
+            await update.message.reply_text(
+                full_message, 
+                parse_mode='Markdown', 
+                disable_web_page_preview=True,
+                reply_markup=keyboard
+            )
         
         except Exception as e:
             logger.error(f"Error handling link message for user {user_id}: {str(e)}")

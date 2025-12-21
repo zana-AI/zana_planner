@@ -19,6 +19,14 @@ class TimeEstimationService:
         self.actions_repo = actions_repo
         self.llm_handler = llm_handler
     
+    def _round_to_5_minutes(self, hours: float) -> float:
+        """Round duration in hours to nearest 5 minutes."""
+        if hours is None or hours <= 0:
+            return 0.0
+        minutes = hours * 60
+        rounded_minutes = round(minutes / 5) * 5
+        return rounded_minutes / 60.0
+    
     def estimate_content_duration(self, content_metadata: Dict, user_id: int = None) -> float:
         """
         Estimate the time needed to consume content using LLM.
@@ -28,18 +36,18 @@ class TimeEstimationService:
             user_id: Optional user ID for personalized estimation
         
         Returns:
-            Estimated duration in hours
+            Estimated duration in hours (rounded to nearest 5 minutes)
         """
         # If we already have duration (e.g., from YouTube), use it
         if content_metadata.get('duration'):
-            return content_metadata['duration']
+            return self._round_to_5_minutes(content_metadata['duration'])
         
         # If we have word count, estimate reading time
         metadata = content_metadata.get('metadata', {})
         if 'word_count' in metadata and metadata['word_count']:
             # Average reading speed: 200-250 words per minute
             reading_time_hours = (metadata['word_count'] / 200) / 60.0
-            return reading_time_hours
+            return self._round_to_5_minutes(reading_time_hours)
         
         # Use LLM to estimate if available
         if self.llm_handler:
@@ -56,12 +64,12 @@ class TimeEstimationService:
                     # If the number seems too large, it might be in minutes
                     if hours > 24:
                         hours = hours / 60.0
-                    return hours
+                    return self._round_to_5_minutes(hours)
             except Exception as e:
                 logger.error(f"Error estimating duration with LLM: {str(e)}")
         
         # Fallback: rule-based estimation
-        return self._fallback_estimation(content_metadata)
+        return self._round_to_5_minutes(self._fallback_estimation(content_metadata))
     
     def _build_estimation_prompt(self, content_metadata: Dict) -> str:
         """Build prompt for LLM to estimate content duration."""
