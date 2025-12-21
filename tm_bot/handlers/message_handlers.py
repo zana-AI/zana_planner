@@ -847,19 +847,23 @@ class MessageHandlers:
                     timezone=tzname
                 )
             
-            # Build response message
-            summary_msg = get_message("link_summary", user_lang, 
-                                    title=title,
-                                    description=description[:300] + ('...' if len(description) > 300 else ''),
-                                    duration=duration_str)
+            # Build response message - only show duration if it's known and >= 2 minutes
+            if estimated_duration and estimated_duration > 0 and estimated_minutes >= 2:
+                summary_msg = get_message("link_summary", user_lang, 
+                                        title=title,
+                                        description=description[:300] + ('...' if len(description) > 300 else ''),
+                                        duration=duration_str)
+            else:
+                # Don't show duration or "too short" message - just show title and description
+                summary_msg = f"📄 *{title}*\n\n{description[:300]}{'...' if len(description) > 300 else ''}"
             
             # Build full message
             if show_calendar:
                 calendar_question = get_message("link_calendar_question", user_lang)
                 full_message = f"{summary_msg}\n\n{calendar_question}"
             else:
-                too_short_msg = get_message("content_too_short", user_lang)
-                full_message = f"{summary_msg}\n\n{too_short_msg}"
+                # Don't show "too short" message - just show the summary
+                full_message = summary_msg
             
             # Create keyboard with actions
             keyboard = content_actions_kb(

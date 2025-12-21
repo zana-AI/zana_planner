@@ -14,6 +14,18 @@ try:
 except ImportError:
     YT_DLP_AVAILABLE = False
 
+try:
+    import trafilatura
+    TRAFILATURA_AVAILABLE = True
+except ImportError:
+    TRAFILATURA_AVAILABLE = False
+
+try:
+    import podcastparser
+    PODCASTPARSER_AVAILABLE = True
+except ImportError:
+    PODCASTPARSER_AVAILABLE = False
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -191,6 +203,48 @@ class ContentService:
     def _process_substack_article(self, url: str) -> Dict[str, any]:
         """Extract metadata from Substack article URL."""
         try:
+            # Try Trafilatura first for better extraction
+            if TRAFILATURA_AVAILABLE:
+                try:
+                    downloaded = trafilatura.fetch_url(url)
+                    if downloaded:
+                        extracted = trafilatura.extract(
+                            downloaded,
+                            include_comments=False,
+                            include_tables=False,
+                            include_images=False,
+                            include_links=False
+                        )
+                        if extracted:
+                            metadata = trafilatura.extract_metadata(downloaded)
+                            
+                            title = metadata.title if metadata and metadata.title else None
+                            description = extracted[:500] if extracted else None
+                            author = metadata.author if metadata and metadata.author else None
+                            date = metadata.date if metadata and metadata.date else None
+                            
+                            # If we got good content, use it
+                            if description and len(description) > 100:
+                                word_count = len(extracted.split())
+                                reading_time_hours = (word_count / 200) / 60.0
+                                
+                                return {
+                                    'title': (title or 'Substack Article')[:200],
+                                    'description': description[:500],
+                                    'duration': reading_time_hours if reading_time_hours > 0 else None,
+                                    'url': url,
+                                    'type': 'blog',
+                                    'metadata': {
+                                        'word_count': word_count,
+                                        'estimated_reading_minutes': int((word_count / 200) + 0.5) if word_count > 0 else None,
+                                        'author': author,
+                                        'date': date.isoformat() if date else None
+                                    }
+                                }
+                except Exception as e:
+                    logger.warning(f"Trafilatura extraction failed for {url}: {str(e)}, falling back to BeautifulSoup")
+            
+            # Fallback to BeautifulSoup
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             
@@ -300,6 +354,48 @@ class ContentService:
     def _process_blog(self, url: str) -> Dict[str, any]:
         """Extract metadata from blog/article URL."""
         try:
+            # Try Trafilatura first for better extraction
+            if TRAFILATURA_AVAILABLE:
+                try:
+                    downloaded = trafilatura.fetch_url(url)
+                    if downloaded:
+                        extracted = trafilatura.extract(
+                            downloaded,
+                            include_comments=False,
+                            include_tables=False,
+                            include_images=False,
+                            include_links=False
+                        )
+                        if extracted:
+                            metadata = trafilatura.extract_metadata(downloaded)
+                            
+                            title = metadata.title if metadata and metadata.title else None
+                            description = extracted[:500] if extracted else None
+                            author = metadata.author if metadata and metadata.author else None
+                            date = metadata.date if metadata and metadata.date else None
+                            
+                            # If we got good content, use it
+                            if description and len(description) > 50:
+                                word_count = len(extracted.split())
+                                reading_time_hours = (word_count / 200) / 60.0
+                                
+                                return {
+                                    'title': (title or 'Article')[:200],
+                                    'description': description[:500],
+                                    'duration': reading_time_hours if reading_time_hours > 0 else None,
+                                    'url': url,
+                                    'type': 'blog',
+                                    'metadata': {
+                                        'word_count': word_count,
+                                        'estimated_reading_minutes': int((word_count / 200) + 0.5) if word_count > 0 else None,
+                                        'author': author,
+                                        'date': date.isoformat() if date else None
+                                    }
+                                }
+                except Exception as e:
+                    logger.warning(f"Trafilatura extraction failed for {url}: {str(e)}, falling back to BeautifulSoup")
+            
+            # Fallback to BeautifulSoup
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             
@@ -375,9 +471,86 @@ class ContentService:
     
     def _process_podcast(self, url: str) -> Dict[str, any]:
         """Extract metadata from podcast URL."""
-        # For now, treat podcasts similar to blogs
-        # Future: could parse RSS feeds or use podcast APIs
         try:
+            # Try to find RSS feed URL if this is a podcast platform page
+            # For Spotify, Apple Podcasts, etc., we might need to extract RSS feed URL first
+            rss_url = None
+            
+            # Check if URL is already an RSS feed
+            if url.endswith('.xml') or 'rss' in url.lower() or 'feed' in url.lower():
+                rss_url = url
+            else:
+                # Try to find RSS feed link on the page
+                try:
+                    response = self.session.get(url, timeout=10)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    
+                    # Look for RSS feed links
+                    rss_link = soup.find('link', type='application/rss+xml') or \
+                              soup.find('link', type='application/atom+xml') or \
+                              soup.find('a', href=re.compile(r'\.(rss|xml|feed)'))
+                    
+                    if rss_link:
+                        rss_url = rss_link.get('href') or rss_link.get('href')
+                        if rss_url and not rss_url.startswith('http'):
+                            from urllib.parse import urljoin
+                            rss_url = urljoin(url, rss_url)
+                except Exception as e:
+                    logger.debug(f"Could not find RSS feed for {url}: {str(e)}")
+            
+            # If we have an RSS feed URL, use podcastparser
+            if rss_url and PODCASTPARSER_AVAILABLE:
+                try:
+                    feed_response = self.session.get(rss_url, timeout=10)
+                    feed_response.raise_for_status()
+                    
+                    # podcastparser.parse expects a file-like object
+                    import io
+                    feed_file = io.BytesIO(feed_response.content)
+                    feed = podcastparser.parse(rss_url, feed_file)
+                    
+                    if feed:
+                        title = feed.get('title', 'Podcast')
+                        description = feed.get('description', '')
+                        
+                        # Try to find the specific episode if URL points to one
+                        episodes = feed.get('episodes', [])
+                        episode = None
+                        if episodes:
+                            # Try to match URL with episode
+                            for ep in episodes:
+                                if url in ep.get('link', '') or url in ep.get('enclosures', [{}])[0].get('url', ''):
+                                    episode = ep
+                                    break
+                            
+                            # If no match, use latest episode
+                            if not episode and episodes:
+                                episode = episodes[0]
+                        
+                        if episode:
+                            title = episode.get('title', title)
+                            description = episode.get('description', description)
+                            duration_seconds = episode.get('total_time', 0)
+                            duration_hours = duration_seconds / 3600.0 if duration_seconds else None
+                        else:
+                            duration_hours = None
+                        
+                        return {
+                            'title': title[:200],
+                            'description': description[:500] if description else 'Podcast episode',
+                            'duration': duration_hours,
+                            'url': url,
+                            'type': 'podcast',
+                            'metadata': {
+                                'feed_title': feed.get('title'),
+                                'episode_count': len(episodes) if episodes else 0
+                            }
+                        }
+                except Exception as e:
+                    logger.warning(f"Podcastparser failed for {rss_url}: {str(e)}, falling back to HTML parsing")
+            
+            # Fallback to HTML parsing (for podcast platform pages)
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             

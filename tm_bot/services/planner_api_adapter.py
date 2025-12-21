@@ -464,6 +464,33 @@ class PlannerAPIAdapter:
             description = content_metadata.get('description', '')
             metadata = content_metadata.get('metadata', {})
             
+            # For blogs/articles, try to get full content using Trafilatura if available
+            full_content = None
+            if content_type == 'blog' or content_type == 'unknown':
+                try:
+                    from services.content_service import ContentService
+                    content_service = ContentService()
+                    # Re-fetch with Trafilatura to get full content
+                    if hasattr(content_service, '_process_blog'):
+                        # Try to get full content
+                        try:
+                            import trafilatura
+                            downloaded = trafilatura.fetch_url(url)
+                            if downloaded:
+                                extracted = trafilatura.extract(
+                                    downloaded,
+                                    include_comments=False,
+                                    include_tables=False,
+                                    include_images=False,
+                                    include_links=False
+                                )
+                                if extracted and len(extracted) > len(description):
+                                    full_content = extracted
+                        except Exception:
+                            pass  # Fallback to description
+                except Exception:
+                    pass  # Fallback to description
+            
             # Build content text for summarization
             content_text = f"Title: {title}\n\n"
             
@@ -475,8 +502,13 @@ class PlannerAPIAdapter:
                     content_text += "Note: This video has subtitles available.\n\n"
                 content_text += f"Video URL: {url}"
             else:
-                # For blogs/articles, use description
-                if description:
+                # For blogs/articles, use full content if available, otherwise description
+                if full_content:
+                    # Use full content but limit length for LLM
+                    content_text += f"Content: {full_content[:3000]}\n\n"  # Limit to 3000 chars
+                    if len(full_content) > 3000:
+                        content_text += "[Content truncated...]\n\n"
+                elif description:
                     content_text += f"Content: {description}\n\n"
                 content_text += f"Article URL: {url}"
             
