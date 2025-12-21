@@ -19,6 +19,7 @@ from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+_DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lower() == "staging"
 
 # Define the schemas list
 schemas = [LLMResponse]  # , UserPromise, UserAction]
@@ -46,6 +47,15 @@ def _wrap_tool(fn: Callable, tool_name: str) -> Callable:
             raise ValueError("No active user_id set")
         # Strip any user_id provided by the model/tool call
         kwargs.pop("user_id", None)
+        if _DEBUG_ENABLED:
+            logger.info(
+                {
+                    "event": "tool_invoke",
+                    "tool": tool_name,
+                    "user_id": safe_user_id,
+                    "args_keys": list(kwargs.keys()),
+                }
+            )
         return fn(user_id=safe_user_id, **kwargs)
 
     wrapped.__name__ = tool_name
@@ -107,6 +117,15 @@ class LLMHandler:
                 model=self.chat_model,
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
+            )
+            logger.info(
+                {
+                    "event": "llm_handler_init",
+                    "model": getattr(self.chat_model, "model_name", None) or getattr(self.chat_model, "model", None),
+                    "adapter_root": adapter_root,
+                    "max_iterations": self.max_iterations,
+                    "debug": _DEBUG_ENABLED,
+                }
             )
         except Exception as e:
             logger.error(f"Failed to initialize LLMHandler: {str(e)}")
@@ -182,6 +201,16 @@ class LLMHandler:
                 *prior_history,
                 HumanMessage(content=user_message),
             ]
+            if _DEBUG_ENABLED:
+                logger.info(
+                    {
+                        "event": "agent_start",
+                        "user_id": safe_user_id,
+                        "lang": user_language or "en",
+                        "history_turns": len(prior_history),
+                        "message_preview": user_message[:200],
+                    }
+                )
 
             state: AgentState = {"messages": messages, "iteration": 0}
             token = _current_user_id.set(safe_user_id)
@@ -216,6 +245,19 @@ class LLMHandler:
                     "last_tool": last_tool_call.get("name") if last_tool_call else None,
                 },
             )
+            if _DEBUG_ENABLED:
+                logger.info(
+                    {
+                        "event": "agent_end",
+                        "user_id": safe_user_id,
+                        "stop_reason": stop_reason,
+                        "iteration": result_state.get("iteration", 0),
+                        "last_tool": last_tool_call.get("name") if last_tool_call else None,
+                        "tool_calls_count": len(getattr(final_ai, "tool_calls", []) or []),
+                        "tool_msgs": len(tool_messages),
+                        "final_ai_preview": (final_ai.content[:200] if final_ai else None),
+                    }
+                )
 
             return {
                 "function_call": last_tool_call.get("name") if last_tool_call else "no_op",
