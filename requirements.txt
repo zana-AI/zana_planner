@@ -1,31 +1,61 @@
-python-telegram-bot[job-queue]
-PyYAML
-python-dotenv
-openai
-langchain
-langchain-community
-langchain-openai
-langchain-google-vertexai
-google-cloud-aiplatform
-pydantic
-requests==2.31.0
-pandas
-pytest
-matplotlib
-#watchdog  # watchmedo auto-restart --pattern="*.py" --recursive python bot.py
-watchfiles  # watchfiles python bot.py
-sentry-sdk
-logtail-python
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# ============================================================================
+# Core Bot Framework
+# ============================================================================
+python-telegram-bot[job-queue]>=22.5
+python-dotenv>=1.2.0
 
-# --- MongoDB persistence ---
-motor>=3.3.0          # async MongoDB driver
-pymongo>=4.6.0        # used internally by motor, safe to pin
+# ============================================================================
+# LLM & AI Services
+# ============================================================================
+openai>=2.14.0
+langchain>=0.3.27
+langchain-community>=0.3.27
+langchain-core>=0.3.80          # Required by langchain
+langchain-openai>=0.3.35
+langchain-google-vertexai>=2.1.2
+langchain-text-splitters>=0.3.11  # Required by langchain
+google-cloud-aiplatform>=1.115.0
+pydantic>=2.12.0
+pydantic-settings>=2.12.0       # Required by pydantic
 
-# --- Optional security/encryption ---
-argon2-cffi>=23.1.0   # for Argon2 password hashing (optional)
-cryptography>=42.0.0  # for Fernet encryption (optional)
+# ============================================================================
+# Data Processing & Storage
+# ============================================================================
+pandas>=2.3.0
+motor>=3.7.0                    # async MongoDB driver
+pymongo>=4.15.0                 # used internally by motor
 
-# --- Optional env helper ---
-python-dotenv>=1.0.1
+# ============================================================================
+# Web Framework (for stats service)
+# ============================================================================
+fastapi==0.104.1                # Pinned for stability
+uvicorn[standard]==0.24.0       # Pinned for stability
+
+# ============================================================================
+# Utilities
+# ============================================================================
+PyYAML>=6.0.3
+requests==2.31.0                # Pinned for stability
+watchfiles>=1.1.0               # file watching for development
+
+# ============================================================================
+# Visualization
+# ============================================================================
+matplotlib>=3.10.0
+
+# ============================================================================
+# Monitoring & Logging
+# ============================================================================
+sentry-sdk>=2.48.0
+logtail-python>=0.3.4
+
+# ============================================================================
+# Security & Encryption (optional)
+# ============================================================================
+argon2-cffi>=25.1.0             # for Argon2 password hashing
+cryptography>=46.0.0            # for Fernet encryption
+
+# ============================================================================
+# Development & Testing
+# ============================================================================
+pytest>=9.0.0
