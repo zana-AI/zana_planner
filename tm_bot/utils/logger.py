@@ -5,7 +5,9 @@ Supports dual output: console (for Docker logs) and Logtail (for centralized log
 import logging
 import os
 import sys
+from datetime import datetime
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
 
 # Try to import Logtail handler
 try:
@@ -18,6 +20,17 @@ except ImportError:
 
 class StructuredFormatter(logging.Formatter):
     """Formatter that supports structured logging (dicts) for Logtail."""
+    
+    def __init__(self):
+        super().__init__()
+        self.paris_tz = ZoneInfo("Europe/Paris")
+    
+    def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
+        """Format time in Paris timezone."""
+        dt = datetime.fromtimestamp(record.created, tz=self.paris_tz)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
     
     def format(self, record: logging.LogRecord) -> str:
         # If the message is a dict, convert it to JSON-like string
@@ -44,6 +57,14 @@ class ConsoleFormatter(logging.Formatter):
             fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
+        self.paris_tz = ZoneInfo("Europe/Paris")
+    
+    def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
+        """Format time in Paris timezone."""
+        dt = datetime.fromtimestamp(record.created, tz=self.paris_tz)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
 
 
 # Global logger cache

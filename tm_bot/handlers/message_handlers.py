@@ -550,9 +550,9 @@ class MessageHandlers:
                     logger.error(f"Error processing image for user {user_id}: {str(e)}")
                     await msg.reply_text(error_msg)
                     
-            except ImportError:
+            except ImportError as e:
                 error_msg = get_message("image_processing_failed", user_lang)
-                logger.error("ImageVLMParser not available")
+                logger.error(f"ImageVLMParser not available: {str(e)}")
                 await msg.reply_text(error_msg)
             except Exception as e:
                 error_msg = get_message("image_processing_failed", user_lang)
