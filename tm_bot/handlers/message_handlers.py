@@ -22,6 +22,7 @@ from infra.scheduler import schedule_user_daily
 from utils_storage import create_user_directory
 from handlers.callback_handlers import CallbackHandlers
 from utils.logger import get_logger
+from utils.version import get_version_info
 
 logger = get_logger(__name__)
 
@@ -474,3 +475,21 @@ class MessageHandlers:
         message = get_message("choose_language", user_lang)
         keyboard = language_selection_kb()
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='Markdown')
+
+    async def cmd_version(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /version command to show bot version."""
+        user_id = update.effective_user.id
+        user_lang = get_user_language(user_id)
+        
+        version_info = get_version_info()
+        
+        version_text = f"**Zana AI Bot Version**\n\n"
+        version_text += f"Version: `{version_info['version']}`\n"
+        version_text += f"Environment: `{version_info.get('environment', 'unknown')}`\n"
+        
+        if 'commit' in version_info:
+            version_text += f"Commit: `{version_info['commit']}`\n"
+        if 'date' in version_info:
+            version_text += f"Build Date: `{version_info['date'][:10]}`\n"
+        
+        await update.message.reply_text(version_text, parse_mode='Markdown')

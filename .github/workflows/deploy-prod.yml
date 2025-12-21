@@ -56,3 +56,20 @@ jobs:
 
             echo '[PROD] Done.'
           "
+
+      - name: Tag production deployment
+        if: success()
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $USER@$HOST "
+            cd $PROJECT_PATH
+            COMMIT_SHA=\$(git rev-parse --short HEAD)
+            TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
+            TAG=\"prod-\${TIMESTAMP}-\${COMMIT_SHA}\"
+            git tag -a \"\$TAG\" -m \"Production deployment: \$(date)\" || true
+            git push origin \"\$TAG\" || true
+            echo \"Tagged as: \$TAG\"
+          "

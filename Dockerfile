@@ -21,6 +21,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Final stage
 FROM python:3.11-slim
 
+# Add this before copying code (after WORKDIR /app)
+# Get git version info and save to VERSION file
+ARG GIT_COMMIT="unknown"
+ARG GIT_TAG=""
+ARG BUILD_DATE=""
+ENV BOT_VERSION=${GIT_TAG:-${GIT_COMMIT}}
+ENV BUILD_DATE=${BUILD_DATE}
+
+# Create VERSION file
+RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION || echo "unknown" > /app/VERSION
+
 # Create non-root user (matching host user UID for volume permissions)
 RUN useradd -m -u 1002 amiryan_j && \
     mkdir -p /app/USERS_DATA_DIR /app/USERS_DATA_DIR && \

@@ -24,6 +24,7 @@ from handlers.messages_store import initialize_message_store
 from utils.bot_utils import BotUtils
 from infra.scheduler import schedule_user_daily
 from utils.logger import get_logger
+from utils.version import get_version_info
 
 logger = get_logger(__name__)
 
@@ -71,6 +72,7 @@ class PlannerTelegramBot:
         self.application.add_handler(CommandHandler("pomodoro", self.message_handlers.pomodoro))
         self.application.add_handler(CommandHandler("settimezone", self.message_handlers.cmd_settimezone))
         self.application.add_handler(CommandHandler("language", self.message_handlers.cmd_language))
+        self.application.add_handler(CommandHandler("version", self.message_handlers.cmd_version))
 
         # Message handlers
         self.application.add_handler(
