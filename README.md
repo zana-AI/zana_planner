@@ -41,6 +41,15 @@ The bot supports the following commands:
 - `/promises` - List all my promises
 - `/zana` - What should I do today?
 - `/pomodoro` - Start a pomodoro session
+- `/broadcast` - (Admin only) Schedule broadcast messages to all users
+
+### 🔐 Environment Variables
+
+Required environment variables:
+
+- `BOT_TOKEN` - Telegram bot token
+- `ROOT_DIR` - Root directory for user data
+- `ADMIN_IDS` - Comma-separated list of Telegram user IDs with admin access (e.g., `123456789,987654321`)
 
 ### 📂 Directory Structure
 

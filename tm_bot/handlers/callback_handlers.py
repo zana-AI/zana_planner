@@ -203,6 +203,10 @@ class CallbackHandlers:
         elif action == "summarize_content":
             url = cb.get("url")
             await self._handle_summarize_content(query, url, user_id, user_lang)
+        elif action == "broadcast_schedule":
+            await self._handle_broadcast_schedule(query, context, user_lang)
+        elif action == "broadcast_cancel":
+            await self._handle_broadcast_cancel(query, context, user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -949,3 +953,37 @@ Generate the calendar links now:"""
         response = llm_handler.get_response_custom(prompt, str(user_id), user_language=user_lang_code)
         
         return response
+    
+    async def _handle_broadcast_schedule(self, query, context: CallbackContext, user_lang: Language):
+        """Handle broadcast schedule button click - transition to time input state."""
+        user_id = query.from_user.id
+        
+        # Update state to waiting for time
+        if 'user_data' not in context:
+            context.user_data = {}
+        context.user_data['broadcast_state'] = 'waiting_time'
+        
+        # Get admin timezone
+        admin_tz = self.get_user_timezone(user_id) or "UTC"
+        
+        # Prompt for time input
+        prompt_msg = (
+            f"📅 **Schedule Broadcast**\n\n"
+            f"Please enter the time for the broadcast:\n\n"
+            f"• **ISO format**: `YYYY-MM-DD HH:MM` (e.g., 2024-01-15 14:30)\n"
+            f"• **Natural language**: `tomorrow 2pm`, `in 1 hour`, etc.\n\n"
+            f"⏰ Your timezone: `{admin_tz}`"
+        )
+        
+        await query.edit_message_text(prompt_msg, parse_mode='Markdown')
+    
+    async def _handle_broadcast_cancel(self, query, context: CallbackContext, user_lang: Language):
+        """Handle broadcast cancel button click - clear state and cancel."""
+        # Clear broadcast state
+        if 'user_data' in context:
+            context.user_data.pop('broadcast_state', None)
+            context.user_data.pop('broadcast_message', None)
+            context.user_data.pop('broadcast_admin_id', None)
+        
+        cancel_msg = "❌ Broadcast cancelled."
+        await query.edit_message_text(cancel_msg)

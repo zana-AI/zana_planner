@@ -237,3 +237,14 @@ def content_actions_kb(calendar_url: str = None, url: str = None, can_summarize:
     return InlineKeyboardMarkup(buttons) if buttons else None
 
 
+def broadcast_confirmation_kb() -> InlineKeyboardMarkup:
+    """Create keyboard for broadcast confirmation (Schedule/Cancel)."""
+    buttons = [
+        [
+            InlineKeyboardButton("📅 Schedule", callback_data=encode_cb("broadcast_schedule")),
+            InlineKeyboardButton("❌ Cancel", callback_data=encode_cb("broadcast_cancel"))
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+

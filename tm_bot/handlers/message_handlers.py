@@ -22,12 +22,16 @@ from utils.calendar_utils import generate_google_calendar_link, suggest_time_slo
 from ui.messages import weekly_report_text
 from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb
 from cbdata import encode_cb
-from infra.scheduler import schedule_user_daily
+from infra.scheduler import schedule_user_daily, schedule_once
 from utils_storage import create_user_directory
 from handlers.callback_handlers import CallbackHandlers
 from utils.logger import get_logger
 from utils.version import get_version_info
+from utils.admin_utils import is_admin
+from services.broadcast_service import get_all_users, send_broadcast, parse_broadcast_time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 logger = get_logger(__name__)
 
@@ -612,6 +616,15 @@ class MessageHandlers:
             user_group_id = update.effective_chat.id if update.effective_chat.type in ['group', 'supergroup'] else None
             user_lang = get_user_language(update.effective_user)
 
+            # Check for broadcast state
+            broadcast_state = context.user_data.get('broadcast_state') if context.user_data else None
+            if broadcast_state == 'waiting_message':
+                await self._handle_broadcast_message(update, context, user_message, user_id, user_lang)
+                return
+            elif broadcast_state == 'waiting_time':
+                await self._handle_broadcast_time(update, context, user_message, user_id, user_lang)
+                return
+
             # Check if user exists, if not, call start
             user_dir = os.path.join(self.root_dir, str(user_id))
             if not os.path.exists(user_dir):
@@ -892,3 +905,161 @@ class MessageHandlers:
             version_text += f"Commit: `{version_info['commit']}`\n"
         
         await update.message.reply_text(version_text, parse_mode='Markdown')
+    
+    async def cmd_broadcast(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /broadcast command for admins to schedule broadcast messages."""
+        user_id = update.effective_user.id
+        user_lang = get_user_language(update.effective_user)
+        
+        # Check admin status
+        if not is_admin(user_id):
+            message = "❌ You don't have permission to use this command."
+            await update.message.reply_text(message)
+            logger.warning(f"Non-admin user {user_id} attempted to use /broadcast")
+            return
+        
+        # Set state to waiting for message
+        if 'user_data' not in context:
+            context.user_data = {}
+        context.user_data['broadcast_state'] = 'waiting_message'
+        context.user_data['broadcast_admin_id'] = user_id
+        
+        message = "📢 **Broadcast Message**\n\nPlease send the message you want to broadcast to all users."
+        await update.message.reply_text(message, parse_mode='Markdown')
+    
+    async def _handle_broadcast_message(
+        self, update: Update, context: CallbackContext, 
+        message_text: str, user_id: int, user_lang: Language
+    ) -> None:
+        """Handle broadcast message input (show preview with Schedule/Cancel buttons)."""
+        # Store the message
+        context.user_data['broadcast_message'] = message_text
+        
+        # Show preview with Schedule/Cancel buttons
+        preview_text = f"**Preview:**\n──────────────\n{message_text}\n──────────────\n\nSend to all users?"
+        
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📅 Schedule", callback_data=encode_cb("broadcast_schedule")),
+                InlineKeyboardButton("❌ Cancel", callback_data=encode_cb("broadcast_cancel"))
+            ]
+        ])
+        
+        await update.message.reply_text(preview_text, parse_mode='Markdown', reply_markup=keyboard)
+    
+    async def _handle_broadcast_time(
+        self, update: Update, context: CallbackContext,
+        time_str: str, user_id: int, user_lang: Language
+    ) -> None:
+        """Handle broadcast time input and schedule the broadcast."""
+        # Get admin timezone
+        admin_tz = self.get_user_timezone(user_id) or "UTC"
+        
+        # Parse time
+        scheduled_time = parse_broadcast_time(time_str, admin_tz)
+        
+        if scheduled_time is None:
+            error_msg = (
+                f"❌ Could not parse time: '{time_str}'\n\n"
+                f"Please use one of these formats:\n"
+                f"• ISO: `YYYY-MM-DD HH:MM` (e.g., 2024-01-15 14:30)\n"
+                f"• Natural: `tomorrow 2pm`, `in 1 hour`, etc.\n\n"
+                f"Your timezone: {admin_tz}"
+            )
+            await update.message.reply_text(error_msg, parse_mode='Markdown')
+            return
+        
+        # Check if time is in the past
+        now = datetime.now(ZoneInfo(admin_tz))
+        if scheduled_time < now:
+            error_msg = f"❌ The specified time is in the past: {scheduled_time.strftime('%Y-%m-%d %H:%M')}"
+            await update.message.reply_text(error_msg)
+            return
+        
+        # Get broadcast message
+        broadcast_message = context.user_data.get('broadcast_message')
+        if not broadcast_message:
+            await update.message.reply_text("❌ Error: Broadcast message not found. Please start over with /broadcast")
+            context.user_data.pop('broadcast_state', None)
+            return
+        
+        # Get all users
+        user_ids = get_all_users(self.root_dir)
+        if not user_ids:
+            await update.message.reply_text("❌ No users found to broadcast to.")
+            context.user_data.pop('broadcast_state', None)
+            return
+        
+        # Convert to UTC for scheduling
+        scheduled_time_utc = scheduled_time.astimezone(ZoneInfo("UTC"))
+        
+        # Schedule the broadcast
+        job_name = f"broadcast-{user_id}-{int(scheduled_time_utc.timestamp())}"
+        schedule_once(
+            self.application.job_queue,
+            name=job_name,
+            callback=self._execute_scheduled_broadcast,
+            when_dt=scheduled_time_utc,
+            data={
+                "message": broadcast_message,
+                "user_ids": user_ids,
+                "admin_id": user_id,
+                "scheduled_time": scheduled_time.isoformat()
+            }
+        )
+        
+        # Confirm to admin
+        confirm_msg = (
+            f"✅ **Broadcast Scheduled**\n\n"
+            f"📅 Time: `{scheduled_time.strftime('%Y-%m-%d %H:%M')}` ({admin_tz})\n"
+            f"👥 Users: {len(user_ids)}\n"
+            f"📝 Message preview: {broadcast_message[:50]}{'...' if len(broadcast_message) > 50 else ''}\n\n"
+            f"The broadcast will be sent automatically at the scheduled time."
+        )
+        await update.message.reply_text(confirm_msg, parse_mode='Markdown')
+        
+        # Clear state
+        context.user_data.pop('broadcast_state', None)
+        context.user_data.pop('broadcast_message', None)
+        context.user_data.pop('broadcast_admin_id', None)
+        
+        logger.info(
+            f"Admin {user_id} scheduled broadcast for {scheduled_time.isoformat()} "
+            f"to {len(user_ids)} users"
+        )
+    
+    async def _execute_scheduled_broadcast(self, context: CallbackContext) -> None:
+        """Execute a scheduled broadcast."""
+        data = context.job.data
+        message = data.get("message")
+        user_ids = data.get("user_ids", [])
+        admin_id = data.get("admin_id")
+        scheduled_time = data.get("scheduled_time")
+        
+        logger.info(f"Executing scheduled broadcast to {len(user_ids)} users (scheduled by admin {admin_id})")
+        
+        # Send broadcast
+        results = await send_broadcast(context.bot, user_ids, message)
+        
+        # Log results
+        logger.info(
+            f"Broadcast completed - Success: {results['success']}, "
+            f"Failed: {results['failed']} (scheduled by admin {admin_id})"
+        )
+        
+        # Optionally notify admin
+        if admin_id:
+            try:
+                admin_msg = (
+                    f"📢 **Broadcast Completed**\n\n"
+                    f"✅ Sent: {results['success']}\n"
+                    f"❌ Failed: {results['failed']}\n"
+                    f"📅 Scheduled time: {scheduled_time}"
+                )
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=admin_msg,
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.warning(f"Could not notify admin {admin_id} of broadcast completion: {str(e)}")
