@@ -3,6 +3,10 @@ name: Promote staging to prod
 on:
   workflow_dispatch:   # manual run in GitHub UI
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   promote-prod:
     runs-on: ubuntu-latest
@@ -35,7 +39,13 @@ jobs:
               echo '[PROD] If deployment fails, configure passwordless sudo or fix permissions manually.'
             fi
 
-            echo '[PROD] Tagging zana-ai-bot:staging as zana-ai-bot:prod'
+            echo '[PROD] Checking if staging image exists...'
+            if ! docker images | grep -q 'zana-ai-bot.*staging'; then
+              echo '[PROD] ERROR: Staging image not found. Please deploy to staging first.'
+              exit 1
+            fi
+
+            echo '[PROD] Tagging zana-ai-bot:staging as zana-ai-bot:prod...'
             docker tag zana-ai-bot:staging zana-ai-bot:prod
 
             echo '[PROD] Restarting production container...'

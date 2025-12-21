@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: zana-ai-bot:latest
+    image: zana-ai-bot:prod
     container_name: zana-prod
     env_file:
       - /opt/zana-config/.env.prod
@@ -26,7 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: zana-ai-bot:latest
+    image: zana-ai-bot:staging
     container_name: zana-staging
     env_file:
       - /opt/zana-config/.env.staging
