@@ -21,20 +21,16 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Final stage
 FROM python:3.11-slim
 
-# Add this before copying code (after WORKDIR /app)
-# Get git version info and save to VERSION file
+# Build arguments for version info
 ARG GIT_COMMIT="unknown"
 ARG GIT_TAG=""
 ARG BUILD_DATE=""
 ENV BOT_VERSION=${GIT_TAG:-${GIT_COMMIT}}
 ENV BUILD_DATE=${BUILD_DATE}
 
-# Create VERSION file
-RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION || echo "unknown" > /app/VERSION
-
-# Create non-root user (matching host user UID for volume permissions)
+# Create non-root user and directory structure
 RUN useradd -m -u 1002 amiryan_j && \
-    mkdir -p /app/USERS_DATA_DIR /app/USERS_DATA_DIR && \
+    mkdir -p /app/USERS_DATA_DIR && \
     chown -R amiryan_j:amiryan_j /app
 
 # Copy Python dependencies from builder
@@ -42,6 +38,9 @@ COPY --from=builder /root/.local /home/amiryan_j/.local
 
 # Set working directory
 WORKDIR /app
+
+# Create VERSION file (after WORKDIR is set and directory exists)
+RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION || echo "unknown" > /app/VERSION
 
 # Copy application code
 COPY tm_bot/ ./tm_bot/

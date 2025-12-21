@@ -50,7 +50,16 @@ jobs:
             # Enable BuildKit for better caching and performance
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
-            docker compose build --progress=plain zana-staging
+
+            # Get git info for version tracking
+            COMMIT_SHA=$(git rev-parse --short HEAD)
+            BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            docker compose build \
+              --build-arg GIT_COMMIT=${COMMIT_SHA} \
+              --build-arg BUILD_DATE=${BUILD_DATE} \
+              --progress=plain zana-staging
+
             docker compose up -d zana-staging
 
             echo '[STAGING] Done.'
