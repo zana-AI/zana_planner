@@ -39,6 +39,9 @@ jobs:
               echo '[PROD] If deployment fails, configure passwordless sudo or fix permissions manually.'
             fi
 
+            echo '[PROD] Changing to project directory...'
+            cd $PROJECT_PATH
+
             echo '[PROD] Checking if staging image exists...'
             if ! docker images | grep -q 'zana-ai-bot.*staging'; then
               echo '[PROD] ERROR: Staging image not found. Please deploy to staging first.'
