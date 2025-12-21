@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import os
+from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
 from contextvars import ContextVar
@@ -45,8 +47,35 @@ def _wrap_tool(fn: Callable, tool_name: str) -> Callable:
         safe_user_id = _current_user_id.get()
         if not safe_user_id:
             raise ValueError("No active user_id set")
+        
         # Strip any user_id provided by the model/tool call
         kwargs.pop("user_id", None)
+        
+        # Remove 'kwargs' if it was incorrectly passed as a keyword argument
+        # This prevents errors like "got an unexpected keyword argument 'kwargs'"
+        if "kwargs" in kwargs:
+            logger.warning(f"Tool {tool_name} received 'kwargs' as a keyword argument, removing it")
+            kwargs.pop("kwargs", None)
+        
+        # Validate parameters against function signature
+        try:
+            sig = inspect.signature(fn)
+            valid_params = set(sig.parameters.keys()) - {"self", "user_id"}
+            
+            # Filter out any parameters that aren't in the function signature
+            invalid_params = set(kwargs.keys()) - valid_params
+            if invalid_params:
+                logger.warning(
+                    f"Tool {tool_name} received invalid parameters: {invalid_params}. "
+                    f"Valid parameters are: {valid_params}. Removing invalid ones."
+                )
+                for param in invalid_params:
+                    kwargs.pop(param, None)
+        except Exception as e:
+            # If signature inspection fails, log but continue
+            if _DEBUG_ENABLED:
+                logger.warning(f"Could not inspect signature for {tool_name}: {e}")
+        
         if _DEBUG_ENABLED:
             logger.info(
                 {
@@ -56,7 +85,15 @@ def _wrap_tool(fn: Callable, tool_name: str) -> Callable:
                     "args_keys": list(kwargs.keys()),
                 }
             )
-        return fn(user_id=safe_user_id, **kwargs)
+        
+        try:
+            return fn(user_id=safe_user_id, **kwargs)
+        except TypeError as e:
+            # Provide more helpful error message
+            logger.error(
+                f"Error calling {tool_name} with parameters {list(kwargs.keys())}: {e}"
+            )
+            raise
 
     wrapped.__name__ = tool_name
     wrapped.__doc__ = fn.__doc__
@@ -162,7 +199,15 @@ class LLMHandler:
 
     def _get_system_message_main(self, user_language: str = None) -> SystemMessage:
         """Get system message with language instruction if provided."""
+        # Add current date and time information
+        now = datetime.now()
+        current_date_str = now.strftime("%A, %B %d, %Y")
+        current_time_str = now.strftime("%H:%M")
+        
         content = self.system_message_main_base
+        content += f"\n\nCurrent date and time: {current_date_str} at {current_time_str}. "
+        content += "You have access to the current date and should use it when answering questions about dates, weeks, or time periods. Do not ask the user for the current date - use the date provided above. "
+        
         if user_language and user_language != "en":
             # Map language codes to full names
             lang_map = {

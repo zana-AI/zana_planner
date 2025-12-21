@@ -195,8 +195,17 @@ class PlannerAPIAdapter:
         weekly_hours = summary['weekly_hours']
         return round(weekly_hours / (promise.hours_per_week + 1e-6), 2)
 
-    def get_weekly_report(self, user_id, reference_time=None):
-        """Get weekly report."""
+    def get_weekly_report(self, user_id, reference_time: Optional[datetime] = None):
+        """Get weekly report for a user.
+        
+        Args:
+            user_id: User identifier
+            reference_time: Optional datetime to use as reference for the week. 
+                          If None, uses current datetime.
+        
+        Returns:
+            Formatted weekly report string showing progress for all promises.
+        """
         if not reference_time:
             reference_time = datetime.now()
         
