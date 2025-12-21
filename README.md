@@ -32,6 +32,16 @@ docker compose build
 docker compose up -d
 ```
 
+### 🤖 Bot Commands
+
+The bot supports the following commands:
+
+- `/nightly` - Send nightly reminders
+- `/weekly` - Report of the current week
+- `/promises` - List all my promises
+- `/zana` - What should I do today?
+- `/pomodoro` - Start a pomodoro session
+
 ### 📂 Directory Structure
 
 The codebase has been refactored into a clean, layered architecture:
