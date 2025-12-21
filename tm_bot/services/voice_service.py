@@ -3,6 +3,7 @@ Voice service for speech-to-text (ASR) and text-to-speech (TTS) using Google Clo
 """
 
 import os
+import re
 from typing import Optional
 from io import BytesIO
 
@@ -78,12 +79,92 @@ class VoiceService:
             logger.error(f"Voice transcription failed: {str(e)}")
             return ""
     
+    @staticmethod
+    def clean_text_for_tts(text: str) -> str:
+        """
+        Clean text for TTS by removing markdown, special characters, and formatting.
+        
+        Args:
+            text: Raw text that may contain markdown or special characters
+        
+        Returns:
+            Cleaned text suitable for TTS
+        """
+        if not text:
+            return ""
+        
+        # Remove markdown formatting
+        # Remove bold/italic: **text**, *text*, __text__, _text_
+        text = re.sub(r'\*\*([^\*]+)\*\*', r'\1', text)
+        text = re.sub(r'\*([^\*]+)\*', r'\1', text)
+        text = re.sub(r'__([^_]+)__', r'\1', text)
+        text = re.sub(r'_([^_]+)_', r'\1', text)
+        
+        # Remove code blocks: `code`, ```code```
+        text = re.sub(r'```[^`]*```', '', text)
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        
+        # Remove markdown links: [text](url)
+        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+        
+        # Remove headers: # Header, ## Header, etc.
+        text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove bullet points and list markers
+        text = re.sub(r'^[\*\-\+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove special characters that TTS might pronounce
+        # Keep basic punctuation but remove symbols
+        text = re.sub(r'[^\w\s\.\,\!\?\:\;\'\"\-\n]', ' ', text)
+        
+        # Clean up multiple spaces
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Handle the specific format from _format_response: "*Zana:*\n`text`\n\n*Log:*\n..."
+        # Extract just the main content, removing the structured format
+        lines = text.split('\n')
+        cleaned_lines = []
+        in_zana_section = False
+        in_log_section = False
+        
+        for line in lines:
+            line_stripped = line.strip()
+            
+            # Skip formatting markers
+            if re.match(r'^\*?(Zana|Log)\*?:\s*$', line_stripped, re.IGNORECASE):
+                if 'Zana' in line_stripped or 'zana' in line_stripped:
+                    in_zana_section = True
+                    in_log_section = False
+                elif 'Log' in line_stripped or 'log' in line_stripped:
+                    in_log_section = True
+                    in_zana_section = False
+                continue
+            
+            # Extract content from backtick-wrapped text
+            if line_stripped.startswith('`') and line_stripped.endswith('`'):
+                content = line_stripped.strip('`').strip()
+                if content:  # Only add non-empty content
+                    cleaned_lines.append(content)
+            elif line_stripped:  # Add non-empty lines
+                cleaned_lines.append(line)
+        
+        text = '\n'.join(cleaned_lines)
+        
+        # Remove "Log:" or "Zana:" prefixes that might remain
+        text = re.sub(r'^(Log|Zana):\s*', '', text, flags=re.IGNORECASE | re.MULTILINE)
+        
+        # Clean up leading/trailing whitespace
+        text = text.strip()
+        
+        return text
+    
     def synthesize_speech(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
         """
         Synthesize text to speech using Google Cloud Text-to-Speech API.
         
         Args:
-            text: Text to synthesize
+            text: Text to synthesize (will be cleaned of markdown/special chars)
             language_code: Language code (e.g., "en-US", "fa-IR", "fr-FR")
         
         Returns:
@@ -91,6 +172,13 @@ class VoiceService:
         """
         try:
             from google.cloud import texttospeech
+            
+            # Clean text before synthesis
+            cleaned_text = self.clean_text_for_tts(text)
+            
+            if not cleaned_text:
+                logger.warning("Text is empty after cleaning, cannot synthesize")
+                return None
             
             client = texttospeech.TextToSpeechClient()
             
@@ -109,7 +197,7 @@ class VoiceService:
             voice_name = voice_map.get(language_code) or voice_map.get(base_lang) or "en-US-Neural2-F"
             
             # Configure synthesis
-            synthesis_input = texttospeech.SynthesisInput(text=text)
+            synthesis_input = texttospeech.SynthesisInput(text=cleaned_text)
             voice = texttospeech.VoiceSelectionParams(
                 language_code=language_code if "-" in language_code else f"{base_lang}-{base_lang.upper()}",
                 name=voice_name,

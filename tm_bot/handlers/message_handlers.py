@@ -338,17 +338,19 @@ class MessageHandlers:
             # Check voice mode preference
             settings = self.plan_keeper.settings_repo.get_settings(user_id)
             
-            if settings.voice_mode is None:
-                # First time - ask user preference
-                message = get_message("voice_mode_prompt", user_lang)
-                keyboard = voice_mode_selection_kb()
-                await update.effective_message.reply_text(message, reply_markup=keyboard)
-                # Don't process voice until preference is set
-                return
+            # Check if there's a text caption with the voice message
+            voice_caption = update.effective_message.caption or ""
             
             # Send acknowledgment
             ack_message = get_message("voice_received", user_lang)
             await update.effective_message.reply_text(ack_message)
+            
+            # If first time, ask about voice mode preference (but still process the message)
+            if settings.voice_mode is None:
+                message = get_message("voice_mode_prompt", user_lang)
+                keyboard = voice_mode_selection_kb()
+                await update.effective_message.reply_text(message, reply_markup=keyboard)
+                # Continue processing the voice message even if preference not set yet
             
             # Transcribe voice
             user_lang_code = user_lang.value if user_lang else "en"
@@ -362,14 +364,22 @@ class MessageHandlers:
             
             transcribed_text = self.voice_service.transcribe_voice(path, speech_lang)
             
-            if not transcribed_text:
+            # Combine transcribed text with caption if present
+            if voice_caption and voice_caption.strip():
+                if transcribed_text:
+                    user_input = f"{voice_caption}\n\n{transcribed_text}".strip()
+                else:
+                    user_input = voice_caption.strip()
+            else:
+                user_input = transcribed_text if transcribed_text else ""
+            
+            if not user_input:
                 error_msg = get_message("voice_transcription_failed", user_lang)
                 await update.effective_message.reply_text(error_msg)
                 return
             
             # Process transcribed text as a regular message
-            # Create a mock update with the transcribed text
-            llm_response = self.llm_handler.get_response_api(transcribed_text, str(user_id), user_language=user_lang_code)
+            llm_response = self.llm_handler.get_response_api(user_input, str(user_id), user_language=user_lang_code)
             
             # Check for errors
             if "error" in llm_response:
@@ -412,9 +422,9 @@ class MessageHandlers:
         text_response: str, settings, user_lang
     ):
         """Send response as voice if voice mode enabled, otherwise as text."""
-        if settings.voice_mode == "enabled":
+        if settings and settings.voice_mode == "enabled":
             try:
-                # Synthesize speech
+                # Synthesize speech (text will be cleaned inside synthesize_speech)
                 user_lang_code = user_lang.value if user_lang else "en"
                 speech_lang_map = {
                     "en": "en-US",
