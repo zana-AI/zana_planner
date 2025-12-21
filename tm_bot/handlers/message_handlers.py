@@ -747,7 +747,7 @@ class MessageHandlers:
     async def cmd_version(self, update: Update, context: CallbackContext) -> None:
         """Handle the /version command to show bot version."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(update.effective_user)
         
         version_info = get_version_info()
         
@@ -755,9 +755,11 @@ class MessageHandlers:
         version_text += f"Version: `{version_info['version']}`\n"
         version_text += f"Environment: `{version_info.get('environment', 'unknown')}`\n"
         
+        # Show last update date
+        if 'last_update' in version_info and version_info['last_update'] != "unknown":
+            version_text += f"Last Update: `{version_info['last_update']}`\n"
+        
         if 'commit' in version_info:
             version_text += f"Commit: `{version_info['commit']}`\n"
-        if 'date' in version_info:
-            version_text += f"Build Date: `{version_info['date'][:10]}`\n"
         
         await update.message.reply_text(version_text, parse_mode='Markdown')
