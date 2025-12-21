@@ -30,7 +30,9 @@ jobs:
             --command="
               set -e
               cd /opt/zana-bot
-              echo Tagging zana-ai-bot:staging as zana-ai-bot:prod
+              echo '[PROD] Fixing permissions for container user (UID 1002)...'
+              sudo chown -R 1002:1002 /srv/zana-users || sudo chmod -R 777 /srv/zana-users
+              echo '[PROD] Tagging zana-ai-bot:staging as zana-ai-bot:prod'
               docker tag zana-ai-bot:staging zana-ai-bot:prod
               docker compose up -d zana-prod
             "

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # Multi-stage build for Zana AI bot
 FROM python:3.11-slim as builder
 
@@ -10,9 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install dependencies
+# Copy requirements first for better layer caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Use BuildKit cache mount for pip cache to speed up rebuilds
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --user -r requirements.txt
 
 # Final stage
 FROM python:3.11-slim

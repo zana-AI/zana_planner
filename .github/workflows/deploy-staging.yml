@@ -29,14 +29,21 @@ jobs:
             echo '[STAGING] Preparing staging data...'
             mkdir -p /srv/zana-users-staging
             rm -rf /srv/zana-users-staging/*
-            cp -r /srv/zana-users/* /srv/zana-users-staging/
+            cp -r /srv/zana-users/* /srv/zana-users-staging/ 2>/dev/null || true
+
+            echo '[STAGING] Fixing permissions for container user (UID 1002)...'
+            sudo chown -R 1002:1002 /srv/zana-users-staging || sudo chmod -R 777 /srv/zana-users-staging
 
             echo '[STAGING] Updating code...'
             cd $PROJECT_PATH
             git pull
 
-            echo '[STAGING] Rebuilding container...'
-            docker compose up -d --build zana-staging
+            echo '[STAGING] Rebuilding container with BuildKit (cached layers)...'
+            # Enable BuildKit for better caching and performance
+            export DOCKER_BUILDKIT=1
+            export COMPOSE_DOCKER_CLI_BUILD=1
+            docker compose build --progress=plain zana-staging
+            docker compose up -d zana-staging
 
             echo '[STAGING] Done.'
           "
