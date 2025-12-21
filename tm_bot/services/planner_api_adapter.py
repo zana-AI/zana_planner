@@ -2,8 +2,6 @@
 Adapter to provide compatibility with the existing PlannerAPI interface
 while using the new repository and service layers underneath.
 """
-import os
-import json
 from datetime import datetime, date
 from typing import List, Dict, Optional
 
@@ -177,9 +175,8 @@ class PlannerAPIAdapter:
         if not action:
             return None
         
-        # TODO: Fix import - should be from llms.schema import UserAction
         # Return in legacy UserAction format
-        from llms.schema import UserAction  # TODO: Fix import path
+        from llms.schema import UserAction
         return UserAction(
             action_date=str(action.at.date()),
             action_time=str(action.at.time().strftime("%H:%M:%S")),
