@@ -14,6 +14,7 @@ from handlers.messages_store import get_message, get_user_language, Language
 from handlers.translator import translate_text
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
+from services.image_service import ImageService
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
 from ui.messages import weekly_report_text
@@ -37,6 +38,11 @@ class MessageHandlers:
         self.root_dir = root_dir
         self.application = application
         self.voice_service = VoiceService()
+        try:
+            self.image_service = ImageService()
+        except Exception as e:
+            logger.error(f"Failed to initialize ImageService: {str(e)}")
+            self.image_service = None
     
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings repository."""
@@ -484,39 +490,32 @@ class MessageHandlers:
             
             # Parse image with VLM
             try:
-                import sys
-                from pathlib import Path
-                # Add parent directory to path to import from demo_features
-                parent_dir = Path(__file__).parent.parent.parent
-                if str(parent_dir) not in sys.path:
-                    sys.path.insert(0, str(parent_dir))
-                from demo_features.demo_image_processing import ImageVLMParser
+                if self.image_service is None:
+                    error_msg = get_message("image_processing_failed", user_lang)
+                    await msg.reply_text(f"{error_msg}\n\nImage processing service is not available.")
+                    return
                 
-                parser = ImageVLMParser()
-                # Use Telegram's file_path (URL) if available, otherwise use local path
-                # Note: ImageVLMParser expects a URL, so we use Telegram's file_path
+                # Use Telegram's file_path (URL) if available, otherwise use local file
                 file_url = file.file_path
                 
-                if not file_url:
-                    # If file_path is not available, we need to use the local file
-                    # For Gemini, we might need to convert to base64 or use a different approach
-                    # For now, try using the local path (may need adjustment based on API)
-                    file_url = f"file://{os.path.abspath(path)}"
+                # Parse image
+                analysis = self.image_service.parse_image(path, image_url=file_url)
                 
-                vlm_output = parser.parse(file_url)
+                # Extract text for processing
+                extracted_text = self.image_service.extract_text_for_processing(analysis)
                 
-                # Extract text from image
-                extracted_text = vlm_output.text or vlm_output.caption or ""
-                
-                if not extracted_text:
+                if not extracted_text or not analysis.text or len(analysis.text.strip()) == 0:
                     # No text found in image
-                    error_msg = get_message("image_processing_failed", user_lang)
+                    error_msg = get_message("image_no_text", user_lang)
                     await msg.reply_text(error_msg)
                     return
                 
-                # Use extracted text as user message input
-                # Combine caption and text for better context
-                user_message = f"{vlm_output.caption}\n\n{extracted_text}".strip()
+                # Log extracted content for debugging
+                logger.info(f"Image analysis - Type: {analysis.type}, Text length: {len(analysis.text)}, Language: {analysis.meta.language}")
+                
+                # Use extracted text as user message input with context
+                # This helps the LLM understand it's processing extracted image content
+                user_message = f"I've extracted the following content from an image:\n\n{extracted_text}\n\nPlease help me process this content."
                 
                 # Process through LLM
                 user_lang_code = user_lang.value if user_lang else "en"
@@ -550,14 +549,12 @@ class MessageHandlers:
                     logger.error(f"Error processing image for user {user_id}: {str(e)}")
                     await msg.reply_text(error_msg)
                     
-            except ImportError as e:
-                error_msg = get_message("image_processing_failed", user_lang)
-                logger.error(f"ImageVLMParser not available: {str(e)}")
-                await msg.reply_text(error_msg)
             except Exception as e:
                 error_msg = get_message("image_processing_failed", user_lang)
-                logger.error(f"Image processing error: {str(e)}")
-                await msg.reply_text(error_msg)
+                logger.error(f"Image processing error: {str(e)}", exc_info=True)
+                # Provide more context in error message
+                detailed_error = f"{error_msg}\n\nError details: {str(e)}"
+                await msg.reply_text(detailed_error)
         finally:
             # Clean up temp file
             try:

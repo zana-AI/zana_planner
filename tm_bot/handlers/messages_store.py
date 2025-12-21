@@ -158,6 +158,7 @@ class MessageTemplateStore:
             # Image messages
             "image_received": "Image received. Processing...",
             "image_processing_failed": "Sorry, I couldn't process your image. Please try again.",
+            "image_no_text": "I received your image, but I couldn't extract any text from it. Please try sending an image with visible text or handwritten notes.",
             
             # Poll messages
             "poll_detected": "Poll detected: {question}",
