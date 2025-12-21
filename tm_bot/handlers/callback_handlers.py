@@ -4,6 +4,7 @@ Handles all callback query processing from inline keyboards.
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -685,7 +686,7 @@ class CallbackHandlers:
         })
 
     async def _handle_refresh_weekly(self, query, context: CallbackContext, user_lang: Language):
-        """Handle weekly report refresh - updates message with current week's data."""
+        """Handle weekly report refresh - re-generates the report card as a single photo message with caption."""
         user_id = query.from_user.id
         
         # Get current time in user's timezone
@@ -702,18 +703,57 @@ class CallbackHandlers:
         # Create new refresh keyboard with updated timestamp
         keyboard = weekly_report_kb(user_now)
         
-        # Update the message
+        # Build caption text
         header = get_message("weekly_header", user_lang, date_range=date_range_str)
+        caption = f"{header}\n\n{report}"
+        
+        # Generate visualization image
+        image_path = None
         try:
-            await query.edit_message_text(
-                f"{header}\n\n{report}",
-                reply_markup=keyboard,
-                parse_mode='Markdown'
+            # Answer the callback query first
+            await query.answer("Refreshing weekly report...")
+            
+            # Generate the visualization image
+            image_path = self.plan_keeper.reports_service.generate_weekly_visualization_image(
+                user_id, user_now
             )
-            await query.answer("Weekly report refreshed!")
+            
+            if image_path and os.path.exists(image_path):
+                # Send photo with caption and keyboard
+                with open(image_path, 'rb') as photo:
+                    await context.bot.send_photo(
+                        chat_id=user_id,
+                        photo=photo,
+                        caption=caption,
+                        reply_markup=keyboard,
+                        parse_mode='Markdown'
+                    )
+                
+                # Try to delete the old message (if it exists and is deletable)
+                try:
+                    await query.message.delete()
+                except Exception as e:
+                    logger.debug(f"Could not delete old message: {e}")
+                    # It's okay if we can't delete it - the new message is already sent
+            else:
+                # Fallback: if image generation fails, send text message
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=caption,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
+                await query.answer("Report refreshed (image generation failed)")
         except Exception as e:
             logger.error(f"Error refreshing weekly report: {e}")
             await query.answer("Error refreshing report. Please try again.")
+        finally:
+            # Clean up temp file
+            if image_path and os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp visualization file {image_path}: {e}")
     
     async def _handle_set_language(self, query):
         """Handle language selection."""
