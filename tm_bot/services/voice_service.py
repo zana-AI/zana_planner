@@ -62,13 +62,13 @@ class VoiceService:
                 content = audio_file.read()
             
             # Configure recognition
+            # Note: Confidence scores are available by default in the API response
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
                 sample_rate_hertz=48000,  # Telegram voice notes are typically 48kHz
                 language_code=primary_language or "en-US",
                 alternative_language_codes=alternative_languages or [],
                 enable_automatic_punctuation=True,
-                enable_confidence=True,  # Enable confidence scores
             )
             
             audio = speech.RecognitionAudio(content=content)
