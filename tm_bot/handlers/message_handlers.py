@@ -15,8 +15,10 @@ from handlers.translator import translate_text
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
 from services.image_service import ImageService
+from services.content_service import ContentService
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
+from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
 from ui.messages import weekly_report_text
 from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb
 from cbdata import encode_cb
@@ -25,6 +27,7 @@ from utils_storage import create_user_directory
 from handlers.callback_handlers import CallbackHandlers
 from utils.logger import get_logger
 from utils.version import get_version_info
+from datetime import datetime, timedelta
 
 logger = get_logger(__name__)
 
@@ -38,6 +41,7 @@ class MessageHandlers:
         self.root_dir = root_dir
         self.application = application
         self.voice_service = VoiceService()
+        self.content_service = ContentService()
         try:
             self.image_service = ImageService()
         except Exception as e:
@@ -614,6 +618,14 @@ class MessageHandlers:
                 await self.start(update, context)
                 return
             
+            # Check for URLs in the message
+            urls = self.content_service.detect_urls(user_message)
+            if urls:
+                # Process the first URL found
+                url = urls[0]
+                await self._handle_link_message(update, context, url, user_id, user_lang)
+                return
+            
             # Get user language code for LLM
             user_lang_code = user_lang.value if user_lang else "en"
             llm_response = self.llm_handler.get_response_api(user_message, user_id, user_language=user_lang_code)
@@ -748,6 +760,93 @@ class MessageHandlers:
         keyboard = language_selection_kb()
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='Markdown')
 
+    async def _handle_link_message(self, update: Update, context: CallbackContext, 
+                                   url: str, user_id: int, user_lang: Language) -> None:
+        """Handle message containing a URL."""
+        try:
+            # Send acknowledgment
+            link_detected_msg = get_message("link_detected", user_lang)
+            await update.message.reply_text(link_detected_msg)
+            
+            # Process the link
+            link_metadata = self.content_service.process_link(url)
+            url_type = link_metadata.get('type', 'unknown')
+            
+            processing_msg = get_message("link_processing", user_lang, url_type=url_type)
+            processing_msg_obj = await update.message.reply_text(processing_msg)
+            
+            # Estimate time needed
+            estimated_duration = self.plan_keeper.time_estimation_service.estimate_content_duration(
+                link_metadata, user_id
+            )
+            
+            # Format duration string
+            if estimated_duration:
+                if estimated_duration < 1.0:
+                    duration_str = f"{int(estimated_duration * 60)} minutes"
+                else:
+                    hours = int(estimated_duration)
+                    minutes = int((estimated_duration - hours) * 60)
+                    if minutes > 0:
+                        duration_str = f"{hours}h {minutes}m"
+                    else:
+                        duration_str = f"{hours} hour{'s' if hours > 1 else ''}"
+            else:
+                duration_str = "Unknown"
+            
+            # Generate summary
+            title = link_metadata.get('title', 'Content')
+            description = link_metadata.get('description', 'No description available')
+            
+            # Generate Google Calendar link
+            tzname = self.get_user_timezone(user_id)
+            suggested_time = suggest_time_slot(
+                estimated_duration or 0.5,  # Default to 30 min if unknown
+                preferred_hour=9,
+                preferred_minute=0
+            )
+            
+            # Make timezone-aware if needed
+            try:
+                from zoneinfo import ZoneInfo
+                if suggested_time.tzinfo is None:
+                    tz = ZoneInfo(tzname)
+                    suggested_time = suggested_time.replace(tzinfo=tz)
+            except Exception:
+                pass  # Fallback to naive datetime
+            
+            calendar_url = generate_google_calendar_link(
+                title=title,
+                start_time=suggested_time,
+                duration_hours=estimated_duration or 0.5,
+                description=f"{description}\n\nLink: {url}",
+                timezone=tzname
+            )
+            
+            # Build response message
+            summary_msg = get_message("link_summary", user_lang, 
+                                    title=title,
+                                    description=description[:300] + ('...' if len(description) > 300 else ''),
+                                    duration=duration_str)
+            
+            calendar_question = get_message("link_calendar_question", user_lang)
+            calendar_link_text = get_message("link_calendar_link", user_lang, calendar_url=calendar_url)
+            
+            full_message = f"{summary_msg}\n\n{calendar_question}\n{calendar_link_text}"
+            
+            # Delete processing message and send final response
+            try:
+                await processing_msg_obj.delete()
+            except Exception:
+                pass
+            
+            await update.message.reply_text(full_message, parse_mode='Markdown', disable_web_page_preview=True)
+        
+        except Exception as e:
+            logger.error(f"Error handling link message for user {user_id}: {str(e)}")
+            error_msg = get_message("error_general", user_lang, error=str(e))
+            await update.message.reply_text(error_msg)
+    
     async def cmd_version(self, update: Update, context: CallbackContext) -> None:
         """Handle the /version command to show bot version."""
         user_id = update.effective_user.id

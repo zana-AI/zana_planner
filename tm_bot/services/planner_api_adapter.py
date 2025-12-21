@@ -14,6 +14,8 @@ from services.reports import ReportsService
 from services.ranking import RankingService
 from services.reminders import RemindersService
 from services.sessions import SessionsService
+from services.content_service import ContentService
+from services.time_estimation_service import TimeEstimationService
 from models.models import Promise, Action, UserSettings
 from models.enums import ActionType
 
@@ -36,6 +38,8 @@ class PlannerAPIAdapter:
         self.ranking_service = RankingService(self.promises_repo, self.actions_repo, self.settings_repo)
         self.reminders_service = RemindersService(self.ranking_service, self.settings_repo)
         self.sessions_service = SessionsService(self.sessions_repo, self.actions_repo)
+        self.content_service = ContentService()
+        self.time_estimation_service = TimeEstimationService(self.actions_repo)
 
     # Promise methods
     def add_promise(self, user_id, promise_text: str, num_hours_promised_per_week: float, 
@@ -328,3 +332,113 @@ class PlannerAPIAdapter:
         )
 
         return report
+    
+    # Link processing methods
+    def process_shared_link(self, user_id, url: str) -> str:
+        """
+        Process a shared link and return summary with calendar link.
+        
+        Args:
+            user_id: User ID
+            url: URL to process
+        
+        Returns:
+            Formatted string with link summary and calendar link
+        """
+        try:
+            # Process the link
+            link_metadata = self.content_service.process_link(url)
+            
+            # Estimate time needed
+            # Set LLM handler if available (will be set externally)
+            estimated_duration = self.time_estimation_service.estimate_content_duration(
+                link_metadata, user_id
+            )
+            
+            # Format duration string
+            if estimated_duration:
+                if estimated_duration < 1.0:
+                    duration_str = f"{int(estimated_duration * 60)} minutes"
+                else:
+                    hours = int(estimated_duration)
+                    minutes = int((estimated_duration - hours) * 60)
+                    if minutes > 0:
+                        duration_str = f"{hours}h {minutes}m"
+                    else:
+                        duration_str = f"{hours} hour{'s' if hours > 1 else ''}"
+            else:
+                duration_str = "Unknown"
+            
+            # Generate summary
+            title = link_metadata.get('title', 'Content')
+            description = link_metadata.get('description', 'No description available')
+            url_type = link_metadata.get('type', 'unknown')
+            
+            summary = (
+                f"📄 *{title}*\n\n"
+                f"{description[:300]}{'...' if len(description) > 300 else ''}\n\n"
+                f"⏱ Estimated time: {duration_str}\n"
+                f"🔗 Type: {url_type}"
+            )
+            
+            return summary
+        
+        except Exception as e:
+            return f"Error processing link: {str(e)}"
+    
+    def estimate_time_for_content(self, user_id, content_type: str, metadata: dict) -> float:
+        """
+        Estimate time needed for content.
+        
+        Args:
+            user_id: User ID
+            content_type: Type of content (blog, youtube, podcast, etc.)
+            metadata: Content metadata dict
+        
+        Returns:
+            Estimated duration in hours
+        """
+        try:
+            content_metadata = {
+                'type': content_type,
+                **metadata
+            }
+            return self.time_estimation_service.estimate_content_duration(content_metadata, user_id)
+        except Exception as e:
+            # Return default estimate on error
+            if content_type == 'youtube':
+                return 0.17  # ~10 minutes
+            elif content_type == 'blog':
+                return 0.08  # ~5 minutes
+            elif content_type == 'podcast':
+                return 0.5  # 30 minutes
+            return 0.25  # 15 minutes default
+    
+    def get_work_hour_suggestion(self, user_id, day_of_week: str = None) -> dict:
+        """
+        Get work hour suggestion based on user patterns.
+        
+        Args:
+            user_id: User ID
+            day_of_week: Optional day name (e.g., 'Monday'). If None, uses current day.
+        
+        Returns:
+            Dict with suggested_hours, day_of_week, reasoning, and patterns
+        """
+        try:
+            # Set LLM handler if available (will be set externally)
+            return self.time_estimation_service.suggest_daily_work_hours(
+                user_id, day_of_week, self._llm_handler
+            )
+        except Exception as e:
+            return {
+                'suggested_hours': 0.0,
+                'day_of_week': day_of_week or 'Unknown',
+                'reasoning': f'Error: {str(e)}',
+                'patterns': {}
+            }
+    
+    def set_llm_handler(self, llm_handler):
+        """Set LLM handler for time estimation service."""
+        self._llm_handler = llm_handler
+        self.time_estimation_service.llm_handler = llm_handler

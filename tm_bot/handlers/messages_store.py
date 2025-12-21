@@ -170,6 +170,16 @@ class MessageTemplateStore:
             
             # Todo messages
             "todo_not_implemented": "Sorry, todo list is not implemented yet.",
+            
+            # Link processing
+            "link_detected": "🔗 I found a link in your message. Let me check it out...",
+            "link_processing": "Processing {url_type}...",
+            "link_summary": "📄 *{title}*\n\n{description}\n\n⏱ Estimated time: {duration}",
+            "link_calendar_question": "Would you like to add this to your Google Calendar?",
+            "link_calendar_link": "[Add to Calendar]({calendar_url})",
+            
+            # Work hours suggestions
+            "work_hours_suggestion": "💡 Based on your patterns, you might want to work ~{hours} hours today ({day})",
         }
 
     def get_message(self, key: str, language: Optional[Language] = None, **kwargs) -> str:

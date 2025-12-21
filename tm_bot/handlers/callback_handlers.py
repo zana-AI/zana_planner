@@ -646,6 +646,19 @@ class CallbackHandlers:
             {'id': p.id, 'text': p.text.replace('_', ' ')} for p in top3
         ]
         
+        # Get work hour suggestion
+        day_of_week = user_now.strftime("%A")
+        work_suggestion = None
+        try:
+            # Get LLM handler if available
+            llm_handler = self.application.bot_data.get('llm_handler')
+            if llm_handler:
+                self.plan_keeper.set_llm_handler(llm_handler)
+            
+            work_suggestion = self.plan_keeper.get_work_hour_suggestion(user_id, day_of_week)
+        except Exception as e:
+            logger.warning(f"Error getting work hour suggestion: {str(e)}")
+        
         # Build priorities list with emojis
         emojis = ['1️⃣', '2️⃣', '3️⃣']
         priorities_text = get_message("morning_priorities_header", user_lang) + "\n\n"
@@ -653,10 +666,17 @@ class CallbackHandlers:
             promise_text = p.text.replace('_', ' ')
             priorities_text += f"{emojis[i]} {promise_text}\n"
         
+        # Add work hour suggestion if available
+        suggestion_text = ""
+        if work_suggestion and work_suggestion.get('suggested_hours', 0) > 0:
+            suggested_hours = work_suggestion['suggested_hours']
+            suggestion_text = "\n\n" + get_message("work_hours_suggestion", user_lang, 
+                                                  hours=suggested_hours, day=day_of_week)
+        
         # Build full message
         header_message = get_message("morning_header", user_lang, date=user_now.strftime("%A"))
         calendar_question = get_message("morning_calendar_question", user_lang)
-        full_message = f"{header_message}\n\n{priorities_text}\n{calendar_question}"
+        full_message = f"{header_message}\n\n{priorities_text}{suggestion_text}\n\n{calendar_question}"
         
         # Send single message with calendar keyboard
         msg = await context.bot.send_message(

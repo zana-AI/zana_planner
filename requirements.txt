@@ -41,6 +41,9 @@ uvicorn[standard]==0.24.0       # Pinned for stability
 PyYAML>=6.0.3
 requests==2.31.0                # Pinned for stability
 watchfiles>=1.1.0               # file watching for development
+yt-dlp>=2024.0.0                # YouTube video processing
+beautifulsoup4>=4.12.0          # HTML parsing
+lxml>=5.0.0                     # HTML parser backend
 
 # ============================================================================
 # Visualization
