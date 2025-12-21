@@ -131,7 +131,7 @@ class CallbackHandlers:
         await query.answer()
         
         user_id = query.from_user.id
-        user_lang = get_user_language(user_id)
+        user_lang = get_user_language(query.from_user)
         
         # Parse callback data
         cb = decode_cb(query.data)
@@ -193,6 +193,8 @@ class CallbackHandlers:
             await self._handle_refresh_weekly(query, context, user_lang)
         elif action == "set_language":
             await self._handle_set_language(query)
+        elif action == "voice_mode":
+            await self._handle_voice_mode(query, cb, user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -722,3 +724,22 @@ class CallbackHandlers:
             # This is a new user, show welcome message
             welcome_message = get_message("welcome_new", selected_lang)
             await query.message.reply_text(welcome_message, parse_mode='Markdown')
+    
+    async def _handle_voice_mode(self, query, cb, user_lang):
+        """Handle voice mode preference selection."""
+        user_id = query.from_user.id
+        enabled_str = cb.get("enabled", "false")
+        enabled = enabled_str.lower() == "true"
+        
+        # Save voice mode preference
+        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        settings.voice_mode = "enabled" if enabled else "disabled"
+        self.plan_keeper.settings_repo.save_settings(settings)
+        
+        # Send confirmation message
+        if enabled:
+            confirmation_message = get_message("voice_mode_enabled", user_lang)
+        else:
+            confirmation_message = get_message("voice_mode_disabled", user_lang)
+        
+        await query.edit_message_text(text=confirmation_message, parse_mode='Markdown')

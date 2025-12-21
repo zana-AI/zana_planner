@@ -194,3 +194,16 @@ def language_selection_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def voice_mode_selection_kb() -> InlineKeyboardMarkup:
+    """Create keyboard for voice mode preference selection."""
+    buttons = [
+        [
+            InlineKeyboardButton("✅ Yes, enable voice mode", callback_data=encode_cb("voice_mode", enabled="true")),
+        ],
+        [
+            InlineKeyboardButton("❌ No, text only", callback_data=encode_cb("voice_mode", enabled="false")),
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+

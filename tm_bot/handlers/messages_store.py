@@ -147,6 +147,24 @@ class MessageTemplateStore:
             # Language selection
             "language_set": "Language set to {lang}",
             "choose_language": "Choose bot language",
+            
+            # Voice messages
+            "voice_received": "Got your voice note. Processing...",
+            "voice_mode_prompt": "Do you want to receive messages in voice mode?",
+            "voice_mode_enabled": "Voice mode enabled. I'll respond with voice messages.",
+            "voice_mode_disabled": "Voice mode disabled. I'll respond with text messages.",
+            "voice_transcription_failed": "Sorry, I couldn't transcribe your voice message. Please try again or send a text message.",
+            
+            # Image messages
+            "image_received": "Image received. Processing...",
+            "image_processing_failed": "Sorry, I couldn't process your image. Please try again.",
+            
+            # Poll messages
+            "poll_detected": "Poll detected: {question}",
+            "poll_answer_not_implemented": "Sorry, poll answer is not implemented yet.",
+            
+            # Todo messages
+            "todo_not_implemented": "Sorry, todo list is not implemented yet.",
         }
 
     def get_message(self, key: str, language: Optional[Language] = None, **kwargs) -> str:

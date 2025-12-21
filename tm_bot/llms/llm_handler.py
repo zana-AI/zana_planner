@@ -67,11 +67,11 @@ class LLMHandler:
             func_obj = getattr(PlannerAPIAdapter, api)
             api_schema_str += f"\t {api}({get_function_args_info(func_obj)}) \n"
 
-        self.system_message_main = SystemMessage(content=(
+        # Base system message - language will be added dynamically
+        self.system_message_main_base = (
             "You are an assistant for a task management bot. "
             "When responding, return a JSON object referencing the action and any relevant fields. "
-            "Always respond in English. "
-        ))
+        )
 
         self.system_message_api = SystemMessage(content=(
             "The output should be structured as follows: \n"
@@ -90,7 +90,23 @@ class LLMHandler:
         # self.chat_history[user_id].add_message(system_message_main)
         # self.chat_history[user_id].add_message(system_message_api)
 
-    def get_response_api(self, user_message: str, user_id: str) -> dict:
+    def _get_system_message_main(self, user_language: str = None) -> SystemMessage:
+        """Get system message with language instruction if provided."""
+        content = self.system_message_main_base
+        if user_language and user_language != "en":
+            # Map language codes to full names
+            lang_map = {
+                "fa": "Persian (Farsi)",
+                "fr": "French",
+                "en": "English"
+            }
+            lang_name = lang_map.get(user_language, "the user's preferred language")
+            content += f"Respond in {lang_name} unless the user explicitly uses English. "
+        else:
+            content += "Respond in English. "
+        return SystemMessage(content=content)
+
+    def get_response_api(self, user_message: str, user_id: str, user_language: str = None) -> dict:
         try:
             if user_id not in self.chat_history:
                 # TODO: Uncomment to enable per-user context initialization
@@ -100,9 +116,11 @@ class LLMHandler:
             self.chat_history[user_id].add_message(HumanMessage(content=user_message))
 
             try:
-                response = self.chat_model([self.system_message_main, self.system_message_api] + self.chat_history[user_id].messages)
+                system_msg = self._get_system_message_main(user_language)
+                response = self.chat_model([system_msg, self.system_message_api] + self.chat_history[user_id].messages)
             except Exception as e:
                 logger.error(f"Error getting LLM response: {str(e)}")
+                # Error message will be translated by caller if needed
                 return {"error": "model_error", "function_call": "handle_error", 
                         "response_to_user": "I'm having trouble understanding that. Could you rephrase?"}
 
@@ -123,7 +141,7 @@ class LLMHandler:
             return {"error": "unexpected_error", "function_call": "handle_error", 
                     "response_to_user": f"Something went wrong. Error: {str(e)}"}
 
-    def get_response_custom(self, user_message: str, user_id: str) -> str:
+    def get_response_custom(self, user_message: str, user_id: str, user_language: str = None) -> str:
         try:
             if user_id not in self.chat_history:
                 self.chat_history[user_id] = ChatMessageHistory()
@@ -131,9 +149,15 @@ class LLMHandler:
             self.chat_history[user_id].add_message(HumanMessage(content=user_message))
 
             try:
-                response = self.chat_model(self.chat_history[user_id].messages)
+                # Add language-aware system message if language is specified
+                messages = self.chat_history[user_id].messages
+                if user_language and user_language != "en":
+                    system_msg = self._get_system_message_main(user_language)
+                    messages = [system_msg] + messages
+                response = self.chat_model(messages)
             except Exception as e:
                 logger.error(f"Error getting LLM response: {str(e)}")
+                # Error message will be translated by caller if needed
                 return "I'm having trouble understanding that. Could you rephrase?"
 
             self.chat_history[user_id].add_message(AIMessage(content=response.content))

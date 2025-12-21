@@ -43,7 +43,8 @@ class SettingsRepository:
                     timezone=data.get('timezone', 'Europe/Paris'),
                     nightly_hh=data.get('nightly_hh', 22),
                     nightly_mm=data.get('nightly_mm', 0),
-                    language=data.get('language', 'en')
+                    language=data.get('language', 'en'),
+                    voice_mode=data.get('voice_mode', None)
                 )
             except Exception:
                 pass
@@ -60,7 +61,8 @@ class SettingsRepository:
             'timezone': settings.timezone,
             'nightly_hh': settings.nightly_hh,
             'nightly_mm': settings.nightly_mm,
-            'language': settings.language
+            'language': settings.language,
+            'voice_mode': settings.voice_mode
         }
         
         with open(file_path, 'w') as f:
