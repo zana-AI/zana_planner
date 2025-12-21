@@ -1,112 +1,143 @@
-# 🧭 Zana Planner — Development Roadmap
+# 🧭 Zana Planner — AI Implementation
 
-## ✅ Phase 1 — Core Infrastructure
+This repository contains the **ZanaAI Planner Bot**, a Telegram-based AI assistant for task management, habit tracking, and personal organization.
 
-* [x] Telegram bot with conversation + job queue
-* [x] CSV → **MongoDB** migration using Motor (async)
-* [x] CRUD for `Promise`, `Action`, `Session`, `UserSettings`
-* [x] Automatic index management (safe & idempotent)
-* [x] Basic encryption / hashing placeholders (Fernet + Argon2)
-* [ ] ⚠️ **Integrate `DataManager` with the rest of the bot logic**
-
-  * Currently implemented but **not yet wired** into command handlers, jobs, or conversation flow.
-  * Need to replace file-based reads/writes with `DataManager` calls.
+> [!NOTE]
+> This README is the **single source of truth** for the project's status, setup, and roadmap.
 
 ---
 
-## 🚧 Phase 2 — Data & Storage Improvements
+## 🏃 Getting Started
 
-* [ ] **Encrypt / hash sensitive data**
+### Prerequisites
+*   Docker & Docker Compose
+*   Access to GCP (for Vertex AI credentials)
+*   Telegram Bot Token
 
-  * Use Fernet (`DATA_ENC_KEY`) for reversible fields (Telegram IDs, messages).
-  * Use Argon2 for irreversible identifiers (emails, usernames).
-* [ ] **Backup & Export system**
+### 🐳 Docker Setup
 
-  * Command to export user data (JSON, ZIP).
-* [ ] **Add metadata layer** (per user, per action) for analytics.
-* [ ] **Migrate old CSV users** automatically to MongoDB schema.
+The project uses Docker for distinct environments (Production, Staging, Stats).
 
----
+```bash
+# 1. Check status of all containers
+docker compose ps
 
-## 🌍 Phase 3 — User Experience
+# 2. View logs for a specific service (e.g., prod bot)
+docker compose logs -f zana-prod
 
-* [ ] **Multilingual support**
+# 3. Update code and rebuild
+cd /opt/zana-bot
+git pull
+docker compose build
+docker compose up -d
+```
 
-  * Ask user preferred language on `/start`.
-  * Use LLM or context-aware translator for all text prompts.
-* [ ] **Time zone detection**
+### 📂 Directory Structure
 
-  * Ask user for city or share location → auto infer timezone.
-* [ ] **Voice + image input**
+The codebase has been refactored into a clean, layered architecture:
 
-  * Integrate Whisper (ASR) for speech-to-text.
-  * Add lightweight image analysis for OCR or context extraction.
-* [ ] **Improved reminders**
-
-  * Smarter scheduling (based on activity patterns).
-  * Pre-task “start/snooze” + live timers.
-
----
-
-## 💬 Phase 4 — Conversation & AI Layer
-
-* [ ] Refine LLM call prompts to prevent unintended API triggers in group chats.
-* [ ] Abstract the LLM conversation layer to support multiple front-ends (Telegram, Web, WhatsApp).
-* [ ] Add contextual “intent detection” to reduce false positives.
-* [ ] Create conversation state machine independent of UI layer.
+*   `tm_bot/` — Main package
+    *   `handlers/` — Telegram message & callback handlers
+    *   `services/` — Business logic (Sessions, Ranking, Reports)
+    *   `repositories/` — Data access layer (CSV/JSON/YAML adapters)
+    *   `models/` — Data models & Enums
+    *   `ui/` — Pure functions for Messages & Keyboards
+    *   `i18n/` — Internationalization & Translations
+    *   `infra/` — Infrastructure & Scheduling
 
 ---
 
-## 📊 Phase 5 — Visualization & Sharing
+## 📝 Active Sprint — Concrete TODO List
 
-* [ ] **Charts & stats**
+This list contains high-priority implementation tasks. Each item is linked to a specific file and issue.
 
-  * Weekly activity plots, streak counters, category distributions.
-* [ ] **Achievement sharing**
+### 🛑 Critical Fixes (High Priority)
 
-  * Share success cards or progress messages in groups (“👏 X just completed 3h of French practice!”).
-* [ ] **User summary dashboard**
+- [ ] **Fix Import Path in `planner_api_adapter.py`**
+    - **File**: `tm_bot/services/planner_api_adapter.py:138`
+    - **Issue**: `from schema import UserAction` causes runtime error.
+    - **Fix**: Change to `from llms.schema import UserAction` (or correct path).
 
-  * Visual analytics for personal progress (web interface).
+- [ ] **Connect Nightly Reminders**
+    - **File**: `tm_bot/handlers/message_handlers.py` (Lines 363, 370)
+    - **Issue**: Methods are empty placeholders.
+    - **Fix**: Connect to `handlers/callback_handlers.py` logic or `services/reminders.py`.
 
----
+### 🚧 Feature Completion (Medium Priority)
 
-## 🧠 Phase 6 — Admin & Monitoring
+- [ ] **Implement Session Ticker System**
+    - **File**: `tm_bot/handlers/callback_handlers.py` (Lines 75, 80, 85)
+    - **Task**: Implement `_schedule_session_ticker`, `_stop_ticker`, and `_schedule_session_resume` for real-time pinned message updates.
 
-* [ ] **Admin panel**
+- [ ] **Implement Session Time Calculation**
+    - **File**: `tm_bot/handlers/callback_handlers.py` (Line 95) & `utils/bot_utils.py`
+    - **Task**: Replace placeholder `0.5` hours with actual duration calculation (`end_time - start_time - pauses`).
 
-  * Monitor user growth and activity.
-  * Trigger bulk messages or updates.
-  * Export anonymized usage stats.
-* [ ] **Analytics script** (headless)
+- [ ] **Implement Weekly Report Refresh**
+    - **File**: `tm_bot/handlers/callback_handlers.py` (Line 572)
+    - **Task**: Implement `_handle_refresh_weekly` to re-generate the report card.
 
-  * Scan MongoDB for:
+- [ ] **User Language Persistence**
+    - **File**: `tm_bot/i18n/translations.py` (Line 463)
+    - **Task**: Update `get_user_language()` to fetch from `SettingsRepository` instead of returning default.
 
-    * Total users
-    * Users with at least one promise
-    * Recent activity (last week / month)
-  * Send reports via a separate manager bot.
+### 🧩 Nice-to-Have (Low Priority)
 
----
-
-## 🔬 Phase 7 — Architecture Refactor
-
-* [ ] Split into modular layers:
-
-  * `core/` (models, logic, ranking, scheduling)
-  * `platforms/telegram`, `platforms/web`, `platforms/whatsapp`
-  * `llms/` (LangChain integration)
-  * `repositories/` (MongoDB, file adapters)
-* [ ] Support running planner engine standalone (no Telegram).
-* [ ] Add test coverage and typing across modules.
+- [ ] **Session Recovery on Startup**: Handle interrupted sessions in `services/sessions.py`.
+- [ ] **Timer Display**: Show live timer in `ui/keyboards.py`.
+- [ ] **Chat History**: Enable system messages context in `llms/llm_handler.py`.
 
 ---
 
-## 🧩 Optional Future Add-ons
+## 📍 Current Status: Refactoring Complete
 
-* [ ] Integrate CalDAV / Google Calendar sync.
-* [ ] Lightweight WebApp (React/Vue) for desktop/mobile.
-* [ ] Offline-first local cache for user data.
-* [ ] Add open API for third-party integrations.
+The monolithic `planner_bot.py` has been successfully refactored.
+
+*   ✅ **Separation of Concerns**: UI, Logic, and Data are now separate.
+*   ✅ **Repository Pattern**: All file I/O is isolated in `repositories/`.
+*   ✅ **Internationalization**: Setup ready for multiple languages.
+*   ✅ **Dependency Management**: Pandas and YAML are now optional dependencies.
 
 ---
+
+## 🗺️ Project Roadmap
+
+### ✅ Phase 1 — Core Infrastructure
+*   [x] Telegram bot with conversation + job queue
+*   [x] CSV → **MongoDB** migration (Ready via Repositories)
+*   [x] CRUD for `Promise`, `Action`, `Session`, `UserSettings`
+*   [x] Automatic index management
+*   [ ] **Integrate `DataManager` logic completely** (Need to ensure all old file-reads are gone)
+
+### 🚧 Phase 2 — Data & Storage
+*   [ ] **Encrypt / hash sensitive data** (Fernet + Argon2)
+*   [ ] **Backup & Export system** (JSON/ZIP export command)
+*   [ ] **Migrate old CSV users** to new Schema completely
+
+### 🌍 Phase 3 — User Experience
+*   [ ] **Multilingual support** (Skeleton ready, need implementation)
+*   [ ] **Time zone detection** (Auto-infer from location)
+*   [ ] **Voice + Image Input** (Whisper + Vision API)
+*   [ ] **Smarter Reminders** (Context-aware based on activity)
+
+### 📊 Phase 4 — Visualization & Sharing
+*   [ ] **Charts & Stats** (Weekly activity plots)
+*   [ ] **Achievement Sharing** (Social proof cards)
+*   [ ] **Web Dashboard** (React/Vue frontend for analytics)
+
+### 🧠 Phase 5 — Admin & Operations
+*   [ ] **Admin Panel** (User monitoring, broadcasts)
+*   [ ] **Analytics Script** (Headless stats collection)
+*   [ ] **CI/CD & Testing** (Automated tests, Docker builds)
+
+---
+
+## 💡 Resolution Suggestions & Future Ideas (2026)
+
+| Idea | Priority | Est. Time |
+| :--- | :--- | :--- |
+| **Agentic Capabilities** | High | 10h |
+| **RAG / Conversation History** | High | 20h |
+| **Telegram Mini App** | Med | 20h |
+| **Offline-first Local Cache** | Low | - |
+| **External Calendar Sync** | Med | 6h |
