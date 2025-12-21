@@ -65,7 +65,11 @@ class MessageTemplateStore:
             "thats_all": "✅ That's all for today.",
 
             # Morning reminders
-            "morning_header": "☀️ *{date} Morning Focus*\nHere are the top 3 to prioritize today. Pick a quick time or adjust, then get rolling.",
+            "morning_header": "☀️ *{date} Morning Focus*",
+            "morning_priorities_header": "Here are your top 3 priorities for today:",
+            "morning_priorities_item": "{emoji} {text}",
+            "morning_calendar_question": "Would you like me to add these to your Google Calendar?",
+            "morning_calendar_links": "📅 *Calendar Links*\n\nHere are your calendar links for today:",
             "morning_question": "🌸 What about *{promise_text}* today? Ready to start?",
 
             # Weekly reports

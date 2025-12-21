@@ -51,8 +51,9 @@ class PlannerTelegramBot:
             self.application
         )
 
-        # Store plan_keeper in bot_data for access by handlers
+        # Store plan_keeper and llm_handler in bot_data for access by handlers
         self.application.bot_data['plan_keeper'] = self.plan_keeper
+        self.application.bot_data['llm_handler'] = self.llm_handler
 
         # Initialize message store with settings repository
         initialize_message_store(self.plan_keeper.settings_repo)

@@ -207,3 +207,14 @@ def voice_mode_selection_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def morning_calendar_kb() -> InlineKeyboardMarkup:
+    """Create keyboard for morning calendar question."""
+    buttons = [
+        [
+            InlineKeyboardButton("✅ Yes, add to calendar", callback_data=encode_cb("add_to_calendar_yes")),
+            InlineKeyboardButton("❌ No, thanks", callback_data=encode_cb("add_to_calendar_no")),
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+

@@ -17,7 +17,7 @@ from utils.time_utils import beautify_time, round_time, get_week_range
 from ui.keyboards import (
     time_options_kb, session_running_kb, session_paused_kb, 
     session_finish_confirm_kb, session_adjust_kb, preping_kb,
-    language_selection_kb, weekly_report_kb
+    language_selection_kb, weekly_report_kb, morning_calendar_kb
 )
 from ui.messages import weekly_report_text
 from cbdata import encode_cb, decode_cb
@@ -195,6 +195,10 @@ class CallbackHandlers:
             await self._handle_set_language(query)
         elif action == "voice_mode":
             await self._handle_voice_mode(query, cb, user_lang)
+        elif action == "add_to_calendar_yes":
+            await self._handle_add_to_calendar_yes(query, context, user_lang)
+        elif action == "add_to_calendar_no":
+            await self._handle_add_to_calendar_no(query, user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -614,8 +618,18 @@ class CallbackHandlers:
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""
         user_id = int(user_id)
-        user_lang = get_user_language(user_id)
+        # Get user language from settings
+        from handlers.messages_store import _translation_manager
+        if _translation_manager:
+            user_lang = _translation_manager.get_user_language(user_id)
+        else:
+            user_lang = Language.EN
         user_now, tzname = self._get_user_now(user_id)
+        
+        # Check if user has promises
+        promises = self.plan_keeper.get_promises(user_id)
+        if not promises:
+            return
         
         # rank a larger list once, then slice top 3
         ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id, user_now, n=1000)
@@ -624,35 +638,35 @@ class CallbackHandlers:
         
         top3 = ranked[:3]
         
-        # header (different copy than nightly)
+        # Store top 3 promises in bot_data for calendar callback handler
+        if 'morning_top3' not in self.application.bot_data:
+            self.application.bot_data['morning_top3'] = {}
+        self.application.bot_data['morning_top3'][user_id] = [
+            {'id': p.id, 'text': p.text.replace('_', ' ')} for p in top3
+        ]
+        
+        # Build priorities list with emojis
+        emojis = ['1️⃣', '2️⃣', '3️⃣']
+        priorities_text = get_message("morning_priorities_header", user_lang) + "\n\n"
+        for i, p in enumerate(top3):
+            promise_text = p.text.replace('_', ' ')
+            priorities_text += f"{emojis[i]} {promise_text}\n"
+        
+        # Build full message
         header_message = get_message("morning_header", user_lang, date=user_now.strftime("%A"))
-        header_msg = await context.bot.send_message(
+        calendar_question = get_message("morning_calendar_question", user_lang)
+        full_message = f"{header_message}\n\n{priorities_text}\n{calendar_question}"
+        
+        # Send single message with calendar keyboard
+        msg = await context.bot.send_message(
             chat_id=user_id,
-            text=header_message,
+            text=full_message,
+            reply_markup=morning_calendar_kb(),
             parse_mode="Markdown",
         )
         
-        # Store header message ID for cleanup
-        self._store_morning_message_id(user_id, header_msg.message_id, "header")
-        
-        # per-promise cards with choices
-        for p in top3:
-            weekly_h = float(getattr(p, "hours_per_week", 0.0) or 0.0)
-            base_day_h = weekly_h / 7.0
-            
-            last = self.plan_keeper.get_last_action_on_promise(user_id, p.id)
-            curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
-            
-            message = get_message("morning_question", user_lang, promise_text=p.text.replace('_', ' '))
-            msg = await context.bot.send_message(
-                chat_id=user_id,
-                text=message,
-                reply_markup=preping_kb(p.id, snooze_min=30),
-                parse_mode="Markdown",
-            )
-            
-            # Store message ID for cleanup
-            self._store_morning_message_id(user_id, msg.message_id, p.id)
+        # Store message ID for cleanup
+        self._store_morning_message_id(user_id, msg.message_id, "morning_priorities")
 
     def _store_morning_message_id(self, user_id: int, message_id: int, promise_id: str) -> None:
         """Store morning message ID for later cleanup."""
@@ -743,3 +757,97 @@ class CallbackHandlers:
             confirmation_message = get_message("voice_mode_disabled", user_lang)
         
         await query.edit_message_text(text=confirmation_message, parse_mode='Markdown')
+    
+    async def _handle_add_to_calendar_yes(self, query, context: CallbackContext, user_lang: Language):
+        """Handle user wanting to add priorities to calendar"""
+        user_id = query.from_user.id
+        user_now, tzname = self._get_user_now(user_id)
+        
+        # Get top 3 promises from bot_data
+        top3_promises = self.application.bot_data.get('morning_top3', {}).get(user_id, [])
+        if not top3_promises:
+            await query.answer("Sorry, I couldn't find your priorities. Please try again tomorrow.")
+            return
+        
+        # Generate calendar links via LLM
+        try:
+            calendar_links_text = await self._generate_calendar_links_via_llm(
+                top3_promises, user_now, tzname, user_id, user_lang
+            )
+            
+            # Build message with calendar links
+            header = get_message("morning_calendar_links", user_lang)
+            full_message = f"{header}\n\n{calendar_links_text}"
+            
+            # Send new message with calendar links
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=full_message,
+                parse_mode="Markdown",
+            )
+            
+            # Acknowledge the button press
+            await query.answer("Calendar links sent! ✅")
+        except Exception as e:
+            logger.error(f"Error generating calendar links for user {user_id}: {str(e)}")
+            await query.answer("Sorry, I couldn't generate calendar links. Please try again later.")
+    
+    async def _handle_add_to_calendar_no(self, query, user_lang: Language):
+        """Handle user not wanting calendar links."""
+        await query.answer("Got it! Have a productive day! 💪")
+    
+    async def _generate_calendar_links_via_llm(self, top3_promises: list, user_now: datetime, 
+                                               tzname: str, user_id: int, user_lang: Language) -> str:
+        """Generate Google Calendar links via LLM for top 3 priorities."""
+        from urllib.parse import quote
+        
+        # Get LLM handler from bot_data
+        llm_handler = self.application.bot_data.get('llm_handler')
+        if not llm_handler:
+            raise ValueError("LLM handler not available")
+        
+        # Build prompt for LLM
+        tasks_text = "\n".join([f"{i+1}. {p['text']}" for i, p in enumerate(top3_promises)])
+        current_date_str = user_now.strftime("%Y-%m-%d")
+        current_time_str = user_now.strftime("%H:%M")
+        
+        prompt = f"""You are helping create Google Calendar events for a user's top 3 priorities today.
+
+Tasks:
+{tasks_text}
+
+User timezone: {tzname}
+Current date: {current_date_str}
+Current time: {current_time_str}
+
+For each task, propose:
+- A reasonable start time (considering it's morning, around 8:30 AM or later)
+- A reasonable duration based on the task nature (e.g., exercise might be 30-60 min, deep work might be 2-3 hours)
+- Generate a Google Calendar URL using this format:
+https://calendar.google.com/calendar/render?action=TEMPLATE&text={{title}}&dates={{start_YYYYMMDDTHHmmss}}/{{end_YYYYMMDDTHHmmss}}&details={{description}}
+
+Important:
+- Dates must be in ISO 8601 format: YYYYMMDDTHHmmss (use Z for UTC or include timezone offset)
+- For timezone-aware dates, use format like: 20240115T083000+0100 (if timezone offset is +1)
+- URL encode all parameters (title, description)
+- Use today's date: {current_date_str}
+
+Return the result in Telegram markdown format with hyperlinks:
+[Task Name](google_calendar_url)
+
+Format as a numbered list with emojis (1️⃣, 2️⃣, 3️⃣).
+
+Example format:
+1️⃣ [Exercise regularly](https://calendar.google.com/calendar/render?action=TEMPLATE&text=Exercise%20regularly&dates=20240115T083000Z/20240115T093000Z&details=Morning%20workout)
+2️⃣ [Deep work](https://calendar.google.com/calendar/render?action=TEMPLATE&text=Deep%20work&dates=20240115T093000Z/20240115T120000Z&details=Focus%20time)
+3️⃣ [Study English](https://calendar.google.com/calendar/render?action=TEMPLATE&text=Study%20English&dates=20240115T140000Z/20240115T150000Z&details=Language%20practice)
+
+Generate the calendar links now:"""
+        
+        # Get user language code
+        user_lang_code = user_lang.value if user_lang else "en"
+        
+        # Call LLM
+        response = llm_handler.get_response_custom(prompt, str(user_id), user_language=user_lang_code)
+        
+        return response
