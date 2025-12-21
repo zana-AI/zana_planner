@@ -218,8 +218,15 @@ def morning_calendar_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def content_actions_kb(calendar_url: str = None, url: str = None, can_summarize: bool = False) -> InlineKeyboardMarkup:
-    """Create keyboard for content actions (calendar, summarize)."""
+def content_actions_kb(calendar_url: str = None, url: str = None, can_summarize: bool = False, url_id: str = None) -> InlineKeyboardMarkup:
+    """Create keyboard for content actions (calendar, summarize).
+    
+    Args:
+        calendar_url: Google Calendar URL (uses url button, no size limit)
+        url: Original content URL (stored separately if needed)
+        can_summarize: Whether to show summarize button
+        url_id: Short ID for URL storage (if provided, use this instead of encoding URL)
+    """
     buttons = []
     
     if calendar_url:
@@ -228,10 +235,11 @@ def content_actions_kb(calendar_url: str = None, url: str = None, can_summarize:
             url=calendar_url
         )])
     
-    if can_summarize and url:
+    if can_summarize and url_id:
+        # Use short ID instead of full URL to avoid callback_data size limit (64 bytes)
         buttons.append([InlineKeyboardButton(
             "📝 Summarize",
-            callback_data=encode_cb("summarize_content", url=url)
+            callback_data=encode_cb("summarize_content", url_id=url_id)
         )])
     
     return InlineKeyboardMarkup(buttons) if buttons else None

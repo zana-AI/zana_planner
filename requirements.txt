@@ -45,7 +45,7 @@ yt-dlp>=2024.0.0                # YouTube video processing
 beautifulsoup4>=4.12.0          # HTML parsing
 lxml>=5.0.0                     # HTML parser backend
 trafilatura>=1.6.0              # Advanced article content extraction
-podcastparser>=1.0.0            # Podcast RSS feed parsing
+podcastparser>=0.6.11           # Podcast RSS feed parsing
 
 # ============================================================================
 # Visualization

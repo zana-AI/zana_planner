@@ -865,11 +865,23 @@ class MessageHandlers:
                 # Don't show "too short" message - just show the summary
                 full_message = summary_msg
             
+            # Store URL in bot_data with a short ID to avoid callback_data size limit
+            url_id = None
+            if can_summarize:
+                import hashlib
+                url_id = hashlib.md5(url.encode()).hexdigest()[:8]  # 8-char ID
+                
+                # Store in bot_data (accessed via application)
+                if 'content_urls' not in self.application.bot_data:
+                    self.application.bot_data['content_urls'] = {}
+                self.application.bot_data['content_urls'][url_id] = url
+            
             # Create keyboard with actions
             keyboard = content_actions_kb(
                 calendar_url=calendar_url,
                 url=url,
-                can_summarize=can_summarize
+                can_summarize=can_summarize,
+                url_id=url_id
             )
             
             # Delete processing message and send final response

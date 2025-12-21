@@ -201,7 +201,16 @@ class CallbackHandlers:
         elif action == "add_to_calendar_no":
             await self._handle_add_to_calendar_no(query, user_lang)
         elif action == "summarize_content":
-            url = cb.get("url")
+            url_id = cb.get("url_id")
+            # Retrieve URL from bot_data storage
+            url = None
+            if url_id and 'content_urls' in self.application.bot_data:
+                url = self.application.bot_data['content_urls'].get(url_id)
+            
+            if not url:
+                await query.answer("Error: URL not found. Please try sharing the link again.", show_alert=True)
+                return
+            
             await self._handle_summarize_content(query, url, user_id, user_lang)
         elif action == "broadcast_schedule":
             await self._handle_broadcast_schedule(query, context, user_lang)
