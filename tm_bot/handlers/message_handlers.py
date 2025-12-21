@@ -352,17 +352,24 @@ class MessageHandlers:
                 await update.effective_message.reply_text(message, reply_markup=keyboard)
                 # Continue processing the voice message even if preference not set yet
             
-            # Transcribe voice
+            # Transcribe voice with multi-language support
             user_lang_code = user_lang.value if user_lang else "en"
-            # Map language codes for speech recognition
-            speech_lang_map = {
-                "en": "en-US",
-                "fa": "fa-IR",
-                "fr": "fr-FR"
-            }
-            speech_lang = speech_lang_map.get(user_lang_code, "en-US")
             
-            transcribed_text = self.voice_service.transcribe_voice(path, speech_lang)
+            # Use multi-language transcription that tries both user language and English
+            transcription_result = self.voice_service.transcribe_voice_multi_language(
+                path,
+                user_language=user_lang_code,
+                fallback_to_english=True
+            )
+            
+            transcribed_text = transcription_result.text
+            
+            # Log transcription details
+            if transcription_result.confidence > 0:
+                logger.info(
+                    f"Voice transcribed in {transcription_result.language_code} "
+                    f"with confidence {transcription_result.confidence:.2f}"
+                )
             
             # Combine transcribed text with caption if present
             if voice_caption and voice_caption.strip():

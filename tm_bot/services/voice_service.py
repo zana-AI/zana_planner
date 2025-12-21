@@ -4,7 +4,8 @@ Voice service for speech-to-text (ASR) and text-to-speech (TTS) using Google Clo
 
 import os
 import re
-from typing import Optional
+from typing import Optional, Tuple, List
+from dataclasses import dataclass
 from io import BytesIO
 
 from llms.llm_env_utils import load_llm_env
@@ -18,6 +19,15 @@ project_id = cfg.get("GCP_PROJECT_ID")
 location = cfg.get("GCP_LOCATION", "us-central1")
 
 
+@dataclass
+class TranscriptionResult:
+    """Result from voice transcription with metadata."""
+    text: str
+    confidence: float
+    language_code: str
+    alternatives: List[Tuple[str, float]]  # List of (text, confidence) tuples
+
+
 class VoiceService:
     """Service for voice transcription and synthesis using Google Cloud APIs."""
     
@@ -25,17 +35,22 @@ class VoiceService:
         self.project_id = project_id
         self.location = location
         
-    def transcribe_voice(self, voice_file_path: str, language_code: Optional[str] = None) -> str:
+    def transcribe_voice(
+        self, 
+        voice_file_path: str, 
+        primary_language: Optional[str] = None,
+        alternative_languages: Optional[List[str]] = None
+    ) -> TranscriptionResult:
         """
         Transcribe voice file to text using Google Cloud Speech-to-Text API.
         
         Args:
             voice_file_path: Path to the voice audio file (OGG format from Telegram)
-            language_code: Optional language code (e.g., "en-US", "fa-IR", "fr-FR")
-                          If None, will attempt auto-detection
+            primary_language: Primary language code (e.g., "en-US", "fa-IR", "fr-FR")
+            alternative_languages: List of alternative language codes to try
         
         Returns:
-            Transcribed text string
+            TranscriptionResult with text, confidence, and metadata
         """
         try:
             from google.cloud import speech
@@ -50,9 +65,10 @@ class VoiceService:
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
                 sample_rate_hertz=48000,  # Telegram voice notes are typically 48kHz
-                language_code=language_code or "en-US",  # Default to English if not specified
-                alternative_language_codes=["en-US", "fa-IR", "fr-FR"] if not language_code else None,
+                language_code=primary_language or "en-US",
+                alternative_language_codes=alternative_languages or [],
                 enable_automatic_punctuation=True,
+                enable_confidence=True,  # Enable confidence scores
             )
             
             audio = speech.RecognitionAudio(content=content)
@@ -60,24 +76,118 @@ class VoiceService:
             # Perform transcription
             response = client.recognize(config=config, audio=audio)
             
-            # Extract transcribed text
+            # Extract transcribed text with confidence scores
             if response.results:
-                transcribed_text = " ".join(
-                    result.alternatives[0].transcript 
-                    for result in response.results
+                all_transcripts = []
+                all_confidences = []
+                alternatives_list = []
+                
+                for result in response.results:
+                    if result.alternatives:
+                        # Get the best alternative
+                        best_alt = result.alternatives[0]
+                        all_transcripts.append(best_alt.transcript)
+                        confidence = best_alt.confidence if hasattr(best_alt, 'confidence') and best_alt.confidence > 0 else 0.0
+                        all_confidences.append(confidence)
+                        
+                        # Collect all alternatives for this result
+                        for alt in result.alternatives:
+                            alt_confidence = alt.confidence if hasattr(alt, 'confidence') and alt.confidence > 0 else 0.0
+                            alternatives_list.append((alt.transcript, alt_confidence))
+                
+                # Combine all transcripts
+                transcribed_text = " ".join(all_transcripts)
+                # Average confidence across all results
+                avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
+                
+                logger.debug(f"Transcribed voice: {transcribed_text[:50]}... (confidence: {avg_confidence:.2f})")
+                
+                return TranscriptionResult(
+                    text=transcribed_text,
+                    confidence=avg_confidence,
+                    language_code=primary_language or "en-US",
+                    alternatives=alternatives_list
                 )
-                logger.debug(f"Transcribed voice: {transcribed_text[:50]}...")
-                return transcribed_text
             else:
                 logger.warning("No transcription results returned")
-                return ""
+                return TranscriptionResult(
+                    text="",
+                    confidence=0.0,
+                    language_code=primary_language or "en-US",
+                    alternatives=[]
+                )
                 
         except ImportError:
             logger.error("google-cloud-speech not available. Install with: pip install google-cloud-speech")
-            return ""
+            return TranscriptionResult(text="", confidence=0.0, language_code="en-US", alternatives=[])
         except Exception as e:
             logger.error(f"Voice transcription failed: {str(e)}")
-            return ""
+            return TranscriptionResult(text="", confidence=0.0, language_code="en-US", alternatives=[])
+    
+    def transcribe_voice_multi_language(
+        self,
+        voice_file_path: str,
+        user_language: str,
+        fallback_to_english: bool = True
+    ) -> TranscriptionResult:
+        """
+        Transcribe voice with multi-language support, trying user language and English.
+        Returns the transcription with highest confidence.
+        
+        Args:
+            voice_file_path: Path to the voice audio file
+            user_language: User's preferred language code (e.g., "en", "fa", "fr")
+            fallback_to_english: If True, always try English as well
+        
+        Returns:
+            TranscriptionResult with the best transcription
+        """
+        # Map language codes
+        lang_map = {
+            "en": "en-US",
+            "fa": "fa-IR",
+            "fr": "fr-FR"
+        }
+        
+        primary_lang = lang_map.get(user_language, "en-US")
+        
+        # If user language is not English and fallback is enabled, try both
+        if user_language != "en" and fallback_to_english:
+            # Try user's language first
+            result_user_lang = self.transcribe_voice(
+                voice_file_path,
+                primary_language=primary_lang,
+                alternative_languages=["en-US"]
+            )
+            
+            # Try English as primary
+            result_english = self.transcribe_voice(
+                voice_file_path,
+                primary_language="en-US",
+                alternative_languages=[primary_lang]
+            )
+            
+            # Compare confidence scores and return the best
+            if result_user_lang.confidence >= result_english.confidence:
+                logger.info(
+                    f"Selected {primary_lang} transcription "
+                    f"(confidence: {result_user_lang.confidence:.2f} vs {result_english.confidence:.2f})"
+                )
+                return result_user_lang
+            else:
+                logger.info(
+                    f"Selected English transcription "
+                    f"(confidence: {result_english.confidence:.2f} vs {result_user_lang.confidence:.2f})"
+                )
+                return result_english
+        else:
+            # Single language transcription with alternatives
+            alternative_langs = ["en-US", "fa-IR", "fr-FR"] if primary_lang == "en-US" else ["en-US"]
+            return self.transcribe_voice(
+                voice_file_path,
+                primary_language=primary_lang,
+                alternative_languages=alternative_langs
+            )
     
     @staticmethod
     def clean_text_for_tts(text: str) -> str:
