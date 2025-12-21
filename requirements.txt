@@ -17,6 +17,7 @@ langchain-text-splitters>=0.3.11  # Required by langchain
 google-cloud-aiplatform>=1.115.0
 google-cloud-speech>=2.0.0     # For speech-to-text (ASR)
 google-cloud-texttospeech>=2.0.0  # For text-to-speech (TTS)
+elevenlabs>=1.0.0              # For Eleven Labs TTS (with fallback to Google Cloud)
 pydantic>=2.12.0
 pydantic-settings>=2.12.0       # Required by pydantic
 

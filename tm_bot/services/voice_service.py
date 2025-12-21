@@ -1,5 +1,6 @@
 """
 Voice service for speech-to-text (ASR) and text-to-speech (TTS) using Google Cloud APIs.
+Supports Eleven Labs TTS with fallback to Google Cloud TTS.
 """
 
 import os
@@ -7,11 +8,15 @@ import re
 from typing import Optional, Tuple, List
 from dataclasses import dataclass
 from io import BytesIO
+from dotenv import load_dotenv
 
 from llms.llm_env_utils import load_llm_env
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 # Load GCP configuration
 cfg = load_llm_env()
@@ -29,11 +34,13 @@ class TranscriptionResult:
 
 
 class VoiceService:
-    """Service for voice transcription and synthesis using Google Cloud APIs."""
+    """Service for voice transcription and synthesis using Google Cloud APIs.
+    Supports Eleven Labs TTS with automatic fallback to Google Cloud TTS."""
     
     def __init__(self):
         self.project_id = project_id
         self.location = location
+        self.eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
         
     def transcribe_voice(
         self, 
@@ -269,12 +276,69 @@ class VoiceService:
         
         return text
     
-    def synthesize_speech(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
+    def _synthesize_with_eleven_labs(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
         """
-        Synthesize text to speech using Google Cloud Text-to-Speech API.
+        Synthesize text to speech using Eleven Labs API.
         
         Args:
-            text: Text to synthesize (will be cleaned of markdown/special chars)
+            text: Text to synthesize (should already be cleaned)
+            language_code: Language code (e.g., "en-US", "fa-IR", "fr-FR")
+        
+        Returns:
+            Audio bytes in MP3 format, or None on failure
+        """
+        if not self.eleven_labs_api_key:
+            return None
+        
+        try:
+            from elevenlabs import generate, set_api_key
+            
+            # Set API key
+            set_api_key(self.eleven_labs_api_key)
+            
+            # Map language codes to Eleven Labs voices
+            # Eleven Labs voice IDs or names (using common voices)
+            voice_map = {
+                "en": "Rachel",      # English female voice
+                "en-US": "Rachel",
+                "fa": "Bella",        # Multilingual voice for Farsi
+                "fa-IR": "Bella",
+                "fr": "Antoni",       # Multilingual voice for French
+                "fr-FR": "Antoni",
+            }
+            
+            # Get base language code
+            base_lang = language_code.split("-")[0] if "-" in language_code else language_code
+            voice_name = voice_map.get(language_code) or voice_map.get(base_lang) or "Rachel"
+            
+            # Generate audio using Eleven Labs
+            audio = generate(
+                text=text,
+                voice=voice_name,
+                model="eleven_multilingual_v2"  # Multilingual model
+            )
+            
+            logger.debug(f"Synthesized speech with Eleven Labs for text: {text[:50]}...")
+            return audio
+            
+        except ImportError:
+            logger.warning("elevenlabs package not available. Install with: pip install elevenlabs")
+            return None
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check for credit/quota related errors
+            if any(keyword in error_str for keyword in ["quota", "credit", "insufficient", "401", "403", "429"]):
+                logger.warning(f"Eleven Labs API credit/quota issue: {str(e)}. Falling back to Google Cloud TTS.")
+            else:
+                logger.warning(f"Eleven Labs synthesis failed: {str(e)}. Falling back to Google Cloud TTS.")
+            return None
+    
+    def _synthesize_with_google_cloud(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
+        """
+        Synthesize text to speech using Google Cloud Text-to-Speech API (baseline fallback).
+        
+        Args:
+            text: Text to synthesize (should already be cleaned)
             language_code: Language code (e.g., "en-US", "fa-IR", "fr-FR")
         
         Returns:
@@ -283,11 +347,8 @@ class VoiceService:
         try:
             from google.cloud import texttospeech
             
-            # Clean text before synthesis
-            cleaned_text = self.clean_text_for_tts(text)
-            
-            if not cleaned_text:
-                logger.warning("Text is empty after cleaning, cannot synthesize")
+            if not text:
+                logger.warning("Text is empty, cannot synthesize")
                 return None
             
             client = texttospeech.TextToSpeechClient()
@@ -307,7 +368,7 @@ class VoiceService:
             voice_name = voice_map.get(language_code) or voice_map.get(base_lang) or "en-US-Neural2-F"
             
             # Configure synthesis
-            synthesis_input = texttospeech.SynthesisInput(text=cleaned_text)
+            synthesis_input = texttospeech.SynthesisInput(text=text)
             voice = texttospeech.VoiceSelectionParams(
                 language_code=language_code if "-" in language_code else f"{base_lang}-{base_lang.upper()}",
                 name=voice_name,
@@ -324,12 +385,41 @@ class VoiceService:
                 audio_config=audio_config,
             )
             
-            logger.debug(f"Synthesized speech for text: {text[:50]}...")
+            logger.debug(f"Synthesized speech with Google Cloud for text: {text[:50]}...")
             return response.audio_content
             
         except ImportError:
             logger.error("google-cloud-texttospeech not available. Install with: pip install google-cloud-texttospeech")
             return None
         except Exception as e:
-            logger.error(f"Speech synthesis failed: {str(e)}")
+            logger.error(f"Google Cloud speech synthesis failed: {str(e)}")
             return None
+    
+    def synthesize_speech(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
+        """
+        Synthesize text to speech using Eleven Labs (if API key available) with fallback to Google Cloud TTS.
+        
+        Args:
+            text: Text to synthesize (will be cleaned of markdown/special chars)
+            language_code: Language code (e.g., "en-US", "fa-IR", "fr-FR")
+        
+        Returns:
+            Audio bytes in OGG/MP3 format, or None on failure
+        """
+        # Clean text before synthesis
+        cleaned_text = self.clean_text_for_tts(text)
+        
+        if not cleaned_text:
+            logger.warning("Text is empty after cleaning, cannot synthesize")
+            return None
+        
+        # Try Eleven Labs first if API key is present
+        if self.eleven_labs_api_key:
+            audio_bytes = self._synthesize_with_eleven_labs(cleaned_text, language_code)
+            if audio_bytes:
+                return audio_bytes
+            # If Eleven Labs failed, fall through to Google Cloud
+        
+        # Fallback to Google Cloud TTS (baseline)
+        logger.debug("Using Google Cloud TTS (baseline fallback)")
+        return self._synthesize_with_google_cloud(cleaned_text, language_code)
