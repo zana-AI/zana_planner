@@ -681,6 +681,10 @@ class MessageHandlers:
     def call_planner_api(self, user_id: int, llm_response: dict) -> str:
         """Process user message by sending it to the LLM and executing the identified action."""
         try:
+            # If the agent already executed tools, avoid double-calling the API.
+            if llm_response.get("executed_by_agent"):
+                return llm_response.get("tool_outputs") or ""
+
             # Interpret LLM response
             function_name = llm_response.get("function_call", None)
             if function_name is None:

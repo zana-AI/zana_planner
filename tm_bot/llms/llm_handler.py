@@ -1,19 +1,19 @@
+from __future__ import annotations
+
 import os
-import sys
-from pathlib import Path
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage, AIMessage
-from langchain_community.chat_message_histories import ChatMessageHistory
+from typing import Callable, Dict, List, Optional
+
+from langchain.tools import StructuredTool
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.output_parsers import JsonOutputParser
-from llms.func_utils import get_function_args_info
-from llms.schema import UserAction, LLMResponse  # Ensure this path is correct
-# load_dotenv()
-# sys.path.append(str(Path(__file__).parent.parent))
-# sys.path.append(str(Path(__file__).parent.parent.parent))
-from services.planner_api_adapter import PlannerAPIAdapter
 from langchain_google_vertexai import ChatVertexAI
+from langchain_openai import ChatOpenAI
+
+from llms.agent import AgentState, create_agent_graph
+from llms.func_utils import get_function_args_info
 from llms.llm_env_utils import load_llm_env
+from llms.schema import LLMResponse, UserAction
+from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -23,17 +23,24 @@ schemas = [LLMResponse]  # , UserPromise, UserAction]
 
 
 class LLMHandler:
-    def __init__(self):
+    def __init__(
+        self,
+        root_dir: Optional[str] = None,
+        max_iterations: Optional[int] = None,
+        progress_callback: Optional[Callable[[str, dict], None]] = None,
+    ):
+        """
+        LLM handler orchestrated by LangGraph to allow tool-using loops.
+
+        Args:
+            root_dir: Base path for PlannerAPIAdapter. Defaults to ROOT_DIR env or cwd.
+            max_iterations: Hard cap on agent iterations. Defaults to LLM_MAX_ITERATIONS env or 6.
+            progress_callback: Optional callback(event, payload) for UI-agnostic progress.
+        """
         try:
             cfg = load_llm_env()  # returns dict with project, location, model
 
-            # if cfg.get("OPENAI_API_KEY", ""):
-            #     self.chat_model = ChatOpenAI(
-            #         openai_api_key=cfg["OPENAI_API_KEY"],
-            #         temperature=0.7,
-            #         model="gpt-4o-mini"
-            #     )
-
+            self.chat_model = None
             if cfg.get("GCP_PROJECT_ID", ""):
                 self.chat_model = ChatVertexAI(
                     model=cfg["GCP_GEMINI_MODEL"],
@@ -42,53 +49,65 @@ class LLMHandler:
                     temperature=0.7,
                 )
 
-            self.parser = JsonOutputParser(pydantic_object=LLMResponse)
-            
-            self.chat_history = {}
+            if not self.chat_model and cfg.get("OPENAI_API_KEY", ""):
+                self.chat_model = ChatOpenAI(
+                    openai_api_key=cfg["OPENAI_API_KEY"],
+                    temperature=0.7,
+                    model="gpt-4o-mini",
+                )
 
-            self._initialize_context(user_id="-1")  # reserved
+            if not self.chat_model:
+                raise ValueError("No LLM configured. Provide GCP or OpenAI credentials.")
+
+            self.parser = JsonOutputParser(pydantic_object=LLMResponse)
+            self.max_iterations = max_iterations or int(os.getenv("LLM_MAX_ITERATIONS", "6"))
+            self.chat_history: Dict[str, List[BaseMessage]] = {}
+            self._progress_callback_default = progress_callback
+            self._progress_callback: Optional[Callable[[str, dict], None]] = progress_callback
+
+            adapter_root = root_dir or os.getenv("ROOT_DIR") or os.getcwd()
+            self.plan_adapter = PlannerAPIAdapter(adapter_root)
+            self.tools = self._build_tools(self.plan_adapter)
+
+            self._initialize_context()
+            self.agent_app = create_agent_graph(
+                tools=self.tools,
+                model=self.chat_model,
+                max_iterations=self.max_iterations,
+                progress_getter=lambda: self._progress_callback,
+            )
         except Exception as e:
             logger.error(f"Failed to initialize LLMHandler: {str(e)}")
             raise
 
-    def _initialize_context(self, user_id: str) -> None:
-        base_model_schemas = ""
-        for schema in schemas:
-            base_model_schemas += f"class {schema.__name__}:\n"
-            for field_name, field in schema.model_fields.items():
-                base_model_schemas += f"\t{field_name}(description= {field.description}, type= {str(field.annotation)})\n"
+    def _initialize_context(self) -> None:
+        """Precompute system prompts and tool descriptions."""
+        tool_lines = []
+        for tool in self.tools:
+            name = getattr(tool, "name", "unknown")
+            desc = (getattr(tool, "description", "") or "").strip()
+            arg_names = []
+            if hasattr(self.plan_adapter, name):
+                arg_names = list(get_function_args_info(getattr(self.plan_adapter, name)).keys())
+            arg_sig = ", ".join(arg_names)
+            tool_lines.append(f"- {name}({arg_sig}) :: {desc}")
 
-        api_schema_str = ""
-        api_schema = [func for func in dir(PlannerAPIAdapter) if
-                      callable(getattr(PlannerAPIAdapter, func)) and not func.startswith("_")]
+        tools_overview = "\n".join(tool_lines)
 
-        for api in api_schema:
-            # Retrieve the actual function object
-            func_obj = getattr(PlannerAPIAdapter, api)
-            api_schema_str += f"\t {api}({get_function_args_info(func_obj)}) \n"
-
-        # Base system message - language will be added dynamically
         self.system_message_main_base = (
             "You are an assistant for a task management bot. "
-            "When responding, return a JSON object referencing the action and any relevant fields. "
+            "Use the provided tools to inspect, add, or update promises and actions. "
+            "If the user is only chatting, respond briefly and do not call tools (use no_op). "
+            "Keep responses concise and actionable."
         )
 
-        self.system_message_api = SystemMessage(content=(
-            "The output should be structured as follows: \n"
-            "{\n"
-            "\t\"function_call\": \"function_name\",\n"
-            "\t\"function_args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"},\n"
-            "\t\"response_to_user\": \"Response to the user\"\n"
-            "}\n"
-            "If the user’s message is small talk, greeting, thanks, emoji-only, or unclear → DO NOT call any function. Return: function_call='no_op', response_to_user=short friendly reply.\n"
-            "If required args missing → ask a brief question.\n"
-            f"Here are the list of API functions available:\n [{api_schema_str}]\n"
-        ))
-
-        # TODO: Uncomment these lines to enable chat history with system messages
-        # self.chat_history[user_id] = ChatMessageHistory()
-        # self.chat_history[user_id].add_message(system_message_main)
-        # self.chat_history[user_id].add_message(system_message_api)
+        self.system_message_api = SystemMessage(
+            content=(
+                "Available planner tools (call only when relevant):\n"
+                f"{tools_overview}\n"
+                "If required arguments are missing, ask for them briefly before calling tools."
+            )
+        )
 
     def _get_system_message_main(self, user_language: str = None) -> SystemMessage:
         """Get system message with language instruction if provided."""
@@ -106,72 +125,174 @@ class LLMHandler:
             content += "Respond in English. "
         return SystemMessage(content=content)
 
-    def get_response_api(self, user_message: str, user_id: str, user_language: str = None) -> dict:
+    def get_response_api(
+        self,
+        user_message: str,
+        user_id: str,
+        user_language: str = None,
+        progress_callback: Optional[Callable[[str, dict], None]] = None,
+    ) -> dict:
+        """
+        Main entry for multi-iteration agentic responses.
+        Executes planner tools inside the LangGraph loop and returns the final reply.
+        """
+        # Allow per-call progress callback; fall back to default.
+        self._progress_callback = progress_callback or self._progress_callback_default
+
         try:
-            if user_id not in self.chat_history:
-                # TODO: Uncomment to enable per-user context initialization
-                # self._initialize_context(user_id)
-                self.chat_history[user_id] = ChatMessageHistory()
+            prior_history = self.chat_history.get(user_id, [])
 
-            self.chat_history[user_id].add_message(HumanMessage(content=user_message))
+            messages: List[BaseMessage] = [
+                self._get_system_message_main(user_language),
+                self.system_message_api,
+                *prior_history,
+                HumanMessage(content=user_message),
+            ]
 
-            try:
-                system_msg = self._get_system_message_main(user_language)
-                response = self.chat_model([system_msg, self.system_message_api] + self.chat_history[user_id].messages)
-            except Exception as e:
-                logger.error(f"Error getting LLM response: {str(e)}")
-                # Error message will be translated by caller if needed
-                return {"error": "model_error", "function_call": "handle_error", 
-                        "response_to_user": "I'm having trouble understanding that. Could you rephrase?"}
+            state: AgentState = {"messages": messages, "iteration": 0}
+            result_state = self.agent_app.invoke(state)
+            final_messages = result_state.get("messages", messages)
 
-            self.chat_history[user_id].add_message(AIMessage(content=response.content))
+            final_ai = self._get_last_ai(final_messages)
+            last_tool_call = self._get_last_tool_call(final_messages)
+            tool_messages = [m for m in final_messages if isinstance(m, ToolMessage)]
 
-            try:
-                return self.parser.parse(response.content)
-            except Exception as e:
-                logger.error(f"Error parsing response: {str(e)}")
-                # Return the raw response content wrapped in the expected format
-                return {
-                    "function_call": "handle_error", 
-                    "response_to_user": response.content
-                }
+            # Update chat history with condensed human/AI turns (excluding system/tool chatter)
+            self.chat_history[user_id] = self._condense_history(final_messages)
 
+            stop_reason = (
+                "max_iterations"
+                if result_state.get("iteration", 0) >= self.max_iterations
+                else "completed"
+            )
+            if final_ai and getattr(final_ai, "tool_calls", None) and stop_reason == "completed":
+                stop_reason = "tool_calls_executed"
+            if not final_ai:
+                stop_reason = "no_final_ai_message"
+
+            self._emit_progress(
+                "completed",
+                {
+                    "stop_reason": stop_reason,
+                    "iteration": result_state.get("iteration", 0),
+                    "last_tool": last_tool_call.get("name") if last_tool_call else None,
+                },
+            )
+
+            return {
+                "function_call": last_tool_call.get("name") if last_tool_call else "no_op",
+                "function_args": last_tool_call.get("args", {}) if last_tool_call else {},
+                "response_to_user": final_ai.content if final_ai else "I'm having trouble responding right now.",
+                "executed_by_agent": True,
+                "tool_calls": getattr(final_ai, "tool_calls", None) or [],
+                "tool_outputs": [tm.content for tm in tool_messages],
+                "stop_reason": stop_reason,
+            }
         except Exception as e:
-            logger.error(f"Unexpected error in get_response: {str(e)}")
-            return {"error": "unexpected_error", "function_call": "handle_error", 
-                    "response_to_user": f"Something went wrong. Error: {str(e)}"}
+            logger.error(f"Unexpected error in get_response_api: {str(e)}")
+            return {
+                "error": "unexpected_error",
+                "function_call": "handle_error",
+                "response_to_user": f"Something went wrong. Error: {str(e)}",
+            }
+        finally:
+            # Reset per-call progress callback
+            self._progress_callback = self._progress_callback_default
 
     def get_response_custom(self, user_message: str, user_id: str, user_language: str = None) -> str:
         try:
             if user_id not in self.chat_history:
-                self.chat_history[user_id] = ChatMessageHistory()
+                self.chat_history[user_id] = []
 
-            self.chat_history[user_id].add_message(HumanMessage(content=user_message))
+            history = self.chat_history[user_id]
+            messages: List[BaseMessage] = [HumanMessage(content=user_message)]
+
+            # Add language-aware system message if language is specified
+            if user_language and user_language != "en":
+                system_msg = self._get_system_message_main(user_language)
+                messages = [system_msg] + history + messages
+            else:
+                messages = history + messages
 
             try:
-                # Add language-aware system message if language is specified
-                messages = self.chat_history[user_id].messages
-                if user_language and user_language != "en":
-                    system_msg = self._get_system_message_main(user_language)
-                    messages = [system_msg] + messages
                 response = self.chat_model(messages)
             except Exception as e:
                 logger.error(f"Error getting LLM response: {str(e)}")
-                # Error message will be translated by caller if needed
                 return "I'm having trouble understanding that. Could you rephrase?"
 
-            self.chat_history[user_id].add_message(AIMessage(content=response.content))
+            if isinstance(response, AIMessage):
+                content = response.content
+            else:
+                content = getattr(response, "content", str(response))
+
+            history.extend([messages[-1], AIMessage(content=content)])
 
             try:
-                return self.parser.parse(response.content)
+                return self.parser.parse(content)
             except Exception as e:
                 logger.error(f"Error parsing response: {str(e)}")
-                # Return the raw response content directly
-                return response.content
+                return content
 
         except Exception as e:
             logger.error(f"Unexpected error in get_response: {str(e)}")
             return f"Something went wrong. Error: {str(e)}"
+
+    def set_progress_callback(self, callback: Optional[Callable[[str, dict], None]]) -> None:
+        """Set a default progress callback for future agent runs."""
+        self._progress_callback_default = callback
+        self._progress_callback = callback
+
+    def _build_tools(self, adapter: PlannerAPIAdapter):
+        """Convert adapter methods into LangChain StructuredTool objects."""
+        tools = []
+        for attr_name in dir(adapter):
+            if attr_name.startswith("_"):
+                continue
+            candidate = getattr(adapter, attr_name)
+            if not callable(candidate):
+                continue
+            doc = (candidate.__doc__ or "").strip() or f"Planner action {attr_name}"
+            try:
+                tool = StructuredTool.from_function(
+                    func=candidate,
+                    name=attr_name,
+                    description=doc,
+                )
+                tools.append(tool)
+            except Exception as e:
+                logger.warning(f"Skipping tool {attr_name}: {e}")
+        return tools
+
+    def _condense_history(self, messages: List[BaseMessage]) -> List[BaseMessage]:
+        """Keep a lightweight history of human/AI turns (no system/tool chatter)."""
+        condensed = [m for m in messages if isinstance(m, (HumanMessage, AIMessage))]
+        # Keep last 12 turns to avoid unbounded growth.
+        return condensed[-12:]
+
+    @staticmethod
+    def _get_last_ai(messages: List[BaseMessage]) -> Optional[AIMessage]:
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage):
+                return msg
+        return None
+
+    @staticmethod
+    def _get_last_tool_call(messages: List[BaseMessage]) -> Optional[dict]:
+        """Return the last tool call dict emitted by the agent, if any."""
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+                return msg.tool_calls[-1]
+        return None
+
+    def _emit_progress(self, event: str, payload: dict) -> None:
+        """Best-effort progress emission (UI-agnostic)."""
+        cb = self._progress_callback
+        if cb:
+            try:
+                cb(event, payload)
+            except Exception:
+                # Never let progress callbacks break the agent
+                pass
 
 
 # Example usage
