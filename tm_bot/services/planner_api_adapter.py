@@ -90,8 +90,41 @@ class PlannerAPIAdapter:
 
     def delete_promise(self, user_id, promise_id: str):
         """Delete a promise."""
-        self.promises_repo.delete_promise(user_id, promise_id)
-        return f"Promise #{promise_id} deleted successfully."
+        # Check if promise exists first (case-insensitive)
+        promise = self.promises_repo.get_promise(user_id, promise_id)
+        if not promise:
+            # Promise not found - return helpful error with available IDs
+            all_promises = self.promises_repo.list_promises(user_id)
+            if not all_promises:
+                return f"Promise #{promise_id} not found. You don't have any promises yet."
+            
+            available_ids = ", ".join(sorted([p.id for p in all_promises]))
+            return (
+                f"Promise #{promise_id} not found.\n\n"
+                f"Available promise IDs: {available_ids}\n\n"
+                f"Did you mean one of these?"
+            )
+        
+        # Use the correct case from the actual promise
+        actual_promise_id = promise.id
+        
+        # Attempt to delete
+        deleted = self.promises_repo.delete_promise(user_id, actual_promise_id)
+        
+        if deleted:
+            return f"Promise #{actual_promise_id} deleted successfully."
+        else:
+            # This shouldn't happen if we checked above, but handle it anyway
+            all_promises = self.promises_repo.list_promises(user_id)
+            if not all_promises:
+                return f"Promise #{actual_promise_id} not found. You don't have any promises yet."
+            
+            available_ids = ", ".join(sorted([p.id for p in all_promises]))
+            return (
+                f"Promise #{actual_promise_id} not found.\n\n"
+                f"Available promise IDs: {available_ids}\n\n"
+                f"Did you mean one of these?"
+            )
 
     def update_promise_start_date(self, user_id, promise_id: str, new_start_date: date) -> str:
         """Update promise start date."""

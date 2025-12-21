@@ -86,10 +86,10 @@ class PromisesRepository:
             return []
 
     def get_promise(self, user_id: int, promise_id: str) -> Optional[Promise]:
-        """Get a specific promise by ID."""
+        """Get a specific promise by ID (case-insensitive)."""
         promises = self.list_promises(user_id)
         for promise in promises:
-            if promise.id == promise_id:
+            if promise.id.upper() == promise_id.upper():
                 return promise
         return None
 
@@ -134,8 +134,27 @@ class PromisesRepository:
         df = pd.DataFrame(data)
         df.to_csv(file_path, index=False)
 
-    def delete_promise(self, user_id: int, promise_id: str) -> None:
-        """Delete a promise by ID."""
+    def delete_promise(self, user_id: int, promise_id: str) -> bool:
+        """Delete a promise by ID.
+        
+        Returns:
+            True if the promise was found and deleted, False otherwise.
+        """
         promises = self.list_promises(user_id)
-        promises = [p for p in promises if p.id != promise_id]
-        self._save_to_csv(user_id, promises)
+        
+        # Check if promise exists (case-insensitive comparison)
+        promise_exists = any(p.id.upper() == promise_id.upper() for p in promises)
+        
+        if not promise_exists:
+            return False
+        
+        # Remove the promise (case-insensitive)
+        original_count = len(promises)
+        promises = [p for p in promises if p.id.upper() != promise_id.upper()]
+        
+        # Only save if something was actually removed
+        if len(promises) < original_count:
+            self._save_to_csv(user_id, promises)
+            return True
+        
+        return False
