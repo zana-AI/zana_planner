@@ -501,10 +501,24 @@ class MessageHandlers:
                 logger.error(f"TTS error: {str(e)}, falling back to text")
         
         # Send as text (voice mode disabled or TTS failed)
+        await self._reply_text_smart(update.effective_message, text_response)
+
+    @staticmethod
+    async def _reply_text_smart(message, text: str) -> None:
+        """
+        Reply using the appropriate parse_mode.
+
+        - Our formatted responses are HTML (used for expandable blockquotes).
+        - Most other bot messages/templates are Markdown.
+        """
+        safe_text = "" if text is None else str(text)
+        looks_like_html = "<b>Zana:</b>" in safe_text or "<blockquote" in safe_text or "<pre>" in safe_text
+        parse_mode = "HTML" if looks_like_html else "Markdown"
         try:
-            await update.effective_message.reply_text(text_response, parse_mode='Markdown')
+            await message.reply_text(safe_text, parse_mode=parse_mode)
         except Exception:
-            await update.effective_message.reply_text(text_response)
+            # Fallback: no parse mode
+            await message.reply_text(safe_text)
 
     async def on_image(self, update: Update, context: CallbackContext):
         """Handle image messages with VLM parsing and text extraction."""
@@ -695,8 +709,9 @@ class MessageHandlers:
                 logger.error(f"Error processing request for user {user_id}: {str(e)}")
 
             try:
-                await update.message.reply_text(formatted_response, parse_mode='HTML')
+                await self._reply_text_smart(update.message, formatted_response)
             except Exception:
+                # Last-resort fallback
                 await update.message.reply_text(formatted_response)
         
         except Exception as e:
