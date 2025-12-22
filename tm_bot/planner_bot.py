@@ -68,6 +68,7 @@ class PlannerTelegramBot:
         """Register all command and message handlers."""
         # Command handlers
         self.application.add_handler(CommandHandler("start", self.message_handlers.start))
+        self.application.add_handler(CommandHandler("me", self.message_handlers.cmd_me))
         self.application.add_handler(CommandHandler("promises", self.message_handlers.list_promises))
         self.application.add_handler(CommandHandler("nightly", self.message_handlers.nightly_reminders))
         self.application.add_handler(CommandHandler("morning", self.message_handlers.morning_reminders))

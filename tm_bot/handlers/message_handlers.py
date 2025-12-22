@@ -20,6 +20,7 @@ from services.content_service import ContentService
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
 from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
+from utils.formatting import format_response_html
 from ui.messages import weekly_report_text
 from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb
 from cbdata import encode_cb
@@ -723,24 +724,7 @@ class MessageHandlers:
     def _format_response(self, llm_response: str, func_call_response) -> str:
         """Format the response for Telegram."""
         try:
-            if func_call_response is None:
-                return llm_response
-            elif isinstance(func_call_response, list):
-                formatted_response = "• " + "\n• ".join(str(item) for item in func_call_response)
-            elif isinstance(func_call_response, dict):
-                formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
-            else:
-                formatted_response = str(func_call_response)
-            
-            # Use HTML formatting so we can render an expandable blockquote for logs robustly.
-            # This avoids Markdown escaping issues and lets Telegram clients collapse/expand the Log section.
-            zana_text = html.escape(llm_response or "")
-            log_text = html.escape(formatted_response or "")
-
-            full_response = f"<b>Zana:</b>\n{zana_text}\n"
-            if formatted_response:
-                full_response += f"\n<b>Log:</b>\n<blockquote expandable>{log_text}</blockquote>"
-            return full_response
+            return format_response_html(llm_response, func_call_response)
         except Exception as e:
             logger.error(f"Error formatting response: {str(e)}")
             return "Error formatting response"
@@ -963,6 +947,81 @@ class MessageHandlers:
             version_text += f"Commit: `{version_info['commit']}`\n"
         
         await update.message.reply_text(version_text, parse_mode='Markdown')
+
+    async def cmd_me(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /me command to show user profile information (DM-only)."""
+        chat = update.effective_chat
+        msg = update.effective_message
+        user = update.effective_user
+
+        if not chat or not msg or not user:
+            return
+
+        # DM-only: in groups/supergroups, ask the user to DM the bot instead.
+        if chat.type in ["group", "supergroup"]:
+            await msg.reply_text("Please DM me to use `/me`.", parse_mode="Markdown")
+            return
+
+        user_id = user.id
+
+        # Bot-side settings (best-effort; don't crash if fields differ).
+        settings = None
+        try:
+            settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        except Exception:
+            settings = None
+
+        timezone = getattr(settings, "timezone", None) if settings else None
+        preferred_language = getattr(settings, "language", None) if settings else None
+
+        full_name = getattr(user, "full_name", None) or "Unknown"
+        username = getattr(user, "username", None)
+        language_code = getattr(user, "language_code", None)
+
+        def _md_code(value) -> str:
+            """Return a safe Markdown inline-code representation."""
+            s = "—" if value is None else str(value)
+            # Inline-code uses backticks; replace any backticks to avoid breaking Markdown parsing.
+            return s.replace("`", "'")
+
+        # Keep dynamic values inside code formatting to avoid Markdown issues.
+        lines = [
+            "*Your info*",
+            f"- Name: `{_md_code(full_name)}`",
+            f"- User ID: `{_md_code(user_id)}`",
+            f"- Username: `{_md_code(('@' + username) if username else None)}`",
+            f"- Telegram language: `{_md_code(language_code)}`",
+            f"- Timezone: `{_md_code(timezone)}`",
+            f"- Preferred language: `{_md_code(preferred_language)}`",
+            f"- Chat ID: `{_md_code(chat.id)}`",
+            f"- Chat type: `{_md_code(chat.type)}`",
+        ]
+        caption = "\n".join(lines)
+
+        # Telegram captions have a hard limit (1024 chars). Keep it safe.
+        MAX_CAPTION_LEN = 1024
+        if len(caption) > MAX_CAPTION_LEN:
+            caption = caption[: MAX_CAPTION_LEN - 1] + "…"
+
+        # Fetch profile photo (best-effort); fallback to text-only.
+        try:
+            photos = await context.bot.get_user_profile_photos(user_id=user_id, limit=1)
+            photo_file_id = None
+            if photos and getattr(photos, "total_count", 0) and getattr(photos, "photos", None):
+                # photos.photos is a list of photo-size lists; pick the largest size.
+                photo_file_id = photos.photos[0][-1].file_id
+
+            if photo_file_id:
+                await context.bot.send_photo(
+                    chat_id=chat.id,
+                    photo=photo_file_id,
+                    caption=caption,
+                    parse_mode="Markdown",
+                )
+            else:
+                await msg.reply_text(caption, parse_mode="Markdown")
+        except Exception:
+            await msg.reply_text(caption, parse_mode="Markdown")
     
     async def cmd_broadcast(self, update: Update, context: CallbackContext) -> None:
         """Handle the /broadcast command for admins to schedule broadcast messages."""
