@@ -711,7 +711,7 @@ class MessageHandlers:
             if func_call_response is None:
                 return llm_response
             elif isinstance(func_call_response, list):
-                formatted_response = "\n• " + "\n• ".join(str(item) for item in func_call_response)
+                formatted_response = "• " + "\n• ".join(str(item) for item in func_call_response)
             elif isinstance(func_call_response, dict):
                 formatted_response = "\n".join(f"{key}: {value}" for key, value in func_call_response.items())
             else:
@@ -722,9 +722,9 @@ class MessageHandlers:
             zana_text = html.escape(llm_response or "")
             log_text = html.escape(formatted_response or "")
 
-            full_response = f"<b>Zana:</b>\n<pre>{zana_text}</pre>\n"
+            full_response = f"<b>Zana:</b>\n{zana_text}\n"
             if formatted_response:
-                full_response += f"\n<b>Log:</b>\n<blockquote expandable><pre>{log_text}</pre></blockquote>"
+                full_response += f"\n<b>Log:</b>\n<blockquote expandable>{log_text}</blockquote>"
             return full_response
         except Exception as e:
             logger.error(f"Error formatting response: {str(e)}")
