@@ -53,7 +53,25 @@ jobs:
               echo \"[STAGING] ERROR: Not a git repository at $PROJECT_PATH\"
               exit 1
             fi
-            git pull
+            
+            # Handle git lock file if it exists (stale lock from interrupted operations)
+            if [ -f .git/index.lock ]; then
+              echo '[STAGING] Removing stale git lock file...'
+              rm -f .git/index.lock 2>/dev/null || sudo rm -f .git/index.lock 2>/dev/null || true
+            fi
+            
+            # Check if we're in detached HEAD state (e.g., from git checkout <commit>)
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"HEAD\")
+            if [ \"$CURRENT_BRANCH\" = \"HEAD\" ]; then
+              echo '[STAGING] Detected detached HEAD state, switching to master...'
+              git fetch origin master 2>/dev/null || git fetch origin
+              git checkout master 2>/dev/null || git checkout -b master origin/master
+            fi
+            
+            # Fetch latest changes and reset to origin/master (ensures clean state)
+            echo '[STAGING] Fetching and updating to latest master...'
+            git fetch origin master || git fetch origin
+            git reset --hard origin/master
 
             echo '[STAGING] Rebuilding container with BuildKit (cached layers)...'
             # Enable BuildKit for better caching and performance
