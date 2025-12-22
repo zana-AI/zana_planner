@@ -16,7 +16,15 @@ def resolve_db_path(root_dir: str) -> str:
     Runtime passes root_dir (normally USERS_DATA_DIR). Prefer the passed root_dir
     to keep tests/dev isolated.
     """
+    # Allow explicit override for deployments where the data dir root is not writable
+    # (common with Docker bind mounts owned by root).
+    explicit = os.getenv("SQLITE_PATH")
+    if explicit:
+        p = str(explicit).strip().strip('"').strip("'")
+        return os.path.abspath(os.path.expanduser(p))
+
     base = root_dir or os.getenv("USERS_DATA_DIR") or os.getenv("ROOT_DIR") or "."
+    base = os.path.abspath(os.path.expanduser(str(base).strip().strip('"').strip("'")))
     return os.path.join(base, "zana.db")
 
 
@@ -135,8 +143,20 @@ def resolve_promise_uuid(conn: sqlite3.Connection, user_id: str, promise_id: Opt
 
 
 def connect(db_path: str) -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)  # autocommit; manage transactions explicitly
+    parent = os.path.dirname(db_path) or "."
+    os.makedirs(parent, exist_ok=True)
+    try:
+        conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)  # autocommit; manage transactions explicitly
+    except sqlite3.OperationalError as e:
+        # Add context to make permission/path issues obvious in logs.
+        writable = None
+        try:
+            writable = os.access(parent, os.W_OK)
+        except Exception:
+            writable = None
+        raise sqlite3.OperationalError(
+            f"{e} (db_path={db_path!r}, parent={parent!r}, parent_exists={os.path.exists(parent)}, parent_writable={writable})"
+        ) from e
     conn.row_factory = sqlite3.Row
     _apply_pragmas(conn)
     ensure_schema(conn)

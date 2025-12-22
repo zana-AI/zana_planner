@@ -196,10 +196,11 @@ class ReportsService:
         Returns:
             Path to generated image file (should be deleted after use)
         """
-        from visualisation.vis_rects import generate_weekly_visualization
+        engine = (os.environ.get("WEEKLY_VIZ_ENGINE") or "html").strip().lower()
         
         # Get weekly summary with sessions
         summary = self.get_weekly_summary_with_sessions(user_id, ref_time)
+        week_start, week_end = get_week_range(ref_time)
         
         # Generate unique temp filename
         if temp_dir is None:
@@ -210,6 +211,19 @@ class ReportsService:
         image_path = os.path.join(temp_dir, f"weekly_viz_{user_id}_{unique_id}.png")
         
         # Generate visualization
-        generate_weekly_visualization(summary, image_path, width=1200, height=900)
+        if engine in ("matplotlib", "mpl", "legacy"):
+            from visualisation.vis_rects import generate_weekly_visualization
+
+            generate_weekly_visualization(summary, image_path, width=1200, height=900)
+        else:
+            from visualisation.weekly_report_card import render_weekly_report_card_png
+
+            render_weekly_report_card_png(
+                summary=summary,
+                output_path=image_path,
+                week_start=week_start,
+                week_end=week_end,
+                width=1200,
+            )
         
         return image_path
