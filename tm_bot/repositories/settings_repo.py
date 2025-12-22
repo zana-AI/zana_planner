@@ -1,73 +1,60 @@
-import os
-import json
-from typing import Optional
-
-try:
-    import yaml
-    YAML_AVAILABLE = True
-except ImportError:
-    YAML_AVAILABLE = False
-
+from db.legacy_importer import ensure_imported
+from db.sqlite_db import connection_for_root, utc_now_iso
 from models.models import UserSettings
 
 
 class SettingsRepository:
+    """SQLite-backed settings repository (with lazy import from settings.yaml)."""
+
     def __init__(self, root_dir: str):
         self.root_dir = root_dir
 
-    def _get_file_path(self, user_id: int) -> str:
-        """Get the settings file path for a user."""
-        return os.path.join(self.root_dir, str(user_id), 'settings.yaml')
-
-    def _ensure_user_dir(self, user_id: int) -> None:
-        """Ensure user directory exists."""
-        user_dir = os.path.join(self.root_dir, str(user_id))
-        os.makedirs(user_dir, exist_ok=True)
-
     def get_settings(self, user_id: int) -> UserSettings:
-        """Get user settings, creating defaults if not found."""
-        file_path = self._get_file_path(user_id)
-        
-        if os.path.exists(file_path):
-            try:
-                if YAML_AVAILABLE:
-                    with open(file_path, 'r') as f:
-                        data = yaml.safe_load(f) or {}
-                else:
-                    # Fallback to JSON
-                    with open(file_path, 'r') as f:
-                        data = json.load(f) or {}
-                
-                return UserSettings(
-                    user_id=user_id,
-                    timezone=data.get('timezone', 'Europe/Paris'),
-                    nightly_hh=data.get('nightly_hh', 22),
-                    nightly_mm=data.get('nightly_mm', 0),
-                    language=data.get('language', 'en'),
-                    voice_mode=data.get('voice_mode', None)
-                )
-            except Exception:
-                pass
-        
-        # Return default settings if file doesn't exist or can't be read
-        return UserSettings(user_id=user_id)
+        user = str(user_id)
+        with connection_for_root(self.root_dir) as conn:
+            ensure_imported(conn, self.root_dir, user, "settings")
+            row = conn.execute(
+                """
+                SELECT timezone, nightly_hh, nightly_mm, language, voice_mode
+                FROM user_settings
+                WHERE user_id = ?
+                LIMIT 1;
+                """,
+                (user,),
+            ).fetchone()
+
+        if not row:
+            return UserSettings(user_id=user)
+
+        return UserSettings(
+            user_id=user,
+            timezone=str(row["timezone"] or "Europe/Paris"),
+            nightly_hh=int(row["nightly_hh"] or 22),
+            nightly_mm=int(row["nightly_mm"] or 0),
+            language=str(row["language"] or "en"),
+            voice_mode=row["voice_mode"],
+        )
 
     def save_settings(self, settings: UserSettings) -> None:
-        """Save user settings to YAML or JSON file."""
-        self._ensure_user_dir(settings.user_id)
-        
-        file_path = self._get_file_path(settings.user_id)
-        data = {
-            'timezone': settings.timezone,
-            'nightly_hh': settings.nightly_hh,
-            'nightly_mm': settings.nightly_mm,
-            'language': settings.language,
-            'voice_mode': settings.voice_mode
-        }
-        
-        with open(file_path, 'w') as f:
-            if YAML_AVAILABLE:
-                yaml.safe_dump(data, f)
-            else:
-                # Fallback to JSON
-                json.dump(data, f, indent=2)
+        user = str(settings.user_id)
+        now = utc_now_iso()
+        with connection_for_root(self.root_dir) as conn:
+            ensure_imported(conn, self.root_dir, user, "settings")
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO user_settings(
+                    user_id, timezone, nightly_hh, nightly_mm, language, voice_mode,
+                    created_at_utc, updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    user,
+                    settings.timezone or "Europe/Paris",
+                    int(settings.nightly_hh or 22),
+                    int(settings.nightly_mm or 0),
+                    settings.language or "en",
+                    settings.voice_mode,
+                    now,
+                    now,
+                ),
+            )

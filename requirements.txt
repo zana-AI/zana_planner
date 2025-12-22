@@ -8,13 +8,14 @@ python-dotenv>=1.2.0
 # LLM & AI Services
 # ============================================================================
 openai>=2.14.0
-langchain>=0.3.27
-langchain-community>=0.3.27
-langchain-core>=0.3.80          # Required by langchain
-langchain-openai>=0.3.35
-langchain-google-vertexai>=2.1.2
-langchain-text-splitters>=0.3.11  # Required by langchain
-langgraph>=0.2.38
+# Keep LangChain/LangGraph on mutually compatible major versions.
+langchain>=0.3.27,<1.0.0
+langchain-community>=0.3.27,<1.0.0
+langchain-core>=0.3.80,<1.0.0          # Required by langchain
+langchain-openai>=0.3.35,<1.0.0
+langchain-google-vertexai>=2.1.2,<3.0.0
+langchain-text-splitters>=0.3.11,<1.0.0  # Required by langchain
+langgraph>=0.2.38,<1.0.0
 google-cloud-aiplatform>=1.115.0
 google-cloud-speech>=2.0.0     # For speech-to-text (ASR)
 google-cloud-texttospeech>=2.0.0  # For text-to-speech (TTS)

@@ -6,7 +6,7 @@ Provides read-only stats endpoint for user activity metrics.
 import os
 import sys
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -15,9 +15,9 @@ from fastapi.responses import JSONResponse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from tm_bot.utils.logger import get_logger
 
-# Import stats logic from bot_stats.py
+# Import stats logic from bot_stats.py (SQLite-based)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from bot_stats import is_user_dir, file_info, count_users, active_within
+from bot_stats import compute_stats_sql
 
 app = FastAPI(title="Zana AI Stats Service", version="1.0.0")
 logger = get_logger(__name__)
@@ -38,79 +38,11 @@ def get_users_data_dir() -> str:
 
 def compute_stats() -> Dict:
     """
-    Compute statistics from user data directory.
+    Compute statistics from SQLite in the user data directory.
     Reuses logic from bot_stats.py.
     """
     data_dir = get_users_data_dir()
-    users = count_users(data_dir)
-    now = datetime.now()
-    
-    total_users = len(users)
-    users_with_promises = 0
-    users_with_actions = 0
-    
-    # Activity windows
-    windows = [7, 30, 90, 365]
-    active_counts = {f"{d}d": 0 for d in windows}
-    
-    # New users (based on folder mtime)
-    new_counts = {f"{d}d": 0 for d in [7, 30]}
-    
-    # Per-user details
-    user_details: List[Dict] = []
-    threshold_bytes = 12
-    
-    for uid in users:
-        udir = os.path.join(data_dir, uid)
-        
-        # Promises.csv presence & size
-        promises_path = os.path.join(udir, "promises.csv")
-        pinfo = file_info(promises_path)
-        has_promises = pinfo["exists"] and pinfo["bytes"] > threshold_bytes
-        if has_promises:
-            users_with_promises += 1
-        
-        # Actions.csv presence, size, and mtime
-        actions_path = os.path.join(udir, "actions.csv")
-        ainfo = file_info(actions_path)
-        has_actions = ainfo["exists"] and ainfo["bytes"] > threshold_bytes
-        last_activity = ainfo["mtime"].isoformat() if ainfo["mtime"] else None
-        
-        if has_actions:
-            users_with_actions += 1
-            for d in windows:
-                if active_within(ainfo["mtime"], d, now):
-                    active_counts[f"{d}d"] += 1
-        
-        # New users (directory mtime)
-        try:
-            dst = os.stat(udir)
-            dir_mtime = datetime.fromtimestamp(dst.st_mtime)
-            for d in [7, 30]:
-                if active_within(dir_mtime, d, now):
-                    new_counts[f"{d}d"] += 1
-        except FileNotFoundError:
-            pass
-        
-        # Add user detail
-        user_details.append({
-            "user_id": int(uid),
-            "has_promises": has_promises,
-            "has_actions": has_actions,
-            "last_activity": last_activity,
-        })
-    
-    return {
-        "total_users": total_users,
-        "users_with_promises": users_with_promises,
-        "users_with_actions": users_with_actions,
-        "active_last_7_days": active_counts["7d"],
-        "active_last_30_days": active_counts["30d"],
-        "active_users_by_actions_mtime": active_counts,
-        "new_users_by_dir_mtime": new_counts,
-        "details": user_details,
-        "generated_at": now.isoformat(timespec="seconds"),
-    }
+    return compute_stats_sql(data_dir)
 
 
 @app.get("/health")

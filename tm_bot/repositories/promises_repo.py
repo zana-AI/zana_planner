@@ -1,160 +1,250 @@
-import os
 import json
+import uuid
 from typing import List, Optional
-from datetime import datetime
 
-import pandas as pd
+from db.legacy_importer import ensure_imported
+from db.sqlite_db import (
+    date_from_iso,
+    date_to_iso,
+    json_compat,
+    resolve_promise_uuid,
+    utc_now_iso,
+    connection_for_root,
+)
 from models.models import Promise
 
 
 class PromisesRepository:
+    """
+    SQLite-backed promises repository.
+
+    - One global DB file: <root_dir>/zana.db
+    - Keeps promise history in `promise_events`
+    - Supports promise ID renames via `promise_aliases`
+    """
+
     def __init__(self, root_dir: str):
         self.root_dir = root_dir
 
-    def _get_file_path(self, user_id: int) -> str:
-        """Get the promises file path for a user."""
-        return os.path.join(self.root_dir, str(user_id), 'promises.csv')
-
-    def _get_json_file_path(self, user_id: int) -> str:
-        """Get the promises JSON file path for a user (legacy format)."""
-        return os.path.join(self.root_dir, str(user_id), 'promises.json')
-
-    def _ensure_user_dir(self, user_id: int) -> None:
-        """Ensure user directory exists."""
-        user_dir = os.path.join(self.root_dir, str(user_id))
-        os.makedirs(user_dir, exist_ok=True)
-
     def list_promises(self, user_id: int) -> List[Promise]:
-        """Get all promises for a user."""
-        # Try CSV first, fallback to JSON
-        csv_path = self._get_file_path(user_id)
-        json_path = self._get_json_file_path(user_id)
-        
-        if os.path.exists(csv_path):
-            return self._load_from_csv(user_id, csv_path)
-        elif os.path.exists(json_path):
-            return self._load_from_json(user_id, json_path)
-        else:
-            return []
+        user = str(user_id)
+        with connection_for_root(self.root_dir) as conn:
+            ensure_imported(conn, self.root_dir, user, "promises")
+            rows = conn.execute(
+                """
+                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius
+                FROM promises
+                WHERE user_id = ? AND is_deleted = 0
+                ORDER BY current_id ASC;
+                """,
+                (user,),
+            ).fetchall()
 
-    def _load_from_csv(self, user_id: int, file_path: str) -> List[Promise]:
-        """Load promises from CSV file using pandas."""
-        try:
-            df = pd.read_csv(file_path)
-            promises: List[Promise] = []
-            for _, row in df.iterrows():
-                promise = Promise(
-                    user_id=user_id,
-                    id=str(row.get('id', '')),
-                    text=str(row.get('text', '')),
-                    hours_per_week=float(row.get('hours_per_week', 0)),
-                    recurring=bool(row.get('recurring', False)),
-                    start_date=pd.to_datetime(row.get('start_date')).date() if pd.notna(row.get('start_date')) else None,
-                    end_date=pd.to_datetime(row.get('end_date')).date() if pd.notna(row.get('end_date')) else None,
-                    angle_deg=int(row.get('angle_deg', 0)),
-                    radius=int(row.get('radius', 0)) if pd.notna(row.get('radius')) else 0
+        promises: List[Promise] = []
+        for r in rows:
+            promises.append(
+                Promise(
+                    user_id=user,
+                    id=str(r["current_id"]),
+                    text=str(r["text"]),
+                    hours_per_week=float(r["hours_per_week"]),
+                    recurring=bool(int(r["recurring"])),
+                    start_date=date_from_iso(r["start_date"]),
+                    end_date=date_from_iso(r["end_date"]),
+                    angle_deg=int(r["angle_deg"]),
+                    radius=int(r["radius"]),
                 )
-                promises.append(promise)
-            return promises
-        except Exception as e:
-            print(f"Error loading promises from CSV: {str(e)}")
-            return []
-
-    def _load_from_json(self, uesr_id: int, file_path: str) -> List[Promise]:
-        """Load promises from JSON file (legacy format)."""
-        try:
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            
-            promises = []
-            for item in data:
-                promise = Promise(
-                    user_id=uesr_id,
-                    id=item.get('id', ''),
-                    text=item.get('text', ''),
-                    hours_per_week=float(item.get('hours_per_week', 0)),
-                    recurring=bool(item.get('recurring', False)),
-                    start_date=datetime.strptime(item.get('start_date', ''), '%Y-%m-%d').date() if item.get('start_date') else None,
-                    end_date=datetime.strptime(item.get('end_date', ''), '%Y-%m-%d').date() if item.get('end_date') else None,
-                    angle_deg=int(item.get('angle_deg', 0)),
-                    radius=int(item.get('radius', 0)) if item.get('radius') is not None else 0
-                )
-                promises.append(promise)
-            return promises
-        except Exception as e:
-            print(f"Error loading promises from JSON: {str(e)}")
-            return []
+            )
+        return promises
 
     def get_promise(self, user_id: int, promise_id: str) -> Optional[Promise]:
-        """Get a specific promise by ID (case-insensitive)."""
-        promises = self.list_promises(user_id)
-        for promise in promises:
-            if promise.id.upper() == promise_id.upper():
-                return promise
-        return None
+        user = str(user_id)
+        pid = (promise_id or "").strip().upper()
+        if not pid:
+            return None
+
+        with connection_for_root(self.root_dir) as conn:
+            ensure_imported(conn, self.root_dir, user, "promises")
+            p_uuid = resolve_promise_uuid(conn, user, pid)
+            if not p_uuid:
+                return None
+
+            row = conn.execute(
+                """
+                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted
+                FROM promises
+                WHERE user_id = ? AND promise_uuid = ?
+                LIMIT 1;
+                """,
+                (user, p_uuid),
+            ).fetchone()
+
+        if not row or int(row["is_deleted"]) == 1:
+            return None
+
+        return Promise(
+            user_id=user,
+            id=str(row["current_id"]),
+            text=str(row["text"]),
+            hours_per_week=float(row["hours_per_week"]),
+            recurring=bool(int(row["recurring"])),
+            start_date=date_from_iso(row["start_date"]),
+            end_date=date_from_iso(row["end_date"]),
+            angle_deg=int(row["angle_deg"]),
+            radius=int(row["radius"]),
+        )
 
     def upsert_promise(self, user_id: int, promise: Promise) -> None:
-        """Create or update a promise."""
-        self._ensure_user_dir(user_id)
-        
-        # Load existing promises
-        promises = self.list_promises(user_id)
-        
-        # Update or add the promise
-        updated = False
-        for i, existing_promise in enumerate(promises):
-            if existing_promise.id == promise.id:
-                promises[i] = promise
-                updated = True
-                break
-        
-        if not updated:
-            promises.append(promise)
-        
-        # Save to CSV format
-        self._save_to_csv(user_id, promises)
+        user = str(user_id)
+        pid = (promise.id or "").strip().upper()
+        if not pid:
+            raise ValueError("Promise.id is required")
 
-    def _save_to_csv(self, user_id: int, promises: List[Promise]) -> None:
-        """Save promises to CSV format using pandas."""
-        file_path = self._get_file_path(user_id)
+        now = utc_now_iso()
+        with connection_for_root(self.root_dir) as conn:
+            ensure_imported(conn, self.root_dir, user, "promises")
 
-        data = []
-        for promise in promises:
-            data.append({
-                'id': promise.id,
-                'text': promise.text,
-                'hours_per_week': promise.hours_per_week,
-                'recurring': promise.recurring,
-                'start_date': promise.start_date.isoformat() if promise.start_date else '',
-                'end_date': promise.end_date.isoformat() if promise.end_date else '',
-                'angle_deg': promise.angle_deg,
-                'radius': promise.radius
-            })
+            p_uuid = resolve_promise_uuid(conn, user, pid)
+            existing = None
+            if p_uuid:
+                existing = conn.execute(
+                    "SELECT current_id, is_deleted FROM promises WHERE user_id = ? AND promise_uuid = ? LIMIT 1;",
+                    (user, p_uuid),
+                ).fetchone()
+            is_new = not bool(existing)
+            if is_new:
+                p_uuid = str(uuid.uuid4())
 
-        df = pd.DataFrame(data)
-        df.to_csv(file_path, index=False)
+            # If renaming current_id, ensure uniqueness and keep old id as alias
+            event_type = "create" if is_new else "update"
+            if existing and str(existing["current_id"]) != pid:
+                # Ensure no other promise already uses the new current_id
+                clash = conn.execute(
+                    """
+                    SELECT promise_uuid FROM promises
+                    WHERE user_id = ? AND current_id = ? AND promise_uuid <> ?
+                    LIMIT 1;
+                    """,
+                    (user, pid, p_uuid),
+                ).fetchone()
+                if clash:
+                    raise ValueError(f"Promise ID '{pid}' is already in use.")
+
+                # Keep old ID as an alias indefinitely
+                old_id = str(existing["current_id"])
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
+                    VALUES (?, ?, ?, ?);
+                    """,
+                    (user, old_id, p_uuid, now),
+                )
+                # Also ensure the new ID is registered as an alias
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
+                    VALUES (?, ?, ?, ?);
+                    """,
+                    (user, pid, p_uuid, now),
+                )
+                event_type = "rename"
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO promises(
+                    promise_uuid, user_id, current_id, text, hours_per_week, recurring,
+                    start_date, end_date, angle_deg, radius, is_deleted,
+                    created_at_utc, updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    p_uuid,
+                    user,
+                    pid,
+                    promise.text or "",
+                    float(promise.hours_per_week or 0.0),
+                    1 if bool(promise.recurring) else 0,
+                    date_to_iso(promise.start_date),
+                    date_to_iso(promise.end_date),
+                    int(promise.angle_deg or 0),
+                    int(promise.radius or 0),
+                    0,
+                    now if is_new else (now),  # best-effort timestamps per plan
+                    now,
+                ),
+            )
+
+            # Ensure current id is an alias too
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
+                VALUES (?, ?, ?, ?);
+                """,
+                (user, pid, p_uuid, now),
+            )
+
+            snapshot = json.dumps(
+                {
+                    **json_compat(promise),
+                    "id": pid,
+                    "is_deleted": False,
+                },
+                ensure_ascii=False,
+            )
+            conn.execute(
+                """
+                INSERT INTO promise_events(event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
+                VALUES (?, ?, ?, ?, ?, ?);
+                """,
+                (str(uuid.uuid4()), p_uuid, user, event_type, now, snapshot),
+            )
 
     def delete_promise(self, user_id: int, promise_id: str) -> bool:
-        """Delete a promise by ID.
-        
-        Returns:
-            True if the promise was found and deleted, False otherwise.
-        """
-        promises = self.list_promises(user_id)
-        
-        # Check if promise exists (case-insensitive comparison)
-        promise_exists = any(p.id.upper() == promise_id.upper() for p in promises)
-        
-        if not promise_exists:
+        user = str(user_id)
+        pid = (promise_id or "").strip().upper()
+        if not pid:
             return False
-        
-        # Remove the promise (case-insensitive)
-        original_count = len(promises)
-        promises = [p for p in promises if p.id.upper() != promise_id.upper()]
-        
-        # Only save if something was actually removed
-        if len(promises) < original_count:
-            self._save_to_csv(user_id, promises)
-            return True
-        
-        return False
+
+        now = utc_now_iso()
+        with connection_for_root(self.root_dir) as conn:
+            ensure_imported(conn, self.root_dir, user, "promises")
+            p_uuid = resolve_promise_uuid(conn, user, pid)
+            if not p_uuid:
+                return False
+
+            row = conn.execute(
+                "SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted "
+                "FROM promises WHERE user_id = ? AND promise_uuid = ? LIMIT 1;",
+                (user, p_uuid),
+            ).fetchone()
+            if not row or int(row["is_deleted"]) == 1:
+                return False
+
+            conn.execute(
+                "UPDATE promises SET is_deleted = 1, updated_at_utc = ? WHERE user_id = ? AND promise_uuid = ?;",
+                (now, user, p_uuid),
+            )
+
+            snapshot = json.dumps(
+                {
+                    "id": str(row["current_id"]),
+                    "text": str(row["text"]),
+                    "hours_per_week": float(row["hours_per_week"]),
+                    "recurring": bool(int(row["recurring"])),
+                    "start_date": str(row["start_date"] or ""),
+                    "end_date": str(row["end_date"] or ""),
+                    "angle_deg": int(row["angle_deg"]),
+                    "radius": int(row["radius"]),
+                    "is_deleted": True,
+                },
+                ensure_ascii=False,
+            )
+            conn.execute(
+                """
+                INSERT INTO promise_events(event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
+                VALUES (?, ?, ?, ?, ?, ?);
+                """,
+                (str(uuid.uuid4()), p_uuid, user, "delete", now, snapshot),
+            )
+
+        return True
