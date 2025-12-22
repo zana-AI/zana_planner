@@ -297,6 +297,8 @@ def main():
     # Create and run bot
     bot = PlannerTelegramBot(BOT_TOKEN, ROOT_DIR)
     bot.bootstrap_schedule_existing_users()
+    logger.info(f"Starting telegram bot")
+    logger.info(f"Web app enabled: {WEBAPP_ENABLED}")
     bot.run(enable_webapp=WEBAPP_ENABLED, webapp_port=WEBAPP_PORT)
 
 
