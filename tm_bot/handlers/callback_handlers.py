@@ -742,6 +742,11 @@ class CallbackHandlers:
         # Build caption text
         header = get_message("weekly_header", user_lang, date_range=date_range_str)
         caption = f"{header}\n\n{report}"
+
+        # Telegram captions have a hard limit (1024 chars). Keep it to one message by truncating.
+        MAX_CAPTION_LEN = 1024
+        if len(caption) > MAX_CAPTION_LEN:
+            caption = caption[: MAX_CAPTION_LEN - 1] + "…"
         
         # Generate visualization image
         image_path = None

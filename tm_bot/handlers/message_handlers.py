@@ -160,11 +160,14 @@ class MessageHandlers:
         keyboard = weekly_report_kb(report_ref_time)
         
         header = get_message("weekly_header", user_lang, date_range=date_range_str)
-        await update.message.reply_text(
-            f"{header}\n\n{report}",
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
+        message_text = f"{header}\n\n{report}"
+
+        # Telegram captions have a hard limit (1024 chars). Keep everything in one message by
+        # truncating (instead of sending a 2nd message).
+        # Ref: https://core.telegram.org/bots/api#sendphoto
+        MAX_CAPTION_LEN = 1024
+        if len(message_text) > MAX_CAPTION_LEN:
+            message_text = message_text[: MAX_CAPTION_LEN - 1] + "…"
         
         # Generate and send visualization image
         image_path = None
@@ -176,11 +179,29 @@ class MessageHandlers:
                 with open(image_path, 'rb') as photo:
                     await context.bot.send_photo(
                         chat_id=update.effective_chat.id,
-                        photo=photo
+                        photo=photo,
+                        caption=message_text,
+                        reply_markup=keyboard,
+                        parse_mode='Markdown',
                     )
+            else:
+                # Fallback: no image generated, send text-only weekly report
+                await update.message.reply_text(
+                    message_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
         except Exception as e:
             logger.warning(f"Failed to generate weekly visualization: {e}")
             # Don't fail the whole command if visualization fails
+            try:
+                await update.message.reply_text(
+                    message_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
+            except Exception:
+                await update.message.reply_text(message_text)
         finally:
             # Clean up temp file
             if image_path and os.path.exists(image_path):
