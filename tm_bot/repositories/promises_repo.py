@@ -105,6 +105,13 @@ class PromisesRepository:
             ensure_imported(conn, self.root_dir, user, "promises")
 
             p_uuid = resolve_promise_uuid(conn, user, pid)
+            # Optional explicit rename support: callers may set `promise.old_id`
+            # to indicate this upsert should target an existing promise.
+            if not p_uuid:
+                old_id = getattr(promise, "old_id", None)
+                old_id = (old_id or "").strip().upper()
+                if old_id and old_id != pid:
+                    p_uuid = resolve_promise_uuid(conn, user, old_id)
             existing = None
             if p_uuid:
                 existing = conn.execute(
