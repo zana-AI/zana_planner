@@ -207,16 +207,10 @@ class PlannerTelegramBot:
             server = uvicorn.Server(config)
             
             def run_server():
-                try:
-                    asyncio.run(server.serve())
-                except Exception as e:
-                    logger.error(f"Web app server thread failed: {e}", exc_info=True)
+                asyncio.run(server.serve())
             
             self.webapp_server = threading.Thread(target=run_server, daemon=True)
             self.webapp_server.start()
-            # Give the server a moment to start and catch any immediate errors
-            import time
-            time.sleep(0.5)
             logger.info(f"Web app server started on http://{host}:{port}")
             
         except ImportError as e:
