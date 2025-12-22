@@ -30,6 +30,26 @@ schemas = [LLMResponse]  # , UserPromise, UserAction]
 # Context var to carry the active user_id during tool execution
 _current_user_id: ContextVar[Optional[str]] = ContextVar("current_user_id", default=None)
 
+def _strip_user_id_from_signature(sig: inspect.Signature) -> inspect.Signature:
+    """Return a signature with self/user_id removed (tool args are model-provided)."""
+    params = []
+    for name, param in sig.parameters.items():
+        if name in {"self", "user_id"}:
+            continue
+        params.append(param)
+    return sig.replace(parameters=params)
+
+
+def _required_params(sig: inspect.Signature) -> List[str]:
+    """List required (no-default) parameters for a tool signature."""
+    required = []
+    for name, param in sig.parameters.items():
+        if param.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
+            continue
+        if param.default is inspect._empty:
+            required.append(name)
+    return required
+
 
 def _sanitize_user_id(user_id: str) -> str:
     """Allow only digit-only user identifiers to avoid cross-user access or path abuse."""
@@ -58,10 +78,11 @@ def _wrap_tool(fn: Callable, tool_name: str) -> Callable:
             logger.warning(f"Tool {tool_name} received 'kwargs' as a keyword argument, removing it")
             kwargs.pop("kwargs", None)
         
-        # Validate parameters against function signature
+        # Validate parameters against function signature and normalize common aliases
         try:
             sig = inspect.signature(fn)
-            valid_params = set(sig.parameters.keys()) - {"self", "user_id"}
+            public_sig = _strip_user_id_from_signature(sig)
+            valid_params = set(public_sig.parameters.keys())
             
             # Filter out any parameters that aren't in the function signature
             invalid_params = set(kwargs.keys()) - valid_params
@@ -72,6 +93,15 @@ def _wrap_tool(fn: Callable, tool_name: str) -> Callable:
                 )
                 for param in invalid_params:
                     kwargs.pop(param, None)
+
+            # If required args are still missing, return a user-friendly message
+            missing_required = [p for p in _required_params(public_sig) if p not in kwargs or kwargs.get(p) in (None, "")]
+            if missing_required:
+                return (
+                    f"Missing required arguments for {tool_name}: {', '.join(missing_required)}. "
+                    f"Provided: {sorted(list(kwargs.keys()))}. "
+                    f"Please provide those fields and try again."
+                )
         except Exception as e:
             # If signature inspection fails, log but continue
             if _DEBUG_ENABLED:
@@ -98,6 +128,18 @@ def _wrap_tool(fn: Callable, tool_name: str) -> Callable:
 
     wrapped.__name__ = tool_name
     wrapped.__doc__ = fn.__doc__
+    # Help LangChain/Gemini build correct tool schemas from the *real* adapter signature.
+    # inspect.signature(wrapped) will prefer __signature__ if present.
+    try:
+        wrapped.__signature__ = _strip_user_id_from_signature(inspect.signature(fn))
+        # Carry annotations (best-effort) so generated schemas include types.
+        ann = dict(getattr(fn, "__annotations__", {}) or {})
+        ann.pop("user_id", None)
+        ann.pop("self", None)
+        wrapped.__annotations__ = ann
+    except Exception as e:
+        if _DEBUG_ENABLED:
+            logger.warning(f"Could not set tool signature for {tool_name}: {e}")
     return wrapped
 
 
@@ -199,6 +241,7 @@ class LLMHandler:
             content=(
                 "Available planner tools (call only when relevant):\n"
                 f"{tools_overview}\n"
+                "Use the exact argument names shown in the tool signatures above.\n"
                 "If required arguments are missing, ask for them briefly before calling tools."
             )
         )
