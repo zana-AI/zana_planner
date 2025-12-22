@@ -4,6 +4,7 @@ Handles all command and text message processing.
 """
 
 import os
+import html
 from datetime import datetime
 from typing import Optional
 
@@ -694,7 +695,7 @@ class MessageHandlers:
                 logger.error(f"Error processing request for user {user_id}: {str(e)}")
 
             try:
-                await update.message.reply_text(formatted_response, parse_mode='Markdown')
+                await update.message.reply_text(formatted_response, parse_mode='HTML')
             except Exception:
                 await update.message.reply_text(formatted_response)
         
@@ -716,9 +717,14 @@ class MessageHandlers:
             else:
                 formatted_response = str(func_call_response)
             
-            full_response = f"*Zana:*\n`{llm_response}`\n\n"
+            # Use HTML formatting so we can render an expandable blockquote for logs robustly.
+            # This avoids Markdown escaping issues and lets Telegram clients collapse/expand the Log section.
+            zana_text = html.escape(llm_response or "")
+            log_text = html.escape(formatted_response or "")
+
+            full_response = f"<b>Zana:</b>\n<pre>{zana_text}</pre>\n"
             if formatted_response:
-                full_response += f"*Log:*\n{formatted_response}"
+                full_response += f"\n<b>Log:</b>\n<blockquote expandable><pre>{log_text}</pre></blockquote>"
             return full_response
         except Exception as e:
             logger.error(f"Error formatting response: {str(e)}")

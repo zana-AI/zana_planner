@@ -5,6 +5,7 @@ Supports Eleven Labs TTS, OpenAI TTS, with automatic fallback to Google Cloud TT
 
 import os
 import re
+import html
 from typing import Optional, Tuple, List
 from dataclasses import dataclass
 from io import BytesIO
@@ -210,6 +211,12 @@ class VoiceService:
         """
         if not text:
             return ""
+
+        # If text is HTML-formatted (e.g. <blockquote expandable>...</blockquote>), strip tags first.
+        # We replace tags with newlines to keep some structure for the TTS output.
+        if "<" in text and ">" in text:
+            text = re.sub(r"<[^>]+>", "\n", text)
+            text = html.unescape(text)
         
         # Remove markdown formatting
         # Remove bold/italic: **text**, *text*, __text__, _text_
@@ -239,7 +246,9 @@ class VoiceService:
         # Clean up multiple spaces
         text = re.sub(r'\s+', ' ', text)
         
-        # Handle the specific format from _format_response: "*Zana:*\n`text`\n\n*Log:*\n..."
+        # Handle the specific format from MessageHandlers._format_response:
+        # - Older Markdown: "*Zana:*\n`text`\n\n*Log:*\n..."
+        # - New HTML: "<b>Zana:</b>\n<pre>text</pre>\n\n<b>Log:</b>\n<blockquote expandable><pre>...</pre></blockquote>"
         # Extract just the main content, removing the structured format
         lines = text.split('\n')
         cleaned_lines = []
