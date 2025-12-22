@@ -283,6 +283,10 @@ def main():
     import logging as std_logging
     httpx_logger = std_logging.getLogger("httpx")
     httpx_logger.setLevel(std_logging.WARNING)
+    
+    # Configure apscheduler logger to reduce noise
+    apscheduler_logger = std_logging.getLogger("apscheduler.scheduler")
+    apscheduler_logger.setLevel(std_logging.WARNING)
 
     logger.info(f"Starting Zana AI bot with ROOT_DIR={ROOT_DIR}")
 
