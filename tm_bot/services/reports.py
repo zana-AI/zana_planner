@@ -3,11 +3,15 @@ from datetime import datetime, timedelta, date
 import os
 import tempfile
 import uuid
+import logging
 
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from utils.time_utils import get_week_range
 from utils.promise_id import normalize_promise_id, promise_ids_equal
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReportsService:
@@ -216,14 +220,25 @@ class ReportsService:
 
             generate_weekly_visualization(summary, image_path, width=1200, height=900)
         else:
-            from visualisation.weekly_report_card import render_weekly_report_card_png
+            try:
+                from visualisation.weekly_report_card import render_weekly_report_card_png
 
-            render_weekly_report_card_png(
-                summary=summary,
-                output_path=image_path,
-                week_start=week_start,
-                week_end=week_end,
-                width=1200,
-            )
+                render_weekly_report_card_png(
+                    summary=summary,
+                    output_path=image_path,
+                    week_start=week_start,
+                    week_end=week_end,
+                    width=1200,
+                )
+            except Exception as e:
+                # Any failure in the new HTML/Chromium pipeline should gracefully fallback
+                # to the legacy matplotlib visualization to keep /weekly reliable.
+                logger.warning(
+                    "Weekly HTML visualization failed; falling back to matplotlib treemap. Error: %s",
+                    str(e),
+                )
+                from visualisation.vis_rects import generate_weekly_visualization
+
+                generate_weekly_visualization(summary, image_path, width=1200, height=900)
         
         return image_path
