@@ -1092,19 +1092,66 @@ class MessageHandlers:
         user_lang = get_user_language(update.effective_user)
         
         version_info = get_version_info()
-        
-        version_text = f"**Zana AI Bot Version**\n\n"
-        version_text += f"Version: `{version_info['version']}`\n"
-        version_text += f"Environment: `{version_info.get('environment', 'unknown')}`\n"
-        
-        # Show last update date
-        if 'last_update' in version_info and version_info['last_update'] != "unknown":
-            version_text += f"Last Update: `{version_info['last_update']}`\n"
-        
-        if 'commit' in version_info:
-            version_text += f"Commit: `{version_info['commit']}`\n"
-        
-        await update.message.reply_text(version_text, parse_mode='Markdown')
+
+        def _md_code(v) -> str:
+            s = "—" if v is None else str(v)
+            return s.replace("`", "'")
+
+        lines = ["*Zana AI Bot — Version*"]
+        lines.append(f"- Version: `{_md_code(version_info.get('version'))}`")
+        lines.append(f"- Environment: `{_md_code(version_info.get('environment', 'unknown'))}`")
+
+        if version_info.get("build_date"):
+            lines.append(f"- Build date: `{_md_code(version_info.get('build_date'))}`")
+
+        if version_info.get("last_update") and version_info.get("last_update") != "unknown":
+            lines.append(f"- Last update: `{_md_code(version_info.get('last_update'))}`")
+
+        # Runtime metadata
+        if version_info.get("started_at_utc"):
+            lines.append(f"- Started (UTC): `{_md_code(version_info.get('started_at_utc'))}`")
+        if "uptime_seconds" in version_info:
+            lines.append(f"- Uptime (s): `{_md_code(version_info.get('uptime_seconds'))}`")
+        if version_info.get("host"):
+            lines.append(f"- Host: `{_md_code(version_info.get('host'))}`")
+        if version_info.get("pid") is not None:
+            lines.append(f"- PID: `{_md_code(version_info.get('pid'))}`")
+        if version_info.get("python"):
+            lines.append(f"- Python: `{_md_code(version_info.get('python'))}`")
+
+        # Git status-like section
+        git_info = version_info.get("git") or {}
+        if git_info.get("available"):
+            lines.append("")
+            lines.append("*Git*")
+            if git_info.get("branch"):
+                lines.append(f"- Branch: `{_md_code(git_info.get('branch'))}`")
+            if git_info.get("head_short"):
+                lines.append(f"- Commit: `{_md_code(git_info.get('head_short'))}`")
+            if git_info.get("commit_date_iso"):
+                lines.append(f"- Commit date: `{_md_code(git_info.get('commit_date_iso'))}`")
+
+            ahead = git_info.get("ahead")
+            behind = git_info.get("behind")
+            if ahead is not None or behind is not None:
+                lines.append(f"- Ahead/behind: `{_md_code(ahead)} / {_md_code(behind)}`")
+
+            dirty = "dirty" if git_info.get("dirty") else "clean"
+            lines.append(
+                f"- Status: `{dirty}` (changed: `{_md_code(git_info.get('changed_files'))}`, "
+                f"untracked: `{_md_code(git_info.get('untracked_files'))}`)"
+            )
+        else:
+            # If git isn't available, still provide where we think the app is running from.
+            if version_info.get("repo_path"):
+                lines.append(f"- Repo path: `{_md_code(version_info.get('repo_path'))}`")
+
+        text = "\n".join(lines)
+        # Telegram message limits: keep it safe.
+        if len(text) > 3500:
+            text = text[:3499] + "…"
+
+        await update.message.reply_text(text, parse_mode='Markdown')
 
     async def cmd_me(self, update: Update, context: CallbackContext) -> None:
         """Handle the /me command to show user profile information (DM-only)."""
