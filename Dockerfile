@@ -36,6 +36,30 @@ RUN useradd -m -u 1002 amiryan_j && \
 # Copy Python dependencies from builder
 COPY --from=builder /root/.local /home/amiryan_j/.local
 
+# ----------------------------------------------------------------------------
+# Playwright (Chromium) + fonts for high-quality RTL rendering
+# ----------------------------------------------------------------------------
+# Store browser binaries in a shared, non-home path.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# System fonts (broad Unicode coverage) + Playwright's runtime deps for Chromium.
+# - We install Noto fonts explicitly for consistent rendering across languages.
+# - We install Playwright Chromium dependencies via `install-deps` as root.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-noto-core \
+    fonts-noto-extra \
+    fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright OS dependencies for Chromium (uses apt internally).
+# The python packages live in /home/amiryan_j/.local (copied from builder), so we add that to PYTHONPATH.
+RUN PYTHONPATH=/home/amiryan_j/.local/lib/python3.11/site-packages \
+    python -m playwright install-deps chromium
+
+# Create a shared browser cache directory and grant runtime user access.
+RUN mkdir -p /ms-playwright && chown -R amiryan_j:amiryan_j /ms-playwright
+
 # Set working directory
 WORKDIR /app
 
@@ -54,6 +78,9 @@ ENV PYTHONPATH=/app:/app/tm_bot
 
 # Switch to non-root user
 USER amiryan_j
+
+# Download Chromium browser binaries to PLAYWRIGHT_BROWSERS_PATH.
+RUN python -m playwright install chromium
 
 # Set entrypoint
 ENTRYPOINT ["python", "-m", "tm_bot.run_bot"]
