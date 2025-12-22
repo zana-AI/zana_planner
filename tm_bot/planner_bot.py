@@ -291,7 +291,7 @@ def main():
     logger.info(f"Starting Zana AI bot with ROOT_DIR={ROOT_DIR}")
 
     # Web app configuration
-    WEBAPP_ENABLED = os.getenv("WEBAPP_ENABLED", "true").lower() in ("true", "1", "yes")
+    WEBAPP_ENABLED = os.getenv("WEBAPP_ENABLED", "false").lower() in ("true", "1", "yes")  # Disabled by default
     WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
 
     # Create and run bot
