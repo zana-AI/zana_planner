@@ -5,6 +5,7 @@ Handles all command and text message processing.
 
 import os
 import html
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -15,7 +16,6 @@ from handlers.messages_store import get_message, get_user_language, Language
 from handlers.translator import translate_text
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
-from services.image_service import ImageService
 from services.content_service import ContentService
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
@@ -49,6 +49,8 @@ class MessageHandlers:
         self.voice_service = VoiceService()
         self.content_service = ContentService()
         try:
+            # ImageService has heavier/optional deps; import lazily to avoid import-time failures.
+            from services.image_service import ImageService  # noqa: WPS433
             self.image_service = ImageService()
         except Exception as e:
             logger.error(f"Failed to initialize ImageService: {str(e)}")
@@ -521,6 +523,76 @@ class MessageHandlers:
             # Fallback: no parse mode
             await message.reply_text(safe_text)
 
+    def _parse_slot_fill_values(
+        self,
+        user_text: str,
+        missing_fields: list,
+        user_id: int,
+        user_lang_code: str,
+    ) -> dict:
+        """
+        Best-effort parse of the user's clarification message into required fields.
+
+        Parsing strategy:
+        - Prefer explicit `field: value` (or `field=value`) lines.
+        - If only one missing field, treat the whole message as the value.
+        - Fallback: ask the base chat model to extract a JSON object (no tools).
+        """
+        missing_fields = [str(f) for f in (missing_fields or []) if f]
+        text = (user_text or "").strip()
+        if not text or not missing_fields:
+            return {}
+
+        # 1) Key-value parsing
+        out = {}
+        field_lut = {f.lower(): f for f in missing_fields}
+        for line in [ln.strip() for ln in text.splitlines() if ln.strip()]:
+            sep = ":" if ":" in line else ("=" if "=" in line else None)
+            if not sep:
+                continue
+            k, v = [p.strip() for p in line.split(sep, 1)]
+            if not k:
+                continue
+            key_norm = k.lower()
+            if key_norm in field_lut:
+                out[field_lut[key_norm]] = v
+
+        # 2) Single-field shortcut
+        if len(missing_fields) == 1 and missing_fields[0] not in out:
+            out[missing_fields[0]] = text
+
+        # 3) Fallback to LLM JSON extraction (no tools)
+        still_missing = [f for f in missing_fields if out.get(f) in (None, "", [])]
+        if still_missing:
+            try:
+                from langchain_core.messages import HumanMessage as LCHumanMessage, SystemMessage as LCSystemMessage
+
+                sys = LCSystemMessage(
+                    content=(
+                        "Extract the requested fields from the user's message.\n"
+                        "Output ONLY valid JSON (no markdown, no extra text).\n"
+                        f"Fields: {still_missing}\n"
+                        "If a field is not provided, use null.\n"
+                    )
+                )
+                hm = LCHumanMessage(content=text)
+
+                model = getattr(self.llm_handler, "chat_model", None)
+                if model is None:
+                    return out
+                resp = model.invoke([sys, hm]) if hasattr(model, "invoke") else model([sys, hm])
+                content = getattr(resp, "content", "") or ""
+                parsed = json.loads(content)
+                if isinstance(parsed, dict):
+                    for f in still_missing:
+                        if f in parsed and parsed[f] not in (None, "", []):
+                            out[f] = parsed[f]
+            except Exception:
+                # Best-effort only; fall back to whatever we parsed.
+                return out
+
+        return out
+
     async def on_image(self, update: Update, context: CallbackContext):
         """Handle image messages with VLM parsing and text extraction."""
         user_id = update.effective_user.id
@@ -667,6 +739,80 @@ class MessageHandlers:
             if not os.path.exists(user_dir):
                 await self.start(update, context)
                 return
+
+            # Stateful clarification: if we previously asked for missing fields, treat this message as the answer.
+            pending = (context.user_data or {}).get("pending_clarification") if hasattr(context, "user_data") else None
+            if pending:
+                missing_fields = pending.get("missing_fields") or []
+                partial_args = dict(pending.get("partial_args") or {})
+                original_user_message = pending.get("original_user_message") or ""
+
+                user_lang_code = user_lang.value if user_lang else "en"
+                filled = self._parse_slot_fill_values(
+                    user_text=user_message,
+                    missing_fields=missing_fields,
+                    user_id=user_id,
+                    user_lang_code=user_lang_code,
+                )
+                partial_args.update({k: v for k, v in (filled or {}).items()})
+                still_missing = [f for f in missing_fields if partial_args.get(f) in (None, "", [])]
+
+                if still_missing:
+                    # Update partial args and ask again (single message, all missing).
+                    try:
+                        context.user_data["pending_clarification"]["partial_args"] = partial_args
+                    except Exception:
+                        pass
+                    fields = ", ".join(still_missing)
+                    await update.message.reply_text(
+                        f"Thanks — I’m still missing: {fields}.\n"
+                        f"Please reply with `field: value` for: {fields}.",
+                        parse_mode="Markdown",
+                    )
+                    return
+
+                # We have enough: clear pending and re-run the agent with the original intent + provided fields.
+                try:
+                    context.user_data.pop("pending_clarification", None)
+                except Exception:
+                    pass
+
+                fields_block = "\n".join([f"{k}: {partial_args.get(k)}" for k in missing_fields])
+                augmented_message = (
+                    f"{original_user_message}\n\n"
+                    f"Clarifications provided:\n{fields_block}\n"
+                ).strip()
+                user_lang_code = user_lang.value if user_lang else "en"
+                llm_response = self.llm_handler.get_response_api(
+                    augmented_message, user_id, user_language=user_lang_code
+                )
+
+                # Handle errors in LLM response
+                if "error" in llm_response:
+                    error_msg = llm_response["response_to_user"]
+                    if user_lang and user_lang != Language.EN:
+                        error_msg = translate_text(error_msg, user_lang.value, "en")
+                    await update.message.reply_text(error_msg, parse_mode="Markdown")
+                    return
+
+                # Store a new pending clarification if the agent asked again
+                if llm_response.get("pending_clarification"):
+                    try:
+                        context.user_data["pending_clarification"] = {
+                            **(llm_response.get("pending_clarification") or {}),
+                            "original_user_message": original_user_message,
+                        }
+                    except Exception:
+                        pass
+
+                # Process response as normal
+                func_call_response = self.call_planner_api(user_id, llm_response)
+                response_text = llm_response.get("response_to_user", "")
+                if user_lang and user_lang != Language.EN:
+                    response_text = translate_text(response_text, user_lang.value, "en")
+                formatted_response = self._format_response(response_text, func_call_response)
+                await self._reply_text_smart(update.message, formatted_response)
+                return
             
             # Check for URLs in the message
             urls = self.content_service.detect_urls(user_message)
@@ -708,6 +854,18 @@ class MessageHandlers:
             except Exception as e:
                 formatted_response = get_message("error_general", user_lang, error=str(e))
                 logger.error(f"Error processing request for user {user_id}: {str(e)}")
+
+            # If the agent is asking for clarification, store pending state for the next message.
+            if llm_response.get("pending_clarification"):
+                try:
+                    if hasattr(context, "user_data") and context.user_data is not None:
+                        context.user_data["pending_clarification"] = {
+                            **(llm_response.get("pending_clarification") or {}),
+                            "original_user_message": user_message,
+                            "asked_at": datetime.utcnow().isoformat(),
+                        }
+                except Exception:
+                    pass
 
             try:
                 await self._reply_text_smart(update.message, formatted_response)

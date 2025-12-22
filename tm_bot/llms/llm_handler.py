@@ -140,9 +140,14 @@ class LLMHandler:
             "- Output ONLY valid JSON.\n"
             "- Do NOT call tools.\n"
             "- Do NOT include any hidden reasoning; keep 'purpose' short and user-safe.\n"
-            "- Prefer using tools to read user settings and action history when needed.\n"
+            "- Prefer planning tool steps over asking the user when data can be obtained from tools.\n"
+            "- Never ask the user for things that are tool-accessible (e.g., timezone/language/settings, promises list, counts).\n"
+            "- Ask the user ONLY when the request is blocked by missing required tool arguments that cannot be inferred safely.\n"
+            "- If you must ask, ask ONCE and request ALL missing fields in a single question.\n"
+            "- Keep the plan short (usually 1-4 steps; never more than 6).\n"
             "- For questions like 'my preferred language', plan to call get_setting(setting_key='language').\n"
             "- For questions like 'how many actions today', plan to call count_actions_today().\n"
+            "- After any mutation tool call (create/add/update/delete/log), plan a follow-up read/list tool call to verify results, then respond.\n"
             "- If the request can be answered without tools, set final_response_if_no_tools.\n\n"
             "JSON schema (informal):\n"
             "{\n"
@@ -253,6 +258,7 @@ class LLMHandler:
                 _current_user_id.reset(token)
             final_messages = result_state.get("messages", messages)
             final_response = result_state.get("final_response")
+            pending_clarification = result_state.get("pending_clarification")
 
             final_ai = self._get_last_ai(final_messages)
             last_tool_call = self._get_last_tool_call(final_messages)
@@ -305,6 +311,7 @@ class LLMHandler:
                 "tool_calls": getattr(final_ai, "tool_calls", None) or [],
                 "tool_outputs": [tm.content for tm in tool_messages],
                 "stop_reason": stop_reason,
+                "pending_clarification": pending_clarification,
             }
         except Exception as e:
             # Do not leak raw provider errors (Vertex/Gemini often includes request/payload details).

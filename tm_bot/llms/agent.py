@@ -20,6 +20,10 @@ class AgentState(TypedDict):
     step_idx: int
     final_response: Optional[str]
     planner_error: Optional[str]
+    # Optional metadata used to support stateful clarifications.
+    pending_meta_by_idx: Optional[Dict[int, dict]]
+    pending_clarification: Optional[dict]
+    tool_retry_counts: Optional[Dict[str, int]]
 
 
 def _emit(
@@ -121,6 +125,214 @@ def create_plan_execute_graph(
     - Executor: runs one step at a time (tool calls via ToolNode), then responds.
     """
     tool_node = ToolNode(tools)
+    tool_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
+
+    def _required_args_for_tool(tool_obj) -> List[str]:
+        """
+        Best-effort extraction of required args from a StructuredTool schema.
+        Supports both Pydantic v1/v2 styles depending on LangChain version.
+        """
+        try:
+            schema = getattr(tool_obj, "args_schema", None)
+            if schema is None:
+                return []
+            # Pydantic v2
+            fields = getattr(schema, "model_fields", None)
+            if isinstance(fields, dict):
+                required = []
+                for name, field in fields.items():
+                    try:
+                        if getattr(field, "is_required", lambda: False)():
+                            required.append(name)
+                    except Exception:
+                        # Fallback: required if default missing
+                        if getattr(field, "default", None) is None and getattr(field, "default_factory", None) is None:
+                            required.append(name)
+                return required
+            # Pydantic v1
+            v1_fields = getattr(schema, "__fields__", None)
+            if isinstance(v1_fields, dict):
+                return [n for n, f in v1_fields.items() if getattr(f, "required", False)]
+        except Exception:
+            return []
+        return []
+
+    required_args_by_tool = {name: _required_args_for_tool(t) for name, t in tool_by_name.items()}
+
+    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
+
+    def _verification_step_for(tool_name: str, tool_args: dict) -> Optional[dict]:
+        """
+        Heuristic: after a mutation tool, add a lightweight read step to confirm.
+        Only returns steps for tools that exist in this app's tool set.
+        """
+        tool_args = tool_args or {}
+        if tool_name == "update_setting":
+            setting_key = tool_args.get("setting_key")
+            if setting_key and "get_setting" in tool_by_name:
+                return {
+                    "kind": "tool",
+                    "purpose": "Verify the updated setting.",
+                    "tool_name": "get_setting",
+                    "tool_args": {"setting_key": setting_key},
+                }
+            if "get_settings" in tool_by_name:
+                return {
+                    "kind": "tool",
+                    "purpose": "Verify updated settings.",
+                    "tool_name": "get_settings",
+                    "tool_args": {},
+                }
+        if "promise" in (tool_name or ""):
+            # Prefer listing promises (stable display) unless we have a dedicated get_promise_report.
+            pid = tool_args.get("promise_id")
+            if pid and "get_promise_report" in tool_by_name:
+                return {
+                    "kind": "tool",
+                    "purpose": "Verify promise state after the change.",
+                    "tool_name": "get_promise_report",
+                    "tool_args": {"promise_id": pid},
+                }
+            if "get_promises" in tool_by_name:
+                return {
+                    "kind": "tool",
+                    "purpose": "Verify the updated promises list.",
+                    "tool_name": "get_promises",
+                    "tool_args": {},
+                }
+        if tool_name == "add_action":
+            pid = tool_args.get("promise_id")
+            if pid and "get_last_action_on_promise" in tool_by_name:
+                return {
+                    "kind": "tool",
+                    "purpose": "Verify the last logged action for the promise.",
+                    "tool_name": "get_last_action_on_promise",
+                    "tool_args": {"promise_id": pid},
+                }
+        return None
+
+    def _validate_and_repair_plan_steps(plan_steps: List[dict]) -> tuple[List[dict], Dict[int, dict]]:
+        """
+        Validate planner-provided steps and repair common issues:
+        - Unknown tool -> ask_user
+        - Missing required args -> ask_user + record pending metadata
+        - Mutation tool -> auto-add verify-by-reading step (best-effort)
+        """
+        pending_meta_by_idx: Dict[int, dict] = {}
+        repaired: List[dict] = []
+
+        for i, raw in enumerate(plan_steps or []):
+            step = dict(raw or {})
+            kind = step.get("kind")
+
+            if kind == "tool":
+                tool_name = (step.get("tool_name") or "").strip()
+                tool_args = step.get("tool_args") or {}
+
+                if not tool_name or tool_name not in tool_by_name:
+                    pending_meta_by_idx[i] = {
+                        "reason": "unknown_tool",
+                        "tool_name": tool_name,
+                        "provided_args": tool_args,
+                    }
+                    repaired.append(
+                        {
+                            "kind": "ask_user",
+                            "purpose": "Clarify the requested action (unknown tool).",
+                            "question": "I’m not sure which action you want me to take. Can you rephrase what you want to do?",
+                        }
+                    )
+                    continue
+
+                required_args = required_args_by_tool.get(tool_name, [])
+                missing = [
+                    a
+                    for a in required_args
+                    if a not in tool_args or tool_args.get(a) in (None, "", [])
+                ]
+                if missing:
+                    pending_meta_by_idx[i] = {
+                        "reason": "missing_required_args",
+                        "tool_name": tool_name,
+                        "missing_fields": missing,
+                        "partial_args": tool_args,
+                    }
+                    fields = ", ".join(missing)
+                    repaired.append(
+                        {
+                            "kind": "ask_user",
+                            "purpose": f"Collect required fields for {tool_name}.",
+                            "question": (
+                                f"To do that, I need: {fields}.\n"
+                                f"Please reply with values for: {fields}.\n"
+                                "Tip: you can send `field: value` on each line."
+                            ),
+                        }
+                    )
+                    continue
+
+                # Keep tool step
+                repaired.append(step)
+
+                # Auto verify-by-reading after mutations (best-effort, capped later)
+                if tool_name.startswith(MUTATION_PREFIXES):
+                    verify = _verification_step_for(tool_name, tool_args)
+                    if verify:
+                        repaired.append(verify)
+
+            elif kind in ("respond", "ask_user"):
+                repaired.append(step)
+            else:
+                # Unknown step kind: respond directly
+                repaired.append(
+                    {
+                        "kind": "respond",
+                        "purpose": "Respond directly (unknown plan step kind).",
+                        "response_hint": "Respond concisely and ask one clarifying question if needed.",
+                    }
+                )
+
+        # Ensure a respond step exists if the plan doesn't already ask the user.
+        if repaired and not any((s.get("kind") == "ask_user") for s in repaired):
+            if repaired[-1].get("kind") != "respond":
+                repaired.append(
+                    {
+                        "kind": "respond",
+                        "purpose": "Respond to the user after completing tool steps.",
+                        "response_hint": "Summarize results briefly and include next recommended action if applicable.",
+                    }
+                )
+
+        # Cap to 6 steps to avoid runaway plans.
+        if len(repaired) > 6:
+            repaired = repaired[:6]
+
+        return repaired, pending_meta_by_idx
+
+    def _last_tool_error(messages: List[BaseMessage]) -> Optional[dict]:
+        """
+        If the last ToolMessage looks like an error payload, return it as a dict.
+        Expected shapes:
+        - {"error": "...", "error_type": "...", "retryable": bool, ...}
+        """
+        try:
+            for m in reversed(messages or []):
+                if not isinstance(m, ToolMessage):
+                    continue
+                content = getattr(m, "content", None)
+                if not content:
+                    continue
+                parsed = None
+                if isinstance(content, str):
+                    try:
+                        parsed = json.loads(content)
+                    except Exception:
+                        parsed = None
+                if isinstance(parsed, dict) and parsed.get("error"):
+                    return parsed
+        except Exception:
+            return None
+        return None
 
     graph = StateGraph(AgentState)
 
@@ -162,6 +374,7 @@ def create_plan_execute_graph(
             )
 
         plan_dicts = [s.model_dump() for s in plan.steps]
+        plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts)
 
         if emit_plan:
             _emit(
@@ -188,6 +401,8 @@ def create_plan_execute_graph(
             "step_idx": 0,
             "final_response": plan.final_response_if_no_tools,
             "planner_error": planner_error,
+            "pending_meta_by_idx": pending_meta_by_idx,
+            "pending_clarification": None,
         }
 
     def executor(state: AgentState) -> AgentState:
@@ -204,7 +419,18 @@ def create_plan_execute_graph(
 
         # If no more steps, use responder model to craft an answer from messages.
         if idx >= len(plan):
-            result = responder_model.invoke(state["messages"])
+            tool_err = _last_tool_error(state["messages"])
+            if tool_err:
+                hint = (
+                    "A tool call failed. Respond with a user-safe, action-oriented message using this format:\n"
+                    "1) What I tried (one short sentence)\n"
+                    "2) What failed (no internal stack traces)\n"
+                    "3) Next step (one concrete action): ask for missing info, suggest retry, or provide an alternative\n"
+                    "If retryable is true, suggest the user try again or re-run the same request.\n"
+                )
+                result = responder_model.invoke(state["messages"] + [SystemMessage(content=hint)])
+            else:
+                result = responder_model.invoke(state["messages"])
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -225,16 +451,32 @@ def create_plan_execute_graph(
             }
 
         if step.kind == "ask_user":
+            pending = (state.get("pending_meta_by_idx") or {}).get(idx)
             return {
                 **state,
                 "iteration": new_iteration,
                 "final_response": step.question or "Could you clarify what you mean?",
+                "pending_clarification": pending,
                 "step_idx": idx + 1,
             }
 
         if step.kind == "respond":
             # Add a lightweight instruction message (no tools).
             hint = step.response_hint or "Respond to the user based on tool results above. Do not call tools."
+            tool_err = _last_tool_error(state["messages"])
+            if tool_err:
+                err_type = tool_err.get("error_type", "unknown")
+                retryable = bool(tool_err.get("retryable"))
+                failure_hint = (
+                    "A tool call failed. Use this response format:\n"
+                    "1) What I tried (one short sentence)\n"
+                    "2) What failed (plain language; do NOT include internal traces)\n"
+                    "3) Next step (one concrete action)\n"
+                    f"Context: error_type={err_type}, retryable={retryable}.\n"
+                    "If retryable is true: suggest trying again.\n"
+                    "If retryable is false: ask the user for the missing/needed info or propose a safe alternative.\n"
+                )
+                hint = f"{hint}\n\n{failure_hint}"
             result = responder_model.invoke(state["messages"] + [SystemMessage(content=hint)])
             return {
                 **state,
@@ -280,15 +522,55 @@ def create_plan_execute_graph(
         if last_tool_calls and isinstance(last_tool_calls, list):
             call_id = last_tool_calls[-1].get("id")
 
+        def _is_transient_error(err: Exception) -> bool:
+            # Best-effort: treat common network/timeouts as transient.
+            transient_types = (TimeoutError, ConnectionError)
+            if isinstance(err, transient_types):
+                return True
+            # Some libs raise OSError/socket-related errors for transient failures.
+            if isinstance(err, OSError):
+                return True
+            return False
+
+        retry_counts = dict(state.get("tool_retry_counts") or {})
+        attempts = retry_counts.get(call_id or "", 0)
+
         try:
             tool_results = tool_node.invoke({"messages": state["messages"]})
             result_messages = tool_results.get("messages", [])
         except Exception as e:
-            # Preserve loop stability: convert tool error into ToolMessage.
-            err_payload = {"error": str(e)}
-            result_messages = [
-                ToolMessage(content=json.dumps(err_payload), tool_call_id=call_id or "tool_error")
-            ]
+            # Retry once for transient failures.
+            if call_id and attempts < 1 and _is_transient_error(e):
+                retry_counts[call_id] = attempts + 1
+                _emit(
+                    progress_getter,
+                    "tool_retry",
+                    {"iteration": state.get("iteration", 0), "tool_call_id": call_id, "attempt": attempts + 1},
+                )
+                try:
+                    tool_results = tool_node.invoke({"messages": state["messages"]})
+                    result_messages = tool_results.get("messages", [])
+                except Exception as e2:
+                    err_payload = {
+                        "error": str(e2),
+                        "error_type": "transient" if _is_transient_error(e2) else "unknown",
+                        "retryable": False,
+                        "retried": True,
+                    }
+                    result_messages = [
+                        ToolMessage(content=json.dumps(err_payload), tool_call_id=call_id or "tool_error")
+                    ]
+            else:
+                # Preserve loop stability: convert tool error into ToolMessage.
+                err_payload = {
+                    "error": str(e),
+                    "error_type": "transient" if _is_transient_error(e) else "unknown",
+                    "retryable": _is_transient_error(e) and attempts < 1,
+                    "retried": False,
+                }
+                result_messages = [
+                    ToolMessage(content=json.dumps(err_payload), tool_call_id=call_id or "tool_error")
+                ]
 
         _emit(
             progress_getter,
@@ -306,6 +588,7 @@ def create_plan_execute_graph(
             **state,
             "messages": state["messages"] + result_messages,
             "step_idx": int(state.get("step_idx", 0) or 0) + 1,
+            "tool_retry_counts": retry_counts,
         }
 
     def should_continue(state: AgentState):
