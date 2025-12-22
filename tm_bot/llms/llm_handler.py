@@ -24,6 +24,9 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lower() == "staging"
 
+# Generic, user-safe LLM failure message (avoid leaking provider internals).
+_LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
+
 # Define the schemas list
 schemas = [LLMResponse]  # , UserPromise, UserAction]
 
@@ -322,6 +325,15 @@ class LLMHandler:
             self._progress_callback = _log_progress
 
         try:
+            # Guard: never send empty prompts to providers.
+            user_message = "" if user_message is None else str(user_message)
+            if not user_message.strip():
+                return {
+                    "error": "empty_message",
+                    "function_call": "no_op",
+                    "response_to_user": "Please type a message (it looks like it was empty).",
+                }
+
             safe_user_id = _sanitize_user_id(user_id)
 
             prior_history = self.chat_history.get(safe_user_id, [])
@@ -412,11 +424,13 @@ class LLMHandler:
                 "stop_reason": stop_reason,
             }
         except Exception as e:
-            logger.error(f"Unexpected error in get_response_api: {str(e)}")
+            # Do not leak raw provider errors (Vertex/Gemini often includes request/payload details).
+            # Log full details for debugging, but return a user-safe message.
+            logger.exception("Unexpected error in get_response_api")
             return {
-                "error": "unexpected_error",
+                "error": "llm_error",
                 "function_call": "handle_error",
-                "response_to_user": f"Something went wrong. Error: {str(e)}",
+                "response_to_user": _LLM_USER_FACING_ERROR,
             }
         finally:
             # Reset per-call progress callback
@@ -430,6 +444,10 @@ class LLMHandler:
                 self.chat_history[safe_user_id] = []
 
             history = self.chat_history[safe_user_id]
+            user_message = "" if user_message is None else str(user_message)
+            if not user_message.strip():
+                return "Please type a message (it looks like it was empty)."
+
             messages: List[BaseMessage] = [HumanMessage(content=user_message)]
 
             # Add language-aware system message if language is specified
@@ -442,7 +460,7 @@ class LLMHandler:
             try:
                 response = self.chat_model(messages)
             except Exception as e:
-                logger.error(f"Error getting LLM response: {str(e)}")
+                logger.exception("Error getting LLM response")
                 return "I'm having trouble understanding that. Could you rephrase?"
 
             if isinstance(response, AIMessage):
@@ -459,8 +477,8 @@ class LLMHandler:
                 return content
 
         except Exception as e:
-            logger.error(f"Unexpected error in get_response: {str(e)}")
-            return f"Something went wrong. Error: {str(e)}"
+            logger.exception("Unexpected error in get_response_custom")
+            return _LLM_USER_FACING_ERROR
 
     def set_progress_callback(self, callback: Optional[Callable[[str, dict], None]]) -> None:
         """Set a default progress callback for future agent runs."""

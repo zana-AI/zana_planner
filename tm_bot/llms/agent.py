@@ -250,7 +250,14 @@ def create_plan_execute_graph(
             call_id = f"plan_{idx}_iter_{new_iteration}"
             tool_call = {"name": tool_name, "args": tool_args, "id": call_id, "type": "tool_call"}
 
-            ai = AIMessage(content="", tool_calls=[tool_call])
+            # IMPORTANT:
+            # Vertex/Gemini requires each "content" item to include at least one "parts" entry.
+            # Some LangChain serializers will drop tool_calls when the model isn't bound to tools,
+            # and an empty assistant message (content="") can become a request with missing parts,
+            # yielding: "400 Unable to submit request ... must include at least one parts field".
+            #
+            # We keep a minimal, non-empty content to ensure request validity.
+            ai = AIMessage(content="(calling tool)", tool_calls=[tool_call])
             _emit(
                 progress_getter,
                 "executor_step",
