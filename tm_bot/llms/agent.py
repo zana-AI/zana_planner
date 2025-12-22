@@ -6,7 +6,12 @@ from typing import Callable, Dict, List, Optional, Sequence, TypedDict
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import ToolNode
+
+# ToolNode import path varies across langgraph versions.
+try:
+    from langgraph.prebuilt import ToolNode as _ToolNode  # type: ignore
+except Exception:  # pragma: no cover
+    _ToolNode = None
 
 from llms.planning_schema import Plan, PlanStep
 
@@ -24,6 +29,45 @@ class AgentState(TypedDict):
     pending_meta_by_idx: Optional[Dict[int, dict]]
     pending_clarification: Optional[dict]
     tool_retry_counts: Optional[Dict[str, int]]
+
+
+def _run_tool_calls(messages: List[BaseMessage], tools_by_name: Dict[str, object]) -> List[ToolMessage]:
+    """
+    Minimal ToolNode-compatible executor for langgraph installs lacking `langgraph.prebuilt`.
+    Executes tool calls present on the last AIMessage and returns ToolMessage list.
+    """
+    last_msg = messages[-1] if messages else None
+    tool_calls = getattr(last_msg, "tool_calls", None) if isinstance(last_msg, AIMessage) else None
+    if not tool_calls:
+        return []
+
+    out: List[ToolMessage] = []
+    for call in tool_calls:
+        call = call or {}
+        name = (call.get("name") or "").strip()
+        args = call.get("args") or {}
+        call_id = call.get("id") or "tool_call"
+        tool = tools_by_name.get(name)
+        if tool is None:
+            payload = {"error": f"Unknown tool: {name}", "error_type": "unknown", "retryable": False}
+            out.append(ToolMessage(content=json.dumps(payload), tool_call_id=call_id))
+            continue
+
+        try:
+            # StructuredTool supports .invoke; fall back to .run if needed.
+            if hasattr(tool, "invoke"):
+                result = tool.invoke(args)
+            elif hasattr(tool, "run"):
+                result = tool.run(**args)  # type: ignore
+            else:
+                result = tool(**args)  # type: ignore
+
+            content = json.dumps(result) if isinstance(result, (dict, list)) else ("" if result is None else str(result))
+            out.append(ToolMessage(content=content, tool_call_id=call_id))
+        except Exception as e:
+            payload = {"error": str(e), "error_type": "unknown", "retryable": False}
+            out.append(ToolMessage(content=json.dumps(payload), tool_call_id=call_id))
+    return out
 
 
 def _emit(
@@ -62,7 +106,8 @@ def create_agent_graph(
     Returns:
         A compiled LangGraph app.
     """
-    tool_node = ToolNode(tools)
+    tool_node = _ToolNode(tools) if _ToolNode else None
+    tools_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
     model_with_tools = model.bind_tools(tools)
 
     graph = StateGraph(AgentState)
@@ -78,8 +123,11 @@ def create_agent_graph(
         return {"messages": state["messages"] + [result], "iteration": new_iteration}
 
     def call_tools(state: AgentState) -> AgentState:
-        tool_results = tool_node.invoke({"messages": state["messages"]})
-        result_messages = tool_results.get("messages", [])
+        if tool_node:
+            tool_results = tool_node.invoke({"messages": state["messages"]})
+            result_messages = tool_results.get("messages", [])
+        else:
+            result_messages = _run_tool_calls(state["messages"], tools_by_name)
         _emit(
             progress_getter,
             "tool_step",
@@ -124,7 +172,7 @@ def create_plan_execute_graph(
     - Planner: produces a structured Plan JSON (no tool calls).
     - Executor: runs one step at a time (tool calls via ToolNode), then responds.
     """
-    tool_node = ToolNode(tools)
+    tool_node = _ToolNode(tools) if _ToolNode else None
     tool_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
 
     def _required_args_for_tool(tool_obj) -> List[str]:
@@ -535,9 +583,87 @@ def create_plan_execute_graph(
         retry_counts = dict(state.get("tool_retry_counts") or {})
         attempts = retry_counts.get(call_id or "", 0)
 
+        # If ToolNode isn't available (older langgraph), run the last tool call manually
+        # so we can support retry-once semantics.
+        if not tool_node and last_tool_calls and isinstance(last_tool_calls, list) and last_tool_calls:
+            call = last_tool_calls[-1] or {}
+            tool_name = (call.get("name") or "").strip()
+            tool_args = call.get("args") or {}
+            tool_call_id = call.get("id") or "tool_call"
+            tool_obj = tool_by_name.get(tool_name)
+            try:
+                if tool_obj is None:
+                    raise ValueError(f"Unknown tool: {tool_name}")
+                if hasattr(tool_obj, "invoke"):
+                    result = tool_obj.invoke(tool_args)
+                elif hasattr(tool_obj, "run"):
+                    result = tool_obj.run(**tool_args)  # type: ignore
+                else:
+                    result = tool_obj(**tool_args)  # type: ignore
+            except Exception as e:
+                if tool_call_id and attempts < 1 and _is_transient_error(e):
+                    retry_counts[tool_call_id] = attempts + 1
+                    _emit(
+                        progress_getter,
+                        "tool_retry",
+                        {"iteration": state.get("iteration", 0), "tool_call_id": tool_call_id, "attempt": attempts + 1},
+                    )
+                    try:
+                        if tool_obj is None:
+                            raise ValueError(f"Unknown tool: {tool_name}")
+                        if hasattr(tool_obj, "invoke"):
+                            result = tool_obj.invoke(tool_args)
+                        elif hasattr(tool_obj, "run"):
+                            result = tool_obj.run(**tool_args)  # type: ignore
+                        else:
+                            result = tool_obj(**tool_args)  # type: ignore
+                    except Exception as e2:
+                        err_payload = {
+                            "error": str(e2),
+                            "error_type": "transient" if _is_transient_error(e2) else "unknown",
+                            "retryable": False,
+                            "retried": True,
+                        }
+                        result_messages = [ToolMessage(content=json.dumps(err_payload), tool_call_id=tool_call_id)]
+                    else:
+                        content = json.dumps(result) if isinstance(result, (dict, list)) else ("" if result is None else str(result))
+                        result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
+                else:
+                    err_payload = {
+                        "error": str(e),
+                        "error_type": "transient" if _is_transient_error(e) else "unknown",
+                        "retryable": _is_transient_error(e) and attempts < 1,
+                        "retried": False,
+                    }
+                    result_messages = [ToolMessage(content=json.dumps(err_payload), tool_call_id=tool_call_id)]
+            else:
+                content = json.dumps(result) if isinstance(result, (dict, list)) else ("" if result is None else str(result))
+                result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
+
+            _emit(
+                progress_getter,
+                "tool_step",
+                {
+                    "iteration": state.get("iteration", 0),
+                    "tool_results": [
+                        getattr(m, "content", None) for m in result_messages if isinstance(m, ToolMessage)
+                    ],
+                },
+            )
+
+            return {
+                **state,
+                "messages": state["messages"] + result_messages,
+                "step_idx": int(state.get("step_idx", 0) or 0) + 1,
+                "tool_retry_counts": retry_counts,
+            }
+
         try:
-            tool_results = tool_node.invoke({"messages": state["messages"]})
-            result_messages = tool_results.get("messages", [])
+            if tool_node:
+                tool_results = tool_node.invoke({"messages": state["messages"]})
+                result_messages = tool_results.get("messages", [])
+            else:
+                result_messages = _run_tool_calls(state["messages"], tool_by_name)
         except Exception as e:
             # Retry once for transient failures.
             if call_id and attempts < 1 and _is_transient_error(e):
@@ -548,8 +674,11 @@ def create_plan_execute_graph(
                     {"iteration": state.get("iteration", 0), "tool_call_id": call_id, "attempt": attempts + 1},
                 )
                 try:
-                    tool_results = tool_node.invoke({"messages": state["messages"]})
-                    result_messages = tool_results.get("messages", [])
+                    if tool_node:
+                        tool_results = tool_node.invoke({"messages": state["messages"]})
+                        result_messages = tool_results.get("messages", [])
+                    else:
+                        result_messages = _run_tool_calls(state["messages"], tool_by_name)
                 except Exception as e2:
                     err_payload = {
                         "error": str(e2),
