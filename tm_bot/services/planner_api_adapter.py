@@ -398,7 +398,306 @@ class PlannerAPIAdapter:
             today_iso = datetime.now().strftime("%Y-%m-%d")
         return self.count_actions_on_date(user_id, today_iso)
 
+    # Query and statistics methods
+    def search_promises(self, user_id, query: str) -> str:
+        """
+        Search promises by text (case-insensitive substring match).
+        
+        Args:
+            query: Search term to match against promise text/description.
+        
+        Returns:
+            Formatted string with matching promises and their total hours logged.
+        """
+        if not query or not query.strip():
+            return "Please provide a search term."
+        
+        query_lower = query.strip().lower().replace(" ", "_")
+        promises = self.promises_repo.list_promises(user_id)
+        
+        if not promises:
+            return "You don't have any promises yet."
+        
+        # Filter promises by case-insensitive substring match
+        matches = []
+        for promise in promises:
+            promise_text_lower = (promise.text or "").lower()
+            # Match against the promise text (which uses underscores for spaces)
+            if query_lower in promise_text_lower or query.strip().lower() in promise_text_lower.replace("_", " "):
+                # Get total hours for this promise
+                all_actions = self.actions_repo.list_actions(user_id)
+                promise_actions = [a for a in all_actions if (a.promise_id or "").upper() == promise.id.upper()]
+                total_hours = sum(a.time_spent for a in promise_actions)
+                
+                matches.append({
+                    'id': promise.id,
+                    'text': promise.text.replace("_", " "),
+                    'hours_per_week': promise.hours_per_week,
+                    'total_hours_logged': round(total_hours, 2),
+                    'start_date': promise.start_date.isoformat() if promise.start_date else None,
+                    'end_date': promise.end_date.isoformat() if promise.end_date else None,
+                })
+        
+        if not matches:
+            return f"No promises found matching '{query}'. Try a different search term."
+        
+        # Format results
+        result_lines = [f"Found {len(matches)} promise(s) matching '{query}':\n"]
+        for m in matches:
+            result_lines.append(
+                f"• #{m['id']} **{m['text']}**\n"
+                f"  Target: {m['hours_per_week']:.1f} h/week | Total logged: {m['total_hours_logged']:.1f} hours"
+            )
+        
+        return "\n".join(result_lines)
+
+    def get_hours_for_promise(self, user_id, promise_id: str, 
+                              since_date: str = None, until_date: str = None) -> str:
+        """
+        Get total hours logged for a promise, optionally within a date range.
+        
+        Args:
+            promise_id: The promise ID (e.g., 'P10').
+            since_date: Optional start date in YYYY-MM-DD format.
+            until_date: Optional end date in YYYY-MM-DD format.
+        
+        Returns:
+            Human-readable summary of hours logged.
+        """
+        if not promise_id or not promise_id.strip():
+            return "Please provide a promise ID."
+        
+        promise = self.promises_repo.get_promise(user_id, promise_id)
+        if not promise:
+            return f"Promise with ID '{promise_id}' not found."
+        
+        # Parse date arguments
+        since = self._parse_date_arg(since_date)
+        until = self._parse_date_arg(until_date)
+        
+        # Get all actions for this promise
+        all_actions = self.actions_repo.list_actions(user_id)
+        promise_actions = [a for a in all_actions if (a.promise_id or "").upper() == promise.id.upper()]
+        
+        # Filter by date range if provided
+        filtered_actions = []
+        for action in promise_actions:
+            action_date = action.at.date()
+            if since and action_date < since:
+                continue
+            if until and action_date > until:
+                continue
+            filtered_actions.append(action)
+        
+        total_hours = sum(a.time_spent for a in filtered_actions)
+        action_count = len(filtered_actions)
+        
+        # Build response
+        promise_text = promise.text.replace("_", " ")
+        
+        if since and until:
+            date_range = f"from {since} to {until}"
+        elif since:
+            date_range = f"since {since}"
+        elif until:
+            date_range = f"until {until}"
+        else:
+            date_range = f"since {promise.start_date}" if promise.start_date else "all time"
+        
+        return (
+            f"**#{promise.id} - {promise_text}**\n"
+            f"Total hours logged {date_range}: **{total_hours:.1f} hours**\n"
+            f"Number of sessions: {action_count}"
+        )
+
+    def get_total_hours(self, user_id, since_date: str = None, until_date: str = None) -> str:
+        """
+        Get total hours logged across all promises, optionally within a date range.
+        
+        Args:
+            since_date: Optional start date in YYYY-MM-DD format.
+            until_date: Optional end date in YYYY-MM-DD format.
+        
+        Returns:
+            Summary with total hours and per-promise breakdown.
+        """
+        # Parse date arguments
+        since = self._parse_date_arg(since_date)
+        until = self._parse_date_arg(until_date)
+        
+        # Get all promises for text lookup
+        promises = self.promises_repo.list_promises(user_id)
+        promise_texts = {p.id.upper(): p.text.replace("_", " ") for p in promises}
+        
+        # Get all actions
+        all_actions = self.actions_repo.list_actions(user_id)
+        
+        if not all_actions:
+            return "No actions logged yet."
+        
+        # Filter by date range and group by promise
+        hours_by_promise: Dict[str, float] = {}
+        for action in all_actions:
+            action_date = action.at.date()
+            if since and action_date < since:
+                continue
+            if until and action_date > until:
+                continue
+            
+            pid = (action.promise_id or "").upper()
+            hours_by_promise[pid] = hours_by_promise.get(pid, 0.0) + action.time_spent
+        
+        if not hours_by_promise:
+            date_range = ""
+            if since and until:
+                date_range = f" between {since} and {until}"
+            elif since:
+                date_range = f" since {since}"
+            elif until:
+                date_range = f" until {until}"
+            return f"No actions logged{date_range}."
+        
+        # Build response
+        grand_total = sum(hours_by_promise.values())
+        
+        # Date range description
+        if since and until:
+            date_range = f"from {since} to {until}"
+        elif since:
+            date_range = f"since {since}"
+        elif until:
+            date_range = f"until {until}"
+        else:
+            date_range = "all time"
+        
+        result_lines = [f"**Total hours logged ({date_range}): {grand_total:.1f} hours**\n"]
+        result_lines.append("Breakdown by promise:")
+        
+        # Sort by hours (descending)
+        sorted_promises = sorted(hours_by_promise.items(), key=lambda x: x[1], reverse=True)
+        for pid, hours in sorted_promises:
+            text = promise_texts.get(pid, pid)
+            result_lines.append(f"• #{pid} {text}: {hours:.1f} hours")
+        
+        return "\n".join(result_lines)
+
+    def get_actions_in_range(self, user_id, promise_id: str = None,
+                             since_date: str = None, until_date: str = None) -> str:
+        """
+        Get list of actions with optional filtering by promise and date range.
+        
+        Args:
+            promise_id: Optional promise ID to filter by.
+            since_date: Optional start date in YYYY-MM-DD format.
+            until_date: Optional end date in YYYY-MM-DD format.
+        
+        Returns:
+            Formatted list of actions with dates and hours.
+        """
+        # Parse date arguments
+        since = self._parse_date_arg(since_date)
+        until = self._parse_date_arg(until_date)
+        
+        # Get all promises for text lookup
+        promises = self.promises_repo.list_promises(user_id)
+        promise_texts = {p.id.upper(): p.text.replace("_", " ") for p in promises}
+        
+        # Validate promise_id if provided
+        target_pid = None
+        if promise_id and promise_id.strip():
+            promise = self.promises_repo.get_promise(user_id, promise_id)
+            if not promise:
+                return f"Promise with ID '{promise_id}' not found."
+            target_pid = promise.id.upper()
+        
+        # Get all actions
+        all_actions = self.actions_repo.list_actions(user_id)
+        
+        if not all_actions:
+            return "No actions logged yet."
+        
+        # Filter actions
+        filtered_actions = []
+        for action in all_actions:
+            action_date = action.at.date()
+            
+            # Filter by promise ID
+            if target_pid and (action.promise_id or "").upper() != target_pid:
+                continue
+            
+            # Filter by date range
+            if since and action_date < since:
+                continue
+            if until and action_date > until:
+                continue
+            
+            filtered_actions.append(action)
+        
+        if not filtered_actions:
+            # Build descriptive "no results" message
+            filters = []
+            if target_pid:
+                filters.append(f"promise #{target_pid}")
+            if since and until:
+                filters.append(f"between {since} and {until}")
+            elif since:
+                filters.append(f"since {since}")
+            elif until:
+                filters.append(f"until {until}")
+            
+            filter_desc = " for " + " ".join(filters) if filters else ""
+            return f"No actions found{filter_desc}."
+        
+        # Build date range description
+        if since and until:
+            date_range = f"from {since} to {until}"
+        elif since:
+            date_range = f"since {since}"
+        elif until:
+            date_range = f"until {until}"
+        else:
+            date_range = "all time"
+        
+        # Build response
+        total_hours = sum(a.time_spent for a in filtered_actions)
+        
+        if target_pid:
+            header = f"**Actions for #{target_pid} ({date_range})**"
+        else:
+            header = f"**All actions ({date_range})**"
+        
+        result_lines = [
+            header,
+            f"Total: {total_hours:.1f} hours across {len(filtered_actions)} session(s)\n"
+        ]
+        
+        # Sort by date (most recent first) and limit output
+        filtered_actions.sort(key=lambda a: a.at, reverse=True)
+        
+        # Limit to 20 actions to avoid overly long responses
+        display_actions = filtered_actions[:20]
+        if len(filtered_actions) > 20:
+            result_lines.append(f"Showing most recent 20 of {len(filtered_actions)} actions:\n")
+        
+        for action in display_actions:
+            pid = (action.promise_id or "").upper()
+            text = promise_texts.get(pid, pid)
+            action_date = action.at.strftime("%Y-%m-%d")
+            action_time = action.at.strftime("%H:%M")
+            result_lines.append(f"• {action_date} {action_time} - #{pid} {text}: {action.time_spent:.1f}h")
+        
+        return "\n".join(result_lines)
+
     # Utility methods
+    def _parse_date_arg(self, date_str: str, default: date = None) -> Optional[date]:
+        """Parse YYYY-MM-DD string to date, with fallback to default."""
+        if not date_str:
+            return default
+        try:
+            return datetime.strptime(date_str.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return default
+
     def _generate_promise_id(self, user_id, promise_type='P'):
         """Generate unique promise ID."""
         promises = self.promises_repo.list_promises(user_id)

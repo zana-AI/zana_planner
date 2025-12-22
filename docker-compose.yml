@@ -9,6 +9,10 @@ services:
       - /opt/zana-config/.env.prod
     environment:
       - ENVIRONMENT=production
+      - WEBAPP_ENABLED=true
+      - WEBAPP_PORT=8080
+    ports:
+      - "8080:8080"
     volumes:
       - /srv/zana-users:/app/USERS_DATA_DIR:rw
     restart: unless-stopped
@@ -34,6 +38,10 @@ services:
       - /opt/zana-config/.env.staging
     environment:
       - ENVIRONMENT=staging
+      - WEBAPP_ENABLED=true
+      - WEBAPP_PORT=8080
+    ports:
+      - "8081:8080"
     volumes:
       - /srv/zana-users-staging:/app/USERS_DATA_DIR:rw
     restart: unless-stopped

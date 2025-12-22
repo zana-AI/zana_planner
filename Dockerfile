@@ -1,5 +1,28 @@
 # syntax=docker/dockerfile:1.4
 # Multi-stage build for Zana AI bot
+
+# =============================================================================
+# Stage 1: Build React frontend
+# =============================================================================
+FROM node:20-slim as frontend-builder
+
+WORKDIR /app/webapp_frontend
+
+# Copy package files first for better layer caching
+COPY webapp_frontend/package.json webapp_frontend/package-lock.json* ./
+
+# Install dependencies
+RUN npm install --frozen-lockfile || npm install
+
+# Copy frontend source
+COPY webapp_frontend/ ./
+
+# Build the React app
+RUN npm run build
+
+# =============================================================================
+# Stage 2: Build Python dependencies
+# =============================================================================
 FROM python:3.11-slim as builder
 
 # Install build dependencies
@@ -72,9 +95,15 @@ RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION && \
 COPY tm_bot/ ./tm_bot/
 COPY bot_stats.py ./
 
+# Copy built frontend from frontend-builder stage
+COPY --from=frontend-builder /app/webapp_frontend/dist ./webapp_frontend/dist
+
 # Make sure local bin is in PATH
 ENV PATH=/home/amiryan_j/.local/bin:$PATH
 ENV PYTHONPATH=/app:/app/tm_bot
+
+# Expose web app port
+EXPOSE 8080
 
 # Switch to non-root user
 USER amiryan_j
