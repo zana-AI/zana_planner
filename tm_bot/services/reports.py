@@ -7,6 +7,7 @@ import uuid
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from utils.time_utils import get_week_range
+from utils.promise_id import normalize_promise_id, promise_ids_equal
 
 
 class ReportsService:
@@ -25,8 +26,9 @@ class ReportsService:
         # Get actions from this week
         actions = self.actions_repo.list_actions(user_id, since=week_start)
         
-        # Initialize report data
-        report_data = {}
+        # Initialize report data (keyed by canonical promise.id from storage)
+        report_data: Dict[str, Any] = {}
+        canonical_by_norm: Dict[str, str] = {}
         for promise in promises:
             # Check if promise is active (start date has passed)
             if promise.start_date and promise.start_date <= ref_time.date():
@@ -35,13 +37,16 @@ class ReportsService:
                     'hours_promised': promise.hours_per_week,
                     'hours_spent': 0.0
                 }
+                # Map normalized id -> canonical id (first one wins if duplicates exist)
+                norm = normalize_promise_id(promise.id)
+                canonical_by_norm.setdefault(norm, promise.id)
         
         # Accumulate hours for each promise
         for action in actions:
             if action.at >= week_start and action.at <= week_end:
-                promise_id = action.promise_id
-                if promise_id in report_data:
-                    report_data[promise_id]['hours_spent'] += action.time_spent
+                canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
+                if canonical and canonical in report_data:
+                    report_data[canonical]['hours_spent'] += action.time_spent
         
         return report_data
 
@@ -56,8 +61,9 @@ class ReportsService:
         # Get actions from this week
         actions = self.actions_repo.list_actions(user_id, since=week_start)
         
-        # Initialize report data
-        report_data = {}
+        # Initialize report data (keyed by canonical promise.id from storage)
+        report_data: Dict[str, Any] = {}
+        canonical_by_norm: Dict[str, str] = {}
         for promise in promises:
             # Check if promise is active (start date has passed)
             if promise.start_date and promise.start_date <= ref_time.date():
@@ -67,19 +73,21 @@ class ReportsService:
                     'hours_spent': 0.0,
                     'sessions': []  # List of {'date': date, 'hours': float}
                 }
+                norm = normalize_promise_id(promise.id)
+                canonical_by_norm.setdefault(norm, promise.id)
         
         # Group actions by promise and date
         actions_by_promise_date: Dict[str, Dict[date, float]] = {}
         for action in actions:
             if action.at >= week_start and action.at <= week_end:
-                promise_id = action.promise_id
-                if promise_id in report_data:
+                canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
+                if canonical and canonical in report_data:
                     action_date = action.at.date()
-                    if promise_id not in actions_by_promise_date:
-                        actions_by_promise_date[promise_id] = {}
-                    if action_date not in actions_by_promise_date[promise_id]:
-                        actions_by_promise_date[promise_id][action_date] = 0.0
-                    actions_by_promise_date[promise_id][action_date] += action.time_spent
+                    if canonical not in actions_by_promise_date:
+                        actions_by_promise_date[canonical] = {}
+                    if action_date not in actions_by_promise_date[canonical]:
+                        actions_by_promise_date[canonical][action_date] = 0.0
+                    actions_by_promise_date[canonical][action_date] += action.time_spent
         
         # Convert to sessions format and accumulate total hours
         for promise_id, date_hours in actions_by_promise_date.items():
@@ -98,13 +106,14 @@ class ReportsService:
         promise = self.promises_repo.get_promise(user_id, promise_id)
         if not promise:
             return {}
+        canonical_promise_id = promise.id
         
         # Get week boundaries
         week_start, week_end = get_week_range(ref_time)
         
         # Get actions for this promise
         all_actions = self.actions_repo.list_actions(user_id)
-        promise_actions = [a for a in all_actions if a.promise_id == promise_id]
+        promise_actions = [a for a in all_actions if promise_ids_equal(a.promise_id, canonical_promise_id)]
         
         # Calculate weekly hours
         weekly_actions = [a for a in promise_actions if week_start <= a.at <= week_end]
