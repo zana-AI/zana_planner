@@ -143,6 +143,87 @@ class PlannerAPIAdapter:
         self.promises_repo.upsert_promise(user_id, promise)
         return f"Promise #{promise_id} start date updated to {new_start_date}."
 
+    def update_promise(
+        self,
+        user_id,
+        promise_id: str,
+        promise_text: Optional[str] = None,
+        hours_per_week: Optional[float] = None,
+        recurring: Optional[bool] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        angle_deg: Optional[int] = None,
+        radius: Optional[int] = None,
+    ) -> str:
+        """
+        Update an existing promise (PATCH-style).
+
+        Args:
+            promise_id: Promise identifier (case-insensitive).
+            promise_text: New description/title for the promise.
+            hours_per_week: New target hours per week.
+            recurring: Whether this promise is recurring.
+            start_date: Optional new start date.
+            end_date: Optional new end date.
+            angle_deg: Optional visualization angle.
+            radius: Optional visualization radius.
+
+        Returns:
+            Human-readable confirmation message.
+        """
+        promise = self.promises_repo.get_promise(user_id, promise_id)
+        if not promise:
+            return f"Promise with ID '{promise_id}' not found."
+
+        # Apply updates (only if provided)
+        if promise_text is not None:
+            if not isinstance(promise_text, str) or not promise_text.strip():
+                return "Promise text must be a non-empty string."
+            # Store with underscores like add_promise does; UI replaces underscores on display.
+            promise.text = promise_text.strip().replace(" ", "_")
+
+        if hours_per_week is not None:
+            try:
+                hours_val = float(hours_per_week)
+            except Exception:
+                return "Hours per week must be a number."
+            if hours_val <= 0:
+                return "Hours per week must be a positive number."
+            promise.hours_per_week = hours_val
+
+        if recurring is not None:
+            # Accept booleans, and also common string-ish forms from LLMs.
+            if isinstance(recurring, bool):
+                promise.recurring = recurring
+            elif isinstance(recurring, str):
+                promise.recurring = recurring.strip().lower() in ("true", "1", "yes", "y", "on")
+            else:
+                return "Recurring must be a boolean."
+
+        if start_date is not None:
+            promise.start_date = start_date
+        if end_date is not None:
+            promise.end_date = end_date
+
+        # Basic date sanity if both are set
+        if promise.start_date and promise.end_date and promise.start_date > promise.end_date:
+            return "Start date must be on/before end date."
+
+        if angle_deg is not None:
+            try:
+                promise.angle_deg = int(angle_deg)
+            except Exception:
+                return "angle_deg must be an integer."
+
+        if radius is not None:
+            try:
+                promise.radius = int(radius)
+            except Exception:
+                return "radius must be an integer."
+
+        self.promises_repo.upsert_promise(user_id, promise)
+        return f"Promise #{promise.id} updated successfully."
+
     # Action methods
     def add_action(self, user_id, promise_id: str, time_spent: float, action_datetime: Optional[datetime] = None) -> str:
         """Add an action."""
