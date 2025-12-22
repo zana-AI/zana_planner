@@ -1097,6 +1097,50 @@ class MessageHandlers:
             s = "—" if v is None else str(v)
             return s.replace("`", "'")
 
+        def _fmt_started_utc(v) -> str:
+            """Format ISO datetime into a compact UTC string."""
+            if not v:
+                return "—"
+            s = str(v).strip()
+            try:
+                # Handle common variants: "+00:00" or trailing "Z"
+                s_norm = s.replace("Z", "+00:00")
+                from datetime import datetime as _dt  # local import to avoid broad file changes
+                dt = _dt.fromisoformat(s_norm)
+                # Always display as UTC label (value is already stored in UTC).
+                return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+            except Exception:
+                # Fallback: best-effort string trimming
+                if "T" in s:
+                    s = s.replace("T", " ")
+                if "+" in s:
+                    s = s.split("+", 1)[0].strip()
+                return f"{s} UTC"
+
+        def _fmt_uptime(seconds) -> str:
+            """Format uptime seconds into a human-friendly duration."""
+            try:
+                total = int(seconds)
+            except Exception:
+                return "—"
+            if total < 0:
+                total = 0
+
+            days, rem = divmod(total, 86400)
+            hours, rem = divmod(rem, 3600)
+            minutes, secs = divmod(rem, 60)
+
+            parts = []
+            if days:
+                parts.append(f"{days}d")
+            if hours:
+                parts.append(f"{hours}h")
+            if minutes:
+                parts.append(f"{minutes}m")
+            if secs or not parts:
+                parts.append(f"{secs}s")
+            return " ".join(parts)
+
         lines = ["*Zana AI Bot — Version*"]
         lines.append(f"- Version: `{_md_code(version_info.get('version'))}`")
         lines.append(f"- Environment: `{_md_code(version_info.get('environment', 'unknown'))}`")
@@ -1109,11 +1153,9 @@ class MessageHandlers:
 
         # Runtime metadata
         if version_info.get("started_at_utc"):
-            lines.append(f"- Started (UTC): `{_md_code(version_info.get('started_at_utc'))}`")
+            lines.append(f"- Started (UTC): `{_md_code(_fmt_started_utc(version_info.get('started_at_utc')))} `")
         if "uptime_seconds" in version_info:
-            lines.append(f"- Uptime (s): `{_md_code(version_info.get('uptime_seconds'))}`")
-        if version_info.get("host"):
-            lines.append(f"- Host: `{_md_code(version_info.get('host'))}`")
+            lines.append(f"- Uptime: `{_md_code(_fmt_uptime(version_info.get('uptime_seconds')))} `")
         if version_info.get("pid") is not None:
             lines.append(f"- PID: `{_md_code(version_info.get('pid'))}`")
         if version_info.get("python"):
@@ -1141,10 +1183,6 @@ class MessageHandlers:
                 f"- Status: `{dirty}` (changed: `{_md_code(git_info.get('changed_files'))}`, "
                 f"untracked: `{_md_code(git_info.get('untracked_files'))}`)"
             )
-        else:
-            # If git isn't available, still provide where we think the app is running from.
-            if version_info.get("repo_path"):
-                lines.append(f"- Repo path: `{_md_code(version_info.get('repo_path'))}`")
 
         text = "\n".join(lines)
         # Telegram message limits: keep it safe.
