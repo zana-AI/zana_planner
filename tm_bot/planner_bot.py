@@ -147,11 +147,6 @@ class PlannerTelegramBot:
 
             tzname = self.get_user_timezone(user_id) or "UTC"
 
-            # Make it idempotent
-            job_name = f"nightly-{user_id}"
-            for j in jq.get_jobs_by_name(job_name):
-                j.schedule_removal()
-
             # Schedule morning reminders
             schedule_user_daily(
                 jq, user_id=user_id, tz=tzname,

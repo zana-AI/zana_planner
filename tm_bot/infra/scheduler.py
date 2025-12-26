@@ -8,7 +8,9 @@ def schedule_user_daily(job_queue: JobQueue, user_id: int, tz: str, callback, hh
     job_name = f"{name_prefix}-{user_id}"
     
     # Clear any existing job with the same name
+    # Disable immediately to prevent duplicate runs, then schedule removal
     for job in job_queue.get_jobs_by_name(job_name):
+        job.enabled = False  # Immediately disable to prevent duplicate execution
         job.schedule_removal()
     
     # Schedule the new job
@@ -24,7 +26,9 @@ def schedule_user_daily(job_queue: JobQueue, user_id: int, tz: str, callback, hh
 def schedule_repeating(job_queue: JobQueue, name: str, callback, seconds: int, data=None):
     """Schedule a repeating job (used for session tickers)."""
     # Clear any existing job with the same name
+    # Disable immediately to prevent duplicate runs, then schedule removal
     for job in job_queue.get_jobs_by_name(name):
+        job.enabled = False  # Immediately disable to prevent duplicate execution
         job.schedule_removal()
     
     # Schedule the new repeating job
@@ -40,7 +44,9 @@ def schedule_repeating(job_queue: JobQueue, name: str, callback, seconds: int, d
 def schedule_once(job_queue: JobQueue, name: str, callback, when_dt: datetime, data=None):
     """Schedule a one-time job (used for pre-pings and snoozes)."""
     # Clear any existing job with the same name
+    # Disable immediately to prevent duplicate runs, then schedule removal
     for job in job_queue.get_jobs_by_name(name):
+        job.enabled = False  # Immediately disable to prevent duplicate execution
         job.schedule_removal()
     
     # Schedule the one-time job
