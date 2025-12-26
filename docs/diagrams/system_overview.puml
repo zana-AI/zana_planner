@@ -1,0 +1,97 @@
+@startuml System Overview
+!theme plain
+skinparam componentStyle rectangle
+skinparam roundcorner 10
+skinparam linetype ortho
+
+package "External Inputs" {
+    actor User
+    cloud "Telegram API" as Telegram
+}
+
+package "Bot System" {
+    component "Telegram Bot\n(planner_bot.py)" as Bot {
+        note right: Entry point\nRegisters handlers
+    }
+    
+    component "Message Handlers\n(message_handlers.py)" as Handlers {
+        note right: Routes messages\nManages state
+    }
+    
+    component "Callback Handlers\n(callback_handlers.py)" as Callbacks {
+        note right: Handles button clicks\nInline keyboard actions
+    }
+    
+    component "LLM Handler\n(llm_handler.py)" as LLM {
+        note right: Chat processing\nAgent orchestration
+    }
+    
+    component "Agent Graph\n(agent.py)" as Agent {
+        note right: Planner-Executor\nTool execution
+    }
+    
+    component "Translator\n(translator.py)" as Translator {
+        note right: Multi-language\nResponse translation
+    }
+    
+    component "Planner API Adapter\n(planner_api_adapter.py)" as API {
+        note right: Business logic\nTool interface
+    }
+    
+    component "Repositories" as Repos {
+        note right: Data persistence\nSQLite storage
+    }
+    
+    component "Services" as Services {
+        note right: Reports, Ranking\nReminders, Sessions
+    }
+}
+
+package "External Services" {
+    cloud "LLM Provider\n(Gemini/OpenAI)" as LLMProvider
+    cloud "Translation API\n(Google Cloud)" as TranslateAPI
+    cloud "Voice Service\n(ASR/TTS)" as VoiceAPI
+    cloud "Image Service\n(VLM)" as ImageAPI
+}
+
+' Input flows
+User --> Telegram: Messages\nCommands\nVoice\nImages\nButtons
+Telegram --> Bot: Updates
+
+' Message routing
+Bot --> Handlers: Text/Voice/Image
+Bot --> Callbacks: Button clicks
+
+' LLM processing flow
+Handlers --> LLM: Process message
+LLM --> Agent: Agent graph
+Agent --> LLMProvider: LLM calls
+LLMProvider --> Agent: Responses
+Agent --> API: Tool calls
+API --> Services: Business logic
+Services --> Repos: Data operations
+Repos --> Services: Data
+Services --> API: Results
+API --> Agent: Tool results
+Agent --> LLM: Final response
+
+' Translation flow
+LLM --> Translator: English response
+Translator --> TranslateAPI: Translation request
+TranslateAPI --> Translator: Translated text
+Translator --> Handlers: Localized response
+
+' Specialized handlers
+Handlers --> VoiceAPI: Voice transcription\nTTS synthesis
+Handlers --> ImageAPI: Image parsing\nText extraction
+
+' Output flow
+Handlers --> Bot: Formatted response
+Bot --> Telegram: Response message
+Telegram --> User: Bot messages
+
+' Scheduled jobs
+Bot --> Services: Scheduled reminders\nDaily reports
+
+@enduml
+
