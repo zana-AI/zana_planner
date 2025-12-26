@@ -1,0 +1,63 @@
+@startuml Chat Flow - Callback Query
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam roundcorner 20
+
+actor User
+participant "Telegram Bot" as Bot
+participant "CallbackHandlers\n(callback_handlers.py)" as Callback
+participant "PlannerAPIAdapter" as API
+participant "Repositories" as Repo
+
+User -> Bot: Click inline button
+activate Bot
+
+Bot -> Callback: handle_promise_callback(update, context)
+activate Callback
+
+Callback -> Callback: decode_cb(query.data)
+Callback -> Callback: Extract action, promise_id, etc.
+
+alt Action: pomodoro_start
+    Callback -> API: Start session
+    activate API
+    API -> Repo: Create session
+    activate Repo
+    Repo --> API: Session created
+    deactivate Repo
+    API --> Callback: Session info
+    deactivate API
+    Callback -> User: Send session keyboard
+    
+else Action: log_action
+    Callback -> API: log_action(\n  promise_id,\n  time_spent\n)
+    activate API
+    API -> Repo: Save action
+    activate Repo
+    Repo --> API: Action saved
+    deactivate Repo
+    API --> Callback: Confirmation
+    deactivate API
+    Callback -> User: Update message
+    
+else Action: language_selection
+    Callback -> API: Update user settings
+    activate API
+    API -> Repo: Save language preference
+    activate Repo
+    Repo --> API: Settings saved
+    deactivate Repo
+    API --> Callback: Confirmation
+    deactivate API
+    Callback -> User: Send welcome message
+    
+else Other actions
+    Callback -> Callback: Route to specific handler
+    Callback -> User: Send response
+end
+
+deactivate Callback
+deactivate Bot
+
+@enduml
+

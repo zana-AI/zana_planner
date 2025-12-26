@@ -1,0 +1,74 @@
+@startuml Chat Flow - Commands
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam roundcorner 20
+
+actor User
+participant "Telegram Bot" as Bot
+participant "MessageHandlers" as Handler
+participant "PlannerAPIAdapter" as API
+participant "Repositories" as Repo
+participant "Scheduler\n(scheduler.py)" as Scheduler
+
+User -> Bot: Send command (/start, /promises, etc.)
+activate Bot
+
+Bot -> Handler: Command handler\n(start, list_promises, etc.)
+activate Handler
+
+alt Command: /start
+    Handler -> Handler: create_user_directory()
+    Handler -> API: get_promises(user_id)
+    activate API
+    API -> Repo: List promises
+    activate Repo
+    Repo --> API: Promises list
+    deactivate Repo
+    API --> Handler: Promises
+    deactivate API
+    
+    alt New user
+        Handler -> User: Show language selection
+    else Existing user
+        Handler -> User: Send welcome message
+    end
+    
+    Handler -> Scheduler: schedule_user_daily(\n  morning reminders\n)
+    activate Scheduler
+    Scheduler --> Handler: Scheduled
+    deactivate Scheduler
+    
+    Handler -> Scheduler: schedule_user_daily(\n  nightly reminders\n)
+    activate Scheduler
+    Scheduler --> Handler: Scheduled
+    deactivate Scheduler
+    
+else Command: /promises
+    Handler -> API: get_promises(user_id)
+    activate API
+    API -> Repo: List promises
+    activate Repo
+    Repo --> API: Promises list
+    deactivate Repo
+    API --> Handler: Promises
+    deactivate API
+    Handler -> User: Send formatted promises list
+    
+else Command: /zana
+    Handler -> API: get_promises(user_id)
+    Handler -> API: get_promise_report()\nfor each promise
+    Handler -> Handler: Build insights prompt
+    Handler -> Handler: llm_handler.get_response_custom()
+    Handler -> User: Send AI insights
+    
+else Command: /weekly
+    Handler -> API: reports_service.get_weekly_summary()
+    Handler -> API: reports_service.generate_weekly_visualization_image()
+    Handler -> User: Send weekly report\nwith image
+end
+
+deactivate Handler
+deactivate Bot
+
+@enduml
+

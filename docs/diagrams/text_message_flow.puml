@@ -1,0 +1,132 @@
+@startuml Chat Flow - Text Message
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam roundcorner 20
+
+actor User
+participant "Telegram Bot\n(planner_bot.py)" as Bot
+participant "MessageHandlers\n(message_handlers.py)" as Handler
+participant "LLMHandler\n(llm_handler.py)" as LLM
+participant "Agent Graph\n(agent.py)" as Agent
+participant "Planner Model\n(Gemini/OpenAI)" as Planner
+participant "Executor\n(agent.py)" as Executor
+participant "Tool Wrappers\n(tool_wrappers.py)" as Tools
+participant "PlannerAPIAdapter\n(planner_api_adapter.py)" as API
+participant "Repositories\n(promises_repo, etc.)" as Repo
+participant "Translator\n(translator.py)" as Translator
+participant "Response Formatter\n(formatting.py)" as Formatter
+
+User -> Bot: Send text message
+activate Bot
+
+Bot -> Handler: handle_message(update, context)
+activate Handler
+
+Handler -> Handler: Check user exists\n(if not, call start())
+Handler -> Handler: Check pending clarification
+Handler -> Handler: Check for URLs\n(route to content_service)
+
+alt URL detected
+    Handler -> Handler: _handle_link_message()
+    Handler -> API: process_link()
+    Handler -> User: Send link summary
+    deactivate Handler
+    deactivate Bot
+else Normal text message
+    Handler -> Handler: Get user language
+    Handler -> LLM: get_response_api(\n  user_message,\n  user_id,\n  user_language\n)
+    activate LLM
+    
+    LLM -> LLM: Build message history
+    LLM -> LLM: Create AgentState\n(messages, iteration=0)
+    LLM -> Agent: agent_app.invoke(state)
+    activate Agent
+    
+    Agent -> Agent: planner(state)
+    activate Planner
+    Agent -> Planner: planner_model.invoke(\n  system_prompt + messages\n)
+    Planner --> Agent: Plan JSON\n(steps: tool/respond/ask_user)
+    deactivate Planner
+    
+    Agent -> Agent: executor(state)
+    activate Executor
+    
+    loop For each step in plan
+        alt Step is "tool"
+            Executor -> Tools: Execute tool call
+            activate Tools
+            Tools -> API: Call method\n(add_promise, log_action, etc.)
+            activate API
+            API -> Repo: Database operations
+            activate Repo
+            Repo --> API: Result
+            deactivate Repo
+            API --> Tools: Function result
+            deactivate API
+            Tools --> Executor: ToolMessage(result)
+            deactivate Tools
+        else Step is "ask_user"
+            Executor -> Executor: Set pending_clarification
+            Executor --> Agent: State with clarification
+        else Step is "respond"
+            Executor -> Executor: responder_model.invoke()
+            Executor --> Agent: Final response
+        end
+    end
+    
+    Executor --> Agent: Final state\n(final_response, tool_outputs)
+    deactivate Executor
+    
+    Agent --> LLM: Result state
+    deactivate Agent
+    
+    LLM -> LLM: Extract response\nand pending_clarification
+    LLM --> Handler: llm_response dict\n{\n  response_to_user,\n  executed_by_agent,\n  pending_clarification\n}
+    deactivate LLM
+    
+    alt LLM response has error
+        Handler -> Translator: translate_text(\n  error_msg,\n  target_lang,\n  source_lang="en"\n)
+        activate Translator
+        Translator --> Handler: Translated error
+        deactivate Translator
+        Handler -> User: Send error message
+    else Normal response
+        alt Tools not executed by agent\n(legacy mode)
+            Handler -> Handler: call_planner_api(\n  user_id,\n  llm_response\n)
+            Handler -> API: Execute function\n(function_call, function_args)
+            activate API
+            API -> Repo: Database operations
+            activate Repo
+            Repo --> API: Result
+            deactivate Repo
+            API --> Handler: Function result
+            deactivate API
+        end
+        
+        Handler -> Handler: Extract response_text
+        alt User language != English
+            Handler -> Translator: translate_text(\n  response_text,\n  target_lang,\n  source_lang="en"\n)
+            activate Translator
+            Translator --> Handler: Translated response
+            deactivate Translator
+        end
+        
+        Handler -> Formatter: format_response_html(\n  response_text,\n  func_call_response\n)
+        activate Formatter
+        Formatter --> Handler: Formatted HTML response
+        deactivate Formatter
+        
+        Handler -> User: Send formatted response
+    end
+    
+    alt Pending clarification exists
+        Handler -> Handler: Store in context.user_data
+        Handler -> User: Ask for missing fields
+    end
+    
+    deactivate Handler
+    deactivate Bot
+end
+
+@enduml
+

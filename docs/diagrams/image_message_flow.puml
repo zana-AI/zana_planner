@@ -1,0 +1,57 @@
+@startuml Chat Flow - Image Message
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam roundcorner 20
+
+actor User
+participant "Telegram Bot" as Bot
+participant "MessageHandlers" as Handler
+participant "ImageService\n(image_service.py)" as Image
+participant "LLMHandler" as LLM
+participant "Agent Graph" as Agent
+participant "Translator" as Translator
+
+User -> Bot: Send image
+activate Bot
+
+Bot -> Handler: on_image(update, context)
+activate Handler
+
+Handler -> Bot: Download image file
+Bot --> Handler: Image file path
+
+Handler -> Image: parse_image(path, image_url)
+activate Image
+Image --> Handler: ImageAnalysis\n(type, text, meta)
+deactivate Image
+
+Handler -> Image: extract_text_for_processing(analysis)
+activate Image
+Image --> Handler: Extracted text
+deactivate Image
+
+Handler -> Handler: Build user_message\nwith extracted text context
+
+Handler -> LLM: get_response_api(\n  user_message,\n  user_id,\n  user_language\n)
+activate LLM
+LLM -> Agent: Process through agent graph
+activate Agent
+Agent --> LLM: Response
+deactivate Agent
+LLM --> Handler: llm_response
+deactivate LLM
+
+alt User language != English
+    Handler -> Translator: translate_text()
+    activate Translator
+    Translator --> Handler: Translated response
+    deactivate Translator
+end
+
+Handler -> User: Send response\n(with voice if enabled)
+
+deactivate Handler
+deactivate Bot
+
+@enduml
+
