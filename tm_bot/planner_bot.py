@@ -42,7 +42,7 @@ class PlannerTelegramBot:
         self.plan_keeper = PlannerAPIAdapter(root_dir)
         self.root_dir = root_dir
         self.token = token
-        self.webapp_server: Optional[threading.Thread] = None
+        # self.webapp_server: Optional[threading.Thread] = None  # Web app disabled
 
         # Initialize handlers
         self.message_handlers = MessageHandlers(
@@ -175,60 +175,61 @@ class PlannerTelegramBot:
                 hh=22, mm=59, name_prefix="nightly",
             )
 
-    def _start_webapp_server(self, host: str = "0.0.0.0", port: int = 8080) -> None:
-        """Start the FastAPI web app server in a background thread."""
-        try:
-            import uvicorn
-            from webapp.api import create_webapp_api
-            
-            # Determine static files directory (React build output)
-            static_dir = os.path.join(os.path.dirname(__file__), "..", "webapp_frontend", "dist")
-            if not os.path.isdir(static_dir):
-                static_dir = None
-                logger.info("Web app static files not found, API-only mode")
-            else:
-                logger.info(f"Serving web app static files from {static_dir}")
-            
-            # Create FastAPI app
-            webapp = create_webapp_api(
-                root_dir=self.root_dir,
-                bot_token=self.token,
-                static_dir=static_dir
-            )
-            
-            # Run uvicorn in a separate thread
-            config = uvicorn.Config(
-                webapp,
-                host=host,
-                port=port,
-                log_level="info",
-                access_log=True
-            )
-            server = uvicorn.Server(config)
-            
-            def run_server():
-                asyncio.run(server.serve())
-            
-            self.webapp_server = threading.Thread(target=run_server, daemon=True)
-            self.webapp_server.start()
-            logger.info(f"Web app server started on http://{host}:{port}")
-            
-        except ImportError as e:
-            logger.warning(f"Web app server dependencies not installed: {e}")
-        except Exception as e:
-            logger.error(f"Failed to start web app server: {e}")
+    # Web app server disabled - commented out to prevent issues with Telegram bot
+    # def _start_webapp_server(self, host: str = "0.0.0.0", port: int = 8080) -> None:
+    #     """Start the FastAPI web app server in a background thread."""
+    #     try:
+    #         import uvicorn
+    #         from webapp.api import create_webapp_api
+    #         
+    #         # Determine static files directory (React build output)
+    #         static_dir = os.path.join(os.path.dirname(__file__), "..", "webapp_frontend", "dist")
+    #         if not os.path.isdir(static_dir):
+    #             static_dir = None
+    #             logger.info("Web app static files not found, API-only mode")
+    #         else:
+    #             logger.info(f"Serving web app static files from {static_dir}")
+    #         
+    #         # Create FastAPI app
+    #         webapp = create_webapp_api(
+    #             root_dir=self.root_dir,
+    #             bot_token=self.token,
+    #             static_dir=static_dir
+    #         )
+    #         
+    #         # Run uvicorn in a separate thread
+    #         config = uvicorn.Config(
+    #             webapp,
+    #             host=host,
+    #             port=port,
+    #             log_level="info",
+    #             access_log=True
+    #         )
+    #         server = uvicorn.Server(config)
+    #         
+    #         def run_server():
+    #             asyncio.run(server.serve())
+    #         
+    #         self.webapp_server = threading.Thread(target=run_server, daemon=True)
+    #         self.webapp_server.start()
+    #         logger.info(f"Web app server started on http://{host}:{port}")
+    #         
+    #     except ImportError as e:
+    #         logger.warning(f"Web app server dependencies not installed: {e}")
+    #     except Exception as e:
+    #         logger.error(f"Failed to start web app server: {e}")
 
     def run(self, enable_webapp: bool = True, webapp_port: int = 8080) -> None:
         """
         Start the bot and optionally the web app server.
         
         Args:
-            enable_webapp: Whether to start the FastAPI web app server
-            webapp_port: Port for the web app server (default: 8080)
+            enable_webapp: Whether to start the FastAPI web app server (currently disabled)
+            webapp_port: Port for the web app server (default: 8080, currently unused)
         """
-        # Start web app server if enabled
-        if enable_webapp:
-            self._start_webapp_server(port=webapp_port)
+        # Web app server disabled - commented out to prevent issues
+        # if enable_webapp:
+        #     self._start_webapp_server(port=webapp_port)
         
         # Start Telegram bot polling (blocking)
         self.application.run_polling()
@@ -290,16 +291,16 @@ def main():
 
     logger.info(f"Starting Zana AI bot with ROOT_DIR={ROOT_DIR}")
 
-    # Web app configuration
-    WEBAPP_ENABLED = os.getenv("WEBAPP_ENABLED", "false").lower() in ("true", "1", "yes")  # Disabled by default
-    WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
+    # Web app configuration - DISABLED
+    # WEBAPP_ENABLED = os.getenv("WEBAPP_ENABLED", "false").lower() in ("true", "1", "yes")  # Disabled by default
+    # WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
 
     # Create and run bot
     bot = PlannerTelegramBot(BOT_TOKEN, ROOT_DIR)
     bot.bootstrap_schedule_existing_users()
-    logger.info(f"Starting telegram bot")
-    logger.info(f"Web app enabled: {WEBAPP_ENABLED}")
-    bot.run(enable_webapp=WEBAPP_ENABLED, webapp_port=WEBAPP_PORT)
+    logger.debug(f"Starting telegram bot")
+    # logger.debug(f"Web app enabled: {WEBAPP_ENABLED} | Web app port: {WEBAPP_PORT}")  # Web app disabled
+    bot.run(enable_webapp=False, webapp_port=8080)  # Web app disabled - always False
 
 
 if __name__ == '__main__':
