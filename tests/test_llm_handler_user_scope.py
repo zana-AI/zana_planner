@@ -1,6 +1,6 @@
 import pytest
 
-from llms.llm_handler import _current_user_id, _sanitize_user_id, _wrap_tool
+from llms.tool_wrappers import _current_user_id, _sanitize_user_id, _wrap_tool
 
 
 def test_sanitize_user_id_allows_digits_only():

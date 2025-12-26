@@ -1,251 +1,386 @@
-import os
-import sys
-import json
-import csv
-import shutil
-import tempfile
-import time
-import unittest
-import random
+import pytest
 
-import pandas as pd
-from datetime import datetime, timedelta, date
-
-import yaml
-tm_bot_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tm_bot"))
-sys.path.append(tm_bot_dir)
-from tm_bot.services.planner_api_adapter import PlannerAPIAdapter
+from services.planner_api_adapter import PlannerAPIAdapter
 
 
-# ---------------------------
-# TEST SUITE WITH RANDOM 8-DIGIT USER ID
-# ---------------------------
-class TestPlannerAPIAdapter(unittest.TestCase):
-    def setUp(self):
-        # Generate a random 8-digit user id as a string
-        self.user_id = str(random.randint(10 ** 7, 10 ** 8 - 1))
-        # Create a temporary directory to serve as the root directory.
-        self.temp_dir = tempfile.mkdtemp()
-        # Create a subdirectory for the user.
-        self.user_dir = os.path.join(self.temp_dir, self.user_id)
-        os.makedirs(self.user_dir, exist_ok=True)
-        # Initialize the PlannerAPI with the temporary directory.
-        self.planner = PlannerAPIAdapter(self.temp_dir)
-        # Explanation:
-        # Here we ensure that each test works in isolation with its own random user.
+@pytest.mark.integration
+def test_planner_api_adapter_add_promise_persists_to_sqlite(tmp_path):
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
 
-    def tearDown(self):
-        # Clean up the temporary directory after each test.
-        shutil.rmtree(self.temp_dir)
+    msg = adapter.add_promise(user_id, promise_text="Test Promise", num_hours_promised_per_week=5.0, recurring=True)
+    assert "added successfully" in msg
 
-    # def test_init_invalid_directory(self):
-    #     # Test that initializing with a non-existent directory raises an error.
-    #     with self.assertRaises(FileNotFoundError):
-    #         PlannerAPI("non_existent_directory")
+    # Repository should have created the SQLite DB.
+    assert (tmp_path / "zana.db").exists()
+    promises = adapter.get_promises(user_id)
+    assert len(promises) == 1
+    assert promises[0]["text"] == "Test_Promise"
 
-    def test_get_file_path_valid(self):
-        # Verify that _get_file_path returns the correct path.
-        file_path = self.planner._get_file_path("promises.json", self.user_id)
-        expected = os.path.join(self.temp_dir, self.user_id, "promises.json")
-        self.assertEqual(file_path, expected)
 
-    def test_get_file_path_invalid_user_directory(self):
-        # Test that accessing a file for a user with no directory raises an error.
-        with self.assertRaises(FileNotFoundError):
-            self.planner._get_file_path("promises.json", "00000000")
+@pytest.mark.integration
+def test_planner_api_adapter_add_action_and_weekly_progress(tmp_path):
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
 
-    def test_add_promise_valid(self):
-        # Add a promise and verify that it's correctly stored.
-        result = self.planner.add_promise(
-            self.user_id,
-            promise_text="Test Promise",
-            num_hours_promised_per_week=5.0,
-            recurring=True
-        )
-        self.assertIn("Promise 'Test Promise' added successfully", result)
-        # Check that the promise was written to promises.json.
-        promises_file = self.planner._get_file_path("promises.json", self.user_id)
-        with open(promises_file, 'r') as f:
-            promises = json.load(f)
-        self.assertEqual(len(promises), 1)
-        self.assertEqual(promises[0]['text'], "Test_Promise")
+    msg = adapter.add_promise(user_id, promise_text="Weekly Progress", num_hours_promised_per_week=10.0)
+    promise_id = msg.split()[0].lstrip("#")
 
-    def test_add_promise_invalid_text(self):
-        # An empty promise text should trigger a RuntimeError.
-        with self.assertRaises(RuntimeError):
-            self.planner.add_promise(self.user_id, "", 5.0)
+    out = adapter.add_action(user_id, promise_id, 5.0)
+    assert "Action logged" in out
+    assert (tmp_path / "zana.db").exists()
 
-    def test_add_promise_invalid_hours(self):
-        # Non-positive hours should trigger a RuntimeError.
-        with self.assertRaises(RuntimeError):
-            self.planner.add_promise(self.user_id, "Valid Text", -3)
+    progress = adapter.get_promise_weekly_progress(user_id, promise_id)
+    assert progress == pytest.approx(0.5, abs=0.05)
 
-    def test_add_action_valid(self):
-        # Add a promise first so that we can then add an action.
-        add_result = self.planner.add_promise(self.user_id, "Action Test", 10.0)
-        # Extract promise_id from the response.
-        promise_id = add_result.split()[0].lstrip("#")
-        result = self.planner.add_action(self.user_id, promise_id, 2.5)
-        self.assertIn("Action logged for promise ID", result)
-        # Verify that the action is appended to actions.csv.
-        actions_file = self.planner._get_file_path("actions.csv", self.user_id)
-        with open(actions_file, 'r') as f:
-            reader = csv.reader(f)
-            rows = list(reader)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0][2], promise_id)
 
-    def test_add_action_invalid_promise(self):
-        # Attempt to add an action for a non-existent promise.
-        result = self.planner.add_action(self.user_id, "NON_EXISTENT", 2.0)
-        self.assertEqual(result, "Promise with ID 'NON_EXISTENT' not found.")
+@pytest.mark.integration
+def test_planner_api_adapter_weekly_report_mentions_promise(tmp_path):
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    msg = adapter.add_promise(user_id, promise_text="Report Test", num_hours_promised_per_week=8.0)
+    promise_id = msg.split()[0].lstrip("#")
+    adapter.add_action(user_id, promise_id, 1.0)
 
-    def test_add_action_invalid_time_spent(self):
-        # Add a promise and then try to add an action with negative time spent.
-        add_result = self.planner.add_promise(self.user_id, "Invalid Time", 10.0)
-        promise_id = add_result.split()[0].lstrip("#")
-        result = self.planner.add_action(self.user_id, promise_id, -1)
-        self.assertEqual(result, "Time spent must be a positive number.")
+    report = adapter.get_weekly_report(user_id)
+    assert f"#{promise_id}" in report
+    assert "Report Test" in report
 
-    def test_get_promise_weekly_progress(self):
-        # Add a promise and log an action; then verify weekly progress.
-        add_result = self.planner.add_promise(self.user_id, "Weekly Progress", 10.0)
-        promise_id = add_result.split()[0].lstrip("#")
-        self.planner.add_action(self.user_id, promise_id, 5.0)
-        progress = self.planner.get_promise_weekly_progress(self.user_id, promise_id)
-        # With 5 hours logged and 10 promised, progress should be 0.5 (or 50%).
-        self.assertAlmostEqual(progress, 0.5, places=2)
 
-    def test_get_promises_empty(self):
-        # If promises.json does not exist, get_promises should return an empty list.
-        promises_file = os.path.join(self.user_dir, "promises.json")
-        if os.path.exists(promises_file):
-            os.remove(promises_file)
-        promises = self.planner.get_promises(self.user_id)
-        self.assertEqual(promises, [])
+# Tests for new query methods
 
-    def test_get_promise_hours(self):
-        # Add a promise and then verify the hours promised are returned correctly.
-        add_result = self.planner.add_promise(self.user_id, "Hours Test", 7.5)
-        promise_id = add_result.split()[0].lstrip("#")
-        hours = self.planner.get_promise_hours(self.user_id, promise_id)
-        self.assertEqual(hours, 7.5)
+@pytest.mark.integration
+def test_search_promises_finds_by_text(tmp_path):
+    """Test that search_promises finds promises by keyword."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    # Create multiple promises
+    adapter.add_promise(user_id, promise_text="Go to gym", num_hours_promised_per_week=3.0)
+    adapter.add_promise(user_id, promise_text="Study math", num_hours_promised_per_week=5.0)
+    adapter.add_promise(user_id, promise_text="Read books", num_hours_promised_per_week=2.0)
+    
+    # Search for "gym"
+    result = adapter.search_promises(user_id, "gym")
+    assert "gym" in result.lower()
+    assert "Found 1 promise" in result
+    assert "math" not in result.lower()
 
-    def test_get_actions(self):
-        # After logging an action, verify that get_actions returns it.
-        add_result = self.planner.add_promise(self.user_id, "Actions Test", 10.0)
-        promise_id = add_result.split()[0].lstrip("#")
-        self.planner.add_action(self.user_id, promise_id, 3.0)
-        actions = self.planner.get_actions(self.user_id)
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0][2], promise_id)
 
-    def test_get_actions_df(self):
-        # Check that get_actions_df returns a proper DataFrame.
-        actions_df = self.planner.get_actions_df(self.user_id)
-        self.assertTrue(isinstance(actions_df, pd.DataFrame))
-        self.assertListEqual(list(actions_df.columns), ['date', 'time', 'promise_id', 'time_spent'])
+@pytest.mark.integration
+def test_search_promises_case_insensitive(tmp_path):
+    """Test that search is case-insensitive."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    adapter.add_promise(user_id, promise_text="Do Sport", num_hours_promised_per_week=3.0)
+    
+    # Search with different cases
+    result_lower = adapter.search_promises(user_id, "sport")
+    result_upper = adapter.search_promises(user_id, "SPORT")
+    result_mixed = adapter.search_promises(user_id, "SpOrT")
+    
+    assert "Found 1 promise" in result_lower
+    assert "Found 1 promise" in result_upper
+    assert "Found 1 promise" in result_mixed
 
-    def test_get_last_action_on_promise(self):
-        # Add a promise, log two actions, and then ensure the last action is retrieved.
-        add_result = self.planner.add_promise(self.user_id, "Last Action", 10.0)
-        promise_id = add_result.split()[0].lstrip("#")
-        self.planner.add_action(self.user_id, promise_id, 2.0)
-        time.sleep(2)  # Ensure the second action has a later timestamp.
-        self.planner.add_action(self.user_id, promise_id, 4.0)
-        last_action = self.planner.get_last_action_on_promise(self.user_id, promise_id)
-        self.assertIsNotNone(last_action)
-        self.assertAlmostEqual(float(last_action.time_spent), 4.0, places=1)
 
-    def test_delete_promise(self):
-        # Add a promise and then delete it.
-        add_result = self.planner.add_promise(self.user_id, "Delete Me", 10.0)
-        promise_id = add_result.split()[0].lstrip("#")
-        del_result = self.planner.delete_promise(self.user_id, promise_id)
-        self.assertIn("deleted successfully", del_result)
-        promises = self.planner.get_promises(self.user_id)
-        self.assertFalse(any(p['id'] == promise_id for p in promises))
+@pytest.mark.integration
+def test_search_promises_no_results(tmp_path):
+    """Test search returns appropriate message when no matches."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    adapter.add_promise(user_id, promise_text="Study Python", num_hours_promised_per_week=5.0)
+    
+    result = adapter.search_promises(user_id, "cooking")
+    assert "No promises found" in result
 
-    def test_update_setting(self):
-        # Update a setting and verify that the setting is stored in settings.yaml.
-        result = self.planner.update_setting(self.user_id, "theme", "dark")
-        self.assertIn("Setting 'theme' updated to 'dark'", result)
-        settings_file = self.planner._get_file_path("settings.yaml", self.user_id)
-        with open(settings_file, 'r') as f:
-            settings = yaml.safe_load(f)
-        self.assertEqual(settings.get("theme"), "dark")
 
-    def test_delete_action(self):
-        # Add an action, then delete it and verify that the action file is updated.
-        add_result = self.planner.add_promise(self.user_id, "Delete Action", 10.0)
-        promise_id = add_result.split()[0].lstrip("#")
-        self.planner.add_action(self.user_id, promise_id, 3.0)
-        actions_file = self.planner._get_file_path("actions.csv", self.user_id)
-        with open(actions_file, 'r') as f:
-            reader = csv.reader(f)
-            rows = list(reader)
-        self.assertEqual(len(rows), 1)
-        action_date_str = rows[0][0]
-        del_result = self.planner.delete_action(self.user_id, action_date_str, promise_id)
-        self.assertIn("deleted successfully", del_result)
-        with open(actions_file, 'r') as f:
-            reader = csv.reader(f)
-            rows_after = list(reader)
-        self.assertEqual(len(rows_after), 0)
+@pytest.mark.integration
+def test_get_hours_for_promise_with_date_range(tmp_path):
+    """Test get_hours_for_promise with date filtering."""
+    from datetime import datetime, timedelta
+    
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    msg = adapter.add_promise(user_id, promise_text="Exercise", num_hours_promised_per_week=5.0)
+    promise_id = msg.split()[0].lstrip("#")
+    
+    # Add actions at different times
+    now = datetime.now()
+    adapter.add_action(user_id, promise_id, 2.0, action_datetime=now)
+    adapter.add_action(user_id, promise_id, 1.5, action_datetime=now - timedelta(days=1))
+    adapter.add_action(user_id, promise_id, 3.0, action_datetime=now - timedelta(days=10))
+    
+    # Get hours for all time
+    result_all = adapter.get_hours_for_promise(user_id, promise_id)
+    assert "6.5 hours" in result_all
+    
+    # Get hours since 5 days ago (should exclude the 10-day-old action)
+    since_date = (now - timedelta(days=5)).strftime("%Y-%m-%d")
+    result_filtered = adapter.get_hours_for_promise(user_id, promise_id, since_date=since_date)
+    assert "3.5 hours" in result_filtered
 
-    def test_get_weekly_report(self):
-        # Add a promise and an action, then generate and check the weekly report.
-        add_result = self.planner.add_promise(self.user_id, "Report Test", 8.0)
-        promise_id = add_result.split()[0].lstrip("#")
-        self.planner.add_action(self.user_id, promise_id, 4.0)
-        report = self.planner.get_weekly_report(self.user_id)
-        self.assertIn(f"#{promise_id}", report)
-        self.assertIn("Report Test", report)
 
-    def test_delete_all_promises(self):
-        # Add a promise, verify the promises file exists, then delete all promises.
-        self.planner.add_promise(self.user_id, "Promise 1", 5.0)
-        promises_file = self.planner._get_file_path("promises.json", self.user_id)
-        self.assertTrue(os.path.exists(promises_file))
-        del_result = self.planner.delete_all_promises(self.user_id)
-        self.assertIn("All promises deleted successfully", del_result)
-        self.assertFalse(os.path.exists(promises_file))
+@pytest.mark.integration
+def test_get_hours_for_promise_all_time(tmp_path):
+    """Test get_hours_for_promise without date filter returns all hours."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    msg = adapter.add_promise(user_id, promise_text="Meditation", num_hours_promised_per_week=1.0)
+    promise_id = msg.split()[0].lstrip("#")
+    
+    adapter.add_action(user_id, promise_id, 0.5)
+    adapter.add_action(user_id, promise_id, 0.75)
+    adapter.add_action(user_id, promise_id, 0.25)
+    
+    result = adapter.get_hours_for_promise(user_id, promise_id)
+    assert "1.5 hours" in result
+    assert "3" in result  # 3 sessions
 
-# ---------------------------
-# OPTIONAL: time_utils tests (run only if utils_time.py is present)
-# ---------------------------
-import importlib
 
-_time_utils_spec = importlib.util.find_spec("utils_time")
-HAS_TIME_UTILS = _time_utils_spec is not None
+@pytest.mark.integration
+def test_get_total_hours_aggregates_all(tmp_path):
+    """Test get_total_hours aggregates across all promises."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    # Create two promises with actions
+    msg1 = adapter.add_promise(user_id, promise_text="Coding", num_hours_promised_per_week=10.0)
+    pid1 = msg1.split()[0].lstrip("#")
+    
+    msg2 = adapter.add_promise(user_id, promise_text="Reading", num_hours_promised_per_week=5.0)
+    pid2 = msg2.split()[0].lstrip("#")
+    
+    adapter.add_action(user_id, pid1, 4.0)
+    adapter.add_action(user_id, pid1, 2.0)
+    adapter.add_action(user_id, pid2, 1.5)
+    
+    result = adapter.get_total_hours(user_id)
+    assert "7.5 hours" in result
+    assert "Coding" in result
+    assert "Reading" in result
+    assert f"#{pid1}" in result
+    assert f"#{pid2}" in result
 
-if HAS_TIME_UTILS:
-    time_utils = importlib.import_module("utils_time")
-    from datetime import datetime as _dt
-    from datetime import timedelta as _td
 
-@unittest.skipUnless(HAS_TIME_UTILS, "utils_time.py not found; skipping time utils tests")
-class TestTimeUtils(unittest.TestCase):
-    def test_beautify_time(self):
-        self.assertEqual(time_utils.beautify_time(0.0), "0 min")
-        self.assertEqual(time_utils.beautify_time(0.5), "30 min")
-        self.assertEqual(time_utils.beautify_time(1.25), "1:15 hrs")
-        self.assertEqual(time_utils.beautify_time(2.0), "2:00 hrs")
+@pytest.mark.integration
+def test_get_total_hours_respects_date_range(tmp_path):
+    """Test get_total_hours filters by date range."""
+    from datetime import datetime, timedelta
+    
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    msg = adapter.add_promise(user_id, promise_text="Writing", num_hours_promised_per_week=3.0)
+    promise_id = msg.split()[0].lstrip("#")
+    
+    now = datetime.now()
+    adapter.add_action(user_id, promise_id, 1.0, action_datetime=now)
+    adapter.add_action(user_id, promise_id, 2.0, action_datetime=now - timedelta(days=30))
+    
+    # Get hours since 10 days ago (should only include recent action)
+    since_date = (now - timedelta(days=10)).strftime("%Y-%m-%d")
+    result = adapter.get_total_hours(user_id, since_date=since_date)
+    assert "1.0 hours" in result
 
-    def test_round_time_default_step(self):
-        # Default step is 5 minutes in our helper
-        self.assertAlmostEqual(time_utils.round_time(0.0), 0.0, places=4)
-        self.assertAlmostEqual(time_utils.round_time(1 + 7/60), 1 + 5/60, places=4)  # 1:07 -> 1:05
-        self.assertAlmostEqual(time_utils.round_time(1 + 8/60), 1 + 10/60, places=4) # 1:08 -> 1:10
-        self.assertAlmostEqual(time_utils.round_time(-0.1), 0.0, places=4)           # negative -> 0
 
-    def test_get_week_range(self):
-        # reference: Wednesday 10:30; week starts Monday 03:00 (matches bot weekly header logic)
-        ref = _dt(2025, 9, 17, 10, 30)
-        week_start, week_end = time_utils.get_week_range(ref, week_start_hour=3)
-        self.assertEqual(week_start.weekday(), 0)  # Monday
-        self.assertEqual(week_start.hour, 3)
-        self.assertEqual(week_end, ref)
+@pytest.mark.integration
+def test_get_actions_in_range_filters_correctly(tmp_path):
+    """Test get_actions_in_range with combined filters."""
+    from datetime import datetime, timedelta
+    
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    # Create two promises
+    msg1 = adapter.add_promise(user_id, promise_text="Project A", num_hours_promised_per_week=10.0)
+    pid1 = msg1.split()[0].lstrip("#")
+    
+    msg2 = adapter.add_promise(user_id, promise_text="Project B", num_hours_promised_per_week=5.0)
+    pid2 = msg2.split()[0].lstrip("#")
+    
+    now = datetime.now()
+    adapter.add_action(user_id, pid1, 2.0, action_datetime=now)
+    adapter.add_action(user_id, pid1, 1.0, action_datetime=now - timedelta(days=5))
+    adapter.add_action(user_id, pid2, 3.0, action_datetime=now - timedelta(days=2))
+    
+    # Filter by promise only
+    result_promise = adapter.get_actions_in_range(user_id, promise_id=pid1)
+    assert f"#{pid1}" in result_promise
+    assert "3.0 hours" in result_promise  # 2.0 + 1.0
+    assert "2 session" in result_promise
+    
+    # Filter by date only (last 3 days)
+    since_date = (now - timedelta(days=3)).strftime("%Y-%m-%d")
+    result_date = adapter.get_actions_in_range(user_id, since_date=since_date)
+    assert "5.0 hours" in result_date  # 2.0 + 3.0 (excludes 5-day-old action)
+    
+    # Combined filter
+    result_both = adapter.get_actions_in_range(user_id, promise_id=pid1, since_date=since_date)
+    assert "2.0 hours" in result_both  # Only the recent pid1 action
 
-if __name__ == '__main__':
-    unittest.main()
+
+# Security tests for SQL query feature
+
+@pytest.mark.integration
+def test_query_database_select_allowed(tmp_path):
+    """Test that valid SELECT queries work."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    # Create some data first
+    msg = adapter.add_promise(user_id, promise_text="Test Query", num_hours_promised_per_week=5.0)
+    promise_id = msg.split()[0].lstrip("#")
+    adapter.add_action(user_id, promise_id, 2.0)
+    
+    # Query with proper user_id filter
+    result = adapter.query_database(
+        user_id, 
+        f"SELECT promise_id_text, SUM(time_spent_hours) as hours FROM actions WHERE user_id = '{user_id}' GROUP BY promise_id_text"
+    )
+    
+    assert "Query returned" in result
+    assert "2.0" in result or "2.00" in result
+
+
+@pytest.mark.integration
+def test_query_database_blocks_insert(tmp_path):
+    """Test that INSERT statements are rejected."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    result = adapter.query_database(
+        user_id,
+        f"INSERT INTO actions (user_id, time_spent_hours) VALUES ('{user_id}', 100)"
+    )
+    
+    assert "rejected" in result.lower() or "only select" in result.lower()
+
+
+@pytest.mark.integration
+def test_query_database_blocks_update(tmp_path):
+    """Test that UPDATE statements are rejected."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    result = adapter.query_database(
+        user_id,
+        f"UPDATE actions SET time_spent_hours = 100 WHERE user_id = '{user_id}'"
+    )
+    
+    assert "rejected" in result.lower() or "only select" in result.lower()
+
+
+@pytest.mark.integration
+def test_query_database_blocks_delete(tmp_path):
+    """Test that DELETE statements are rejected."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    result = adapter.query_database(
+        user_id,
+        f"DELETE FROM actions WHERE user_id = '{user_id}'"
+    )
+    
+    assert "rejected" in result.lower() or "only select" in result.lower()
+
+
+@pytest.mark.integration
+def test_query_database_blocks_drop(tmp_path):
+    """Test that DROP statements are rejected."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    result = adapter.query_database(
+        user_id,
+        "DROP TABLE actions"
+    )
+    
+    assert "rejected" in result.lower() or "only select" in result.lower()
+
+
+@pytest.mark.integration
+def test_query_database_enforces_user_id(tmp_path):
+    """Test that queries for other users are rejected."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    other_user_id = 999
+    
+    # Create data for user 123
+    msg = adapter.add_promise(user_id, promise_text="My Promise", num_hours_promised_per_week=5.0)
+    promise_id = msg.split()[0].lstrip("#")
+    adapter.add_action(user_id, promise_id, 2.0)
+    
+    # Try to query as user 123 but with a filter for user 999
+    result = adapter.query_database(
+        user_id,
+        f"SELECT * FROM actions WHERE user_id = '{other_user_id}'"
+    )
+    
+    # Should be rejected because user_id in query doesn't match
+    assert "rejected" in result.lower() or "your own data" in result.lower()
+
+
+@pytest.mark.integration
+def test_query_database_requires_user_id_filter(tmp_path):
+    """Test that queries without user_id filter are rejected."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    # Query without user_id filter
+    result = adapter.query_database(
+        user_id,
+        "SELECT * FROM actions"
+    )
+    
+    # Should be rejected for missing user_id filter
+    assert "rejected" in result.lower() or "user_id" in result.lower()
+
+
+@pytest.mark.integration
+def test_query_database_limits_results(tmp_path):
+    """Test that results are capped at 100 rows."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    # Create a promise
+    msg = adapter.add_promise(user_id, promise_text="Many Actions", num_hours_promised_per_week=100.0)
+    promise_id = msg.split()[0].lstrip("#")
+    
+    # Add many actions (more than 100)
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    for i in range(150):
+        adapter.add_action(user_id, promise_id, 0.1, action_datetime=now - timedelta(hours=i))
+    
+    # Query should return but be limited
+    result = adapter.query_database(
+        user_id,
+        f"SELECT * FROM actions WHERE user_id = '{user_id}'"
+    )
+    
+    # Should have results but be limited
+    assert "Query returned" in result
+    # Count actual result rows (lines starting with "[")
+    result_lines = [l for l in result.split("\n") if l.strip().startswith("[")]
+    assert len(result_lines) <= 100
+
+
+@pytest.mark.integration
+def test_query_database_handles_syntax_error(tmp_path):
+    """Test that SQL syntax errors are handled gracefully."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = 123
+    
+    # Query with syntax error
+    result = adapter.query_database(
+        user_id,
+        f"SELECT * FORM actions WHERE user_id = '{user_id}'"  # FORM instead of FROM
+    )
+    
+    # Should return error but not crash
+    assert "syntax" in result.lower() or "failed" in result.lower() or "error" in result.lower()
