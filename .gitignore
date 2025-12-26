@@ -8,6 +8,7 @@ env.*
 !webapp_frontend/tsconfig.json
 !webapp_frontend/tsconfig.node.json
 *.txt
+*.jar
 !requirements.txt
 *.log
 *.pyc

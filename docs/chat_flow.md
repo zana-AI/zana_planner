@@ -2,6 +2,22 @@
 
 This document contains UML sequence diagrams showing the system hooks, inputs, and user flows when chatting with the bot.
 
+## System Overview
+
+![System Overview](diagrams/svg/system_overview.svg)
+
+This high-level diagram shows the overall system architecture:
+- **External Inputs**: User interactions via Telegram API
+- **Bot System**: Core components handling messages, LLM processing, and business logic
+- **External Services**: LLM providers, translation, voice, and image services
+- **Data Layer**: Repositories for persistent storage
+
+Key flows:
+- **Input**: User messages → Telegram → Bot → Handlers
+- **Processing**: Handlers → LLM → Agent Graph → Tools → Services → Repositories
+- **Translation**: LLM responses → Translator → External API → Localized output
+- **Output**: Processed responses → Bot → Telegram → User
+
 ## Main Text Message Flow
 
 ![Text Message Flow](diagrams/svg/text_message_flow.svg)
