@@ -259,12 +259,65 @@ def create_plan_execute_graph(
                 }
         return None
 
+    # Args that can be inferred or have smart defaults (don't ask user for these)
+    INFERABLE_ARGS = {
+        "time_spent": 1.0,  # Default to 1 hour when user says "worked on X"
+    }
+    
+    # Args that can be resolved via search (prepend a search step instead of asking)
+    SEARCHABLE_ARGS = {"promise_id"}
+    
+    def _can_infer_missing_args(tool_name: str, missing: List[str], tool_args: dict) -> tuple[bool, dict]:
+        """
+        Check if missing args can be inferred via defaults or search.
+        Returns (can_infer, updated_args_or_prepend_steps).
+        """
+        updated_args = dict(tool_args)
+        still_missing = []
+        
+        for arg in missing:
+            if arg in INFERABLE_ARGS:
+                # Apply default value
+                updated_args[arg] = INFERABLE_ARGS[arg]
+            elif arg in SEARCHABLE_ARGS:
+                # This needs a search step prepended - handled separately
+                still_missing.append(arg)
+            else:
+                still_missing.append(arg)
+        
+        return (len(still_missing) == 0, updated_args, still_missing)
+    
+    def _create_search_step_for_promise(tool_args: dict) -> Optional[dict]:
+        """
+        If promise_id is marked as FROM_SEARCH or missing, try to create a search step
+        based on any query hints in the args.
+        """
+        # Check if there's a query hint embedded (planner might put "FROM_SEARCH" as placeholder)
+        promise_id = tool_args.get("promise_id", "")
+        if promise_id and promise_id != "FROM_SEARCH" and not str(promise_id).startswith("FROM"):
+            return None  # Already has a real promise_id
+        
+        # Look for any text hint that could be used as search query
+        # The planner might include a "query" or similar hint
+        query = tool_args.get("_search_query") or tool_args.get("query")
+        if not query:
+            return None
+        
+        return {
+            "kind": "tool",
+            "purpose": f"Find promise matching '{query}'",
+            "tool_name": "search_promises",
+            "tool_args": {"query": query},
+        }
+
     def _validate_and_repair_plan_steps(plan_steps: List[dict]) -> tuple[List[dict], Dict[int, dict]]:
         """
         Validate planner-provided steps and repair common issues:
-        - Unknown tool -> ask_user
-        - Missing required args -> ask_user + record pending metadata
+        - Unknown tool -> ask_user (only as last resort)
+        - Missing required args -> try to infer/default first, then ask_user
         - Mutation tool -> auto-add verify-by-reading step (best-effort)
+        
+        Philosophy: Prefer action over asking. Use smart defaults when possible.
         """
         pending_meta_by_idx: Dict[int, dict] = {}
         repaired: List[dict] = []
@@ -287,7 +340,7 @@ def create_plan_execute_graph(
                         {
                             "kind": "ask_user",
                             "purpose": "Clarify the requested action (unknown tool).",
-                            "question": "I’m not sure which action you want me to take. Can you rephrase what you want to do?",
+                            "question": "I'm not sure which action you want me to take. Can you rephrase what you want to do?",
                         }
                     )
                     continue
@@ -296,30 +349,77 @@ def create_plan_execute_graph(
                 missing = [
                     a
                     for a in required_args
-                    if a not in tool_args or tool_args.get(a) in (None, "", [])
+                    if a not in tool_args or tool_args.get(a) in (None, "", [], "FROM_SEARCH")
                 ]
+                
                 if missing:
+                    # Try to infer missing args using defaults
+                    can_infer, updated_args, still_missing = _can_infer_missing_args(
+                        tool_name, missing, tool_args
+                    )
+                    
+                    if can_infer:
+                        # All missing args were inferred - update step and continue
+                        step["tool_args"] = updated_args
+                        repaired.append(step)
+                        
+                        # Auto verify-by-reading after mutations
+                        if tool_name.startswith(MUTATION_PREFIXES):
+                            verify = _verification_step_for(tool_name, updated_args)
+                            if verify:
+                                repaired.append(verify)
+                        continue
+                    
+                    # Check if the only missing arg is promise_id and can be searched
+                    if still_missing == ["promise_id"] and "search_promises" in tool_by_name:
+                        # Check if there's context that suggests what to search for
+                        search_step = _create_search_step_for_promise(tool_args)
+                        if search_step:
+                            # Prepend search step - the executor will handle chaining
+                            repaired.append(search_step)
+                            # Update the tool step with inferred args and keep it
+                            step["tool_args"] = updated_args
+                            step["tool_args"]["promise_id"] = "FROM_SEARCH"  # Placeholder
+                            repaired.append(step)
+                            continue
+                    
+                    # Still have unresolvable missing args - must ask user
+                    # But be more helpful in the question
                     pending_meta_by_idx[i] = {
                         "reason": "missing_required_args",
                         "tool_name": tool_name,
-                        "missing_fields": missing,
-                        "partial_args": tool_args,
+                        "missing_fields": still_missing,
+                        "partial_args": updated_args,
                     }
-                    fields = ", ".join(missing)
+                    
+                    # Create a friendlier question
+                    if still_missing == ["promise_id"]:
+                        question = (
+                            "Which promise/goal should I use for this? "
+                            "You can say the name (like 'sport' or 'reading') or the ID (like 'P01')."
+                        )
+                    elif still_missing == ["time_spent"]:
+                        question = "How much time did you spend? (e.g., '2 hours' or '30 minutes')"
+                    elif "promise_id" in still_missing and "time_spent" in still_missing:
+                        question = (
+                            "I need a bit more info:\n"
+                            "• Which promise/goal? (name or ID like 'P01')\n"
+                            "• How much time did you spend?"
+                        )
+                    else:
+                        fields = ", ".join(still_missing)
+                        question = f"I need: {fields}. Can you provide these?"
+                    
                     repaired.append(
                         {
                             "kind": "ask_user",
-                            "purpose": f"Collect required fields for {tool_name}.",
-                            "question": (
-                                f"To do that, I need: {fields}.\n"
-                                f"Please reply with values for: {fields}.\n"
-                                "Tip: you can send `field: value` on each line."
-                            ),
+                            "purpose": f"Get missing info for {tool_name}.",
+                            "question": question,
                         }
                     )
                     continue
 
-                # Keep tool step
+                # Keep tool step (all args present)
                 repaired.append(step)
 
                 # Auto verify-by-reading after mutations (best-effort, capped later)
@@ -347,7 +447,7 @@ def create_plan_execute_graph(
                     {
                         "kind": "respond",
                         "purpose": "Respond to the user after completing tool steps.",
-                        "response_hint": "Summarize results briefly and include next recommended action if applicable.",
+                        "response_hint": "Summarize results briefly and encouragingly. Use emojis for status (✅ done, 🔥 streak).",
                     }
                 )
 
@@ -470,15 +570,27 @@ def create_plan_execute_graph(
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
                 hint = (
-                    "A tool call failed. Respond with a user-safe, action-oriented message using this format:\n"
+                    "A tool call failed. Respond with a user-safe, action-oriented message:\n"
                     "1) What I tried (one short sentence)\n"
-                    "2) What failed (no internal stack traces)\n"
+                    "2) What failed (plain language; no internal traces)\n"
                     "3) Next step (one concrete action): ask for missing info, suggest retry, or provide an alternative\n"
-                    "If retryable is true, suggest the user try again or re-run the same request.\n"
+                    "If retryable is true, suggest the user try again.\n"
+                    "Keep it friendly and helpful - don't make the user feel bad about the error."
                 )
                 result = responder_model.invoke(state["messages"] + [SystemMessage(content=hint)])
             else:
-                result = responder_model.invoke(state["messages"])
+                # Default responder hint for good UX
+                default_hint = (
+                    "RESPONSE GUIDELINES:\n"
+                    "- Be friendly, encouraging, and concise (2-4 sentences max)\n"
+                    "- Summarize what was done using natural language\n"
+                    "- Use emojis sparingly: ✅ for success, 🔥 for streaks, 📊 for reports\n"
+                    "- If showing progress, highlight achievements and encourage continued effort\n"
+                    "- End with a subtle prompt for next action if relevant (e.g., 'Keep up the great work!')\n"
+                    "- Format lists with bullet points (•) for readability\n"
+                    "- Do NOT include raw tool outputs or JSON - summarize in human terms"
+                )
+                result = responder_model.invoke(state["messages"] + [SystemMessage(content=default_hint)])
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -510,21 +622,36 @@ def create_plan_execute_graph(
 
         if step.kind == "respond":
             # Add a lightweight instruction message (no tools).
-            hint = step.response_hint or "Respond to the user based on tool results above. Do not call tools."
+            base_hint = step.response_hint or "Respond to the user based on tool results above."
+            
+            # Build comprehensive response guidelines
+            ux_guidelines = (
+                "\n\nRESPONSE STYLE:\n"
+                "- Be friendly and encouraging (you're Zana, a helpful assistant)\n"
+                "- Keep it concise: 2-4 sentences for simple actions, up to 6 for reports\n"
+                "- Use natural language, not technical jargon\n"
+                "- Emojis: ✅ success, 🔥 streaks, 📊 reports, 💪 encouragement (use sparingly)\n"
+                "- Format lists with bullet points (•) for readability\n"
+                "- Highlight achievements and progress positively\n"
+                "- Do NOT output raw JSON or tool responses - summarize them\n"
+                "- Do NOT call any tools in your response"
+            )
+            
+            hint = base_hint + ux_guidelines
+            
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
                 err_type = tool_err.get("error_type", "unknown")
                 retryable = bool(tool_err.get("retryable"))
                 failure_hint = (
-                    "A tool call failed. Use this response format:\n"
-                    "1) What I tried (one short sentence)\n"
-                    "2) What failed (plain language; do NOT include internal traces)\n"
-                    "3) Next step (one concrete action)\n"
+                    "\n\nNOTE: A tool call failed. Handle gracefully:\n"
+                    "1) Briefly explain what you tried\n"
+                    "2) What went wrong (no technical details)\n"
+                    "3) Suggest a next step\n"
                     f"Context: error_type={err_type}, retryable={retryable}.\n"
-                    "If retryable is true: suggest trying again.\n"
-                    "If retryable is false: ask the user for the missing/needed info or propose a safe alternative.\n"
+                    "Be reassuring - errors happen!"
                 )
-                hint = f"{hint}\n\n{failure_hint}"
+                hint = hint + failure_hint
             result = responder_model.invoke(state["messages"] + [SystemMessage(content=hint)])
             return {
                 **state,

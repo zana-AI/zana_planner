@@ -52,6 +52,8 @@ class PlannerAPIAdapter:
                    promise_radius: Optional[int] = 0):
         """Add a new promise."""
         try:
+            if user_id is None:
+                raise ValueError("user_id is required and cannot be None")
             if not promise_text or not isinstance(promise_text, str):
                 raise ValueError("Promise text must be a non-empty string")
             if not isinstance(num_hours_promised_per_week, (int, float)) or num_hours_promised_per_week <= 0:

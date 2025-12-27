@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
@@ -18,6 +19,16 @@ from llms.planning_schema import Plan
 from llms.tool_wrappers import _current_user_id, _sanitize_user_id, _wrap_tool
 from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
+
+# LangSmith tracing support
+try:
+    from langsmith import traceable
+    from langchain_core.tracers.context import tracing_v2_enabled
+    LANGSMITH_AVAILABLE = True
+except ImportError:
+    LANGSMITH_AVAILABLE = False
+    traceable = lambda **kwargs: lambda f: f  # no-op decorator
+    tracing_v2_enabled = nullcontext
 
 logger = get_logger(__name__)
 _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lower() == "staging"
@@ -89,6 +100,11 @@ class LLMHandler:
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
             )
+            
+            # Store LangSmith config for tracing
+            self._langsmith_enabled = cfg.get("LANGSMITH_ENABLED", False)
+            self._langsmith_project = cfg.get("LANGSMITH_PROJECT")
+            
             logger.info(
                 {
                     "event": "llm_handler_init",
@@ -96,6 +112,8 @@ class LLMHandler:
                     "adapter_root": adapter_root,
                     "max_iterations": self.max_iterations,
                     "debug": _DEBUG_ENABLED,
+                    "langsmith_enabled": self._langsmith_enabled,
+                    "langsmith_project": self._langsmith_project,
                 }
             )
         except Exception as e:
@@ -117,39 +135,83 @@ class LLMHandler:
         tools_overview = "\n".join(tool_lines)
 
         self.system_message_main_base = (
-            "You are an assistant for a task management bot. "
-            "Use the provided tools to inspect, add, or update promises and actions. "
-            "If the user is only chatting, respond briefly and do not call tools (use no_op). "
-            "Keep responses concise and actionable."
+            "You are Zana, a friendly and proactive task management assistant. "
+            "Help users track their promises (goals) and log time spent on them. "
+            "Be encouraging, concise, and action-oriented. "
+            "When users mention activities, assume they want to log time unless they clearly ask something else. "
+            "Use emojis sparingly (✅ for success, 🔥 for streaks, 📊 for reports). "
+            "If the user is just chatting, respond warmly without using tools."
         )
 
         self.system_message_api = SystemMessage(
             content=(
-                "Available planner tools (call only when relevant):\n"
-                f"{tools_overview}\n"
-                "Use the exact argument names shown in the tool signatures above.\n"
-                "If required arguments are missing, ask for them briefly before calling tools."
+                "AVAILABLE TOOLS (use only when needed):\n"
+                f"{tools_overview}\n\n"
+                "TOOL USAGE GUIDELINES:\n"
+                "- Use exact argument names from signatures above.\n"
+                "- When promise_id is unknown but user mentions a topic, use search_promises first.\n"
+                "- Default time_spent to 1.0 hour if user says 'worked on X' without specifying duration.\n"
+                "- Prefer action over asking: make reasonable assumptions from context."
             )
         )
 
         # Planner prompt: must output a structured plan JSON (no chain-of-thought).
         self.system_message_planner_prompt = (
             "You are the PLANNER for a task management assistant.\n"
-            "Your job: produce a short, high-level plan (NOT chain-of-thought) that the executor can follow.\n"
-            "Rules:\n"
+            "Your job: produce a short, high-level plan (NOT chain-of-thought) that the executor can follow.\n\n"
+            
+            "CORE PRINCIPLES:\n"
+            "1. BE PROACTIVE: Make reasonable assumptions rather than asking. Users prefer action over questions.\n"
+            "2. INFER CONTEXT: Use search_promises to find promise IDs when the user mentions a topic by name.\n"
+            "3. USE DEFAULTS: When time_spent is not specified, default to 1.0 hour.\n"
+            "4. RESOLVE AMBIGUITY: If a promise name is mentioned (e.g., 'sport', 'reading'), search for it first.\n\n"
+            
+            "RULES:\n"
             "- Output ONLY valid JSON.\n"
-            "- Do NOT call tools.\n"
-            "- Do NOT include any hidden reasoning; keep 'purpose' short and user-safe.\n"
-            "- Prefer planning tool steps over asking the user when data can be obtained from tools.\n"
-            "- Never ask the user for things that are tool-accessible (e.g., timezone/language/settings, promises list, counts).\n"
-            "- Ask the user ONLY when the request is blocked by missing required tool arguments that cannot be inferred safely.\n"
-            "- If you must ask, ask ONCE and request ALL missing fields in a single question.\n"
-            "- Keep the plan short (usually 1-4 steps; never more than 6).\n"
-            "- For questions like 'my preferred language', plan to call get_setting(setting_key='language').\n"
-            "- For questions like 'how many actions today', plan to call count_actions_today().\n"
-            "- After any mutation tool call (create/add/update/delete/log), plan a follow-up read/list tool call to verify results, then respond.\n"
-            "- If the request can be answered without tools, set final_response_if_no_tools.\n\n"
-            "JSON schema (informal):\n"
+            "- Do NOT call tools directly; just plan which tools to call.\n"
+            "- Keep 'purpose' short and user-safe (no internal reasoning).\n"
+            "- Prefer tool steps over asking the user when data can be obtained from tools.\n"
+            "- Never ask for things that are tool-accessible (timezone, language, settings, promise lists).\n"
+            "- Ask the user ONLY when truly blocked (e.g., completely ambiguous request with no context).\n"
+            "- If you must ask, ask ONCE and request ALL missing fields together.\n"
+            "- Keep plans short (1-4 steps; never more than 6).\n"
+            "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n"
+            "- For casual chat, set final_response_if_no_tools and return empty steps.\n\n"
+            
+            "SMART DEFAULTS & INFERENCE:\n"
+            "- 'log time on X' / 'worked on X' without duration → time_spent=1.0\n"
+            "- 'log 2 hours on sport' → search_promises('sport'), then add_action with found ID\n"
+            "- 'delete my reading promise' → search_promises('reading'), then delete with found ID\n"
+            "- 'how am I doing?' → get_weekly_report()\n"
+            "- 'my promises' / 'show tasks' → get_promises()\n\n"
+            
+            "EXAMPLES:\n\n"
+            
+            "User: 'I just did 2 hours of sport'\n"
+            "Plan: {\"steps\": [\n"
+            "  {\"kind\": \"tool\", \"purpose\": \"Find sport promise\", \"tool_name\": \"search_promises\", \"tool_args\": {\"query\": \"sport\"}},\n"
+            "  {\"kind\": \"tool\", \"purpose\": \"Log the time\", \"tool_name\": \"add_action\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\", \"time_spent\": 2.0}},\n"
+            "  {\"kind\": \"tool\", \"purpose\": \"Verify action\", \"tool_name\": \"get_last_action_on_promise\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\"}},\n"
+            "  {\"kind\": \"respond\", \"purpose\": \"Confirm to user\", \"response_hint\": \"Confirm time logged, show streak if relevant\"}\n"
+            "]}\n\n"
+            
+            "User: 'worked on reading'\n"
+            "Plan: {\"steps\": [\n"
+            "  {\"kind\": \"tool\", \"purpose\": \"Find reading promise\", \"tool_name\": \"search_promises\", \"tool_args\": {\"query\": \"reading\"}},\n"
+            "  {\"kind\": \"tool\", \"purpose\": \"Log 1 hour (default)\", \"tool_name\": \"add_action\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\", \"time_spent\": 1.0}},\n"
+            "  {\"kind\": \"respond\", \"purpose\": \"Confirm\", \"response_hint\": \"Confirm 1 hour logged\"}\n"
+            "]}\n\n"
+            
+            "User: 'how is my progress?'\n"
+            "Plan: {\"steps\": [\n"
+            "  {\"kind\": \"tool\", \"purpose\": \"Get weekly summary\", \"tool_name\": \"get_weekly_report\", \"tool_args\": {}},\n"
+            "  {\"kind\": \"respond\", \"purpose\": \"Present progress\", \"response_hint\": \"Summarize progress encouragingly\"}\n"
+            "]}\n\n"
+            
+            "User: 'hi there!'\n"
+            "Plan: {\"steps\": [], \"final_response_if_no_tools\": \"Hello! How can I help you with your tasks today?\"}\n\n"
+            
+            "JSON SCHEMA:\n"
             "{\n"
             '  "steps": [\n'
             "    {\n"
@@ -253,7 +315,21 @@ class LLMHandler:
             }
             token = _current_user_id.set(safe_user_id)
             try:
-                result_state = self.agent_app.invoke(state)
+                # Wrap with LangSmith tracing if enabled
+                if self._langsmith_enabled and LANGSMITH_AVAILABLE:
+                    with tracing_v2_enabled(
+                        project_name=self._langsmith_project,
+                        tags=[f"user:{safe_user_id}", f"lang:{user_language or 'en'}"],
+                        metadata={
+                            "user_id": safe_user_id,
+                            "user_language": user_language or "en",
+                            "message_preview": user_message[:100],
+                            "history_turns": len(prior_history),
+                        },
+                    ):
+                        result_state = self.agent_app.invoke(state)
+                else:
+                    result_state = self.agent_app.invoke(state)
             finally:
                 _current_user_id.reset(token)
             final_messages = result_state.get("messages", messages)

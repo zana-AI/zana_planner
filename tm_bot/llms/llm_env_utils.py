@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 def load_llm_env():
     """
     Loads environment variables from .env and prepares credentials for Vertex AI.
-    Returns a dict with project, location, and model.
+    Also configures LangSmith tracing if LANGCHAIN_API_KEY is present.
+    Returns a dict with project, location, model, and LangSmith settings.
     """
     load_dotenv()  # ensure .env is loaded
 
@@ -35,9 +36,22 @@ def load_llm_env():
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
     # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"E:\workspace\ZanaAI\zana_planner\demo_features\vertex-access.json"
 
+    # Configure LangSmith tracing if API key is present
+    langsmith_api_key = os.getenv("LANGCHAIN_API_KEY", "")
+    langsmith_project = os.getenv("LANGCHAIN_PROJECT", "zana-planner")
+    langsmith_enabled = False
+    
+    if langsmith_api_key:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_PROJECT"] = langsmith_project
+        os.environ["LANGCHAIN_API_KEY"] = langsmith_api_key
+        langsmith_enabled = True
+
     return {
         "GCP_PROJECT_ID": project_id,
         "GCP_LOCATION": location,
         "GCP_GEMINI_MODEL": model_name,
-        "OPENAI_API_KEY": openai_key
+        "OPENAI_API_KEY": openai_key,
+        "LANGSMITH_ENABLED": langsmith_enabled,
+        "LANGSMITH_PROJECT": langsmith_project if langsmith_enabled else None,
     }
