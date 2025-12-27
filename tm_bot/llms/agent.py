@@ -62,7 +62,15 @@ def _run_tool_calls(messages: List[BaseMessage], tools_by_name: Dict[str, object
             else:
                 result = tool(**args)  # type: ignore
 
-            content = json.dumps(result) if isinstance(result, (dict, list)) else ("" if result is None else str(result))
+            if result is None:
+                content = "{}"
+            elif isinstance(result, (dict, list)):
+                content = json.dumps(result)
+            else:
+                content = str(result)
+            # Ensure content is never empty
+            if not content or (isinstance(content, str) and not content.strip()):
+                content = "{}"
             out.append(ToolMessage(content=content, tool_call_id=call_id))
         except Exception as e:
             payload = {"error": str(e), "error_type": "unknown", "retryable": False}
@@ -86,6 +94,42 @@ def _emit(
         except Exception:
             # Progress is best-effort; never break the agent loop.
             pass
+
+
+def _ensure_messages_have_content(messages: List[BaseMessage]) -> List[BaseMessage]:
+    """
+    Ensure all messages have non-empty content to prevent Gemini API errors.
+    
+    Gemini API requires each message to have at least one "parts" field (non-empty content).
+    This function ensures SystemMessage and AIMessage have at least minimal content.
+    
+    Args:
+        messages: List of messages to validate
+        
+    Returns:
+        List of messages with guaranteed non-empty content for SystemMessage and AIMessage
+    """
+    validated = []
+    for msg in messages:
+        content = getattr(msg, "content", None)
+        # Check if content is empty or None (only for SystemMessage and AIMessage)
+        if isinstance(msg, (SystemMessage, AIMessage)) and (not content or (isinstance(content, str) and not content.strip())):
+            # For SystemMessage, provide a minimal placeholder
+            if isinstance(msg, SystemMessage):
+                validated.append(SystemMessage(content=" "))
+            # For AIMessage, ensure content exists
+            elif isinstance(msg, AIMessage):
+                # If it has tool_calls, ensure minimal content
+                tool_calls = getattr(msg, "tool_calls", None)
+                if tool_calls:
+                    validated.append(AIMessage(content="(calling tool)", tool_calls=tool_calls))
+                else:
+                    # Empty AIMessage without tool_calls - provide minimal content
+                    validated.append(AIMessage(content=" "))
+        else:
+            # Keep message as-is (HumanMessage, ToolMessage, etc. should already have content)
+            validated.append(msg)
+    return validated
 
 
 def create_agent_graph(
@@ -113,7 +157,8 @@ def create_agent_graph(
     graph = StateGraph(AgentState)
 
     def call_agent(state: AgentState) -> AgentState:
-        result = model_with_tools.invoke(state["messages"])
+        validated_messages = _ensure_messages_have_content(state["messages"])
+        result = model_with_tools.invoke(validated_messages)
         new_iteration = state["iteration"] + 1
         _emit(
             progress_getter,
@@ -500,8 +545,9 @@ def create_plan_execute_graph(
     def planner(state: AgentState) -> AgentState:
         messages = list(state.get("messages") or [])
         messages = [SystemMessage(content=planner_prompt)] + messages
+        validated_messages = _ensure_messages_have_content(messages)
 
-        result = planner_model.invoke(messages)
+        result = planner_model.invoke(validated_messages)
         content = getattr(result, "content", "") or ""
 
         plan: Optional[Plan] = None
@@ -577,7 +623,8 @@ def create_plan_execute_graph(
                     "If retryable is true, suggest the user try again.\n"
                     "Keep it friendly and helpful - don't make the user feel bad about the error."
                 )
-                result = responder_model.invoke(state["messages"] + [SystemMessage(content=hint)])
+                messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
+                result = responder_model.invoke(messages_to_send)
             else:
                 # Default responder hint for good UX
                 default_hint = (
@@ -590,7 +637,8 @@ def create_plan_execute_graph(
                     "- Format lists with bullet points (•) for readability\n"
                     "- Do NOT include raw tool outputs or JSON - summarize in human terms"
                 )
-                result = responder_model.invoke(state["messages"] + [SystemMessage(content=default_hint)])
+                messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=default_hint)])
+                result = responder_model.invoke(messages_to_send)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -602,7 +650,8 @@ def create_plan_execute_graph(
 
         if new_iteration > max_iterations:
             # hard stop: respond with best effort
-            result = responder_model.invoke(state["messages"])
+            validated_messages = _ensure_messages_have_content(state["messages"])
+            result = responder_model.invoke(validated_messages)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -652,7 +701,8 @@ def create_plan_execute_graph(
                     "Be reassuring - errors happen!"
                 )
                 hint = hint + failure_hint
-            result = responder_model.invoke(state["messages"] + [SystemMessage(content=hint)])
+            messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
+            result = responder_model.invoke(messages_to_send)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -753,7 +803,15 @@ def create_plan_execute_graph(
                         }
                         result_messages = [ToolMessage(content=json.dumps(err_payload), tool_call_id=tool_call_id)]
                     else:
-                        content = json.dumps(result) if isinstance(result, (dict, list)) else ("" if result is None else str(result))
+                        if result is None:
+                            content = "{}"
+                        elif isinstance(result, (dict, list)):
+                            content = json.dumps(result)
+                        else:
+                            content = str(result)
+                        # Ensure content is never empty
+                        if not content or (isinstance(content, str) and not content.strip()):
+                            content = "{}"
                         result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
                 else:
                     err_payload = {
@@ -764,7 +822,15 @@ def create_plan_execute_graph(
                     }
                     result_messages = [ToolMessage(content=json.dumps(err_payload), tool_call_id=tool_call_id)]
             else:
-                content = json.dumps(result) if isinstance(result, (dict, list)) else ("" if result is None else str(result))
+                if result is None:
+                    content = "{}"
+                elif isinstance(result, (dict, list)):
+                    content = json.dumps(result)
+                else:
+                    content = str(result)
+                # Ensure content is never empty
+                if not content or (isinstance(content, str) and not content.strip()):
+                    content = "{}"
                 result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
 
             _emit(
