@@ -397,6 +397,7 @@ class LLMHandler:
                 "error": "llm_error",
                 "function_call": "handle_error",
                 "response_to_user": _LLM_USER_FACING_ERROR,
+                "executed_by_agent": True,  # Prevent legacy path from re-executing
             }
         finally:
             # Reset per-call progress callback
