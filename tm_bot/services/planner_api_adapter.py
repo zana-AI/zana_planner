@@ -792,6 +792,22 @@ class PlannerAPIAdapter:
         
         safe_user_id = str(user_id).strip()
         
+        # Auto-inject user_id for common placeholder patterns (safe: uses authenticated user_id)
+        original_query = sql_query
+        placeholder_patterns = [
+            (r"'\{user_id\}'", f"'{safe_user_id}'"),         # '{user_id}'
+            (r'"\{user_id\}"', f"'{safe_user_id}'"),         # "{user_id}"
+            (r"\{user_id\}", f"'{safe_user_id}'"),           # {user_id} unquoted
+        ]
+        for pattern, replacement in placeholder_patterns:
+            sql_query = re.sub(pattern, replacement, sql_query, flags=re.IGNORECASE)
+        
+        if sql_query != original_query:
+            logger.info(
+                f"[query_database] Auto-injected user_id={safe_user_id}. "
+                f"Original: {original_query[:150]}..."
+            )
+        
         # Validate the query
         is_valid, sanitized_query, error_msg = self._validate_sql_query(sql_query, safe_user_id)
         if not is_valid:
@@ -819,8 +835,10 @@ class PlannerAPIAdapter:
                     found_id = match.group(1)
                     if found_id != safe_user_id:
                         logger.warning(
-                            f"SQL query attempted to access different user! "
-                            f"Current user: {safe_user_id}, Query user: {found_id}"
+                            f"[query_database] SECURITY: Query user_id mismatch! "
+                            f"Authenticated user: {safe_user_id}, Query attempted for: {found_id}. "
+                            f"Original query: {original_query[:200]}. "
+                            f"After auto-inject: {sanitized_query[:200]}"
                         )
                         return "Query rejected: You can only query your own data."
         
