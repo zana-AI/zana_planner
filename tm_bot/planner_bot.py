@@ -37,7 +37,7 @@ class PlannerTelegramBot:
     def __init__(self, token: str, root_dir: str):
         # Initialize core components
         request = HTTPXRequest(connect_timeout=10, read_timeout=20)
-        self.application = Application.builder().token(token).build()
+        self.application = Application.builder().token(token).request(request).build()
         self.llm_handler = LLMHandler()
         self.plan_keeper = PlannerAPIAdapter(root_dir)
         self.root_dir = root_dir

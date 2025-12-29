@@ -3,6 +3,7 @@ Message handlers for the Telegram bot.
 Handles all command and text message processing.
 """
 
+import asyncio
 import os
 import html
 import json
@@ -418,8 +419,27 @@ class MessageHandlers:
                 await update.effective_message.reply_text(error_msg)
                 return
             
+            # Create progress callback to show plan to user
+            plan_message_sent = False
+            
+            def progress_callback(event: str, payload: dict):
+                nonlocal plan_message_sent
+                if event == "plan" and not plan_message_sent:
+                    steps = payload.get("steps", [])
+                    plan_msg = self._format_plan_for_user(steps)
+                    if plan_msg:
+                        plan_message_sent = True
+                        # Schedule async send via asyncio
+                        asyncio.create_task(
+                            update.effective_message.reply_text(plan_msg, parse_mode='Markdown')
+                        )
+            
             # Process transcribed text as a regular message
-            llm_response = self.llm_handler.get_response_api(user_input, str(user_id), user_language=user_lang_code)
+            llm_response = self.llm_handler.get_response_api(
+                user_input, str(user_id), 
+                user_language=user_lang_code,
+                progress_callback=progress_callback
+            )
             
             # Check for errors
             if "error" in llm_response:
@@ -522,6 +542,30 @@ class MessageHandlers:
         except Exception:
             # Fallback: no parse mode
             await message.reply_text(safe_text)
+
+    @staticmethod
+    def _format_plan_for_user(plan_steps: list) -> str:
+        """
+        Format plan steps into a user-friendly message.
+        
+        Only shows plans with 2+ tool steps to avoid clutter for simple operations.
+        Returns None if plan should not be shown.
+        """
+        if not plan_steps:
+            return None
+        
+        # Filter to only tool steps (skip internal respond/ask_user)
+        tool_steps = [s for s in plan_steps if s.get("kind") == "tool"]
+        
+        if len(tool_steps) < 2:
+            return None  # Don't show for single-step plans
+        
+        lines = ["🔄 *Working on it...*\n"]
+        for i, step in enumerate(tool_steps, 1):
+            purpose = step.get("purpose", "Processing...")
+            lines.append(f"{i}. {purpose}")
+        
+        return "\n".join(lines)
 
     def _parse_slot_fill_values(
         self,
@@ -653,7 +697,27 @@ class MessageHandlers:
                 
                 # Process through LLM
                 user_lang_code = user_lang.value if user_lang else "en"
-                llm_response = self.llm_handler.get_response_api(user_message, str(user_id), user_language=user_lang_code)
+                
+                # Create progress callback to show plan to user
+                plan_message_sent = False
+                
+                def progress_callback(event: str, payload: dict):
+                    nonlocal plan_message_sent
+                    if event == "plan" and not plan_message_sent:
+                        steps = payload.get("steps", [])
+                        plan_msg = self._format_plan_for_user(steps)
+                        if plan_msg:
+                            plan_message_sent = True
+                            # Schedule async send via asyncio
+                            asyncio.create_task(
+                                msg.reply_text(plan_msg, parse_mode='Markdown')
+                            )
+                
+                llm_response = self.llm_handler.get_response_api(
+                    user_message, str(user_id), 
+                    user_language=user_lang_code,
+                    progress_callback=progress_callback
+                )
                 
                 # Check for errors
                 if "error" in llm_response:
@@ -783,8 +847,26 @@ class MessageHandlers:
                     f"Clarifications provided:\n{fields_block}\n"
                 ).strip()
                 user_lang_code = user_lang.value if user_lang else "en"
+                
+                # Create progress callback to show plan to user
+                plan_message_sent = False
+                
+                def progress_callback(event: str, payload: dict):
+                    nonlocal plan_message_sent
+                    if event == "plan" and not plan_message_sent:
+                        steps = payload.get("steps", [])
+                        plan_msg = self._format_plan_for_user(steps)
+                        if plan_msg:
+                            plan_message_sent = True
+                            # Schedule async send via asyncio
+                            asyncio.create_task(
+                                update.message.reply_text(plan_msg, parse_mode='Markdown')
+                            )
+                
                 llm_response = self.llm_handler.get_response_api(
-                    augmented_message, user_id, user_language=user_lang_code
+                    augmented_message, user_id, 
+                    user_language=user_lang_code,
+                    progress_callback=progress_callback
                 )
 
                 # Handle errors in LLM response
@@ -824,7 +906,27 @@ class MessageHandlers:
             
             # Get user language code for LLM
             user_lang_code = user_lang.value if user_lang else "en"
-            llm_response = self.llm_handler.get_response_api(user_message, user_id, user_language=user_lang_code)
+            
+            # Create progress callback to show plan to user
+            plan_message_sent = False
+            
+            def progress_callback(event: str, payload: dict):
+                nonlocal plan_message_sent
+                if event == "plan" and not plan_message_sent:
+                    steps = payload.get("steps", [])
+                    plan_msg = self._format_plan_for_user(steps)
+                    if plan_msg:
+                        plan_message_sent = True
+                        # Schedule async send via asyncio
+                        asyncio.create_task(
+                            update.message.reply_text(plan_msg, parse_mode='Markdown')
+                        )
+            
+            llm_response = self.llm_handler.get_response_api(
+                user_message, user_id, 
+                user_language=user_lang_code,
+                progress_callback=progress_callback
+            )
             
             # Check for errors in LLM response
             if "error" in llm_response:
