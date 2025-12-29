@@ -96,7 +96,7 @@ class LLMHandler:
                 planner_model=self.chat_model,   # no tools bound (planner must not call tools)
                 responder_model=self.chat_model, # no tools bound (responder must not call tools)
                 planner_prompt=self.system_message_planner_prompt,
-                emit_plan=_DEBUG_ENABLED,
+                emit_plan=True,  # Always emit plan for user visibility
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
             )

@@ -260,6 +260,9 @@ def create_plan_execute_graph(
         Only returns steps for tools that exist in this app's tool set.
         """
         tool_args = tool_args or {}
+        # Skip verification for delete operations (expected to not find the item)
+        if tool_name == "delete_promise":
+            return None
         if tool_name == "update_setting":
             setting_key = tool_args.get("setting_key")
             if setting_key and "get_setting" in tool_by_name:
@@ -714,6 +717,40 @@ def create_plan_execute_graph(
         if step.kind == "tool":
             tool_name = step.tool_name or ""
             tool_args = step.tool_args or {}
+            
+            # Check if previous tool was search_promises with single match, and current step needs promise_id
+            if tool_args.get("promise_id") == "FROM_SEARCH":
+                # Look for the last search_promises result in messages
+                # Check messages in reverse to find the most recent search_promises result
+                for i in range(len(state.get("messages", [])) - 1, -1, -1):
+                    msg = state["messages"][i]
+                    # Check if this is an AIMessage with a search_promises tool call
+                    if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+                        for tool_call in msg.tool_calls:
+                            if tool_call.get("name") == "search_promises":
+                                # Found search_promises call, now check the corresponding ToolMessage
+                                tool_call_id = tool_call.get("id")
+                                # Look ahead for the ToolMessage with matching tool_call_id
+                                for j in range(i + 1, len(state.get("messages", []))):
+                                    next_msg = state["messages"][j]
+                                    if isinstance(next_msg, ToolMessage):
+                                        call_id = getattr(next_msg, "tool_call_id", None)
+                                        if call_id == tool_call_id:
+                                            # This is the result from search_promises
+                                            try:
+                                                content = getattr(next_msg, "content", "")
+                                                if isinstance(content, str):
+                                                    parsed = json.loads(content)
+                                                    if isinstance(parsed, dict) and parsed.get("single_match"):
+                                                        # Auto-fill promise_id from single match
+                                                        tool_args["promise_id"] = parsed["promise_id"]
+                                                        break
+                                            except (json.JSONDecodeError, AttributeError):
+                                                pass
+                                break
+                        if tool_args.get("promise_id") != "FROM_SEARCH":
+                            break
+            
             call_id = f"plan_{idx}_iter_{new_iteration}"
             tool_call = {"name": tool_name, "args": tool_args, "id": call_id, "type": "tool_call"}
 

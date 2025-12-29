@@ -420,19 +420,13 @@ class MessageHandlers:
                 return
             
             # Create progress callback to show plan to user
-            plan_message_sent = False
+            plan_message_to_send = None
             
             def progress_callback(event: str, payload: dict):
-                nonlocal plan_message_sent
-                if event == "plan" and not plan_message_sent:
+                nonlocal plan_message_to_send
+                if event == "plan":
                     steps = payload.get("steps", [])
-                    plan_msg = self._format_plan_for_user(steps)
-                    if plan_msg:
-                        plan_message_sent = True
-                        # Schedule async send via asyncio
-                        asyncio.create_task(
-                            update.effective_message.reply_text(plan_msg, parse_mode='Markdown')
-                        )
+                    plan_message_to_send = self._format_plan_for_user(steps)
             
             # Process transcribed text as a regular message
             llm_response = self.llm_handler.get_response_api(
@@ -440,6 +434,10 @@ class MessageHandlers:
                 user_language=user_lang_code,
                 progress_callback=progress_callback
             )
+            
+            # Send plan message before final response if available
+            if plan_message_to_send:
+                await update.effective_message.reply_text(plan_message_to_send, parse_mode='Markdown')
             
             # Check for errors
             if "error" in llm_response:
@@ -699,25 +697,23 @@ class MessageHandlers:
                 user_lang_code = user_lang.value if user_lang else "en"
                 
                 # Create progress callback to show plan to user
-                plan_message_sent = False
+                plan_message_to_send = None
                 
                 def progress_callback(event: str, payload: dict):
-                    nonlocal plan_message_sent
-                    if event == "plan" and not plan_message_sent:
+                    nonlocal plan_message_to_send
+                    if event == "plan":
                         steps = payload.get("steps", [])
-                        plan_msg = self._format_plan_for_user(steps)
-                        if plan_msg:
-                            plan_message_sent = True
-                            # Schedule async send via asyncio
-                            asyncio.create_task(
-                                msg.reply_text(plan_msg, parse_mode='Markdown')
-                            )
+                        plan_message_to_send = self._format_plan_for_user(steps)
                 
                 llm_response = self.llm_handler.get_response_api(
                     user_message, str(user_id), 
                     user_language=user_lang_code,
                     progress_callback=progress_callback
                 )
+                
+                # Send plan message before final response if available
+                if plan_message_to_send:
+                    await msg.reply_text(plan_message_to_send, parse_mode='Markdown')
                 
                 # Check for errors
                 if "error" in llm_response:
@@ -818,7 +814,15 @@ class MessageHandlers:
                     user_id=user_id,
                     user_lang_code=user_lang_code,
                 )
-                partial_args.update({k: v for k, v in (filled or {}).items()})
+                
+                # Replace instead of merge: if single field, replace entirely with new input
+                if len(missing_fields) == 1:
+                    # Single field: replace entirely with new input
+                    partial_args[missing_fields[0]] = user_message.strip()
+                else:
+                    # Multiple fields: only update parsed values
+                    partial_args.update({k: v for k, v in (filled or {}).items() if v})
+                
                 still_missing = [f for f in missing_fields if partial_args.get(f) in (None, "", [])]
 
                 if still_missing:
@@ -849,25 +853,23 @@ class MessageHandlers:
                 user_lang_code = user_lang.value if user_lang else "en"
                 
                 # Create progress callback to show plan to user
-                plan_message_sent = False
+                plan_message_to_send = None
                 
                 def progress_callback(event: str, payload: dict):
-                    nonlocal plan_message_sent
-                    if event == "plan" and not plan_message_sent:
+                    nonlocal plan_message_to_send
+                    if event == "plan":
                         steps = payload.get("steps", [])
-                        plan_msg = self._format_plan_for_user(steps)
-                        if plan_msg:
-                            plan_message_sent = True
-                            # Schedule async send via asyncio
-                            asyncio.create_task(
-                                update.message.reply_text(plan_msg, parse_mode='Markdown')
-                            )
+                        plan_message_to_send = self._format_plan_for_user(steps)
                 
                 llm_response = self.llm_handler.get_response_api(
                     augmented_message, user_id, 
                     user_language=user_lang_code,
                     progress_callback=progress_callback
                 )
+
+                # Send plan message before final response if available
+                if plan_message_to_send:
+                    await update.message.reply_text(plan_message_to_send, parse_mode='Markdown')
 
                 # Handle errors in LLM response
                 if "error" in llm_response:
@@ -908,25 +910,23 @@ class MessageHandlers:
             user_lang_code = user_lang.value if user_lang else "en"
             
             # Create progress callback to show plan to user
-            plan_message_sent = False
+            plan_message_to_send = None
             
             def progress_callback(event: str, payload: dict):
-                nonlocal plan_message_sent
-                if event == "plan" and not plan_message_sent:
+                nonlocal plan_message_to_send
+                if event == "plan":
                     steps = payload.get("steps", [])
-                    plan_msg = self._format_plan_for_user(steps)
-                    if plan_msg:
-                        plan_message_sent = True
-                        # Schedule async send via asyncio
-                        asyncio.create_task(
-                            update.message.reply_text(plan_msg, parse_mode='Markdown')
-                        )
+                    plan_message_to_send = self._format_plan_for_user(steps)
             
             llm_response = self.llm_handler.get_response_api(
                 user_message, user_id, 
                 user_language=user_lang_code,
                 progress_callback=progress_callback
             )
+            
+            # Send plan message before final response if available
+            if plan_message_to_send:
+                await update.message.reply_text(plan_message_to_send, parse_mode='Markdown')
             
             # Check for errors in LLM response
             if "error" in llm_response:

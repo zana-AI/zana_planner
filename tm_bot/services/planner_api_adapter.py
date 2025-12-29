@@ -3,6 +3,7 @@ Adapter to provide compatibility with the existing PlannerAPI interface
 while using the new repository and service layers underneath.
 """
 import re
+import json
 from datetime import datetime, date
 from typing import List, Dict, Optional, Any
 
@@ -444,7 +445,16 @@ class PlannerAPIAdapter:
         if not matches:
             return f"No promises found matching '{query}'. Try a different search term."
         
-        # Format results
+        # If exactly one match, return structured JSON for auto-selection
+        if len(matches) == 1:
+            return json.dumps({
+                "single_match": True,
+                "promise_id": matches[0]['id'],
+                "promise_text": matches[0]['text'],
+                "message": f"Found exact match: #{matches[0]['id']} {matches[0]['text']}"
+            })
+        
+        # Format results for multiple matches
         result_lines = [f"Found {len(matches)} promise(s) matching '{query}':\n"]
         for m in matches:
             result_lines.append(
