@@ -33,13 +33,29 @@ def utc_now_iso() -> str:
 
 
 def date_to_iso(d: Optional[date]) -> Optional[str]:
-    return d.isoformat() if d else None
+    """Convert date or datetime to ISO date string (YYYY-MM-DD)."""
+    if d is None:
+        return None
+    # Handle both date and datetime objects, always store as date-only
+    if isinstance(d, datetime):
+        return d.date().isoformat()
+    return d.isoformat()
 
 
 def date_from_iso(s: Optional[str]) -> Optional[date]:
+    """Parse ISO date string, handling both YYYY-MM-DD and YYYY-MM-DDTHH:MM:SS formats."""
     if not s:
         return None
     try:
+        # Handle datetime format (e.g., "2025-12-29T00:00:00")
+        if 'T' in s:
+            # Strip timezone info if present
+            dt_str = s.replace('Z', '+00:00')
+            if '+' in dt_str[10:]:  # Check after date part
+                dt_str = dt_str[:dt_str.index('+', 10)]
+            elif dt_str.endswith('+00:00'):
+                dt_str = dt_str[:-6]
+            return datetime.fromisoformat(dt_str).date()
         return date.fromisoformat(s)
     except Exception:
         return None

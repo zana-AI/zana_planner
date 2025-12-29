@@ -34,8 +34,8 @@ class ReportsService:
         report_data: Dict[str, Any] = {}
         canonical_by_norm: Dict[str, str] = {}
         for promise in promises:
-            # Check if promise is active (start date has passed)
-            if promise.start_date and promise.start_date <= ref_time.date():
+            # Check if promise is active (no start_date = always active, or start date has passed)
+            if not promise.start_date or promise.start_date <= ref_time.date():
                 report_data[promise.id] = {
                     'text': promise.text,
                     'hours_promised': promise.hours_per_week,
@@ -69,8 +69,8 @@ class ReportsService:
         report_data: Dict[str, Any] = {}
         canonical_by_norm: Dict[str, str] = {}
         for promise in promises:
-            # Check if promise is active (start date has passed)
-            if promise.start_date and promise.start_date <= ref_time.date():
+            # Check if promise is active (no start_date = always active, or start date has passed)
+            if not promise.start_date or promise.start_date <= ref_time.date():
                 report_data[promise.id] = {
                     'text': promise.text,
                     'hours_promised': promise.hours_per_week,
