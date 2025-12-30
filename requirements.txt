@@ -71,6 +71,9 @@ cryptography>=46.0.0            # for Fernet encryption
 # Observability & Debugging
 # ============================================================================
 langsmith>=0.1.0
+#opentelemetry-api>=1.20.0
+#opentelemetry-sdk>=1.20.0
+#opentelemetry-exporter-gcp-trace>=1.0.0
 
 # ============================================================================
 # Development & Testing

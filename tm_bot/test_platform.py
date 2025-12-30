@@ -7,7 +7,6 @@ Run: python -m tm_bot.test_platform
 """
 
 import asyncio
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -16,8 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from platforms.testing import MockPlatformAdapter, TestResponseService
-from platforms.types import UserMessage, MessageType
-from datetime import datetime
 
 
 async def test_basic_functionality():

@@ -179,15 +179,6 @@ class BotUtils:
         return datetime.now() + timedelta(days=(7 - datetime.now().weekday()))
     
     @staticmethod
-    def ensure_user_directory(root_dir: str, user_id: int) -> bool:
-        """Ensure user directory exists, return True if created."""
-        user_dir = os.path.join(root_dir, str(user_id))
-        if not os.path.exists(user_dir):
-            from utils_storage import create_user_directory
-            return create_user_directory(root_dir, user_id)
-        return False
-    
-    @staticmethod
     def format_session_text(session, promise_text: str, elapsed: str) -> str:
         """Format session text for display."""
         return (f"⏱ *Session for #{session.promise_id}: {promise_text}*"

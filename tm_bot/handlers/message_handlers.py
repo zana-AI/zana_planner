@@ -29,7 +29,6 @@ from ui.messages import weekly_report_text
 from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily, schedule_once
-from utils_storage import create_user_directory
 from handlers.callback_handlers import CallbackHandlers
 from utils.logger import get_logger
 from utils.version import get_version_info
@@ -153,7 +152,6 @@ class MessageHandlers:
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
         
-        create_user_directory(self.root_dir, user_id)
         existing_promises = self.plan_keeper.get_promises(user_id)
         
         # Check if user has language preference set
@@ -1064,12 +1062,6 @@ class MessageHandlers:
                 return
             elif broadcast_state == 'waiting_time':
                 await self._handle_broadcast_time(update, context, user_message, user_id, user_lang)
-                return
-
-            # Check if user exists, if not, call start
-            user_dir = os.path.join(self.root_dir, str(user_id))
-            if not os.path.exists(user_dir):
-                await self.start(update, context)
                 return
 
             # Stateful clarification: if we previously asked for missing fields, treat this message as the answer.

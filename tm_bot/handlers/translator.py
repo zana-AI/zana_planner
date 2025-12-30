@@ -3,8 +3,7 @@ Translation module using Google Cloud Translation API.
 Provides caching to minimize API calls for frequently used messages.
 """
 
-from typing import Dict, Optional
-from functools import lru_cache
+from typing import Dict
 
 from llms.llm_env_utils import load_llm_env
 from utils.logger import get_logger

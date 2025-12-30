@@ -2,12 +2,9 @@
 Refactored bot for the planner application.
 This version uses platform abstraction to support multiple platforms (Telegram, Discord, etc.).
 """
-import asyncio
-import datetime
 import os
 import subprocess
-import threading
-from typing import Optional
+from unittest.mock import Mock
 
 # Platform abstraction imports
 from platforms.interfaces import IPlatformAdapter
@@ -18,7 +15,6 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    CallbackContext,
     filters,
     CallbackQueryHandler,
 )
@@ -31,9 +27,7 @@ from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
 from handlers.messages_store import initialize_message_store
 from utils.bot_utils import BotUtils
-from infra.scheduler import schedule_user_daily
 from utils.logger import get_logger
-from utils.version import get_version_info
 
 logger = get_logger(__name__)
 
@@ -104,12 +98,12 @@ class PlannerBot:
         else:
             # For non-Telegram platforms, initialize handlers with mock application
             # Create a minimal mock application for handlers that need it
-            from unittest.mock import Mock, MagicMock
-            
             # Create mock job queue that works with the platform adapter's scheduler
             mock_job_queue = Mock()
             # Make job_queue methods work with our scheduler
-            def get_jobs_by_name(name):
+            # Note: jobs are actually managed by platform adapter's scheduler,
+            # so we return empty list to indicate no Telegram jobs exist
+            def get_jobs_by_name(_name):
                 # Return empty list - jobs are managed by platform adapter's scheduler
                 return []
             mock_job_queue.get_jobs_by_name = get_jobs_by_name
