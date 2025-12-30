@@ -262,10 +262,16 @@ class PlannerBot:
             else:
                 logger.info(f"Serving web app static files from {static_dir}")
             
+            # Get bot token from environment variable
+            bot_token = os.getenv("BOT_TOKEN")
+            if not bot_token:
+                logger.error("BOT_TOKEN environment variable is not set, cannot start webapp server")
+                return
+            
             # Create FastAPI app
             webapp = create_webapp_api(
                 root_dir=self.root_dir,
-                bot_token=self.token,
+                bot_token=bot_token,
                 static_dir=static_dir
             )
             
