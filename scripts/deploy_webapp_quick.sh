@@ -29,18 +29,22 @@ fi
 
 echo "🚀 Quick deployment - Building and restarting..."
 
-# Build frontend
-FRONTEND_DIR=""
-if [ -d "webapp_frontend" ]; then
-    FRONTEND_DIR="webapp_frontend"
-elif [ -d "zana_planner/webapp_frontend" ]; then
-    FRONTEND_DIR="zana_planner/webapp_frontend"
-fi
+# Build frontend (optional - Docker will build it if npm not available)
+if command -v npm &> /dev/null; then
+    FRONTEND_DIR=""
+    if [ -d "webapp_frontend" ]; then
+        FRONTEND_DIR="webapp_frontend"
+    elif [ -d "zana_planner/webapp_frontend" ]; then
+        FRONTEND_DIR="zana_planner/webapp_frontend"
+    fi
 
-if [ -n "$FRONTEND_DIR" ]; then
-    cd "$FRONTEND_DIR"
-    npm run build
-    cd "$PROJECT_DIR"
+    if [ -n "$FRONTEND_DIR" ]; then
+        cd "$FRONTEND_DIR"
+        npm run build
+        cd "$PROJECT_DIR"
+    fi
+else
+    echo "⚠️  npm not found - frontend will be built in Docker"
 fi
 
 # Build and restart Docker

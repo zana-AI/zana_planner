@@ -104,35 +104,48 @@ echo ""
 echo "[3/8] Updating code..."
 if [ -d ".git" ]; then
     echo "Pulling latest changes from git..."
-    git pull || echo "⚠️  Git pull failed, continuing with current code"
+    # Try to fix git permissions if needed
+    if ! git pull 2>&1 | grep -q "Permission denied"; then
+        echo "✓ Code updated"
+    else
+        echo "⚠️  Git pull failed (permission issue), trying with sudo..."
+        $SUDO git pull || echo "⚠️  Git pull failed, continuing with current code"
+    fi
 else
     echo "Not a git repository, skipping pull"
 fi
 
-# Step 4: Build frontend
+# Step 4: Build frontend (optional - Docker will build it if npm not available)
 echo ""
 echo "[4/8] Building React frontend..."
-# Check for webapp_frontend in current dir or zana_planner subdir
-FRONTEND_DIR=""
-if [ -d "webapp_frontend" ]; then
-    FRONTEND_DIR="webapp_frontend"
-elif [ -d "zana_planner/webapp_frontend" ]; then
-    FRONTEND_DIR="zana_planner/webapp_frontend"
-fi
-
-if [ -n "$FRONTEND_DIR" ]; then
-    cd "$FRONTEND_DIR"
-    if [ ! -d "node_modules" ]; then
-        echo "Installing npm dependencies..."
-        npm install
-    fi
-    echo "Building frontend..."
-    npm run build
-    cd "$PROJECT_DIR"
-    echo "✓ Frontend built successfully"
+# Check if npm is available
+if ! command -v npm &> /dev/null; then
+    echo "⚠️  npm not found on host system"
+    echo "   Frontend will be built inside Docker during image build (this is fine)"
+    echo "   To build locally, install Node.js: sudo apt-get install -y nodejs npm"
 else
-    echo "⚠️  webapp_frontend directory not found, skipping frontend build"
-    echo "   (This is OK if frontend is built in Docker)"
+    # Check for webapp_frontend in current dir or zana_planner subdir
+    FRONTEND_DIR=""
+    if [ -d "webapp_frontend" ]; then
+        FRONTEND_DIR="webapp_frontend"
+    elif [ -d "zana_planner/webapp_frontend" ]; then
+        FRONTEND_DIR="zana_planner/webapp_frontend"
+    fi
+
+    if [ -n "$FRONTEND_DIR" ]; then
+        cd "$FRONTEND_DIR"
+        if [ ! -d "node_modules" ]; then
+            echo "Installing npm dependencies..."
+            npm install
+        fi
+        echo "Building frontend..."
+        npm run build
+        cd "$PROJECT_DIR"
+        echo "✓ Frontend built successfully"
+    else
+        echo "⚠️  webapp_frontend directory not found, skipping frontend build"
+        echo "   (Frontend will be built in Docker)"
+    fi
 fi
 
 # Step 5: Build Docker image
