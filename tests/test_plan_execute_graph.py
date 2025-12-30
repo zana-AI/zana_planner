@@ -101,6 +101,9 @@ def test_plan_execute_tool_then_respond_emits_plan_when_enabled():
             "step_idx": 0,
             "final_response": None,
             "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
         }
     )
 
@@ -159,6 +162,9 @@ def test_plan_execute_does_not_emit_plan_when_disabled():
             "step_idx": 0,
             "final_response": None,
             "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
         }
     )
 
@@ -200,6 +206,9 @@ def test_plan_validation_missing_required_args_converts_to_ask_user_and_sets_pen
             "step_idx": 0,
             "final_response": None,
             "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
         }
     )
 
@@ -272,6 +281,9 @@ def test_verify_by_reading_appends_verification_tool_after_mutation():
             "step_idx": 0,
             "final_response": None,
             "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
         }
     )
 
@@ -331,6 +343,9 @@ def test_retry_once_on_transient_tool_failure():
             "step_idx": 0,
             "final_response": None,
             "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
         }
     )
 
@@ -397,6 +412,9 @@ def test_dynamic_replan_asks_user_when_from_search_is_ambiguous():
             "step_idx": 0,
             "final_response": None,
             "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
         }
     )
 
@@ -461,11 +479,189 @@ def test_generic_from_tool_placeholder_is_resolved_from_json_tool_output():
             "step_idx": 0,
             "final_response": None,
             "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
         }
     )
 
     assert result.get("final_response") == "done"
     assert ("use_item", "X123") in calls
+
+
+def test_low_confidence_mutation_asks_confirmation():
+    """Test that low-confidence mutation tools trigger a confirmation question."""
+    calls = []
+
+    def _add_action(promise_id: str, time_spent: float):
+        calls.append(("add_action", promise_id, time_spent))
+        return "ok"
+
+    tools = [
+        StructuredTool.from_function(func=_add_action, name="add_action", description="Add an action."),
+    ]
+
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Log time on promise.",
+                "tool_name": "add_action",
+                "tool_args": {"promise_id": "P01", "time_spent": 2.0},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm success."},
+        ]
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+    responder = FakeModel([AIMessage(content="should not be used")])
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="maybe log 2h on P01")],
+            "iteration": 0,
+            "plan": plan["steps"],
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+            "detected_intent": "LOG_ACTION",
+            "intent_confidence": "medium",  # Not high
+            "safety": {"requires_confirmation": False},
+        }
+    )
+
+    # Should ask for confirmation before executing
+    assert "confirm" in (result.get("final_response") or "").lower()
+    pending = result.get("pending_clarification") or {}
+    assert pending.get("reason") == "pre_mutation_confirmation"
+    assert pending.get("tool_name") == "add_action"
+    # Tool should NOT have been called yet
+    assert len(calls) == 0
+
+
+def test_high_confidence_mutation_proceeds_normally():
+    """Test that high-confidence mutation tools proceed without confirmation."""
+    calls = []
+
+    def _add_action(promise_id: str, time_spent: float):
+        calls.append(("add_action", promise_id, time_spent))
+        return "ok"
+
+    tools = [
+        StructuredTool.from_function(func=_add_action, name="add_action", description="Add an action."),
+    ]
+
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Log time on promise.",
+                "tool_name": "add_action",
+                "tool_args": {"promise_id": "P01", "time_spent": 2.0},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm success."},
+        ]
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+
+    def responder_fn(messages):
+        return AIMessage(content="Logged 2 hours on P01.")
+
+    responder = FakeModel(responder_fn=responder_fn)
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="log 2h on P01")],
+            "iteration": 0,
+            "plan": plan["steps"],
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+            "detected_intent": "LOG_ACTION",
+            "intent_confidence": "high",  # High confidence
+            "safety": {"requires_confirmation": False},
+        }
+    )
+
+    # Should proceed without asking for confirmation
+    assert "confirm" not in (result.get("final_response") or "").lower()
+    # Tool should have been called
+    assert ("add_action", "P01", 2.0) in calls
+    assert result.get("final_response") == "Logged 2 hours on P01."
+
+
+def test_safety_requires_confirmation_triggers_ask():
+    """Test that safety.requires_confirmation=True triggers confirmation even with high confidence."""
+    calls = []
+
+    def _delete_promise(promise_id: str):
+        calls.append(("delete_promise", promise_id))
+        return "ok"
+
+    tools = [
+        StructuredTool.from_function(func=_delete_promise, name="delete_promise", description="Delete a promise."),
+    ]
+
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Delete promise.",
+                "tool_name": "delete_promise",
+                "tool_args": {"promise_id": "P01"},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm deletion."},
+        ]
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+    responder = FakeModel([AIMessage(content="should not be used")])
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="delete P01")],
+            "iteration": 0,
+            "plan": plan["steps"],
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+            "detected_intent": "DELETE_PROMISE",
+            "intent_confidence": "high",
+            "safety": {"requires_confirmation": True},  # Explicitly requires confirmation
+        }
+    )
+
+    # Should ask for confirmation even with high confidence
+    assert "confirm" in (result.get("final_response") or "").lower()
+    pending = result.get("pending_clarification") or {}
+    assert pending.get("reason") == "pre_mutation_confirmation"
+    # Tool should NOT have been called yet
+    assert len(calls) == 0
 
 
 

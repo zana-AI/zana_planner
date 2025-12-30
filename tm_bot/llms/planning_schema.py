@@ -54,3 +54,18 @@ class Plan(BaseModel):
         max_length=2000,
     )
 
+    detected_intent: Optional[str] = Field(
+        None,
+        description="Open-text description of the user's primary intent (e.g., 'LOG_ACTION', 'CREATE_PROMISE', 'QUERY_PROGRESS', 'MANAGE_PROMISE', 'GET_IDEAS', 'USER_CORRECTION', etc.).",
+    )
+
+    intent_confidence: Optional[str] = Field(
+        None,
+        description="Confidence level for the detected intent: 'high', 'medium', or 'low'.",
+    )
+
+    safety: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Safety metadata including flags like requires_confirmation, assumptions, risk_level.",
+    )
+

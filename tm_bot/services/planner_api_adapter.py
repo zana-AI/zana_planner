@@ -18,6 +18,7 @@ from services.reminders import RemindersService
 from services.sessions import SessionsService
 from services.content_service import ContentService
 from services.time_estimation_service import TimeEstimationService
+from services.settings_service import SettingsService
 from models.models import Promise, Action, UserSettings
 from models.enums import ActionType
 from utils.logger import get_logger
@@ -39,6 +40,7 @@ class PlannerAPIAdapter:
         self.nightly_state_repo = NightlyStateRepository(root_dir)
         
         # Initialize services
+        self.settings_service = SettingsService(self.settings_repo)
         self.reports_service = ReportsService(self.promises_repo, self.actions_repo)
         self.ranking_service = RankingService(self.promises_repo, self.actions_repo, self.settings_repo)
         self.reminders_service = RemindersService(self.ranking_service, self.settings_repo)

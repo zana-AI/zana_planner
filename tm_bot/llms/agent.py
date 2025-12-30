@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Callable, Dict, List, Optional, Sequence, TypedDict
+from typing import Any, Callable, Dict, List, Optional, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable
@@ -34,6 +34,10 @@ class AgentState(TypedDict):
     pending_meta_by_idx: Optional[Dict[int, dict]]
     pending_clarification: Optional[dict]
     tool_retry_counts: Optional[Dict[str, int]]
+    # Intent detection and validation
+    detected_intent: Optional[str]
+    intent_confidence: Optional[str]
+    safety: Optional[Dict[str, Any]]
 
 
 def _run_tool_calls(messages: List[BaseMessage], tools_by_name: Dict[str, object]) -> List[ToolMessage]:
@@ -648,6 +652,9 @@ def create_plan_execute_graph(
             "planner_error": planner_error,
             "pending_meta_by_idx": pending_meta_by_idx,
             "pending_clarification": None,
+            "detected_intent": plan.detected_intent,
+            "intent_confidence": plan.intent_confidence,
+            "safety": plan.safety,
         }
 
     def executor(state: AgentState) -> AgentState:
@@ -688,6 +695,14 @@ def create_plan_execute_graph(
                     "- Format lists with bullet points (•) for readability\n"
                     "- Do NOT include raw tool outputs or JSON - summarize in human terms"
                 )
+                # Add intent validation if intent was detected
+                detected_intent = state.get("detected_intent")
+                if detected_intent:
+                    default_hint += (
+                        f"\n\nVALIDATION: The user's detected intent was '{detected_intent}'. "
+                        "Verify that your response aligns with this intent. If the actions taken don't match the intent, "
+                        "acknowledge the mismatch and ask one clarifying question instead of asserting success."
+                    )
                 messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=default_hint)])
                 result = responder_model.invoke(messages_to_send)
             return {
@@ -739,6 +754,15 @@ def create_plan_execute_graph(
             
             hint = base_hint + ux_guidelines
             
+            # Add intent validation if intent was detected
+            detected_intent = state.get("detected_intent")
+            if detected_intent:
+                hint += (
+                    f"\n\nVALIDATION: The user's detected intent was '{detected_intent}'. "
+                    "Verify that your response aligns with this intent. If the actions taken don't match the intent, "
+                    "acknowledge the mismatch and ask one clarifying question instead of asserting success."
+                )
+            
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
                 err_type = tool_err.get("error_type", "unknown")
@@ -765,6 +789,54 @@ def create_plan_execute_graph(
         if step.kind == "tool":
             tool_name = step.tool_name or ""
             tool_args = step.tool_args or {}
+
+            # Pre-mutation confirmation guard: ask before mutation if confidence is not high or safety requires confirmation
+            is_mutation_tool = tool_name.startswith(MUTATION_PREFIXES)
+            intent_confidence = state.get("intent_confidence", "").lower() if state.get("intent_confidence") else ""
+            safety = state.get("safety") or {}
+            requires_confirmation = safety.get("requires_confirmation", False)
+            
+            if is_mutation_tool and (intent_confidence != "high" or requires_confirmation):
+                # Build a confirmation question that describes what will happen
+                detected_intent = state.get("detected_intent", "this action")
+                action_description = f"perform {detected_intent.lower()}"
+                if tool_name == "add_action":
+                    promise_id = tool_args.get("promise_id", "a promise")
+                    time_spent = tool_args.get("time_spent", "some time")
+                    action_description = f"log {time_spent} hour(s) on {promise_id}"
+                elif tool_name == "create_promise" or tool_name == "add_promise":
+                    promise_text = tool_args.get("text", tool_args.get("promise_text", "a promise"))
+                    action_description = f"create a new promise: '{promise_text}'"
+                elif tool_name == "delete_promise":
+                    promise_id = tool_args.get("promise_id", "a promise")
+                    action_description = f"delete promise {promise_id}"
+                elif tool_name == "update_setting":
+                    setting_key = tool_args.get("setting_key", "a setting")
+                    setting_value = tool_args.get("setting_value", "")
+                    action_description = f"change {setting_key} to {setting_value}"
+                else:
+                    action_description = f"call {tool_name} with {tool_args}"
+                
+                question = (
+                    f"Just to confirm: you want me to {action_description}, right?\n\n"
+                    f"Reply 'yes' or 'confirm' to proceed, or clarify what you actually want."
+                )
+                
+                pending = {
+                    "reason": "pre_mutation_confirmation",
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "detected_intent": detected_intent,
+                    "intent_confidence": intent_confidence,
+                }
+                
+                return {
+                    **state,
+                    "iteration": new_iteration,
+                    "final_response": question,
+                    "pending_clarification": pending,
+                    "step_idx": idx,  # Don't advance - we'll retry this step after confirmation
+                }
 
             # Generic placeholder resolution (agent-centric, avoids brittle handler logic):
             # - "FROM_TOOL:<tool_name>:<json_field>" pulls a field from the last tool's JSON output.

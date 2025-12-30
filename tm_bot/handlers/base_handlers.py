@@ -37,15 +37,12 @@ class BaseMessageHandler(ABC):
         self.root_dir = root_dir
     
     def get_user_timezone(self, user_id: int) -> str:
-        """Get user timezone using the settings repository."""
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
-        return settings.timezone
+        """Get user timezone using the settings service."""
+        return self.plan_keeper.settings_service.get_user_timezone(user_id)
     
     def set_user_timezone(self, user_id: int, tzname: str) -> None:
-        """Set user timezone using the settings repository."""
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
-        settings.timezone = tzname
-        self.plan_keeper.settings_repo.save_settings(settings)
+        """Set user timezone using the settings service."""
+        self.plan_keeper.settings_service.set_user_timezone(user_id, tzname)
     
     async def handle_text_message(self, message: UserMessage) -> BotResponse:
         """
@@ -140,9 +137,8 @@ class BaseCallbackHandler(ABC):
         self.response_service = response_service
     
     def get_user_timezone(self, user_id: int) -> str:
-        """Get user timezone using the settings repository."""
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
-        return settings.timezone
+        """Get user timezone using the settings service."""
+        return self.plan_keeper.settings_service.get_user_timezone(user_id)
     
     async def handle_callback(self, query: CallbackQuery) -> Optional[BotResponse]:
         """

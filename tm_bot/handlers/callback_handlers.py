@@ -38,9 +38,8 @@ class CallbackHandlers:
         self.response_service = response_service
     
     def get_user_timezone(self, user_id: int) -> str:
-        """Get user timezone using the settings repository."""
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
-        return settings.timezone
+        """Get user timezone using the settings service."""
+        return self.plan_keeper.settings_service.get_user_timezone(user_id)
     
     def _get_user_now(self, user_id: int):
         """Return (now_in_user_tz, tzname)."""
@@ -845,9 +844,9 @@ class CallbackHandlers:
             selected_lang = query.from_user.language_code
         
         # Save language to settings
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        settings = self.plan_keeper.settings_service.get_settings(user_id)
         settings.language = selected_lang
-        self.plan_keeper.settings_repo.save_settings(settings)
+        self.plan_keeper.settings_service.save_settings(settings)
         
         # Clear language cache since language changed
         if hasattr(self, 'response_service') and self.response_service:
@@ -871,9 +870,9 @@ class CallbackHandlers:
         enabled = enabled_str.lower() == "true"
         
         # Save voice mode preference
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        settings = self.plan_keeper.settings_service.get_settings(user_id)
         settings.voice_mode = "enabled" if enabled else "disabled"
-        self.plan_keeper.settings_repo.save_settings(settings)
+        self.plan_keeper.settings_service.save_settings(settings)
         
         # Send confirmation message
         if enabled:

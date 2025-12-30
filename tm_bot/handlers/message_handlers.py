@@ -63,7 +63,7 @@ class MessageHandlers:
     def _update_user_info(self, user_id: int, user) -> None:
         """Extract and update user info (first_name, username, last_seen) from Telegram user object."""
         try:
-            settings = self.plan_keeper.settings_repo.get_settings(user_id)
+            settings = self.plan_keeper.settings_service.get_settings(user_id)
             updated = False
             
             # Update first_name if missing or changed
@@ -84,14 +84,13 @@ class MessageHandlers:
             updated = True
             
             if updated:
-                self.plan_keeper.settings_repo.save_settings(settings)
+                self.plan_keeper.settings_service.save_settings(settings)
         except Exception as e:
             logger.warning(f"Failed to update user info for user {user_id}: {e}")
     
     def get_user_timezone(self, user_id: int) -> str:
-        """Get user timezone using the settings repository."""
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
-        return settings.timezone
+        """Get user timezone using the settings service."""
+        return self.plan_keeper.settings_service.get_user_timezone(user_id)
 
     @staticmethod
     def _choose_from_options(user_text: str, options: list[dict]) -> Optional[str]:
@@ -142,10 +141,8 @@ class MessageHandlers:
         return None
     
     def set_user_timezone(self, user_id: int, tzname: str) -> None:
-        """Set user timezone using the settings repository."""
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
-        settings.timezone = tzname
-        self.plan_keeper.settings_repo.save_settings(settings)
+        """Set user timezone using the settings service."""
+        self.plan_keeper.settings_service.set_user_timezone(user_id, tzname)
     
     async def start(self, update: Update, context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
@@ -155,7 +152,7 @@ class MessageHandlers:
         existing_promises = self.plan_keeper.get_promises(user_id)
         
         # Check if user has language preference set
-        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+        settings = self.plan_keeper.settings_service.get_settings(user_id)
         if len(existing_promises) == 0 and (not hasattr(settings, 'language') or settings.language == "en"):
             # New user without language preference - show language selection
             message = get_message("choose_language", user_lang)
@@ -488,7 +485,7 @@ class MessageHandlers:
         
         try:
             # Check voice mode preference
-            settings = self.plan_keeper.settings_repo.get_settings(user_id)
+            settings = self.plan_keeper.settings_service.get_settings(user_id)
             
             # Check if there's a text caption with the voice message
             voice_caption = update.effective_message.caption or ""
@@ -976,7 +973,7 @@ class MessageHandlers:
                         )
                     else:
                         # Get settings for voice mode
-                        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+                        settings = self.plan_keeper.settings_service.get_settings(user_id)
                         
                         # Send response (with voice mode if enabled)
                         await self._send_response_with_voice_mode(
@@ -1751,7 +1748,7 @@ class MessageHandlers:
         # Bot-side settings (best-effort; don't crash if fields differ).
         settings = None
         try:
-            settings = self.plan_keeper.settings_repo.get_settings(user_id)
+            settings = self.plan_keeper.settings_service.get_settings(user_id)
         except Exception:
             settings = None
 
@@ -1940,7 +1937,7 @@ class MessageHandlers:
         logger.info(f"Executing scheduled broadcast to {len(user_ids)} users (scheduled by admin {admin_id})")
         
         # Send broadcast
-        results = await send_broadcast(context.bot, user_ids, message)
+        results = await send_broadcast(self.response_service, user_ids, message)
         
         # Log results
         logger.info(

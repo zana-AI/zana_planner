@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from zoneinfo import ZoneInfo
 
-from telegram import Bot
+from platforms.interfaces import IResponseService
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -55,7 +55,7 @@ def get_all_users(root_dir: str) -> List[int]:
 
 
 async def send_broadcast(
-    bot: Bot,
+    response_service: IResponseService,
     user_ids: List[int],
     message: str,
     rate_limit_delay: float = 0.05
@@ -64,7 +64,7 @@ async def send_broadcast(
     Send a broadcast message to all users with rate limiting.
     
     Args:
-        bot: Telegram bot instance
+        response_service: Platform-agnostic response service
         user_ids: List of user IDs to send to
         message: Message text to send
         rate_limit_delay: Delay between messages in seconds (default 0.05 = 20 msg/sec)
@@ -79,8 +79,9 @@ async def send_broadcast(
     
     for user_id in user_ids:
         try:
-            await bot.send_message(
-                chat_id=user_id,
+            await response_service.send_text(
+                user_id=user_id,
+                chat_id=user_id,  # For Telegram, chat_id == user_id for private chats
                 text=message,
                 parse_mode='Markdown'
             )

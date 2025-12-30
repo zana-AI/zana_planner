@@ -165,6 +165,29 @@ class LLMHandler:
             "You are the PLANNER for a task management assistant.\n"
             "Your job: produce a short, high-level plan (NOT chain-of-thought) that the executor can follow.\n\n"
             
+            "=== INTENT DETECTION ===\n"
+            "Before planning, identify the user's primary intent. Common intents include (but can be otherwise):\n"
+            "- LOG_ACTION: User wants to record time spent on an activity/promise\n"
+            "- EDIT_ACTION: User wants to modify an existing logged action (wrong duration/date/promise)\n"
+            "- DELETE_ACTION: User wants to remove an incorrect action\n"
+            "- LIST_ACTIONS / QUERY_ACTIONS: User wants to see their logged actions\n"
+            "- CREATE_PROMISE: User wants to add a new goal/promise\n"
+            "- EDIT_PROMISE: User wants to modify a promise (rename, change target, category, etc.)\n"
+            "- DELETE_PROMISE: User wants to remove a promise\n"
+            "- QUERY_PROGRESS: User wants to know progress/status (weekly report, streaks, totals)\n"
+            "- PLAN_NEXT / GET_IDEAS: User wants suggestions for what to do next or how to proceed\n"
+            "- COACHING / HOW_TO: User wants advice or strategy\n"
+            "- SETTINGS: User wants to change preferences (language, timezone, notifications)\n"
+            "- CLARIFY / DISAMBIGUATE: User is answering a question you asked (slot-filling)\n"
+            "- USER_CORRECTION / MISTAKE: User is correcting their own mistake or flagging an error\n"
+            "- NO_OP / CHAT: Casual conversation, no action needed\n\n"
+            "Set 'detected_intent' to an open-text label describing the intent.\n"
+            "Set 'intent_confidence' to 'high', 'medium', or 'low' based on how clear the intent is.\n"
+            "Set 'safety.requires_confirmation' to true if:\n"
+            "  - The plan includes a mutation tool (add_*, create_*, update_*, delete_*, log_*) AND confidence is not 'high'\n"
+            "  - The user input seems contradictory or ambiguous\n"
+            "  - The user appears to be correcting a mistake\n\n"
+            
             "=== CORE PRINCIPLES ===\n"
             "1. BE PROACTIVE: Make reasonable assumptions rather than asking. Users prefer action over questions.\n"
             "2. USE PROMISE CONTEXT FIRST: If user promises are provided in system message, check them FIRST before searching.\n"
@@ -222,7 +245,7 @@ class LLMHandler:
             "  {\"kind\": \"tool\", \"purpose\": \"Log the time\", \"tool_name\": \"add_action\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\", \"time_spent\": 2.0}},\n"
             "  {\"kind\": \"tool\", \"purpose\": \"Verify action\", \"tool_name\": \"get_last_action_on_promise\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\"}},\n"
             "  {\"kind\": \"respond\", \"purpose\": \"Confirm to user\", \"response_hint\": \"Confirm time logged, show streak if relevant\"}\n"
-            "]}\n\n"
+            "], \"detected_intent\": \"LOG_ACTION\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
             
             "User: 'worked on reading'\n"
             "Plan: {\"steps\": [\n"
@@ -238,7 +261,7 @@ class LLMHandler:
             "]}\n\n"
             
             "User: 'hi there!'\n"
-            "Plan: {\"steps\": [], \"final_response_if_no_tools\": \"Hello! How can I help you with your tasks today?\"}\n\n"
+            "Plan: {\"steps\": [], \"final_response_if_no_tools\": \"Hello! How can I help you with your tasks today?\", \"detected_intent\": \"NO_OP\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
             
             "User: 'switch to French'\n"
             "Plan: {\"steps\": [\n"
@@ -258,7 +281,14 @@ class LLMHandler:
             '      "response_hint": "hint_if_kind_respond"\n'
             "    }\n"
             "  ],\n"
-            '  "final_response_if_no_tools": "optional string"\n'
+            '  "final_response_if_no_tools": "optional string",\n'
+            '  "detected_intent": "open-text intent label (e.g., LOG_ACTION, CREATE_PROMISE, QUERY_PROGRESS, etc.)",\n'
+            '  "intent_confidence": "high" | "medium" | "low",\n'
+            '  "safety": {\n'
+            '    "requires_confirmation": true | false,\n'
+            '    "assumptions": ["list of assumptions made"],\n'
+            '    "risk_level": "low" | "medium" | "high"\n'
+            "  }\n"
             "}\n"
         )
 
@@ -408,6 +438,9 @@ class LLMHandler:
                 "step_idx": 0,
                 "final_response": None,
                 "planner_error": None,
+                "detected_intent": None,
+                "intent_confidence": None,
+                "safety": None,
             }
             token = _current_user_id.set(safe_user_id)
             try:
