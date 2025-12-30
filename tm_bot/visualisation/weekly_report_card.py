@@ -34,6 +34,39 @@ def _escape(s: Any) -> str:
     return html.escape("" if s is None else str(s), quote=True)
 
 
+def _is_rtl_text(text: str) -> bool:
+    """
+    Detect if text contains RTL characters (Arabic, Hebrew, Persian, etc.).
+    
+    Unicode ranges:
+    - Arabic: U+0600-U+06FF
+    - Hebrew: U+0590-U+05FF
+    - Persian/Arabic Extended: U+08A0-U+08FF
+    - Arabic Presentation Forms: U+FB50-U+FDFF, U+FE70-U+FEFF
+    """
+    if not text:
+        return False
+    
+    for char in text:
+        code_point = ord(char)
+        # Arabic
+        if 0x0600 <= code_point <= 0x06FF:
+            return True
+        # Hebrew
+        if 0x0590 <= code_point <= 0x05FF:
+            return True
+        # Arabic Extended
+        if 0x08A0 <= code_point <= 0x08FF:
+            return True
+        # Arabic Presentation Forms
+        if 0xFB50 <= code_point <= 0xFDFF:
+            return True
+        if 0xFE70 <= code_point <= 0xFEFF:
+            return True
+    
+    return False
+
+
 def _week_days(week_start: datetime) -> List[date]:
     # week_start is Monday 00:00 from utils.get_week_range()
     start = week_start.date()
@@ -68,7 +101,7 @@ def build_weekly_report_card_html(
     cards: List[str] = []
     for pid, data in sorted((summary or {}).items(), key=lambda kv: str(kv[0])):
         d = data or {}
-        title = str(d.get("text", "") or "")
+        title = str(d.get("text", "") or "").replace('_', ' ')
         promised = float(d.get("hours_promised", 0.0) or 0.0)
         spent = float(d.get("hours_spent", 0.0) or 0.0)
         pct = _progress_pct(spent, promised)
@@ -90,11 +123,18 @@ def build_weekly_report_card_html(
                 f"</div>"
             )
 
+        # Detect RTL text and set appropriate direction
+        is_rtl = _is_rtl_text(title)
+        title_dir = "rtl" if is_rtl else "auto"
+        
         cards.append(
             f"""
             <section class="card">
               <div class="cardTop">
-                <div class="cardTitle" dir="auto"><span class="emoji">{_escape(emoji)}</span><span class="titleText">{_escape(title)}</span></div>
+                <div class="cardTitle" dir="{title_dir}">
+                  <span class="emoji" dir="ltr" unicode-bidi="isolate">{_escape(emoji)}</span>
+                  <span class="titleText" dir="{title_dir}" unicode-bidi="plaintext">{_escape(title)}</span>
+                </div>
                 <div class="cardMeta">
                   <span class="pid" dir="ltr">#{_escape(pid)}</span>
                   <span class="ratio" dir="ltr">{spent:.1f}/{promised:.1f} h</span>
@@ -120,7 +160,7 @@ def build_weekly_report_card_html(
     if not cards:
         empty_state = """
         <section class="empty">
-          <div class="emptyTitle" dir="auto">No data available for this week</div>
+          <div class="emptyTitle" dir="ltr" style="text-align: start;">No data available for this week</div>
         </section>
         """.strip()
 
@@ -160,8 +200,16 @@ def build_weekly_report_card_html(
       }}
 
       /* Mixed RTL/LTR handling */
-      .cardTitle, .titleText, .emptyTitle {{
+      .cardTitle {{
+        text-align: start;
+      }}
+      .titleText, .emptyTitle {{
         unicode-bidi: plaintext;
+        text-align: start;
+      }}
+      .emoji {{
+        unicode-bidi: isolate;
+        direction: ltr;
       }}
 
       .wrap {{
@@ -177,11 +225,28 @@ def build_weekly_report_card_html(
         border: 1px solid var(--border);
         border-radius: 18px;
         background: linear-gradient(135deg, rgba(91,163,245,0.20), rgba(125,211,252,0.08));
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        position: relative;
+        overflow: hidden;
+      }}
+      .header::before {{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        opacity: 0.6;
       }}
       .hTitle {{
         font-size: 22px;
         font-weight: 800;
         letter-spacing: 0.2px;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
       }}
       .hSub {{
         font-size: 13px;
@@ -200,23 +265,36 @@ def build_weekly_report_card_html(
       }}
 
       .grid {{
-        margin-top: 18px;
+        margin-top: 20px;
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 14px;
+        gap: 16px;
       }}
 
       .card {{
         border: 1px solid var(--border);
         border-radius: 16px;
         background: linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98));
-        padding: 14px 14px 12px 14px;
+        padding: 16px 16px 14px 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        position: relative;
+        overflow: hidden;
+      }}
+      .card::before {{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(91,163,245,0.3), transparent);
       }}
       .cardTop {{
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        gap: 10px;
+        gap: 12px;
+        margin-bottom: 2px;
       }}
       .cardTitle {{
         flex: 1;
@@ -227,10 +305,16 @@ def build_weekly_report_card_html(
         display: flex;
         gap: 8px;
         align-items: flex-start;
+        text-align: start;
+      }}
+      .cardTitle[dir="rtl"] {{
+        flex-direction: row-reverse;
       }}
       .emoji {{
         flex: 0 0 auto;
         margin-top: 1px;
+        unicode-bidi: isolate;
+        direction: ltr;
       }}
       .titleText {{
         display: -webkit-box;
@@ -238,6 +322,9 @@ def build_weekly_report_card_html(
         -webkit-box-orient: vertical;
         overflow: hidden;
         text-overflow: ellipsis;
+        text-align: start;
+        flex: 1;
+        min-width: 0;
       }}
       .cardMeta {{
         flex: 0 0 auto;
@@ -269,6 +356,23 @@ def build_weekly_report_card_html(
         height: 100%;
         background: linear-gradient(90deg, var(--accent), var(--accent2));
         border-radius: 999px;
+        box-shadow: 0 0 8px rgba(91, 163, 245, 0.4);
+        position: relative;
+        overflow: hidden;
+      }}
+      .progressFill::after {{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        animation: shimmer 2s infinite;
+      }}
+      @keyframes shimmer {{
+        0% {{ left: -100%; }}
+        100% {{ left: 100%; }}
       }}
 
       .daysRow {{
@@ -291,8 +395,20 @@ def build_weekly_report_card_html(
       }}
       .dayBar {{
         width: 100%;
-        background: rgba(91, 163, 245, 0.70);
+        background: linear-gradient(180deg, var(--accent), var(--accent2));
         border-top: 1px solid rgba(232, 238, 252, 0.20);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        position: relative;
+      }}
+      .dayBar::after {{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 30%;
+        background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent);
+        pointer-events: none;
       }}
       .dayLbl {{
         position: absolute;
@@ -391,6 +507,59 @@ def render_weekly_report_card_png(
             page.screenshot(path=output_path, full_page=True, type="png")
         finally:
             browser.close()
+
+    return output_path
+
+
+async def render_weekly_report_card_png_async(
+    *,
+    summary: Dict[str, Any],
+    output_path: str,
+    week_start: datetime,
+    week_end: datetime,
+    width: int = 1200,
+) -> str:
+    """
+    Render the weekly report card HTML to a PNG at output_path (async Playwright API).
+
+    IMPORTANT: Use this from async Telegram handlers to avoid:
+    "It looks like you are using Playwright Sync API inside the asyncio loop."
+    """
+    from playwright.async_api import async_playwright  # type: ignore
+
+    html_doc = build_weekly_report_card_html(
+        summary,
+        week_start=week_start,
+        week_end=week_end,
+        width=width,
+    )
+
+    out_dir = os.path.dirname(output_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
+        )
+        try:
+            page = await browser.new_page(
+                viewport={"width": int(width), "height": 900},
+                device_scale_factor=2,
+            )
+            await page.set_content(html_doc, wait_until="load")
+            # Ensure web fonts are ready before screenshot (important for RTL shaping and consistent layout).
+            await page.evaluate(
+                "() => document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true"
+            )
+            await page.screenshot(path=output_path, full_page=True, type="png")
+        finally:
+            await browser.close()
 
     return output_path
 

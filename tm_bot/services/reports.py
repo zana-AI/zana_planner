@@ -37,7 +37,7 @@ class ReportsService:
             # Check if promise is active (no start_date = always active, or start date has passed)
             if not promise.start_date or promise.start_date <= ref_time.date():
                 report_data[promise.id] = {
-                    'text': promise.text,
+                    'text': promise.text.replace('_', ' '),
                     'hours_promised': promise.hours_per_week,
                     'hours_spent': 0.0
                 }
@@ -72,7 +72,7 @@ class ReportsService:
             # Check if promise is active (no start_date = always active, or start date has passed)
             if not promise.start_date or promise.start_date <= ref_time.date():
                 report_data[promise.id] = {
-                    'text': promise.text,
+                    'text': promise.text.replace('_', ' '),
                     'hours_promised': promise.hours_per_week,
                     'hours_spent': 0.0,
                     'sessions': []  # List of {'date': date, 'hours': float}
@@ -188,7 +188,73 @@ class ReportsService:
             days_since = (current_date - last_action_date).days
             return -days_since
 
-    def generate_weekly_visualization_image(self, user_id: int, ref_time: datetime, temp_dir: str = None) -> str:
+    def get_streak_heatmap_data(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
+        """
+        Get streak heatmap data for last 4 weeks (28 days) per promise.
+        
+        Args:
+            user_id: User ID
+            ref_time: Reference time (typically current time)
+        
+        Returns:
+            Dictionary with promise_id as key and data containing:
+            - text: Promise text
+            - days: Dict mapping date -> bool (had activity)
+            - hours_by_date: Dict mapping date -> float (hours spent)
+        """
+        # Calculate 4 weeks ago (28 days)
+        four_weeks_ago = ref_time - timedelta(days=28)
+        
+        # Get all promises
+        promises = self.promises_repo.list_promises(user_id)
+        
+        # Get actions from last 4 weeks
+        actions = self.actions_repo.list_actions(user_id, since=four_weeks_ago)
+        
+        # Initialize report data (keyed by canonical promise.id from storage)
+        report_data: Dict[str, Any] = {}
+        canonical_by_norm: Dict[str, str] = {}
+        
+        # Get the Monday of the week that contains ref_time
+        week_start, _ = get_week_range(ref_time)
+        # Calculate the Monday of 4 weeks ago
+        four_weeks_monday = week_start - timedelta(days=21)  # 3 weeks back from current week
+        
+        # Initialize all dates in the 4-week range (Monday to Sunday, 4 weeks)
+        all_dates = []
+        for week_offset in range(4):
+            week_monday = four_weeks_monday + timedelta(days=week_offset * 7)
+            for day_offset in range(7):
+                all_dates.append(week_monday + timedelta(days=day_offset))
+        
+        for promise in promises:
+            # Check if promise is active
+            if not promise.start_date or promise.start_date <= ref_time.date():
+                # Initialize all dates as False (no activity)
+                days_dict = {d: False for d in all_dates}
+                hours_dict = {d: 0.0 for d in all_dates}
+                
+                report_data[promise.id] = {
+                    'text': promise.text.replace('_', ' '),
+                    'days': days_dict,
+                    'hours_by_date': hours_dict
+                }
+                norm = normalize_promise_id(promise.id)
+                canonical_by_norm.setdefault(norm, promise.id)
+        
+        # Process actions and mark days with activity
+        for action in actions:
+            if action.at >= four_weeks_ago:
+                canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
+                if canonical and canonical in report_data:
+                    action_date = action.at.date()
+                    if action_date in report_data[canonical]['days']:
+                        report_data[canonical]['days'][action_date] = True
+                        report_data[canonical]['hours_by_date'][action_date] += action.time_spent
+        
+        return report_data
+
+    async def generate_weekly_visualization_image(self, user_id: int, ref_time: datetime, temp_dir: str = None) -> str:
         """
         Generate weekly visualization image and return path to temp file.
         
@@ -221,9 +287,9 @@ class ReportsService:
             generate_weekly_visualization(summary, image_path, width=1200, height=900)
         else:
             try:
-                from visualisation.weekly_report_card import render_weekly_report_card_png
+                from visualisation.weekly_report_card import render_weekly_report_card_png_async
 
-                render_weekly_report_card_png(
+                await render_weekly_report_card_png_async(
                     summary=summary,
                     output_path=image_path,
                     week_start=week_start,
@@ -240,5 +306,47 @@ class ReportsService:
                 from visualisation.vis_rects import generate_weekly_visualization
 
                 generate_weekly_visualization(summary, image_path, width=1200, height=900)
+        
+        return image_path
+
+    async def generate_streak_heatmap_image(self, user_id: int, ref_time: datetime, temp_dir: str = None) -> str:
+        """
+        Generate streak heatmap visualization image and return path to temp file.
+        
+        Args:
+            user_id: User ID
+            ref_time: Reference time for heatmap calculation
+            temp_dir: Optional temp directory (defaults to system temp)
+        
+        Returns:
+            Path to generated image file (should be deleted after use)
+        """
+        # Get streak heatmap data
+        heatmap_data = self.get_streak_heatmap_data(user_id, ref_time)
+        
+        # Generate unique temp filename
+        if temp_dir is None:
+            temp_dir = tempfile.gettempdir()
+        
+        # Use UUID to ensure unique filename
+        unique_id = str(uuid.uuid4())
+        image_path = os.path.join(temp_dir, f"streak_heatmap_{user_id}_{unique_id}.png")
+        
+        # Generate visualization
+        try:
+            from visualisation.streak_heatmap import render_streak_heatmap_png
+
+            await render_streak_heatmap_png(
+                heatmap_data=heatmap_data,
+                output_path=image_path,
+                ref_time=ref_time,
+                width=1400,
+            )
+        except Exception as e:
+            logger.warning(
+                "Streak heatmap visualization failed. Error: %s",
+                str(e),
+            )
+            raise
         
         return image_path

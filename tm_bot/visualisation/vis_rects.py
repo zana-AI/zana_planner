@@ -52,7 +52,7 @@ def create_tasks_from_summary(summary: Dict[str, Any]) -> List[Task]:
     for promise_id, data in summary.items():
         hours_promised = data.get('hours_promised', 0.0)
         hours_spent = data.get('hours_spent', 0.0)
-        promise_text = data.get('text', '')
+        promise_text = data.get('text', '').replace('_', ' ')
         sessions_data = data.get('sessions', [])
         
         # Calculate progress for emoji

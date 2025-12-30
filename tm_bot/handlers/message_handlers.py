@@ -268,7 +268,7 @@ class MessageHandlers:
         # Generate and send visualization image
         image_path = None
         try:
-            image_path = self.plan_keeper.reports_service.generate_weekly_visualization_image(
+            image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
                 user_id, report_ref_time
             )
             if image_path and os.path.exists(image_path):

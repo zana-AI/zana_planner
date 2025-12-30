@@ -332,7 +332,7 @@ class CallbackHandlers:
                 action_datetime=query.message.date
             )
             promise = self.plan_keeper.get_promise(query.from_user.id, promise_id)
-            promise_text = promise.text if promise else f"#{promise_id}"
+            promise_text = (promise.text.replace('_', ' ') if promise else f"#{promise_id}")
             message = get_message("time_spent", user_lang, time=beautify_time(value),
                                   date=query.message.date.strftime("%A"),
                                   promise_id=promise_id, promise_text=promise_text.replace("_", " "))
@@ -794,7 +794,7 @@ class CallbackHandlers:
             await query.answer("Refreshing weekly report...")
             
             # Generate the visualization image
-            image_path = self.plan_keeper.reports_service.generate_weekly_visualization_image(
+            image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
                 user_id, user_now
             )
             
