@@ -12,7 +12,20 @@ set -e  # Exit on error
 DOMAIN="${1:-zana-ai.com}"
 EMAIL="${2:-}"
 BACKEND_PORT="${3:-8080}"
-PROJECT_DIR="/opt/zana-bot/zana_planner"
+
+# Auto-detect project directory
+# Try common locations
+if [ -d "/opt/zana-bot/zana_planner" ]; then
+    PROJECT_DIR="/opt/zana-bot/zana_planner"
+elif [ -d "/opt/zana-bot" ] && [ -f "/opt/zana-bot/docker-compose.yml" ]; then
+    PROJECT_DIR="/opt/zana-bot"
+elif [ -d "$(pwd)/zana_planner" ] && [ -f "$(pwd)/zana_planner/docker-compose.yml" ]; then
+    PROJECT_DIR="$(pwd)/zana_planner"
+elif [ -f "$(pwd)/docker-compose.yml" ]; then
+    PROJECT_DIR="$(pwd)"
+else
+    PROJECT_DIR="/opt/zana-bot/zana_planner"  # Default fallback
+fi
 
 echo "========================================"
 echo "Zana Web App - Automated Deployment"
@@ -31,8 +44,18 @@ fi
 
 # Step 1: Verify DNS
 echo "[1/8] Verifying DNS configuration..."
-DNS_IP=$(dig +short $DOMAIN | head -n 1 || echo "")
-CURRENT_IP=$(curl -s ifconfig.me || echo "")
+# Try multiple DNS lookup methods
+if command -v dig &> /dev/null; then
+    DNS_IP=$(dig +short $DOMAIN | head -n 1 || echo "")
+elif command -v host &> /dev/null; then
+    DNS_IP=$(host -t A $DOMAIN | grep -oP 'has address \K[0-9.]+' | head -n 1 || echo "")
+elif command -v nslookup &> /dev/null; then
+    DNS_IP=$(nslookup $DOMAIN | grep -A 1 "Name:" | grep "Address:" | awk '{print $2}' | head -n 1 || echo "")
+else
+    DNS_IP=""
+fi
+
+CURRENT_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ifconfig.co 2>/dev/null || echo "")
 
 if [ -z "$DNS_IP" ]; then
     echo "⚠️  WARNING: Could not resolve $DOMAIN. DNS may not be configured yet."
@@ -53,12 +76,28 @@ echo ""
 echo "[2/8] Checking project directory..."
 if [ ! -d "$PROJECT_DIR" ]; then
     echo "❌ Error: Project directory not found: $PROJECT_DIR"
-    echo "Please clone/pull the repository first."
-    exit 1
+    echo ""
+    echo "Trying to auto-detect from current location..."
+    CURRENT_DIR=$(pwd)
+    if [ -f "$CURRENT_DIR/docker-compose.yml" ]; then
+        PROJECT_DIR="$CURRENT_DIR"
+        echo "✓ Found project at: $PROJECT_DIR"
+    else
+        echo "Please run this script from the project root directory (where docker-compose.yml is located)"
+        echo "Or specify the correct path by editing PROJECT_DIR in the script"
+        exit 1
+    fi
 fi
 
 cd "$PROJECT_DIR"
 echo "✓ Project directory: $(pwd)"
+
+# Verify we're in the right place
+if [ ! -f "docker-compose.yml" ]; then
+    echo "❌ Error: docker-compose.yml not found in $PROJECT_DIR"
+    echo "Please run this script from the project root directory"
+    exit 1
+fi
 
 # Step 3: Pull latest code (if git repo)
 echo ""
@@ -73,18 +112,27 @@ fi
 # Step 4: Build frontend
 echo ""
 echo "[4/8] Building React frontend..."
+# Check for webapp_frontend in current dir or zana_planner subdir
+FRONTEND_DIR=""
 if [ -d "webapp_frontend" ]; then
-    cd webapp_frontend
+    FRONTEND_DIR="webapp_frontend"
+elif [ -d "zana_planner/webapp_frontend" ]; then
+    FRONTEND_DIR="zana_planner/webapp_frontend"
+fi
+
+if [ -n "$FRONTEND_DIR" ]; then
+    cd "$FRONTEND_DIR"
     if [ ! -d "node_modules" ]; then
         echo "Installing npm dependencies..."
         npm install
     fi
     echo "Building frontend..."
     npm run build
-    cd ..
+    cd "$PROJECT_DIR"
     echo "✓ Frontend built successfully"
 else
     echo "⚠️  webapp_frontend directory not found, skipping frontend build"
+    echo "   (This is OK if frontend is built in Docker)"
 fi
 
 # Step 5: Build Docker image
