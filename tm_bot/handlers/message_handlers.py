@@ -20,6 +20,7 @@ from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
 from services.content_service import ContentService
 from services.response_service import ResponseService
+from platforms.interfaces import IResponseService
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
 from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
@@ -44,7 +45,7 @@ logger = get_logger(__name__)
 class MessageHandlers:
     """Handles all message and command processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: ResponseService):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService):
         self.plan_keeper = plan_keeper
         self.llm_handler = llm_handler
         self.root_dir = root_dir
@@ -591,6 +592,7 @@ class MessageHandlers:
             # Process LLM response
             try:
                 func_call_response = self.call_planner_api(user_id, llm_response)
+                response_text = llm_response.get("response_to_user", "")
                 formatted_response = self._format_response(response_text, func_call_response)
                 
                 # Edit processing message with final response

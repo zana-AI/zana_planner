@@ -14,6 +14,7 @@ from telegram.ext import CallbackContext
 from handlers.messages_store import get_message, get_user_language, Language
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
+from platforms.interfaces import IResponseService
 from models.models import Action
 from utils.time_utils import beautify_time, round_time, get_week_range
 from ui.keyboards import (
@@ -31,7 +32,7 @@ logger = get_logger(__name__)
 class CallbackHandlers:
     """Handles all callback query processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: ResponseService):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: IResponseService):
         self.plan_keeper = plan_keeper
         self.application = application
         self.response_service = response_service

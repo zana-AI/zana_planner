@@ -1,6 +1,6 @@
 """
-Refactored Telegram bot for the planner application.
-This version uses separated concerns with internationalization support.
+Refactored bot for the planner application.
+This version uses platform abstraction to support multiple platforms (Telegram, Discord, etc.).
 """
 import asyncio
 import datetime
@@ -9,6 +9,11 @@ import subprocess
 import threading
 from typing import Optional
 
+# Platform abstraction imports
+from platforms.interfaces import IPlatformAdapter
+from platforms.telegram.adapter import TelegramPlatformAdapter
+
+# Telegram-specific imports (for backward compatibility during transition)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -32,43 +37,106 @@ from utils.version import get_version_info
 
 logger = get_logger(__name__)
 
-class PlannerTelegramBot:
-    """Main Telegram bot class with separated concerns."""
+class PlannerBot:
+    """
+    Main bot class with platform abstraction.
+    
+    This class is platform-agnostic and works with any IPlatformAdapter implementation.
+    For Telegram, use TelegramPlatformAdapter. For other platforms, provide appropriate adapters.
+    """
 
-    def __init__(self, token: str, root_dir: str):
+    def __init__(self, platform_adapter: IPlatformAdapter, root_dir: str):
+        """
+        Initialize the bot with a platform adapter.
+        
+        Args:
+            platform_adapter: Platform adapter implementing IPlatformAdapter
+            root_dir: Root directory for user data
+        """
+        self.platform_adapter = platform_adapter
+        self.root_dir = root_dir
+        
         # Initialize core components
-        request = HTTPXRequest(connect_timeout=10, read_timeout=20)
-        self.application = Application.builder().token(token).request(request).build()
         self.llm_handler = LLMHandler()
         self.plan_keeper = PlannerAPIAdapter(root_dir)
-        self.root_dir = root_dir
-        self.token = token
-        # self.webapp_server: Optional[threading.Thread] = None  # Web app disabled
+        
+        # Get response service from platform adapter
+        self.response_service = platform_adapter.response_service
+        
+        # For backward compatibility, also store original response service if available
+        if hasattr(self.response_service, 'original'):
+            self._original_response_service = self.response_service.original
+        else:
+            # For non-Telegram platforms (like CLI), use the adapter's response service directly
+            # if it implements the compatibility methods (reply_text, send_message)
+            if hasattr(self.response_service, 'reply_text'):
+                # The adapter's response service can handle Update objects (e.g., TestResponseService)
+                self._original_response_service = self.response_service
+            else:
+                # Fallback: create a response service if adapter doesn't provide one
+                self._original_response_service = ResponseService(
+                    root_dir=self.root_dir,
+                    settings_repo=self.plan_keeper.settings_repo
+                )
 
-        # Initialize ResponseService
-        self.response_service = ResponseService(
-            root_dir=self.root_dir,
-            settings_repo=self.plan_keeper.settings_repo
-        )
-
-        # Initialize handlers
-        self.message_handlers = MessageHandlers(
-            self.plan_keeper,
-            self.llm_handler,
-            self.root_dir,
-            self.application,
-            self.response_service
-        )
-        self.callback_handlers = CallbackHandlers(
-            self.plan_keeper,
-            self.application,
-            self.response_service
-        )
-
-        # Store plan_keeper, llm_handler, and response_service in bot_data for access by handlers
-        self.application.bot_data['plan_keeper'] = self.plan_keeper
-        self.application.bot_data['llm_handler'] = self.llm_handler
-        self.application.bot_data['response_service'] = self.response_service
+        # Initialize handlers (still using Telegram-specific handlers for now)
+        # In Phase 5, these will be refactored to use base handlers
+        if hasattr(platform_adapter, 'application'):
+            # Telegram-specific initialization
+            self.application = platform_adapter.application
+            self.message_handlers = MessageHandlers(
+                self.plan_keeper,
+                self.llm_handler,
+                self.root_dir,
+                self.application,
+                self._original_response_service
+            )
+            self.callback_handlers = CallbackHandlers(
+                self.plan_keeper,
+                self.application,
+                self._original_response_service
+            )
+            
+            # Store plan_keeper, llm_handler, and response_service in bot_data
+            self.application.bot_data['plan_keeper'] = self.plan_keeper
+            self.application.bot_data['llm_handler'] = self.llm_handler
+            self.application.bot_data['response_service'] = self._original_response_service
+        else:
+            # For non-Telegram platforms, initialize handlers with mock application
+            # Create a minimal mock application for handlers that need it
+            from unittest.mock import Mock, MagicMock
+            
+            # Create mock job queue that works with the platform adapter's scheduler
+            mock_job_queue = Mock()
+            # Make job_queue methods work with our scheduler
+            def get_jobs_by_name(name):
+                # Return empty list - jobs are managed by platform adapter's scheduler
+                return []
+            mock_job_queue.get_jobs_by_name = get_jobs_by_name
+            
+            mock_application = Mock()
+            mock_application.job_queue = mock_job_queue
+            mock_application.bot_data = {}
+            mock_application.bot = Mock()  # Some handlers may need bot
+            
+            self.application = mock_application
+            self.message_handlers = MessageHandlers(
+                self.plan_keeper,
+                self.llm_handler,
+                self.root_dir,
+                mock_application,
+                self._original_response_service
+            )
+            self.callback_handlers = CallbackHandlers(
+                self.plan_keeper,
+                mock_application,
+                self._original_response_service
+            )
+            
+            # Store in bot_data for handlers
+            mock_application.bot_data['plan_keeper'] = self.plan_keeper
+            mock_application.bot_data['llm_handler'] = self.llm_handler
+            mock_application.bot_data['response_service'] = self._original_response_service
         
         # Set LLM handler in plan_keeper for time estimation service
         self.plan_keeper.set_llm_handler(self.llm_handler)
@@ -77,7 +145,12 @@ class PlannerTelegramBot:
         initialize_message_store(self.plan_keeper.settings_repo)
 
         # Register all handlers
-        self._register_handlers()
+        if self.application:
+            self._register_handlers()
+        
+        # For CLI adapter, set handlers so it can process input
+        if hasattr(platform_adapter, 'set_handlers') and self.message_handlers:
+            platform_adapter.set_handlers(self.message_handlers, self.callback_handlers)
 
     def _register_handlers(self) -> None:
         """Register all command and message handlers."""
@@ -143,7 +216,7 @@ class PlannerTelegramBot:
         On bot startup, (re)schedule nightly jobs for all existing users found under root_dir.
         Safe to run multiple times; it removes any prior job with the same name first.
         """
-        jq = self.application.job_queue
+        job_scheduler = self.platform_adapter.job_scheduler
 
         for entry in os.listdir(self.root_dir):
             user_path = os.path.join(self.root_dir, entry)
@@ -158,27 +231,26 @@ class PlannerTelegramBot:
             tzname = self.get_user_timezone(user_id) or "UTC"
 
             # Schedule morning reminders
-            schedule_user_daily(
-                jq, user_id=user_id, tz=tzname,
-                callback=self.message_handlers.scheduled_morning_reminders_for_one,
-                hh=8, mm=30, name_prefix="morning",
-            )
+            if self.message_handlers:
+                job_scheduler.schedule_daily(
+                    user_id=user_id, tz=tzname,
+                    callback=self.message_handlers.scheduled_morning_reminders_for_one,
+                    hh=8, mm=30, name_prefix="morning",
+                )
 
-            now = datetime.datetime.now()
-            # Schedule noon cleanup 
-            schedule_user_daily(
-                jq, user_id=user_id, tz=tzname,
-                callback=self.message_handlers.scheduled_noon_cleanup_for_one,
-                # hh=23, mm=2, name_prefix="noon_cleanup",
-                hh=12, mm=00, name_prefix="noon_cleanup",
-            )
+                # Schedule noon cleanup 
+                job_scheduler.schedule_daily(
+                    user_id=user_id, tz=tzname,
+                    callback=self.message_handlers.scheduled_noon_cleanup_for_one,
+                    hh=12, mm=00, name_prefix="noon_cleanup",
+                )
 
-            # Schedule nightly reminders
-            schedule_user_daily(
-                jq, user_id=user_id, tz=tzname,
-                callback=self.message_handlers.scheduled_nightly_reminders_for_one,
-                hh=22, mm=59, name_prefix="nightly",
-            )
+                # Schedule nightly reminders
+                job_scheduler.schedule_daily(
+                    user_id=user_id, tz=tzname,
+                    callback=self.message_handlers.scheduled_nightly_reminders_for_one,
+                    hh=22, mm=59, name_prefix="nightly",
+                )
 
     # Web app server disabled - commented out to prevent issues with Telegram bot
     # def _start_webapp_server(self, host: str = "0.0.0.0", port: int = 8080) -> None:
@@ -236,8 +308,16 @@ class PlannerTelegramBot:
         # if enable_webapp:
         #     self._start_webapp_server(port=webapp_port)
         
-        # Start Telegram bot polling (blocking)
-        self.application.run_polling()
+        # Start platform bot (blocking)
+        # For Telegram, this calls application.run_polling()
+        # For other platforms, this will start their respective event loops
+        if hasattr(self.platform_adapter, 'application'):
+            # Telegram-specific: use run_polling for backward compatibility
+            self.application.run_polling()
+        else:
+            # For other platforms, use async start
+            import asyncio
+            asyncio.run(self.platform_adapter.start())
 
 
 def main():
@@ -300,11 +380,27 @@ def main():
     # WEBAPP_ENABLED = os.getenv("WEBAPP_ENABLED", "false").lower() in ("true", "1", "yes")  # Disabled by default
     # WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
 
+    # Create Telegram platform adapter
+    request = HTTPXRequest(connect_timeout=10, read_timeout=20)
+    application = Application.builder().token(BOT_TOKEN).request(request).build()
+    
+    # Create plan_keeper first to get settings_repo
+    plan_keeper = PlannerAPIAdapter(ROOT_DIR)
+    
+    # Initialize response service with settings_repo
+    response_service = ResponseService(
+        root_dir=ROOT_DIR,
+        settings_repo=plan_keeper.settings_repo
+    )
+    
+    # Create platform adapter
+    platform_adapter = TelegramPlatformAdapter(application, response_service)
+    
     # Create and run bot
-    bot = PlannerTelegramBot(BOT_TOKEN, ROOT_DIR)
+    bot = PlannerBot(platform_adapter, ROOT_DIR)
+    
     bot.bootstrap_schedule_existing_users()
-    logger.debug(f"Starting telegram bot")
-    # logger.debug(f"Web app enabled: {WEBAPP_ENABLED} | Web app port: {WEBAPP_PORT}")  # Web app disabled
+    logger.debug(f"Starting bot with platform adapter")
     bot.run(enable_webapp=False, webapp_port=8080)  # Web app disabled - always False
 
 
