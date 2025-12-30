@@ -199,7 +199,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -214,15 +214,21 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     row = conn.execute("SELECT MAX(version) AS v FROM schema_version;").fetchone()
     current = int(row["v"] or 0)
-    if current >= SCHEMA_VERSION:
-        return
-
+    
     with conn:
-        _apply_v1(conn)
-        conn.execute(
-            "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
-            (SCHEMA_VERSION, utc_now_iso()),
-        )
+        # Apply migrations in order
+        if current < 1:
+            _apply_v1(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (1, utc_now_iso()),
+            )
+        if current < 2:
+            _apply_v2(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (2, utc_now_iso()),
+            )
 
 
 def _apply_v1(conn: sqlite3.Connection) -> None:
@@ -340,4 +346,41 @@ def _apply_v1(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS ix_actions_user_at ON actions(user_id, at_utc);")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_actions_user_promise_at ON actions(user_id, promise_uuid, at_utc);")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_sessions_user_status ON sessions(user_id, status);")
+
+
+def _apply_v2(conn: sqlite3.Connection) -> None:
+    """Apply schema version 2 migrations: conversations table and user_settings extensions."""
+    # Add conversations table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            chat_id TEXT,
+            message_id INTEGER,
+            message_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES user_settings(user_id)
+        );
+        """
+    )
+    
+    # Add index for conversations
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_conversations_user_time ON conversations(user_id, created_at_utc DESC);"
+    )
+    
+    # Add new columns to user_settings (if they don't exist)
+    # SQLite doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS, so we check first
+    existing_columns = [row[1] for row in conn.execute("PRAGMA table_info(user_settings);").fetchall()]
+    
+    if "first_name" not in existing_columns:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN first_name TEXT NULL;")
+    
+    if "username" not in existing_columns:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN username TEXT NULL;")
+    
+    if "last_seen_utc" not in existing_columns:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN last_seen_utc TEXT NULL;")
 

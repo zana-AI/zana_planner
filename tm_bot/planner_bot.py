@@ -21,6 +21,7 @@ from telegram.request import HTTPXRequest
 
 from llms.llm_handler import LLMHandler
 from services.planner_api_adapter import PlannerAPIAdapter
+from services.response_service import ResponseService
 from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
 from handlers.messages_store import initialize_message_store
@@ -44,21 +45,30 @@ class PlannerTelegramBot:
         self.token = token
         # self.webapp_server: Optional[threading.Thread] = None  # Web app disabled
 
+        # Initialize ResponseService
+        self.response_service = ResponseService(
+            root_dir=self.root_dir,
+            settings_repo=self.plan_keeper.settings_repo
+        )
+
         # Initialize handlers
         self.message_handlers = MessageHandlers(
             self.plan_keeper,
             self.llm_handler,
             self.root_dir,
-            self.application
+            self.application,
+            self.response_service
         )
         self.callback_handlers = CallbackHandlers(
             self.plan_keeper,
-            self.application
+            self.application,
+            self.response_service
         )
 
-        # Store plan_keeper and llm_handler in bot_data for access by handlers
+        # Store plan_keeper, llm_handler, and response_service in bot_data for access by handlers
         self.application.bot_data['plan_keeper'] = self.plan_keeper
         self.application.bot_data['llm_handler'] = self.llm_handler
+        self.application.bot_data['response_service'] = self.response_service
         
         # Set LLM handler in plan_keeper for time estimation service
         self.plan_keeper.set_llm_handler(self.llm_handler)

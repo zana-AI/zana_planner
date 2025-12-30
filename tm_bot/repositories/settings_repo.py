@@ -1,5 +1,5 @@
 from db.legacy_importer import ensure_imported
-from db.sqlite_db import connection_for_root, utc_now_iso
+from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
 from models.models import UserSettings
 
 
@@ -15,7 +15,8 @@ class SettingsRepository:
             ensure_imported(conn, self.root_dir, user, "settings")
             row = conn.execute(
                 """
-                SELECT timezone, nightly_hh, nightly_mm, language, voice_mode
+                SELECT timezone, nightly_hh, nightly_mm, language, voice_mode, 
+                       first_name, username, last_seen_utc
                 FROM user_settings
                 WHERE user_id = ?
                 LIMIT 1;
@@ -33,6 +34,9 @@ class SettingsRepository:
             nightly_mm=int(row["nightly_mm"] or 0),
             language=str(row["language"] or "en"),
             voice_mode=row["voice_mode"],
+            first_name=row["first_name"],
+            username=row["username"],
+            last_seen=dt_from_utc_iso(row["last_seen_utc"]) if row["last_seen_utc"] else None,
         )
 
     def save_settings(self, settings: UserSettings) -> None:
@@ -44,8 +48,9 @@ class SettingsRepository:
                 """
                 INSERT OR REPLACE INTO user_settings(
                     user_id, timezone, nightly_hh, nightly_mm, language, voice_mode,
+                    first_name, username, last_seen_utc,
                     created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     user,
@@ -54,6 +59,9 @@ class SettingsRepository:
                     int(settings.nightly_mm or 0),
                     settings.language or "en",
                     settings.voice_mode,
+                    settings.first_name,
+                    settings.username,
+                    dt_to_utc_iso(settings.last_seen) if settings.last_seen else None,
                     now,
                     now,
                 ),

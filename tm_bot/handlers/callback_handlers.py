@@ -13,6 +13,7 @@ from telegram.ext import CallbackContext
 
 from handlers.messages_store import get_message, get_user_language, Language
 from services.planner_api_adapter import PlannerAPIAdapter
+from services.response_service import ResponseService
 from models.models import Action
 from utils.time_utils import beautify_time, round_time, get_week_range
 from ui.keyboards import (
@@ -30,9 +31,10 @@ logger = get_logger(__name__)
 class CallbackHandlers:
     """Handles all callback query processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, application):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: ResponseService):
         self.plan_keeper = plan_keeper
         self.application = application
+        self.response_service = response_service
     
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings repository."""
@@ -226,19 +228,34 @@ class CallbackHandlers:
     async def _handle_pomodoro_pause(self, query, user_lang: Language):
         """Handle pomodoro timer pause."""
         message = get_message("pomodoro_paused", user_lang)
-        await query.edit_message_text(text=message, parse_mode='Markdown')
+        user_id = query.from_user.id if query.from_user else None
+        await self.response_service.edit_message_text(
+            query, message,
+            user_id=user_id,
+            parse_mode='Markdown'
+        )
     
     async def _handle_pomodoro_stop(self, query, user_lang: Language):
         """Handle pomodoro timer stop."""
         message = get_message("pomodoro_stopped", user_lang)
-        await query.edit_message_text(text=message, parse_mode='Markdown')
+        user_id = query.from_user.id if query.from_user else None
+        await self.response_service.edit_message_text(
+            query, message,
+            user_id=user_id,
+            parse_mode='Markdown'
+        )
     
     async def _handle_remind_next_week(self, query, promise_id: str, user_lang: Language):
         """Handle remind next week action."""
         next_monday = (datetime.now() + timedelta(days=(7 - datetime.now().weekday()))).date()
         self.plan_keeper.update_promise_start_date(query.from_user.id, promise_id, next_monday)
         message = get_message("promise_remind_next_week", user_lang, promise_id=promise_id)
-        await query.edit_message_text(text=message, parse_mode='Markdown')
+        user_id = query.from_user.id if query.from_user else None
+        await self.response_service.edit_message_text(
+            query, message,
+            user_id=user_id,
+            parse_mode='Markdown'
+        )
     
     async def _handle_delete_promise(self, query, promise_id: str):
         """Handle delete promise confirmation."""
@@ -263,8 +280,10 @@ class CallbackHandlers:
     
     async def _handle_cancel_delete(self, query):
         """Handle cancel delete action."""
-        await query.edit_message_text(
-            text=query.message.text_markdown,
+        user_id = query.from_user.id if query.from_user else None
+        await self.response_service.edit_message_text(
+            query, query.message.text_markdown,
+            user_id=user_id,
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(query.message.reply_markup.inline_keyboard[:-1])
         )
@@ -298,7 +317,7 @@ class CallbackHandlers:
             pass
         
         kb = time_options_kb(promise_id, new_curr, base_h)
-        await query.edit_message_reply_markup(reply_markup=kb)
+        await self.response_service.edit_message_reply_markup(query, reply_markup=kb)
         message = get_message("time_selected", user_lang, time=beautify_time(new_curr))
         await query.answer(message)
     
@@ -318,9 +337,18 @@ class CallbackHandlers:
                                   date=query.message.date.strftime("%A"),
                                   promise_id=promise_id, promise_text=promise_text.replace("_", " "))
             try:
-                await query.edit_message_text(text=message, parse_mode='Markdown')
+                user_id = query.from_user.id if query.from_user else None
+                await self.response_service.edit_message_text(
+                    query, message,
+                    user_id=user_id,
+                    parse_mode='Markdown'
+                )
             except Exception:
-                await query.edit_message_text(text=message)  # no markdown
+                user_id = query.from_user.id if query.from_user else None
+                await self.response_service.edit_message_text(
+                    query, message,
+                    user_id=user_id
+                )
         else:
             # If 0 is selected, consider it a cancellation and delete the message.
             await query.delete_message()
@@ -350,7 +378,11 @@ class CallbackHandlers:
         if not unshown_ranked:
             # All promises have been shown today
             message = get_message("thats_all", user_lang)
-            await query.edit_message_text(message)
+            user_id = query.from_user.id if query.from_user else None
+            await self.response_service.edit_message_text(
+                query, message,
+                user_id=user_id
+            )
             return
         
         # slice the next chunk (show next batch_size items)
@@ -366,9 +398,12 @@ class CallbackHandlers:
             
             kb = time_options_kb(p.id, curr_h=curr_h, base_day_h=base_day_h, weekly_h=weekly_h)
             message = get_message("nightly_question", user_lang, promise_text=p.text.replace('_', ' '))
-            await context.bot.send_message(
+            # Use ResponseService for send_message
+            await self.response_service.send_message(
+                context,
                 chat_id=user_id,
                 text=message,
+                user_id=user_id,
                 reply_markup=kb,
                 parse_mode="Markdown",
             )
@@ -392,7 +427,11 @@ class CallbackHandlers:
             )
         else:
             message = get_message("thats_all", user_lang)
-            await query.edit_message_text(message)
+            user_id = query.from_user.id if query.from_user else None
+            await self.response_service.edit_message_text(
+                query, message,
+                user_id=user_id
+            )
     
     async def _handle_preping_start(self, query, promise_id: str):
         """Handle preping start action."""
@@ -442,7 +481,7 @@ class CallbackHandlers:
             weekly_h=weekly_h,
             # TODO: show_timer parameter not implemented in time_options_kb function
         )
-        await query.edit_message_reply_markup(reply_markup=kb)
+        await self.response_service.edit_message_reply_markup(query, reply_markup=kb)
     
     async def _handle_session_pause(self, query, session_id: str):
         """Handle session pause."""

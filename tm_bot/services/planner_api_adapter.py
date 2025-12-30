@@ -98,6 +98,10 @@ class PlannerAPIAdapter:
         """Get all promises for a user (legacy format)."""
         promises = self.promises_repo.list_promises(user_id)
         return [self._promise_to_dict(p) for p in promises]
+    
+    def count_promises(self, user_id) -> int:
+        """Get total number of promises for a user."""
+        return len(self.promises_repo.list_promises(user_id))
 
     def delete_promise(self, user_id, promise_id: str):
         """Delete a promise."""

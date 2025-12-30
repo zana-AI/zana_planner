@@ -35,6 +35,9 @@ class UserSettings:
     nightly_mm: int = 0
     language: str = "en"  # "en", "fa", "fr"
     voice_mode: Optional[str] = None  # None (NOTSET), "enabled", "disabled"
+    first_name: Optional[str] = None
+    username: Optional[str] = None
+    last_seen: Optional[datetime] = None
 
 
 @dataclass

@@ -18,6 +18,7 @@ from handlers.translator import translate_text
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
 from services.content_service import ContentService
+from services.response_service import ResponseService
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
 from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
@@ -42,11 +43,12 @@ logger = get_logger(__name__)
 class MessageHandlers:
     """Handles all message and command processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: ResponseService):
         self.plan_keeper = plan_keeper
         self.llm_handler = llm_handler
         self.root_dir = root_dir
         self.application = application
+        self.response_service = response_service
         self.voice_service = VoiceService()
         self.content_service = ContentService()
         try:
@@ -56,6 +58,34 @@ class MessageHandlers:
         except Exception as e:
             logger.error(f"Failed to initialize ImageService: {str(e)}")
             self.image_service = None
+    
+    def _update_user_info(self, user_id: int, user) -> None:
+        """Extract and update user info (first_name, username, last_seen) from Telegram user object."""
+        try:
+            settings = self.plan_keeper.settings_repo.get_settings(user_id)
+            updated = False
+            
+            # Update first_name if missing or changed
+            if user.first_name:
+                if settings.first_name != user.first_name:
+                    settings.first_name = user.first_name
+                    updated = True
+            
+            # Update username if missing or changed
+            if user.username:
+                if settings.username != user.username:
+                    settings.username = user.username
+                    updated = True
+            
+            # Always update last_seen
+            from datetime import datetime
+            settings.last_seen = datetime.now()
+            updated = True
+            
+            if updated:
+                self.plan_keeper.settings_repo.save_settings(settings)
+        except Exception as e:
+            logger.warning(f"Failed to update user info for user {user_id}: {e}")
     
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings repository."""
@@ -82,7 +112,12 @@ class MessageHandlers:
             # New user without language preference - show language selection
             message = get_message("choose_language", user_lang)
             keyboard = language_selection_kb()
-            await update.message.reply_text(message, reply_markup=keyboard, parse_mode='Markdown')
+            await self.response_service.reply_text(
+                update, message,
+                user_id=user_id,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
             return
         
         # Existing user or user with language preference
@@ -91,7 +126,11 @@ class MessageHandlers:
         else:
             message = get_message("welcome_return", user_lang)
         
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id,
+            parse_mode='Markdown'
+        )
         
         tzname = self.get_user_timezone(user_id)
         schedule_user_daily(
@@ -135,7 +174,10 @@ class MessageHandlers:
             header = get_message("promises_list_header", user_lang)
             message = f"{header}\n{formatted_promises}"
         
-        await update.message.reply_text(message)
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id
+        )
     
     async def nightly_reminders(self, update: Update, context: CallbackContext) -> None:
         """Handle the /nightly command to send nightly reminders."""
@@ -182,17 +224,20 @@ class MessageHandlers:
             )
             if image_path and os.path.exists(image_path):
                 with open(image_path, 'rb') as photo:
-                    await context.bot.send_photo(
+                    await self.response_service.send_photo(
+                        context,
                         chat_id=update.effective_chat.id,
                         photo=photo,
                         caption=message_text,
+                        user_id=user_id,
                         reply_markup=keyboard,
                         parse_mode='Markdown',
                     )
             else:
                 # Fallback: no image generated, send text-only weekly report
-                await update.message.reply_text(
-                    message_text,
+                await self.response_service.reply_text(
+                    update, message_text,
+                    user_id=user_id,
                     reply_markup=keyboard,
                     parse_mode='Markdown'
                 )
@@ -200,13 +245,17 @@ class MessageHandlers:
             logger.warning(f"Failed to generate weekly visualization: {e}")
             # Don't fail the whole command if visualization fails
             try:
-                await update.message.reply_text(
-                    message_text,
+                await self.response_service.reply_text(
+                    update, message_text,
+                    user_id=user_id,
                     reply_markup=keyboard,
                     parse_mode='Markdown'
                 )
             except Exception:
-                await update.message.reply_text(message_text)
+                await self.response_service.reply_text(
+                    update, message_text,
+                    user_id=user_id
+                )
         finally:
             # Clean up temp file
             if image_path and os.path.exists(image_path):
@@ -260,11 +309,15 @@ class MessageHandlers:
         )
         
         # Get insights from the LLM handler
-        insights = self.llm_handler.get_response_custom(prompt, user_id)
+        insights = self.llm_handler.get_response_custom(prompt, str(user_id))
         
         # Send the insights to the user
         message = get_message("zana_insights", user_lang, insights=insights)
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id,
+            parse_mode='Markdown'
+        )
     
     async def pomodoro(self, update: Update, context: CallbackContext) -> None:
         """Handle the /pomodoro command to start a Pomodoro timer."""
@@ -292,7 +345,10 @@ class MessageHandlers:
                 ZoneInfo(tzname)
             except Exception:
                 message = get_message("timezone_invalid", user_lang)
-                await update.message.reply_text(message)
+                await self.response_service.reply_text(
+                    update, message,
+                    user_id=user_id
+                )
                 return
             
             # save
@@ -300,7 +356,10 @@ class MessageHandlers:
             # reschedule nightly/morning jobs if you have them
             await self._reschedule_user_jobs(user_id, tzname)
             message = get_message("timezone_set", user_lang, timezone=tzname)
-            await update.message.reply_text(message)
+            await self.response_service.reply_text(
+                update, message,
+                user_id=user_id
+            )
             return
         
         # Ask for location
@@ -311,7 +370,11 @@ class MessageHandlers:
             input_field_placeholder="Tap to share your location…",
         )
         message = get_message("timezone_location_request", user_lang)
-        await update.message.reply_text(message, reply_markup=kb)
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id,
+            reply_markup=kb
+        )
     
     async def on_location_shared(self, update: Update, context: CallbackContext) -> None:
         """Handle location sharing for timezone detection."""
@@ -329,30 +392,36 @@ class MessageHandlers:
             
             if not tzname:
                 message = get_message("timezone_location_failed", user_lang)
-                await update.message.reply_text(
-                    message,
-                    reply_markup=ReplyKeyboardRemove(),
+                await self.response_service.reply_text(
+                    update, message,
+                    user_id=user_id,
+                    reply_markup=ReplyKeyboardRemove()
                 )
                 return
             
             self.set_user_timezone(user_id, tzname)
             message = get_message("timezone_location_success", user_lang, timezone=tzname)
-            await update.message.reply_text(
-                message,
-                reply_markup=ReplyKeyboardRemove(),
+            await self.response_service.reply_text(
+                update, message,
+                user_id=user_id,
+                reply_markup=ReplyKeyboardRemove()
             )
         except ImportError:
             logger.error("timezonefinder not available")
             message = get_message("timezone_location_failed", user_lang)
-            await update.message.reply_text(
-                message,
-                reply_markup=ReplyKeyboardRemove(),
+            await self.response_service.reply_text(
+                update, message,
+                user_id=user_id,
+                reply_markup=ReplyKeyboardRemove()
             )
 
     async def on_voice(self, update: Update, context: CallbackContext):
         """Handle voice messages with ASR and optional TTS response."""
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
+        
+        # Extract and update user info
+        self._update_user_info(user_id, update.effective_user)
         
         # Get voice file
         voice = update.effective_message.voice
@@ -367,6 +436,7 @@ class MessageHandlers:
         temp_dir = tempfile.gettempdir()
         path = os.path.join(temp_dir, f"voice_{voice.file_unique_id}.ogg")
         await file.download_to_drive(path)
+
         
         try:
             # Check voice mode preference
@@ -377,13 +447,21 @@ class MessageHandlers:
             
             # Send acknowledgment
             ack_message = get_message("voice_received", user_lang)
-            await update.effective_message.reply_text(ack_message)
+            await self.response_service.reply_text(
+                update, ack_message,
+                user_id=user_id,
+                log_conversation=False  # Don't log acknowledgment
+            )
             
             # If first time, ask about voice mode preference (but still process the message)
             if settings.voice_mode is None:
                 message = get_message("voice_mode_prompt", user_lang)
                 keyboard = voice_mode_selection_kb()
-                await update.effective_message.reply_text(message, reply_markup=keyboard)
+                await self.response_service.reply_text(
+                    update, message,
+                    user_id=user_id,
+                    reply_markup=keyboard
+                )
                 # Continue processing the voice message even if preference not set yet
             
             # Transcribe voice with multi-language support
@@ -416,7 +494,10 @@ class MessageHandlers:
             
             if not user_input:
                 error_msg = get_message("voice_transcription_failed", user_lang)
-                await update.effective_message.reply_text(error_msg)
+                await self.response_service.reply_text(
+                    update, error_msg,
+                    user_id=user_id
+                )
                 return
             
             # Create progress callback to show plan to user
@@ -437,7 +518,12 @@ class MessageHandlers:
             
             # Send plan message before final response if available
             if plan_message_to_send:
-                await update.effective_message.reply_text(plan_message_to_send, parse_mode='Markdown')
+                await self.response_service.reply_text(
+                    update, plan_message_to_send,
+                    user_id=user_id,
+                    parse_mode='Markdown',
+                    log_conversation=False  # Don't log plan messages separately
+                )
             
             # Check for errors
             if "error" in llm_response:
@@ -480,6 +566,8 @@ class MessageHandlers:
         text_response: str, settings, user_lang
     ):
         """Send response as voice if voice mode enabled, otherwise as text."""
+        user_id = update.effective_user.id if update.effective_user else None
+        
         if settings and settings.voice_mode == "enabled":
             try:
                 # Synthesize speech (text will be cleaned inside synthesize_speech)
@@ -494,7 +582,7 @@ class MessageHandlers:
                 audio_bytes = self.voice_service.synthesize_speech(text_response, speech_lang)
                 
                 if audio_bytes:
-                    # Send as voice message
+                    # Send as voice message via ResponseService
                     import tempfile
                     import os
                     temp_dir = tempfile.gettempdir()
@@ -505,7 +593,10 @@ class MessageHandlers:
                             f.write(audio_bytes)
                         
                         with open(temp_path, 'rb') as voice_file:
-                            await update.effective_message.reply_voice(voice=voice_file)
+                            await self.response_service.reply_voice(
+                                update, voice_file,
+                                user_id=user_id
+                            )
                     finally:
                         # Clean up temp file
                         try:
@@ -521,13 +612,17 @@ class MessageHandlers:
                 # TTS error, fallback to text
                 logger.error(f"TTS error: {str(e)}, falling back to text")
         
-        # Send as text (voice mode disabled or TTS failed)
-        await self._reply_text_smart(update.effective_message, text_response)
+        # Send as text (voice mode disabled or TTS failed) via ResponseService
+        await self.response_service.reply_text(
+            update, text_response,
+            user_id=user_id
+        )
 
-    @staticmethod
-    async def _reply_text_smart(message, text: str) -> None:
+    async def _reply_text_smart(self, message, text: str, user_id: Optional[int] = None) -> None:
         """
-        Reply using the appropriate parse_mode.
+        Reply using the appropriate parse_mode via ResponseService.
+        
+        This is a transitional method - prefer using response_service.reply_text directly.
 
         - Our formatted responses are HTML (used for expandable blockquotes).
         - Most other bot messages/templates are Markdown.
@@ -535,11 +630,21 @@ class MessageHandlers:
         safe_text = "" if text is None else str(text)
         looks_like_html = "<b>Zana:</b>" in safe_text or "<blockquote" in safe_text or "<pre>" in safe_text
         parse_mode = "HTML" if looks_like_html else "Markdown"
-        try:
-            await message.reply_text(safe_text, parse_mode=parse_mode)
-        except Exception:
-            # Fallback: no parse mode
-            await message.reply_text(safe_text)
+        
+        # If we have user_id and can create an Update, use ResponseService
+        # Otherwise fallback to direct reply (for edge cases)
+        if user_id and hasattr(message, 'chat') and hasattr(message, 'reply_text'):
+            # Try to create a minimal Update for ResponseService
+            # For now, use direct reply as fallback
+            try:
+                await message.reply_text(safe_text, parse_mode=parse_mode)
+            except Exception:
+                await message.reply_text(safe_text)
+        else:
+            try:
+                await message.reply_text(safe_text, parse_mode=parse_mode)
+            except Exception:
+                await message.reply_text(safe_text)
 
     @staticmethod
     def _format_plan_for_user(plan_steps: list) -> str:
@@ -640,6 +745,9 @@ class MessageHandlers:
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
         
+        # Extract and update user info
+        self._update_user_info(user_id, update.effective_user)
+        
         msg = update.effective_message
         
         # Get image file
@@ -662,13 +770,20 @@ class MessageHandlers:
         try:
             # Send acknowledgment
             ack_message = get_message("image_received", user_lang)
-            await msg.reply_text(ack_message)
+            await self.response_service.reply_text(
+                update, ack_message,
+                user_id=user_id,
+                log_conversation=False  # Don't log acknowledgment
+            )
             
             # Parse image with VLM
             try:
                 if self.image_service is None:
                     error_msg = get_message("image_processing_failed", user_lang)
-                    await msg.reply_text(f"{error_msg}\n\nImage processing service is not available.")
+                    await self.response_service.reply_text(
+                        update, f"{error_msg}\n\nImage processing service is not available.",
+                        user_id=user_id
+                    )
                     return
                 
                 # Use Telegram's file_path (URL) if available, otherwise use local file
@@ -683,7 +798,10 @@ class MessageHandlers:
                 if not extracted_text or not analysis.text or len(analysis.text.strip()) == 0:
                     # No text found in image
                     error_msg = get_message("image_no_text", user_lang)
-                    await msg.reply_text(error_msg)
+                    await self.response_service.reply_text(
+                        update, error_msg,
+                        user_id=user_id
+                    )
                     return
                 
                 # Log extracted content for debugging
@@ -713,14 +831,23 @@ class MessageHandlers:
                 
                 # Send plan message before final response if available
                 if plan_message_to_send:
-                    await msg.reply_text(plan_message_to_send, parse_mode='Markdown')
+                    await self.response_service.reply_text(
+                        update, plan_message_to_send,
+                        user_id=user_id,
+                        parse_mode='Markdown',
+                        log_conversation=False  # Don't log plan messages separately
+                    )
                 
                 # Check for errors
                 if "error" in llm_response:
                     error_msg = llm_response["response_to_user"]
                     if user_lang and user_lang != Language.EN:
                         error_msg = translate_text(error_msg, user_lang.value, "en")
-                    await msg.reply_text(error_msg, parse_mode='Markdown')
+                    await self.response_service.reply_text(
+                        update, error_msg,
+                        user_id=user_id,
+                        parse_mode='Markdown'
+                    )
                     return
                 
                 # Process LLM response
@@ -741,14 +868,20 @@ class MessageHandlers:
                 except Exception as e:
                     error_msg = get_message("error_general", user_lang, error=str(e))
                     logger.error(f"Error processing image for user {user_id}: {str(e)}")
-                    await msg.reply_text(error_msg)
+                    await self.response_service.reply_text(
+                        update, error_msg,
+                        user_id=user_id
+                    )
                     
             except Exception as e:
                 error_msg = get_message("image_processing_failed", user_lang)
                 logger.error(f"Image processing error: {str(e)}", exc_info=True)
                 # Provide more context in error message
                 detailed_error = f"{error_msg}\n\nError details: {str(e)}"
-                await msg.reply_text(detailed_error)
+                await self.response_service.reply_text(
+                    update, detailed_error,
+                    user_id=user_id
+                )
         finally:
             # Clean up temp file
             try:
@@ -763,19 +896,28 @@ class MessageHandlers:
         user_lang = get_user_language(update.effective_user)
         # You can store poll.id ↔ chat/message mapping if you plan to track answers
         message = get_message("poll_detected", user_lang, question=poll.question)
-        await update.effective_message.reply_text(message)
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id
+        )
 
     async def on_poll_answer(self, update: Update, context: CallbackContext):
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
         message = get_message("poll_answer_not_implemented", user_lang)
-        await update.effective_message.reply_text(message)
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id
+        )
 
     async def on_todo_text(self, update: Update, context: CallbackContext):
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
         message = get_message("todo_not_implemented", user_lang)
-        await update.effective_message.reply_text(message)
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id
+        )
 
     async def handle_message(self, update: Update, context: CallbackContext) -> None:
         """Handle general text messages."""
@@ -784,6 +926,17 @@ class MessageHandlers:
             user_id = update.effective_user.id
             user_group_id = update.effective_chat.id if update.effective_chat.type in ['group', 'supergroup'] else None
             user_lang = get_user_language(update.effective_user)
+            
+            # Extract and update user info (first_name, username, last_seen)
+            self._update_user_info(user_id, update.effective_user)
+            
+            # Log user message
+            self.response_service.log_user_message(
+                user_id=user_id,
+                content=user_message,
+                message_id=update.message.message_id,
+                chat_id=update.effective_chat.id if update.effective_chat else None,
+            )
 
             # Check for broadcast state
             broadcast_state = context.user_data.get('broadcast_state') if context.user_data else None
@@ -832,9 +985,11 @@ class MessageHandlers:
                     except Exception:
                         pass
                     fields = ", ".join(still_missing)
-                    await update.message.reply_text(
-                        f"Thanks — I’m still missing: {fields}.\n"
+                    await self.response_service.reply_text(
+                        update,
+                        f"Thanks — I'm still missing: {fields}.\n"
                         f"Please reply with `field: value` for: {fields}.",
+                        user_id=user_id,
                         parse_mode="Markdown",
                     )
                     return
@@ -869,14 +1024,23 @@ class MessageHandlers:
 
                 # Send plan message before final response if available
                 if plan_message_to_send:
-                    await update.message.reply_text(plan_message_to_send, parse_mode='Markdown')
+                    await self.response_service.reply_text(
+                        update, plan_message_to_send,
+                        user_id=user_id,
+                        parse_mode='Markdown',
+                        log_conversation=False  # Don't log plan messages separately
+                    )
 
                 # Handle errors in LLM response
                 if "error" in llm_response:
                     error_msg = llm_response["response_to_user"]
                     if user_lang and user_lang != Language.EN:
                         error_msg = translate_text(error_msg, user_lang.value, "en")
-                    await update.message.reply_text(error_msg, parse_mode="Markdown")
+                    await self.response_service.reply_text(
+                        update, error_msg,
+                        user_id=user_id,
+                        parse_mode="Markdown"
+                    )
                     return
 
                 # Store a new pending clarification if the agent asked again
@@ -895,7 +1059,10 @@ class MessageHandlers:
                 if user_lang and user_lang != Language.EN:
                     response_text = translate_text(response_text, user_lang.value, "en")
                 formatted_response = self._format_response(response_text, func_call_response)
-                await self._reply_text_smart(update.message, formatted_response)
+                await self.response_service.reply_text(
+                    update, formatted_response,
+                    user_id=user_id
+                )
                 return
             
             # Check for URLs in the message
@@ -926,7 +1093,12 @@ class MessageHandlers:
             
             # Send plan message before final response if available
             if plan_message_to_send:
-                await update.message.reply_text(plan_message_to_send, parse_mode='Markdown')
+                await self.response_service.reply_text(
+                    update, plan_message_to_send,
+                    user_id=user_id,
+                    parse_mode='Markdown',
+                    log_conversation=False  # Don't log plan messages separately
+                )
             
             # Check for errors in LLM response
             if "error" in llm_response:
@@ -934,8 +1106,9 @@ class MessageHandlers:
                 error_msg = llm_response["response_to_user"]
                 if user_lang and user_lang != Language.EN:
                     error_msg = translate_text(error_msg, user_lang.value, "en")
-                await update.message.reply_text(
-                    error_msg,
+                await self.response_service.reply_text(
+                    update, error_msg,
+                    user_id=user_id,
                     parse_mode='Markdown'
                 )
                 return
@@ -970,10 +1143,17 @@ class MessageHandlers:
                     pass
 
             try:
-                await self._reply_text_smart(update.message, formatted_response)
+                await self.response_service.reply_text(
+                    update, formatted_response,
+                    user_id=user_id
+                )
             except Exception:
                 # Last-resort fallback
-                await update.message.reply_text(formatted_response)
+                await self.response_service.reply_text(
+                    update, formatted_response,
+                    user_id=user_id,
+                    auto_translate=False  # Already translated
+                )
         
         except Exception as e:
             user_lang = get_user_language(update.effective_user)

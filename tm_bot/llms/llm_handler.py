@@ -185,6 +185,17 @@ class LLMHandler:
             "- 'how am I doing?' → get_weekly_report()\n"
             "- 'my promises' / 'show tasks' → get_promises()\n\n"
             
+            "CATEGORY & MULTI-PROMISE QUERIES:\n"
+            "- When user asks about a category (e.g., 'health', 'work', 'learning', 'living healthy'), "
+            "use get_promises() first to see all promises, then filter by category keywords.\n"
+            "- For 'performance in X category' or 'activities in X', use get_actions_in_range() without promise_id "
+            "to get all actions, then filter by related promises.\n"
+            "- For complex analysis across multiple promises, use query_database() with SQL.\n"
+            "- Examples:\n"
+            "  • 'my health performance' → get_promises(), filter health-related, get_actions_in_range() for those promises\n"
+            "  • 'how am I doing with work?' → get_promises(), filter work-related, get_promise_report() for each, aggregate\n"
+            "  • 'activities in health category' → get_actions_in_range(), filter by health-related promise IDs\n\n"
+            
             "EXAMPLES:\n\n"
             
             "User: 'I just did 2 hours of sport'\n"
@@ -227,8 +238,8 @@ class LLMHandler:
             "}\n"
         )
 
-    def _get_system_message_main(self, user_language: str = None) -> SystemMessage:
-        """Get system message with language instruction if provided."""
+    def _get_system_message_main(self, user_language: str = None, user_id: Optional[str] = None) -> SystemMessage:
+        """Get system message with language instruction, user info, and promise context if provided."""
         # Add current date and time information
         now = datetime.now()
         current_date_str = now.strftime("%A, %B %d, %Y")
@@ -238,6 +249,29 @@ class LLMHandler:
         content += f"\n\nCurrent date and time: {current_date_str} at {current_time_str}. "
         content += "You have access to the current date and should use it when answering questions about dates, weeks, or time periods. Do not ask the user for the current date - use the date provided above. "
         
+        # Add user personalization (first_name)
+        if user_id:
+            try:
+                settings = self.plan_adapter.settings_repo.get_settings(int(user_id))
+                if settings.first_name:
+                    content += f"\n\nUser's name: {settings.first_name}\n"
+                    content += "Use their name contextually when appropriate for warmth and personalization, but let the conversation flow naturally."
+            except Exception as e:
+                logger.debug(f"Could not get user settings for personalization: {e}")
+        
+        # Add promise context if user has <= 50 promises
+        if user_id:
+            try:
+                promise_count = self.plan_adapter.count_promises(int(user_id))
+                if promise_count <= 50:
+                    promises = self.plan_adapter.get_promises(int(user_id))
+                    if promises:
+                        promise_list = ", ".join([f"{p['id']}: {p['text'].replace('_', ' ')}" for p in promises])
+                        content += f"\n\nUser has these promises: [{promise_list}]\n"
+                        content += "You have access to all user promises in context. Use this information to answer questions about their goals and activities."
+            except Exception as e:
+                logger.debug(f"Could not get promise context: {e}")
+        
         if user_language and user_language != "en":
             # Map language codes to full names
             lang_map = {
@@ -246,9 +280,9 @@ class LLMHandler:
                 "en": "English"
             }
             lang_name = lang_map.get(user_language, "the user's preferred language")
-            content += f"Respond in {lang_name} unless the user explicitly uses English. "
+            content += f"\n\nRespond in {lang_name} unless the user explicitly uses English. "
         else:
-            content += "Respond in English. "
+            content += "\n\nRespond in English. "
         return SystemMessage(content=content)
 
     def get_response_api(
@@ -289,7 +323,7 @@ class LLMHandler:
             prior_history = self.chat_history.get(safe_user_id, [])
 
             messages: List[BaseMessage] = [
-                self._get_system_message_main(user_language),
+                self._get_system_message_main(user_language, safe_user_id),
                 self.system_message_api,
                 *prior_history,
                 HumanMessage(content=user_message),
@@ -419,10 +453,12 @@ class LLMHandler:
 
             # Add language-aware system message if language is specified
             if user_language and user_language != "en":
-                system_msg = self._get_system_message_main(user_language)
+                system_msg = self._get_system_message_main(user_language, safe_user_id)
                 messages = [system_msg] + history + messages
             else:
-                messages = history + messages
+                # Still add system message for promise context and user info
+                system_msg = self._get_system_message_main(user_language, safe_user_id)
+                messages = [system_msg] + history + messages
 
             try:
                 response = self.chat_model(messages)
