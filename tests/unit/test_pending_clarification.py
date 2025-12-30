@@ -41,5 +41,16 @@ def test_parse_slot_fill_values_single_field_uses_whole_message():
     assert out.get("promise_id") == "P01"
 
 
+def test_choose_from_options_supports_index_and_fuzzy_title():
+    options = [
+        {"promise_id": "P10", "title": "Do sport"},
+        {"promise_id": "P11", "title": "Sport cardio"},
+    ]
+
+    assert MessageHandlers._choose_from_options("P10", options) == "P10"
+    assert MessageHandlers._choose_from_options("1", options) == "P10"
+    assert MessageHandlers._choose_from_options("cardio", options) == "P11"
+
+
 
 

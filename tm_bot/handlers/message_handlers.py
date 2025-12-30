@@ -92,6 +92,54 @@ class MessageHandlers:
         """Get user timezone using the settings repository."""
         settings = self.plan_keeper.settings_repo.get_settings(user_id)
         return settings.timezone
+
+    @staticmethod
+    def _choose_from_options(user_text: str, options: list[dict]) -> Optional[str]:
+        """
+        Best-effort mapping of a free-form user reply to a value from options.
+
+        Supports:
+        - direct ID/value match (e.g., "P10")
+        - 1-based index ("1" -> first option)
+        - fuzzy title/label substring match
+
+        Expected option keys (any subset):
+        - "value" or "promise_id"
+        - "label" or "title"
+        """
+        if not user_text or not options:
+            return None
+        text = str(user_text).strip()
+        if not text:
+            return None
+
+        # 1) direct match against value-like fields
+        upper = text.upper()
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+            val = opt.get("value") or opt.get("promise_id")
+            if val and str(val).upper() == upper:
+                return str(val)
+
+        # 2) numeric index (1-based)
+        if text.isdigit():
+            idx = int(text) - 1
+            if 0 <= idx < len(options):
+                val = options[idx].get("value") or options[idx].get("promise_id")
+                if val:
+                    return str(val)
+
+        # 3) fuzzy match against label/title
+        low = text.lower()
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+            label = opt.get("label") or opt.get("title") or ""
+            val = opt.get("value") or opt.get("promise_id")
+            if val and label and low in str(label).lower():
+                return str(val)
+        return None
     
     def set_user_timezone(self, user_id: int, tzname: str) -> None:
         """Set user timezone using the settings repository."""
@@ -1028,6 +1076,7 @@ class MessageHandlers:
                 missing_fields = pending.get("missing_fields") or []
                 partial_args = dict(pending.get("partial_args") or {})
                 original_user_message = pending.get("original_user_message") or ""
+                options = pending.get("options") or []
 
                 user_lang_code = user_lang.value if user_lang else "en"
                 filled = self._parse_slot_fill_values(
@@ -1040,7 +1089,8 @@ class MessageHandlers:
                 # Replace instead of merge: if single field, replace entirely with new input
                 if len(missing_fields) == 1:
                     # Single field: replace entirely with new input
-                    partial_args[missing_fields[0]] = user_message.strip()
+                    chosen = self._choose_from_options(user_message, options) if options else None
+                    partial_args[missing_fields[0]] = (chosen or user_message.strip())
                 else:
                     # Multiple fields: only update parsed values
                     partial_args.update({k: v for k, v in (filled or {}).items() if v})

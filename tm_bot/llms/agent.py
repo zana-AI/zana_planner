@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Callable, Dict, List, Optional, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
@@ -258,6 +259,40 @@ def create_plan_execute_graph(
 
     MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
 
+    def _last_tool_output_for(messages: List[BaseMessage], tool_name: str) -> Optional[str]:
+        """
+        Return the most recent ToolMessage content associated with a tool call of `tool_name`.
+        Matches AIMessage.tool_calls[*].id with ToolMessage.tool_call_id.
+        """
+        try:
+            for i in range(len(messages) - 1, -1, -1):
+                msg = messages[i]
+                if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+                    for call in reversed(msg.tool_calls or []):
+                        if (call or {}).get("name") != tool_name:
+                            continue
+                        call_id = (call or {}).get("id")
+                        if not call_id:
+                            continue
+                        # Scan forward for the corresponding ToolMessage.
+                        for j in range(i + 1, len(messages)):
+                            m2 = messages[j]
+                            if isinstance(m2, ToolMessage) and getattr(m2, "tool_call_id", None) == call_id:
+                                content = getattr(m2, "content", None)
+                                return content if isinstance(content, str) else None
+        except Exception:
+            return None
+        return None
+
+    def _parse_json_obj(text: Optional[str]) -> Optional[dict]:
+        if not text or not isinstance(text, str):
+            return None
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
     def _verification_step_for(tool_name: str, tool_args: dict) -> Optional[dict]:
         """
         Heuristic: after a mutation tool, add a lightweight read step to confirm.
@@ -398,11 +433,20 @@ def create_plan_execute_graph(
                     continue
 
                 required_args = required_args_by_tool.get(tool_name, [])
-                missing = [
-                    a
-                    for a in required_args
-                    if a not in tool_args or tool_args.get(a) in (None, "", [], "FROM_SEARCH")
-                ]
+                missing = [a for a in required_args if a not in tool_args or tool_args.get(a) in (None, "", [])]
+
+                # Special case: promise_id placeholders.
+                # We allow promise_id="FROM_SEARCH" iff a prior search step exists in the plan.
+                # Otherwise, treat it as missing so we can prepend search or ask the user.
+                if (
+                    "promise_id" in required_args
+                    and tool_args.get("promise_id") == "FROM_SEARCH"
+                    and not any(
+                        (s or {}).get("kind") == "tool" and (s or {}).get("tool_name") == "search_promises"
+                        for s in repaired
+                    )
+                ):
+                    missing.append("promise_id")
                 
                 if missing:
                     # Try to infer missing args using defaults
@@ -460,7 +504,7 @@ def create_plan_execute_graph(
                         )
                     else:
                         fields = ", ".join(still_missing)
-                        question = f"I need: {fields}. Can you provide these?"
+                        question = f"To do that, I need: {fields}. Can you provide these?"
                     
                     repaired.append(
                         {
@@ -721,52 +765,108 @@ def create_plan_execute_graph(
         if step.kind == "tool":
             tool_name = step.tool_name or ""
             tool_args = step.tool_args or {}
-            
+
+            # Generic placeholder resolution (agent-centric, avoids brittle handler logic):
+            # - "FROM_TOOL:<tool_name>:<json_field>" pulls a field from the last tool's JSON output.
+            # - "FROM_SEARCH" remains supported as a shorthand for promise selection via search_promises.
+            for arg_name, arg_val in list((tool_args or {}).items()):
+                if not isinstance(arg_val, str):
+                    continue
+                if not arg_val.startswith("FROM_TOOL:"):
+                    continue
+
+                # Format: FROM_TOOL:search_promises:promise_id
+                parts = arg_val.split(":", 2)
+                if len(parts) != 3:
+                    continue
+                src_tool = parts[1].strip()
+                src_field = parts[2].strip()
+
+                src_text = _last_tool_output_for(state.get("messages", []), src_tool)
+                obj = _parse_json_obj(src_text)
+                resolved = (obj or {}).get(src_field)
+                if resolved not in (None, "", [], {}):
+                    tool_args[arg_name] = resolved
+                else:
+                    pending = {
+                        "reason": "unresolved_placeholder",
+                        "tool_name": tool_name,
+                        "missing_fields": [arg_name],
+                        "partial_args": {k: v for k, v in (tool_args or {}).items() if k != arg_name},
+                        "placeholder": arg_val,
+                    }
+                    question = (
+                        f"I couldn't auto-fill `{arg_name}` from the previous `{src_tool}` result.\n"
+                        f"Please reply with `{arg_name}: <value>` (or just the value)."
+                    )
+                    return {
+                        **state,
+                        "iteration": new_iteration,
+                        "final_response": question,
+                        "pending_clarification": pending,
+                        "step_idx": idx + 1,
+                    }
+
             # Check if previous tool was search_promises with single match, and current step needs promise_id
             if tool_args.get("promise_id") == "FROM_SEARCH":
                 logger.debug(f"Auto-fill: Looking for search_promises result to fill promise_id for {tool_name}")
                 # Look for the last search_promises result in messages
                 # Check messages in reverse to find the most recent search_promises result
                 found_single_match = False
-                for i in range(len(state.get("messages", [])) - 1, -1, -1):
-                    msg = state["messages"][i]
-                    # Check if this is an AIMessage with a search_promises tool call
-                    if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-                        for tool_call in msg.tool_calls:
-                            if tool_call.get("name") == "search_promises":
-                                # Found search_promises call, now check the corresponding ToolMessage
-                                tool_call_id = tool_call.get("id")
-                                logger.debug(f"Auto-fill: Found search_promises call with id {tool_call_id}")
-                                # Look ahead for the ToolMessage with matching tool_call_id
-                                for j in range(i + 1, len(state.get("messages", []))):
-                                    next_msg = state["messages"][j]
-                                    if isinstance(next_msg, ToolMessage):
-                                        call_id = getattr(next_msg, "tool_call_id", None)
-                                        if call_id == tool_call_id:
-                                            # This is the result from search_promises
-                                            try:
-                                                content = getattr(next_msg, "content", "")
-                                                if isinstance(content, str):
-                                                    parsed = json.loads(content)
-                                                    if isinstance(parsed, dict) and parsed.get("single_match"):
-                                                        # Auto-fill promise_id from single match
-                                                        promise_id = parsed.get("promise_id")
-                                                        if promise_id:
-                                                            tool_args["promise_id"] = promise_id
-                                                            found_single_match = True
-                                                            logger.info(f"Auto-fill: Successfully filled promise_id={promise_id} from single_match")
-                                                            break
-                                            except (json.JSONDecodeError, AttributeError) as e:
-                                                logger.debug(f"Auto-fill: Failed to parse search_promises result: {e}")
-                                                pass
-                                if found_single_match:
-                                    break
-                        if found_single_match:
-                            break
-                
+                last_search_output_text: Optional[str] = None
+                last_search_output_text = _last_tool_output_for(state.get("messages", []), "search_promises")
+                parsed = _parse_json_obj(last_search_output_text)
+                if parsed and parsed.get("single_match"):
+                    promise_id = parsed.get("promise_id")
+                    if promise_id:
+                        tool_args["promise_id"] = promise_id
+                        found_single_match = True
+                        logger.info(f"Auto-fill: Successfully filled promise_id={promise_id} from single_match")
+
                 if not found_single_match:
-                    logger.warning(f"Auto-fill: FROM_SEARCH placeholder found but no single_match result located for {tool_name}")
-            
+                    # Dynamic replanning: instead of calling the tool with an unresolved placeholder,
+                    # ask the user to pick the intended promise_id (works with existing slot-fill flow).
+                    logger.warning(
+                        f"Auto-fill: FROM_SEARCH placeholder found but no single_match result located for {tool_name}"
+                    )
+                    options: List[dict] = []
+                    if last_search_output_text:
+                        # Extract IDs and (best-effort) titles from the formatted multi-match string.
+                        # Example line: "• #P10 **Do sport**"
+                        for pid, title in re.findall(r"#([PT]\d+)\s+\*\*(.+?)\*\*", last_search_output_text):
+                            options.append({"promise_id": pid, "title": title})
+                        if not options:
+                            # Fallback: just collect IDs.
+                            for pid in re.findall(r"#([PT]\d+)", last_search_output_text):
+                                options.append({"promise_id": pid})
+
+                    if options:
+                        preview = "\n".join(
+                            [f"- {o['promise_id']}: {o.get('title', '').strip() or '(no title)'}" for o in options[:6]]
+                        )
+                        question = (
+                            "I found multiple matching promises. Which one do you mean?\n\n"
+                            f"{preview}\n\n"
+                            "Reply with the promise ID (e.g., P10)."
+                        )
+                    else:
+                        question = "Which promise should I use? Reply with the promise ID (e.g., P10)."
+
+                    pending = {
+                        "reason": "ambiguous_promise_id",
+                        "tool_name": tool_name,
+                        "missing_fields": ["promise_id"],
+                        "partial_args": {k: v for k, v in (tool_args or {}).items() if k != "promise_id"},
+                        "options": options,
+                    }
+                    return {
+                        **state,
+                        "iteration": new_iteration,
+                        "final_response": question,
+                        "pending_clarification": pending,
+                        "step_idx": idx + 1,
+                    }
+
             call_id = f"plan_{idx}_iter_{new_iteration}"
             tool_call = {"name": tool_name, "args": tool_args, "id": call_id, "type": "tool_call"}
 

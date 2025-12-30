@@ -338,5 +338,134 @@ def test_retry_once_on_transient_tool_failure():
     assert attempts["n"] == 2
 
 
+def test_dynamic_replan_asks_user_when_from_search_is_ambiguous():
+    def _search_promises(query: str):
+        # Multi-match output (non-JSON) like PlannerAPIAdapter.search_promises
+        return (
+            "Found 2 promise(s) matching 'sport':\n\n"
+            "• #P10 **Do sport**\n"
+            "  Target: 2.0 h/week | Total logged: 10.0 hours\n"
+            "• #P11 **Sport cardio**\n"
+            "  Target: 1.0 h/week | Total logged: 3.0 hours"
+        )
+
+    calls = []
+
+    def _add_action(promise_id: str, time_spent: float):
+        calls.append(("add_action", promise_id, time_spent))
+        return "ok"
+
+    tools = [
+        StructuredTool.from_function(func=_search_promises, name="search_promises", description="Search promises."),
+        StructuredTool.from_function(func=_add_action, name="add_action", description="Add an action."),
+    ]
+
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Search promises for the user topic.",
+                "tool_name": "search_promises",
+                "tool_args": {"query": "sport"},
+            },
+            {
+                "kind": "tool",
+                "purpose": "Log time on the selected promise.",
+                "tool_name": "add_action",
+                "tool_args": {"promise_id": "FROM_SEARCH", "time_spent": 1.0},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm success."},
+        ]
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+    responder = FakeModel([AIMessage(content="should not be used")])
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="I did sport")],
+            "iteration": 0,
+            "plan": None,
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+        }
+    )
+
+    assert "multiple matching promises" in (result.get("final_response") or "").lower()
+    pending = result.get("pending_clarification") or {}
+    assert pending.get("reason") == "ambiguous_promise_id"
+    assert pending.get("tool_name") == "add_action"
+    assert pending.get("missing_fields") == ["promise_id"]
+    # Tool should not be invoked with unresolved FROM_SEARCH placeholder.
+    assert ("add_action", "FROM_SEARCH", 1.0) not in calls
+
+
+def test_generic_from_tool_placeholder_is_resolved_from_json_tool_output():
+    calls = []
+
+    def _make_item():
+        return json.dumps({"item_id": "X123", "message": "created"})
+
+    def _use_item(item_id: str):
+        calls.append(("use_item", item_id))
+        return "ok"
+
+    tools = [
+        StructuredTool.from_function(func=_make_item, name="make_item", description="Create an item."),
+        StructuredTool.from_function(func=_use_item, name="use_item", description="Use an item."),
+    ]
+
+    plan = {
+        "steps": [
+            {"kind": "tool", "purpose": "Create.", "tool_name": "make_item", "tool_args": {}},
+            {
+                "kind": "tool",
+                "purpose": "Use created.",
+                "tool_name": "use_item",
+                "tool_args": {"item_id": "FROM_TOOL:make_item:item_id"},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm."},
+        ]
+    }
+
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+
+    def responder_fn(messages):
+        return AIMessage(content="done")
+
+    responder = FakeModel(responder_fn=responder_fn)
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="go")],
+            "iteration": 0,
+            "plan": None,
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+        }
+    )
+
+    assert result.get("final_response") == "done"
+    assert ("use_item", "X123") in calls
+
 
 
