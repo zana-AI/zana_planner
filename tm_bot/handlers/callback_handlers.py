@@ -848,6 +848,10 @@ class CallbackHandlers:
         settings.language = selected_lang
         self.plan_keeper.settings_repo.save_settings(settings)
         
+        # Clear language cache since language changed
+        if hasattr(self, 'response_service') and self.response_service:
+            self.response_service.clear_lang_cache(user_id)
+        
         # Send confirmation message in selected language
         confirmation_message = get_message("language_set", selected_lang, lang=selected_lang)
         await query.edit_message_text(text=confirmation_message, parse_mode='Markdown')

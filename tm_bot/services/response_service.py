@@ -56,10 +56,7 @@ class ResponseService:
             self._lang_cache.clear()
     
     def _should_translate(self, text: str, user_lang: Language) -> bool:
-        """Determine if text needs translation."""
-        # Skip translation if:
-        # - User language is English
-        # - Text is empty or just formatting
+        """Simple check: translate if user language is not English."""
         if user_lang == Language.EN:
             return False
         if not text or len(text.strip()) < 3:

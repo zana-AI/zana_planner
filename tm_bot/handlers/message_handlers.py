@@ -7,6 +7,7 @@ import asyncio
 import os
 import html
 import json
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -542,9 +543,6 @@ class MessageHandlers:
             # Process LLM response
             try:
                 func_call_response = self.call_planner_api(user_id, llm_response)
-                response_text = llm_response['response_to_user']
-                if user_lang and user_lang != Language.EN:
-                    response_text = translate_text(response_text, user_lang.value, "en")
                 formatted_response = self._format_response(response_text, func_call_response)
                 
                 # Edit processing message with final response
@@ -697,19 +695,94 @@ class MessageHandlers:
         user_lang_code: str,
     ) -> dict:
         """
-        Best-effort parse of the user's clarification message into required fields.
+        LLM-first parsing of user's clarification message into required fields.
 
         Parsing strategy:
-        - Prefer explicit `field: value` (or `field=value`) lines.
-        - If only one missing field, treat the whole message as the value.
-        - Fallback: ask the base chat model to extract a JSON object (no tools).
+        - If only one missing field, treat the whole message as the value (simple case).
+        - Otherwise, use LLM to extract structured data with normalization.
+        - Keep regex key-value parsing as lightweight fallback only.
         """
         missing_fields = [str(f) for f in (missing_fields or []) if f]
         text = (user_text or "").strip()
         if not text or not missing_fields:
             return {}
 
-        # 1) Key-value parsing
+        # 1) Single-field shortcut (keep this simple case)
+        if len(missing_fields) == 1:
+            return {missing_fields[0]: text}
+
+        # 2) LLM-based extraction (primary method for multiple fields)
+        try:
+            from langchain_core.messages import HumanMessage as LCHumanMessage, SystemMessage as LCSystemMessage
+
+            # Build enhanced prompt with examples and normalization instructions
+            field_descriptions = []
+            for field in missing_fields:
+                if field == "time_spent":
+                    field_descriptions.append(
+                        f"- time_spent: Time duration in hours (float). Accept formats: '2h', '2 hours', '90 minutes', '1.5h', 'four hours'. Normalize to float (e.g., '2h' → 2.0, '90 minutes' → 1.5)"
+                    )
+                elif field == "promise_id":
+                    field_descriptions.append(
+                        f"- promise_id: Promise identifier. Accept formats: 'P01', 'p01', '#P01', 'P-1', 'p-3'. Normalize to standard format (e.g., 'P01', 'P03')"
+                    )
+                elif field == "setting_value":
+                    field_descriptions.append(
+                        f"- setting_value: Setting value (string). Extract as-is from user message."
+                    )
+                else:
+                    field_descriptions.append(f"- {field}: Extract the value from user message.")
+
+            sys_content = (
+                "Extract the requested fields from the user's message and normalize values.\n"
+                "Output ONLY valid JSON (no markdown, no extra text).\n\n"
+                f"Fields to extract:\n" + "\n".join(field_descriptions) + "\n\n"
+                "Examples:\n"
+                "- User: '4h' with field time_spent → {\"time_spent\": 4.0}\n"
+                "- User: '90 minutes' with field time_spent → {\"time_spent\": 1.5}\n"
+                "- User: 'P01' with field promise_id → {\"promise_id\": \"P01\"}\n"
+                "- User: 'p-3' with field promise_id → {\"promise_id\": \"P03\"}\n"
+                "- User: 'promise_id: P01, time_spent: 2h' → {\"promise_id\": \"P01\", \"time_spent\": 2.0}\n\n"
+                "If a field is not provided or cannot be extracted, use null for that field.\n"
+                "Always return a JSON object with all requested fields (use null for missing ones)."
+            )
+
+            sys = LCSystemMessage(content=sys_content)
+            hm = LCHumanMessage(content=text)
+
+            model = getattr(self.llm_handler, "chat_model", None)
+            if model is None:
+                # Fallback to regex if no LLM available
+                return self._parse_slot_fill_values_regex_fallback(text, missing_fields)
+
+            resp = model.invoke([sys, hm]) if hasattr(model, "invoke") else model([sys, hm])
+            content = getattr(resp, "content", "") or ""
+            
+            # Try to extract JSON from response (might have markdown code blocks)
+            json_match = re.search(r'\{[^}]+\}', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
+            
+            parsed = json.loads(content)
+            if isinstance(parsed, dict):
+                # Normalize promise_id if present
+                if "promise_id" in parsed and parsed["promise_id"]:
+                    from utils.promise_id import normalize_promise_id
+                    try:
+                        parsed["promise_id"] = normalize_promise_id(str(parsed["promise_id"]))
+                    except Exception:
+                        pass  # Keep original if normalization fails
+                
+                return {k: v for k, v in parsed.items() if k in missing_fields and v is not None}
+        except Exception as e:
+            logger.debug(f"LLM extraction failed for slot filling: {e}, falling back to regex")
+            # Fallback to regex parsing
+            return self._parse_slot_fill_values_regex_fallback(text, missing_fields)
+
+        return {}
+    
+    def _parse_slot_fill_values_regex_fallback(self, text: str, missing_fields: list) -> dict:
+        """Lightweight regex-based fallback for slot filling."""
         out = {}
         field_lut = {f.lower(): f for f in missing_fields}
         for line in [ln.strip() for ln in text.splitlines() if ln.strip()]:
@@ -722,41 +795,6 @@ class MessageHandlers:
             key_norm = k.lower()
             if key_norm in field_lut:
                 out[field_lut[key_norm]] = v
-
-        # 2) Single-field shortcut
-        if len(missing_fields) == 1 and missing_fields[0] not in out:
-            out[missing_fields[0]] = text
-
-        # 3) Fallback to LLM JSON extraction (no tools)
-        still_missing = [f for f in missing_fields if out.get(f) in (None, "", [])]
-        if still_missing:
-            try:
-                from langchain_core.messages import HumanMessage as LCHumanMessage, SystemMessage as LCSystemMessage
-
-                sys = LCSystemMessage(
-                    content=(
-                        "Extract the requested fields from the user's message.\n"
-                        "Output ONLY valid JSON (no markdown, no extra text).\n"
-                        f"Fields: {still_missing}\n"
-                        "If a field is not provided, use null.\n"
-                    )
-                )
-                hm = LCHumanMessage(content=text)
-
-                model = getattr(self.llm_handler, "chat_model", None)
-                if model is None:
-                    return out
-                resp = model.invoke([sys, hm]) if hasattr(model, "invoke") else model([sys, hm])
-                content = getattr(resp, "content", "") or ""
-                parsed = json.loads(content)
-                if isinstance(parsed, dict):
-                    for f in still_missing:
-                        if f in parsed and parsed[f] not in (None, "", []):
-                            out[f] = parsed[f]
-            except Exception:
-                # Best-effort only; fall back to whatever we parsed.
-                return out
-
         return out
 
     async def on_image(self, update: Update, context: CallbackContext):
@@ -877,9 +915,9 @@ class MessageHandlers:
                 # Process LLM response
                 try:
                     func_call_response = self.call_planner_api(user_id, llm_response)
+                    # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                     response_text = llm_response['response_to_user']
-                    if user_lang and user_lang != Language.EN:
-                        response_text = translate_text(response_text, user_lang.value, "en")
+                    
                     formatted_response = self._format_response(response_text, func_call_response)
                     
                     # Edit processing message with final response
@@ -1091,9 +1129,9 @@ class MessageHandlers:
 
                 # Process response as normal
                 func_call_response = self.call_planner_api(user_id, llm_response)
+                # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                 response_text = llm_response.get("response_to_user", "")
-                if user_lang and user_lang != Language.EN:
-                    response_text = translate_text(response_text, user_lang.value, "en")
+                
                 formatted_response = self._format_response(response_text, func_call_response)
                 
                 # Edit processing message with final response
@@ -1142,10 +1180,8 @@ class MessageHandlers:
             
             # Check for errors in LLM response
             if "error" in llm_response:
-                # Translate error message if needed
+                # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                 error_msg = llm_response["response_to_user"]
-                if user_lang and user_lang != Language.EN:
-                    error_msg = translate_text(error_msg, user_lang.value, "en")
                 
                 # Edit processing message with error
                 if processing_msg:
@@ -1165,12 +1201,9 @@ class MessageHandlers:
             # Process the LLM response
             try:
                 func_call_response = self.call_planner_api(user_id, llm_response)
-                # LLM should already respond in target language, but translate as fallback if needed
+                # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                 response_text = llm_response['response_to_user']
-                if user_lang and user_lang != Language.EN:
-                    # Try to detect if already in target language, otherwise translate
-                    # For now, always translate to ensure consistency
-                    response_text = translate_text(response_text, user_lang.value, "en")
+                
                 formatted_response = self._format_response(response_text, func_call_response)
             except ValueError as e:
                 formatted_response = get_message("error_invalid_input", user_lang, error=str(e))

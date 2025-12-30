@@ -184,7 +184,8 @@ class LLMHandler:
             "- Never ask for things that are tool-accessible (timezone, language, settings, promise lists).\n"
             "- Ask the user ONLY when truly blocked (e.g., completely ambiguous request with no context).\n"
             "- If you must ask, ask ONCE and request ALL missing fields together.\n"
-            "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n\n"
+            "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n"
+            "- If user requests language change (e.g., 'switch to French', 'change language to Persian'), include update_setting step in plan BEFORE responding.\n\n"
             
             "=== SMART DEFAULTS & INFERENCE ===\n"
             "- 'log time on X' / 'worked on X' without duration → time_spent=1.0\n"
@@ -237,6 +238,12 @@ class LLMHandler:
             
             "User: 'hi there!'\n"
             "Plan: {\"steps\": [], \"final_response_if_no_tools\": \"Hello! How can I help you with your tasks today?\"}\n\n"
+            
+            "User: 'switch to French'\n"
+            "Plan: {\"steps\": [\n"
+            "  {\"kind\": \"tool\", \"purpose\": \"Update language setting\", \"tool_name\": \"update_setting\", \"tool_args\": {\"setting_key\": \"language\", \"setting_value\": \"fr\"}},\n"
+            "  {\"kind\": \"respond\", \"purpose\": \"Confirm language change\", \"response_hint\": \"Confirm in French that language has been changed\"}\n"
+            "]}\n\n"
             
             "=== JSON SCHEMA ===\n"
             "{\n"
@@ -315,18 +322,18 @@ class LLMHandler:
             except Exception as e:
                 logger.debug(f"Could not get conversation context: {e}")
         
-        # Language preference
-        sections.append(f"\n=== LANGUAGE ===")
-        if user_language and user_language != "en":
-            lang_map = {
-                "fa": "Persian (Farsi)",
-                "fr": "French",
-                "en": "English"
-            }
-            lang_name = lang_map.get(user_language, "the user's preferred language")
-            sections.append(f"Respond in {lang_name} unless the user explicitly uses English.")
-        else:
-            sections.append("Respond in English.")
+        # Language preference and management
+        sections.append(f"\n=== LANGUAGE MANAGEMENT ===")
+        current_lang = user_language or "en"
+        lang_map = {
+            "fa": "Persian (Farsi)",
+            "fr": "French",
+            "en": "English"
+        }
+        lang_name = lang_map.get(current_lang, "English")
+        sections.append(f"Current user language setting: {current_lang} ({lang_name})")
+        sections.append("ALWAYS respond in the user's current language setting unless they explicitly use English.")
+        sections.append("If user requests to change language, call update_setting(setting_key='language', setting_value='fr'/'fa'/'en') and respond in the new language.")
         
         content = "\n".join(sections)
         
