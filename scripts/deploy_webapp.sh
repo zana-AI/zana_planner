@@ -1,10 +1,15 @@
 #!/bin/bash
 # =============================================================================
-# Automated deployment script for Zana Web App
-# Deploys to GCP VM with domain zana-ai.com
+# DEPRECATED: Use GitHub Actions for deployments
+# 
+# This script is kept for backward compatibility but should not be used
+# for regular deployments. Use GitHub Actions workflows instead:
+# - Staging: auto-deploys on push to master
+# - Production: manual promotion from staging
+#
+# For one-time infrastructure setup, use: scripts/setup_infrastructure.sh
 #
 # Usage: bash scripts/deploy_webapp.sh [domain] [email] [backend_port]
-# Example: bash scripts/deploy_webapp.sh zana-ai.com your@email.com 8080
 # =============================================================================
 
 set -e  # Exit on error
@@ -332,6 +337,11 @@ echo "========================================"
 echo "✅ Deployment complete!"
 echo "========================================"
 echo ""
+echo "⚠️  WARNING: This script rebuilds containers manually."
+echo "   For regular deployments, use GitHub Actions workflows:"
+echo "   - Staging: auto-deploys on push to master"
+echo "   - Production: manual promotion from staging"
+echo ""
 echo "Your web app should be accessible at:"
 if $SUDO certbot certificates 2>/dev/null | grep -q "$DOMAIN"; then
     echo "  https://$DOMAIN/"
@@ -348,5 +358,7 @@ echo "Next steps:"
 echo "  1. Configure BotFather menu button: https://$DOMAIN/"
 echo "  2. View logs: $DOCKER_COMPOSE_CMD logs -f zana-prod"
 echo "  3. Check nginx logs: sudo tail -f /var/log/nginx/error.log"
+echo ""
+echo "For future deployments, rely on GitHub Actions instead of this script."
 echo ""
 

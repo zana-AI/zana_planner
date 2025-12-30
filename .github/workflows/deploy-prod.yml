@@ -54,6 +54,14 @@ jobs:
             echo '[PROD] Restarting production container...'
             docker compose up -d zana-prod
 
+            echo '[PROD] Verifying webapp is running...'
+            sleep 5
+            if curl -f -s http://localhost:8080/api/health > /dev/null; then
+              echo '[PROD] ✓ Webapp health check passed'
+            else
+              echo '[PROD] ⚠️  Webapp health check failed - check logs: docker compose logs zana-prod'
+            fi
+
             echo '[PROD] Done.'
           "
 

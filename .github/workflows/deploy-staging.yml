@@ -89,6 +89,14 @@ jobs:
 
             docker compose up -d zana-staging
 
+            echo '[STAGING] Verifying webapp is running...'
+            sleep 5
+            if curl -f -s http://localhost:8081/api/health > /dev/null; then
+              echo '[STAGING] ✓ Webapp health check passed'
+            else
+              echo '[STAGING] ⚠️  Webapp health check failed - check logs: docker compose logs zana-staging'
+            fi
+
             echo '[STAGING] Done.'
           "
 
