@@ -38,8 +38,18 @@ echo ""
 # Check if running as root for nginx/certbot operations
 if [ "$EUID" -eq 0 ]; then
     SUDO=""
+    DOCKER_CMD="docker"
+    DOCKER_COMPOSE_CMD="docker compose"
 else
     SUDO="sudo"
+    # Check if user can run docker without sudo
+    if docker info &>/dev/null; then
+        DOCKER_CMD="docker"
+        DOCKER_COMPOSE_CMD="docker compose"
+    else
+        DOCKER_CMD="sudo docker"
+        DOCKER_COMPOSE_CMD="sudo docker compose"
+    fi
 fi
 
 # Step 1: Verify DNS
@@ -151,7 +161,7 @@ fi
 # Step 5: Build Docker image
 echo ""
 echo "[5/8] Building Docker image..."
-docker compose build zana-prod
+$DOCKER_COMPOSE_CMD build zana-prod
 echo "✓ Docker image built"
 
 # Step 6: Install/configure nginx
@@ -272,17 +282,17 @@ fi
 # Step 9: Start/restart Docker container
 echo ""
 echo "[9/9] Starting Docker container..."
-docker compose up -d zana-prod
+$DOCKER_COMPOSE_CMD up -d zana-prod
 
 # Wait a moment for container to start
 sleep 3
 
 # Check container status
-if docker compose ps zana-prod | grep -q "Up"; then
+if $DOCKER_COMPOSE_CMD ps zana-prod | grep -q "Up"; then
     echo "✓ Container is running"
 else
     echo "⚠️  Container may not be running properly"
-    echo "   Check logs: docker compose logs zana-prod"
+    echo "   Check logs: $DOCKER_COMPOSE_CMD logs zana-prod"
 fi
 
 # Step 10: Verify deployment
@@ -336,7 +346,7 @@ echo "  curl https://$DOMAIN/api/public/users?limit=10"
 echo ""
 echo "Next steps:"
 echo "  1. Configure BotFather menu button: https://$DOMAIN/"
-echo "  2. View logs: docker compose logs -f zana-prod"
+echo "  2. View logs: $DOCKER_COMPOSE_CMD logs -f zana-prod"
 echo "  3. Check nginx logs: sudo tail -f /var/log/nginx/error.log"
 echo ""
 

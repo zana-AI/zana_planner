@@ -27,6 +27,13 @@ if [ ! -f "docker-compose.yml" ]; then
     exit 1
 fi
 
+# Check Docker permissions
+if docker info &>/dev/null; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
+    DOCKER_COMPOSE_CMD="sudo docker compose"
+fi
+
 echo "🚀 Quick deployment - Building and restarting..."
 
 # Build frontend (optional - Docker will build it if npm not available)
@@ -48,9 +55,9 @@ else
 fi
 
 # Build and restart Docker
-docker compose build zana-prod
-docker compose up -d zana-prod
+$DOCKER_COMPOSE_CMD build zana-prod
+$DOCKER_COMPOSE_CMD up -d zana-prod
 
 echo "✅ Deployment complete!"
-echo "View logs: docker compose logs -f zana-prod"
+echo "View logs: $DOCKER_COMPOSE_CMD logs -f zana-prod"
 
