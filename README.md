@@ -72,10 +72,9 @@ This list contains high-priority implementation tasks. Each item is linked to a 
 
 ### 🛑 Critical Fixes (High Priority)
 
-- [ ] **Fix Import Path in `planner_api_adapter.py`**
-    - **File**: `tm_bot/services/planner_api_adapter.py:138`
-    - **Issue**: `from schema import UserAction` causes runtime error.
-    - **Fix**: Change to `from llms.schema import UserAction` (or correct path).
+- [x] **Fix Import Path in `planner_api_adapter.py`** ✅ **DONE**
+    - **File**: `tm_bot/services/planner_api_adapter.py:275`
+    - **Status**: Already fixed - uses `from llms.schema import UserAction`
 
 - [ ] **Connect Nightly Reminders**
     - **File**: `tm_bot/handlers/message_handlers.py` (Lines 363, 370)
@@ -85,20 +84,22 @@ This list contains high-priority implementation tasks. Each item is linked to a 
 ### 🚧 Feature Completion (Medium Priority)
 
 - [ ] **Implement Session Ticker System**
-    - **File**: `tm_bot/handlers/callback_handlers.py` (Lines 75, 80, 85)
+    - **File**: `tm_bot/handlers/callback_handlers.py` (Lines 106-119)
     - **Task**: Implement `_schedule_session_ticker`, `_stop_ticker`, and `_schedule_session_resume` for real-time pinned message updates.
+    - **Status**: Currently TODO placeholders
 
-- [ ] **Implement Session Time Calculation**
-    - **File**: `tm_bot/handlers/callback_handlers.py` (Line 95) & `utils/bot_utils.py`
-    - **Task**: Replace placeholder `0.5` hours with actual duration calculation (`end_time - start_time - pauses`).
+- [x] **Implement Session Time Calculation** ✅ **DONE**
+    - **File**: `tm_bot/services/sessions.py` (Lines 73-74)
+    - **Status**: Properly calculates `(now - started_at).total_seconds() - paused_seconds_total`
 
-- [ ] **Implement Weekly Report Refresh**
-    - **File**: `tm_bot/handlers/callback_handlers.py` (Line 572)
-    - **Task**: Implement `_handle_refresh_weekly` to re-generate the report card.
+- [x] **Implement Weekly Report Refresh** ✅ **DONE**
+    - **File**: `tm_bot/handlers/callback_handlers.py` (Lines 763-782)
+    - **Status**: Fully implemented with report regeneration
 
 - [ ] **User Language Persistence**
-    - **File**: `tm_bot/i18n/translations.py` (Line 463)
-    - **Task**: Update `get_user_language()` to fetch from `SettingsRepository` instead of returning default.
+    - **File**: `tm_bot/handlers/messages_store.py` (Line 237)
+    - **Issue**: `get_user_language(user: User)` uses Telegram's `language_code` instead of `SettingsRepository`
+    - **Fix**: Update to use `_translation_manager.get_user_language(user.id)` which already uses SettingsRepository
 
 ### 🧩 Nice-to-Have (Low Priority)
 
@@ -126,17 +127,17 @@ The monolithic `planner_bot.py` has been successfully refactored.
 *   [x] CSV → **MongoDB** migration (Ready via Repositories)
 *   [x] CRUD for `Promise`, `Action`, `Session`, `UserSettings`
 *   [x] Automatic index management
-*   [ ] **Integrate `DataManager` logic completely** (Need to ensure all old file-reads are gone)
+*   [x] **Integrate `DataManager` logic completely** (Need to ensure all old file-reads are gone)
 
 ### 🚧 Phase 2 — Data & Storage
 *   [ ] **Encrypt / hash sensitive data** (Fernet + Argon2)
 *   [ ] **Backup & Export system** (JSON/ZIP export command)
-*   [ ] **Migrate old CSV users** to new Schema completely
+*   [x] **Migrate old CSV users** to new Schema completely
 
 ### 🌍 Phase 3 — User Experience
-*   [ ] **Multilingual support** (Skeleton ready, need implementation)
+*   [x] **Multilingual support** (Skeleton ready, need implementation)
 *   [ ] **Time zone detection** (Auto-infer from location)
-*   [ ] **Voice + Image Input** (Whisper + Vision API)
+*   [x] **Voice + Image Input** (Whisper + Vision API)
 *   [ ] **Smarter Reminders** (Context-aware based on activity)
 
 ### 📊 Phase 4 — Visualization & Sharing
@@ -147,7 +148,8 @@ The monolithic `planner_bot.py` has been successfully refactored.
 ### 🧠 Phase 5 — Admin & Operations
 *   [ ] **Admin Panel** (User monitoring, broadcasts)
 *   [ ] **Analytics Script** (Headless stats collection)
-*   [ ] **CI/CD & Testing** (Automated tests, Docker builds)
+*   [x] **CI/CD** (push github -> build docker -> deploy on GCP) 
+*   [ ] Testing** (Automated tests)
 
 ---
 
