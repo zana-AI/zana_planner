@@ -1,4 +1,4 @@
-import type { WeeklyReportData, UserInfo } from '../types';
+import type { WeeklyReportData, UserInfo, PublicUsersResponse } from '../types';
 
 const API_BASE = '/api';
 
@@ -72,6 +72,21 @@ class ApiClient {
    */
   async healthCheck(): Promise<{ status: string; service: string }> {
     const response = await fetch(`${API_BASE}/health`);
+    return response.json();
+  }
+
+  /**
+   * Get public list of users (no auth required).
+   */
+  async getPublicUsers(limit: number = 20): Promise<PublicUsersResponse> {
+    const response = await fetch(`${API_BASE}/public/users?limit=${limit}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiError(
+        response.status,
+        errorData.detail || `Failed to fetch users: ${response.statusText}`
+      );
+    }
     return response.json();
   }
 }

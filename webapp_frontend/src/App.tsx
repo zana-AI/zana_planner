@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
 import { apiClient, ApiError } from './api/client';
 import { WeeklyReport } from './components/WeeklyReport';
+import { UsersPage } from './components/UsersPage';
 import type { WeeklyReportData } from './types';
 
 type AppState = 'loading' | 'ready' | 'error';
@@ -50,18 +51,8 @@ function App() {
     const authData = initData || getDevInitData();
 
     if (!authData) {
-      // In development without auth data, show a friendly message
-      if (import.meta.env.DEV) {
-        setError(
-          'No Telegram authentication data found. ' +
-          'To test locally, set dev_init_data in localStorage or open from Telegram.'
-        );
-        setState('error');
-        return;
-      }
-      
-      setError('Please open this app from Telegram.');
-      setState('error');
+      // No auth data: show public users page instead of error
+      setState('ready');
       return;
     }
 
@@ -75,8 +66,12 @@ function App() {
     }
   }, [initData, fetchReport]);
 
-  // Loading state
-  if (state === 'loading' || !isReady) {
+  // Check if we have authentication
+  const authData = initData || getDevInitData();
+  const isAuthenticated = !!authData;
+
+  // Loading state (only for authenticated users loading report)
+  if ((state === 'loading' || !isReady) && isAuthenticated) {
     return (
       <div className="app">
         <div className="loading">
@@ -87,8 +82,8 @@ function App() {
     );
   }
 
-  // Error state
-  if (state === 'error') {
+  // Error state (only for authenticated users)
+  if (state === 'error' && isAuthenticated) {
     return (
       <div className="app">
         <div className="error">
@@ -105,7 +100,16 @@ function App() {
     );
   }
 
-  // Ready state with data
+  // Not authenticated: show public users page
+  if (!isAuthenticated) {
+    return (
+      <div className="app">
+        <UsersPage />
+      </div>
+    );
+  }
+
+  // Authenticated: show weekly report
   return (
     <div className="app">
       {/* User greeting if available */}

@@ -103,6 +103,23 @@ export interface UserInfo {
   language: string;
 }
 
+export interface PublicUser {
+  user_id: string;
+  first_name?: string;
+  last_name?: string;
+  display_name?: string;
+  username?: string;
+  avatar_path?: string;
+  avatar_file_unique_id?: string;
+  activity_count: number;
+  last_seen_utc?: string;
+}
+
+export interface PublicUsersResponse {
+  users: PublicUser[];
+  total: number;
+}
+
 // Extend Window interface for Telegram
 declare global {
   interface Window {

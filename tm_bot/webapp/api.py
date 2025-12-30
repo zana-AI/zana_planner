@@ -5,9 +5,9 @@ Provides API endpoints for the React frontend.
 
 import os
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -18,6 +18,7 @@ from services.reports import ReportsService
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
+from db.sqlite_db import connection_for_root
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
 
@@ -39,6 +40,25 @@ class UserInfoResponse(BaseModel):
     user_id: int
     timezone: str
     language: str
+
+
+class PublicUser(BaseModel):
+    """Public user information for community page."""
+    user_id: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    display_name: Optional[str] = None
+    username: Optional[str] = None
+    avatar_path: Optional[str] = None
+    avatar_file_unique_id: Optional[str] = None
+    activity_count: int = 0
+    last_seen_utc: Optional[str] = None
+
+
+class PublicUsersResponse(BaseModel):
+    """Response model for public users endpoint."""
+    users: List[PublicUser]
+    total: int
 
 
 def create_webapp_api(
@@ -65,7 +85,7 @@ def create_webapp_api(
         openapi_url="/api/openapi.json"
     )
     
-    # CORS middleware for development
+    # CORS middleware for development and production
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -73,6 +93,10 @@ def create_webapp_api(
             "http://localhost:3000",
             "https://web.telegram.org",
             "https://*.telegram.org",
+            "https://zana-ai.com",
+            "https://www.zana-ai.com",
+            "http://zana-ai.com",  # Allow HTTP during initial setup
+            "http://www.zana-ai.com",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -224,6 +248,88 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error getting user info for user {user_id}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/public/users", response_model=PublicUsersResponse)
+    async def get_public_users(limit: int = Query(default=20, ge=1, le=100)):
+        """
+        Get public list of most active users (no authentication required).
+        
+        Args:
+            limit: Maximum number of users to return (1-100, default: 20)
+        
+        Returns:
+            List of public user information ranked by activity
+        """
+        try:
+            logger.info(f"Getting public users, limit={limit}")
+            root_dir = app.state.root_dir
+            logger.info(f"Root dir: {root_dir}")
+            if not root_dir:
+                raise HTTPException(status_code=500, detail="Server configuration error: root_dir not set")
+            
+            logger.info("Opening database connection...")
+            with connection_for_root(root_dir) as conn:
+                logger.info("Executing query...")
+                # Query users with activity count from last 30 days
+                rows = conn.execute(
+                    """
+                    SELECT 
+                        u.user_id,
+                        u.first_name,
+                        u.last_name,
+                        u.display_name,
+                        u.username,
+                        u.avatar_path,
+                        u.avatar_file_unique_id,
+                        u.last_seen_utc,
+                        COALESCE(activity.activity_count, 0) as activity_count
+                    FROM users u
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) as activity_count
+                        FROM (
+                            SELECT user_id, at_utc FROM actions 
+                            WHERE at_utc >= datetime('now', '-30 days')
+                            UNION ALL
+                            SELECT user_id, started_at_utc as at_utc FROM sessions 
+                            WHERE started_at_utc >= datetime('now', '-30 days')
+                        ) recent_activity
+                        GROUP BY user_id
+                    ) activity ON u.user_id = activity.user_id
+                    WHERE (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
+                    ORDER BY activity_count DESC, u.last_seen_utc DESC NULLS LAST
+                    LIMIT ?;
+                    """,
+                    (limit,),
+                ).fetchall()
+                
+                users = []
+                for row in rows:
+                    users.append(
+                        PublicUser(
+                            user_id=str(row["user_id"]),
+                            first_name=row["first_name"],
+                            last_name=row["last_name"],
+                            display_name=row["display_name"],
+                            username=row["username"],
+                            avatar_path=row["avatar_path"],
+                            avatar_file_unique_id=row["avatar_file_unique_id"],
+                            activity_count=int(row["activity_count"] or 0),
+                            last_seen_utc=row["last_seen_utc"],
+                        )
+                    )
+                
+                logger.info(f"Found {len(users)} users")
+                return PublicUsersResponse(users=users, total=len(users))
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting public users: {e}")
+            import traceback
+            error_trace = traceback.format_exc()
+            logger.error(f"Full traceback: {error_trace}")
+            # Return a simpler error message for production
+            raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
     
     # Serve static files if directory is provided
     if static_dir and os.path.isdir(static_dir):
