@@ -250,6 +250,7 @@ class PlannerBot:
 
     def _start_webapp_server(self, host: str = "0.0.0.0", port: int = 8080) -> None:
         """Start the FastAPI web app server in a background thread."""
+        logger.info(f"[DEBUG] Starting webapp server on {host}:{port}")
         try:
             import uvicorn
             from webapp.api import create_webapp_api
@@ -268,6 +269,7 @@ class PlannerBot:
                 logger.error("BOT_TOKEN environment variable is not set, cannot start webapp server")
                 return
             
+            logger.info("[DEBUG] Creating FastAPI app...")
             # Create FastAPI app
             webapp = create_webapp_api(
                 root_dir=self.root_dir,
@@ -275,6 +277,7 @@ class PlannerBot:
                 static_dir=static_dir
             )
             
+            logger.info("[DEBUG] Starting uvicorn server...")
             # Run uvicorn in a separate thread
             config = uvicorn.Config(
                 webapp,
@@ -286,7 +289,10 @@ class PlannerBot:
             server = uvicorn.Server(config)
             
             def run_server():
-                asyncio.run(server.serve())
+                try:
+                    asyncio.run(server.serve())
+                except Exception as e:
+                    logger.error(f"[DEBUG] Exception in uvicorn thread: {e}", exc_info=True)
             
             self.webapp_server = threading.Thread(target=run_server, daemon=True)
             self.webapp_server.start()
@@ -295,7 +301,7 @@ class PlannerBot:
         except ImportError as e:
             logger.warning(f"Web app server dependencies not installed: {e}")
         except Exception as e:
-            logger.error(f"Failed to start web app server: {e}")
+            logger.error(f"Failed to start web app server: {e}", exc_info=True)
 
     def run(self, enable_webapp: bool = True, webapp_port: int = 8080) -> None:
         """
@@ -305,6 +311,7 @@ class PlannerBot:
             enable_webapp: Whether to start the FastAPI web app server
             webapp_port: Port for the web app server (default: 8080)
         """
+        logger.info(f"[DEBUG] run() called with enable_webapp={enable_webapp}, webapp_port={webapp_port}")
         if enable_webapp:
             self._start_webapp_server(port=webapp_port)
         
