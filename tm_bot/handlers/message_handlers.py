@@ -500,6 +500,11 @@ class MessageHandlers:
                 )
                 return
             
+            # Send quick processing message
+            processing_msg = await self.response_service.send_processing_message(
+                update, user_id=user_id, user_lang=user_lang
+            )
+            
             # Create progress callback to show plan to user
             plan_message_to_send = None
             
@@ -516,23 +521,22 @@ class MessageHandlers:
                 progress_callback=progress_callback
             )
             
-            # Send plan message before final response if available
-            if plan_message_to_send:
-                await self.response_service.reply_text(
-                    update, plan_message_to_send,
-                    user_id=user_id,
-                    parse_mode='Markdown',
-                    log_conversation=False  # Don't log plan messages separately
-                )
-            
             # Check for errors
             if "error" in llm_response:
                 error_msg = llm_response["response_to_user"]
                 if user_lang and user_lang != Language.EN:
                     error_msg = translate_text(error_msg, user_lang.value, "en")
-                await self._send_response_with_voice_mode(
-                    update, context, error_msg, settings, user_lang
-                )
+                
+                # Edit processing message with error
+                if processing_msg:
+                    await self.response_service.edit_processing_message(
+                        context, processing_msg, error_msg,
+                        user_id=user_id, user_lang=user_lang
+                    )
+                else:
+                    await self._send_response_with_voice_mode(
+                        update, context, error_msg, settings, user_lang
+                    )
                 return
             
             # Process LLM response
@@ -543,16 +547,31 @@ class MessageHandlers:
                     response_text = translate_text(response_text, user_lang.value, "en")
                 formatted_response = self._format_response(response_text, func_call_response)
                 
-                # Send response with voice mode if enabled
-                await self._send_response_with_voice_mode(
-                    update, context, formatted_response, settings, user_lang
-                )
+                # Edit processing message with final response
+                if processing_msg:
+                    await self.response_service.edit_processing_message(
+                        context, processing_msg, formatted_response,
+                        user_id=user_id, user_lang=user_lang
+                    )
+                else:
+                    # Send response with voice mode if enabled
+                    await self._send_response_with_voice_mode(
+                        update, context, formatted_response, settings, user_lang
+                    )
             except Exception as e:
                 error_msg = get_message("error_general", user_lang, error=str(e))
                 logger.error(f"Error processing voice message for user {user_id}: {str(e)}")
-                await self._send_response_with_voice_mode(
-                    update, context, error_msg, settings, user_lang
-                )
+                
+                # Edit processing message with error if available
+                if processing_msg:
+                    await self.response_service.edit_processing_message(
+                        context, processing_msg, error_msg,
+                        user_id=user_id, user_lang=user_lang
+                    )
+                else:
+                    await self._send_response_with_voice_mode(
+                        update, context, error_msg, settings, user_lang
+                    )
         finally:
             # Clean up temp file
             try:
@@ -814,6 +833,11 @@ class MessageHandlers:
                 # Process through LLM
                 user_lang_code = user_lang.value if user_lang else "en"
                 
+                # Send quick processing message
+                processing_msg = await self.response_service.send_processing_message(
+                    update, user_id=user_id, user_lang=user_lang
+                )
+                
                 # Create progress callback to show plan to user
                 plan_message_to_send = None
                 
@@ -829,25 +853,25 @@ class MessageHandlers:
                     progress_callback=progress_callback
                 )
                 
-                # Send plan message before final response if available
-                if plan_message_to_send:
-                    await self.response_service.reply_text(
-                        update, plan_message_to_send,
-                        user_id=user_id,
-                        parse_mode='Markdown',
-                        log_conversation=False  # Don't log plan messages separately
-                    )
-                
                 # Check for errors
                 if "error" in llm_response:
                     error_msg = llm_response["response_to_user"]
                     if user_lang and user_lang != Language.EN:
                         error_msg = translate_text(error_msg, user_lang.value, "en")
-                    await self.response_service.reply_text(
-                        update, error_msg,
-                        user_id=user_id,
-                        parse_mode='Markdown'
-                    )
+                    
+                    # Edit processing message with error
+                    if processing_msg:
+                        await self.response_service.edit_processing_message(
+                            context, processing_msg, error_msg,
+                            user_id=user_id, user_lang=user_lang,
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await self.response_service.reply_text(
+                            update, error_msg,
+                            user_id=user_id,
+                            parse_mode='Markdown'
+                        )
                     return
                 
                 # Process LLM response
@@ -858,13 +882,20 @@ class MessageHandlers:
                         response_text = translate_text(response_text, user_lang.value, "en")
                     formatted_response = self._format_response(response_text, func_call_response)
                     
-                    # Get settings for voice mode
-                    settings = self.plan_keeper.settings_repo.get_settings(user_id)
-                    
-                    # Send response (with voice mode if enabled)
-                    await self._send_response_with_voice_mode(
-                        update, context, formatted_response, settings, user_lang
-                    )
+                    # Edit processing message with final response
+                    if processing_msg:
+                        await self.response_service.edit_processing_message(
+                            context, processing_msg, formatted_response,
+                            user_id=user_id, user_lang=user_lang
+                        )
+                    else:
+                        # Get settings for voice mode
+                        settings = self.plan_keeper.settings_repo.get_settings(user_id)
+                        
+                        # Send response (with voice mode if enabled)
+                        await self._send_response_with_voice_mode(
+                            update, context, formatted_response, settings, user_lang
+                        )
                 except Exception as e:
                     error_msg = get_message("error_general", user_lang, error=str(e))
                     logger.error(f"Error processing image for user {user_id}: {str(e)}")
@@ -1007,6 +1038,11 @@ class MessageHandlers:
                 ).strip()
                 user_lang_code = user_lang.value if user_lang else "en"
                 
+                # Send quick processing message
+                processing_msg = await self.response_service.send_processing_message(
+                    update, user_id=user_id, user_lang=user_lang
+                )
+                
                 # Create progress callback to show plan to user
                 plan_message_to_send = None
                 
@@ -1022,25 +1058,25 @@ class MessageHandlers:
                     progress_callback=progress_callback
                 )
 
-                # Send plan message before final response if available
-                if plan_message_to_send:
-                    await self.response_service.reply_text(
-                        update, plan_message_to_send,
-                        user_id=user_id,
-                        parse_mode='Markdown',
-                        log_conversation=False  # Don't log plan messages separately
-                    )
-
                 # Handle errors in LLM response
                 if "error" in llm_response:
                     error_msg = llm_response["response_to_user"]
                     if user_lang and user_lang != Language.EN:
                         error_msg = translate_text(error_msg, user_lang.value, "en")
-                    await self.response_service.reply_text(
-                        update, error_msg,
-                        user_id=user_id,
-                        parse_mode="Markdown"
-                    )
+                    
+                    # Edit processing message with error
+                    if processing_msg:
+                        await self.response_service.edit_processing_message(
+                            context, processing_msg, error_msg,
+                            user_id=user_id, user_lang=user_lang,
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        await self.response_service.reply_text(
+                            update, error_msg,
+                            user_id=user_id,
+                            parse_mode="Markdown"
+                        )
                     return
 
                 # Store a new pending clarification if the agent asked again
@@ -1059,10 +1095,18 @@ class MessageHandlers:
                 if user_lang and user_lang != Language.EN:
                     response_text = translate_text(response_text, user_lang.value, "en")
                 formatted_response = self._format_response(response_text, func_call_response)
-                await self.response_service.reply_text(
-                    update, formatted_response,
-                    user_id=user_id
-                )
+                
+                # Edit processing message with final response
+                if processing_msg:
+                    await self.response_service.edit_processing_message(
+                        context, processing_msg, formatted_response,
+                        user_id=user_id, user_lang=user_lang
+                    )
+                else:
+                    await self.response_service.reply_text(
+                        update, formatted_response,
+                        user_id=user_id
+                    )
                 return
             
             # Check for URLs in the message
@@ -1075,6 +1119,11 @@ class MessageHandlers:
             
             # Get user language code for LLM
             user_lang_code = user_lang.value if user_lang else "en"
+            
+            # Send quick processing message
+            processing_msg = await self.response_service.send_processing_message(
+                update, user_id=user_id, user_lang=user_lang
+            )
             
             # Create progress callback to show plan to user
             plan_message_to_send = None
@@ -1091,26 +1140,26 @@ class MessageHandlers:
                 progress_callback=progress_callback
             )
             
-            # Send plan message before final response if available
-            if plan_message_to_send:
-                await self.response_service.reply_text(
-                    update, plan_message_to_send,
-                    user_id=user_id,
-                    parse_mode='Markdown',
-                    log_conversation=False  # Don't log plan messages separately
-                )
-            
             # Check for errors in LLM response
             if "error" in llm_response:
                 # Translate error message if needed
                 error_msg = llm_response["response_to_user"]
                 if user_lang and user_lang != Language.EN:
                     error_msg = translate_text(error_msg, user_lang.value, "en")
-                await self.response_service.reply_text(
-                    update, error_msg,
-                    user_id=user_id,
-                    parse_mode='Markdown'
-                )
+                
+                # Edit processing message with error
+                if processing_msg:
+                    await self.response_service.edit_processing_message(
+                        context, processing_msg, error_msg,
+                        user_id=user_id, user_lang=user_lang,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await self.response_service.reply_text(
+                        update, error_msg,
+                        user_id=user_id,
+                        parse_mode='Markdown'
+                    )
                 return
             
             # Process the LLM response
@@ -1142,18 +1191,25 @@ class MessageHandlers:
                 except Exception:
                     pass
 
-            try:
-                await self.response_service.reply_text(
-                    update, formatted_response,
-                    user_id=user_id
+            # Edit processing message with final response
+            if processing_msg:
+                await self.response_service.edit_processing_message(
+                    context, processing_msg, formatted_response,
+                    user_id=user_id, user_lang=user_lang
                 )
-            except Exception:
-                # Last-resort fallback
-                await self.response_service.reply_text(
-                    update, formatted_response,
-                    user_id=user_id,
-                    auto_translate=False  # Already translated
-                )
+            else:
+                # Fallback if processing message wasn't sent
+                try:
+                    await self.response_service.reply_text(
+                        update, formatted_response,
+                        user_id=user_id
+                    )
+                except Exception:
+                    await self.response_service.reply_text(
+                        update, formatted_response,
+                        user_id=user_id,
+                        auto_translate=False  # Already translated
+                    )
         
         except Exception as e:
             user_lang = get_user_language(update.effective_user)

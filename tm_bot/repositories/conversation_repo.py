@@ -143,6 +143,61 @@ class ConversationRepository:
             logger.warning(f"Failed to get conversation history for user {user_id}: {e}")
             return []
     
+    def get_recent_conversation_summary(self, user_id: int, limit: int = 3) -> str:
+        """
+        Get recent conversation summary for context injection.
+        Returns formatted string with last N exchanges (user + bot pairs).
+        
+        Args:
+            user_id: User ID
+            limit: Number of exchanges to return (default: 3)
+        
+        Returns:
+            Formatted conversation summary string
+        """
+        try:
+            # Get last 2*limit messages (limit exchanges = limit user + limit bot messages)
+            messages = self.get_recent_history(user_id, limit=limit * 2)
+            
+            if not messages:
+                return ""
+            
+            # Group into exchanges (user message followed by bot response)
+            exchanges = []
+            i = 0
+            while i < len(messages):
+                if messages[i]["message_type"] == "user":
+                    user_msg = messages[i]["content"]
+                    # Look for bot response after this
+                    bot_msg = None
+                    if i + 1 < len(messages) and messages[i + 1]["message_type"] == "bot":
+                        bot_msg = messages[i + 1]["content"]
+                        i += 2
+                    else:
+                        i += 1
+                    
+                    exchanges.append({"user": user_msg, "bot": bot_msg})
+                else:
+                    i += 1
+            
+            # Format as conversation summary
+            if not exchanges:
+                return ""
+            
+            # Take last N exchanges
+            recent_exchanges = exchanges[-limit:] if len(exchanges) > limit else exchanges
+            
+            lines = []
+            for exchange in recent_exchanges:
+                lines.append(f"User: {exchange['user']}")
+                if exchange['bot']:
+                    lines.append(f"Bot: {exchange['bot']}")
+            
+            return "\n".join(lines)
+        except Exception as e:
+            logger.warning(f"Failed to get conversation summary for user {user_id}: {e}")
+            return ""
+    
     def cleanup_old_messages(self, days: int = 30) -> int:
         """
         Delete conversation messages older than specified days.

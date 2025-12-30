@@ -3,6 +3,7 @@ Unified response service for all Telegram bot communications.
 Handles translation, logging, formatting, and error handling.
 """
 
+import re
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -66,13 +67,42 @@ class ResponseService:
         return True
     
     def _translate_if_needed(self, text: str, user_lang: Language, user_id: Optional[int] = None) -> str:
-        """Translate text if needed."""
+        """Translate text if needed, preserving promise IDs and technical terms."""
         if not self._should_translate(text, user_lang):
             return text
         
+        # Extract and preserve promise IDs and technical terms
+        # Pattern: P01, P02, T01, T02, etc. or in brackets [P01: text]
+        placeholders = {}
+        placeholder_counter = 0
+        
+        # Find patterns in brackets like [P01: text] first (longer matches)
+        bracket_pattern = r'\[([PT]\d+):[^\]]+\]'
+        for match in re.finditer(bracket_pattern, text):
+            placeholder = f"__PLACEHOLDER_{placeholder_counter}__"
+            placeholders[placeholder] = match.group(0)
+            text = text[:match.start()] + placeholder + text[match.end():]
+            placeholder_counter += 1
+        
+        # Find standalone promise IDs (P\d+, T\d+)
+        promise_id_pattern = r'\b([PT]\d+)\b'
+        matches = list(re.finditer(promise_id_pattern, text))
+        # Process in reverse to maintain positions
+        for match in reversed(matches):
+            placeholder = f"__PLACEHOLDER_{placeholder_counter}__"
+            placeholders[placeholder] = match.group(1)
+            text = text[:match.start()] + placeholder + text[match.end():]
+            placeholder_counter += 1
+        
         try:
             user_lang_code = user_lang.value if user_lang else "en"
-            return translate_text(text, user_lang_code, "en")
+            translated = translate_text(text, user_lang_code, "en")
+            
+            # Restore preserved patterns
+            for placeholder, original in placeholders.items():
+                translated = translated.replace(placeholder, original)
+            
+            return translated
         except Exception as e:
             logger.warning(f"Translation failed for user {user_id}: {e}")
             return text  # Fallback to original
@@ -443,4 +473,102 @@ class ResponseService:
         except TelegramError as e:
             logger.debug(f"Failed to delete message {message_id}: {e}")
             return False
+    
+    async def send_processing_message(
+        self,
+        update: Update,
+        user_id: Optional[int] = None,
+        user_lang: Optional[Language] = None,
+    ) -> Optional[Message]:
+        """
+        Send a quick 'processing...' message that will be edited later.
+        Returns the message object for later editing.
+        """
+        if user_id is None:
+            user_id = update.effective_user.id if update.effective_user else None
+        
+        if user_id is None:
+            logger.error("Cannot send processing message: user_id is None")
+            return None
+        
+        # Get user language if not provided
+        if user_lang is None:
+            user_lang = self._get_user_language_cached(user_id)
+        
+        # Processing message - keep it simple, don't translate
+        processing_text = "🔄 Processing..."
+        
+        try:
+            message = await update.message.reply_text(processing_text)
+            # Don't log processing messages to conversation history
+            return message
+        except TelegramError as e:
+            logger.error(f"Telegram API error sending processing message to user {user_id}: {e}")
+            return None
+    
+    async def edit_processing_message(
+        self,
+        context: CallbackContext,
+        message: Message,
+        final_text: str,
+        user_id: Optional[int] = None,
+        user_lang: Optional[Language] = None,
+        parse_mode: Optional[str] = None,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
+        log_conversation: bool = True,
+        auto_translate: bool = True,
+    ) -> Optional[Message]:
+        """
+        Edit a processing message with the final response.
+        Handles translation and logging.
+        """
+        if user_id is None:
+            logger.error("Cannot edit processing message: user_id is None")
+            return None
+        
+        # Get user language if not provided
+        if user_lang is None:
+            user_lang = self._get_user_language_cached(user_id)
+        
+        # Translate if needed
+        if auto_translate:
+            final_text = self._translate_if_needed(final_text, user_lang, user_id)
+        
+        # Detect parse mode if not provided
+        if parse_mode is None:
+            parse_mode = self._detect_parse_mode(final_text)
+        
+        # Log conversation
+        if log_conversation:
+            self.conversation_repo.save_message(
+                user_id=user_id,
+                message_type='bot',
+                content=final_text,
+                message_id=message.message_id,
+                chat_id=message.chat.id,
+            )
+        
+        # Edit message
+        try:
+            edited = await context.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                text=final_text,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+            return edited
+        except TelegramError as e:
+            logger.warning(f"Failed to edit processing message for user {user_id}: {e}")
+            # Fallback: try without parse_mode
+            try:
+                return await context.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    text=final_text,
+                    reply_markup=reply_markup,
+                )
+            except Exception as e2:
+                logger.error(f"Fallback edit also failed: {e2}")
+                return None
 

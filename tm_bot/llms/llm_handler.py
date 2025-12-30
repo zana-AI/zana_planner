@@ -87,6 +87,9 @@ class LLMHandler:
             adapter_root = root_dir or os.getenv("ROOT_DIR") or os.getcwd()
             self.plan_adapter = PlannerAPIAdapter(adapter_root)
             self.tools = self._build_tools(self.plan_adapter)
+            # Initialize conversation repository for context injection
+            from repositories.conversation_repo import ConversationRepository
+            self.conversation_repo = ConversationRepository(adapter_root)
 
             self._initialize_context()
             self.planner_parser = JsonOutputParser(pydantic_object=Plan)
@@ -156,36 +159,49 @@ class LLMHandler:
         )
 
         # Planner prompt: must output a structured plan JSON (no chain-of-thought).
+        # Structured with clear sections for better LLM understanding
         self.system_message_planner_prompt = (
+            "=== ROLE ===\n"
             "You are the PLANNER for a task management assistant.\n"
             "Your job: produce a short, high-level plan (NOT chain-of-thought) that the executor can follow.\n\n"
             
-            "CORE PRINCIPLES:\n"
+            "=== CORE PRINCIPLES ===\n"
             "1. BE PROACTIVE: Make reasonable assumptions rather than asking. Users prefer action over questions.\n"
-            "2. INFER CONTEXT: Use search_promises to find promise IDs when the user mentions a topic by name.\n"
-            "3. USE DEFAULTS: When time_spent is not specified, default to 1.0 hour.\n"
-            "4. RESOLVE AMBIGUITY: If a promise name is mentioned (e.g., 'sport', 'reading'), search for it first.\n\n"
+            "2. USE PROMISE CONTEXT FIRST: If user promises are provided in system message, check them FIRST before searching.\n"
+            "3. INFER CONTEXT: Only use search_promises if the promise is NOT found in the context list.\n"
+            "4. USE DEFAULTS: When time_spent is not specified, default to 1.0 hour.\n"
+            "5. RESOLVE AMBIGUITY: If a promise name is mentioned (e.g., 'sport', 'reading'), check context first, then search if needed.\n\n"
             
-            "RULES:\n"
+            "=== OUTPUT RULES ===\n"
             "- Output ONLY valid JSON.\n"
             "- Do NOT call tools directly; just plan which tools to call.\n"
             "- Keep 'purpose' short and user-safe (no internal reasoning).\n"
+            "- Keep plans short (1-4 steps; never more than 6).\n"
+            "- For casual chat, set final_response_if_no_tools and return empty steps.\n\n"
+            
+            "=== PLANNING STRATEGY ===\n"
             "- Prefer tool steps over asking the user when data can be obtained from tools.\n"
             "- Never ask for things that are tool-accessible (timezone, language, settings, promise lists).\n"
             "- Ask the user ONLY when truly blocked (e.g., completely ambiguous request with no context).\n"
             "- If you must ask, ask ONCE and request ALL missing fields together.\n"
-            "- Keep plans short (1-4 steps; never more than 6).\n"
-            "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n"
-            "- For casual chat, set final_response_if_no_tools and return empty steps.\n\n"
+            "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n\n"
             
-            "SMART DEFAULTS & INFERENCE:\n"
+            "=== SMART DEFAULTS & INFERENCE ===\n"
             "- 'log time on X' / 'worked on X' without duration → time_spent=1.0\n"
             "- 'log 2 hours on sport' → search_promises('sport'), then add_action with found ID\n"
             "- 'delete my reading promise' → search_promises('reading'), then delete with found ID\n"
             "- 'how am I doing?' → get_weekly_report()\n"
             "- 'my promises' / 'show tasks' → get_promises()\n\n"
             
-            "CATEGORY & MULTI-PROMISE QUERIES:\n"
+            "=== AUTO-SELECTION FOR SINGLE MATCHES ===\n"
+            "- When search_promises returns a single_match JSON ({\"single_match\": true, \"promise_id\": \"P10\", ...}), "
+            "use \"FROM_SEARCH\" as the promise_id placeholder in subsequent tool steps.\n"
+            "- The executor will automatically fill in the actual promise_id from the single_match result.\n"
+            "- Example: If search_promises('sport') returns single_match with promise_id='P10', "
+            "then use {\"promise_id\": \"FROM_SEARCH\"} in the next step that needs promise_id.\n"
+            "- IMPORTANT: Always use FROM_SEARCH when you see single_match in search_promises results.\n\n"
+            
+            "=== CATEGORY & MULTI-PROMISE QUERIES ===\n"
             "- When user asks about a category (e.g., 'health', 'work', 'learning', 'living healthy'), "
             "use get_promises() first to see all promises, then filter by category keywords.\n"
             "- For 'performance in X category' or 'activities in X', use get_actions_in_range() without promise_id "
@@ -196,7 +212,7 @@ class LLMHandler:
             "  • 'how am I doing with work?' → get_promises(), filter work-related, get_promise_report() for each, aggregate\n"
             "  • 'activities in health category' → get_actions_in_range(), filter by health-related promise IDs\n\n"
             
-            "EXAMPLES:\n\n"
+            "=== EXAMPLES ===\n\n"
             
             "User: 'I just did 2 hours of sport'\n"
             "Plan: {\"steps\": [\n"
@@ -222,7 +238,7 @@ class LLMHandler:
             "User: 'hi there!'\n"
             "Plan: {\"steps\": [], \"final_response_if_no_tools\": \"Hello! How can I help you with your tasks today?\"}\n\n"
             
-            "JSON SCHEMA:\n"
+            "=== JSON SCHEMA ===\n"
             "{\n"
             '  "steps": [\n'
             "    {\n"
@@ -240,49 +256,87 @@ class LLMHandler:
 
     def _get_system_message_main(self, user_language: str = None, user_id: Optional[str] = None) -> SystemMessage:
         """Get system message with language instruction, user info, and promise context if provided."""
-        # Add current date and time information
+        # Build structured system message with clear sections
+        sections = []
+        
+        # Base personality and role
+        sections.append("=== ROLE & PERSONALITY ===")
+        sections.append(self.system_message_main_base)
+        
+        # Date and time context
         now = datetime.now()
         current_date_str = now.strftime("%A, %B %d, %Y")
         current_time_str = now.strftime("%H:%M")
+        sections.append(f"\n=== DATE & TIME ===")
+        sections.append(f"Current date and time: {current_date_str} at {current_time_str}.")
+        sections.append("You have access to the current date and should use it when answering questions about dates, weeks, or time periods. Do not ask the user for the current date - use the date provided above.")
         
-        content = self.system_message_main_base
-        content += f"\n\nCurrent date and time: {current_date_str} at {current_time_str}. "
-        content += "You have access to the current date and should use it when answering questions about dates, weeks, or time periods. Do not ask the user for the current date - use the date provided above. "
-        
-        # Add user personalization (first_name)
+        # User personalization
         if user_id:
             try:
                 settings = self.plan_adapter.settings_repo.get_settings(int(user_id))
                 if settings.first_name:
-                    content += f"\n\nUser's name: {settings.first_name}\n"
-                    content += "Use their name contextually when appropriate for warmth and personalization, but let the conversation flow naturally."
+                    sections.append(f"\n=== USER INFO ===")
+                    sections.append(f"User's name: {settings.first_name}")
+                    sections.append("Use their name contextually when appropriate for warmth and personalization, but let the conversation flow naturally.")
             except Exception as e:
                 logger.debug(f"Could not get user settings for personalization: {e}")
         
-        # Add promise context if user has <= 50 promises
+        # Promise context
         if user_id:
             try:
                 promise_count = self.plan_adapter.count_promises(int(user_id))
+                logger.debug(f"User {user_id} has {promise_count} promises")
                 if promise_count <= 50:
                     promises = self.plan_adapter.get_promises(int(user_id))
                     if promises:
                         promise_list = ", ".join([f"{p['id']}: {p['text'].replace('_', ' ')}" for p in promises])
-                        content += f"\n\nUser has these promises: [{promise_list}]\n"
-                        content += "You have access to all user promises in context. Use this information to answer questions about their goals and activities."
+                        sections.append(f"\n=== USER PROMISES (in context) ===")
+                        sections.append(f"User has these promises: [{promise_list}]")
+                        sections.append("IMPORTANT: You have access to all user promises in context. Use this information directly to answer questions about their goals and activities.")
+                        sections.append("When user mentions a category, activity, or promise name:")
+                        sections.append("1. FIRST check the promise list above to see if it matches")
+                        sections.append("2. If found, use the promise_id directly (e.g., P10, P01)")
+                        sections.append("3. Only use search_promises if the promise is NOT in the context list")
+                        sections.append("Example: If user asks 'how much did I practice sport' and you see 'P10: Do sport' in context, use P10 directly without searching.")
+                        logger.info(f"Injected {promise_count} promises into context for user {user_id}: {promise_list[:100]}...")
             except Exception as e:
-                logger.debug(f"Could not get promise context: {e}")
+                logger.warning(f"Could not get promise context for user {user_id}: {e}")
         
+        # Recent conversation history
+        if user_id:
+            try:
+                conversation_summary = self.conversation_repo.get_recent_conversation_summary(int(user_id), limit=3)
+                if conversation_summary:
+                    sections.append(f"\n=== RECENT CONVERSATION ===")
+                    sections.append(conversation_summary)
+                    sections.append("Use this recent conversation context to understand follow-up questions.")
+                    sections.append("For example, if the user previously asked about 'French' and now says 'and piano', they likely want information about piano practice history (similar to what was asked about French).")
+            except Exception as e:
+                logger.debug(f"Could not get conversation context: {e}")
+        
+        # Language preference
+        sections.append(f"\n=== LANGUAGE ===")
         if user_language and user_language != "en":
-            # Map language codes to full names
             lang_map = {
                 "fa": "Persian (Farsi)",
                 "fr": "French",
                 "en": "English"
             }
             lang_name = lang_map.get(user_language, "the user's preferred language")
-            content += f"\n\nRespond in {lang_name} unless the user explicitly uses English. "
+            sections.append(f"Respond in {lang_name} unless the user explicitly uses English.")
         else:
-            content += "\n\nRespond in English. "
+            sections.append("Respond in English.")
+        
+        content = "\n".join(sections)
+        
+        # Log system message length for debugging
+        content_length = len(content)
+        if user_id:
+            logger.debug(f"System message for user {user_id} is {content_length} characters")
+            if content_length > 8000:
+                logger.warning(f"System message for user {user_id} is very long ({content_length} chars), may be truncated by LLM")
+        
         return SystemMessage(content=content)
 
     def get_response_api(

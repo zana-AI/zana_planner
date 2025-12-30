@@ -7,6 +7,10 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolM
 from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 # ToolNode import path varies across langgraph versions.
 try:
     from langgraph.prebuilt import ToolNode as _ToolNode  # type: ignore
@@ -720,8 +724,10 @@ def create_plan_execute_graph(
             
             # Check if previous tool was search_promises with single match, and current step needs promise_id
             if tool_args.get("promise_id") == "FROM_SEARCH":
+                logger.debug(f"Auto-fill: Looking for search_promises result to fill promise_id for {tool_name}")
                 # Look for the last search_promises result in messages
                 # Check messages in reverse to find the most recent search_promises result
+                found_single_match = False
                 for i in range(len(state.get("messages", [])) - 1, -1, -1):
                     msg = state["messages"][i]
                     # Check if this is an AIMessage with a search_promises tool call
@@ -730,6 +736,7 @@ def create_plan_execute_graph(
                             if tool_call.get("name") == "search_promises":
                                 # Found search_promises call, now check the corresponding ToolMessage
                                 tool_call_id = tool_call.get("id")
+                                logger.debug(f"Auto-fill: Found search_promises call with id {tool_call_id}")
                                 # Look ahead for the ToolMessage with matching tool_call_id
                                 for j in range(i + 1, len(state.get("messages", []))):
                                     next_msg = state["messages"][j]
@@ -743,13 +750,22 @@ def create_plan_execute_graph(
                                                     parsed = json.loads(content)
                                                     if isinstance(parsed, dict) and parsed.get("single_match"):
                                                         # Auto-fill promise_id from single match
-                                                        tool_args["promise_id"] = parsed["promise_id"]
-                                                        break
-                                            except (json.JSONDecodeError, AttributeError):
+                                                        promise_id = parsed.get("promise_id")
+                                                        if promise_id:
+                                                            tool_args["promise_id"] = promise_id
+                                                            found_single_match = True
+                                                            logger.info(f"Auto-fill: Successfully filled promise_id={promise_id} from single_match")
+                                                            break
+                                            except (json.JSONDecodeError, AttributeError) as e:
+                                                logger.debug(f"Auto-fill: Failed to parse search_promises result: {e}")
                                                 pass
-                                break
-                        if tool_args.get("promise_id") != "FROM_SEARCH":
+                                if found_single_match:
+                                    break
+                        if found_single_match:
                             break
+                
+                if not found_single_match:
+                    logger.warning(f"Auto-fill: FROM_SEARCH placeholder found but no single_match result located for {tool_name}")
             
             call_id = f"plan_{idx}_iter_{new_iteration}"
             tool_call = {"name": tool_name, "args": tool_args, "id": call_id, "type": "tool_call"}
