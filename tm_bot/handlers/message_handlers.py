@@ -1179,6 +1179,16 @@ class MessageHandlers:
 
                 # Process response as normal
                 func_call_response = self.call_planner_api(user_id, llm_response)
+                tool_outputs = llm_response.get("tool_outputs") or []
+                
+                # Check if visualization should be sent
+                viz_sent = await self._handle_weekly_visualization_if_present(
+                    update, context, func_call_response, tool_outputs,
+                    user_id, user_lang, processing_msg
+                )
+                if viz_sent:
+                    return  # Image already sent, don't send text response
+                
                 # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                 response_text = llm_response.get("response_to_user", "")
                 
@@ -1251,6 +1261,16 @@ class MessageHandlers:
             # Process the LLM response
             try:
                 func_call_response = self.call_planner_api(user_id, llm_response)
+                tool_outputs = llm_response.get("tool_outputs") or []
+                
+                # Check if visualization should be sent
+                viz_sent = await self._handle_weekly_visualization_if_present(
+                    update, context, func_call_response, tool_outputs,
+                    user_id, user_lang, processing_msg
+                )
+                if viz_sent:
+                    return  # Image already sent, don't send text response
+                
                 # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                 response_text = llm_response['response_to_user']
                 
@@ -1300,6 +1320,112 @@ class MessageHandlers:
             await update.message.reply_text(message, parse_mode='Markdown')
             logger.error(f"Unexpected error handling message from user {update.effective_user.id}: {str(e)}")
     
+    async def _handle_weekly_visualization_if_present(
+        self, update: Update, context: CallbackContext, 
+        func_call_response, tool_outputs: list, 
+        user_id: int, user_lang: Language, processing_msg=None
+    ) -> bool:
+        """
+        Check if any tool output contains weekly visualization marker and send image if found.
+        
+        Args:
+            func_call_response: Can be a string (direct tool call) or list (when executed_by_agent is True)
+            tool_outputs: List of tool output strings from agent execution
+        
+        Returns:
+            True if visualization was sent, False otherwise
+        """
+        viz_marker = None
+        
+        # Check func_call_response (can be string or list)
+        if isinstance(func_call_response, str) and "[WEEKLY_VIZ:" in func_call_response:
+            match = re.search(r'\[WEEKLY_VIZ:([^\]]+)\]', func_call_response)
+            if match:
+                viz_marker = match.group(1)
+        elif isinstance(func_call_response, list):
+            # When executed_by_agent is True, func_call_response is the tool_outputs list
+            for output in func_call_response:
+                if isinstance(output, str) and "[WEEKLY_VIZ:" in output:
+                    match = re.search(r'\[WEEKLY_VIZ:([^\]]+)\]', output)
+                    if match:
+                        viz_marker = match.group(1)
+                        break
+        
+        # Check tool_outputs (separate from func_call_response)
+        if not viz_marker and tool_outputs:
+            for output in tool_outputs:
+                if isinstance(output, str) and "[WEEKLY_VIZ:" in output:
+                    match = re.search(r'\[WEEKLY_VIZ:([^\]]+)\]', output)
+                    if match:
+                        viz_marker = match.group(1)
+                        break
+        
+        if not viz_marker:
+            return False
+        
+        try:
+            # Parse the timestamp
+            ref_time = datetime.fromisoformat(viz_marker.replace('Z', '+00:00'))
+            
+            # Get weekly summary for caption
+            summary = self.plan_keeper.reports_service.get_weekly_summary(user_id, ref_time)
+            report = weekly_report_text(summary)
+            
+            # Compute week boundaries
+            week_start, week_end = get_week_range(ref_time)
+            date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
+            
+            # Get header
+            header = get_message("weekly_header", user_lang, date_range=date_range_str)
+            message_text = f"{header}\n\n{report}"
+            
+            # Truncate if needed
+            MAX_CAPTION_LEN = 1024
+            if len(message_text) > MAX_CAPTION_LEN:
+                message_text = message_text[: MAX_CAPTION_LEN - 1] + "…"
+            
+            # Generate visualization image
+            image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
+                user_id, ref_time
+            )
+            
+            if image_path and os.path.exists(image_path):
+                # Create refresh keyboard
+                keyboard = weekly_report_kb(ref_time)
+                
+                # Send photo
+                with open(image_path, 'rb') as photo:
+                    await self.response_service.send_photo(
+                        context,
+                        chat_id=update.effective_chat.id,
+                        photo=photo,
+                        caption=message_text,
+                        user_id=user_id,
+                        reply_markup=keyboard,
+                        parse_mode='Markdown',
+                    )
+                
+                # Clean up temp file
+                try:
+                    os.remove(image_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp visualization file {image_path}: {e}")
+                
+                # Delete processing message if it exists
+                if processing_msg:
+                    try:
+                        await processing_msg.delete()
+                    except Exception:
+                        pass
+                
+                return True
+            else:
+                logger.warning(f"Failed to generate weekly visualization image for user {user_id}")
+                return False
+        except Exception as e:
+            logger.error(f"Error generating weekly visualization: {e}")
+            return False
+
     def _format_response(self, llm_response: str, func_call_response) -> str:
         """Format the response for Telegram."""
         try:

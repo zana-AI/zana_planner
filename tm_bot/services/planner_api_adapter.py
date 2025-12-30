@@ -308,6 +308,36 @@ class PlannerAPIAdapter:
         summary = self.reports_service.get_weekly_summary(user_id, reference_time)
         return self._format_weekly_report(summary)
 
+    def get_weekly_visualization(self, user_id, reference_time: Optional[datetime] = None) -> str:
+        """Generate weekly visualization image for a user.
+        
+        This tool generates a visual chart/graph of the weekly report. The handler will
+        automatically send the image to the user when this tool is called.
+        
+        Args:
+            user_id: User identifier
+            reference_time: Optional datetime to use as reference for the week.
+                          If None, uses current datetime. Can be a datetime string in ISO format
+                          or a relative description like "last week" (which will be parsed).
+        
+        Returns:
+            Special marker string that triggers image generation and sending in the handler.
+            Format: [WEEKLY_VIZ:timestamp] where timestamp is ISO format of reference_time.
+        """
+        if not reference_time:
+            reference_time = datetime.now()
+        elif isinstance(reference_time, str):
+            # Try to parse ISO format or relative descriptions
+            try:
+                reference_time = datetime.fromisoformat(reference_time.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                # If parsing fails, use current time
+                reference_time = datetime.now()
+        
+        # Return special marker that handler will detect
+        timestamp_str = reference_time.isoformat()
+        return f"[WEEKLY_VIZ:{timestamp_str}]"
+
     def get_promise_report(self, user_id, promise_id: str) -> str:
         """Get promise report."""
         summary = self.reports_service.get_promise_summary(user_id, promise_id, datetime.now())

@@ -192,6 +192,7 @@ class LLMHandler:
             "- 'log 2 hours on sport' → search_promises('sport'), then add_action with found ID\n"
             "- 'delete my reading promise' → search_promises('reading'), then delete with found ID\n"
             "- 'how am I doing?' → get_weekly_report()\n"
+            "- 'show weekly graph' / 'weekly visualization' / 'show this graph for last week' → get_weekly_visualization()\n"
             "- 'my promises' / 'show tasks' → get_promises()\n\n"
             
             "=== AUTO-SELECTION FOR SINGLE MATCHES ===\n"
