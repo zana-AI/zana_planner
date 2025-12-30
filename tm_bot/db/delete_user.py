@@ -40,7 +40,7 @@ def delete_user_from_sqlite(root_dir: str, user_id: str) -> None:
         conn.execute("DELETE FROM promises WHERE user_id = ?", (user,))
         
         # Delete user settings
-        conn.execute("DELETE FROM user_settings WHERE user_id = ?", (user,))
+        conn.execute("DELETE FROM users WHERE user_id = ?", (user,))
         
         # Delete legacy imports
         conn.execute("DELETE FROM legacy_imports WHERE user_id = ?", (user,))

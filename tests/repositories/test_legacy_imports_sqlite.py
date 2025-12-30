@@ -57,7 +57,7 @@ def test_legacy_import_is_idempotent_and_tracked(tmp_path):
     try:
         p_cnt = conn.execute("SELECT COUNT(*) FROM promises WHERE user_id = ?;", (str(user_id),)).fetchone()[0]
         a_cnt = conn.execute("SELECT COUNT(*) FROM actions WHERE user_id = ?;", (str(user_id),)).fetchone()[0]
-        st_cnt = conn.execute("SELECT COUNT(*) FROM user_settings WHERE user_id = ?;", (str(user_id),)).fetchone()[0]
+        st_cnt = conn.execute("SELECT COUNT(*) FROM users WHERE user_id = ?;", (str(user_id),)).fetchone()[0]
         assert int(p_cnt) == 1
         assert int(a_cnt) == 1
         assert int(st_cnt) == 1

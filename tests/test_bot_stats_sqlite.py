@@ -22,7 +22,7 @@ def _create_schema(conn: sqlite3.Connection) -> None:
     # Minimal subset needed by compute_stats_sql
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS user_settings (
+        CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
             timezone TEXT NOT NULL,
             nightly_hh INTEGER NOT NULL,

@@ -15,6 +15,7 @@ class Promise:
     # Optional viz fields (keep if already present in CSVs)
     angle_deg: int = 0
     radius: Optional[int] = 0
+    visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
     # Future: pinned/focus flags, tags
 
 

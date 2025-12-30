@@ -40,7 +40,7 @@ def _list_users(conn: sqlite3.Connection) -> List[str]:
             UNION
             SELECT user_id FROM sessions
             UNION
-            SELECT user_id FROM user_settings
+            SELECT user_id FROM users
         ) u
         ORDER BY user_id ASC;
         """
@@ -110,7 +110,7 @@ def compute_stats_sql(data_dir: str) -> Dict:
                 SELECT COUNT(*) FROM (
                     SELECT user_id, MIN(ts) AS first_seen
                     FROM (
-                        SELECT user_id, created_at_utc AS ts FROM user_settings
+                        SELECT user_id, created_at_utc AS ts FROM users
                         UNION ALL
                         SELECT user_id, created_at_utc AS ts FROM promises
                         UNION ALL

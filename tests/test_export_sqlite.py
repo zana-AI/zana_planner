@@ -10,7 +10,7 @@ from db.export import main as export_main
 def _create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS user_settings (
+        CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
             timezone TEXT NOT NULL,
             nightly_hh INTEGER NOT NULL,
@@ -89,7 +89,7 @@ def test_export_writes_manifest_and_user_json(tmp_path):
     try:
         _create_schema(conn)
         conn.execute(
-            "INSERT INTO user_settings VALUES (?,?,?,?,?,?,?,?);",
+            "INSERT INTO users VALUES (?,?,?,?,?,?,?,?);",
             ("123", "UTC", 22, 0, "en", None, "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z"),
         )
         conn.execute(

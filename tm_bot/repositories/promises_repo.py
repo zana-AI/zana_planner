@@ -32,7 +32,7 @@ class PromisesRepository:
             ensure_imported(conn, self.root_dir, user, "promises")
             rows = conn.execute(
                 """
-                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius
+                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, visibility
                 FROM promises
                 WHERE user_id = ? AND is_deleted = 0
                 ORDER BY current_id ASC;
@@ -53,6 +53,7 @@ class PromisesRepository:
                     end_date=date_from_iso(r["end_date"]),
                     angle_deg=int(r["angle_deg"]),
                     radius=int(r["radius"]),
+                    visibility=str(r.get("visibility") or "private"),
                 )
             )
         return promises
@@ -71,7 +72,7 @@ class PromisesRepository:
 
             row = conn.execute(
                 """
-                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted
+                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted, visibility
                 FROM promises
                 WHERE user_id = ? AND promise_uuid = ?
                 LIMIT 1;
@@ -92,6 +93,7 @@ class PromisesRepository:
             end_date=date_from_iso(row["end_date"]),
             angle_deg=int(row["angle_deg"]),
             radius=int(row["radius"]),
+            visibility=str(row.get("visibility") or "private"),
         )
 
     def upsert_promise(self, user_id: int, promise: Promise) -> None:
@@ -160,9 +162,9 @@ class PromisesRepository:
                 """
                 INSERT OR REPLACE INTO promises(
                     promise_uuid, user_id, current_id, text, hours_per_week, recurring,
-                    start_date, end_date, angle_deg, radius, is_deleted,
+                    start_date, end_date, angle_deg, radius, is_deleted, visibility,
                     created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     p_uuid,
@@ -176,6 +178,7 @@ class PromisesRepository:
                     int(promise.angle_deg or 0),
                     int(promise.radius or 0),
                     0,
+                    str(promise.visibility or "private"),
                     now if is_new else (now),  # best-effort timestamps per plan
                     now,
                 ),

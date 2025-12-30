@@ -778,7 +778,7 @@ class PlannerAPIAdapter:
         - ended_at_utc: TEXT
         - paused_seconds_total: INTEGER
         
-        TABLE: user_settings
+        TABLE: users
         - user_id: TEXT PRIMARY KEY
         - timezone: TEXT
         - language: TEXT
@@ -1026,7 +1026,7 @@ class PlannerAPIAdapter:
         
         try:
             # Tables that have user_id column
-            user_tables = ["promises", "actions", "sessions", "user_settings", 
+            user_tables = ["promises", "actions", "sessions", "users", 
                           "promise_aliases", "promise_events"]
             
             query_upper = query.upper()
@@ -1038,7 +1038,7 @@ class PlannerAPIAdapter:
                     referenced_tables.append(table)
             
             if not referenced_tables:
-                return (False, "Query must reference at least one user data table (promises, actions, sessions, user_settings).")
+                return (False, "Query must reference at least one user data table (promises, actions, sessions, users).")
             
             # SECURITY: Rewrite query to enforce user_id filter
             # We wrap the original query as a subquery and add our own WHERE clause

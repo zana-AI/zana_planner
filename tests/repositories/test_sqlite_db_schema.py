@@ -19,13 +19,24 @@ def test_sqlite_db_creates_schema_and_tables(tmp_path):
             for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
         }
         for expected in (
-            "user_settings",
+            "users",
             "promises",
             "promise_aliases",
             "promise_events",
             "actions",
             "sessions",
             "legacy_imports",
+            # Social tables (v3)
+            "user_follows",
+            "user_blocks",
+            "user_mutes",
+            "clubs",
+            "club_members",
+            "promise_club_shares",
+            "feed_items",
+            "milestones",
+            "feed_reactions",
+            "social_events",
         ):
             assert expected in tables
 

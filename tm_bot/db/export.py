@@ -36,7 +36,7 @@ def _list_users(conn: sqlite3.Connection) -> List[str]:
             UNION
             SELECT user_id FROM sessions
             UNION
-            SELECT user_id FROM user_settings
+            SELECT user_id FROM users
         ) u
         ORDER BY user_id ASC;
         """
@@ -51,7 +51,7 @@ def _rows(conn: sqlite3.Connection, sql: str, params: tuple) -> List[Dict[str, A
 
 def export_user(conn: sqlite3.Connection, user_id: str) -> Dict[str, Any]:
     settings = conn.execute(
-        "SELECT * FROM user_settings WHERE user_id = ? LIMIT 1;",
+        "SELECT * FROM users WHERE user_id = ? LIMIT 1;",
         (user_id,),
     ).fetchone()
 

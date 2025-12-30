@@ -1,0 +1,330 @@
+@startuml LLM Agent Flow
+!theme plain
+skinparam componentStyle rectangle
+skinparam roundcorner 10
+skinparam linetype ortho
+skinparam backgroundColor #FEFEFE
+
+title LLM Handler and Agent Flow with Context Variables
+
+package "Initialization Phase" {
+    component "PlannerBot\n(planner_bot.py)" as PlannerBot
+    note right of PlannerBot
+        Initialization:
+        - Creates LLMHandler()
+        - Creates PlannerAPIAdapter
+        - Registers handlers
+    end note
+    
+    component "LLMHandler\n(llm_handler.py)" as LLMHandler {
+        note right
+            Configuration:
+            - chat_model: ChatVertexAI or ChatOpenAI
+            - max_iterations: int (default: 6)
+            - chat_history: Dict[str, List[BaseMessage]]
+            - plan_adapter: PlannerAPIAdapter
+            - tools: List[StructuredTool]
+            - conversation_repo: ConversationRepository
+            
+            System Prompts:
+            - system_message_main_base: str
+            - system_message_api: SystemMessage
+            - system_message_planner_prompt: str
+            
+            Agent App:
+            - agent_app: CompiledGraph
+            - Created via create_plan_execute_graph()
+        end note
+    }
+    
+    component "Agent Graph\n(agent.py)" as AgentGraph {
+        note right
+            Graph Nodes:
+            + planner: AgentState -> AgentState
+            + executor: AgentState -> AgentState
+            + tools_node: AgentState -> AgentState
+            
+            State Management:
+            + should_continue: routing logic
+            + _validate_and_repair_plan_steps()
+            + _parse_plan()
+        end note
+    }
+    
+    PlannerBot --> LLMHandler: 1. Initialize
+    LLMHandler --> AgentGraph: 2. create_plan_execute_graph(\n  tools, planner_model, responder_model,\n  planner_prompt, max_iterations\n)
+}
+
+package "Message Processing Flow" {
+    component "MessageHandler\n(base_handlers.py)" as MessageHandler {
+        note right
+            Entry Point:
+            handle_text_message()
+            - Receives UserMessage
+            - Gets user_language
+            - Calls LLMHandler.get_response_api()
+        end note
+    }
+    
+    component "get_response_api()" as GetResponseAPI {
+        note right
+            Input Parameters:
+            + user_message: str
+            + user_id: str
+            + user_language: str (optional)
+            + progress_callback: Callable (optional)
+            
+            Context Building:
+            + Builds message list
+            + Gets system message
+            + Loads chat history
+            + Sets up LangSmith tracing
+            
+            Agent Invocation:
+            + Creates AgentState
+            + Invokes agent_app.invoke(state)
+            + Processes result_state
+        end note
+    }
+    
+    MessageHandler --> GetResponseAPI: get_response_api(\n  user_message,\n  user_id,\n  user_language\n)
+}
+
+package "System Message Context Variables" {
+    component "System Message Structure" as SystemMsg {
+        note right
+            Built by _get_system_message_main():
+            
+            ROLE & PERSONALITY:
+            - Base personality prompt
+            - Task management assistant role
+            
+            DATE & TIME:
+            - current_date_str: "Monday, January 15, 2025"
+            - current_time_str: "14:30"
+            
+            USER INFO:
+            - user_id: str
+            - first_name: str (from settings)
+            
+            USER PROMISES (in context):
+            - promise_list: "P10: Do sport, P01: Reading"
+            - promise_count: int (if <= 50)
+            
+            RECENT CONVERSATION:
+            - conversation_summary: str
+            - Last 3 conversation turns
+            
+            LANGUAGE MANAGEMENT:
+            - user_language: "en" or "fr" or "fa"
+            - Language instructions
+        end note
+    }
+    
+    component "Message List Construction" as MsgList {
+        note right
+            Messages sent to agent:
+            
+            1. SystemMessage (main context)
+            2. SystemMessage (API tools)
+            3. prior_history (HumanMessage/AIMessage)
+            4. HumanMessage (current user_message)
+        end note
+    }
+    
+    GetResponseAPI --> SystemMsg: _get_system_message_main()
+    SystemMsg --> MsgList: Build message list
+}
+
+package "Agent State Variables" {
+    component "AgentState (TypedDict)" as AgentState {
+        note right
+            State Variables:
+            + messages: List[BaseMessage]
+            + iteration: int
+            + plan: Optional[List[dict]]
+            + step_idx: int
+            + final_response: Optional[str]
+            + planner_error: Optional[str]
+            + pending_meta_by_idx: Optional[Dict[int, dict]]
+            + pending_clarification: Optional[dict]
+            + tool_retry_counts: Optional[Dict[str, int]]
+        end note
+    }
+}
+
+package "Agent Graph Execution Flow" {
+    component "Planner Node" as PlannerNode
+    note right of PlannerNode
+        Input:
+        + messages: List[BaseMessage]
+        + planner_prompt: SystemMessage
+        
+        Processing:
+        + Invoke planner_model (no tools)
+        + Parse JSON plan
+        + Validate & repair steps
+        
+        Output:
+        + plan: List[PlanStep]
+        + pending_meta_by_idx: Dict
+        + final_response_if_no_tools: str
+    end note
+    
+    component "Executor Node" as ExecutorNode
+    note right of ExecutorNode
+        Step Processing:
+        + Get current step from plan[step_idx]
+        + Check step.kind: "tool" or "respond" or "ask_user"
+        
+        Tool Step:
+        + Resolve placeholders (FROM_SEARCH, FROM_TOOL)
+        + Create AIMessage with tool_calls
+        + Advance step_idx
+        
+        Respond Step:
+        + Invoke responder_model
+        + Generate final_response
+        + Advance step_idx
+        
+        Ask User Step:
+        + Set final_response = question
+        + Set pending_clarification
+        + Advance step_idx
+    end note
+    
+    component "Tools Node" as ToolsNode
+    note right of ToolsNode
+        Tool Execution:
+        + Execute tool.invoke(args)
+        + Handle retries (transient errors)
+        + Create ToolMessage with result
+        
+        Error Handling:
+        + Catch exceptions
+        + Create error ToolMessage
+        + Mark retryable if transient
+    end note
+    
+    component "Routing Logic" as Routing
+    note right of Routing
+        should_continue():
+        + Check final_response exists
+        + Check iteration < max_iterations
+        + Check has_tool_calls
+        + Route: "tools" or "executor" or END
+    end note
+    
+    AgentInvoke --> PlannerNode: Initial state
+    PlannerNode --> ExecutorNode: plan created
+    ExecutorNode --> ToolsNode: has tool_calls
+    ToolsNode --> Routing: tool executed
+    Routing --> ExecutorNode: continue
+    Routing --> END: done
+}
+
+package "Tool Resolution & Placeholders" {
+    component "Placeholder Resolution" as PlaceholderRes {
+        note right
+            Supported Placeholders:
+            
+            FROM_SEARCH:
+            - Resolves from last search_promises result
+            - Checks for single_match JSON
+            - Extracts promise_id
+            
+            FROM_TOOL:tool_name:field:
+            - Resolves from last tool output
+            - Parses JSON from ToolMessage
+            - Extracts field value
+        end note
+    }
+    
+    component "Smart Defaults" as SmartDefaults {
+        note right
+            Inferred Arguments:
+            
+            time_spent: 1.0 (default)
+            - Applied when missing
+            
+            promise_id: FROM_SEARCH
+            - Auto-filled from search results
+            - Falls back to ask_user if ambiguous
+        end note
+    }
+    
+    ToolStep --> PlaceholderRes: Resolve placeholders
+    PlaceholderRes --> SmartDefaults: Apply defaults
+}
+
+package "Response Processing" {
+    component "Final Response" as FinalResponse {
+        note right
+            Return Dictionary:
+            
+            function_call: str
+            function_args: dict
+            response_to_user: str
+            executed_by_agent: bool
+            tool_calls: List
+            tool_outputs: List[str]
+            stop_reason: str
+            pending_clarification: dict
+        end note
+    }
+    
+    component "History Management" as HistoryMgmt {
+        note right
+            Chat History:
+            
+            - Condensed to HumanMessage/AIMessage only
+            - Keeps last 12 turns
+            - Stored per user_id
+        end note
+    }
+    
+    Routing --> FinalResponse: final_response set
+    FinalResponse --> HistoryMgmt: Update chat_history
+    HistoryMgmt --> MessageHandler: Return response dict
+}
+
+package "Tool Integration" {
+    component "PlannerAPIAdapter" as PlannerAdapter {
+        note right
+            Available Tools:
+            
+            - add_promise()
+            - search_promises()
+            - add_action()
+            - get_promises()
+            - get_weekly_report()
+            - update_setting()
+            - ... (all public methods)
+        end note
+    }
+    
+    component "Tool Wrappers" as ToolWrappers {
+        note right
+            Tool Wrapping:
+            
+            - _wrap_tool(): Adds user_id context
+            - _current_user_id: Thread-local storage
+            - _sanitize_user_id(): Safety
+        end note
+    }
+    
+    LLMHandler --> PlannerAdapter: Build tools
+    PlannerAdapter --> ToolWrappers: Wrap each method
+    ToolWrappers --> AgentGraph: StructuredTool list
+    ToolsNode --> PlannerAdapter: Execute tool methods
+}
+
+' Styling
+LLMHandler -[#blue]-> AgentGraph
+GetResponseAPI -[#green]-> AgentInvoke
+AgentInvoke -[#purple]-> PlannerNode
+PlannerNode -[#orange]-> ExecutorNode
+ExecutorNode -[#red]-> ToolsNode
+
+@enduml
+

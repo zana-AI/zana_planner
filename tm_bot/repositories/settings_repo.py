@@ -17,7 +17,7 @@ class SettingsRepository:
                 """
                 SELECT timezone, nightly_hh, nightly_mm, language, voice_mode, 
                        first_name, username, last_seen_utc
-                FROM user_settings
+                FROM users
                 WHERE user_id = ?
                 LIMIT 1;
                 """,
@@ -46,7 +46,7 @@ class SettingsRepository:
             ensure_imported(conn, self.root_dir, user, "settings")
             conn.execute(
                 """
-                INSERT OR REPLACE INTO user_settings(
+                INSERT OR REPLACE INTO users(
                     user_id, timezone, nightly_hh, nightly_mm, language, voice_mode,
                     first_name, username, last_seen_utc,
                     created_at_utc, updated_at_utc
