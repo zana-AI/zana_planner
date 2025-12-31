@@ -533,6 +533,7 @@ def create_webapp_api(
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):
             """Serve the React SPA - serves static files if they exist, otherwise index.html."""
+            logger.info(f"[DEBUG] Catch-all route hit for: {full_path}")
             # Don't serve for API routes (handled by other routes)
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found")
@@ -543,7 +544,7 @@ def create_webapp_api(
             
             # Check if the requested path is a file that exists in dist root
             file_path = os.path.join(static_dir, full_path)
-            logger.debug(f"[DEBUG] SPA route requested: {full_path}, checking file: {file_path}")
+            logger.info(f"[DEBUG] SPA route requested: {full_path}, checking file: {file_path}")
             
             # If not found in root, check in assets subdirectory (Vite builds files there)
             if not os.path.isfile(file_path):
@@ -553,7 +554,6 @@ def create_webapp_api(
             
             if os.path.isfile(file_path):
                 # Serve the actual file (JS, CSS, etc. from dist root)
-                from fastapi.responses import FileResponse
                 logger.debug(f"[DEBUG] Serving static file: {file_path}")
                 # Determine MIME type based on extension
                 if full_path.endswith('.js'):
