@@ -1,4 +1,9 @@
+version: "3.9"
+
 services:
+  # =========================
+  # PRODUCTION TELEGRAM BOT
+  # =========================
   zana-prod:
     build:
       context: .
@@ -6,79 +11,95 @@ services:
     image: zana-ai-bot:prod
     container_name: zana-prod
     env_file:
-      - /opt/zana-config/.env.prod
+      - .env.prod
     environment:
       - ENVIRONMENT=production
       - WEBAPP_ENABLED=true
       - WEBAPP_PORT=8080
     ports:
-      - "8080:8080"
-    volumes:
-      - /srv/zana-users:/app/USERS_DATA_DIR:rw
+      - "8080:8080"          # you can remove this later if you don't want prod exposed directly
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/USERS_DATA_DIR') else 1)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    networks:
+      - web
 
+  # =========================
+  # STAGING TELEGRAM BOT
+  # =========================
   zana-staging:
     build:
       context: .
-      dockerfile: Dockerfile
+    dockerfile: Dockerfile
     image: zana-ai-bot:staging
     container_name: zana-staging
     env_file:
-      - /opt/zana-config/.env.staging
+      - .env.staging
     environment:
       - ENVIRONMENT=staging
       - WEBAPP_ENABLED=true
       - WEBAPP_PORT=8080
     ports:
-      - "8081:8080"
-    volumes:
-      - /srv/zana-users-staging:/app/USERS_DATA_DIR:rw
+      - "8081:8080"          # staging mapped to host 8081 (as before)
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/USERS_DATA_DIR') else 1)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    networks:
+      - web
 
+  # =========================
+  # STATS / API SERVICE
+  # (adapt this block to match your existing zana-stats config if needed)
+  # =========================
   zana-stats:
     build:
       context: .
-      dockerfile: stats_service/Dockerfile
+      dockerfile: stats_service/Dockerfile    # adjust if your stats Dockerfile is elsewhere
     container_name: zana-stats
+    env_file:
+      - .env.stats                            # or keep your original path
     ports:
       - "8000:8000"
-    environment:
-      - USERS_DATA_DIR=/app/USERS_DATA_DIR
-      - LOGTAIL_SOURCE_TOKEN=${LOGTAIL_SOURCE_TOKEN:-}
-      - LOGTAIL_INGEST_HOST=${LOGTAIL_INGEST_HOST:-in.logtail.com}
-    volumes:
-      - /srv/zana-users:/app/USERS_DATA_DIR:ro
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    networks:
+      - web
+
+  # =========================
+  # NEW WEBAPP (REAL WEBSITE)
+  # =========================
+  zana-webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile.webapp           # the new minimal webapp Dockerfile
+    image: zana-project-webapp
+    container_name: zana-webapp
+    env_file:
+      - .env.staging                          # or .env.prod if you prefer
+    # IMPORTANT: no host port here – nginx will reach it via Docker network
+    expose:
+      - "8080"                                # internal FastAPI/uvicorn port
+    volumes:
+      - .:/app                                # bind-mount project source; no code locked in image
+    restart: unless-stopped
+    networks:
+      - web
+
+  # =========================
+  # NGINX REVERSE PROXY
+  # Serves http://zana-ai.com → zana-webapp:8080
+  # =========================
+  nginx:
+    image: nginx:alpine
+    container_name: zana-nginx
+    depends_on:
+      - zana-webapp
+    ports:
+      - "80:80"
+      # - "443:443"                           # keep for later when you add HTTPS
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # later for TLS:
+      # - ./letsencrypt:/etc/letsencrypt:ro
+    restart: unless-stopped
+    networks:
+      - web
+
+networks:
+  web:
+    driver: bridge
