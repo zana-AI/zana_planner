@@ -42,6 +42,11 @@ class PromisesRepository:
 
         promises: List[Promise] = []
         for r in rows:
+            # Handle visibility column - may not exist in older schemas
+            visibility = "private"
+            if "visibility" in r.keys():
+                visibility = str(r["visibility"] or "private")
+            
             promises.append(
                 Promise(
                     user_id=user,
@@ -53,7 +58,7 @@ class PromisesRepository:
                     end_date=date_from_iso(r["end_date"]),
                     angle_deg=int(r["angle_deg"]),
                     radius=int(r["radius"]),
-                    visibility=str(r.get("visibility") or "private"),
+                    visibility=visibility,
                 )
             )
         return promises
@@ -83,6 +88,11 @@ class PromisesRepository:
         if not row or int(row["is_deleted"]) == 1:
             return None
 
+        # Handle visibility column - may not exist in older schemas
+        visibility = "private"
+        if "visibility" in row.keys():
+            visibility = str(row["visibility"] or "private")
+
         return Promise(
             user_id=user,
             id=str(row["current_id"]),
@@ -93,7 +103,7 @@ class PromisesRepository:
             end_date=date_from_iso(row["end_date"]),
             angle_deg=int(row["angle_deg"]),
             radius=int(row["radius"]),
-            visibility=str(row.get("visibility") or "private"),
+            visibility=visibility,
         )
 
     def upsert_promise(self, user_id: int, promise: Promise) -> None:
