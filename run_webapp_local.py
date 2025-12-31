@@ -78,13 +78,35 @@ try:
             traceback.print_exc()
             raise
     
+    # Try to find built React app
+    static_dir = None
+    possible_static_dirs = [
+        os.path.join(Path(__file__).parent, "webapp_frontend", "dist"),
+        os.path.join(Path(__file__).parent, "tm_bot", "..", "webapp_frontend", "dist"),
+    ]
+    
+    for possible_dir in possible_static_dirs:
+        abs_dir = os.path.abspath(possible_dir)
+        if os.path.isdir(abs_dir) and os.path.exists(os.path.join(abs_dir, "index.html")):
+            static_dir = abs_dir
+            logger.info(f"[DEBUG] Found built React app at: {static_dir}")
+            break
+    
+    if not static_dir:
+        logger.warning("[WARNING] Built React app not found. Tried:")
+        for possible_dir in possible_static_dirs:
+            logger.warning(f"  - {os.path.abspath(possible_dir)}")
+        logger.warning("[WARNING] Frontend will not be served. Use Vite dev server or build the React app.")
+    else:
+        logger.info(f"[DEBUG] Using static_dir: {static_dir}")
+    
     # Create FastAPI app instance with error handling
     logger.info("[DEBUG] Creating FastAPI app instance...")
     try:
         app = create_webapp_api(
             root_dir=root_dir,
             bot_token=bot_token,
-            static_dir=None  # Frontend runs on Vite dev server or is served separately
+            static_dir=static_dir  # Use built React app if found, otherwise None
         )
         logger.info("[DEBUG] FastAPI app instance created successfully")
     except Exception as e:
