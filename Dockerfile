@@ -95,6 +95,9 @@ RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION && \
 COPY tm_bot/ ./tm_bot/
 COPY bot_stats.py ./
 
+# Copy assets directory for icons and static files
+COPY assets/ ./assets/
+
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/webapp_frontend/dist ./webapp_frontend/dist
 
