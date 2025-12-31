@@ -90,9 +90,10 @@ services:
       - zana-webapp
     ports:
       - "80:80"
-      # - "443:443"                           # keep for later when you add HTTPS
+      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
       # later for TLS:
       # - ./letsencrypt:/etc/letsencrypt:ro
     restart: unless-stopped
