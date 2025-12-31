@@ -56,14 +56,21 @@ class ReportsService:
 
     def get_weekly_summary_with_sessions(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
         """Get weekly summary data with per-day session breakdown for visualization."""
+        # Ensure ref_time is naive (no timezone) for consistent week calculation
+        if ref_time.tzinfo is not None:
+            ref_time = ref_time.replace(tzinfo=None)
+        
         # Get week boundaries
         week_start, week_end = get_week_range(ref_time)
+        logger.debug(f"[DEBUG] Week range for {ref_time}: {week_start} to {week_end}")
         
         # Get all promises
         promises = self.promises_repo.list_promises(user_id)
+        logger.debug(f"[DEBUG] Found {len(promises)} promises for user {user_id}")
         
         # Get actions from this week
         actions = self.actions_repo.list_actions(user_id, since=week_start)
+        logger.debug(f"[DEBUG] Found {len(actions)} actions since {week_start}")
         
         # Initialize report data (keyed by canonical promise.id from storage)
         report_data: Dict[str, Any] = {}
@@ -82,16 +89,29 @@ class ReportsService:
         
         # Group actions by promise and date
         actions_by_promise_date: Dict[str, Dict[date, float]] = {}
+        actions_in_range = 0
         for action in actions:
-            if action.at >= week_start and action.at <= week_end:
+            # Ensure action.at is naive for comparison
+            action_at = action.at
+            if action_at.tzinfo is not None:
+                action_at = action_at.replace(tzinfo=None)
+            
+            if week_start <= action_at <= week_end:
+                actions_in_range += 1
                 canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
                 if canonical and canonical in report_data:
-                    action_date = action.at.date()
+                    action_date = action_at.date()
                     if canonical not in actions_by_promise_date:
                         actions_by_promise_date[canonical] = {}
                     if action_date not in actions_by_promise_date[canonical]:
                         actions_by_promise_date[canonical][action_date] = 0.0
                     actions_by_promise_date[canonical][action_date] += action.time_spent
+                else:
+                    logger.debug(f"[DEBUG] Action for promise {action.promise_id} (normalized: {normalize_promise_id(action.promise_id)}) not matched to canonical promise. Canonical map: {canonical_by_norm}")
+            else:
+                logger.debug(f"[DEBUG] Action at {action_at} is outside week range {week_start} to {week_end}")
+        
+        logger.debug(f"[DEBUG] {actions_in_range} actions in week range, grouped into {len(actions_by_promise_date)} promises")
         
         # Convert to sessions format and accumulate total hours
         for promise_id, date_hours in actions_by_promise_date.items():

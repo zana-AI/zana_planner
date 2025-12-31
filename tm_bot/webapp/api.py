@@ -176,6 +176,8 @@ def create_webapp_api(
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Zana AI - Your Personal Planning Assistant</title>
+            <link rel="icon" type="image/png" href="/assets/zana_icon.png" />
+            <link rel="apple-touch-icon" href="/assets/zana_icon.png" />
             <style>
                 * {
                     margin: 0;
@@ -323,16 +325,27 @@ def create_webapp_api(
             if ref_time:
                 try:
                     reference_time = datetime.fromisoformat(ref_time)
-                except ValueError:
-                    raise HTTPException(status_code=400, detail="Invalid ref_time format")
+                    # If timezone-aware, convert to naive datetime in user's timezone
+                    if reference_time.tzinfo is not None:
+                        import pytz
+                        user_tz_obj = pytz.timezone(user_tz)
+                        # Convert to user timezone, then make naive
+                        reference_time = reference_time.astimezone(user_tz_obj).replace(tzinfo=None)
+                    logger.debug(f"[DEBUG] Parsed ref_time: {ref_time} -> {reference_time} (user_tz: {user_tz})")
+                except ValueError as e:
+                    logger.error(f"[ERROR] Invalid ref_time format: {ref_time}, error: {e}")
+                    raise HTTPException(status_code=400, detail=f"Invalid ref_time format: {ref_time}")
             else:
                 import pytz
                 tz = pytz.timezone(user_tz)
-                reference_time = datetime.now(tz)
+                reference_time = datetime.now(tz).replace(tzinfo=None)  # Make naive
+                logger.debug(f"[DEBUG] Using current time as ref_time: {reference_time} (user_tz: {user_tz})")
             
             # Get weekly summary
             reports_service = get_reports_service(user_id)
+            logger.debug(f"[DEBUG] Getting weekly summary for user {user_id}, ref_time: {reference_time}")
             summary = reports_service.get_weekly_summary_with_sessions(user_id, reference_time)
+            logger.debug(f"[DEBUG] Weekly summary result: {len(summary)} promises, keys: {list(summary.keys())}")
             
             # Calculate week range
             week_start, week_end = get_week_range(reference_time)
@@ -501,10 +514,19 @@ def create_webapp_api(
             }
         )
     
+    # Serve static assets (icons, etc.) from assets directory
+    # Path: from tm_bot/webapp/api.py -> go up to zana_planner/ -> assets/
+    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+        logger.info(f"[DEBUG] Serving static assets from: {assets_dir}")
+    else:
+        logger.warning(f"[WARNING] Assets directory not found at: {assets_dir}")
+    
     # Serve static files if directory is provided
     if static_dir and os.path.isdir(static_dir):
-        # Mount static files
-        app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
+        # Mount static files from React build
+        app.mount("/static", StaticFiles(directory=os.path.join(static_dir, "assets")), name="static")
         
         # Catch-all route for SPA - must be last
         @app.get("/{full_path:path}")

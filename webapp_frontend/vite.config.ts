@@ -27,6 +27,12 @@ export default defineConfig({
           });
         },
       },
+      '/assets': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path, // Don't rewrite the path
+      },
     },
   },
   build: {
