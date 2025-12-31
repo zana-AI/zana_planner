@@ -7,8 +7,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 2) We'll mount the project source from the host at runtime,
+# 2) Copy assets directory (icons, static files) - small and needed for serving
+COPY assets/ ./assets/
+
+# 3) We'll mount the project source from the host at runtime,
 #    so we don't COPY . here. That way your code is NOT locked inside the image.
+#    Assets are copied above because they're small and needed for the webapp to serve icons.
 
 # 3) Expose internal port
 EXPOSE 8080
