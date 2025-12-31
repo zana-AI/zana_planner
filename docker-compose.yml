@@ -16,8 +16,6 @@ services:
       - ENVIRONMENT=production
       - WEBAPP_ENABLED=true
       - WEBAPP_PORT=8080
-    ports:
-      - "8080:8080"          # you can remove this later if you don't want prod exposed directly
     restart: unless-stopped
     networks:
       - web
@@ -37,8 +35,6 @@ services:
       - ENVIRONMENT=staging
       - WEBAPP_ENABLED=true
       - WEBAPP_PORT=8080
-    ports:
-      - "8081:8080"          # staging mapped to host 8081 (as before)
     restart: unless-stopped
     networks:
       - web
