@@ -551,11 +551,28 @@ def create_webapp_api(
                 if path.startswith("/api/"):
                     raise exc
                 
-                # Don't handle /assets
-                if path == "/assets" or path.startswith("/assets/"):
+                # Handle paths that went through /assets mount - strip the /assets prefix
+                # and check in dist/assets/ directory
+                if path.startswith("/assets/"):
+                    # This is a file request that went through the /assets mount
+                    # Strip /assets/ prefix and check in dist/assets/
+                    file_name = path[len("/assets/"):]
+                    assets_file_path = os.path.join(static_dir, "assets", file_name)
+                    if os.path.isfile(assets_file_path):
+                        logger.info(f"[VERSION_CHECK] v2.0 - Serving static file from assets: {assets_file_path}")
+                        if path.endswith('.js'):
+                            return FileResponse(assets_file_path, media_type='application/javascript')
+                        elif path.endswith('.css'):
+                            return FileResponse(assets_file_path, media_type='text/css')
+                        else:
+                            return FileResponse(assets_file_path)
+                    # If not found, continue to check root and serve index.html
+                
+                # Don't handle /assets root path (only /assets/...)
+                if path == "/assets":
                     raise exc
                 
-                # Check if it's a static file request (remove leading slash)
+                # Check if it's a static file request in dist root (remove leading slash)
                 file_path = os.path.join(static_dir, path.lstrip("/"))
                 if os.path.isfile(file_path):
                     logger.info(f"[VERSION_CHECK] v2.0 - Serving static file: {file_path}")
