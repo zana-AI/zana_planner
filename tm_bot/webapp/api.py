@@ -286,8 +286,9 @@ def create_webapp_api(
                 <div class="status">🟢 Server Running</div>
                 
                 <div class="links">
-                    <a href="/api/docs" class="link">API Documentation</a>
-                    <a href="/api/health" class="link">Health Check</a>
+                    <a href="https://t.me/zana_planner_bot" class="link" target="_blank" rel="noopener noreferrer">
+                        💬 Open in Telegram
+                    </a>
                 </div>
             </div>
         </body>
