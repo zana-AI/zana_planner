@@ -534,54 +534,66 @@ def create_webapp_api(
     
     # Serve static files if directory is provided
     if static_dir and os.path.isdir(static_dir):
-        logger.info(f"[VERSION_CHECK] v2.0 - Registering catch-all route, static_dir={static_dir}")
-        # Note: Vite builds JS/CSS files in dist root (e.g., index-*.js, index-*.css)
-        # and other assets in dist/assets/ subdirectory
-        # The catch-all route below will serve files from dist root
+        logger.info(f"[VERSION_CHECK] v2.0 - Registering static file serving, static_dir={static_dir}")
         
-        # Catch-all route for SPA - must be last, serves files or index.html
+        # Custom exception handler to serve static files or index.html
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+        from starlette.requests import Request
+        
+        @app.exception_handler(StarletteHTTPException)
+        async def custom_404_handler(request: Request, exc: StarletteHTTPException):
+            """Handle 404s by checking for static files or serving index.html."""
+            if exc.status_code == 404:
+                path = request.url.path
+                logger.info(f"[VERSION_CHECK] v2.0 - 404 handler for: {path}")
+                
+                # Don't handle API routes
+                if path.startswith("/api/"):
+                    raise exc
+                
+                # Don't handle /assets
+                if path == "/assets" or path.startswith("/assets/"):
+                    raise exc
+                
+                # Check if it's a static file request (remove leading slash)
+                file_path = os.path.join(static_dir, path.lstrip("/"))
+                if os.path.isfile(file_path):
+                    logger.info(f"[VERSION_CHECK] v2.0 - Serving static file: {file_path}")
+                    if path.endswith('.js'):
+                        return FileResponse(file_path, media_type='application/javascript')
+                    elif path.endswith('.css'):
+                        return FileResponse(file_path, media_type='text/css')
+                    else:
+                        return FileResponse(file_path)
+                
+                # Check in assets subdirectory
+                assets_file_path = os.path.join(static_dir, "assets", path.lstrip("/"))
+                if os.path.isfile(assets_file_path):
+                    logger.info(f"[VERSION_CHECK] v2.0 - Serving static file from assets: {assets_file_path}")
+                    if path.endswith('.js'):
+                        return FileResponse(assets_file_path, media_type='application/javascript')
+                    elif path.endswith('.css'):
+                        return FileResponse(assets_file_path, media_type='text/css')
+                    else:
+                        return FileResponse(assets_file_path)
+                
+                # Otherwise serve index.html for SPA routing
+                index_path = os.path.join(static_dir, "index.html")
+                if os.path.exists(index_path):
+                    logger.info(f"[VERSION_CHECK] v2.0 - Serving index.html for SPA route: {path}")
+                    return FileResponse(index_path)
+            
+            raise exc
+        
+        # Keep the catch-all route as backup (though exception handler should catch it)
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):
-            """Serve the React SPA - serves static files if they exist, otherwise index.html."""
+            """Serve the React SPA - serves index.html for non-file routes."""
             logger.info(f"[VERSION_CHECK] v2.0 - Catch-all route hit for: {full_path}")
-            # Don't serve for API routes (handled by other routes)
+            # This should rarely be hit if exception handler works
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found")
-            
-            # Don't serve for /assets (handled by assets mount above)
-            if full_path == "assets" or full_path.startswith("assets/"):
-                raise HTTPException(status_code=404, detail="Not found")
-            
-            # Check if the requested path is a file that exists in dist root
-            file_path = os.path.join(static_dir, full_path)
-            logger.info(f"[VERSION_CHECK] v2.0 - SPA route requested: {full_path}, checking file: {file_path}")
-            
-            # If not found in root, check in assets subdirectory (Vite builds files there)
-            if not os.path.isfile(file_path):
-                assets_file_path = os.path.join(static_dir, "assets", full_path)
-                logger.info(f"[VERSION_CHECK] v2.0 - File not in root, checking assets subdirectory: {assets_file_path}")
-                if os.path.isfile(assets_file_path):
-                    file_path = assets_file_path
-                    logger.info(f"[VERSION_CHECK] v2.0 - Found file in assets subdirectory: {file_path}")
-                else:
-                    logger.warning(f"[VERSION_CHECK] v2.0 - File not found in root or assets: {file_path}")
-            
-            if os.path.isfile(file_path):
-                # Serve the actual file (JS, CSS, etc. from dist root)
-                logger.debug(f"[DEBUG] Serving static file: {file_path}")
-                # Determine MIME type based on extension
-                if full_path.endswith('.js'):
-                    return FileResponse(file_path, media_type='application/javascript')
-                elif full_path.endswith('.css'):
-                    return FileResponse(file_path, media_type='text/css')
-                elif full_path.endswith('.map'):
-                    return FileResponse(file_path, media_type='application/json')
-                else:
-                    return FileResponse(file_path)
-            
-            # Otherwise, serve index.html for SPA routing
             index_path = os.path.join(static_dir, "index.html")
-            logger.debug(f"[DEBUG] File not found, serving index.html for SPA routing")
             if os.path.exists(index_path):
                 return FileResponse(index_path)
             raise HTTPException(status_code=404, detail="Frontend not found")
