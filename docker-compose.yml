@@ -73,8 +73,9 @@ services:
     volumes:
       - .:/app                                # bind-mount project source; no code locked in image
     working_dir: /app                       # important: match your dev run's -w /app
-    command: ["python", "run_webapp_local.py"]   # ← IMPORTANT
-    restart: unless-stopped
+    #command: ["python", "run_webapp_local.py"]   # ← IMPORTANT
+    command: ["uvicorn", "run_webapp_local:app", "--host", "0.0.0.0", "--port", "8080"]
+    #restart: unless-stopped
     networks:
       - web
 
