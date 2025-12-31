@@ -545,6 +545,12 @@ def create_webapp_api(
             file_path = os.path.join(static_dir, full_path)
             logger.debug(f"[DEBUG] SPA route requested: {full_path}, checking file: {file_path}")
             
+            # If not found in root, check in assets subdirectory (Vite builds files there)
+            if not os.path.isfile(file_path):
+                assets_file_path = os.path.join(static_dir, "assets", full_path)
+                if os.path.isfile(assets_file_path):
+                    file_path = assets_file_path
+            
             if os.path.isfile(file_path):
                 # Serve the actual file (JS, CSS, etc. from dist root)
                 from fastapi.responses import FileResponse
