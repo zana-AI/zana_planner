@@ -159,7 +159,14 @@ def create_webapp_api(
     
     @app.get("/")
     async def root():
-        """Static landing page."""
+        """Static landing page or serve React app if static_dir is set."""
+        # If static_dir is set, serve the React app
+        if static_dir and os.path.isdir(static_dir):
+            index_path = os.path.join(static_dir, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+        
+        # Otherwise, serve static landing page
         from fastapi.responses import HTMLResponse
         
         html_content = """
@@ -461,6 +468,37 @@ def create_webapp_api(
             logger.error(f"Full traceback: {error_trace}")
             # Return a simpler error message for production
             raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+    
+    # Add route for /weekly to serve React app (works with or without static_dir)
+    @app.get("/weekly")
+    async def weekly_route():
+        """
+        Route for /weekly - serves React app index.html.
+        This route works whether static_dir is set or not.
+        """
+        # If static_dir is set, serve the built React app
+        if static_dir and os.path.isdir(static_dir):
+            index_path = os.path.join(static_dir, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            logger.warning(f"[WARNING] static_dir set but index.html not found at {index_path}")
+        
+        # If no static_dir or file not found, return helpful error
+        # In development, the React app should be running on Vite dev server
+        # In production, static_dir should be set to the built React app directory
+        from fastapi.responses import JSONResponse
+        logger.warning("[WARNING] /weekly route accessed but React app not available. "
+                      "static_dir is not set or index.html not found.")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Frontend not available",
+                "message": "React app is not built or static_dir is not configured.",
+                "hint": "In development, ensure Vite dev server is running. "
+                       "In production, build the React app and set static_dir parameter.",
+                "static_dir": str(static_dir) if static_dir else None
+            }
+        )
     
     # Serve static files if directory is provided
     if static_dir and os.path.isdir(static_dir):
