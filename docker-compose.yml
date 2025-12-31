@@ -11,7 +11,7 @@ services:
     image: zana-ai-bot:prod
     container_name: zana-prod
     env_file:
-      - .env.prod
+      - /opt/zana-config/.env.prod
     environment:
       - ENVIRONMENT=production
       - WEBAPP_ENABLED=true
@@ -32,7 +32,7 @@ services:
     image: zana-ai-bot:staging
     container_name: zana-staging
     env_file:
-      - .env.staging
+      - /opt/zana-config/.env.staging
     environment:
       - ENVIRONMENT=staging
       - WEBAPP_ENABLED=true
@@ -53,7 +53,7 @@ services:
       dockerfile: stats_service/Dockerfile    # adjust if your stats Dockerfile is elsewhere
     container_name: zana-stats
     env_file:
-      - .env.stats                            # or keep your original path
+      - /opt/zana-config/.env.staging                            # or keep your original path
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -70,7 +70,7 @@ services:
     image: zana-project-webapp
     container_name: zana-webapp
     env_file:
-      - .env.staging                          # or .env.prod if you prefer
+      - /opt/zana-config/.env.staging                          # or .env.prod if you prefer
     # IMPORTANT: no host port here – nginx will reach it via Docker network
     expose:
       - "8080"                                # internal FastAPI/uvicorn port
