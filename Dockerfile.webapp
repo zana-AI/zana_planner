@@ -15,4 +15,4 @@ EXPOSE 8080
 
 # 4) Default command for this image: run the minimal webapp
 #    (module path: webapp_minimal/app.py)
-CMD ["python", "-m", "webapp_minimal.app"]
+CMD ["python", "-m", "run_webapp_local.app"]
