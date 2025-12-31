@@ -59,6 +59,11 @@ function App() {
     // Extract ref_time from URL query parameters
     const urlParams = new URLSearchParams(window.location.search);
     const refTime = urlParams.get('ref_time') || undefined;
+    
+    // Debug logging
+    console.log('[DEBUG] Current URL:', window.location.href);
+    console.log('[DEBUG] URL search params:', window.location.search);
+    console.log('[DEBUG] Extracted ref_time:', refTime);
 
     fetchReport(authData, refTime);
   }, [isReady, initData, fetchReport]);

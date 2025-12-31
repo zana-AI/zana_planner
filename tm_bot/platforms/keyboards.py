@@ -47,9 +47,19 @@ def weekly_report_kb(ref_time: datetime, miniapp_url: Optional[str] = None) -> K
     refresh_button = create_button(text="🔄 Refresh", callback_data=refresh_callback)
     
     if miniapp_url:
-        # Format ref_time as ISO datetime for URL parameter
+        # Format ref_time as ISO datetime for URL parameter and URL-encode it
+        from urllib.parse import quote
         ref_time_iso = ref_time.isoformat()
-        mini_app_url_with_params = f"{miniapp_url}?ref_time={ref_time_iso}"
+        ref_time_encoded = quote(ref_time_iso, safe='')
+        # Use /weekly route for cleaner URL structure
+        mini_app_url_with_params = f"{miniapp_url}/weekly?ref_time={ref_time_encoded}"
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"[DEBUG] Weekly report mini app URL: {mini_app_url_with_params}")
+        logger.debug(f"[DEBUG] ref_time ISO: {ref_time_iso}, encoded: {ref_time_encoded}")
+        
         mini_app_button = create_button(text="🌐 View in App", web_app_url=mini_app_url_with_params)
         # Add both buttons on the same row
         keyboard.add_row(refresh_button, mini_app_button)
