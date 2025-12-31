@@ -76,6 +76,7 @@ services:
       - "8080"                                # internal FastAPI/uvicorn port
     volumes:
       - .:/app                                # bind-mount project source; no code locked in image
+    command: ["python", "run_webapp_local.py"]   # ← IMPORTANT
     restart: unless-stopped
     networks:
       - web
