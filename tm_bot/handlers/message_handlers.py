@@ -26,7 +26,7 @@ from utils.time_utils import get_week_range
 from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
 from utils.formatting import format_response_html
 from ui.messages import weekly_report_text
-from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb
+from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb, mini_app_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily, schedule_once
 from handlers.callback_handlers import CallbackHandlers
@@ -44,12 +44,13 @@ logger = get_logger(__name__)
 class MessageHandlers:
     """Handles all message and command processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService, miniapp_url: str = "https://zana-ai.com"):
         self.plan_keeper = plan_keeper
         self.llm_handler = llm_handler
         self.root_dir = root_dir
         self.application = application
         self.response_service = response_service
+        self.miniapp_url = miniapp_url
         self.voice_service = VoiceService()
         self.content_service = ContentService()
         try:
@@ -170,11 +171,15 @@ class MessageHandlers:
             message = get_message("welcome_new", user_lang)
         else:
             message = get_message("welcome_return", user_lang)
-        
+
+        # Add mini app keyboard to welcome message
+        keyboard = mini_app_kb(self.miniapp_url)
+
         await self.response_service.reply_text(
             update, message,
             user_id=user_id,
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=keyboard
         )
         
         tzname = self.get_user_timezone(user_id)

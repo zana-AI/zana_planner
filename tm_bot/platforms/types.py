@@ -27,13 +27,17 @@ class KeyboardButton:
     text: str
     callback_data: Optional[str] = None
     url: Optional[str] = None
-    
+    web_app_url: Optional[str] = None  # For Telegram mini apps
+
     def __post_init__(self):
         """Validate button configuration."""
-        if not self.callback_data and not self.url:
-            raise ValueError("Button must have either callback_data or url")
-        if self.callback_data and self.url:
-            raise ValueError("Button cannot have both callback_data and url")
+        has_action = self.callback_data or self.url or self.web_app_url
+        if not has_action:
+            raise ValueError("Button must have either callback_data, url, or web_app_url")
+
+        action_count = sum([bool(self.callback_data), bool(self.url), bool(self.web_app_url)])
+        if action_count > 1:
+            raise ValueError("Button cannot have more than one action type (callback_data, url, or web_app_url)")
 
 
 @dataclass

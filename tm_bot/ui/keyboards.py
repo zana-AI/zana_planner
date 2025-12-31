@@ -19,6 +19,7 @@ from platforms.keyboards import (
     broadcast_confirmation_kb as _broadcast_confirmation_kb,
     session_controls_kb as _session_controls_kb,
     delete_confirmation_kb as _delete_confirmation_kb,
+    mini_app_kb as _mini_app_kb,
 )
 from platforms.telegram.keyboard_adapter import TelegramKeyboardAdapter
 
@@ -126,6 +127,12 @@ def content_actions_kb(calendar_url: str = None, url: str = None, can_summarize:
 def broadcast_confirmation_kb() -> InlineKeyboardMarkup:
     """Create keyboard for broadcast confirmation (Schedule/Cancel)."""
     keyboard = _broadcast_confirmation_kb()
+    return _keyboard_adapter.build_keyboard(keyboard)
+
+
+def mini_app_kb(mini_app_url: str) -> InlineKeyboardMarkup:
+    """Create keyboard with mini app button."""
+    keyboard = _mini_app_kb(mini_app_url)
     return _keyboard_adapter.build_keyboard(keyboard)
 
 

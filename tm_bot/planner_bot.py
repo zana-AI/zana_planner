@@ -41,16 +41,18 @@ class PlannerBot:
     For Telegram, use TelegramPlatformAdapter. For other platforms, provide appropriate adapters.
     """
 
-    def __init__(self, platform_adapter: IPlatformAdapter, root_dir: str):
+    def __init__(self, platform_adapter: IPlatformAdapter, root_dir: str, miniapp_url: str = "https://zana-ai.com"):
         """
         Initialize the bot with a platform adapter.
-        
+
         Args:
             platform_adapter: Platform adapter implementing IPlatformAdapter
             root_dir: Root directory for user data
+            miniapp_url: URL for the Telegram mini app
         """
         self.platform_adapter = platform_adapter
         self.root_dir = root_dir
+        self.miniapp_url = miniapp_url
         
         # Initialize core components
         self.llm_handler = LLMHandler()
@@ -85,7 +87,8 @@ class PlannerBot:
                 self.llm_handler,
                 self.root_dir,
                 self.application,
-                self._original_response_service
+                self._original_response_service,
+                self.miniapp_url
             )
             self.callback_handlers = CallbackHandlers(
                 self.plan_keeper,
@@ -121,7 +124,8 @@ class PlannerBot:
                 self.llm_handler,
                 self.root_dir,
                 mock_application,
-                self._original_response_service
+                self._original_response_service,
+                self.miniapp_url
             )
             self.callback_handlers = CallbackHandlers(
                 self.plan_keeper,
@@ -350,6 +354,8 @@ def main():
         logger.error("BOT_TOKEN environment variable is not set")
         raise ValueError("BOT_TOKEN environment variable is required")
 
+    MINIAPP_URL = os.getenv("MINIAPP_URL", "https://zana-ai.com")
+
     # Optional Sentry initialization (if DSN is provided)
     SENTRY_DSN = os.getenv("SENTRY_DSN")
     if SENTRY_DSN:
@@ -404,7 +410,7 @@ def main():
     platform_adapter = TelegramPlatformAdapter(application, response_service)
     
     # Create and run bot
-    bot = PlannerBot(platform_adapter, ROOT_DIR)
+    bot = PlannerBot(platform_adapter, ROOT_DIR, MINIAPP_URL)
     
     bot.bootstrap_schedule_existing_users()
     logger.debug(f"Starting bot with platform adapter")

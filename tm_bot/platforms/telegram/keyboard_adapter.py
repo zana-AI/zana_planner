@@ -3,7 +3,7 @@ Telegram keyboard adapter - converts platform-agnostic keyboards to Telegram for
 """
 
 from typing import List
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from ..types import Keyboard, KeyboardButton
 from ..interfaces import IKeyboardBuilder
@@ -16,12 +16,17 @@ class TelegramKeyboardAdapter(IKeyboardBuilder):
         """Convert a platform-agnostic Keyboard to Telegram InlineKeyboardMarkup."""
         if not keyboard or not keyboard.buttons:
             return None
-        
+
         telegram_buttons = []
         for row in keyboard.buttons:
             telegram_row = []
             for button in row:
-                if button.url:
+                if button.web_app_url:
+                    telegram_button = InlineKeyboardButton(
+                        text=button.text,
+                        web_app=WebAppInfo(url=button.web_app_url)
+                    )
+                elif button.url:
                     telegram_button = InlineKeyboardButton(
                         text=button.text,
                         url=button.url
@@ -34,9 +39,9 @@ class TelegramKeyboardAdapter(IKeyboardBuilder):
                 else:
                     continue  # Skip invalid buttons
                 telegram_row.append(telegram_button)
-            
+
             if telegram_row:  # Only add non-empty rows
                 telegram_buttons.append(telegram_row)
-        
+
         return InlineKeyboardMarkup(telegram_buttons) if telegram_buttons else None
 

@@ -14,9 +14,9 @@ from utils.time_utils import beautify_time, round_time
 from cbdata import encode_cb
 
 
-def create_button(text: str, callback_data: Optional[str] = None, url: Optional[str] = None) -> KeyboardButton:
+def create_button(text: str, callback_data: Optional[str] = None, url: Optional[str] = None, web_app_url: Optional[str] = None) -> KeyboardButton:
     """Create a platform-agnostic keyboard button."""
-    return KeyboardButton(text=text, callback_data=callback_data, url=url)
+    return KeyboardButton(text=text, callback_data=callback_data, url=url, web_app_url=web_app_url)
 
 
 def nightly_card_kb(promises_top3: List[Promise], has_more: bool = False) -> Keyboard:
@@ -291,5 +291,13 @@ def delete_confirmation_kb(promise_id: str) -> Keyboard:
         create_button("No (cancel)", callback_data=encode_cb("cancel_delete", promise_id))
     ]
     keyboard.add_row(*buttons)
+    return keyboard
+
+
+def mini_app_kb(mini_app_url: str) -> Keyboard:
+    """Create keyboard with mini app button."""
+    keyboard = Keyboard()
+    button = create_button("🌐 Open Mini App", web_app_url=mini_app_url)
+    keyboard.add_row(button)
     return keyboard
 
