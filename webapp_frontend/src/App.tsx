@@ -13,7 +13,7 @@ function App() {
   const [error, setError] = useState<string>('');
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
 
-  const fetchReport = useCallback(async (authData: string) => {
+  const fetchReport = useCallback(async (authData: string, refTime?: string) => {
     setState('loading');
     setError('');
 
@@ -21,8 +21,8 @@ function App() {
       // Set auth data for API client
       apiClient.setInitData(authData);
 
-      // Fetch weekly report
-      const data = await apiClient.getWeeklyReport();
+      // Fetch weekly report with optional ref_time
+      const data = await apiClient.getWeeklyReport(refTime);
       setReportData(data);
       setState('ready');
       hapticFeedback('success');
@@ -56,13 +56,20 @@ function App() {
       return;
     }
 
-    fetchReport(authData);
+    // Extract ref_time from URL query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const refTime = urlParams.get('ref_time') || undefined;
+
+    fetchReport(authData, refTime);
   }, [isReady, initData, fetchReport]);
 
   const handleRetry = useCallback(() => {
     const authData = initData || getDevInitData();
     if (authData) {
-      fetchReport(authData);
+      // Extract ref_time from URL query parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const refTime = urlParams.get('ref_time') || undefined;
+      fetchReport(authData, refTime);
     }
   }, [initData, fetchReport]);
 

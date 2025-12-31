@@ -253,8 +253,8 @@ class MessageHandlers:
         week_start, week_end = get_week_range(report_ref_time)
         date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
         
-        # Create refresh keyboard
-        keyboard = weekly_report_kb(report_ref_time)
+        # Create keyboard with refresh and mini app buttons
+        keyboard = weekly_report_kb(report_ref_time, self.miniapp_url)
         
         header = get_message("weekly_header", user_lang, date_range=date_range_str)
         message_text = f"{header}\n\n{report}"
@@ -266,53 +266,18 @@ class MessageHandlers:
         if len(message_text) > MAX_CAPTION_LEN:
             message_text = message_text[: MAX_CAPTION_LEN - 1] + "…"
         
-        # Generate and send visualization image
-        image_path = None
-        try:
-            image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
-                user_id, report_ref_time
-            )
-            if image_path and os.path.exists(image_path):
-                with open(image_path, 'rb') as photo:
-                    await self.response_service.send_photo(
-                        context,
-                        chat_id=update.effective_chat.id,
-                        photo=photo,
-                        caption=message_text,
-                        user_id=user_id,
-                        reply_markup=keyboard,
-                        parse_mode='Markdown',
-                    )
-            else:
-                # Fallback: no image generated, send text-only weekly report
-                await self.response_service.reply_text(
-                    update, message_text,
-                    user_id=user_id,
-                    reply_markup=keyboard,
-                    parse_mode='Markdown'
-                )
-        except Exception as e:
-            logger.warning(f"Failed to generate weekly visualization: {e}")
-            # Don't fail the whole command if visualization fails
-            try:
-                await self.response_service.reply_text(
-                    update, message_text,
-                    user_id=user_id,
-                    reply_markup=keyboard,
-                    parse_mode='Markdown'
-                )
-            except Exception:
-                await self.response_service.reply_text(
-                    update, message_text,
-                    user_id=user_id
-                )
-        finally:
-            # Clean up temp file
-            if image_path and os.path.exists(image_path):
-                try:
-                    os.remove(image_path)
-                except Exception as e:
-                    logger.warning(f"Failed to delete temp visualization file {image_path}: {e}")
+        # Image generation disabled - send text-only weekly report with mini app button
+        # Note: Re-enable image generation if needed in the future
+        # image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
+        #     user_id, report_ref_time
+        # )
+        
+        await self.response_service.reply_text(
+            update, message_text,
+            user_id=user_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
     
     async def plan_by_zana(self, update: Update, context: CallbackContext) -> None:
         """Handle the /zana command to get AI insights."""
@@ -1376,48 +1341,35 @@ class MessageHandlers:
             message_text = f"{header}\n\n{report}"
             
             # Truncate if needed
-            MAX_CAPTION_LEN = 1024
-            if len(message_text) > MAX_CAPTION_LEN:
-                message_text = message_text[: MAX_CAPTION_LEN - 1] + "…"
+            MAX_MESSAGE_LEN = 4096
+            if len(message_text) > MAX_MESSAGE_LEN:
+                message_text = message_text[: MAX_MESSAGE_LEN - 1] + "…"
             
-            # Generate visualization image
-            image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
-                user_id, ref_time
+            # Image generation disabled - send text-only weekly report with mini app button
+            # Re-enable image generation if needed in the future
+            # image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
+            #     user_id, ref_time
+            # )
+            
+            # Create keyboard with refresh and mini app buttons
+            keyboard = weekly_report_kb(ref_time, self.miniapp_url)
+            
+            # Send text message with keyboard
+            await self.response_service.reply_text(
+                update, message_text,
+                user_id=user_id,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
             )
             
-            if image_path and os.path.exists(image_path):
-                # Create refresh keyboard
-                keyboard = weekly_report_kb(ref_time)
-                
-                # Send photo
-                with open(image_path, 'rb') as photo:
-                    await self.response_service.send_photo(
-                        context,
-                        chat_id=update.effective_chat.id,
-                        photo=photo,
-                        caption=message_text,
-                        user_id=user_id,
-                        reply_markup=keyboard,
-                        parse_mode='Markdown',
-                    )
-                
-                # Clean up temp file
+            # Delete processing message if it exists
+            if processing_msg:
                 try:
-                    os.remove(image_path)
-                except Exception as e:
-                    logger.warning(f"Failed to delete temp visualization file {image_path}: {e}")
-                
-                # Delete processing message if it exists
-                if processing_msg:
-                    try:
-                        await processing_msg.delete()
-                    except Exception:
-                        pass
-                
-                return True
-            else:
-                logger.warning(f"Failed to generate weekly visualization image for user {user_id}")
-                return False
+                    await processing_msg.delete()
+                except Exception:
+                    pass
+            
+            return True
         except Exception as e:
             logger.error(f"Error generating weekly visualization: {e}")
             return False

@@ -32,10 +32,11 @@ logger = get_logger(__name__)
 class CallbackHandlers:
     """Handles all callback query processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: IResponseService):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: IResponseService, miniapp_url: str = "https://zana-ai.com"):
         self.plan_keeper = plan_keeper
         self.application = application
         self.response_service = response_service
+        self.miniapp_url = miniapp_url
     
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings service."""
@@ -775,65 +776,45 @@ class CallbackHandlers:
         week_start, week_end = get_week_range(user_now)
         date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
         
-        # Create new refresh keyboard with updated timestamp
-        keyboard = weekly_report_kb(user_now)
+        # Create keyboard with refresh and mini app buttons
+        keyboard = weekly_report_kb(user_now, self.miniapp_url)
         
-        # Build caption text
+        # Build message text
         header = get_message("weekly_header", user_lang, date_range=date_range_str)
-        caption = f"{header}\n\n{report}"
+        message_text = f"{header}\n\n{report}"
 
-        # Telegram captions have a hard limit (1024 chars). Keep it to one message by truncating.
-        MAX_CAPTION_LEN = 1024
-        if len(caption) > MAX_CAPTION_LEN:
-            caption = caption[: MAX_CAPTION_LEN - 1] + "…"
+        # Telegram message text limit handling
+        MAX_MESSAGE_LEN = 4096
+        if len(message_text) > MAX_MESSAGE_LEN:
+            message_text = message_text[: MAX_MESSAGE_LEN - 1] + "…"
         
-        # Generate visualization image
-        image_path = None
+        # Image generation disabled - send text-only weekly report with mini app button
+        # Note: Re-enable image generation if needed in the future
+        # image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
+        #     user_id, user_now
+        # )
+        
         try:
             # Answer the callback query first
             await query.answer("Refreshing weekly report...")
             
-            # Generate the visualization image
-            image_path = await self.plan_keeper.reports_service.generate_weekly_visualization_image(
-                user_id, user_now
+            # Send text message with keyboard
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
             )
             
-            if image_path and os.path.exists(image_path):
-                # Send photo with caption and keyboard
-                with open(image_path, 'rb') as photo:
-                    await context.bot.send_photo(
-                        chat_id=user_id,
-                        photo=photo,
-                        caption=caption,
-                        reply_markup=keyboard,
-                        parse_mode='Markdown'
-                    )
-                
-                # Try to delete the old message (if it exists and is deletable)
-                try:
-                    await query.message.delete()
-                except Exception as e:
-                    logger.debug(f"Could not delete old message: {e}")
-                    # It's okay if we can't delete it - the new message is already sent
-            else:
-                # Fallback: if image generation fails, send text message
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=caption,
-                    reply_markup=keyboard,
-                    parse_mode='Markdown'
-                )
-                await query.answer("Report refreshed (image generation failed)")
+            # Try to delete the old message (if it exists and is deletable)
+            try:
+                await query.message.delete()
+            except Exception as e:
+                logger.debug(f"Could not delete old message: {e}")
+                # It's okay if we can't delete it - the new message is already sent
         except Exception as e:
             logger.error(f"Error refreshing weekly report: {e}")
             await query.answer("Error refreshing report. Please try again.")
-        finally:
-            # Clean up temp file
-            if image_path and os.path.exists(image_path):
-                try:
-                    os.remove(image_path)
-                except Exception as e:
-                    logger.warning(f"Failed to delete temp visualization file {image_path}: {e}")
     
     async def _handle_set_language(self, query):
         """Handle language selection."""

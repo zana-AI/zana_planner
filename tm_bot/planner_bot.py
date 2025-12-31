@@ -93,7 +93,8 @@ class PlannerBot:
             self.callback_handlers = CallbackHandlers(
                 self.plan_keeper,
                 self.application,
-                self._original_response_service
+                self._original_response_service,
+                self.miniapp_url
             )
             
             # Store plan_keeper, llm_handler, and response_service in bot_data
@@ -130,7 +131,8 @@ class PlannerBot:
             self.callback_handlers = CallbackHandlers(
                 self.plan_keeper,
                 mock_application,
-                self._original_response_service
+                self._original_response_service,
+                self.miniapp_url
             )
             
             # Store in bot_data for handlers

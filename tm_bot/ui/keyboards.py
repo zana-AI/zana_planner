@@ -39,9 +39,9 @@ def session_controls_kb(session_running: bool) -> InlineKeyboardMarkup:
     return _keyboard_adapter.build_keyboard(keyboard)
 
 
-def weekly_report_kb(ref_time) -> InlineKeyboardMarkup:
-    """Create keyboard for weekly report with refresh button."""
-    keyboard = _weekly_report_kb(ref_time)
+def weekly_report_kb(ref_time, miniapp_url: Optional[str] = None) -> InlineKeyboardMarkup:
+    """Create keyboard for weekly report with refresh button and optional mini app button."""
+    keyboard = _weekly_report_kb(ref_time, miniapp_url)
     return _keyboard_adapter.build_keyboard(keyboard)
 
 def time_options_kb(
@@ -130,7 +130,7 @@ def broadcast_confirmation_kb() -> InlineKeyboardMarkup:
     return _keyboard_adapter.build_keyboard(keyboard)
 
 
-def mini_app_kb(mini_app_url: str) -> InlineKeyboardMarkup:
+def mini_app_kb(mini_app_url: str, button_text: str = "Open App") -> InlineKeyboardMarkup:
     """Create keyboard with mini app button."""
     keyboard = _mini_app_kb(mini_app_url)
     return _keyboard_adapter.build_keyboard(keyboard)

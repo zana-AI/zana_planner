@@ -40,12 +40,23 @@ def nightly_card_kb(promises_top3: List[Promise], has_more: bool = False) -> Key
     return keyboard
 
 
-def weekly_report_kb(ref_time: datetime) -> Keyboard:
-    """Create keyboard for weekly report with refresh button."""
+def weekly_report_kb(ref_time: datetime, miniapp_url: Optional[str] = None) -> Keyboard:
+    """Create keyboard for weekly report with refresh button and optional mini app button."""
     keyboard = Keyboard()
     refresh_callback = encode_cb("refresh_weekly", t=str(int(ref_time.timestamp())))
-    button = create_button(text="🔄 Refresh", callback_data=refresh_callback)
-    keyboard.add_row(button)
+    refresh_button = create_button(text="🔄 Refresh", callback_data=refresh_callback)
+    
+    if miniapp_url:
+        # Format ref_time as ISO datetime for URL parameter
+        ref_time_iso = ref_time.isoformat()
+        mini_app_url_with_params = f"{miniapp_url}?ref_time={ref_time_iso}"
+        mini_app_button = create_button(text="🌐 View in App", web_app_url=mini_app_url_with_params)
+        # Add both buttons on the same row
+        keyboard.add_row(refresh_button, mini_app_button)
+    else:
+        # Only refresh button if no miniapp_url provided
+        keyboard.add_row(refresh_button)
+    
     return keyboard
 
 
@@ -294,10 +305,10 @@ def delete_confirmation_kb(promise_id: str) -> Keyboard:
     return keyboard
 
 
-def mini_app_kb(mini_app_url: str) -> Keyboard:
+def mini_app_kb(mini_app_url: str, button_text: str = "Open App") -> Keyboard:
     """Create keyboard with mini app button."""
     keyboard = Keyboard()
-    button = create_button("🌐 Open Mini App", web_app_url=mini_app_url)
+    button = create_button(button_text, web_app_url=mini_app_url)
     keyboard.add_row(button)
     return keyboard
 
