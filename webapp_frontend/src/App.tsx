@@ -133,11 +133,6 @@ function App() {
 
       {/* Weekly Report */}
       {reportData && <WeeklyReport data={reportData} />}
-
-      {/* Refresh hint */}
-      <div className="refresh-hint">
-        Pull down to refresh
-      </div>
     </div>
   );
 }
