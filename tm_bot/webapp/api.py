@@ -107,6 +107,15 @@ def create_webapp_api(
     app.state.root_dir = root_dir
     app.state.bot_token = bot_token
     
+    # Startup event to log registered routes
+    @app.on_event("startup")
+    async def startup_event():
+        logger.info(f"[VERSION_CHECK] v2.0 - App startup, registered routes:")
+        for route in app.routes:
+            if hasattr(route, 'path'):
+                methods = getattr(route, 'methods', set())
+                logger.info(f"[VERSION_CHECK] v2.0 - Route: {route.path} {methods}")
+    
     # Dependency to validate Telegram auth and get user_id
     async def get_current_user(
         x_telegram_init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
@@ -525,6 +534,7 @@ def create_webapp_api(
     
     # Serve static files if directory is provided
     if static_dir and os.path.isdir(static_dir):
+        logger.info(f"[VERSION_CHECK] v2.0 - Registering catch-all route, static_dir={static_dir}")
         # Note: Vite builds JS/CSS files in dist root (e.g., index-*.js, index-*.css)
         # and other assets in dist/assets/ subdirectory
         # The catch-all route below will serve files from dist root
