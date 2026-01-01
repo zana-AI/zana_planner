@@ -31,6 +31,8 @@ services:
       - /opt/zana-config/.env.staging
     environment:
       - ENVIRONMENT=staging
+    volumes:
+      - /srv/zana-users-staging:/app/USERS_DATA_DIR
     restart: unless-stopped
     networks:
       - web
