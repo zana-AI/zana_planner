@@ -73,6 +73,27 @@ jobs:
             git fetch origin master || git fetch origin
             git reset --hard origin/master
 
+            # Build frontend before building containers (needed for volume mount)
+            echo '[STAGING] Building React frontend...'
+            if [ -d "webapp_frontend" ]; then
+              cd webapp_frontend
+              # Check if node_modules exists, if not install
+              if [ ! -d "node_modules" ]; then
+                echo '[STAGING] Installing npm dependencies...'
+                npm install || sudo npm install || echo '[STAGING] ⚠️  npm install failed, continuing...'
+              fi
+              echo '[STAGING] Building frontend...'
+              npm run build || sudo npm run build || echo '[STAGING] ⚠️  Frontend build failed, Docker will build it'
+              cd ..
+              if [ -d "webapp_frontend/dist" ] && [ -f "webapp_frontend/dist/index.html" ]; then
+                echo '[STAGING] ✓ Frontend built successfully on host'
+              else
+                echo '[STAGING] ⚠️  Frontend dist not found, Docker build will provide it'
+              fi
+            else
+              echo '[STAGING] ⚠️  webapp_frontend directory not found, Docker build will handle it'
+            fi
+
             echo '[STAGING] Rebuilding containers with BuildKit (cached layers)...'
             # Enable BuildKit for better caching and performance
             export DOCKER_BUILDKIT=1
@@ -94,7 +115,8 @@ jobs:
               --build-arg GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
               --progress=plain zana-staging
 
-            # Build webapp container (no commit info needed for webapp)
+            # Build webapp container (includes frontend build in Dockerfile)
+            # Frontend is automatically built during Docker build, no manual step needed
             docker compose build --progress=plain zana-webapp
 
             # Start both containers
