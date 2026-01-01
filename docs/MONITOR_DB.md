@@ -210,6 +210,43 @@ ls -ld /srv/zana-users-staging
 # If needed, fix permissions (be careful in production!)
 sudo chmod 755 /srv/zana-users
 sudo chmod 755 /srv/zana-users-staging
+sudo chmod 644 /srv/zana-users/zana.db
+sudo chmod 644 /srv/zana-users-staging/zana.db
+```
+
+### Issue: "unable to open database file" error in container logs
+
+If you see `peewee.OperationalError: unable to open database file` in the logs even though `sqlite3` can read the databases, this may be due to sqlite-web having issues with multiple databases or file access. Try these solutions:
+
+**Solution 1: Debug inside the container**
+```bash
+# Stop the container
+sudo docker compose stop zana-db-monitor
+
+# Start it without auto-restart for debugging
+sudo docker compose up zana-db-monitor
+
+# In another terminal, exec into the container
+sudo docker exec -it zana-db-monitor /bin/sh
+
+# Inside container, test manually:
+sqlite3 /srv/zana-users/zana.db "SELECT 1;"
+sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db
+```
+
+**Solution 2: Use separate containers for each database**
+
+If sqlite-web has issues with multiple databases, you can run separate containers:
+- Production on port 8081
+- Staging on port 8082
+
+Then forward both ports: `gcloud compute ssh vm-telegram-bots -- -L 8081:127.0.0.1:8081 -L 8082:127.0.0.1:8082`
+
+**Solution 3: Check database file integrity**
+```bash
+# On VM, verify databases are not corrupted
+sqlite3 /srv/zana-users/zana.db "PRAGMA integrity_check;"
+sqlite3 /srv/zana-users-staging/zana.db "PRAGMA integrity_check;"
 ```
 
 ### Issue: SSH connection drops frequently

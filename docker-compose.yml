@@ -14,6 +14,8 @@ services:
       - /opt/zana-config/.env.prod
     environment:
       - ENVIRONMENT=production
+    volumes:
+      - /srv/zana-users:/app/USERS_DATA_DIR
     restart: unless-stopped
     networks:
       - web
