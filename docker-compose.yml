@@ -96,6 +96,40 @@ services:
     networks:
       - web
 
+  # =========================
+  # DATABASE MONITORING (STAGING)
+  # Access via SSH port forwarding: gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081
+  # Then open: http://localhost:8081
+  # =========================
+  zana-db-monitor-staging:
+    image: coleifer/sqlite-web:latest
+    container_name: zana-db-monitor-staging
+    command: ["-H", "127.0.0.1", "-p", "8081", "-x", "/srv/zana-users-staging/zana.db"]
+    volumes:
+      - /srv/zana-users-staging:/srv/zana-users-staging:ro
+    ports:
+      - "127.0.0.1:8081:8081"
+    restart: unless-stopped
+    networks:
+      - web
+
+  # =========================
+  # DATABASE MONITORING (PRODUCTION)
+  # Access via SSH port forwarding: gcloud compute ssh vm-telegram-bot -- -L 8082:127.0.0.1:8082
+  # Then open: http://localhost:8082
+  # =========================
+  zana-db-monitor-prod:
+    image: coleifer/sqlite-web:latest
+    container_name: zana-db-monitor-prod
+    command: ["-H", "127.0.0.1", "-p", "8082", "-x", "/srv/zana-users/zana.db"]
+    volumes:
+      - /srv/zana-users:/srv/zana-users:ro
+    ports:
+      - "127.0.0.1:8082:8082"
+    restart: unless-stopped
+    networks:
+      - web
+
 networks:
   web:
     driver: bridge
