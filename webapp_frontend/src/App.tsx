@@ -51,6 +51,16 @@ function App() {
     // Use Telegram initData if available, otherwise try dev data
     const authData = initData || getDevInitData();
 
+    // Extract page parameter from URL query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const pageParam = urlParams.get('page');
+    
+    // If page=community, don't fetch report (show community page instead)
+    if (pageParam === 'community') {
+      setState('ready');
+      return;
+    }
+
     if (!authData) {
       // No auth data: show public users page instead of error
       setState('ready');
@@ -58,7 +68,6 @@ function App() {
     }
 
     // Extract ref_time from URL query parameters
-    const urlParams = new URLSearchParams(window.location.search);
     const refTime = urlParams.get('ref_time') || undefined;
     
     // Debug logging
@@ -87,8 +96,8 @@ function App() {
   const urlParamsForPage = new URLSearchParams(window.location.search);
   const showCommunity = urlParamsForPage.get('page') === 'community';
 
-  // Loading state (only for authenticated users loading report)
-  if ((state === 'loading' || !isReady) && isAuthenticated) {
+  // Loading state (only for authenticated users loading report, not for community page)
+  if ((state === 'loading' || !isReady) && isAuthenticated && !showCommunity) {
     return (
       <div className="app">
         <div className="loading">
@@ -99,8 +108,8 @@ function App() {
     );
   }
 
-  // Error state (only for authenticated users)
-  if (state === 'error' && isAuthenticated) {
+  // Error state (only for authenticated users loading report, not for community page)
+  if (state === 'error' && isAuthenticated && !showCommunity) {
     return (
       <div className="app">
         <div className="error">
@@ -117,11 +126,20 @@ function App() {
     );
   }
 
-  // Not authenticated: show home page or community page
+  // Show community page if requested (for both authenticated and unauthenticated users)
+  if (showCommunity) {
+    return (
+      <div className="app">
+        <UsersPage />
+      </div>
+    );
+  }
+
+  // Not authenticated: show home page
   if (!isAuthenticated) {
     return (
       <div className="app">
-        {showCommunity ? <UsersPage /> : <HomePage />}
+        <HomePage />
       </div>
     );
   }
