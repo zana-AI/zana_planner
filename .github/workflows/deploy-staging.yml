@@ -75,6 +75,7 @@ jobs:
 
             # Build frontend before building containers (needed for volume mount)
             echo '[STAGING] Building React frontend...'
+            FRONTEND_BUILD_SUCCESS=false
             if [ -d "webapp_frontend" ]; then
               cd webapp_frontend
               # Check if node_modules exists, if not install
@@ -83,12 +84,17 @@ jobs:
                 npm install || sudo npm install || echo '[STAGING] ⚠️  npm install failed, continuing...'
               fi
               echo '[STAGING] Building frontend...'
-              npm run build || sudo npm run build || echo '[STAGING] ⚠️  Frontend build failed, Docker will build it'
-              cd ..
-              if [ -d "webapp_frontend/dist" ] && [ -f "webapp_frontend/dist/index.html" ]; then
-                echo '[STAGING] ✓ Frontend built successfully on host'
+              if npm run build 2>&1 || sudo npm run build 2>&1; then
+                cd ..
+                if [ -d "webapp_frontend/dist" ] && [ -f "webapp_frontend/dist/index.html" ]; then
+                  echo '[STAGING] ✓ Frontend built successfully on host'
+                  FRONTEND_BUILD_SUCCESS=true
+                else
+                  echo '[STAGING] ⚠️  Frontend build completed but dist not found'
+                fi
               else
-                echo '[STAGING] ⚠️  Frontend dist not found, Docker build will provide it'
+                cd ..
+                echo '[STAGING] ⚠️  Frontend build failed on host, Docker will build it'
               fi
             else
               echo '[STAGING] ⚠️  webapp_frontend directory not found, Docker build will handle it'
@@ -123,7 +129,7 @@ jobs:
             docker compose up -d zana-staging zana-webapp
 
             echo '[STAGING] Verifying containers are running...'
-            sleep 5
+            sleep 10  # Increased wait time for webapp to be ready
             
             # Check if containers are up
             if docker compose ps zana-staging | grep -q "Up"; then
@@ -134,12 +140,22 @@ jobs:
             
             if docker compose ps zana-webapp | grep -q "Up"; then
               echo '[STAGING] ✓ Webapp container (zana-webapp) is running'
-              # Check webapp health using a temporary Python script to avoid quote escaping issues
-              echo 'import urllib.request; urllib.request.urlopen("http://localhost:8080/api/health")' | docker compose exec -T zana-webapp python > /dev/null 2>&1
-              if [ $? -eq 0 ]; then
-                echo '[STAGING] ✓ Webapp health check passed'
-              else
-                echo '[STAGING] ⚠️  Webapp health endpoint not responding - check logs: docker compose logs zana-webapp'
+              # Check webapp health - don't fail deployment if health check fails
+              # Try multiple times with delays
+              HEALTH_CHECK_PASSED=false
+              for i in 1 2 3; do
+                if echo 'import urllib.request; urllib.request.urlopen("http://localhost:8080/api/health")' | docker compose exec -T zana-webapp python > /dev/null 2>&1; then
+                  echo '[STAGING] ✓ Webapp health check passed'
+                  HEALTH_CHECK_PASSED=true
+                  break
+                else
+                  echo "[STAGING] Health check attempt $i/3 failed, waiting 3 seconds..."
+                  sleep 3
+                fi
+              done
+              if [ "$HEALTH_CHECK_PASSED" = "false" ]; then
+                echo '[STAGING] ⚠️  Webapp health endpoint not responding after retries - check logs: docker compose logs zana-webapp'
+                echo '[STAGING] Container is running but health check failed - this may be a timing issue'
               fi
             else
               echo '[STAGING] ⚠️  Webapp container (zana-webapp) is not running - check logs: docker compose logs zana-webapp'
