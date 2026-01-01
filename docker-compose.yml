@@ -110,49 +110,19 @@ services:
     command:
       - |
         echo "Setting up database monitoring..." && \
-        mkdir -p /dbs && \
-        echo "Checking production database..." && \
-        if [ -f /srv/zana-users/zana.db ]; then \
-          echo "Found production DB, checking permissions..." && \
-          ls -lh /srv/zana-users/zana.db && \
-          if [ -r /srv/zana-users/zana.db ]; then \
-            echo "Production DB is readable, creating symlink..." && \
-            ln -sf /srv/zana-users/zana.db /dbs/production.db && \
-            ls -lh /dbs/production.db && \
-            echo "Testing production DB access..." && \
-            sqlite3 /dbs/production.db "SELECT 1;" 2>&1 && echo "Production DB access OK" || echo "WARNING: Cannot read production DB"; \
-          else \
-            echo "ERROR: Production DB exists but is not readable!"; \
-            exit 1; \
-          fi; \
+        if [ -f /srv/zana-users/zana.db ] && [ -f /srv/zana-users-staging/zana.db ]; then \
+          echo "Both databases found, starting sqlite-web with both..." && \
+          exec sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db /srv/zana-users-staging/zana.db; \
+        elif [ -f /srv/zana-users/zana.db ]; then \
+          echo "Only production DB found, starting sqlite-web..." && \
+          exec sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db; \
+        elif [ -f /srv/zana-users-staging/zana.db ]; then \
+          echo "Only staging DB found, starting sqlite-web..." && \
+          exec sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users-staging/zana.db; \
         else \
-          echo "WARNING: Production database not found at /srv/zana-users/zana.db"; \
-        fi && \
-        echo "Checking staging database..." && \
-        if [ -f /srv/zana-users-staging/zana.db ]; then \
-          echo "Found staging DB, checking permissions..." && \
-          ls -lh /srv/zana-users-staging/zana.db && \
-          if [ -r /srv/zana-users-staging/zana.db ]; then \
-            echo "Staging DB is readable, creating symlink..." && \
-            ln -sf /srv/zana-users-staging/zana.db /dbs/staging.db && \
-            ls -lh /dbs/staging.db && \
-            echo "Testing staging DB access..." && \
-            sqlite3 /dbs/staging.db "SELECT 1;" 2>&1 && echo "Staging DB access OK" || echo "WARNING: Cannot read staging DB"; \
-          else \
-            echo "ERROR: Staging DB exists but is not readable!"; \
-            exit 1; \
-          fi; \
-        else \
-          echo "WARNING: Staging database not found at /srv/zana-users-staging/zana.db"; \
-        fi && \
-        echo "Listing /dbs contents:" && \
-        ls -lah /dbs/ && \
-        if [ ! -L /dbs/production.db ] && [ ! -L /dbs/staging.db ]; then \
-          echo "ERROR: No database files found! Please verify databases exist."; \
+          echo "ERROR: No database files found!"; \
           exit 1; \
-        fi && \
-        echo "Starting sqlite-web..." && \
-        exec sqlite_web -H 127.0.0.1 -p 8081 -x /dbs
+        fi
     volumes:
       - /srv/zana-users:/srv/zana-users:ro
       - /srv/zana-users-staging:/srv/zana-users-staging:ro
