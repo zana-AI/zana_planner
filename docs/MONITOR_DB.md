@@ -10,16 +10,16 @@ SSH into your GCP VM and start the monitoring container:
 
 ```bash
 # SSH into VM
-gcloud compute ssh vm-telegram-bot
+gcloud compute ssh vm-telegram-bots
 
 # Navigate to project directory
-cd /opt/zana-bot/zana_planner
+cd /opt/zana-bot
 
 # Start monitoring container
-docker compose up -d zana-db-monitor
+sudo docker compose up -d zana-db-monitor
 
 # Verify it's running
-docker compose ps | grep db-monitor
+sudo docker compose ps | grep db-monitor
 ```
 
 Expected output:
@@ -37,7 +37,7 @@ Open WSL terminal and run:
 
 ```bash
 # Forward the database monitoring port
-gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081
+gcloud compute ssh vm-telegram-bots -- -L 8081:127.0.0.1:8081
 ```
 
 **Keep this terminal open** - the SSH tunnel stays active while this command runs.
@@ -48,7 +48,7 @@ Open PowerShell and run:
 
 ```powershell
 # Forward the database monitoring port
-gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081
+gcloud compute ssh vm-telegram-bots -- -L 8081:127.0.0.1:8081
 ```
 
 **Keep this PowerShell window open** - the SSH tunnel stays active while this command runs.
@@ -107,7 +107,7 @@ Simply click on the database you want to explore.
 Add to your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
-alias zana-db="gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081"
+alias zana-db="gcloud compute ssh vm-telegram-bots -- -L 8081:127.0.0.1:8081"
 ```
 
 Then reload: `source ~/.bashrc` (or `source ~/.zshrc`)
@@ -123,7 +123,7 @@ Add to your PowerShell profile (`$PROFILE`):
 
 ```powershell
 function Connect-ZanaDB {
-    gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081
+    gcloud compute ssh vm-telegram-bots -- -L 8081:127.0.0.1:8081
 }
 ```
 
@@ -143,12 +143,12 @@ Connect-ZanaDB    # Forward database monitoring port
 1. **Monitoring container not running on VM**
    ```bash
    # SSH into VM and check
-   gcloud compute ssh vm-telegram-bot
-   docker compose ps | grep db-monitor
+   gcloud compute ssh vm-telegram-bots
+   sudo docker compose ps | grep db-monitor
    
    # If not running, start it
-   cd /opt/zana-bot/zana_planner
-   docker compose up -d zana-db-monitor
+   cd /opt/zana-bot
+   sudo docker compose up -d zana-db-monitor
    ```
 
 2. **SSH tunnel not active**
@@ -183,7 +183,7 @@ sudo systemctl start docker
 
 ```bash
 # SSH into VM and verify database exists
-gcloud compute ssh vm-telegram-bot
+gcloud compute ssh vm-telegram-bots
 
 # Check staging database
 ls -lh /srv/zana-users-staging/zana.db
@@ -195,7 +195,7 @@ ls -lh /srv/zana-users/zana.db
 If the database doesn't exist, the container will fail to start. Check container logs:
 
 ```bash
-docker compose logs zana-db-monitor
+sudo docker compose logs zana-db-monitor
 ```
 
 ### Issue: "Permission denied" when accessing database
@@ -217,17 +217,16 @@ sudo chmod 755 /srv/zana-users-staging
 Add keep-alive options to your SSH command:
 
 ```bash
-gcloud compute ssh vm-telegram-bot -- \
+gcloud compute ssh vm-telegram-bots -- \
   -o ServerAliveInterval=60 \
   -o ServerAliveCountMax=3 \
-  -L 8081:127.0.0.1:8081 \
-  -L 8082:127.0.0.1:8082
+  -L 8081:127.0.0.1:8081
 ```
 
 Or add to your SSH config (`~/.ssh/config`):
 
 ```
-Host vm-telegram-bot
+Host vm-telegram-bots
   ServerAliveInterval 60
   ServerAliveCountMax 3
 ```
@@ -240,36 +239,36 @@ Host vm-telegram-bot
 
 ```bash
 # On VM
-cd /opt/zana-bot/zana_planner
-docker compose up -d zana-db-monitor
+cd /opt/zana-bot
+sudo docker compose up -d zana-db-monitor
 ```
 
 ### Stop Container
 
 ```bash
 # On VM
-docker compose stop zana-db-monitor
+sudo docker compose stop zana-db-monitor
 ```
 
 ### View Logs
 
 ```bash
 # On VM
-docker compose logs -f zana-db-monitor
+sudo docker compose logs -f zana-db-monitor
 ```
 
 ### Restart Container
 
 ```bash
 # On VM
-docker compose restart zana-db-monitor
+sudo docker compose restart zana-db-monitor
 ```
 
 ### Check Container Status
 
 ```bash
 # On VM
-docker compose ps | grep db-monitor
+sudo docker compose ps | grep db-monitor
 ```
 
 ---
@@ -309,7 +308,7 @@ If you don't have `gcloud` CLI set up, you can use regular SSH:
 
 ```bash
 # First, get the VM's external IP
-gcloud compute instances describe vm-telegram-bot --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
+gcloud compute instances describe vm-telegram-bots --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
 
 # Then use regular SSH with port forwarding
 ssh -L 8081:127.0.0.1:8081 your-username@VM_EXTERNAL_IP
@@ -323,11 +322,11 @@ Replace `your-username` and `VM_EXTERNAL_IP` with your actual values.
 
 | Task | Command |
 |------|---------|
-| Start monitoring container | `docker compose up -d zana-db-monitor` |
-| Forward database port | `gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081` |
+| Start monitoring container | `sudo docker compose up -d zana-db-monitor` |
+| Forward database port | `gcloud compute ssh vm-telegram-bots -- -L 8081:127.0.0.1:8081` |
 | Access database UI | http://localhost:8081 |
-| Check container status | `docker compose ps \| grep db-monitor` |
-| View container logs | `docker compose logs -f zana-db-monitor` |
+| Check container status | `sudo docker compose ps \| grep db-monitor` |
+| View container logs | `sudo docker compose logs -f zana-db-monitor` |
 
 ---
 

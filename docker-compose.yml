@@ -108,9 +108,31 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        echo "Setting up database monitoring..." && \
         mkdir -p /dbs && \
-        ln -sf /srv/zana-users/zana.db /dbs/production.db && \
-        ln -sf /srv/zana-users-staging/zana.db /dbs/staging.db && \
+        echo "Checking production database..." && \
+        if [ -f /srv/zana-users/zana.db ]; then \
+          echo "Found production DB, creating symlink..." && \
+          ln -sf /srv/zana-users/zana.db /dbs/production.db && \
+          ls -lh /dbs/production.db; \
+        else \
+          echo "WARNING: Production database not found at /srv/zana-users/zana.db"; \
+        fi && \
+        echo "Checking staging database..." && \
+        if [ -f /srv/zana-users-staging/zana.db ]; then \
+          echo "Found staging DB, creating symlink..." && \
+          ln -sf /srv/zana-users-staging/zana.db /dbs/staging.db && \
+          ls -lh /dbs/staging.db; \
+        else \
+          echo "WARNING: Staging database not found at /srv/zana-users-staging/zana.db"; \
+        fi && \
+        echo "Listing /dbs contents:" && \
+        ls -lah /dbs/ && \
+        if [ ! -L /dbs/production.db ] && [ ! -L /dbs/staging.db ]; then \
+          echo "ERROR: No database files found! Please verify databases exist."; \
+          exit 1; \
+        fi && \
+        echo "Starting sqlite-web..." && \
         exec sqlite_web -H 127.0.0.1 -p 8081 -x /dbs
     volumes:
       - /srv/zana-users:/srv/zana-users:ro
