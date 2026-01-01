@@ -35,6 +35,7 @@ from utils.version import get_version_info
 from utils.admin_utils import is_admin
 from services.broadcast_service import get_all_users, send_broadcast, parse_broadcast_time
 from services.stats_service import get_aggregate_stats
+from services.avatar_service import AvatarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -48,6 +49,7 @@ class MessageHandlers:
     def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService, miniapp_url: str = "https://zana-ai.com"):
         self.plan_keeper = plan_keeper
         self.llm_handler = llm_handler
+        self.avatar_service = AvatarService(root_dir)
         self.root_dir = root_dir
         self.application = application
         self.response_service = response_service
@@ -89,6 +91,17 @@ class MessageHandlers:
                 self.plan_keeper.settings_service.save_settings(settings)
         except Exception as e:
             logger.warning(f"Failed to update user info for user {user_id}: {e}")
+    
+    async def _update_user_avatar_async(self, context: CallbackContext, user_id: int) -> None:
+        """Fetch and store user avatar asynchronously (non-blocking)."""
+        try:
+            if context and context.bot:
+                # Run avatar fetch in background (fire and forget)
+                asyncio.create_task(
+                    self.avatar_service.fetch_and_store_avatar(context.bot, user_id)
+                )
+        except Exception as e:
+            logger.debug(f"Failed to schedule avatar fetch for user {user_id}: {e}")
     
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings service."""
@@ -438,6 +451,8 @@ class MessageHandlers:
         
         # Extract and update user info
         self._update_user_info(user_id, update.effective_user)
+        # Fetch avatar in background (non-blocking)
+        await self._update_user_avatar_async(context, user_id)
         
         # Get voice file
         voice = update.effective_message.voice
@@ -820,6 +835,8 @@ class MessageHandlers:
         
         # Extract and update user info
         self._update_user_info(user_id, update.effective_user)
+        # Fetch avatar in background (non-blocking)
+        await self._update_user_avatar_async(context, user_id)
         
         msg = update.effective_message
         

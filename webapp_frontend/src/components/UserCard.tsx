@@ -67,15 +67,14 @@ export function UserCard({ user }: UserCardProps) {
   const displayName = getDisplayName(user);
   const avatarColor = getAvatarColor(user.user_id);
   
-  // Try to construct avatar URL if path exists
-  // For now, we'll use the path directly if it's a full URL
-  // In production, this might need to be served via /api/media/avatars/
-  // If avatar_path is a relative path, we'll try to construct a URL
+  // Construct avatar URL from avatar_path
+  // If avatar_path is a full URL, use it directly
+  // If avatar_path is a relative path or just exists, use API endpoint
   // Otherwise, fall back to initials
   const avatarUrl = user.avatar_path && !imageError 
-    ? (user.avatar_path.startsWith('http') || user.avatar_path.startsWith('/')
-        ? user.avatar_path 
-        : null) // For now, only use full URLs or absolute paths
+    ? (user.avatar_path.startsWith('http')
+        ? user.avatar_path  // Full URL (external)
+        : `/api/media/avatars/${user.user_id}`)  // Use API endpoint for local avatars
     : null;
 
   return (

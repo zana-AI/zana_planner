@@ -104,6 +104,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--data-dir", default=_default_data_dir(), help="Path to USERS_DATA_DIR (default: env USERS_DATA_DIR/ROOT_DIR).")
     parser.add_argument("--out", required=True, help="Output directory.")
     parser.add_argument("--user", default=None, help="Export a single user_id (TEXT). If omitted, exports all users.")
+    parser.add_argument("--include-media", action="store_true", default=True, help="Include media files (avatars) in backup (default: True).")
+    parser.add_argument("--no-media", dest="include_media", action="store_false", help="Exclude media files from backup.")
     args = parser.parse_args(argv)
 
     data_dir = os.path.abspath(args.data_dir)
@@ -121,11 +123,29 @@ def main(argv: Optional[List[str]] = None) -> int:
             users = _list_users(conn)
 
         exported_at = _utc_now_iso()
+        
+        # Copy media files if requested
+        media_count = 0
+        if args.include_media:
+            media_dir = os.path.join(data_dir, "media", "avatars")
+            out_media_dir = os.path.join(out_dir, "media", "avatars")
+            if os.path.exists(media_dir):
+                import shutil
+                os.makedirs(out_media_dir, exist_ok=True)
+                for filename in os.listdir(media_dir):
+                    if filename.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                        src = os.path.join(media_dir, filename)
+                        dst = os.path.join(out_media_dir, filename)
+                        shutil.copy2(src, dst)
+                        media_count += 1
+        
         manifest = {
             "data_dir": data_dir,
             "db_path": db_path,
             "exported_at_utc": exported_at,
             "users": users,
+            "media_files_count": media_count,
+            "include_media": args.include_media,
         }
 
         with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:

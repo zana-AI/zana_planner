@@ -21,6 +21,7 @@ from repositories.settings_repo import SettingsRepository
 from db.sqlite_db import connection_for_root
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
+from fastapi.responses import FileResponse
 
 
 logger = get_logger(__name__)
@@ -491,6 +492,87 @@ def create_webapp_api(
             logger.error(f"Full traceback: {error_trace}")
             # Return a simpler error message for production
             raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+    
+    @app.get("/api/media/avatars/{user_id}")
+    async def get_user_avatar(user_id: str):
+        """
+        Serve user avatar image.
+        
+        Args:
+            user_id: User ID (string)
+        
+        Returns:
+            Avatar image file or 404 if not found/not visible
+        """
+        try:
+            root_dir = app.state.root_dir
+            if not root_dir:
+                raise HTTPException(status_code=500, detail="Server configuration error: root_dir not set")
+            
+            with connection_for_root(root_dir) as conn:
+                # Check avatar visibility and get path
+                row = conn.execute(
+                    """
+                    SELECT avatar_path, avatar_visibility 
+                    FROM users 
+                    WHERE user_id = ? 
+                    LIMIT 1;
+                    """,
+                    (user_id,),
+                ).fetchone()
+                
+                if not row:
+                    raise HTTPException(status_code=404, detail="User not found")
+                
+                # Check visibility (default to 'public' if not set)
+                visibility = row["avatar_visibility"] or "public"
+                if visibility != "public":
+                    raise HTTPException(status_code=403, detail="Avatar is private")
+                
+                avatar_path = row["avatar_path"]
+                if not avatar_path:
+                    raise HTTPException(status_code=404, detail="Avatar not found")
+                
+                # Resolve full path
+                # If path is relative, it's relative to root_dir
+                if os.path.isabs(avatar_path):
+                    full_path = avatar_path
+                else:
+                    full_path = os.path.join(root_dir, avatar_path)
+                
+                # Normalize path separators
+                full_path = os.path.normpath(full_path)
+                
+                # Security check: ensure path is within root_dir
+                root_dir_abs = os.path.abspath(root_dir)
+                full_path_abs = os.path.abspath(full_path)
+                if not full_path_abs.startswith(root_dir_abs):
+                    logger.warning(f"Attempted access outside root_dir: {full_path}")
+                    raise HTTPException(status_code=403, detail="Invalid path")
+                
+                if not os.path.exists(full_path):
+                    raise HTTPException(status_code=404, detail="Avatar file not found")
+                
+                # Determine content type from file extension
+                content_type = "image/jpeg"  # Default
+                if full_path.lower().endswith(".png"):
+                    content_type = "image/png"
+                elif full_path.lower().endswith(".gif"):
+                    content_type = "image/gif"
+                
+                return FileResponse(
+                    full_path,
+                    media_type=content_type,
+                    headers={
+                        "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                    }
+                )
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error serving avatar for user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to serve avatar: {str(e)}")
     
     # Add route for /weekly to serve React app (works with or without static_dir)
     @app.get("/weekly")
