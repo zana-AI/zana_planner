@@ -1824,6 +1824,27 @@ class MessageHandlers:
         message = "📢 **Broadcast Message**\n\nPlease send the message you want to broadcast to all users."
         await update.message.reply_text(message, parse_mode='Markdown')
     
+    async def cmd_club(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /club command to open the community/users page in the mini-app."""
+        user_id = update.effective_user.id
+        user_lang = get_user_language(update.effective_user)
+        
+        # Create mini-app URL with community page parameter
+        community_url = f"{self.miniapp_url}?page=community"
+        
+        # Create message
+        message = "👥 **Zana Community**\n\nOpen the app to see all active users!"
+        
+        # Create mini-app keyboard button
+        keyboard = mini_app_kb(community_url, button_text="Open Community")
+        
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+    
     async def _handle_broadcast_message(
         self, update: Update, context: CallbackContext, 
         message_text: str, user_id: int, user_lang: Language
