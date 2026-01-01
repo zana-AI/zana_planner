@@ -125,11 +125,11 @@ services:
         echo "" && \
         echo "Testing sqlite-web command..." && \
         which sqlite_web && \
-        sqlite_web --help 2>&1 | head -5 && \
+        sqlite_web --help 2>&1 | head -10 && \
         echo "" && \
-        echo "Attempting to start sqlite-web..." && \
+        echo "Attempting to start sqlite-web (checking error)..." && \
         sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db /srv/zana-users-staging/zana.db 2>&1 || \
-        (echo "" && echo "=== sqlite-web failed ===" && echo "Container will stay alive for debugging. Run: sudo docker exec -it zana-db-monitor /bin/sh" && sleep infinity)
+        (echo "" && echo "=== sqlite-web failed with error above ===" && echo "Container will stay alive. Run: sudo docker exec -it zana-db-monitor /bin/sh" && while true; do sleep 3600; done)
     volumes:
       - /srv/zana-users:/srv/zana-users:ro
       - /srv/zana-users-staging:/srv/zana-users-staging:ro
