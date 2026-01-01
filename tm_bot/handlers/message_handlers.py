@@ -1829,8 +1829,8 @@ class MessageHandlers:
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
         
-        # Create mini-app URL with community page parameter
-        community_url = f"{self.miniapp_url}?page=community"
+        # Create mini-app URL with startapp parameter (Telegram's supported way to pass data)
+        community_url = f"{self.miniapp_url}?startapp=community"
         
         # Create message
         message = "👥 **Zana Community**\n\nOpen the app to see all active users!"

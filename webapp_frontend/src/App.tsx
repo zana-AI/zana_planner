@@ -51,12 +51,12 @@ function App() {
     // Use Telegram initData if available, otherwise try dev data
     const authData = initData || getDevInitData();
 
-    // Extract page parameter from URL query parameters
+    // Extract startapp parameter (Telegram's supported way to pass data)
     const urlParams = new URLSearchParams(window.location.search);
-    const pageParam = urlParams.get('page');
+    const startappParam = urlParams.get('startapp');
     
-    // If page=community, don't fetch report (show community page instead)
-    if (pageParam === 'community') {
+    // If startapp=community, don't fetch report (show community page instead)
+    if (startappParam === 'community') {
       setState('ready');
       return;
     }
@@ -67,12 +67,21 @@ function App() {
       return;
     }
 
-    // Extract ref_time from URL query parameters
-    const refTime = urlParams.get('ref_time') || undefined;
+    // Extract ref_time from startapp parameter (format: "weekly:ISO_DATE")
+    // Fallback to query param for backward compatibility
+    let refTime: string | undefined = undefined;
+    if (startappParam && startappParam.startsWith('weekly:')) {
+      // Extract and decode ISO date after "weekly:"
+      const encodedRefTime = startappParam.substring(7);
+      refTime = decodeURIComponent(encodedRefTime);
+    } else {
+      refTime = urlParams.get('ref_time') || undefined;
+    }
     
     // Debug logging
     console.log('[DEBUG] Current URL:', window.location.href);
     console.log('[DEBUG] URL search params:', window.location.search);
+    console.log('[DEBUG] startapp param:', startappParam);
     console.log('[DEBUG] Extracted ref_time:', refTime);
 
     fetchReport(authData, refTime);
@@ -92,9 +101,9 @@ function App() {
   const authData = initData || getDevInitData();
   const isAuthenticated = !!authData;
 
-  // Check if user wants to see community page
+  // Check if user wants to see community page (using Telegram's startapp parameter)
   const urlParamsForPage = new URLSearchParams(window.location.search);
-  const showCommunity = urlParamsForPage.get('page') === 'community';
+  const showCommunity = urlParamsForPage.get('startapp') === 'community';
 
   // Loading state (only for authenticated users loading report, not for community page)
   if ((state === 'loading' || !isReady) && isAuthenticated && !showCommunity) {
