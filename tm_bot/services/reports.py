@@ -54,7 +54,7 @@ class ReportsService:
         
         return report_data
 
-    def get_weekly_summary_with_sessions(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
+    def get_weekly_summary_with_sessions(self, user_id: int, ref_time: datetime, user_timezone: str = "UTC") -> Dict[str, Any]:
         """Get weekly summary data with per-day session breakdown for visualization."""
         # Ensure ref_time is naive (no timezone) for consistent week calculation
         if ref_time.tzinfo is not None:
@@ -87,9 +87,17 @@ class ReportsService:
                 norm = normalize_promise_id(promise.id)
                 canonical_by_norm.setdefault(norm, promise.id)
         
+        # Import timezone conversion utilities
+        import pytz
+        
         # Group actions by promise and date
         actions_by_promise_date: Dict[str, Dict[date, float]] = {}
         actions_in_range = 0
+        user_tz_obj = pytz.timezone(user_timezone)
+        
+        # Get server timezone to convert action times correctly
+        server_tz = datetime.now().astimezone().tzinfo
+        
         for action in actions:
             # Ensure action.at is naive for comparison
             action_at = action.at
@@ -100,7 +108,22 @@ class ReportsService:
                 actions_in_range += 1
                 canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
                 if canonical and canonical in report_data:
-                    action_date = action_at.date()
+                    # Convert action datetime from server local time to user's timezone before extracting date
+                    # action.at is in server local time (naive) from dt_utc_iso_to_local_naive
+                    # We need to: server local -> UTC -> user timezone -> date
+                    try:
+                        # Treat action_at as server local time
+                        action_at_server = action_at.replace(tzinfo=server_tz)
+                        # Convert to UTC
+                        action_at_utc = action_at_server.astimezone(pytz.UTC)
+                        # Convert to user timezone
+                        action_at_user_tz = action_at_utc.astimezone(user_tz_obj)
+                        # Extract date in user's timezone
+                        action_date = action_at_user_tz.date()
+                    except Exception as e:
+                        logger.warning(f"[DEBUG] Failed to convert action time to user timezone: {e}, using server local date")
+                        # Fallback to original behavior
+                        action_date = action_at.date()
                     if canonical not in actions_by_promise_date:
                         actions_by_promise_date[canonical] = {}
                     if action_date not in actions_by_promise_date[canonical]:

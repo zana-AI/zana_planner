@@ -353,8 +353,8 @@ def create_webapp_api(
             
             # Get weekly summary
             reports_service = get_reports_service(user_id)
-            logger.debug(f"[DEBUG] Getting weekly summary for user {user_id}, ref_time: {reference_time}")
-            summary = reports_service.get_weekly_summary_with_sessions(user_id, reference_time)
+            logger.debug(f"[DEBUG] Getting weekly summary for user {user_id}, ref_time: {reference_time}, timezone: {user_tz}")
+            summary = reports_service.get_weekly_summary_with_sessions(user_id, reference_time, user_timezone=user_tz)
             logger.debug(f"[DEBUG] Weekly summary result: {len(summary)} promises, keys: {list(summary.keys())}")
             
             # Calculate week range
