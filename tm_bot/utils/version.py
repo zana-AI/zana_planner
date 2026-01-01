@@ -10,6 +10,7 @@ import subprocess
 import re
 import sys
 import platform
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -249,6 +250,25 @@ def get_last_update_date() -> str:
     return fs_date or "unknown"
 
 
+def _load_commit_info() -> dict | None:
+    """
+    Load commit info from COMMIT_INFO.json file if it exists.
+    Returns dict with commit, message, author, date, or None if file doesn't exist.
+    """
+    commit_info_path = Path("/app/COMMIT_INFO.json")
+    if not commit_info_path.exists():
+        # Try relative to current file (for local development)
+        commit_info_path = Path(__file__).parent.parent.parent / "COMMIT_INFO.json"
+        if not commit_info_path.exists():
+            return None
+    
+    try:
+        with open(commit_info_path, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def _get_git_status_summary(git_root: Path) -> dict:
     """Return a compact git status-like summary."""
     info: dict = {"available": True, "root": str(git_root)}
@@ -329,16 +349,42 @@ def get_version_info() -> dict:
         "build_date": build_date or os.getenv("BUILD_AT") or os.getenv("RELEASE_DATE"),
     }
 
-    # Git status-like metadata (best-effort).
+    # Load commit info from COMMIT_INFO.json (build-time metadata)
+    commit_info = _load_commit_info()
+    if commit_info:
+        info["commit_message"] = commit_info.get("message", "")
+        info["commit_author"] = commit_info.get("author", "")
+        commit_date_str = commit_info.get("date", "")
+        if commit_date_str:
+            # Format commit date: "2025-12-31 10:30:00 +0000" -> "2025-12-31 10:30:00 UTC"
+            try:
+                # Parse git date format: "2025-12-31 10:30:00 +0000"
+                parts = commit_date_str.split()
+                if len(parts) >= 2:
+                    date_part = parts[0]
+                    time_part = parts[1]
+                    info["commit_date"] = f"{date_part} {time_part} UTC"
+                else:
+                    info["commit_date"] = commit_date_str
+            except Exception:
+                info["commit_date"] = commit_date_str
+        else:
+            info["commit_date"] = None
+        # Also set commit hash if available
+        if commit_info.get("commit"):
+            info["commit"] = commit_info.get("commit")
+
+    # Git status-like metadata (best-effort, for local development).
     git_root = _find_git_root(repo_path)
     if git_root:
         git_info = _get_git_status_summary(git_root)
         info["git"] = git_info
         # Back-compat fields used by older /version formatting.
-        if git_info.get("head_short"):
+        # Only set if not already set from COMMIT_INFO.json
+        if git_info.get("head_short") and "commit" not in info:
             info["commit"] = git_info["head_short"]
-        if git_info.get("subject"):
-            info["message"] = str(git_info["subject"])[:50]
+        if git_info.get("subject") and "commit_message" not in info:
+            info["commit_message"] = str(git_info["subject"])[:50]
         if (not info.get("last_update") or info["last_update"] == "unknown") and git_info.get("commit_date_iso"):
             info["last_update"] = git_info["commit_date_iso"]
     else:

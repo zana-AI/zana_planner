@@ -34,6 +34,7 @@ from utils.logger import get_logger
 from utils.version import get_version_info
 from utils.admin_utils import is_admin
 from services.broadcast_service import get_all_users, send_broadcast, parse_broadcast_time
+from services.stats_service import get_aggregate_stats
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -1646,6 +1647,16 @@ class MessageHandlers:
         if version_info.get("last_update") and version_info.get("last_update") != "unknown":
             lines.append(f"- Last update: `{_md_code(version_info.get('last_update'))}`")
 
+        # Commit information from build-time metadata
+        if version_info.get("commit"):
+            lines.append(f"- Commit: `{_md_code(version_info.get('commit'))}`")
+        if version_info.get("commit_message"):
+            lines.append(f"- Commit message: `{_md_code(version_info.get('commit_message'))}`")
+        if version_info.get("commit_author"):
+            lines.append(f"- Commit author: `{_md_code(version_info.get('commit_author'))}`")
+        if version_info.get("commit_date"):
+            lines.append(f"- Commit date: `{_md_code(version_info.get('commit_date'))}`")
+
         # Runtime metadata
         if version_info.get("started_at_utc"):
             lines.append(f"- Started (UTC): `{_md_code(_fmt_started_utc(version_info.get('started_at_utc')))} `")
@@ -1678,6 +1689,18 @@ class MessageHandlers:
                 f"- Status: `{dirty}` (changed: `{_md_code(git_info.get('changed_files'))}`, "
                 f"untracked: `{_md_code(git_info.get('untracked_files'))}`)"
             )
+
+        # Database statistics
+        try:
+            stats = get_aggregate_stats(self.root_dir)
+            lines.append("")
+            lines.append("*Database Statistics*")
+            lines.append(f"- Total users: `{stats.get('total_users', 0)}`")
+            lines.append(f"- Total promises: `{stats.get('total_promises', 0)}`")
+            lines.append(f"- Actions (24h): `{stats.get('actions_24h', 0)}`")
+        except Exception as e:
+            logger.warning(f"Error getting database stats: {e}")
+            # Don't fail the version command if stats fail
 
         text = "\n".join(lines)
         # Telegram message limits: keep it safe.

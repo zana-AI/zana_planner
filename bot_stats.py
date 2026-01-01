@@ -166,6 +166,52 @@ def compute_stats_sql(data_dir: str) -> Dict:
         "generated_at": _utc_iso(now),
     }
 
+
+def get_version_stats(data_dir: str) -> Dict[str, int]:
+    """
+    Get lightweight aggregate stats for version command.
+    Returns only: total_users, total_promises, actions_24h.
+    
+    This is a simplified version of compute_stats_sql() for the /version command.
+    """
+    db_path = _db_path(data_dir)
+    conn = _connect_ro(db_path)
+    now = _utc_now()
+
+    if not conn:
+        return {
+            "total_users": 0,
+            "total_promises": 0,
+            "actions_24h": 0,
+        }
+
+    with conn:
+        # Total distinct users
+        total_users = _count_distinct(
+            conn,
+            "SELECT COUNT(DISTINCT user_id) FROM users;"
+        )
+        
+        # Total active promises
+        total_promises = _count_distinct(
+            conn,
+            "SELECT COUNT(*) FROM promises WHERE is_deleted = 0;"
+        )
+        
+        # Actions in last 24 hours
+        threshold = _utc_iso(now - timedelta(hours=24))
+        actions_24h = _count_distinct(
+            conn,
+            "SELECT COUNT(*) FROM actions WHERE at_utc >= ?;",
+            (threshold,)
+        )
+        
+        return {
+            "total_users": total_users,
+            "total_promises": total_promises,
+            "actions_24h": actions_24h,
+        }
+
 def main():
     parser = argparse.ArgumentParser(description="Privacy-friendly usage stats for Zana Planner bot.")
     parser.add_argument("data_dir", help="Path to USERS_DATA_DIR")

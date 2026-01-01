@@ -48,6 +48,9 @@ FROM python:3.11-slim
 ARG GIT_COMMIT="unknown"
 ARG GIT_TAG=""
 ARG BUILD_DATE=""
+ARG GIT_COMMIT_MESSAGE=""
+ARG GIT_COMMIT_AUTHOR=""
+ARG GIT_COMMIT_DATE=""
 ENV BOT_VERSION=${GIT_TAG:-${GIT_COMMIT}}
 ENV BUILD_DATE=${BUILD_DATE}
 
@@ -90,6 +93,23 @@ WORKDIR /app
 RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION && \
     chown amiryan_j:amiryan_j /app/VERSION && \
     chmod 644 /app/VERSION
+
+# Create COMMIT_INFO.json file with commit metadata
+# Write Python script to handle JSON escaping properly
+RUN printf 'import json\n\
+import sys\n\
+commit = sys.argv[1] if len(sys.argv) > 1 else "unknown"\n\
+message = sys.argv[2] if len(sys.argv) > 2 else ""\n\
+author = sys.argv[3] if len(sys.argv) > 3 else ""\n\
+date = sys.argv[4] if len(sys.argv) > 4 else ""\n\
+commit_info = {"commit": commit, "message": message, "author": author, "date": date}\n\
+with open("/app/COMMIT_INFO.json", "w") as f:\n\
+    json.dump(commit_info, f)\n\
+' > /tmp/create_commit_info.py && \
+    python3 /tmp/create_commit_info.py "${GIT_COMMIT}" "${GIT_COMMIT_MESSAGE}" "${GIT_COMMIT_AUTHOR}" "${GIT_COMMIT_DATE}" && \
+    rm /tmp/create_commit_info.py && \
+    chown amiryan_j:amiryan_j /app/COMMIT_INFO.json && \
+    chmod 644 /app/COMMIT_INFO.json
 
 # Copy application code
 COPY tm_bot/ ./tm_bot/

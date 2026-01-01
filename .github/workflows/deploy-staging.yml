@@ -73,7 +73,7 @@ jobs:
             git fetch origin master || git fetch origin
             git reset --hard origin/master
 
-            echo '[STAGING] Rebuilding container with BuildKit (cached layers)...'
+            echo '[STAGING] Rebuilding containers with BuildKit (cached layers)...'
             # Enable BuildKit for better caching and performance
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
@@ -81,20 +81,45 @@ jobs:
             # Get git info for version tracking
             COMMIT_SHA=$(git rev-parse --short HEAD)
             BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            GIT_COMMIT_MESSAGE=$(git log -1 --pretty=format:"%s" | head -c 100)
+            GIT_COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an <%ae>")
+            GIT_COMMIT_DATE=$(git log -1 --pretty=format:"%ci")
 
+            # Build bot container (zana-staging) with commit info
             docker compose build \
               --build-arg GIT_COMMIT=${COMMIT_SHA} \
               --build-arg BUILD_DATE=${BUILD_DATE} \
+              --build-arg GIT_COMMIT_MESSAGE="${GIT_COMMIT_MESSAGE}" \
+              --build-arg GIT_COMMIT_AUTHOR="${GIT_COMMIT_AUTHOR}" \
+              --build-arg GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
               --progress=plain zana-staging
 
-            docker compose up -d zana-staging
+            # Build webapp container (no commit info needed for webapp)
+            docker compose build --progress=plain zana-webapp
 
-            echo '[STAGING] Verifying webapp is running...'
+            # Start both containers
+            docker compose up -d zana-staging zana-webapp
+
+            echo '[STAGING] Verifying containers are running...'
             sleep 5
-            if curl -f -s http://localhost:8081/api/health > /dev/null; then
-              echo '[STAGING] ✓ Webapp health check passed'
+            
+            # Check if containers are up
+            if docker compose ps zana-staging | grep -q "Up"; then
+              echo '[STAGING] ✓ Bot container (zana-staging) is running'
             else
-              echo '[STAGING] ⚠️  Webapp health check failed - check logs: docker compose logs zana-staging'
+              echo '[STAGING] ⚠️  Bot container (zana-staging) is not running - check logs: docker compose logs zana-staging'
+            fi
+            
+            if docker compose ps zana-webapp | grep -q "Up"; then
+              echo '[STAGING] ✓ Webapp container (zana-webapp) is running'
+              # Try to check webapp health via Docker network
+              if docker compose exec -T zana-webapp python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')" > /dev/null 2>&1; then
+                echo '[STAGING] ✓ Webapp health check passed'
+              else
+                echo '[STAGING] ⚠️  Webapp health endpoint not responding - check logs: docker compose logs zana-webapp'
+              fi
+            else
+              echo '[STAGING] ⚠️  Webapp container (zana-webapp) is not running - check logs: docker compose logs zana-webapp'
             fi
 
             echo '[STAGING] Done.'
