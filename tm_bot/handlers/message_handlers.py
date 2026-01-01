@@ -1031,6 +1031,8 @@ class MessageHandlers:
             
             # Extract and update user info (first_name, username, last_seen)
             self._update_user_info(user_id, update.effective_user)
+            # Fetch avatar in background (non-blocking)
+            await self._update_user_avatar_async(context, user_id)
             
             # Log user message
             self.response_service.log_user_message(

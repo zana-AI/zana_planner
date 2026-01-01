@@ -31,8 +31,12 @@ function getWeekDays(weekStart: string): string[] {
   for (let i = 0; i < 7; i++) {
     const date = new Date(start);
     date.setDate(start.getDate() + i);
-    // Format as YYYY-MM-DD
-    days.push(date.toISOString().split('T')[0]);
+    // Format as YYYY-MM-DD in LOCAL timezone, not UTC
+    // This ensures dates match the backend's date strings
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    days.push(`${year}-${month}-${day}`);
   }
   
   return days;

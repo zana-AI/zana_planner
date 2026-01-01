@@ -4,7 +4,7 @@ Provides API endpoints for the React frontend.
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Query
@@ -359,6 +359,8 @@ def create_webapp_api(
             
             # Calculate week range
             week_start, week_end = get_week_range(reference_time)
+            # For display, week_end should be Sunday (6 days after Monday), not next Monday
+            week_end_display = week_start + timedelta(days=6)  # Sunday
             
             # Calculate totals
             total_promised = 0.0
@@ -383,7 +385,7 @@ def create_webapp_api(
             
             return WeeklyReportResponse(
                 week_start=week_start.isoformat(),
-                week_end=week_end.isoformat(),
+                week_end=week_end_display.isoformat(),
                 total_promised=round(total_promised, 2),
                 total_spent=round(total_spent, 2),
                 promises=formatted_summary
