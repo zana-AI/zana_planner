@@ -3,6 +3,7 @@ import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
 import { apiClient, ApiError } from './api/client';
 import { WeeklyReport } from './components/WeeklyReport';
 import { UsersPage } from './components/UsersPage';
+import { HomePage } from './components/HomePage';
 import type { WeeklyReportData } from './types';
 
 type AppState = 'loading' | 'ready' | 'error';
@@ -82,6 +83,10 @@ function App() {
   const authData = initData || getDevInitData();
   const isAuthenticated = !!authData;
 
+  // Check if user wants to see community page
+  const urlParamsForPage = new URLSearchParams(window.location.search);
+  const showCommunity = urlParamsForPage.get('page') === 'community';
+
   // Loading state (only for authenticated users loading report)
   if ((state === 'loading' || !isReady) && isAuthenticated) {
     return (
@@ -112,11 +117,11 @@ function App() {
     );
   }
 
-  // Not authenticated: show public users page
+  // Not authenticated: show home page or community page
   if (!isAuthenticated) {
     return (
       <div className="app">
-        <UsersPage />
+        {showCommunity ? <UsersPage /> : <HomePage />}
       </div>
     );
   }
