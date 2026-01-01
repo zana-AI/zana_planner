@@ -1,0 +1,81 @@
+# ============================================================================
+# Core Bot Framework
+# ============================================================================
+python-telegram-bot[job-queue]>=22.5
+python-dotenv>=1.2.0
+
+# ============================================================================
+# LLM & AI Services
+# ============================================================================
+openai>=2.14.0
+# Keep LangChain/LangGraph on mutually compatible major versions.
+langchain>=0.3.27,<1.0.0
+langchain-community>=0.3.27,<1.0.0
+langchain-core>=0.3.80,<1.0.0          # Required by langchain
+langchain-openai>=0.3.35,<1.0.0
+langchain-google-vertexai>=2.1.2,<3.0.0
+langchain-text-splitters>=0.3.11,<1.0.0  # Required by langchain
+langgraph>=0.2.38,<1.0.0
+google-cloud-aiplatform>=1.115.0
+google-cloud-speech>=2.0.0     # For speech-to-text (ASR)
+google-cloud-texttospeech>=2.0.0  # For text-to-speech (TTS)
+google-cloud-translate>=3.0.0  # For text translation
+elevenlabs>=1.0.0              # For Eleven Labs TTS (with fallback to Google Cloud)
+pydantic>=2.12.0
+pydantic-settings>=2.12.0       # Required by pydantic
+
+# ============================================================================
+# Data Processing & Storage
+# ============================================================================
+pandas>=2.3.0
+motor>=3.7.0                    # async MongoDB driver
+pymongo>=4.15.0                 # used internally by motor
+
+# ============================================================================
+# Web Framework (for stats service)
+# ============================================================================
+fastapi==0.104.1                # Pinned for stability
+uvicorn[standard]==0.24.0       # Pinned for stability
+
+# ============================================================================
+# Utilities
+# ============================================================================
+PyYAML>=6.0.3
+requests==2.31.0                # Pinned for stability
+watchfiles>=1.1.0               # file watching for development
+yt-dlp>=2024.0.0                # YouTube video processing
+beautifulsoup4>=4.12.0          # HTML parsing
+lxml>=5.0.0                     # HTML parser backend
+trafilatura>=1.6.0              # Advanced article content extraction
+podcastparser>=0.6.11           # Podcast RSS feed parsing
+
+# ============================================================================
+# Visualization
+# ============================================================================
+matplotlib>=3.10.0
+playwright>=1.57.0
+
+# ============================================================================
+# Monitoring & Logging
+# ============================================================================
+sentry-sdk>=2.48.0
+logtail-python>=0.3.4
+
+# ============================================================================
+# Security & Encryption (optional)
+# ============================================================================
+argon2-cffi>=25.1.0             # for Argon2 password hashing
+cryptography>=46.0.0            # for Fernet encryption
+
+# ============================================================================
+# Observability & Debugging
+# ============================================================================
+langsmith>=0.1.0
+#opentelemetry-api>=1.20.0
+#opentelemetry-sdk>=1.20.0
+#opentelemetry-exporter-gcp-trace>=1.0.0
+
+# ============================================================================
+# Development & Testing
+# ============================================================================
+pytest>=9.0.0

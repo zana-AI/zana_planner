@@ -10,7 +10,7 @@ env.*
 *.txt
 *.md
 *.jar
-!requirements.txt
+!requirements*
 *.log
 *.pyc
 /TEMP_*
