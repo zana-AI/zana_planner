@@ -97,35 +97,26 @@ services:
       - web
 
   # =========================
-  # DATABASE MONITORING (STAGING)
+  # DATABASE MONITORING (BOTH STAGING & PRODUCTION)
   # Access via SSH port forwarding: gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081
   # Then open: http://localhost:8081
+  # The interface will show both databases for selection
   # =========================
-  zana-db-monitor-staging:
+  zana-db-monitor:
     image: coleifer/sqlite-web:latest
-    container_name: zana-db-monitor-staging
-    command: ["-H", "127.0.0.1", "-p", "8081", "-x", "/srv/zana-users-staging/zana.db"]
+    container_name: zana-db-monitor
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /dbs && \
+        ln -sf /srv/zana-users/zana.db /dbs/production.db && \
+        ln -sf /srv/zana-users-staging/zana.db /dbs/staging.db && \
+        exec sqlite_web -H 127.0.0.1 -p 8081 -x /dbs
     volumes:
+      - /srv/zana-users:/srv/zana-users:ro
       - /srv/zana-users-staging:/srv/zana-users-staging:ro
     ports:
       - "127.0.0.1:8081:8081"
-    restart: unless-stopped
-    networks:
-      - web
-
-  # =========================
-  # DATABASE MONITORING (PRODUCTION)
-  # Access via SSH port forwarding: gcloud compute ssh vm-telegram-bot -- -L 8082:127.0.0.1:8082
-  # Then open: http://localhost:8082
-  # =========================
-  zana-db-monitor-prod:
-    image: coleifer/sqlite-web:latest
-    container_name: zana-db-monitor-prod
-    command: ["-H", "127.0.0.1", "-p", "8082", "-x", "/srv/zana-users/zana.db"]
-    volumes:
-      - /srv/zana-users:/srv/zana-users:ro
-    ports:
-      - "127.0.0.1:8082:8082"
     restart: unless-stopped
     networks:
       - web
