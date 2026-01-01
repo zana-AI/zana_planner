@@ -1,0 +1,6 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-dotenv==1.2.1
+pydantic==2.x        # whatever you use in webapp
+PyYAML==6.0.3
+sentry-sdk==2.48.0   # if you want tracing in webapp
