@@ -112,8 +112,9 @@ jobs:
             
             if docker compose ps zana-webapp | grep -q "Up"; then
               echo '[STAGING] ✓ Webapp container (zana-webapp) is running'
-              # Try to check webapp health via Docker network
-              if docker compose exec -T zana-webapp python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')" > /dev/null 2>&1; then
+              # Check webapp health using a temporary Python script to avoid quote escaping issues
+              echo 'import urllib.request; urllib.request.urlopen("http://localhost:8080/api/health")' | docker compose exec -T zana-webapp python > /dev/null 2>&1
+              if [ $? -eq 0 ]; then
                 echo '[STAGING] ✓ Webapp health check passed'
               else
                 echo '[STAGING] ⚠️  Webapp health endpoint not responding - check logs: docker compose logs zana-webapp'
