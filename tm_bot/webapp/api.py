@@ -353,8 +353,8 @@ def create_webapp_api(
             
             # Get weekly summary
             reports_service = get_reports_service(user_id)
-            logger.debug(f"[DEBUG] Getting weekly summary for user {user_id}, ref_time: {reference_time}, timezone: {user_tz}")
-            summary = reports_service.get_weekly_summary_with_sessions(user_id, reference_time, user_timezone=user_tz)
+            logger.debug(f"[DEBUG] Getting weekly summary for user {user_id}, ref_time: {reference_time}")
+            summary = reports_service.get_weekly_summary_with_sessions(user_id, reference_time)
             logger.debug(f"[DEBUG] Weekly summary result: {len(summary)} promises, keys: {list(summary.keys())}")
             
             # Calculate week range
@@ -384,8 +384,8 @@ def create_webapp_api(
                 formatted_summary[pid] = formatted_data
             
             return WeeklyReportResponse(
-                week_start=week_start.isoformat(),
-                week_end=week_end_display.isoformat(),
+                week_start=week_start.date().isoformat(),  # Send as date-only string (YYYY-MM-DD)
+                week_end=week_end_display.date().isoformat(),  # Send as date-only string (YYYY-MM-DD)
                 total_promised=round(total_promised, 2),
                 total_spent=round(total_spent, 2),
                 promises=formatted_summary

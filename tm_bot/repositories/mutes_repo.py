@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
+import json
 
 from db.sqlite_db import connection_for_root, utc_now_iso
 
@@ -27,12 +28,15 @@ class MutesRepository:
             # Check if already muted
             existing = conn.execute(
                 """
-                SELECT is_active FROM user_mutes
-                WHERE muter_user_id = ? AND muted_user_id = ?
+                SELECT is_active FROM user_relationships
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'mute'
                 LIMIT 1;
                 """,
                 (muter, muted),
             ).fetchone()
+            
+            metadata = {"scope": scope}
+            metadata_json = json.dumps(metadata)
             
             if existing:
                 if int(existing["is_active"]) == 1:
@@ -40,23 +44,23 @@ class MutesRepository:
                 # Reactivate if previously unmuted
                 conn.execute(
                     """
-                    UPDATE user_mutes
-                    SET is_active = 1, lifted_at_utc = NULL, scope = ?, created_at_utc = ?
-                    WHERE muter_user_id = ? AND muted_user_id = ?;
+                    UPDATE user_relationships
+                    SET is_active = 1, ended_at_utc = NULL, metadata = ?, created_at_utc = ?, updated_at_utc = ?
+                    WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'mute';
                     """,
-                    (scope, now, muter, muted),
+                    (metadata_json, now, now, muter, muted),
                 )
                 return True
             
             # Create new mute
             conn.execute(
                 """
-                INSERT INTO user_mutes(
-                    muter_user_id, muted_user_id, is_active,
-                    created_at_utc, scope
-                ) VALUES (?, ?, 1, ?, ?);
+                INSERT INTO user_relationships(
+                    source_user_id, target_user_id, relationship_type, is_active,
+                    created_at_utc, updated_at_utc, metadata
+                ) VALUES (?, ?, 'mute', 1, ?, ?, ?);
                 """,
-                (muter, muted, now, scope),
+                (muter, muted, now, now, metadata_json),
             )
             return True
 
@@ -69,11 +73,11 @@ class MutesRepository:
         with connection_for_root(self.root_dir) as conn:
             result = conn.execute(
                 """
-                UPDATE user_mutes
-                SET is_active = 0, lifted_at_utc = ?
-                WHERE muter_user_id = ? AND muted_user_id = ? AND is_active = 1;
+                UPDATE user_relationships
+                SET is_active = 0, ended_at_utc = ?, updated_at_utc = ?
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'mute' AND is_active = 1;
                 """,
-                (now, muter, muted),
+                (now, now, muter, muted),
             )
             return result.rowcount > 0
 
@@ -85,8 +89,8 @@ class MutesRepository:
         with connection_for_root(self.root_dir) as conn:
             row = conn.execute(
                 """
-                SELECT 1 FROM user_mutes
-                WHERE muter_user_id = ? AND muted_user_id = ? AND is_active = 1
+                SELECT 1 FROM user_relationships
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'mute' AND is_active = 1
                 LIMIT 1;
                 """,
                 (muter, muted),
@@ -99,11 +103,11 @@ class MutesRepository:
         with connection_for_root(self.root_dir) as conn:
             rows = conn.execute(
                 """
-                SELECT muted_user_id FROM user_mutes
-                WHERE muter_user_id = ? AND is_active = 1
+                SELECT target_user_id FROM user_relationships
+                WHERE source_user_id = ? AND relationship_type = 'mute' AND is_active = 1
                 ORDER BY created_at_utc DESC;
                 """,
                 (user,),
             ).fetchall()
-            return [str(row["muted_user_id"]) for row in rows]
+            return [str(row["target_user_id"]) for row in rows]
 

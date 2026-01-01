@@ -25,18 +25,20 @@ function formatDateRange(startDate: string, endDate: string): string {
  * Get all dates for the week (Monday to Sunday)
  */
 function getWeekDays(weekStart: string): string[] {
-  const start = new Date(weekStart);
+  // weekStart is now a date-only string (YYYY-MM-DD) from backend
+  // Parse it as a date at midnight local time to avoid timezone issues
+  const [year, month, day] = weekStart.split('-').map(Number);
+  const start = new Date(year, month - 1, day); // month is 0-indexed in JS
   const days: string[] = [];
   
   for (let i = 0; i < 7; i++) {
     const date = new Date(start);
     date.setDate(start.getDate() + i);
-    // Format as YYYY-MM-DD in LOCAL timezone, not UTC
-    // This ensures dates match the backend's date strings
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    days.push(`${year}-${month}-${day}`);
+    // Format as YYYY-MM-DD in LOCAL timezone
+    const dateYear = date.getFullYear();
+    const dateMonth = String(date.getMonth() + 1).padStart(2, '0');
+    const dateDay = String(date.getDate()).padStart(2, '0');
+    days.push(`${dateYear}-${dateMonth}-${dateDay}`);
   }
   
   return days;

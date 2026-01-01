@@ -199,7 +199,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -234,6 +234,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
                 (3, utc_now_iso()),
+            )
+        if current < 4:
+            _apply_v4(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (4, utc_now_iso()),
             )
 
 
@@ -710,4 +716,138 @@ def _apply_v3(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_social_events_time ON social_events(created_at_utc DESC);"
     )
+
+
+def _apply_v4(conn: sqlite3.Connection) -> None:
+    """Apply schema version 4 migrations: consolidate relationship tables into user_relationships."""
+    import json
+    
+    # Step 1: Create new unified user_relationships table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_relationships (
+            source_user_id TEXT NOT NULL,
+            target_user_id TEXT NOT NULL,
+            relationship_type TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            ended_at_utc TEXT NULL,
+            metadata TEXT NULL,
+            PRIMARY KEY (source_user_id, target_user_id, relationship_type),
+            CHECK (source_user_id <> target_user_id),
+            CHECK (relationship_type IN ('follow', 'block', 'mute')),
+            FOREIGN KEY (source_user_id) REFERENCES users(user_id),
+            FOREIGN KEY (target_user_id) REFERENCES users(user_id)
+        );
+        """
+    )
+    
+    # Create indexes for common queries
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_relationships_target_type ON user_relationships(target_user_id, relationship_type, is_active, created_at_utc DESC);"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_relationships_source_type ON user_relationships(source_user_id, relationship_type, is_active, created_at_utc DESC);"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_relationships_bidirectional ON user_relationships(source_user_id, target_user_id, relationship_type, is_active);"
+    )
+    
+    # Step 2: Migrate data from user_follows
+    # Check if user_follows table exists and has data
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
+    if "user_follows" in tables:
+        follows_rows = conn.execute("SELECT * FROM user_follows;").fetchall()
+        for row in follows_rows:
+            metadata = {}
+            if row.get("notifications_enabled") is not None:
+                metadata["notifications_enabled"] = bool(row["notifications_enabled"])
+            
+            metadata_json = json.dumps(metadata) if metadata else None
+            ended_at = row.get("unfollowed_at_utc")
+            
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO user_relationships(
+                    source_user_id, target_user_id, relationship_type,
+                    is_active, created_at_utc, updated_at_utc, ended_at_utc, metadata
+                ) VALUES (?, ?, 'follow', ?, ?, ?, ?, ?);
+                """,
+                (
+                    row["follower_user_id"],
+                    row["followee_user_id"],
+                    row["is_active"],
+                    row["created_at_utc"],
+                    row.get("updated_at_utc", row["created_at_utc"]),
+                    ended_at,
+                    metadata_json,
+                ),
+            )
+    
+    # Step 3: Migrate data from user_blocks
+    if "user_blocks" in tables:
+        blocks_rows = conn.execute("SELECT * FROM user_blocks;").fetchall()
+        for row in blocks_rows:
+            metadata = {}
+            if row.get("reason"):
+                metadata["reason"] = row["reason"]
+            
+            metadata_json = json.dumps(metadata) if metadata else None
+            ended_at = row.get("lifted_at_utc")
+            
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO user_relationships(
+                    source_user_id, target_user_id, relationship_type,
+                    is_active, created_at_utc, updated_at_utc, ended_at_utc, metadata
+                ) VALUES (?, ?, 'block', ?, ?, ?, ?, ?);
+                """,
+                (
+                    row["blocker_user_id"],
+                    row["blocked_user_id"],
+                    row["is_active"],
+                    row["created_at_utc"],
+                    row["created_at_utc"],  # user_blocks doesn't have updated_at_utc
+                    ended_at,
+                    metadata_json,
+                ),
+            )
+    
+    # Step 4: Migrate data from user_mutes
+    if "user_mutes" in tables:
+        mutes_rows = conn.execute("SELECT * FROM user_mutes;").fetchall()
+        for row in mutes_rows:
+            metadata = {}
+            if row.get("scope"):
+                metadata["scope"] = row["scope"]
+            
+            metadata_json = json.dumps(metadata) if metadata else None
+            ended_at = row.get("lifted_at_utc")
+            
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO user_relationships(
+                    source_user_id, target_user_id, relationship_type,
+                    is_active, created_at_utc, updated_at_utc, ended_at_utc, metadata
+                ) VALUES (?, ?, 'mute', ?, ?, ?, ?, ?);
+                """,
+                (
+                    row["muter_user_id"],
+                    row["muted_user_id"],
+                    row["is_active"],
+                    row["created_at_utc"],
+                    row["created_at_utc"],  # user_mutes doesn't have updated_at_utc
+                    ended_at,
+                    metadata_json,
+                ),
+            )
+    
+    # Step 5: Drop old tables and their indexes
+    if "user_follows" in tables:
+        conn.execute("DROP TABLE IF EXISTS user_follows;")
+    if "user_blocks" in tables:
+        conn.execute("DROP TABLE IF EXISTS user_blocks;")
+    if "user_mutes" in tables:
+        conn.execute("DROP TABLE IF EXISTS user_mutes;")
 

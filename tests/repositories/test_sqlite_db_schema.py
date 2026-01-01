@@ -26,10 +26,8 @@ def test_sqlite_db_creates_schema_and_tables(tmp_path):
             "actions",
             "sessions",
             "legacy_imports",
-            # Social tables (v3)
-            "user_follows",
-            "user_blocks",
-            "user_mutes",
+            # Social tables (v3, v4)
+            "user_relationships",
             "clubs",
             "club_members",
             "promise_club_shares",

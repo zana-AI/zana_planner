@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
+import json
 
 from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
 
@@ -26,12 +27,14 @@ class FollowsRepository:
             # Check if already following
             existing = conn.execute(
                 """
-                SELECT is_active FROM user_follows
-                WHERE follower_user_id = ? AND followee_user_id = ?
+                SELECT is_active FROM user_relationships
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'follow'
                 LIMIT 1;
                 """,
                 (follower, followee),
             ).fetchone()
+            
+            metadata = json.dumps({"notifications_enabled": True})
             
             if existing:
                 if int(existing["is_active"]) == 1:
@@ -39,23 +42,23 @@ class FollowsRepository:
                 # Reactivate if previously unfollowed
                 conn.execute(
                     """
-                    UPDATE user_follows
-                    SET is_active = 1, updated_at_utc = ?, unfollowed_at_utc = NULL
-                    WHERE follower_user_id = ? AND followee_user_id = ?;
+                    UPDATE user_relationships
+                    SET is_active = 1, updated_at_utc = ?, ended_at_utc = NULL, metadata = ?
+                    WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'follow';
                     """,
-                    (now, follower, followee),
+                    (now, metadata, follower, followee),
                 )
                 return True
             
             # Create new follow
             conn.execute(
                 """
-                INSERT INTO user_follows(
-                    follower_user_id, followee_user_id, is_active,
-                    created_at_utc, updated_at_utc, notifications_enabled
-                ) VALUES (?, ?, 1, ?, ?, 1);
+                INSERT INTO user_relationships(
+                    source_user_id, target_user_id, relationship_type, is_active,
+                    created_at_utc, updated_at_utc, metadata
+                ) VALUES (?, ?, 'follow', 1, ?, ?, ?);
                 """,
-                (follower, followee, now, now),
+                (follower, followee, now, now, metadata),
             )
             return True
 
@@ -68,9 +71,9 @@ class FollowsRepository:
         with connection_for_root(self.root_dir) as conn:
             result = conn.execute(
                 """
-                UPDATE user_follows
-                SET is_active = 0, updated_at_utc = ?, unfollowed_at_utc = ?
-                WHERE follower_user_id = ? AND followee_user_id = ? AND is_active = 1;
+                UPDATE user_relationships
+                SET is_active = 0, updated_at_utc = ?, ended_at_utc = ?
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'follow' AND is_active = 1;
                 """,
                 (now, now, follower, followee),
             )
@@ -84,8 +87,8 @@ class FollowsRepository:
         with connection_for_root(self.root_dir) as conn:
             row = conn.execute(
                 """
-                SELECT 1 FROM user_follows
-                WHERE follower_user_id = ? AND followee_user_id = ? AND is_active = 1
+                SELECT 1 FROM user_relationships
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'follow' AND is_active = 1
                 LIMIT 1;
                 """,
                 (follower, followee),
@@ -98,13 +101,13 @@ class FollowsRepository:
         with connection_for_root(self.root_dir) as conn:
             rows = conn.execute(
                 """
-                SELECT follower_user_id FROM user_follows
-                WHERE followee_user_id = ? AND is_active = 1
+                SELECT source_user_id FROM user_relationships
+                WHERE target_user_id = ? AND relationship_type = 'follow' AND is_active = 1
                 ORDER BY created_at_utc DESC;
                 """,
                 (user,),
             ).fetchall()
-            return [str(row["follower_user_id"]) for row in rows]
+            return [str(row["source_user_id"]) for row in rows]
 
     def get_following(self, user_id: int) -> List[str]:
         """Get list of user IDs that this user follows."""
@@ -112,13 +115,13 @@ class FollowsRepository:
         with connection_for_root(self.root_dir) as conn:
             rows = conn.execute(
                 """
-                SELECT followee_user_id FROM user_follows
-                WHERE follower_user_id = ? AND is_active = 1
+                SELECT target_user_id FROM user_relationships
+                WHERE source_user_id = ? AND relationship_type = 'follow' AND is_active = 1
                 ORDER BY created_at_utc DESC;
                 """,
                 (user,),
             ).fetchall()
-            return [str(row["followee_user_id"]) for row in rows]
+            return [str(row["target_user_id"]) for row in rows]
 
     def get_follower_count(self, user_id: int) -> int:
         """Get count of followers for a user."""
@@ -126,8 +129,8 @@ class FollowsRepository:
         with connection_for_root(self.root_dir) as conn:
             row = conn.execute(
                 """
-                SELECT COUNT(*) as cnt FROM user_follows
-                WHERE followee_user_id = ? AND is_active = 1;
+                SELECT COUNT(*) as cnt FROM user_relationships
+                WHERE target_user_id = ? AND relationship_type = 'follow' AND is_active = 1;
                 """,
                 (user,),
             ).fetchone()
@@ -139,8 +142,8 @@ class FollowsRepository:
         with connection_for_root(self.root_dir) as conn:
             row = conn.execute(
                 """
-                SELECT COUNT(*) as cnt FROM user_follows
-                WHERE follower_user_id = ? AND is_active = 1;
+                SELECT COUNT(*) as cnt FROM user_relationships
+                WHERE source_user_id = ? AND relationship_type = 'follow' AND is_active = 1;
                 """,
                 (user,),
             ).fetchone()

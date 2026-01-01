@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
+import json
 
 from db.sqlite_db import connection_for_root, utc_now_iso
 
@@ -26,12 +27,17 @@ class BlocksRepository:
             # Check if already blocked
             existing = conn.execute(
                 """
-                SELECT is_active FROM user_blocks
-                WHERE blocker_user_id = ? AND blocked_user_id = ?
+                SELECT is_active FROM user_relationships
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'block'
                 LIMIT 1;
                 """,
                 (blocker, blocked),
             ).fetchone()
+            
+            metadata = {}
+            if reason:
+                metadata["reason"] = reason
+            metadata_json = json.dumps(metadata) if metadata else None
             
             if existing:
                 if int(existing["is_active"]) == 1:
@@ -39,23 +45,23 @@ class BlocksRepository:
                 # Reactivate if previously unblocked
                 conn.execute(
                     """
-                    UPDATE user_blocks
-                    SET is_active = 1, lifted_at_utc = NULL, reason = ?, created_at_utc = ?
-                    WHERE blocker_user_id = ? AND blocked_user_id = ?;
+                    UPDATE user_relationships
+                    SET is_active = 1, ended_at_utc = NULL, metadata = ?, created_at_utc = ?, updated_at_utc = ?
+                    WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'block';
                     """,
-                    (reason, now, blocker, blocked),
+                    (metadata_json, now, now, blocker, blocked),
                 )
                 return True
             
             # Create new block
             conn.execute(
                 """
-                INSERT INTO user_blocks(
-                    blocker_user_id, blocked_user_id, is_active,
-                    created_at_utc, reason
-                ) VALUES (?, ?, 1, ?, ?);
+                INSERT INTO user_relationships(
+                    source_user_id, target_user_id, relationship_type, is_active,
+                    created_at_utc, updated_at_utc, metadata
+                ) VALUES (?, ?, 'block', 1, ?, ?, ?);
                 """,
-                (blocker, blocked, now, reason),
+                (blocker, blocked, now, now, metadata_json),
             )
             return True
 
@@ -68,11 +74,11 @@ class BlocksRepository:
         with connection_for_root(self.root_dir) as conn:
             result = conn.execute(
                 """
-                UPDATE user_blocks
-                SET is_active = 0, lifted_at_utc = ?
-                WHERE blocker_user_id = ? AND blocked_user_id = ? AND is_active = 1;
+                UPDATE user_relationships
+                SET is_active = 0, ended_at_utc = ?, updated_at_utc = ?
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'block' AND is_active = 1;
                 """,
-                (now, blocker, blocked),
+                (now, now, blocker, blocked),
             )
             return result.rowcount > 0
 
@@ -84,8 +90,8 @@ class BlocksRepository:
         with connection_for_root(self.root_dir) as conn:
             row = conn.execute(
                 """
-                SELECT 1 FROM user_blocks
-                WHERE blocker_user_id = ? AND blocked_user_id = ? AND is_active = 1
+                SELECT 1 FROM user_relationships
+                WHERE source_user_id = ? AND target_user_id = ? AND relationship_type = 'block' AND is_active = 1
                 LIMIT 1;
                 """,
                 (blocker, blocked),
@@ -100,10 +106,10 @@ class BlocksRepository:
         with connection_for_root(self.root_dir) as conn:
             row = conn.execute(
                 """
-                SELECT 1 FROM user_blocks
-                WHERE ((blocker_user_id = ? AND blocked_user_id = ?) OR
-                       (blocker_user_id = ? AND blocked_user_id = ?))
-                AND is_active = 1
+                SELECT 1 FROM user_relationships
+                WHERE ((source_user_id = ? AND target_user_id = ?) OR
+                       (source_user_id = ? AND target_user_id = ?))
+                AND relationship_type = 'block' AND is_active = 1
                 LIMIT 1;
                 """,
                 (user1, user2, user2, user1),
@@ -116,11 +122,11 @@ class BlocksRepository:
         with connection_for_root(self.root_dir) as conn:
             rows = conn.execute(
                 """
-                SELECT blocked_user_id FROM user_blocks
-                WHERE blocker_user_id = ? AND is_active = 1
+                SELECT target_user_id FROM user_relationships
+                WHERE source_user_id = ? AND relationship_type = 'block' AND is_active = 1
                 ORDER BY created_at_utc DESC;
                 """,
                 (user,),
             ).fetchall()
-            return [str(row["blocked_user_id"]) for row in rows]
+            return [str(row["target_user_id"]) for row in rows]
 
