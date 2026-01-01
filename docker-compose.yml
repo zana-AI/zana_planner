@@ -106,29 +106,36 @@ services:
     image: coleifer/sqlite-web:latest
     container_name: zana-db-monitor
     user: "0:0"
+    # DEBUG MODE: Keep container running with shell for debugging
+    # To debug: sudo docker exec -it zana-db-monitor /bin/sh
+    # Then run: sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db /srv/zana-users-staging/zana.db
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        echo "Setting up database monitoring..." && \
-        if [ -f /srv/zana-users/zana.db ] && [ -f /srv/zana-users-staging/zana.db ]; then \
-          echo "Both databases found, starting sqlite-web with both..." && \
-          exec sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db /srv/zana-users-staging/zana.db; \
-        elif [ -f /srv/zana-users/zana.db ]; then \
-          echo "Only production DB found, starting sqlite-web..." && \
-          exec sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db; \
-        elif [ -f /srv/zana-users-staging/zana.db ]; then \
-          echo "Only staging DB found, starting sqlite-web..." && \
-          exec sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users-staging/zana.db; \
-        else \
-          echo "ERROR: No database files found!"; \
-          exit 1; \
-        fi
+        echo "=== DEBUG MODE: Container will keep running ===" && \
+        echo "To debug, run: sudo docker exec -it zana-db-monitor /bin/sh" && \
+        echo "" && \
+        echo "Checking databases..." && \
+        ls -lh /srv/zana-users/zana.db 2>&1 && \
+        ls -lh /srv/zana-users-staging/zana.db 2>&1 && \
+        echo "" && \
+        echo "Testing database access..." && \
+        sqlite3 /srv/zana-users/zana.db "SELECT 1;" 2>&1 && echo "Production DB: OK" || echo "Production DB: FAILED" && \
+        sqlite3 /srv/zana-users-staging/zana.db "SELECT 1;" 2>&1 && echo "Staging DB: OK" || echo "Staging DB: FAILED" && \
+        echo "" && \
+        echo "Testing sqlite-web command..." && \
+        which sqlite_web && \
+        sqlite_web --help 2>&1 | head -5 && \
+        echo "" && \
+        echo "Attempting to start sqlite-web..." && \
+        sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db /srv/zana-users-staging/zana.db 2>&1 || \
+        (echo "" && echo "=== sqlite-web failed ===" && echo "Container will stay alive for debugging. Run: sudo docker exec -it zana-db-monitor /bin/sh" && sleep infinity)
     volumes:
       - /srv/zana-users:/srv/zana-users:ro
       - /srv/zana-users-staging:/srv/zana-users-staging:ro
     ports:
       - "127.0.0.1:8081:8081"
-    restart: unless-stopped
+    restart: "no"
     networks:
       - web
 
