@@ -42,7 +42,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   // Swipe gesture state
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
-  const [isSnoozing, setIsSnoozing] = useState(false);
   
   const SWIPE_THRESHOLD = 100; // pixels
   
@@ -94,7 +93,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     
     if (swipeOffset <= -SWIPE_THRESHOLD) {
       // Trigger snooze
-      setIsSnoozing(true);
       try {
         await apiClient.snoozePromise(id);
         if (onRefresh) {
@@ -102,8 +100,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         }
       } catch (err) {
         console.error('Failed to snooze promise:', err);
-      } finally {
-        setIsSnoozing(false);
       }
     }
     
