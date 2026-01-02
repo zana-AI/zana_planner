@@ -36,7 +36,9 @@ function calculateProgress(spent: number, promised: number): number {
  */
 export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps) {
   const { text, hours_promised, hours_spent, sessions, visibility = 'private' } = data;
-  const [currentVisibility, setCurrentVisibility] = useState(visibility);
+  const [currentVisibility, setCurrentVisibility] = useState<'private' | 'public'>(
+    (visibility === 'public' ? 'public' : 'private') as 'private' | 'public'
+  );
   const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [showVisibilityConfirm, setShowVisibilityConfirm] = useState(false);
