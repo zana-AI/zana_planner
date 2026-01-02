@@ -4,6 +4,7 @@ import { PromiseCard } from './PromiseCard';
 
 interface WeeklyReportProps {
   data: WeeklyReportData;
+  onRefresh?: () => void; // Callback to refresh data
 }
 
 /**
@@ -47,7 +48,7 @@ function getWeekDays(weekStart: string): string[] {
 /**
  * WeeklyReport component - displays the full weekly report with header and promise cards
  */
-export function WeeklyReport({ data }: WeeklyReportProps) {
+export function WeeklyReport({ data, onRefresh }: WeeklyReportProps) {
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
   const dateRange = useMemo(
@@ -94,6 +95,7 @@ export function WeeklyReport({ data }: WeeklyReportProps) {
               id={id}
               data={promiseData}
               weekDays={weekDays}
+              onRefresh={onRefresh}
             />
           ))}
         </main>

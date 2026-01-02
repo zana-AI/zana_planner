@@ -2,11 +2,23 @@ import { useState, useEffect } from 'react';
 import { apiClient, ApiError } from '../api/client';
 import { UserCard } from './UserCard';
 import type { PublicUser } from '../types';
+import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 export function UsersPage() {
+  const { user, initData } = useTelegramWebApp();
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  
+  // Get current user ID if authenticated
+  const currentUserId = user?.id?.toString();
+  
+  // Set initData for API client if available
+  useEffect(() => {
+    if (initData) {
+      apiClient.setInitData(initData);
+    }
+  }, [initData]);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -92,7 +104,12 @@ export function UsersPage() {
       </div>
       <div className="users-page-grid">
         {users.map((user) => (
-          <UserCard key={user.user_id} user={user} />
+          <UserCard 
+            key={user.user_id} 
+            user={user} 
+            currentUserId={currentUserId}
+            showFollowButton={!!currentUserId}
+          />
         ))}
       </div>
     </div>

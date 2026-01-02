@@ -166,7 +166,16 @@ function App() {
       )}
 
       {/* Weekly Report */}
-      {reportData && <WeeklyReport data={reportData} />}
+      {reportData && (
+        <WeeklyReport 
+          data={reportData} 
+          onRefresh={() => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const refTime = urlParams.get('ref_time') || undefined;
+            fetchReport(initData || getDevInitData(), refTime);
+          }}
+        />
+      )}
     </div>
   );
 }

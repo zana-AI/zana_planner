@@ -82,7 +82,8 @@ class ReportsService:
                     'text': promise.text.replace('_', ' '),
                     'hours_promised': promise.hours_per_week,
                     'hours_spent': 0.0,
-                    'sessions': []  # List of {'date': date, 'hours': float}
+                    'sessions': [],  # List of {'date': date, 'hours': float}
+                    'visibility': getattr(promise, 'visibility', 'private')  # Include visibility
                 }
                 norm = normalize_promise_id(promise.id)
                 canonical_by_norm.setdefault(norm, promise.id)

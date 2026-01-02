@@ -87,6 +87,7 @@ export interface PromiseData {
   hours_promised: number;
   hours_spent: number;
   sessions: SessionData[];
+  visibility?: string; // "private" | "public"
 }
 
 export interface WeeklyReportData {

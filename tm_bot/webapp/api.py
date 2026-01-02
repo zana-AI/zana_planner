@@ -18,6 +18,7 @@ from services.reports import ReportsService
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
+from repositories.follows_repo import FollowsRepository
 from db.sqlite_db import connection_for_root
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
@@ -575,6 +576,186 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error serving avatar for user {user_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to serve avatar: {str(e)}")
+    
+    # Follow endpoints
+    @app.post("/api/users/{target_user_id}/follow")
+    async def follow_user(
+        target_user_id: int,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Follow a user."""
+        try:
+            if user_id == target_user_id:
+                raise HTTPException(status_code=400, detail="Cannot follow yourself")
+            
+            follows_repo = FollowsRepository(app.state.root_dir)
+            success = follows_repo.follow(user_id, target_user_id)
+            
+            if success:
+                return {"status": "success", "message": "User followed successfully"}
+            else:
+                return {"status": "success", "message": "Already following this user"}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.exception(f"Error following user {target_user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to follow user: {str(e)}")
+    
+    @app.delete("/api/users/{target_user_id}/follow")
+    async def unfollow_user(
+        target_user_id: int,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Unfollow a user."""
+        try:
+            follows_repo = FollowsRepository(app.state.root_dir)
+            success = follows_repo.unfollow(user_id, target_user_id)
+            
+            if success:
+                return {"status": "success", "message": "User unfollowed successfully"}
+            else:
+                return {"status": "success", "message": "Not following this user"}
+        except Exception as e:
+            logger.exception(f"Error unfollowing user {target_user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to unfollow user: {str(e)}")
+    
+    @app.get("/api/users/{target_user_id}/follow-status")
+    async def get_follow_status(
+        target_user_id: int,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Check if current user is following target user."""
+        try:
+            follows_repo = FollowsRepository(app.state.root_dir)
+            is_following = follows_repo.is_following(user_id, target_user_id)
+            
+            return {"is_following": is_following}
+        except Exception as e:
+            logger.exception(f"Error getting follow status for user {target_user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get follow status: {str(e)}")
+    
+    # Promise visibility endpoint
+    class UpdateVisibilityRequest(BaseModel):
+        visibility: str  # "private" or "public"
+    
+    @app.patch("/api/promises/{promise_id}/visibility")
+    async def update_promise_visibility(
+        promise_id: str,
+        request: UpdateVisibilityRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Update promise visibility."""
+        try:
+            if request.visibility not in ["private", "public"]:
+                raise HTTPException(status_code=400, detail="Visibility must be 'private' or 'public'")
+            
+            promises_repo = PromisesRepository(app.state.root_dir)
+            promise = promises_repo.get_promise(user_id, promise_id)
+            
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            promise.visibility = request.visibility
+            promises_repo.upsert_promise(user_id, promise)
+            
+            return {"status": "success", "visibility": promise.visibility}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating promise visibility: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update visibility: {str(e)}")
+    
+    # Action logging endpoint
+    class LogActionRequest(BaseModel):
+        promise_id: str
+        time_spent: float
+        action_datetime: Optional[str] = None  # ISO format datetime string
+    
+    @app.post("/api/actions")
+    async def log_action(
+        request: LogActionRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Log an action (time spent) for a promise."""
+        try:
+            if request.time_spent <= 0:
+                raise HTTPException(status_code=400, detail="Time spent must be positive")
+            
+            # Parse datetime if provided, otherwise use current time
+            if request.action_datetime:
+                try:
+                    action_datetime = datetime.fromisoformat(request.action_datetime)
+                    # If timezone-aware, convert to naive datetime
+                    if action_datetime.tzinfo is not None:
+                        import pytz
+                        settings_repo = get_settings_repo()
+                        settings = settings_repo.get_settings(user_id)
+                        user_tz = settings.timezone if settings else "UTC"
+                        tz = pytz.timezone(user_tz)
+                        action_datetime = action_datetime.astimezone(tz).replace(tzinfo=None)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid action_datetime format")
+            else:
+                action_datetime = datetime.now()
+            
+            # Verify promise exists
+            promises_repo = PromisesRepository(app.state.root_dir)
+            promise = promises_repo.get_promise(user_id, request.promise_id)
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Create and save action
+            from models.models import Action
+            action = Action(
+                user_id=str(user_id),
+                promise_id=request.promise_id,
+                action="log_time",
+                time_spent=request.time_spent,
+                at=action_datetime
+            )
+            
+            actions_repo = ActionsRepository(app.state.root_dir)
+            actions_repo.append_action(action)
+            
+            return {"status": "success", "message": "Action logged successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error logging action: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to log action: {str(e)}")
+    
+    # Snooze promise endpoint
+    @app.post("/api/promises/{promise_id}/snooze")
+    async def snooze_promise(
+        promise_id: str,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Snooze a promise until next week (hide from current week)."""
+        try:
+            promises_repo = PromisesRepository(app.state.root_dir)
+            promise = promises_repo.get_promise(user_id, promise_id)
+            
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Calculate next week's start date (Monday)
+            from datetime import timedelta
+            today = datetime.now().date()
+            days_until_monday = (7 - today.weekday()) % 7
+            if days_until_monday == 0:
+                days_until_monday = 7  # If today is Monday, go to next Monday
+            next_monday = today + timedelta(days=days_until_monday)
+            
+            # Update promise start_date to next week
+            promise.start_date = next_monday
+            promises_repo.upsert_promise(user_id, promise)
+            
+            return {"status": "success", "message": f"Promise snoozed until {next_monday.isoformat()}"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error snoozing promise: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to snooze promise: {str(e)}")
     
     # Add route for /weekly to serve React app (works with or without static_dir)
     @app.get("/weekly")

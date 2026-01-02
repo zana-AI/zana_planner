@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { PublicUser } from '../types';
+import { generateUsername, getInitialsFromUsername } from '../utils/usernameGenerator';
+import { apiClient } from '../api/client';
 
 interface UserCardProps {
   user: PublicUser;
+  currentUserId?: string; // Current authenticated user ID (if available)
+  showFollowButton?: boolean; // Whether to show follow button
 }
 
 /**
@@ -24,7 +28,9 @@ function getInitials(user: PublicUser): string {
     return user.first_name[0]?.toUpperCase() || '?';
   }
   
-  return '?';
+  // If no name available, generate username and extract initials
+  const generatedUsername = generateUsername(user.user_id);
+  return getInitialsFromUsername(generatedUsername);
 }
 
 /**
@@ -58,14 +64,59 @@ function getDisplayName(user: PublicUser): string {
   if (user.username) {
     return `@${user.username}`;
   }
-  return 'User';
+  // Generate deterministic username when no name is available
+  return generateUsername(user.user_id);
 }
 
-export function UserCard({ user }: UserCardProps) {
+export function UserCard({ user, currentUserId, showFollowButton = false }: UserCardProps) {
   const [imageError, setImageError] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [isLoadingFollow, setIsLoadingFollow] = useState(false);
+  const [followStatusChecked, setFollowStatusChecked] = useState(false);
+  
   const initials = getInitials(user);
   const displayName = getDisplayName(user);
   const avatarColor = getAvatarColor(user.user_id);
+  
+  // Check if this is the current user's own card
+  const isOwnCard = currentUserId && currentUserId === user.user_id;
+  
+  // Check follow status on mount if authenticated and not own card
+  useEffect(() => {
+    if (showFollowButton && currentUserId && !isOwnCard && !followStatusChecked) {
+      const checkFollowStatus = async () => {
+        try {
+          const status = await apiClient.getFollowStatus(user.user_id);
+          setIsFollowing(status.is_following);
+          setFollowStatusChecked(true);
+        } catch (err) {
+          console.error('Failed to check follow status:', err);
+          // Don't show follow button if we can't check status
+        }
+      };
+      checkFollowStatus();
+    }
+  }, [showFollowButton, currentUserId, user.user_id, isOwnCard, followStatusChecked]);
+  
+  const handleFollowToggle = async () => {
+    if (!currentUserId || isOwnCard || isLoadingFollow) return;
+    
+    setIsLoadingFollow(true);
+    try {
+      if (isFollowing) {
+        await apiClient.unfollowUser(user.user_id);
+        setIsFollowing(false);
+      } else {
+        await apiClient.followUser(user.user_id);
+        setIsFollowing(true);
+      }
+    } catch (err) {
+      console.error('Failed to toggle follow:', err);
+      // Could show error toast here
+    } finally {
+      setIsLoadingFollow(false);
+    }
+  };
   
   // Construct avatar URL from avatar_path
   // If avatar_path is a full URL, use it directly
@@ -106,6 +157,15 @@ export function UserCard({ user }: UserCardProps) {
           <div className="user-card-activity">
             {user.activity_count} {user.activity_count === 1 ? 'activity' : 'activities'}
           </div>
+        )}
+        {showFollowButton && currentUserId && !isOwnCard && (
+          <button
+            className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}
+            onClick={handleFollowToggle}
+            disabled={isLoadingFollow || !followStatusChecked}
+          >
+            {isLoadingFollow ? '...' : isFollowing ? 'Following' : 'Follow'}
+          </button>
         )}
       </div>
     </div>

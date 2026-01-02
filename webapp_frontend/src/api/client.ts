@@ -89,6 +89,67 @@ class ApiClient {
     }
     return response.json();
   }
+
+  /**
+   * Follow a user.
+   */
+  async followUser(targetUserId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/users/${targetUserId}/follow`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Unfollow a user.
+   */
+  async unfollowUser(targetUserId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/users/${targetUserId}/follow`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Get follow status for a user.
+   */
+  async getFollowStatus(targetUserId: string): Promise<{ is_following: boolean }> {
+    return this.request<{ is_following: boolean }>(`/users/${targetUserId}/follow-status`);
+  }
+
+  /**
+   * Update promise visibility.
+   */
+  async updatePromiseVisibility(promiseId: string, visibility: 'private' | 'public'): Promise<{ status: string; visibility: string }> {
+    return this.request<{ status: string; visibility: string }>(`/promises/${promiseId}/visibility`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visibility }),
+    });
+  }
+
+  /**
+   * Log an action (time spent) for a promise.
+   */
+  async logAction(promiseId: string, timeSpent: number, actionDatetime?: string): Promise<{ status: string; message: string }> {
+    const body: any = {
+      promise_id: promiseId,
+      time_spent: timeSpent,
+    };
+    if (actionDatetime) {
+      body.action_datetime = actionDatetime;
+    }
+    return this.request<{ status: string; message: string }>('/actions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Snooze a promise until next week.
+   */
+  async snoozePromise(promiseId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/promises/${promiseId}/snooze`, {
+      method: 'POST',
+    });
+  }
 }
 
 /**
