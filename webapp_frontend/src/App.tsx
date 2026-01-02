@@ -52,20 +52,39 @@ function App() {
     // Use Telegram initData if available, otherwise try dev data
     const authData = initData || getDevInitData();
 
-    // Extract startapp parameter (Telegram's supported way to pass data)
-    // Also support page parameter for browser testing
+    // Extract route parameter from multiple sources:
+    // 1. Telegram's start_param (if available via WebApp SDK)
+    // 2. URL hash fragment (e.g., #admin - Telegram preserves these better)
+    // 3. URL query parameter (e.g., ?startapp=admin - for backward compatibility)
+    // 4. page parameter (for browser testing)
     const urlParams = new URLSearchParams(window.location.search);
     const startappParam = urlParams.get('startapp');
     const pageParam = urlParams.get('page');
+    const hash = window.location.hash.slice(1); // Remove the # symbol
     
-    // If startapp=community or page=community, don't fetch report (show community page instead)
-    if (startappParam === 'community' || pageParam === 'community') {
+    // Check Telegram's start_param if available
+    const tg = window.Telegram?.WebApp;
+    const telegramStartParam = tg?.initDataUnsafe?.start_param;
+    
+    // Combine all sources - Telegram start_param takes precedence, then hash, then query param
+    const effectiveRoute = telegramStartParam || hash || startappParam;
+    
+    // Debug logging
+    console.log('[DEBUG] Current URL:', window.location.href);
+    console.log('[DEBUG] URL hash:', hash);
+    console.log('[DEBUG] URL search params:', window.location.search);
+    console.log('[DEBUG] startapp param (URL):', startappParam);
+    console.log('[DEBUG] start_param (Telegram):', telegramStartParam);
+    console.log('[DEBUG] effective route:', effectiveRoute);
+    
+    // If route=community or page=community, don't fetch report (show community page instead)
+    if (effectiveRoute === 'community' || pageParam === 'community') {
       setState('ready');
       return;
     }
     
-    // If startapp=admin or page=admin, don't fetch report (show admin panel instead)
-    if (startappParam === 'admin' || pageParam === 'admin') {
+    // If route=admin or page=admin, don't fetch report (show admin panel instead)
+    if (effectiveRoute === 'admin' || pageParam === 'admin') {
       setState('ready');
       return;
     }
@@ -76,21 +95,17 @@ function App() {
       return;
     }
 
-    // Extract ref_time from startapp parameter (format: "weekly:ISO_DATE")
+    // Extract ref_time from effective route (format: "weekly:ISO_DATE")
     // Fallback to query param for backward compatibility
     let refTime: string | undefined = undefined;
-    if (startappParam && startappParam.startsWith('weekly:')) {
+    if (effectiveRoute && effectiveRoute.startsWith('weekly:')) {
       // Extract and decode ISO date after "weekly:"
-      const encodedRefTime = startappParam.substring(7);
+      const encodedRefTime = effectiveRoute.substring(7);
       refTime = decodeURIComponent(encodedRefTime);
     } else {
       refTime = urlParams.get('ref_time') || undefined;
     }
     
-    // Debug logging
-    console.log('[DEBUG] Current URL:', window.location.href);
-    console.log('[DEBUG] URL search params:', window.location.search);
-    console.log('[DEBUG] startapp param:', startappParam);
     console.log('[DEBUG] Extracted ref_time:', refTime);
 
     fetchReport(authData, refTime);
@@ -110,10 +125,15 @@ function App() {
   const authData = initData || getDevInitData();
   const isAuthenticated = !!authData;
 
-  // Check if user wants to see community page (using Telegram's startapp parameter or page param for browser testing)
+  // Check if user wants to see community/admin page (check multiple sources)
   const urlParamsForPage = new URLSearchParams(window.location.search);
-  const showCommunity = urlParamsForPage.get('startapp') === 'community' || urlParamsForPage.get('page') === 'community';
-  const showAdmin = urlParamsForPage.get('startapp') === 'admin' || urlParamsForPage.get('page') === 'admin';
+  const hashForPage = window.location.hash.slice(1);
+  const tgForPage = window.Telegram?.WebApp;
+  const telegramStartParamForPage = tgForPage?.initDataUnsafe?.start_param;
+  const effectiveRouteForPage = telegramStartParamForPage || hashForPage || urlParamsForPage.get('startapp');
+  
+  const showCommunity = effectiveRouteForPage === 'community' || urlParamsForPage.get('page') === 'community';
+  const showAdmin = effectiveRouteForPage === 'admin' || urlParamsForPage.get('page') === 'admin';
 
   // Loading state (only for authenticated users loading report, not for community/admin pages)
   if ((state === 'loading' || !isReady) && isAuthenticated && !showCommunity && !showAdmin) {
