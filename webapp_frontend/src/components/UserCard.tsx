@@ -70,6 +70,7 @@ function getDisplayName(user: PublicUser): string {
 
 export function UserCard({ user, currentUserId, showFollowButton = false }: UserCardProps) {
   const [imageError, setImageError] = useState(false);
+  const [dicebearError, setDicebearError] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoadingFollow, setIsLoadingFollow] = useState(false);
   const [followStatusChecked, setFollowStatusChecked] = useState(false);
@@ -77,6 +78,9 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
   const initials = getInitials(user);
   const displayName = getDisplayName(user);
   const avatarColor = getAvatarColor(user.user_id);
+  
+  // Generate DiceBear avatar URL (deterministic based on user_id)
+  const dicebearUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.user_id)}`;
   
   // Check if this is the current user's own card
   const isOwnCard = currentUserId && currentUserId === user.user_id;
@@ -118,14 +122,14 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
     }
   };
   
-  // Construct avatar URL from avatar_path
+  // Construct avatar URL
+  // Always try to use API endpoint first (it will check if avatar exists and is public)
   // If avatar_path is a full URL, use it directly
-  // If avatar_path is a relative path or just exists, use API endpoint
-  // Otherwise, fall back to initials
-  const avatarUrl = user.avatar_path && !imageError 
-    ? (user.avatar_path.startsWith('http')
+  // Otherwise, try API endpoint which will serve the avatar if it exists
+  const avatarUrl = !imageError 
+    ? (user.avatar_path && user.avatar_path.startsWith('http')
         ? user.avatar_path  // Full URL (external)
-        : `/api/media/avatars/${user.user_id}`)  // Use API endpoint for local avatars
+        : `/api/media/avatars/${user.user_id}`)  // Use API endpoint for local avatars (checks file existence)
     : null;
 
   return (
@@ -136,6 +140,13 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
             src={avatarUrl}
             alt={displayName}
             onError={() => setImageError(true)}
+            className="user-card-avatar-img"
+          />
+        ) : !dicebearError ? (
+          <img
+            src={dicebearUrl}
+            alt={displayName}
+            onError={() => setDicebearError(true)}
             className="user-card-avatar-img"
           />
         ) : (
@@ -150,9 +161,6 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
       
       <div className="user-card-info">
         <div className="user-card-name">{displayName}</div>
-        {user.username && (
-          <div className="user-card-username">@{user.username}</div>
-        )}
         {user.activity_count > 0 && (
           <div className="user-card-activity">
             {user.activity_count} {user.activity_count === 1 ? 'activity' : 'activities'}

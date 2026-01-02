@@ -533,15 +533,22 @@ def create_webapp_api(
                     raise HTTPException(status_code=403, detail="Avatar is private")
                 
                 avatar_path = row["avatar_path"]
-                if not avatar_path:
-                    raise HTTPException(status_code=404, detail="Avatar not found")
                 
-                # Resolve full path
-                # If path is relative, it's relative to root_dir
-                if os.path.isabs(avatar_path):
-                    full_path = avatar_path
+                # If avatar_path is not in database, try standard location
+                if not avatar_path:
+                    # Try standard avatar location: media/avatars/{user_id}.jpg
+                    standard_path = os.path.join("media", "avatars", f"{user_id}.jpg")
+                    full_path = os.path.join(root_dir, standard_path)
+                    # If file doesn't exist at standard location, return 404
+                    if not os.path.exists(full_path):
+                        raise HTTPException(status_code=404, detail="Avatar not found")
                 else:
-                    full_path = os.path.join(root_dir, avatar_path)
+                    # Resolve full path from database
+                    # If path is relative, it's relative to root_dir
+                    if os.path.isabs(avatar_path):
+                        full_path = avatar_path
+                    else:
+                        full_path = os.path.join(root_dir, avatar_path)
                 
                 # Normalize path separators
                 full_path = os.path.normpath(full_path)
