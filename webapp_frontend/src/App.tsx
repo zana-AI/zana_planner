@@ -4,6 +4,7 @@ import { apiClient, ApiError } from './api/client';
 import { WeeklyReport } from './components/WeeklyReport';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
+import { AdminPanel } from './components/AdminPanel';
 import type { WeeklyReportData } from './types';
 
 type AppState = 'loading' | 'ready' | 'error';
@@ -62,6 +63,12 @@ function App() {
       setState('ready');
       return;
     }
+    
+    // If startapp=admin or page=admin, don't fetch report (show admin panel instead)
+    if (startappParam === 'admin' || pageParam === 'admin') {
+      setState('ready');
+      return;
+    }
 
     if (!authData) {
       // No auth data: show public users page instead of error
@@ -106,9 +113,10 @@ function App() {
   // Check if user wants to see community page (using Telegram's startapp parameter or page param for browser testing)
   const urlParamsForPage = new URLSearchParams(window.location.search);
   const showCommunity = urlParamsForPage.get('startapp') === 'community' || urlParamsForPage.get('page') === 'community';
+  const showAdmin = urlParamsForPage.get('startapp') === 'admin' || urlParamsForPage.get('page') === 'admin';
 
-  // Loading state (only for authenticated users loading report, not for community page)
-  if ((state === 'loading' || !isReady) && isAuthenticated && !showCommunity) {
+  // Loading state (only for authenticated users loading report, not for community/admin pages)
+  if ((state === 'loading' || !isReady) && isAuthenticated && !showCommunity && !showAdmin) {
     return (
       <div className="app">
         <div className="loading">
@@ -119,8 +127,8 @@ function App() {
     );
   }
 
-  // Error state (only for authenticated users loading report, not for community page)
-  if (state === 'error' && isAuthenticated && !showCommunity) {
+  // Error state (only for authenticated users loading report, not for community/admin pages)
+  if (state === 'error' && isAuthenticated && !showCommunity && !showAdmin) {
     return (
       <div className="app">
         <div className="error">
@@ -133,6 +141,15 @@ function App() {
             </button>
           )}
         </div>
+      </div>
+    );
+  }
+
+  // Show admin panel if requested (admin only, backend will verify)
+  if (showAdmin) {
+    return (
+      <div className="app">
+        <AdminPanel />
       </div>
     );
   }

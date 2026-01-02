@@ -121,6 +121,43 @@ export interface PublicUsersResponse {
   total: number;
 }
 
+// Admin types
+export interface AdminUser {
+  user_id: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  last_seen_utc?: string;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUser[];
+  total: number;
+}
+
+export interface Broadcast {
+  broadcast_id: string;
+  admin_id: string;
+  message: string;
+  target_user_ids: number[];
+  scheduled_time_utc: string;
+  status: 'pending' | 'completed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBroadcastRequest {
+  message: string;
+  target_user_ids: number[];
+  scheduled_time_utc?: string;
+}
+
+export interface UpdateBroadcastRequest {
+  message?: string;
+  target_user_ids?: number[];
+  scheduled_time_utc?: string;
+}
+
 // Extend Window interface for Telegram
 declare global {
   interface Window {

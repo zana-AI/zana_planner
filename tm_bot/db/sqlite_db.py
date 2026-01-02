@@ -199,7 +199,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -240,6 +240,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
                 (4, utc_now_iso()),
+            )
+        if current < 5:
+            _apply_v5(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (5, utc_now_iso()),
             )
 
 
@@ -850,4 +856,34 @@ def _apply_v4(conn: sqlite3.Connection) -> None:
         conn.execute("DROP TABLE IF EXISTS user_blocks;")
     if "user_mutes" in tables:
         conn.execute("DROP TABLE IF EXISTS user_mutes;")
+
+
+def _apply_v5(conn: sqlite3.Connection) -> None:
+    """Apply schema version 5 migrations: add broadcasts table for scheduled broadcasts."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS broadcasts (
+            broadcast_id TEXT PRIMARY KEY,
+            admin_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            target_user_ids TEXT NOT NULL,
+            scheduled_time_utc TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            CHECK (status IN ('pending', 'completed', 'cancelled'))
+        );
+        """
+    )
+    
+    # Create indexes for common queries
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_broadcasts_admin ON broadcasts(admin_id, created_at_utc DESC);"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_broadcasts_scheduled ON broadcasts(scheduled_time_utc, status);"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_broadcasts_status ON broadcasts(status, scheduled_time_utc);"
+    )
 

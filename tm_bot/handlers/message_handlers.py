@@ -33,7 +33,7 @@ from handlers.callback_handlers import CallbackHandlers
 from utils.logger import get_logger
 from utils.version import get_version_info
 from utils.admin_utils import is_admin
-from services.broadcast_service import get_all_users, send_broadcast, parse_broadcast_time
+from services.broadcast_service import get_all_users, send_broadcast, parse_broadcast_time, execute_broadcast_from_db
 from services.stats_service import get_aggregate_stats
 from services.avatar_service import AvatarService
 from datetime import datetime, timedelta
@@ -1847,6 +1847,31 @@ class MessageHandlers:
             reply_markup=keyboard
         )
     
+    async def cmd_admin(self, update: Update, context: CallbackContext) -> None:
+        """Handle the /admin command to open the admin panel in the mini-app."""
+        user_id = update.effective_user.id
+        
+        # Check admin status - bullet-proof check
+        if not is_admin(user_id):
+            message = "❌ You don't have permission to use this command."
+            await update.message.reply_text(message)
+            logger.warning(f"Non-admin user {user_id} attempted to use /admin")
+            return
+        
+        # Admin verified - send mini-app link
+        admin_url = f"{self.miniapp_url}?startapp=admin"
+        message = "🔐 **Admin Panel**\n\nOpen the admin panel to manage broadcasts and users."
+        
+        # Create mini-app keyboard button
+        keyboard = mini_app_kb(admin_url, button_text="Open Admin Panel")
+        
+        await self.response_service.reply_text(
+            update, message,
+            user_id=user_id,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+    
     async def _handle_broadcast_message(
         self, update: Update, context: CallbackContext, 
         message_text: str, user_id: int, user_lang: Language
@@ -1951,35 +1976,77 @@ class MessageHandlers:
     async def _execute_scheduled_broadcast(self, context: CallbackContext) -> None:
         """Execute a scheduled broadcast."""
         data = context.job.data
-        message = data.get("message")
-        user_ids = data.get("user_ids", [])
-        admin_id = data.get("admin_id")
-        scheduled_time = data.get("scheduled_time")
+        broadcast_id = data.get("broadcast_id")
         
-        logger.info(f"Executing scheduled broadcast to {len(user_ids)} users (scheduled by admin {admin_id})")
-        
-        # Send broadcast
-        results = await send_broadcast(self.response_service, user_ids, message)
-        
-        # Log results
-        logger.info(
-            f"Broadcast completed - Success: {results['success']}, "
-            f"Failed: {results['failed']} (scheduled by admin {admin_id})"
-        )
-        
-        # Optionally notify admin
-        if admin_id:
-            try:
-                admin_msg = (
-                    f"📢 **Broadcast Completed**\n\n"
-                    f"✅ Sent: {results['success']}\n"
-                    f"❌ Failed: {results['failed']}\n"
-                    f"📅 Scheduled time: {scheduled_time}"
-                )
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=admin_msg,
-                    parse_mode='Markdown'
-                )
-            except Exception as e:
-                logger.warning(f"Could not notify admin {admin_id} of broadcast completion: {str(e)}")
+        # New format: execute from database
+        if broadcast_id:
+            logger.info(f"Executing scheduled broadcast {broadcast_id} from database")
+            results = await execute_broadcast_from_db(
+                self.response_service,
+                self.root_dir,
+                broadcast_id,
+            )
+            
+            # Get broadcast details for admin notification
+            from repositories.broadcasts_repo import BroadcastsRepository
+            broadcasts_repo = BroadcastsRepository(self.root_dir)
+            broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+            
+            admin_id = int(broadcast.admin_id) if broadcast else None
+            
+            # Log results
+            logger.info(
+                f"Broadcast {broadcast_id} completed - Success: {results['success']}, "
+                f"Failed: {results['failed']}"
+            )
+            
+            # Notify admin
+            if admin_id:
+                try:
+                    admin_msg = (
+                        f"📢 **Broadcast Completed**\n\n"
+                        f"✅ Sent: {results['success']}\n"
+                        f"❌ Failed: {results['failed']}\n"
+                        f"📅 Broadcast ID: {broadcast_id}"
+                    )
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=admin_msg,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify admin {admin_id} of broadcast completion: {str(e)}")
+        else:
+            # Old format: backward compatibility
+            message = data.get("message")
+            user_ids = data.get("user_ids", [])
+            admin_id = data.get("admin_id")
+            scheduled_time = data.get("scheduled_time")
+            
+            logger.info(f"Executing scheduled broadcast to {len(user_ids)} users (scheduled by admin {admin_id})")
+            
+            # Send broadcast
+            results = await send_broadcast(self.response_service, user_ids, message)
+            
+            # Log results
+            logger.info(
+                f"Broadcast completed - Success: {results['success']}, "
+                f"Failed: {results['failed']} (scheduled by admin {admin_id})"
+            )
+            
+            # Optionally notify admin
+            if admin_id:
+                try:
+                    admin_msg = (
+                        f"📢 **Broadcast Completed**\n\n"
+                        f"✅ Sent: {results['success']}\n"
+                        f"❌ Failed: {results['failed']}\n"
+                        f"📅 Scheduled time: {scheduled_time}"
+                    )
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=admin_msg,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify admin {admin_id} of broadcast completion: {str(e)}")

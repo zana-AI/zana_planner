@@ -19,9 +19,11 @@ from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.follows_repo import FollowsRepository
+from repositories.broadcasts_repo import BroadcastsRepository
 from db.sqlite_db import connection_for_root
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
+from utils.admin_utils import is_admin
 from fastapi.responses import FileResponse
 
 
@@ -167,6 +169,21 @@ def create_webapp_api(
     def get_settings_repo() -> SettingsRepository:
         """Get SettingsRepository instance."""
         return SettingsRepository(app.state.root_dir)
+    
+    # Admin dependency - validates admin status
+    async def get_admin_user(
+        user_id: int = Depends(get_current_user),
+    ) -> int:
+        """
+        Validate that the current user is an admin.
+        Raises 403 if user is not an admin.
+        """
+        if not is_admin(user_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Admin access required"
+            )
+        return user_id
     
     @app.get("/")
     async def root():
@@ -763,6 +780,402 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error snoozing promise: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to snooze promise: {str(e)}")
+    
+    # Admin API endpoints
+    class AdminUser(BaseModel):
+        """Admin user information."""
+        user_id: str
+        first_name: Optional[str] = None
+        last_name: Optional[str] = None
+        username: Optional[str] = None
+        last_seen_utc: Optional[str] = None
+    
+    class AdminUsersResponse(BaseModel):
+        """Response model for admin users endpoint."""
+        users: List[AdminUser]
+        total: int
+    
+    class CreateBroadcastRequest(BaseModel):
+        """Request model for creating a broadcast."""
+        message: str
+        target_user_ids: List[int]
+        scheduled_time_utc: Optional[str] = None  # ISO format datetime string, None for immediate
+    
+    class BroadcastResponse(BaseModel):
+        """Response model for broadcast."""
+        broadcast_id: str
+        admin_id: str
+        message: str
+        target_user_ids: List[int]
+        scheduled_time_utc: str
+        status: str
+        created_at: str
+        updated_at: str
+    
+    @app.get("/api/admin/users", response_model=AdminUsersResponse)
+    async def get_admin_users(
+        limit: int = Query(default=1000, ge=1, le=10000),
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Get all users (admin only).
+        
+        Args:
+            limit: Maximum number of users to return
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            List of all users
+        """
+        try:
+            root_dir = app.state.root_dir
+            if not root_dir:
+                raise HTTPException(status_code=500, detail="Server configuration error: root_dir not set")
+            
+            with connection_for_root(root_dir) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT user_id, first_name, last_name, username, last_seen_utc
+                    FROM users
+                    ORDER BY last_seen_utc DESC NULLS LAST
+                    LIMIT ?;
+                    """,
+                    (limit,),
+                ).fetchall()
+                
+                users = []
+                for row in rows:
+                    users.append(
+                        AdminUser(
+                            user_id=str(row["user_id"]),
+                            first_name=row["first_name"],
+                            last_name=row["last_name"],
+                            username=row["username"],
+                            last_seen_utc=row["last_seen_utc"],
+                        )
+                    )
+                
+                return AdminUsersResponse(users=users, total=len(users))
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting admin users: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+    
+    @app.post("/api/admin/broadcast", response_model=BroadcastResponse)
+    async def create_broadcast(
+        request: CreateBroadcastRequest,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Create or schedule a broadcast (admin only).
+        
+        Args:
+            request: Broadcast creation request
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            Created broadcast
+        """
+        try:
+            from zoneinfo import ZoneInfo
+            from services.broadcast_service import get_all_users
+            from infra.scheduler import schedule_once
+            
+            # Validate message
+            if not request.message or not request.message.strip():
+                raise HTTPException(status_code=400, detail="Message cannot be empty")
+            
+            # Validate target users
+            if not request.target_user_ids:
+                raise HTTPException(status_code=400, detail="At least one target user must be selected")
+            
+            # Get all valid users
+            all_users = get_all_users(app.state.root_dir)
+            valid_user_ids = [uid for uid in request.target_user_ids if uid in all_users]
+            
+            if not valid_user_ids:
+                raise HTTPException(status_code=400, detail="No valid target users found")
+            
+            # Determine scheduled time
+            if request.scheduled_time_utc:
+                # Parse scheduled time
+                try:
+                    scheduled_dt = datetime.fromisoformat(request.scheduled_time_utc.replace('Z', '+00:00'))
+                    if scheduled_dt.tzinfo is None:
+                        scheduled_dt = scheduled_dt.replace(tzinfo=ZoneInfo("UTC"))
+                    scheduled_dt = scheduled_dt.astimezone(ZoneInfo("UTC"))
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=f"Invalid scheduled_time_utc format: {e}")
+                
+                # Check if time is in the past
+                now_utc = datetime.now(ZoneInfo("UTC"))
+                if scheduled_dt < now_utc:
+                    raise HTTPException(status_code=400, detail="Scheduled time cannot be in the past")
+            else:
+                # Immediate broadcast - schedule for now
+                scheduled_dt = datetime.now(ZoneInfo("UTC"))
+            
+            # Create broadcast in database
+            broadcasts_repo = BroadcastsRepository(app.state.root_dir)
+            broadcast_id = broadcasts_repo.create_broadcast(
+                admin_id=admin_id,
+                message=request.message,
+                target_user_ids=valid_user_ids,
+                scheduled_time_utc=scheduled_dt,
+            )
+            
+            # Schedule job if not immediate (or schedule immediately if it's now)
+            # Note: Job scheduling requires access to the application/job_queue
+            # For now, broadcasts created via API will need to be executed by a separate process
+            # or we can add a periodic job that checks for pending broadcasts
+            # This is a limitation - in production, you'd want to schedule the job here
+            # For immediate broadcasts, we could execute them directly, but that's async
+            # and would require more complex setup
+            
+            # Get created broadcast
+            broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+            if not broadcast:
+                raise HTTPException(status_code=500, detail="Failed to retrieve created broadcast")
+            
+            return BroadcastResponse(
+                broadcast_id=broadcast.broadcast_id,
+                admin_id=broadcast.admin_id,
+                message=broadcast.message,
+                target_user_ids=broadcast.target_user_ids,
+                scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
+                status=broadcast.status,
+                created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
+                updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error creating broadcast: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create broadcast: {str(e)}")
+    
+    @app.get("/api/admin/broadcasts", response_model=List[BroadcastResponse])
+    async def list_broadcasts(
+        status: Optional[str] = Query(None),
+        limit: int = Query(default=100, ge=1, le=1000),
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        List scheduled broadcasts (admin only).
+        
+        Args:
+            status: Filter by status (pending, completed, cancelled)
+            limit: Maximum number of broadcasts to return
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            List of broadcasts
+        """
+        try:
+            broadcasts_repo = BroadcastsRepository(app.state.root_dir)
+            broadcasts = broadcasts_repo.list_broadcasts(
+                admin_id=admin_id,
+                status=status,
+                limit=limit,
+            )
+            
+            return [
+                BroadcastResponse(
+                    broadcast_id=b.broadcast_id,
+                    admin_id=b.admin_id,
+                    message=b.message,
+                    target_user_ids=b.target_user_ids,
+                    scheduled_time_utc=b.scheduled_time_utc.isoformat(),
+                    status=b.status,
+                    created_at=b.created_at.isoformat() if b.created_at else "",
+                    updated_at=b.updated_at.isoformat() if b.updated_at else "",
+                )
+                for b in broadcasts
+            ]
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error listing broadcasts: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to list broadcasts: {str(e)}")
+    
+    @app.get("/api/admin/broadcasts/{broadcast_id}", response_model=BroadcastResponse)
+    async def get_broadcast(
+        broadcast_id: str,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Get broadcast details (admin only).
+        
+        Args:
+            broadcast_id: Broadcast ID
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            Broadcast details
+        """
+        try:
+            broadcasts_repo = BroadcastsRepository(app.state.root_dir)
+            broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+            
+            if not broadcast:
+                raise HTTPException(status_code=404, detail="Broadcast not found")
+            
+            # Verify admin owns this broadcast
+            if broadcast.admin_id != str(admin_id):
+                raise HTTPException(status_code=403, detail="Access denied")
+            
+            return BroadcastResponse(
+                broadcast_id=broadcast.broadcast_id,
+                admin_id=broadcast.admin_id,
+                message=broadcast.message,
+                target_user_ids=broadcast.target_user_ids,
+                scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
+                status=broadcast.status,
+                created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
+                updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting broadcast: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get broadcast: {str(e)}")
+    
+    class UpdateBroadcastRequest(BaseModel):
+        """Request model for updating a broadcast."""
+        message: Optional[str] = None
+        target_user_ids: Optional[List[int]] = None
+        scheduled_time_utc: Optional[str] = None  # ISO format datetime string
+    
+    @app.patch("/api/admin/broadcasts/{broadcast_id}", response_model=BroadcastResponse)
+    async def update_broadcast(
+        broadcast_id: str,
+        request: UpdateBroadcastRequest,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Update a scheduled broadcast (admin only).
+        
+        Args:
+            broadcast_id: Broadcast ID
+            request: Update request
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            Updated broadcast
+        """
+        try:
+            from zoneinfo import ZoneInfo
+            
+            broadcasts_repo = BroadcastsRepository(app.state.root_dir)
+            broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+            
+            if not broadcast:
+                raise HTTPException(status_code=404, detail="Broadcast not found")
+            
+            # Verify admin owns this broadcast
+            if broadcast.admin_id != str(admin_id):
+                raise HTTPException(status_code=403, detail="Access denied")
+            
+            # Can only update pending broadcasts
+            if broadcast.status != "pending":
+                raise HTTPException(status_code=400, detail="Can only update pending broadcasts")
+            
+            # Parse scheduled time if provided
+            scheduled_dt = None
+            if request.scheduled_time_utc:
+                try:
+                    scheduled_dt = datetime.fromisoformat(request.scheduled_time_utc.replace('Z', '+00:00'))
+                    if scheduled_dt.tzinfo is None:
+                        scheduled_dt = scheduled_dt.replace(tzinfo=ZoneInfo("UTC"))
+                    scheduled_dt = scheduled_dt.astimezone(ZoneInfo("UTC"))
+                    
+                    # Check if time is in the past
+                    now_utc = datetime.now(ZoneInfo("UTC"))
+                    if scheduled_dt < now_utc:
+                        raise HTTPException(status_code=400, detail="Scheduled time cannot be in the past")
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=f"Invalid scheduled_time_utc format: {e}")
+            
+            # Update broadcast
+            success = broadcasts_repo.update_broadcast(
+                broadcast_id=broadcast_id,
+                message=request.message,
+                target_user_ids=request.target_user_ids,
+                scheduled_time_utc=scheduled_dt,
+            )
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to update broadcast")
+            
+            # Get updated broadcast
+            updated_broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+            if not updated_broadcast:
+                raise HTTPException(status_code=500, detail="Failed to retrieve updated broadcast")
+            
+            return BroadcastResponse(
+                broadcast_id=updated_broadcast.broadcast_id,
+                admin_id=updated_broadcast.admin_id,
+                message=updated_broadcast.message,
+                target_user_ids=updated_broadcast.target_user_ids,
+                scheduled_time_utc=updated_broadcast.scheduled_time_utc.isoformat(),
+                status=updated_broadcast.status,
+                created_at=updated_broadcast.created_at.isoformat() if updated_broadcast.created_at else "",
+                updated_at=updated_broadcast.updated_at.isoformat() if updated_broadcast.updated_at else "",
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating broadcast: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update broadcast: {str(e)}")
+    
+    @app.delete("/api/admin/broadcasts/{broadcast_id}")
+    async def cancel_broadcast(
+        broadcast_id: str,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Cancel a scheduled broadcast (admin only).
+        
+        Args:
+            broadcast_id: Broadcast ID
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            Success message
+        """
+        try:
+            broadcasts_repo = BroadcastsRepository(app.state.root_dir)
+            broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+            
+            if not broadcast:
+                raise HTTPException(status_code=404, detail="Broadcast not found")
+            
+            # Verify admin owns this broadcast
+            if broadcast.admin_id != str(admin_id):
+                raise HTTPException(status_code=403, detail="Access denied")
+            
+            # Can only cancel pending broadcasts
+            if broadcast.status != "pending":
+                raise HTTPException(status_code=400, detail="Can only cancel pending broadcasts")
+            
+            # Cancel broadcast
+            success = broadcasts_repo.cancel_broadcast(broadcast_id)
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to cancel broadcast")
+            
+            return {"status": "success", "message": "Broadcast cancelled successfully"}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error cancelling broadcast: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to cancel broadcast: {str(e)}")
     
     # Add route for /weekly to serve React app (works with or without static_dir)
     @app.get("/weekly")

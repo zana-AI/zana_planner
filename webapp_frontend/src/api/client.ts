@@ -1,4 +1,12 @@
-import type { WeeklyReportData, UserInfo, PublicUsersResponse } from '../types';
+import type { 
+  WeeklyReportData, 
+  UserInfo, 
+  PublicUsersResponse,
+  AdminUsersResponse,
+  Broadcast,
+  CreateBroadcastRequest,
+  UpdateBroadcastRequest
+} from '../types';
 
 const API_BASE = '/api';
 
@@ -148,6 +156,60 @@ class ApiClient {
   async snoozePromise(promiseId: string): Promise<{ status: string; message: string }> {
     return this.request<{ status: string; message: string }>(`/promises/${promiseId}/snooze`, {
       method: 'POST',
+    });
+  }
+
+  // Admin API methods
+  /**
+   * Get all users (admin only).
+   */
+  async getAdminUsers(limit: number = 1000): Promise<AdminUsersResponse> {
+    return this.request<AdminUsersResponse>(`/admin/users?limit=${limit}`);
+  }
+
+  /**
+   * Create or schedule a broadcast (admin only).
+   */
+  async createBroadcast(request: CreateBroadcastRequest): Promise<Broadcast> {
+    return this.request<Broadcast>('/admin/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * List scheduled broadcasts (admin only).
+   */
+  async getBroadcasts(status?: string, limit: number = 100): Promise<Broadcast[]> {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    params.append('limit', limit.toString());
+    return this.request<Broadcast[]>(`/admin/broadcasts?${params.toString()}`);
+  }
+
+  /**
+   * Get broadcast details (admin only).
+   */
+  async getBroadcast(broadcastId: string): Promise<Broadcast> {
+    return this.request<Broadcast>(`/admin/broadcasts/${broadcastId}`);
+  }
+
+  /**
+   * Update a scheduled broadcast (admin only).
+   */
+  async updateBroadcast(broadcastId: string, request: UpdateBroadcastRequest): Promise<Broadcast> {
+    return this.request<Broadcast>(`/admin/broadcasts/${broadcastId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * Cancel a scheduled broadcast (admin only).
+   */
+  async cancelBroadcast(broadcastId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/admin/broadcasts/${broadcastId}`, {
+      method: 'DELETE',
     });
   }
 }

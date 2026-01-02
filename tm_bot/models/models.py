@@ -53,3 +53,15 @@ class Session:
     last_state_change_at: Optional[datetime] = None
     message_id: Optional[int] = None
     chat_id: Optional[int] = None
+
+
+@dataclass
+class Broadcast:
+    broadcast_id: str
+    admin_id: str
+    message: str
+    target_user_ids: list[int]  # List of user IDs as integers
+    scheduled_time_utc: datetime
+    status: str = "pending"  # "pending" | "completed" | "cancelled"
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

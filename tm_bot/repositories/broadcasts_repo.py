@@ -1,0 +1,204 @@
+from typing import List, Optional
+from datetime import datetime
+import json
+import uuid
+
+from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
+from models.models import Broadcast
+
+
+class BroadcastsRepository:
+    """Repository for managing scheduled broadcasts."""
+
+    def __init__(self, root_dir: str):
+        self.root_dir = root_dir
+
+    def create_broadcast(
+        self,
+        admin_id: int,
+        message: str,
+        target_user_ids: List[int],
+        scheduled_time_utc: datetime,
+    ) -> str:
+        """
+        Create a new broadcast.
+        
+        Returns:
+            broadcast_id: The unique ID of the created broadcast
+        """
+        broadcast_id = str(uuid.uuid4())
+        admin = str(admin_id)
+        now = utc_now_iso()
+        
+        # Convert target_user_ids to JSON string
+        target_ids_json = json.dumps([int(uid) for uid in target_user_ids])
+        scheduled_time_str = dt_to_utc_iso(scheduled_time_utc)
+        
+        with connection_for_root(self.root_dir) as conn:
+            conn.execute(
+                """
+                INSERT INTO broadcasts(
+                    broadcast_id, admin_id, message, target_user_ids,
+                    scheduled_time_utc, status, created_at_utc, updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?);
+                """,
+                (
+                    broadcast_id,
+                    admin,
+                    message,
+                    target_ids_json,
+                    scheduled_time_str,
+                    now,
+                    now,
+                ),
+            )
+        
+        return broadcast_id
+
+    def get_broadcast(self, broadcast_id: str) -> Optional[Broadcast]:
+        """Get a broadcast by ID."""
+        with connection_for_root(self.root_dir) as conn:
+            row = conn.execute(
+                """
+                SELECT broadcast_id, admin_id, message, target_user_ids,
+                       scheduled_time_utc, status, created_at_utc, updated_at_utc
+                FROM broadcasts
+                WHERE broadcast_id = ?
+                LIMIT 1;
+                """,
+                (broadcast_id,),
+            ).fetchone()
+            
+            if not row:
+                return None
+            
+            # Parse target_user_ids from JSON
+            target_ids = json.loads(row["target_user_ids"])
+            
+            return Broadcast(
+                broadcast_id=row["broadcast_id"],
+                admin_id=row["admin_id"],
+                message=row["message"],
+                target_user_ids=[int(uid) for uid in target_ids],
+                scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
+                status=row["status"],
+                created_at=dt_from_utc_iso(row["created_at_utc"]),
+                updated_at=dt_from_utc_iso(row["updated_at_utc"]),
+            )
+
+    def list_broadcasts(
+        self,
+        admin_id: Optional[int] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Broadcast]:
+        """
+        List broadcasts with optional filters.
+        
+        Args:
+            admin_id: Filter by admin ID (optional)
+            status: Filter by status (optional)
+            limit: Maximum number of results
+        """
+        broadcasts = []
+        
+        with connection_for_root(self.root_dir) as conn:
+            query = """
+                SELECT broadcast_id, admin_id, message, target_user_ids,
+                       scheduled_time_utc, status, created_at_utc, updated_at_utc
+                FROM broadcasts
+                WHERE 1=1
+            """
+            params = []
+            
+            if admin_id:
+                query += " AND admin_id = ?"
+                params.append(str(admin_id))
+            
+            if status:
+                query += " AND status = ?"
+                params.append(status)
+            
+            query += " ORDER BY created_at_utc DESC LIMIT ?"
+            params.append(limit)
+            
+            rows = conn.execute(query, params).fetchall()
+            
+            for row in rows:
+                # Parse target_user_ids from JSON
+                target_ids = json.loads(row["target_user_ids"])
+                
+                broadcasts.append(
+                    Broadcast(
+                        broadcast_id=row["broadcast_id"],
+                        admin_id=row["admin_id"],
+                        message=row["message"],
+                        target_user_ids=[int(uid) for uid in target_ids],
+                        scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
+                        status=row["status"],
+                        created_at=dt_from_utc_iso(row["created_at_utc"]),
+                        updated_at=dt_from_utc_iso(row["updated_at_utc"]),
+                    )
+                )
+        
+        return broadcasts
+
+    def update_broadcast(
+        self,
+        broadcast_id: str,
+        message: Optional[str] = None,
+        target_user_ids: Optional[List[int]] = None,
+        scheduled_time_utc: Optional[datetime] = None,
+        status: Optional[str] = None,
+    ) -> bool:
+        """
+        Update a broadcast.
+        
+        Returns:
+            True if broadcast was updated, False if not found
+        """
+        updates = []
+        params = []
+        
+        if message is not None:
+            updates.append("message = ?")
+            params.append(message)
+        
+        if target_user_ids is not None:
+            updates.append("target_user_ids = ?")
+            params.append(json.dumps([int(uid) for uid in target_user_ids]))
+        
+        if scheduled_time_utc is not None:
+            updates.append("scheduled_time_utc = ?")
+            params.append(dt_to_utc_iso(scheduled_time_utc))
+        
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
+        
+        if not updates:
+            return False
+        
+        updates.append("updated_at_utc = ?")
+        params.append(utc_now_iso())
+        params.append(broadcast_id)
+        
+        with connection_for_root(self.root_dir) as conn:
+            result = conn.execute(
+                f"""
+                UPDATE broadcasts
+                SET {', '.join(updates)}
+                WHERE broadcast_id = ?;
+                """,
+                params,
+            )
+            return result.rowcount > 0
+
+    def cancel_broadcast(self, broadcast_id: str) -> bool:
+        """Cancel a broadcast (set status to 'cancelled')."""
+        return self.update_broadcast(broadcast_id, status="cancelled")
+
+    def mark_broadcast_completed(self, broadcast_id: str) -> bool:
+        """Mark a broadcast as completed."""
+        return self.update_broadcast(broadcast_id, status="completed")
+

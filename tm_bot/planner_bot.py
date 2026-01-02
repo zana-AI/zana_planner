@@ -170,6 +170,7 @@ class PlannerBot:
         self.application.add_handler(CommandHandler("version", self.message_handlers.cmd_version))
         self.application.add_handler(CommandHandler("broadcast", self.message_handlers.cmd_broadcast))
         self.application.add_handler(CommandHandler("club", self.message_handlers.cmd_club))
+        self.application.add_handler(CommandHandler("admin", self.message_handlers.cmd_admin))
 
         # Message handlers
         self.application.add_handler(

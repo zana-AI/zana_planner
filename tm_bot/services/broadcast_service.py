@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 from zoneinfo import ZoneInfo
 
 from platforms.interfaces import IResponseService
+from repositories.broadcasts_repo import BroadcastsRepository
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -104,6 +105,48 @@ async def send_broadcast(
     
     logger.info(f"Broadcast completed: {success_count} sent, {failed_count} failed")
     return {"success": success_count, "failed": failed_count}
+
+
+async def execute_broadcast_from_db(
+    response_service: IResponseService,
+    root_dir: str,
+    broadcast_id: str,
+) -> Dict[str, int]:
+    """
+    Execute a broadcast from the database by ID.
+    Marks the broadcast as completed after execution.
+    
+    Args:
+        response_service: Platform-agnostic response service
+        root_dir: Root directory for database access
+        broadcast_id: Broadcast ID from database
+        
+    Returns:
+        Dictionary with 'success' and 'failed' counts
+    """
+    broadcasts_repo = BroadcastsRepository(root_dir)
+    broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+    
+    if not broadcast:
+        logger.error(f"Broadcast {broadcast_id} not found in database")
+        return {"success": 0, "failed": 0}
+    
+    if broadcast.status != "pending":
+        logger.warning(f"Broadcast {broadcast_id} is not pending (status: {broadcast.status})")
+        return {"success": 0, "failed": 0}
+    
+    # Execute the broadcast
+    results = await send_broadcast(
+        response_service,
+        broadcast.target_user_ids,
+        broadcast.message,
+    )
+    
+    # Mark as completed
+    broadcasts_repo.mark_broadcast_completed(broadcast_id)
+    logger.info(f"Broadcast {broadcast_id} marked as completed")
+    
+    return results
 
 
 def parse_broadcast_time(time_str: str, admin_tz: str) -> Optional[datetime]:
