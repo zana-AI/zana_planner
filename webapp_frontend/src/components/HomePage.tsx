@@ -9,7 +9,7 @@ export function HomePage() {
       <section className="home-hero">
         <div className="home-hero-content">
           <h1 className="home-hero-title">
-            Zana AI ✨
+            Zana AI
           </h1>
           <p className="home-hero-subtitle">
             Your AI-powered assistant for productivity and goal achievement
