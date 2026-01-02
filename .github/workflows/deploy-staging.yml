@@ -145,7 +145,22 @@ jobs:
             # Build webapp container (includes frontend build in Dockerfile)
             # Frontend is automatically built during Docker build, no manual step needed
             docker compose build --progress=plain zana-webapp
-
+            
+            # If host build failed, copy built dist from container to host
+            if [ "$FRONTEND_BUILD_SUCCESS" = "false" ]; then
+              echo '[STAGING] Copying built frontend from Docker image to host...'
+              # Create a temporary container to extract the built dist folder
+              docker create --name temp-webapp-extract zana-project-webapp:latest > /dev/null 2>&1 || true
+              if docker cp temp-webapp-extract:/app/webapp_frontend/dist ./webapp_frontend/ 2>/dev/null; then
+                echo '[STAGING] ✓ Frontend dist copied from container to host'
+                # Fix permissions on copied files
+                chmod -R u+w webapp_frontend/dist 2>/dev/null || sudo chmod -R u+w webapp_frontend/dist 2>/dev/null || true
+              else
+                echo '[STAGING] ⚠️  Failed to copy dist from container, will use Docker build'
+              fi
+              docker rm temp-webapp-extract > /dev/null 2>&1 || true
+            fi
+            
             # Start both containers
             docker compose up -d zana-staging zana-webapp
 
