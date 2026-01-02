@@ -4,7 +4,7 @@ import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { AdminUser, Broadcast, CreateBroadcastRequest } from '../types';
 
 export function AdminPanel() {
-  const { user, initData } = useTelegramWebApp();
+  const { initData } = useTelegramWebApp();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
