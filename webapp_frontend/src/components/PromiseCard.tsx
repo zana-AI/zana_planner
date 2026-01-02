@@ -77,7 +77,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     } catch (err) {
       console.error('Failed to update visibility:', err);
       // Revert on error
-      setCurrentVisibility(visibility);
+      setCurrentVisibility((visibility === 'public' ? 'public' : 'private') as 'private' | 'public');
     } finally {
       setIsUpdatingVisibility(false);
       setPendingVisibility(null);
