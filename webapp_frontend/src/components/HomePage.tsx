@@ -87,9 +87,15 @@ export function HomePage() {
           <div className="home-community-icon">👥</div>
           <h3 className="home-community-title">Join the Community</h3>
           <p className="home-community-description">
-            Connect with other goal-achievers, share your progress, and stay motivated together. 
-            <strong> Coming soon!</strong>
+            Connect with other goal-achievers, share your progress, and stay motivated together.
           </p>
+          <a 
+            href="?startapp=community" 
+            className="home-cta-button"
+            style={{ marginTop: '1rem', display: 'inline-block' }}
+          >
+            View Community
+          </a>
         </div>
       </section>
 

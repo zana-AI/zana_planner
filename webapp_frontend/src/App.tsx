@@ -52,11 +52,13 @@ function App() {
     const authData = initData || getDevInitData();
 
     // Extract startapp parameter (Telegram's supported way to pass data)
+    // Also support page parameter for browser testing
     const urlParams = new URLSearchParams(window.location.search);
     const startappParam = urlParams.get('startapp');
+    const pageParam = urlParams.get('page');
     
-    // If startapp=community, don't fetch report (show community page instead)
-    if (startappParam === 'community') {
+    // If startapp=community or page=community, don't fetch report (show community page instead)
+    if (startappParam === 'community' || pageParam === 'community') {
       setState('ready');
       return;
     }
@@ -101,9 +103,9 @@ function App() {
   const authData = initData || getDevInitData();
   const isAuthenticated = !!authData;
 
-  // Check if user wants to see community page (using Telegram's startapp parameter)
+  // Check if user wants to see community page (using Telegram's startapp parameter or page param for browser testing)
   const urlParamsForPage = new URLSearchParams(window.location.search);
-  const showCommunity = urlParamsForPage.get('startapp') === 'community';
+  const showCommunity = urlParamsForPage.get('startapp') === 'community' || urlParamsForPage.get('page') === 'community';
 
   // Loading state (only for authenticated users loading report, not for community page)
   if ((state === 'loading' || !isReady) && isAuthenticated && !showCommunity) {
