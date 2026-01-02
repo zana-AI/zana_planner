@@ -774,7 +774,9 @@ class CallbackHandlers:
         
         # Compute week boundaries based on current time
         week_start, week_end = get_week_range(user_now)
-        date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
+        # week_end is next Monday, so for display we want Sunday (6 days after Monday)
+        week_end_display = week_start + timedelta(days=6)
+        date_range_str = f"{week_start.strftime('%d %b')} - {week_end_display.strftime('%d %b')}"
         
         # Create keyboard with refresh and mini app buttons
         keyboard = weekly_report_kb(user_now, self.miniapp_url)

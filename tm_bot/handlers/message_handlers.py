@@ -265,7 +265,9 @@ class MessageHandlers:
         
         # Compute week boundaries based on report_ref_time.
         week_start, week_end = get_week_range(report_ref_time)
-        date_range_str = f"{week_start.strftime('%d %b')} - {week_end.strftime('%d %b')}"
+        # week_end is next Monday, so for display we want Sunday (6 days after Monday)
+        week_end_display = week_start + timedelta(days=6)
+        date_range_str = f"{week_start.strftime('%d %b')} - {week_end_display.strftime('%d %b')}"
         
         # Create keyboard with refresh and mini app buttons
         keyboard = weekly_report_kb(report_ref_time, self.miniapp_url)
