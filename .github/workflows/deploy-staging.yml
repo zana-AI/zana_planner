@@ -77,11 +77,32 @@ jobs:
             echo '[STAGING] Building React frontend...'
             FRONTEND_BUILD_SUCCESS=false
             if [ -d "webapp_frontend" ]; then
+              # Fix permissions for webapp_frontend directory to avoid permission errors
+              echo '[STAGING] Fixing permissions for webapp_frontend...'
+              if chown -R $USER:$USER webapp_frontend 2>/dev/null || chmod -R u+w webapp_frontend 2>/dev/null; then
+                echo '[STAGING] Permissions fixed without sudo'
+              elif sudo -n chown -R $USER:$USER webapp_frontend 2>/dev/null || sudo -n chmod -R u+w webapp_frontend 2>/dev/null; then
+                echo '[STAGING] Permissions fixed with sudo'
+              else
+                echo '[STAGING] ⚠️  Could not fix permissions, will try with sudo during build'
+              fi
+              
               cd webapp_frontend
+              
+              # Fix node_modules permissions if they exist
+              if [ -d "node_modules" ]; then
+                echo '[STAGING] Fixing node_modules permissions...'
+                chmod -R u+w node_modules 2>/dev/null || sudo chmod -R u+w node_modules 2>/dev/null || true
+              fi
+              
               # Check if node_modules exists, if not install
               if [ ! -d "node_modules" ]; then
                 echo '[STAGING] Installing npm dependencies...'
                 npm install || sudo npm install || echo '[STAGING] ⚠️  npm install failed, continuing...'
+                # Fix permissions after install
+                if [ -d "node_modules" ]; then
+                  chmod -R u+w node_modules 2>/dev/null || sudo chmod -R u+w node_modules 2>/dev/null || true
+                fi
               fi
               echo '[STAGING] Building frontend...'
               if npm run build 2>&1 || sudo npm run build 2>&1; then
