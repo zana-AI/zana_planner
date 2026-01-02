@@ -47,13 +47,12 @@ def weekly_report_kb(ref_time: datetime, miniapp_url: Optional[str] = None) -> K
     refresh_button = create_button(text="🔄 Refresh", callback_data=refresh_callback)
     
     if miniapp_url:
-        # Format ref_time as ISO datetime and encode in startapp parameter
-        # Telegram supports startapp parameter, not custom query params
+        # Use proper path routing with query parameter for ref_time
         from urllib.parse import quote
         ref_time_iso = ref_time.isoformat()
         ref_time_encoded = quote(ref_time_iso, safe='')
-        # Use startapp parameter: format is "weekly:ISO_DATE"
-        mini_app_url_with_params = f"{miniapp_url}?startapp=weekly:{ref_time_encoded}"
+        # Use /weekly path with ref_time as query parameter
+        mini_app_url_with_params = f"{miniapp_url}/weekly?ref_time={ref_time_encoded}"
         
         # Debug logging
         import logging

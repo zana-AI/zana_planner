@@ -1829,10 +1829,9 @@ class MessageHandlers:
     async def cmd_club(self, update: Update, context: CallbackContext) -> None:
         """Handle the /club command to open the community/users page in the mini-app."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(update.effective_user)
         
-        # Create mini-app URL with hash fragment (Telegram preserves these better than query params)
-        community_url = f"{self.miniapp_url}#community"
+        # Create mini-app URL with proper path routing
+        community_url = f"{self.miniapp_url}/community"
         
         # Create message
         message = "👥 **Zana Community**\n\nOpen the app to see all active users!"
@@ -1858,9 +1857,8 @@ class MessageHandlers:
             logger.warning(f"Non-admin user {user_id} attempted to use /admin")
             return
         
-        # Admin verified - send mini-app link
-        # Use hash fragment - Telegram preserves these better than query params
-        admin_url = f"{self.miniapp_url}#admin"
+        # Admin verified - send mini-app link with proper path routing
+        admin_url = f"{self.miniapp_url}/admin"
         message = "🔐 **Admin Panel**\n\nOpen the admin panel to manage broadcasts and users."
         
         # Create mini-app keyboard button
