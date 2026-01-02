@@ -254,9 +254,11 @@ html, body {
 }
 
 .card-actions {
-  margin-top: 12px;
+  margin-top: 16px;
   display: flex;
   gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .card-log-button {
@@ -281,21 +283,74 @@ html, body {
   transform: translateY(0);
 }
 
-.card-snooze-indicator {
-  position: absolute;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 600;
-  pointer-events: none;
-  z-index: 1;
+/* Promise card transitions */
+.promise-card {
+  transition: transform 0.3s ease, box-shadow 0.2s ease;
+}
+
+.promise-card:active {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .promise-card {
   position: relative;
   overflow: hidden;
+}
+
+.card-swipe-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 16px;
+}
+
+.card-snooze-button {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.2s ease;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.card-snooze-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.5);
+}
+
+.card-snooze-button:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.95) !important;
+}
+
+.card-snooze-button.active {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.card-snooze-button.active:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669, #047857);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5);
+}
+
+.card-snooze-button:disabled {
+  cursor: default;
 }
 
 .card-meta {
@@ -1154,4 +1209,32 @@ html, body {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+}
+
+.modal-message {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.modal-warning {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.modal-warning-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.modal-warning-text {
+  color: #fbbf24;
+  font-size: 13px;
+  line-height: 1.5;
 }

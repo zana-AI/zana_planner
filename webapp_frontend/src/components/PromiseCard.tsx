@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { PromiseData, SessionData } from '../types';
 import { apiClient } from '../api/client';
 import { LogActionModal } from './LogActionModal';
+import { VisibilityConfirmModal } from './VisibilityConfirmModal';
 
 interface PromiseCardProps {
   id: string;
@@ -38,25 +39,36 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [currentVisibility, setCurrentVisibility] = useState(visibility);
   const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [showVisibilityConfirm, setShowVisibilityConfirm] = useState(false);
+  const [pendingVisibility, setPendingVisibility] = useState<'private' | 'public' | null>(null);
   
   // Swipe gesture state
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
+  const [thresholdReached, setThresholdReached] = useState(false);
   
   const SWIPE_THRESHOLD = 100; // pixels
   
   const progress = calculateProgress(hours_spent, hours_promised);
   const emoji = getStatusEmoji(progress);
   
-  const handleVisibilityToggle = async () => {
+  const handleVisibilityToggle = () => {
     if (isUpdatingVisibility) return;
     
     const newVisibility = currentVisibility === 'private' ? 'public' : 'private';
+    setPendingVisibility(newVisibility);
+    setShowVisibilityConfirm(true);
+  };
+  
+  const handleVisibilityConfirm = async () => {
+    if (!pendingVisibility || isUpdatingVisibility) return;
+    
     setIsUpdatingVisibility(true);
+    setShowVisibilityConfirm(false);
     
     try {
-      await apiClient.updatePromiseVisibility(id, newVisibility);
-      setCurrentVisibility(newVisibility);
+      await apiClient.updatePromiseVisibility(id, pendingVisibility);
+      setCurrentVisibility(pendingVisibility);
       if (onRefresh) {
         onRefresh();
       }
@@ -66,7 +78,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       setCurrentVisibility(visibility);
     } finally {
       setIsUpdatingVisibility(false);
+      setPendingVisibility(null);
     }
+  };
+  
+  const handleVisibilityCancel = () => {
+    setShowVisibilityConfirm(false);
+    setPendingVisibility(null);
   };
   
   const handleSwipeStart = (e: React.TouchEvent) => {
@@ -108,6 +126,41 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     setSwipeOffset(0);
   };
   
+  const handleSnoozeButtonClick = async () => {
+    if (swipeOffset <= -SWIPE_THRESHOLD) {
+      try {
+        await apiClient.snoozePromise(id);
+        if (onRefresh) {
+          onRefresh();
+        }
+        // Reset swipe state
+        setSwipeStart(null);
+        setSwipeOffset(0);
+      } catch (err) {
+        console.error('Failed to snooze promise:', err);
+      }
+    }
+  };
+  
+  // Calculate button visibility and scale based on swipe offset
+  const snoozeButtonOpacity = swipeOffset < -50 
+    ? Math.min(Math.abs(swipeOffset) / SWIPE_THRESHOLD, 1) 
+    : 0;
+  const snoozeButtonScale = swipeOffset < -50
+    ? Math.min(0.5 + (Math.abs(swipeOffset) / SWIPE_THRESHOLD) * 0.5, 1)
+    : 0.5;
+  const isSnoozeActive = swipeOffset <= -SWIPE_THRESHOLD;
+  
+  // Haptic feedback when threshold is reached
+  useEffect(() => {
+    if (isSnoozeActive && !thresholdReached && swipeStart) {
+      setThresholdReached(true);
+      // Haptic feedback would go here if available
+    } else if (!isSnoozeActive && thresholdReached) {
+      setThresholdReached(false);
+    }
+  }, [isSnoozeActive, thresholdReached, swipeStart]);
+  
   // Create a map of date -> hours for quick lookup
   const sessionsByDate: Record<string, number> = {};
   sessions.forEach((session: SessionData) => {
@@ -134,11 +187,31 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         onTouchMove={handleSwipeMove}
         onTouchEnd={handleSwipeEnd}
       >
+        {/* Swipe overlay */}
         {swipeOffset < -50 && (
-          <div className="card-snooze-indicator">
-            {swipeOffset <= -SWIPE_THRESHOLD ? 'Release to snooze' : 'Swipe to snooze'}
-          </div>
+          <div 
+            className="card-swipe-overlay"
+            style={{
+              opacity: Math.min(Math.abs(swipeOffset) / SWIPE_THRESHOLD, 0.3),
+            }}
+          />
         )}
+        
+        {/* Snooze button that appears during swipe */}
+        {swipeOffset < -50 && (
+          <button
+            className={`card-snooze-button ${isSnoozeActive ? 'active' : ''}`}
+            style={{
+              opacity: snoozeButtonOpacity,
+              transform: `translateY(-50%) scale(${snoozeButtonScale})`,
+            }}
+            onClick={handleSnoozeButtonClick}
+            disabled={!isSnoozeActive}
+          >
+            {isSnoozeActive ? 'Snooze' : 'Swipe to snooze'}
+          </button>
+        )}
+        
         <div className="card-top">
           <div className="card-title" dir="auto">
             <span className="card-emoji">{emoji}</span>
@@ -159,16 +232,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             </span>
             <span className="card-pct" dir="ltr">{progress}%</span>
           </div>
-        </div>
-        
-        <div className="card-actions">
-          <button
-            className="card-log-button"
-            onClick={() => setIsLogModalOpen(true)}
-            title="Log time spent"
-          >
-            + Log Time
-          </button>
         </div>
       
       <div className="progress-row" aria-hidden="true">
@@ -198,6 +261,16 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           );
         })}
       </div>
+      
+      <div className="card-actions">
+        <button
+          className="card-log-button"
+          onClick={() => setIsLogModalOpen(true)}
+          title="Log time spent"
+        >
+          + Log Time
+        </button>
+      </div>
       </article>
       
       <LogActionModal
@@ -211,6 +284,16 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           }
         }}
       />
+      
+      {pendingVisibility && (
+        <VisibilityConfirmModal
+          isOpen={showVisibilityConfirm}
+          currentVisibility={currentVisibility}
+          newVisibility={pendingVisibility}
+          onConfirm={handleVisibilityConfirm}
+          onCancel={handleVisibilityCancel}
+        />
+      )}
     </>
   );
 }
