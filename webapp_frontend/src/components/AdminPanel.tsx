@@ -24,8 +24,13 @@ export function AdminPanel() {
     }
   }, [initData]);
 
-  // Fetch users
+  // Fetch users - wait for initData to be available
   useEffect(() => {
+    // Don't fetch if initData is not available yet
+    if (!initData) {
+      return;
+    }
+
     const fetchUsers = async () => {
       setLoading(true);
       setError('');
@@ -39,6 +44,8 @@ export function AdminPanel() {
         if (err instanceof ApiError) {
           if (err.status === 403) {
             setError('Access denied. Admin privileges required.');
+          } else if (err.status === 401) {
+            setError('Authentication failed. Please reopen the app from Telegram.');
           } else {
             setError(err.message);
           }
@@ -51,10 +58,15 @@ export function AdminPanel() {
     };
 
     fetchUsers();
-  }, []);
+  }, [initData]); // Changed from [] to [initData] - ensures we wait for initData
 
   // Fetch broadcasts
   const fetchBroadcasts = async () => {
+    // Don't fetch if initData is not available
+    if (!initData) {
+      return;
+    }
+    
     setLoadingBroadcasts(true);
     try {
       const broadcastsList = await apiClient.getBroadcasts('pending', 100);
@@ -67,10 +79,10 @@ export function AdminPanel() {
   };
 
   useEffect(() => {
-    if (activeTab === 'scheduled') {
+    if (activeTab === 'scheduled' && initData) {
       fetchBroadcasts();
     }
-  }, [activeTab]);
+  }, [activeTab, initData]); // Also depend on initData
 
   // Filter users based on search query
   const filteredUsers = users.filter(user => {
