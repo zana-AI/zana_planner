@@ -192,7 +192,12 @@ def create_webapp_api(
         if static_dir and os.path.isdir(static_dir):
             index_path = os.path.join(static_dir, "index.html")
             if os.path.exists(index_path):
-                return FileResponse(index_path)
+                # Prevent caching of index.html to ensure users get latest version
+                response = FileResponse(index_path)
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+                return response
         
         # Otherwise, serve static landing page
         from fastapi.responses import HTMLResponse
@@ -1188,7 +1193,12 @@ def create_webapp_api(
         if static_dir and os.path.isdir(static_dir):
             index_path = os.path.join(static_dir, "index.html")
             if os.path.exists(index_path):
-                return FileResponse(index_path)
+                # Prevent caching of index.html to ensure users get latest version
+                response = FileResponse(index_path)
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+                return response
             logger.warning(f"[WARNING] static_dir set but index.html not found at {index_path}")
         
         # If no static_dir or file not found, return helpful error
@@ -1283,7 +1293,12 @@ def create_webapp_api(
                 index_path = os.path.join(static_dir, "index.html")
                 if os.path.exists(index_path):
                     logger.info(f"[VERSION_CHECK] v2.0 - Serving index.html for SPA route: {path}")
-                    return FileResponse(index_path)
+                    # Prevent caching of index.html to ensure users get latest version
+                    response = FileResponse(index_path)
+                    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                    response.headers["Pragma"] = "no-cache"
+                    response.headers["Expires"] = "0"
+                    return response
             
             raise exc
         
@@ -1297,7 +1312,12 @@ def create_webapp_api(
                 raise HTTPException(status_code=404, detail="Not found")
             index_path = os.path.join(static_dir, "index.html")
             if os.path.exists(index_path):
-                return FileResponse(index_path)
+                # Prevent caching of index.html to ensure users get latest version
+                response = FileResponse(index_path)
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+                return response
             raise HTTPException(status_code=404, detail="Frontend not found")
     
     return app
