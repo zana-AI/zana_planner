@@ -25,9 +25,10 @@ const API_BASE = '/api';
  */
 class ApiClient {
   private initData: string = '';
+  private authToken: string | null = null;
 
   /**
-   * Set the Telegram initData for authentication.
+   * Set the Telegram initData for authentication (Telegram Mini App).
    * Should be called once when the app initializes.
    */
   setInitData(initData: string): void {
@@ -35,7 +36,37 @@ class ApiClient {
   }
 
   /**
+   * Set the authentication token (browser login).
+   * Also stores it in localStorage for persistence.
+   */
+  setAuthToken(token: string): void {
+    this.authToken = token;
+    localStorage.setItem('telegram_auth_token', token);
+  }
+
+  /**
+   * Load authentication token from localStorage.
+   * Should be called on app initialization.
+   */
+  loadAuthToken(): void {
+    const token = localStorage.getItem('telegram_auth_token');
+    if (token) {
+      this.authToken = token;
+    }
+  }
+
+  /**
+   * Clear authentication token (logout).
+   */
+  clearAuth(): void {
+    this.authToken = null;
+    this.initData = '';
+    localStorage.removeItem('telegram_auth_token');
+  }
+
+  /**
    * Make an authenticated API request.
+   * Supports both session token (browser) and initData (Telegram Mini App).
    */
   private async request<T>(
     endpoint: string,
@@ -48,8 +79,16 @@ class ApiClient {
       ...(options.headers as Record<string, string> || {}),
     };
 
-    // Add Telegram auth header if available
-    if (this.initData) {
+    // Check for session token first (browser login)
+    const token = this.authToken || localStorage.getItem('telegram_auth_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      // Update internal state if loaded from localStorage
+      if (!this.authToken) {
+        this.authToken = token;
+      }
+    } else if (this.initData) {
+      // Fall back to Telegram Mini App initData
       headers['X-Telegram-Init-Data'] = this.initData;
     }
 
@@ -315,3 +354,6 @@ export class ApiError extends Error {
 
 // Export singleton instance
 export const apiClient = new ApiClient();
+
+// Load auth token from localStorage on initialization
+apiClient.loadAuthToken();

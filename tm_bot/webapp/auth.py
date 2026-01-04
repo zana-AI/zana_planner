@@ -118,3 +118,85 @@ def extract_user_id(validated_data: Dict[str, Any]) -> Optional[int]:
         return int(user_id)
     
     return None
+
+
+def validate_telegram_widget_auth(
+    auth_data: Dict[str, Any],
+    bot_token: str,
+    max_age_seconds: int = 86400  # 24 hours default
+) -> Optional[Dict[str, Any]]:
+    """
+    Validate Telegram Login Widget authentication data.
+    
+    The Login Widget sends data in a different format than Mini App initData.
+    It includes: id, first_name, last_name, username, photo_url, auth_date, hash
+    
+    Args:
+        auth_data: The auth data dict from Telegram Login Widget
+        bot_token: The bot token for HMAC validation
+        max_age_seconds: Maximum age of auth_date (default 24 hours)
+    
+    Returns:
+        Validated user data dict if valid, None if invalid
+    """
+    if not auth_data or not bot_token:
+        return None
+    
+    try:
+        # Extract hash
+        received_hash = auth_data.get("hash")
+        if not received_hash:
+            return None
+        
+        # Build data-check-string: alphabetically sorted key=value pairs, excluding hash
+        data_pairs = []
+        for key, value in sorted(auth_data.items()):
+            if key != "hash":
+                # Convert value to string, handle None
+                value_str = str(value) if value is not None else ""
+                data_pairs.append(f"{key}={value_str}")
+        
+        data_check_string = "\n".join(data_pairs)
+        
+        # Create secret key: HMAC-SHA256 of bot_token
+        secret_key = hmac.new(
+            bot_token.encode("utf-8"),
+            digestmod=hashlib.sha256
+        ).digest()
+        
+        # Calculate expected hash
+        expected_hash = hmac.new(
+            secret_key,
+            data_check_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Compare hashes
+        if not hmac.compare_digest(received_hash, expected_hash):
+            return None
+        
+        # Check auth_date freshness
+        auth_date = auth_data.get("auth_date")
+        if auth_date:
+            try:
+                auth_date_int = int(auth_date)
+                current_time = int(time.time())
+                if current_time - auth_date_int > max_age_seconds:
+                    return None
+            except (ValueError, TypeError):
+                return None
+        
+        # Return in format compatible with existing code
+        return {
+            "user": {
+                "id": auth_data.get("id"),
+                "first_name": auth_data.get("first_name"),
+                "last_name": auth_data.get("last_name"),
+                "username": auth_data.get("username"),
+                "photo_url": auth_data.get("photo_url"),
+            },
+            "auth_date": int(auth_date) if auth_date else None,
+        }
+        
+    except (KeyError, TypeError, ValueError):
+        return None

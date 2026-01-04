@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
 import { WeeklyReportPage } from './pages/WeeklyReportPage';
 import { TemplatesPage } from './pages/TemplatesPage';
@@ -7,11 +8,28 @@ import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
 import { Navigation } from './components/Navigation';
+import { apiClient } from './api/client';
 
 function App() {
   const { initData, isReady } = useTelegramWebApp();
+  const [hasSessionToken, setHasSessionToken] = useState(false);
+  
+  // Check for session token on mount
+  useEffect(() => {
+    const token = localStorage.getItem('telegram_auth_token');
+    setHasSessionToken(!!token);
+  }, []);
+
+  // Check for Telegram Mini App initData or session token
   const authData = initData || getDevInitData();
-  const isAuthenticated = !!authData;
+  const isAuthenticated = !!authData || hasSessionToken;
+  
+  // Update API client with initData if available
+  useEffect(() => {
+    if (authData) {
+      apiClient.setInitData(authData);
+    }
+  }, [authData]);
 
   // Wait for Telegram WebApp to be ready
   if (!isReady) {

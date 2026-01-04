@@ -4,6 +4,7 @@ Provides API endpoints for the React frontend.
 """
 
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -13,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from webapp.auth import validate_telegram_init_data, extract_user_id
+from webapp.auth import validate_telegram_init_data, extract_user_id, validate_telegram_widget_auth
+from repositories.auth_session_repo import AuthSessionRepository
 from services.reports import ReportsService
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
@@ -117,7 +119,14 @@ def create_webapp_api(
     app.state.root_dir = root_dir
     app.state.bot_token = bot_token
     
-    # Startup event to log registered routes
+    # Initialize auth session repository
+    auth_session_repo = AuthSessionRepository()
+    app.state.auth_session_repo = auth_session_repo
+    
+    # Initialize bot_username (will be set in startup)
+    app.state.bot_username = ""
+    
+    # Startup event to log registered routes and fetch bot username
     @app.on_event("startup")
     async def startup_event():
         logger.info(f"[VERSION_CHECK] v2.0 - App startup, registered routes:")
@@ -125,6 +134,47 @@ def create_webapp_api(
             if hasattr(route, 'path'):
                 methods = getattr(route, 'methods', set())
                 logger.info(f"[VERSION_CHECK] v2.0 - Route: {route.path} {methods}")
+        
+        # Get bot username from env or fetch from API
+        username = os.getenv("TELEGRAM_BOT_USERNAME")
+        if username:
+            logger.info(f"Using bot username from env: {username}")
+            app.state.bot_username = username
+        else:
+            # Fetch from Telegram API
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"https://api.telegram.org/bot{bot_token}/getMe",
+                        timeout=10.0
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("ok"):
+                            username = data["result"].get("username")
+                            if username:
+                                logger.info(f"Fetched bot username from API: {username}")
+                                app.state.bot_username = username
+                            else:
+                                logger.warning("Bot username not found in API response")
+                    else:
+                        logger.warning(f"Failed to fetch bot username: HTTP {response.status_code}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch bot username from API: {e}")
+            
+            if not app.state.bot_username:
+                logger.warning("Bot username not found in env or API, Login Widget may not work")
+        
+        # Start background task for session cleanup
+        import asyncio
+        async def cleanup_task():
+            while True:
+                await asyncio.sleep(3600)  # Run every hour
+                auth_session_repo.cleanup_expired()
+        
+        asyncio.create_task(cleanup_task())
+        logger.info("Started auth session cleanup task")
     
     # Dependency to validate Telegram auth and get user_id
     async def get_current_user(
@@ -132,12 +182,25 @@ def create_webapp_api(
         authorization: Optional[str] = Header(None),
     ) -> int:
         """
-        Validate Telegram initData and return user_id.
-        Accepts initData in either X-Telegram-Init-Data header or Authorization header.
+        Validate Telegram auth and return user_id.
+        Supports both:
+        1. Session token (browser login): Authorization: Bearer <session_token>
+        2. Telegram Mini App initData: X-Telegram-Init-Data or Authorization header
         """
+        # First, check for session token (browser login)
+        if authorization and authorization.startswith("Bearer "):
+            session_token = authorization[7:]
+            auth_session_repo = app.state.auth_session_repo
+            session = auth_session_repo.get_session(session_token)
+            
+            if session:
+                return session.user_id
+            # If session not found, fall through to initData check
+        
+        # Fall back to Telegram Mini App initData validation
         init_data = x_telegram_init_data
         
-        # Also check Authorization header (Bearer <initData>)
+        # Also check Authorization header (Bearer <initData> or plain initData)
         if not init_data and authorization:
             if authorization.startswith("Bearer "):
                 init_data = authorization[7:]
@@ -341,6 +404,85 @@ def create_webapp_api(
     async def health_check():
         """Health check endpoint."""
         return {"status": "healthy", "service": "zana-webapp"}
+    
+    # Authentication endpoints
+    class TelegramLoginRequest(BaseModel):
+        """Request model for Telegram Login Widget authentication."""
+        auth_data: Dict[str, Any]
+    
+    class TelegramLoginResponse(BaseModel):
+        """Response model for Telegram login."""
+        session_token: str
+        user_id: int
+        expires_at: str
+    
+    @app.post("/api/auth/telegram-login", response_model=TelegramLoginResponse)
+    async def telegram_login(request: TelegramLoginRequest):
+        """
+        Authenticate using Telegram Login Widget data.
+        Validates the widget auth data and returns a session token.
+        """
+        try:
+            auth_data = request.auth_data
+            
+            # Validate widget auth data
+            validated = validate_telegram_widget_auth(
+                auth_data,
+                app.state.bot_token
+            )
+            
+            if not validated:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid or expired Telegram authentication"
+                )
+            
+            user_id = extract_user_id(validated)
+            if not user_id:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Could not extract user ID from authentication data"
+                )
+            
+            # Get auth_date from original auth_data
+            telegram_auth_date = auth_data.get("auth_date", 0)
+            try:
+                telegram_auth_date = int(telegram_auth_date)
+            except (ValueError, TypeError):
+                telegram_auth_date = int(time.time())
+            
+            # Create auth session
+            auth_session_repo = app.state.auth_session_repo
+            session = auth_session_repo.create_session(
+                user_id=user_id,
+                telegram_auth_date=telegram_auth_date,
+                expires_in_days=7
+            )
+            
+            return TelegramLoginResponse(
+                session_token=session.session_token,
+                user_id=session.user_id,
+                expires_at=session.expires_at.isoformat()
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error in telegram login: {e}")
+            raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+    
+    @app.get("/api/auth/bot-username")
+    async def get_bot_username_endpoint():
+        """
+        Get bot username for Login Widget configuration (public endpoint).
+        """
+        bot_username = app.state.bot_username
+        if not bot_username:
+            raise HTTPException(
+                status_code=503,
+                detail="Bot username not available"
+            )
+        return {"bot_username": bot_username}
     
     @app.get("/api/weekly", response_model=WeeklyReportResponse)
     async def get_weekly_report(

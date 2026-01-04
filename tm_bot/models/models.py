@@ -65,3 +65,13 @@ class Broadcast:
     status: str = "pending"  # "pending" | "completed" | "cancelled"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+@dataclass
+class AuthSession:
+    """Authentication session for browser-based login (distinct from work Session)."""
+    session_token: str  # Unique token (UUID)
+    user_id: int
+    created_at: datetime
+    expires_at: datetime
+    telegram_auth_date: int  # Original auth_date from Telegram

@@ -1,9 +1,53 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { NewYearBanner } from './NewYearBanner';
+import { TelegramLogin } from './TelegramLogin';
+import { apiClient } from '../api/client';
 
 export function HomePage() {
+  const navigate = useNavigate();
+  const [showLogin, setShowLogin] = useState(false);
+  
+  // Check if user is already authenticated
+  useEffect(() => {
+    const token = localStorage.getItem('telegram_auth_token');
+    const hasInitData = window.Telegram?.WebApp?.initData;
+    
+    if (token || hasInitData) {
+      // User is authenticated, redirect to weekly report
+      navigate('/weekly', { replace: true });
+    } else {
+      // Show login option
+      setShowLogin(true);
+    }
+  }, [navigate]);
+
+  const handleAuthSuccess = (token: string) => {
+    apiClient.setAuthToken(token);
+    navigate('/weekly', { replace: true });
+  };
+
   return (
     <div className="home-page">
       <NewYearBanner />
+      
+      {/* Login Section - shown when not authenticated */}
+      {showLogin && (
+        <section className="home-login-section" style={{
+          background: 'rgba(11, 16, 32, 0.95)',
+          padding: '3rem 2rem',
+          margin: '2rem auto',
+          maxWidth: '500px',
+          borderRadius: '12px',
+          textAlign: 'center'
+        }}>
+          <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Sign in to continue</h2>
+          <p style={{ color: '#aaa', marginBottom: '2rem' }}>
+            Please sign in with Telegram to access your dashboard
+          </p>
+          <TelegramLogin onAuthSuccess={handleAuthSuccess} />
+        </section>
+      )}
       
       {/* Hero Section */}
       <section className="home-hero">
