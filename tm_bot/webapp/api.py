@@ -477,12 +477,13 @@ def create_webapp_api(
         Get bot username for Login Widget configuration (public endpoint).
         """
         bot_username = app.state.bot_username
-        if not bot_username:
+        if not bot_username or not bot_username.strip():
+            logger.warning("Bot username endpoint called but username not available")
             raise HTTPException(
                 status_code=503,
-                detail="Bot username not available"
+                detail="Bot username not available. Please check TELEGRAM_BOT_USERNAME environment variable or bot token configuration."
             )
-        return {"bot_username": bot_username}
+        return {"bot_username": bot_username.strip()}
     
     @app.get("/api/weekly", response_model=WeeklyReportResponse)
     async def get_weekly_report(
