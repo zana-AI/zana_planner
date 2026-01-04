@@ -175,26 +175,16 @@ export function TelegramLogin({
   }
 
   return (
-    <div className="telegram-login-wrapper">
-      <div 
-        ref={containerRef} 
-        className="telegram-login-container" 
-        style={{ 
-          minHeight: '60px',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center'
-        }} 
-      />
-      <p style={{ 
-        fontSize: '0.85em', 
-        color: 'var(--muted)', 
-        marginTop: '0.5rem',
-        textAlign: 'center'
-      }}>
-        If the login button doesn't appear, make sure this domain is whitelisted in your Telegram Bot settings.
-      </p>
-    </div>
+    <div 
+      ref={containerRef} 
+      className="telegram-login-container" 
+      style={{ 
+        minHeight: '60px',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center'
+      }} 
+    />
   );
 }
 

@@ -35,16 +35,12 @@ export function HomePage() {
       {showLogin && (
         <section className="home-login-section" style={{
           background: 'rgba(11, 16, 32, 0.95)',
-          padding: '3rem 2rem',
+          padding: '2rem',
           margin: '2rem auto',
           maxWidth: '500px',
           borderRadius: '12px',
           textAlign: 'center'
         }}>
-          <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Sign in to continue</h2>
-          <p style={{ color: '#aaa', marginBottom: '2rem' }}>
-            Please sign in with Telegram to access your dashboard
-          </p>
           <TelegramLogin onAuthSuccess={handleAuthSuccess} />
         </section>
       )}
