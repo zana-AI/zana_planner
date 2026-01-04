@@ -32,9 +32,16 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
       // Expand to full height
       tg.expand();
       
-      // Set theme colors to match our dark theme
-      tg.setHeaderColor('#0b1020');
-      tg.setBackgroundColor('#0b1020');
+      // Set theme colors to match our dark theme (only if supported)
+      // Check version to avoid warnings in older Telegram versions
+      try {
+        if (tg.version && parseFloat(tg.version) >= 6.1) {
+          tg.setHeaderColor('#0b1020');
+          tg.setBackgroundColor('#0b1020');
+        }
+      } catch (e) {
+        // Ignore if not supported
+      }
       
       setIsReady(true);
     } else {

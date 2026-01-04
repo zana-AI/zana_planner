@@ -99,37 +99,8 @@ export function WeeklyReportPage() {
     }
   }, [initData, fetchReport, searchParams]);
 
-  // Loading state
-  if (state === 'loading' || !isReady) {
-    return (
-      <div className="app">
-        <div className="loading">
-          <div className="loading-spinner" />
-          <div className="loading-text">Loading your weekly report...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (state === 'error') {
-    return (
-      <div className="app">
-        <div className="error">
-          <div className="error-icon">😕</div>
-          <h1 className="error-title">Something went wrong</h1>
-          <p className="error-message">{error}</p>
-          {initData && (
-            <button className="retry-button" onClick={handleRetry}>
-              Try Again
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   // Filter and recompute totals for tasks view
+  // IMPORTANT: This hook must be called before any conditional returns
   const filteredData = useMemo(() => {
     if (!reportData) return null;
     
@@ -159,6 +130,36 @@ export function WeeklyReportPage() {
       total_spent: filteredTotalSpent,
     };
   }, [reportData, isTasksView]);
+
+  // Loading state
+  if (state === 'loading' || !isReady) {
+    return (
+      <div className="app">
+        <div className="loading">
+          <div className="loading-spinner" />
+          <div className="loading-text">Loading your weekly report...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (state === 'error') {
+    return (
+      <div className="app">
+        <div className="error">
+          <div className="error-icon">😕</div>
+          <h1 className="error-title">Something went wrong</h1>
+          <p className="error-message">{error}</p>
+          {initData && (
+            <button className="retry-button" onClick={handleRetry}>
+              Try Again
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Show weekly report
   // If state is ready but no reportData, show loading (shouldn't happen, but safety check)
