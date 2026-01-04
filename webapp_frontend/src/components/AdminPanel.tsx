@@ -578,11 +578,23 @@ export function AdminPanel() {
                       console.error('Failed to delete template:', err);
                       if (err instanceof ApiError) {
                         if (err.status === 409) {
-                          const detail = err.detail as any;
-                          setError(detail?.message || 'Template cannot be deleted: ' + (detail?.reasons?.join(', ') || 'Template is in use'));
+                          // Try to parse error message for structured error details
+                          try {
+                            const errorData = JSON.parse(err.message);
+                            if (errorData.message || errorData.reasons) {
+                              setError(errorData.message || 'Template cannot be deleted: ' + (Array.isArray(errorData.reasons) ? errorData.reasons.join(', ') : 'Template is in use'));
+                            } else {
+                              setError(err.message);
+                            }
+                          } catch {
+                            // If parsing fails, use the message as-is
+                            setError(err.message || 'Template cannot be deleted because it is in use');
+                          }
                         } else {
                           setError(err.message);
                         }
+                      } else {
+                        setError('Failed to delete template');
                       }
                       setShowDeleteConfirm(null);
                       setDeleteConfirmText('');
