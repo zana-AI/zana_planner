@@ -12,7 +12,11 @@ from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.sessions_repo import SessionsRepository
 from repositories.nightly_state_repo import NightlyStateRepository
+from repositories.templates_repo import TemplatesRepository
+from repositories.instances_repo import InstancesRepository
+from repositories.distractions_repo import DistractionsRepository
 from services.reports import ReportsService
+from services.template_unlocks import TemplateUnlocksService
 from services.ranking import RankingService
 from services.reminders import RemindersService
 from services.sessions import SessionsService
@@ -41,12 +45,18 @@ class PlannerAPIAdapter:
         
         # Initialize services
         self.settings_service = SettingsService(self.settings_repo)
-        self.reports_service = ReportsService(self.promises_repo, self.actions_repo)
+        self.reports_service = ReportsService(self.promises_repo, self.actions_repo, root_dir=self.root_dir)
         self.ranking_service = RankingService(self.promises_repo, self.actions_repo, self.settings_repo)
         self.reminders_service = RemindersService(self.ranking_service, self.settings_repo)
         self.sessions_service = SessionsService(self.sessions_repo, self.actions_repo)
         self.content_service = ContentService()
         self.time_estimation_service = TimeEstimationService(self.actions_repo)
+        
+        # Template-related repos and services
+        self.templates_repo = TemplatesRepository(root_dir)
+        self.instances_repo = InstancesRepository(root_dir)
+        self.distractions_repo = DistractionsRepository(root_dir)
+        self.unlocks_service = TemplateUnlocksService(root_dir)
 
     # Promise methods
     def add_promise(self, user_id, promise_text: str, num_hours_promised_per_week: float, 
@@ -1387,3 +1397,208 @@ Summary:"""
         except Exception as e:
             logger.error(f"Error summarizing content: {str(e)}")
             return f"Unable to generate summary. Error: {str(e)}"
+    
+    # Template methods
+    def list_templates(self, user_id, category: Optional[str] = None) -> str:
+        """List available promise templates, optionally filtered by category."""
+        try:
+            templates = self.templates_repo.list_templates(category=category, is_active=True)
+            templates_with_status = self.unlocks_service.annotate_templates_with_unlock_status(user_id, templates)
+            
+            if not templates_with_status:
+                return "No templates found."
+            
+            result = []
+            for t in templates_with_status:
+                status = "🔓 Unlocked" if t.get('unlocked', False) else "🔒 Locked"
+                metric = f"{t['target_value']}{'x' if t['metric_type'] == 'count' else 'h'}"
+                result.append(f"{status} - {t['title']} ({t['level']}) - {metric} - {t['category']}")
+            
+            return "\n".join(result)
+        except Exception as e:
+            logger.error(f"Error listing templates: {str(e)}")
+            return f"Error listing templates: {str(e)}"
+    
+    def get_template(self, user_id, template_id: str) -> str:
+        """Get details for a specific template."""
+        try:
+            template = self.templates_repo.get_template(template_id)
+            if not template:
+                return f"Template '{template_id}' not found."
+            
+            unlock_status = self.unlocks_service.get_unlock_status(user_id, template_id)
+            prerequisites = self.templates_repo.get_prerequisites(template_id)
+            
+            result = [f"Template: {template['title']}"]
+            result.append(f"Category: {template['category']}")
+            result.append(f"Level: {template['level']}")
+            result.append(f"Status: {'🔓 Unlocked' if unlock_status['unlocked'] else '🔒 Locked'}")
+            if not unlock_status['unlocked']:
+                result.append(f"Lock reason: {unlock_status['lock_reason']}")
+            result.append(f"Why: {template['why']}")
+            result.append(f"Done means: {template['done']}")
+            result.append(f"Effort: {template['effort']}")
+            result.append(f"Target: {template['target_value']}{'x' if template['metric_type'] == 'count' else 'h'} ({template['target_direction']})")
+            
+            if prerequisites:
+                result.append("Prerequisites:")
+                for p in prerequisites:
+                    if p['kind'] == 'completed_template':
+                        result.append(f"  - Complete template: {p['required_template_id']}")
+                    elif p['kind'] == 'success_rate':
+                        result.append(f"  - Achieve {p['min_success_rate']*100}% success on {p['required_template_id']} over {p['window_weeks']} weeks")
+            
+            return "\n".join(result)
+        except Exception as e:
+            logger.error(f"Error getting template: {str(e)}")
+            return f"Error getting template: {str(e)}"
+    
+    def subscribe_template(
+        self, user_id, template_id: str, start_date: Optional[str] = None, target_date: Optional[str] = None
+    ) -> str:
+        """Subscribe to a template (creates a promise and instance)."""
+        try:
+            from dateutil.parser import parse as parse_date
+            
+            # Check if unlocked
+            unlock_status = self.unlocks_service.get_unlock_status(user_id, template_id)
+            if not unlock_status['unlocked']:
+                return f"Template is locked: {unlock_status['lock_reason']}"
+            
+            # Parse dates
+            start = None
+            target = None
+            if start_date:
+                try:
+                    start = parse_date(start_date).date()
+                except:
+                    return f"Invalid start_date format: {start_date}"
+            if target_date:
+                try:
+                    target = parse_date(target_date).date()
+                except:
+                    return f"Invalid target_date format: {target_date}"
+            
+            result = self.instances_repo.subscribe_template(user_id, template_id, start, target)
+            return f"Subscribed to template '{template_id}'. Created promise #{result['promise_id']}."
+        except Exception as e:
+            logger.error(f"Error subscribing to template: {str(e)}")
+            return f"Error subscribing to template: {str(e)}"
+    
+    def add_checkin(self, user_id, promise_id: str, action_datetime: Optional[datetime] = None) -> str:
+        """Record a check-in for a promise (count-based templates)."""
+        try:
+            # Verify promise exists
+            promise = self.promises_repo.get_promise(user_id, promise_id)
+            if not promise:
+                return f"Promise with ID '{promise_id}' not found."
+            
+            if not action_datetime:
+                action_datetime = datetime.now()
+            
+            action = Action(
+                user_id=user_id,
+                promise_id=promise_id,
+                action=ActionType.CHECKIN.value,
+                time_spent=0.0,
+                at=action_datetime
+            )
+            
+            self.actions_repo.append_action(action)
+            return f"Check-in recorded for promise ID '{promise_id}'."
+        except Exception as e:
+            logger.error(f"Error recording check-in: {str(e)}")
+            return f"Error recording check-in: {str(e)}"
+    
+    def resolve_date(self, user_id, date_text: str) -> str:
+        """Resolve a relative date phrase (e.g., 'end of March', 'in 2 months') to an absolute date (YYYY-MM-DD)."""
+        try:
+            import dateparser
+            from datetime import datetime
+            
+            # Parse the date text
+            parsed = dateparser.parse(date_text, settings={'RELATIVE_BASE': datetime.now()})
+            if not parsed:
+                return f"Could not parse date: '{date_text}'. Please use a clearer date description."
+            
+            return parsed.date().isoformat()
+        except ImportError:
+            # Fallback if dateparser not available
+            try:
+                from datetime import datetime
+                # Try basic ISO format
+                parsed = datetime.fromisoformat(date_text.replace('Z', '+00:00'))
+                return parsed.date().isoformat()
+            except:
+                return f"Could not parse date: '{date_text}'. Please use ISO format (YYYY-MM-DD)."
+        except Exception as e:
+            logger.error(f"Error resolving date: {str(e)}")
+            return f"Error resolving date: {str(e)}"
+    
+    def get_overload_status(self, user_id) -> str:
+        """Check if user is overloaded with too many active promises and suggest reducing scope."""
+        try:
+            instances = self.instances_repo.list_active_instances(user_id)
+            promises = self.promises_repo.list_promises(user_id)
+            
+            # Calculate estimated weekly load
+            total_estimated_hours = 0.0
+            for instance in instances:
+                target = instance['target_value']
+                hours_per_unit = instance['estimated_hours_per_unit']
+                if instance['metric_type'] == 'hours':
+                    total_estimated_hours += target
+                else:  # count
+                    total_estimated_hours += target * hours_per_unit
+            
+            # Get recent actual weekly hours
+            from datetime import datetime, timedelta
+            ref_time = datetime.now()
+            weekly_summary = self.reports_service.get_weekly_summary(user_id, ref_time)
+            total_actual = sum(p.get('hours_spent', 0) for p in weekly_summary.values())
+            
+            # Check overload (estimated > 40 hours/week or actual > 35 hours/week consistently)
+            is_overloaded = total_estimated_hours > 40 or (total_actual > 35 and len(instances) > 3)
+            
+            result = []
+            result.append(f"Active template instances: {len(instances)}")
+            result.append(f"Total promises: {len(promises)}")
+            result.append(f"Estimated weekly load: {total_estimated_hours:.1f}h")
+            result.append(f"Recent actual weekly: {total_actual:.1f}h")
+            
+            if is_overloaded:
+                result.append("\n⚠️ OVERLOAD DETECTED")
+                result.append("Recommendation: Reduce scope by:")
+                result.append("1. Completing or abandoning some active instances")
+                result.append("2. Downgrading to lower-level templates")
+                result.append("3. Pausing some commitments temporarily")
+            else:
+                result.append("\n✅ Load looks manageable")
+            
+            return "\n".join(result)
+        except Exception as e:
+            logger.error(f"Error checking overload status: {str(e)}")
+            return f"Error checking overload status: {str(e)}"
+    
+    def log_distraction(self, user_id, category: str, minutes: float, at: Optional[str] = None) -> str:
+        """Log a distraction event (for budget templates)."""
+        try:
+            from datetime import datetime
+            from dateutil.parser import parse as parse_datetime
+            
+            action_datetime = None
+            if at:
+                try:
+                    action_datetime = parse_datetime(at)
+                    if action_datetime.tzinfo is not None:
+                        action_datetime = action_datetime.replace(tzinfo=None)
+                except:
+                    return f"Invalid datetime format: {at}"
+            else:
+                action_datetime = datetime.now()
+            
+            event_uuid = self.distractions_repo.log_distraction(user_id, category, minutes, action_datetime)
+            return f"Distraction logged: {minutes} minutes in '{category}' category."
+        except Exception as e:
+            logger.error(f"Error logging distraction: {str(e)}")
+            return f"Error logging distraction: {str(e)}"

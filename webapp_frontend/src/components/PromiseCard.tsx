@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import type { PromiseData, SessionData } from '../types';
 import { apiClient } from '../api/client';
 import { LogActionModal } from './LogActionModal';
+import { CheckinModal } from './CheckinModal';
+import { WeeklyNoteModal } from './WeeklyNoteModal';
 import { VisibilityConfirmModal } from './VisibilityConfirmModal';
 
 interface PromiseCardProps {
@@ -35,12 +37,25 @@ function calculateProgress(spent: number, promised: number): number {
  * PromiseCard component - displays a single promise with progress visualization
  */
 export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps) {
-  const { text, hours_promised, hours_spent, sessions, visibility = 'private' } = data;
+  const { 
+    text, 
+    hours_promised, 
+    hours_spent, 
+    sessions, 
+    visibility = 'private',
+    metric_type = 'hours',
+    target_value = hours_promised,
+    target_direction = 'at_least',
+    template_kind = 'commitment',
+    achieved_value = hours_spent,
+  } = data;
   const [currentVisibility, setCurrentVisibility] = useState<'private' | 'public'>(
     (visibility === 'public' ? 'public' : 'private') as 'private' | 'public'
   );
   const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [isCheckinModalOpen, setIsCheckinModalOpen] = useState(false);
+  const [isWeeklyNoteModalOpen, setIsWeeklyNoteModalOpen] = useState(false);
   const [showVisibilityConfirm, setShowVisibilityConfirm] = useState(false);
   const [pendingVisibility, setPendingVisibility] = useState<'private' | 'public' | null>(null);
   
@@ -51,7 +66,31 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   
   const SWIPE_THRESHOLD = 100; // pixels
   
-  const progress = calculateProgress(hours_spent, hours_promised);
+  // Calculate progress based on metric type
+  const isCountBased = metric_type === 'count';
+  const isBudget = template_kind === 'budget';
+  const isAtMost = target_direction === 'at_most';
+  
+  let progress: number;
+  if (isCountBased) {
+    progress = calculateProgress(achieved_value, target_value);
+  } else if (isBudget && isAtMost) {
+    // For budgets, progress is inverse: 100% when under budget, decreasing as we go over
+    if (target_value > 0) {
+      if (achieved_value <= target_value) {
+        progress = (achieved_value / target_value) * 100;
+      } else {
+        // Over budget: show negative progress
+        const excess = achieved_value - target_value;
+        progress = Math.max(0, 100 - (excess / target_value) * 100);
+      }
+    } else {
+      progress = achieved_value <= 0 ? 100 : 0;
+    }
+  } else {
+    progress = calculateProgress(achieved_value, target_value);
+  }
+  
   const emoji = getStatusEmoji(progress);
   
   const handleVisibilityToggle = () => {
@@ -163,19 +202,26 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     }
   }, [isSnoozeActive, thresholdReached, swipeStart]);
   
-  // Create a map of date -> hours for quick lookup
+  // Create a map of date -> value for quick lookup
   const sessionsByDate: Record<string, number> = {};
   sessions.forEach((session: SessionData) => {
-    sessionsByDate[session.date] = (sessionsByDate[session.date] || 0) + session.hours;
+    const dateKey = typeof session.date === 'string' ? session.date : session.date;
+    if (isCountBased) {
+      // For count-based, sessions have 'count' field
+      const count = (session as any).count || 0;
+      sessionsByDate[dateKey] = (sessionsByDate[dateKey] || 0) + count;
+    } else {
+      sessionsByDate[dateKey] = (sessionsByDate[dateKey] || 0) + (session.hours || 0);
+    }
   });
   
-  // Get hours for each day of the week
-  const dayHours = weekDays.map(date => sessionsByDate[date] || 0);
+  // Get values for each day of the week
+  const dayValues = weekDays.map(date => sessionsByDate[date] || 0);
   
   // Calculate max height for bars
-  const maxDayHours = Math.max(...dayHours, 0.001);
-  const dailyTarget = hours_promised > 0 ? hours_promised / 7 : 0;
-  const baseline = Math.max(dailyTarget, maxDayHours, 0.25);
+  const maxDayValue = Math.max(...dayValues, 0.001);
+  const dailyTarget = target_value > 0 ? target_value / 7 : 0;
+  const baseline = Math.max(dailyTarget, maxDayValue, isCountBased ? 1 : 0.25);
   
   return (
     <>
@@ -230,9 +276,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           <div className="card-meta">
             <span className="card-id" dir="ltr">#{id}</span>
             <span className="card-ratio" dir="ltr">
-              {hours_spent.toFixed(1)}/{hours_promised.toFixed(1)} h
+              {isCountBased ? (
+                <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
+              ) : (
+                <>{achieved_value.toFixed(1)}/{target_value.toFixed(1)} h</>
+              )}
             </span>
-            <span className="card-pct" dir="ltr">{progress}%</span>
+            <span className="card-pct" dir="ltr">{Math.round(progress)}%</span>
           </div>
         </div>
       
@@ -246,13 +296,16 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       </div>
       
       <div className="days-row" aria-hidden="true">
-        {dayHours.map((hours, index) => {
-          const heightPct = Math.round((hours / baseline) * 100);
+        {dayValues.map((value, index) => {
+          const heightPct = Math.round((value / baseline) * 100);
+          const title = isCountBased 
+            ? `${DAY_LABELS[index]}: ${Math.round(value)}`
+            : `${DAY_LABELS[index]}: ${value.toFixed(2)}h`;
           return (
             <div 
               key={index} 
               className="day-col"
-              title={`${DAY_LABELS[index]}: ${hours.toFixed(2)}h`}
+              title={title}
             >
               <div 
                 className="day-bar" 
@@ -265,13 +318,52 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       </div>
       
       <div className="card-actions">
+        {isCountBased ? (
+          <button
+            className="card-log-button"
+            onClick={() => setIsCheckinModalOpen(true)}
+            title="Check in"
+          >
+            + Check In
+          </button>
+        ) : (
+          <button
+            className="card-log-button"
+            onClick={() => setIsLogModalOpen(true)}
+            title="Log time spent"
+          >
+            + Log Time
+          </button>
+        )}
         <button
-          className="card-log-button"
-          onClick={() => setIsLogModalOpen(true)}
-          title="Log time spent"
+          className="card-log-button card-log-button-secondary"
+          onClick={() => setIsWeeklyNoteModalOpen(true)}
+          title="Add weekly note"
         >
-          + Log Time
+          📝 Note
         </button>
+        {isBudget && (
+          <div className="budget-bar-container" style={{ marginTop: '0.5rem', width: '100%' }}>
+            <div className="budget-bar-label" style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+              {isCountBased ? (
+                <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
+              ) : (
+                <>{achieved_value.toFixed(1)}h / {target_value.toFixed(1)}h</>
+              )}
+            </div>
+            <div className="budget-bar" style={{ height: '8px', backgroundColor: '#2a2a3a', borderRadius: '4px', overflow: 'hidden' }}>
+              <div 
+                className={`budget-bar-fill ${achieved_value > target_value ? 'over-budget' : ''}`}
+                style={{ 
+                  height: '100%',
+                  width: `${Math.min((achieved_value / target_value) * 100, 100)}%`,
+                  backgroundColor: achieved_value > target_value ? '#ff4444' : '#4CAF50',
+                  transition: 'width 0.3s ease'
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
       </article>
       
@@ -280,6 +372,29 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         promiseText={text}
         isOpen={isLogModalOpen}
         onClose={() => setIsLogModalOpen(false)}
+        onSuccess={() => {
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
+      />
+      <CheckinModal
+        promiseId={id}
+        promiseText={text}
+        isOpen={isCheckinModalOpen}
+        onClose={() => setIsCheckinModalOpen(false)}
+        onSuccess={() => {
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
+      />
+      <WeeklyNoteModal
+        promiseId={id}
+        promiseText={text}
+        weekStart={weekDays[0]}
+        isOpen={isWeeklyNoteModalOpen}
+        onClose={() => setIsWeeklyNoteModalOpen(false)}
         onSuccess={() => {
           if (onRefresh) {
             onRefresh();

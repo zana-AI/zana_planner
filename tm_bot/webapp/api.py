@@ -20,6 +20,11 @@ from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.follows_repo import FollowsRepository
 from repositories.broadcasts_repo import BroadcastsRepository
+from repositories.templates_repo import TemplatesRepository
+from repositories.instances_repo import InstancesRepository
+from repositories.reviews_repo import ReviewsRepository
+from repositories.distractions_repo import DistractionsRepository
+from services.template_unlocks import TemplateUnlocksService
 from db.sqlite_db import connection_for_root
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
@@ -165,7 +170,7 @@ def create_webapp_api(
         """Get ReportsService instance for a user."""
         promises_repo = PromisesRepository(app.state.root_dir)
         actions_repo = ActionsRepository(app.state.root_dir)
-        return ReportsService(promises_repo, actions_repo)
+        return ReportsService(promises_repo, actions_repo, root_dir=app.state.root_dir)
     
     def get_settings_repo() -> SettingsRepository:
         """Get SettingsRepository instance."""
@@ -789,6 +794,296 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error snoozing promise: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to snooze promise: {str(e)}")
+    
+    # Template API endpoints
+    @app.get("/api/templates")
+    async def list_templates(
+        category: Optional[str] = Query(None, description="Filter by category"),
+        program_key: Optional[str] = Query(None, description="Filter by program key"),
+        user_id: int = Depends(get_current_user)
+    ):
+        """List templates with unlock status."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            unlocks_service = TemplateUnlocksService(app.state.root_dir)
+            
+            templates = templates_repo.list_templates(category=category, program_key=program_key, is_active=True)
+            templates_with_status = unlocks_service.annotate_templates_with_unlock_status(user_id, templates)
+            
+            return {"templates": templates_with_status}
+        except Exception as e:
+            logger.exception(f"Error listing templates: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
+    
+    @app.get("/api/templates/{template_id}")
+    async def get_template(
+        template_id: str,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Get template details with unlock status."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            unlocks_service = TemplateUnlocksService(app.state.root_dir)
+            
+            template = templates_repo.get_template(template_id)
+            if not template:
+                raise HTTPException(status_code=404, detail="Template not found")
+            
+            prerequisites = templates_repo.get_prerequisites(template_id)
+            unlock_status = unlocks_service.get_unlock_status(user_id, template_id)
+            
+            return {
+                **template,
+                "prerequisites": prerequisites,
+                "unlocked": unlock_status["unlocked"],
+                "lock_reason": unlock_status["lock_reason"],
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get template: {str(e)}")
+    
+    class SubscribeTemplateRequest(BaseModel):
+        start_date: Optional[str] = None  # ISO date string
+        target_date: Optional[str] = None  # ISO date string
+    
+    @app.post("/api/templates/{template_id}/subscribe")
+    async def subscribe_template(
+        template_id: str,
+        request: Optional[SubscribeTemplateRequest] = None,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Subscribe to a template (creates promise + instance)."""
+        try:
+            from datetime import date as date_type
+            try:
+                from dateutil.parser import parse as parse_date
+            except ImportError:
+                # Fallback to datetime.fromisoformat
+                def parse_date(s: str) -> date_type:
+                    return date_type.fromisoformat(s.split('T')[0])
+            
+            instances_repo = InstancesRepository(app.state.root_dir)
+            unlocks_service = TemplateUnlocksService(app.state.root_dir)
+            
+            # Check if template is unlocked
+            unlock_status = unlocks_service.get_unlock_status(user_id, template_id)
+            if not unlock_status["unlocked"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Template is locked: {unlock_status['lock_reason']}"
+                )
+            
+            # Parse dates
+            start_date = None
+            target_date = None
+            if request:
+                if request.start_date:
+                    start_date = parse_date(request.start_date).date()
+                if request.target_date:
+                    target_date = parse_date(request.target_date).date()
+            
+            result = instances_repo.subscribe_template(user_id, template_id, start_date, target_date)
+            
+            return {"status": "success", **result}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error subscribing to template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to subscribe: {str(e)}")
+    
+    @app.get("/api/instances/active")
+    async def list_active_instances(
+        user_id: int = Depends(get_current_user)
+    ):
+        """List active template instances for the user."""
+        try:
+            instances_repo = InstancesRepository(app.state.root_dir)
+            instances = instances_repo.list_active_instances(user_id)
+            return {"instances": instances}
+        except Exception as e:
+            logger.exception(f"Error listing instances: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to list instances: {str(e)}")
+    
+    # Check-in and weekly note endpoints
+    class CheckinRequest(BaseModel):
+        action_datetime: Optional[str] = None  # ISO datetime string
+    
+    @app.post("/api/promises/{promise_id}/checkin")
+    async def checkin_promise(
+        promise_id: str,
+        request: Optional[CheckinRequest] = None,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Record a check-in for a promise (count-based templates)."""
+        try:
+            from datetime import datetime
+            from dateutil.parser import parse as parse_datetime
+            
+            promises_repo = PromisesRepository(app.state.root_dir)
+            promise = promises_repo.get_promise(user_id, promise_id)
+            
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Parse datetime if provided
+            action_datetime = None
+            if request and request.action_datetime:
+                try:
+                    action_datetime = parse_datetime(request.action_datetime)
+                    if action_datetime.tzinfo is not None:
+                        import pytz
+                        settings_repo = get_settings_repo()
+                        settings = settings_repo.get_settings(user_id)
+                        user_tz = settings.timezone if settings else "UTC"
+                        tz = pytz.timezone(user_tz)
+                        action_datetime = action_datetime.astimezone(tz).replace(tzinfo=None)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid action_datetime format")
+            else:
+                action_datetime = datetime.now()
+            
+            # Create check-in action
+            from models.models import Action
+            from models.enums import ActionType
+            action = Action(
+                user_id=str(user_id),
+                promise_id=promise_id,
+                action=ActionType.CHECKIN.value,
+                time_spent=0.0,
+                at=action_datetime
+            )
+            
+            actions_repo = ActionsRepository(app.state.root_dir)
+            actions_repo.append_action(action)
+            
+            return {"status": "success", "message": "Check-in recorded successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error recording check-in: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to record check-in: {str(e)}")
+    
+    class WeeklyNoteRequest(BaseModel):
+        week_start: str  # ISO date string
+        note: Optional[str] = None
+    
+    @app.post("/api/promises/{promise_id}/weekly-note")
+    async def update_weekly_note(
+        promise_id: str,
+        request: WeeklyNoteRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Update weekly note for a promise instance."""
+        try:
+            instances_repo = InstancesRepository(app.state.root_dir)
+            reviews_repo = ReviewsRepository(app.state.root_dir)
+            
+            # Find instance by promise_id
+            from db.sqlite_db import resolve_promise_uuid
+            user = str(user_id)
+            with connection_for_root(app.state.root_dir) as conn:
+                promise_uuid = resolve_promise_uuid(conn, user, promise_id)
+                if not promise_uuid:
+                    raise HTTPException(status_code=404, detail="Promise not found")
+            
+            instance = instances_repo.get_instance_by_promise_uuid(user_id, promise_uuid)
+            if not instance:
+                raise HTTPException(status_code=404, detail="Instance not found for this promise")
+            
+            success = reviews_repo.update_weekly_note(
+                user_id, instance["instance_id"], request.week_start, request.note
+            )
+            
+            if not success:
+                raise HTTPException(status_code=404, detail="Weekly review not found")
+            
+            return {"status": "success", "message": "Weekly note updated"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating weekly note: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update weekly note: {str(e)}")
+    
+    # Distraction events endpoints
+    class LogDistractionRequest(BaseModel):
+        category: str
+        minutes: float
+        at_utc: Optional[str] = None  # ISO datetime string
+    
+    @app.post("/api/distractions")
+    async def log_distraction(
+        request: LogDistractionRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Log a distraction event (for budget templates)."""
+        try:
+            from datetime import datetime
+            from dateutil.parser import parse as parse_datetime
+            
+            distractions_repo = DistractionsRepository(app.state.root_dir)
+            
+            at = None
+            if request.at_utc:
+                try:
+                    at = parse_datetime(request.at_utc)
+                    if at.tzinfo is not None:
+                        import pytz
+                        settings_repo = get_settings_repo()
+                        settings = settings_repo.get_settings(user_id)
+                        user_tz = settings.timezone if settings else "UTC"
+                        tz = pytz.timezone(user_tz)
+                        at = at.astimezone(tz).replace(tzinfo=None)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid at_utc format")
+            
+            event_uuid = distractions_repo.log_distraction(
+                user_id, request.category, request.minutes, at
+            )
+            
+            return {"status": "success", "event_uuid": event_uuid, "message": "Distraction logged"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error logging distraction: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to log distraction: {str(e)}")
+    
+    @app.get("/api/distractions/weekly")
+    async def get_weekly_distractions(
+        ref_time: Optional[str] = Query(None, description="Reference time (ISO datetime)"),
+        category: Optional[str] = Query(None, description="Filter by category"),
+        user_id: int = Depends(get_current_user)
+    ):
+        """Get weekly distraction summary."""
+        try:
+            from datetime import datetime
+            from dateutil.parser import parse as parse_datetime
+            from utils.time_utils import get_week_range
+            
+            distractions_repo = DistractionsRepository(app.state.root_dir)
+            
+            if ref_time:
+                try:
+                    ref_dt = parse_datetime(ref_time)
+                    if ref_dt.tzinfo is not None:
+                        ref_dt = ref_dt.replace(tzinfo=None)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid ref_time format")
+            else:
+                ref_dt = datetime.now()
+            
+            week_start, week_end = get_week_range(ref_dt)
+            summary = distractions_repo.get_weekly_distractions(
+                user_id, week_start, week_end, category
+            )
+            
+            return summary
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting weekly distractions: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get weekly distractions: {str(e)}")
     
     # Admin API endpoints
     class AdminUser(BaseModel):

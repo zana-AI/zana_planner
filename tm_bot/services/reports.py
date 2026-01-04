@@ -7,17 +7,21 @@ import logging
 
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
+from repositories.instances_repo import InstancesRepository
+from repositories.distractions_repo import DistractionsRepository
 from utils.time_utils import get_week_range
 from utils.promise_id import normalize_promise_id, promise_ids_equal
+from db.sqlite_db import resolve_promise_uuid, connection_for_root
 
 
 logger = logging.getLogger(__name__)
 
 
 class ReportsService:
-    def __init__(self, promises_repo: PromisesRepository, actions_repo: ActionsRepository):
+    def __init__(self, promises_repo: PromisesRepository, actions_repo: ActionsRepository, root_dir: str = None):
         self.promises_repo = promises_repo
         self.actions_repo = actions_repo
+        self.root_dir = root_dir
 
     def get_weekly_summary(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
         """Get weekly summary data for a user."""
@@ -72,24 +76,67 @@ class ReportsService:
         actions = self.actions_repo.list_actions(user_id, since=week_start)
         logger.debug(f"[DEBUG] Found {len(actions)} actions since {week_start}")
         
+        # Get instances to check for template-derived promises
+        instances_by_promise_uuid: Dict[str, Dict] = {}
+        if self.root_dir:
+            from repositories.instances_repo import InstancesRepository
+            instances_repo = InstancesRepository(self.root_dir)
+            user = str(user_id)
+            with connection_for_root(self.root_dir) as conn:
+                for promise in promises:
+                    promise_uuid = resolve_promise_uuid(conn, user, promise.id)
+                    if promise_uuid:
+                        instance = instances_repo.get_instance_by_promise_uuid(user_id, promise_uuid)
+                        if instance:
+                            instances_by_promise_uuid[promise_uuid] = instance
+        
         # Initialize report data (keyed by canonical promise.id from storage)
         report_data: Dict[str, Any] = {}
         canonical_by_norm: Dict[str, str] = {}
+        promise_uuid_by_id: Dict[str, str] = {}
         for promise in promises:
             # Check if promise is active (no start_date = always active, or start date has passed)
             if not promise.start_date or promise.start_date <= ref_time.date():
+                user = str(user_id)
+                promise_uuid = None
+                instance = None
+                if self.root_dir:
+                    with connection_for_root(self.root_dir) as conn:
+                        promise_uuid = resolve_promise_uuid(conn, user, promise.id)
+                        if promise_uuid:
+                            promise_uuid_by_id[promise.id] = promise_uuid
+                            instance = instances_by_promise_uuid.get(promise_uuid)
+                
+                # Determine metric type and target
+                if instance:
+                    metric_type = instance['metric_type']
+                    target_value = instance['target_value']
+                    target_direction = instance['target_direction']
+                    template_kind = instance['template_kind']
+                else:
+                    # Legacy promise: hours-based
+                    metric_type = 'hours'
+                    target_value = promise.hours_per_week
+                    target_direction = 'at_least'
+                    template_kind = 'commitment'
+                
                 report_data[promise.id] = {
                     'text': promise.text.replace('_', ' '),
-                    'hours_promised': promise.hours_per_week,
-                    'hours_spent': 0.0,
-                    'sessions': [],  # List of {'date': date, 'hours': float}
-                    'visibility': getattr(promise, 'visibility', 'private')  # Include visibility
+                    'hours_promised': promise.hours_per_week,  # Keep for backward compat
+                    'hours_spent': 0.0,  # Will be updated based on metric_type
+                    'sessions': [],  # List of {'date': date, 'hours': float} or {'date': date, 'count': int}
+                    'visibility': getattr(promise, 'visibility', 'private'),
+                    'metric_type': metric_type,
+                    'target_value': target_value,
+                    'target_direction': target_direction,
+                    'template_kind': template_kind,
+                    'achieved_value': 0.0,  # Will be computed
                 }
                 norm = normalize_promise_id(promise.id)
                 canonical_by_norm.setdefault(norm, promise.id)
         
         # Group actions by promise and date
-        actions_by_promise_date: Dict[str, Dict[date, float]] = {}
+        actions_by_promise_date: Dict[str, Dict[date, Any]] = {}
         actions_in_range = 0
         for action in actions:
             # Ensure action.at is naive for comparison
@@ -105,8 +152,13 @@ class ReportsService:
                     if canonical not in actions_by_promise_date:
                         actions_by_promise_date[canonical] = {}
                     if action_date not in actions_by_promise_date[canonical]:
-                        actions_by_promise_date[canonical][action_date] = 0.0
-                    actions_by_promise_date[canonical][action_date] += action.time_spent
+                        actions_by_promise_date[canonical][action_date] = {'hours': 0.0, 'count': 0}
+                    
+                    # Track both hours and count
+                    if action.action == 'log_time':
+                        actions_by_promise_date[canonical][action_date]['hours'] += action.time_spent
+                    elif action.action == 'checkin':
+                        actions_by_promise_date[canonical][action_date]['count'] += 1
                 else:
                     logger.debug(f"[DEBUG] Action for promise {action.promise_id} (normalized: {normalize_promise_id(action.promise_id)}) not matched to canonical promise. Canonical map: {canonical_by_norm}")
             else:
@@ -114,15 +166,52 @@ class ReportsService:
         
         logger.debug(f"[DEBUG] {actions_in_range} actions in week range, grouped into {len(actions_by_promise_date)} promises")
         
-        # Convert to sessions format and accumulate total hours
-        for promise_id, date_hours in actions_by_promise_date.items():
+        # Handle budget templates with distraction_events
+        if self.root_dir:
+            from repositories.distractions_repo import DistractionsRepository
+            distractions_repo = DistractionsRepository(self.root_dir)
+            for promise_id, promise_data in report_data.items():
+                if promise_data.get('template_kind') == 'budget' and promise_data.get('metric_type') == 'hours':
+                    promise_uuid = promise_uuid_by_id.get(promise_id)
+                    if promise_uuid:
+                        instance = instances_by_promise_uuid.get(promise_uuid)
+                        if instance:
+                            # Get distraction events for this week
+                            distraction_data = distractions_repo.get_weekly_distractions(
+                                user_id, week_start, week_end
+                            )
+                            promise_data['achieved_value'] = distraction_data['total_hours']
+                            promise_data['hours_spent'] = distraction_data['total_hours']  # For backward compat
+                            # Create sessions from distraction events (simplified: one session per day with hours)
+                            # For now, we'll just set total - detailed per-day distraction tracking can be added later
+                            promise_data['sessions'] = [{'date': week_start.date(), 'hours': distraction_data['total_hours']}]
+        
+        # Convert to sessions format and accumulate totals
+        for promise_id, date_data in actions_by_promise_date.items():
+            promise_data = report_data[promise_id]
+            metric_type = promise_data.get('metric_type', 'hours')
             sessions = []
             total_hours = 0.0
-            for action_date, hours in sorted(date_hours.items()):
-                sessions.append({'date': action_date, 'hours': hours})
-                total_hours += hours
-            report_data[promise_id]['hours_spent'] = total_hours
-            report_data[promise_id]['sessions'] = sessions
+            total_count = 0
+            
+            for action_date, data in sorted(date_data.items()):
+                if metric_type == 'count':
+                    count = data.get('count', 0)
+                    sessions.append({'date': action_date, 'count': count})
+                    total_count += count
+                else:  # hours
+                    hours = data.get('hours', 0.0)
+                    sessions.append({'date': action_date, 'hours': hours})
+                    total_hours += hours
+            
+            if metric_type == 'count':
+                promise_data['achieved_value'] = float(total_count)
+                promise_data['hours_spent'] = 0.0  # Not applicable for count
+            else:
+                promise_data['achieved_value'] = total_hours
+                promise_data['hours_spent'] = total_hours
+            
+            promise_data['sessions'] = sessions
         
         return report_data
 

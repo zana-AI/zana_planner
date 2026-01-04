@@ -3,6 +3,7 @@ from enum import Enum
 
 class ActionType(Enum):
     LOG_TIME = "log_time"
+    CHECKIN = "checkin"
     SKIP = "skip"
     DELETE = "delete"
     REMIND_NEXT_WEEK = "remind_next_week"

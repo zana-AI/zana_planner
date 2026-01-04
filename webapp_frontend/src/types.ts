@@ -160,6 +160,113 @@ export interface UpdateBroadcastRequest {
   scheduled_time_utc?: string;
 }
 
+// Template types
+export interface PromiseTemplate {
+  template_id: string;
+  category: string;
+  program_key?: string;
+  level: string;
+  title: string;
+  why: string;
+  done: string;
+  effort: string;
+  template_kind: 'commitment' | 'budget';
+  metric_type: 'hours' | 'count';
+  target_value: number;
+  target_direction: 'at_least' | 'at_most';
+  estimated_hours_per_unit: number;
+  duration_type: 'week' | 'one_time' | 'date';
+  duration_weeks?: number;
+  is_active: number;
+  created_at_utc: string;
+  updated_at_utc: string;
+  unlocked?: boolean;
+  lock_reason?: string;
+}
+
+export interface TemplatePrerequisite {
+  prereq_id: string;
+  template_id: string;
+  prereq_group: number;
+  kind: 'completed_template' | 'success_rate';
+  required_template_id?: string;
+  min_success_rate?: number;
+  window_weeks?: number;
+  created_at_utc: string;
+}
+
+export interface TemplateDetail extends PromiseTemplate {
+  prerequisites: TemplatePrerequisite[];
+}
+
+export interface SubscribeTemplateRequest {
+  start_date?: string;
+  target_date?: string;
+}
+
+export interface SubscribeTemplateResponse {
+  status: string;
+  instance_id: string;
+  promise_id: string;
+  promise_uuid: string;
+  start_date: string;
+  end_date?: string;
+}
+
+export interface PromiseInstance {
+  instance_id: string;
+  user_id: string;
+  template_id: string;
+  promise_uuid: string;
+  status: 'active' | 'completed' | 'abandoned';
+  metric_type: 'hours' | 'count';
+  target_value: number;
+  estimated_hours_per_unit: number;
+  start_date: string;
+  end_date?: string;
+  created_at_utc: string;
+  updated_at_utc: string;
+  title: string;
+  category: string;
+  template_kind: 'commitment' | 'budget';
+  target_direction: 'at_least' | 'at_most';
+}
+
+export interface CheckinRequest {
+  action_datetime?: string;
+}
+
+export interface WeeklyNoteRequest {
+  week_start: string;
+  note?: string;
+}
+
+export interface LogDistractionRequest {
+  category: string;
+  minutes: number;
+  at_utc?: string;
+}
+
+export interface WeeklyDistractionsResponse {
+  total_minutes: number;
+  total_hours: number;
+  event_count: number;
+}
+
+// Extended PromiseData to include metric fields
+export interface PromiseData {
+  text: string;
+  hours_promised: number;
+  hours_spent: number;
+  sessions: SessionData[];
+  visibility?: string;
+  metric_type?: 'hours' | 'count';
+  target_value?: number;
+  target_direction?: 'at_least' | 'at_most';
+  template_kind?: 'commitment' | 'budget';
+  achieved_value?: number;
+}
+
 // Extend Window interface for Telegram
 declare global {
   interface Window {

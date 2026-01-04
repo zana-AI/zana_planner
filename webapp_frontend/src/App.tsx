@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
 import { WeeklyReportPage } from './pages/WeeklyReportPage';
+import { TemplatesPage } from './pages/TemplatesPage';
+import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
@@ -30,6 +32,10 @@ function App() {
         
         {/* Community/Users Page - accessible via /community */}
         <Route path="/community" element={<UsersPage />} />
+        
+        {/* Templates Pages */}
+        <Route path="/templates" element={<TemplatesPage />} />
+        <Route path="/templates/:templateId" element={<TemplateDetailPage />} />
         
         {/* Home Page - shown when not authenticated */}
         <Route 

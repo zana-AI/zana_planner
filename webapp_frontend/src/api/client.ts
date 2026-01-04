@@ -5,7 +5,16 @@ import type {
   AdminUsersResponse,
   Broadcast,
   CreateBroadcastRequest,
-  UpdateBroadcastRequest
+  UpdateBroadcastRequest,
+  PromiseTemplate,
+  TemplateDetail,
+  SubscribeTemplateRequest,
+  SubscribeTemplateResponse,
+  PromiseInstance,
+  CheckinRequest,
+  WeeklyNoteRequest,
+  LogDistractionRequest,
+  WeeklyDistractionsResponse
 } from '../types';
 
 const API_BASE = '/api';
@@ -211,6 +220,83 @@ class ApiClient {
     return this.request<{ status: string; message: string }>(`/admin/broadcasts/${broadcastId}`, {
       method: 'DELETE',
     });
+  }
+
+  // Template API methods
+  /**
+   * List templates with optional filters.
+   */
+  async getTemplates(category?: string, programKey?: string): Promise<{ templates: PromiseTemplate[] }> {
+    const params = new URLSearchParams();
+    if (category) params.append('category', category);
+    if (programKey) params.append('program_key', programKey);
+    const query = params.toString();
+    return this.request<{ templates: PromiseTemplate[] }>(`/templates${query ? `?${query}` : ''}`);
+  }
+
+  /**
+   * Get template details with unlock status.
+   */
+  async getTemplate(templateId: string): Promise<TemplateDetail> {
+    return this.request<TemplateDetail>(`/templates/${templateId}`);
+  }
+
+  /**
+   * Subscribe to a template (creates promise + instance).
+   */
+  async subscribeTemplate(templateId: string, request?: SubscribeTemplateRequest): Promise<SubscribeTemplateResponse> {
+    return this.request<SubscribeTemplateResponse>(`/templates/${templateId}/subscribe`, {
+      method: 'POST',
+      body: JSON.stringify(request || {}),
+    });
+  }
+
+  /**
+   * List active template instances.
+   */
+  async getActiveInstances(): Promise<{ instances: PromiseInstance[] }> {
+    return this.request<{ instances: PromiseInstance[] }>('/instances/active');
+  }
+
+  /**
+   * Record a check-in for a promise (count-based templates).
+   */
+  async checkinPromise(promiseId: string, request?: CheckinRequest): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/promises/${promiseId}/checkin`, {
+      method: 'POST',
+      body: JSON.stringify(request || {}),
+    });
+  }
+
+  /**
+   * Update weekly note for a promise instance.
+   */
+  async updateWeeklyNote(promiseId: string, request: WeeklyNoteRequest): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/promises/${promiseId}/weekly-note`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * Log a distraction event (for budget templates).
+   */
+  async logDistraction(request: LogDistractionRequest): Promise<{ status: string; event_uuid: string; message: string }> {
+    return this.request<{ status: string; event_uuid: string; message: string }>('/distractions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * Get weekly distraction summary.
+   */
+  async getWeeklyDistractions(refTime?: string, category?: string): Promise<WeeklyDistractionsResponse> {
+    const params = new URLSearchParams();
+    if (refTime) params.append('ref_time', refTime);
+    if (category) params.append('category', category);
+    const query = params.toString();
+    return this.request<WeeklyDistractionsResponse>(`/distractions/weekly${query ? `?${query}` : ''}`);
   }
 }
 

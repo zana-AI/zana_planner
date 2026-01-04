@@ -204,7 +204,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -251,6 +251,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
                 (5, utc_now_iso()),
+            )
+        if current < 6:
+            _apply_v6(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (6, utc_now_iso()),
             )
 
 
@@ -891,4 +897,345 @@ def _apply_v5(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_broadcasts_status ON broadcasts(status, scheduled_time_utc);"
     )
+
+
+def _apply_v6(conn: sqlite3.Connection) -> None:
+    """Apply schema version 6 migrations: promise templates, instances, reviews, and distraction events."""
+    
+    # promise_templates table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS promise_templates (
+            template_id TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            program_key TEXT NULL,
+            level TEXT NOT NULL,
+            title TEXT NOT NULL,
+            why TEXT NOT NULL,
+            done TEXT NOT NULL,
+            effort TEXT NOT NULL,
+            template_kind TEXT NOT NULL DEFAULT 'commitment',
+            metric_type TEXT NOT NULL,
+            target_value REAL NOT NULL,
+            target_direction TEXT NOT NULL DEFAULT 'at_least',
+            estimated_hours_per_unit REAL NOT NULL DEFAULT 1.0,
+            duration_type TEXT NOT NULL,
+            duration_weeks INTEGER NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            CHECK (template_kind IN ('commitment', 'budget')),
+            CHECK (metric_type IN ('hours', 'count')),
+            CHECK (target_direction IN ('at_least', 'at_most')),
+            CHECK (duration_type IN ('week', 'one_time', 'date'))
+        );
+        """
+    )
+    
+    # template_prerequisites table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS template_prerequisites (
+            prereq_id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            prereq_group INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            required_template_id TEXT NULL,
+            min_success_rate REAL NULL,
+            window_weeks INTEGER NULL,
+            created_at_utc TEXT NOT NULL,
+            FOREIGN KEY(template_id) REFERENCES promise_templates(template_id),
+            FOREIGN KEY(required_template_id) REFERENCES promise_templates(template_id),
+            CHECK (kind IN ('completed_template', 'success_rate'))
+        );
+        """
+    )
+    
+    # promise_instances table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS promise_instances (
+            instance_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            template_id TEXT NOT NULL,
+            promise_uuid TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            metric_type TEXT NOT NULL,
+            target_value REAL NOT NULL,
+            estimated_hours_per_unit REAL NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NULL,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            FOREIGN KEY(template_id) REFERENCES promise_templates(template_id),
+            FOREIGN KEY(promise_uuid) REFERENCES promises(promise_uuid),
+            CHECK (status IN ('active', 'completed', 'abandoned')),
+            CHECK (metric_type IN ('hours', 'count'))
+        );
+        """
+    )
+    
+    # promise_weekly_reviews table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS promise_weekly_reviews (
+            review_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            instance_id TEXT NOT NULL,
+            week_start TEXT NOT NULL,
+            week_end TEXT NOT NULL,
+            metric_type TEXT NOT NULL,
+            target_value REAL NOT NULL,
+            achieved_value REAL NOT NULL,
+            success_ratio REAL NOT NULL,
+            note TEXT NULL,
+            computed_at_utc TEXT NOT NULL,
+            FOREIGN KEY(instance_id) REFERENCES promise_instances(instance_id),
+            CHECK (metric_type IN ('hours', 'count'))
+        );
+        """
+    )
+    
+    # distraction_events table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS distraction_events (
+            event_uuid TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            category TEXT NOT NULL,
+            minutes REAL NOT NULL,
+            at_utc TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        );
+        """
+    )
+    
+    # Create indexes
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_templates_category ON promise_templates(category, is_active);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_templates_program ON promise_templates(program_key, level);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_prereqs_template ON template_prerequisites(template_id, prereq_group);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_instances_user ON promise_instances(user_id, status);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_instances_template ON promise_instances(template_id);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_reviews_instance ON promise_weekly_reviews(instance_id, week_start DESC);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_reviews_user ON promise_weekly_reviews(user_id, week_start DESC);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_distractions_user ON distraction_events(user_id, at_utc DESC);")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_distractions_category ON distraction_events(category, at_utc DESC);")
+    
+    # Seed initial curated templates (idempotent)
+    _seed_initial_templates(conn)
+
+
+def _seed_initial_templates(conn: sqlite3.Connection) -> None:
+    """Seed initial curated promise templates with almost-fun copy."""
+    now = utc_now_iso()
+    
+    templates = [
+        # Fitness - Gym templates (count-based)
+        {
+            "template_id": "gym-2x-l1",
+            "category": "fitness",
+            "program_key": "gym",
+            "level": "L1",
+            "title": "2x Gym This Week (Warm-up)",
+            "why": "Start building a consistent gym habit. Two sessions is enough to get moving without overwhelming yourself.",
+            "done": "Complete 2 gym sessions this week. A session counts if you show up and do any workout.",
+            "effort": "About 1-2 hours total. Pick days that work for you.",
+            "template_kind": "commitment",
+            "metric_type": "count",
+            "target_value": 2.0,
+            "target_direction": "at_least",
+            "estimated_hours_per_unit": 1.0,
+            "duration_type": "week",
+            "duration_weeks": 1,
+        },
+        {
+            "template_id": "gym-3x-l2",
+            "category": "fitness",
+            "program_key": "gym",
+            "level": "L2",
+            "title": "3x Gym This Week",
+            "why": "Level up your consistency. Three sessions builds real momentum.",
+            "done": "Complete 3 gym sessions this week.",
+            "effort": "About 2-3 hours total. Spread them out for best results.",
+            "template_kind": "commitment",
+            "metric_type": "count",
+            "target_value": 3.0,
+            "target_direction": "at_least",
+            "estimated_hours_per_unit": 1.0,
+            "duration_type": "week",
+            "duration_weeks": 1,
+        },
+        {
+            "template_id": "gym-2x-2months-l3",
+            "category": "fitness",
+            "program_key": "gym",
+            "level": "L3",
+            "title": "Gym 2x/Week for 2 Months",
+            "why": "Build a lasting habit. Consistency over intensity wins long-term.",
+            "done": "Go to gym 2 times per week for 8 weeks straight.",
+            "effort": "About 2 hours per week. This is about showing up, not perfection.",
+            "template_kind": "commitment",
+            "metric_type": "count",
+            "target_value": 2.0,
+            "target_direction": "at_least",
+            "estimated_hours_per_unit": 1.0,
+            "duration_type": "week",
+            "duration_weeks": 8,
+        },
+        # Language - French templates (hours-based)
+        {
+            "template_id": "french-3h-l1",
+            "category": "language",
+            "program_key": "french",
+            "level": "L1",
+            "title": "French Sprint: 3h This Week",
+            "why": "Jumpstart your French learning with focused practice. Three hours is enough to make real progress.",
+            "done": "Spend 3 hours on French this week. Can be lessons, reading, listening, or conversation.",
+            "effort": "About 3 hours total. Break it into daily chunks or longer weekend sessions.",
+            "template_kind": "commitment",
+            "metric_type": "hours",
+            "target_value": 3.0,
+            "target_direction": "at_least",
+            "estimated_hours_per_unit": 1.0,
+            "duration_type": "week",
+            "duration_weeks": 1,
+        },
+        {
+            "template_id": "french-5h-l2",
+            "category": "language",
+            "program_key": "french",
+            "level": "L2",
+            "title": "French Sprint: 5h This Week",
+            "why": "Double down on your progress. Five hours builds serious momentum.",
+            "done": "Spend 5 hours on French this week across any activities.",
+            "effort": "About 5 hours total. Mix it up to keep it engaging.",
+            "template_kind": "commitment",
+            "metric_type": "hours",
+            "target_value": 5.0,
+            "target_direction": "at_least",
+            "estimated_hours_per_unit": 1.0,
+            "duration_type": "week",
+            "duration_weeks": 1,
+        },
+        # Digital wellness - Distraction budgets
+        {
+            "template_id": "scroll-budget-2h",
+            "category": "digital_wellness",
+            "program_key": "distraction_budget",
+            "level": "L1",
+            "title": "Scroll Budget: 2h This Week",
+            "why": "Reclaim your time. Social media scrolling adds up fast—let's cap it at 2 hours.",
+            "done": "Stay under 2 hours of social media scrolling this week.",
+            "effort": "Track your scrolling time. You'll be surprised how quickly it adds up.",
+            "template_kind": "budget",
+            "metric_type": "hours",
+            "target_value": 2.0,
+            "target_direction": "at_most",
+            "estimated_hours_per_unit": 1.0,
+            "duration_type": "week",
+            "duration_weeks": 1,
+        },
+        {
+            "template_id": "youtube-budget-90m",
+            "category": "digital_wellness",
+            "program_key": "distraction_budget",
+            "level": "L1",
+            "title": "YouTube Budget: 90m This Week",
+            "why": "Keep YouTube fun without it eating your week. 90 minutes is plenty for entertainment.",
+            "done": "Stay under 90 minutes of YouTube watching this week.",
+            "effort": "Track your watch time. Use it intentionally, not mindlessly.",
+            "template_kind": "budget",
+            "metric_type": "hours",
+            "target_value": 1.5,
+            "target_direction": "at_most",
+            "estimated_hours_per_unit": 1.0,
+            "duration_type": "week",
+            "duration_weeks": 1,
+        },
+        # Digital wellness - Dry month (count-based)
+        {
+            "template_id": "dry-social-month",
+            "category": "digital_wellness",
+            "program_key": "dry_month",
+            "level": "L1",
+            "title": "Dry Social Networks Month",
+            "why": "Take a full month break from social networks. You'll be amazed how much time and mental space you get back.",
+            "done": "Zero social network check-ins for the entire month. Cold turkey.",
+            "effort": "One month commitment. Delete apps, use blockers, or just commit to not opening them.",
+            "template_kind": "commitment",
+            "metric_type": "count",
+            "target_value": 0.0,
+            "target_direction": "at_most",
+            "estimated_hours_per_unit": 0.5,
+            "duration_type": "date",
+            "duration_weeks": 4,
+        },
+    ]
+    
+    for t in templates:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO promise_templates (
+                template_id, category, program_key, level, title, why, done, effort,
+                template_kind, metric_type, target_value, target_direction,
+                estimated_hours_per_unit, duration_type, duration_weeks, is_active,
+                created_at_utc, updated_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                t["template_id"], t["category"], t["program_key"], t["level"],
+                t["title"], t["why"], t["done"], t["effort"],
+                t["template_kind"], t["metric_type"], t["target_value"], t["target_direction"],
+                t["estimated_hours_per_unit"], t["duration_type"], t["duration_weeks"], 1,
+                now, now,
+            ),
+        )
+    
+    # Add prerequisites (unlock rules)
+    prerequisites = [
+        # Gym L2 requires L1 completion
+        {
+            "prereq_id": "gym-3x-l2-prereq1",
+            "template_id": "gym-3x-l2",
+            "prereq_group": 1,
+            "kind": "completed_template",
+            "required_template_id": "gym-2x-l1",
+            "min_success_rate": None,
+            "window_weeks": None,
+        },
+        # Gym L3 requires L2 success rate >= 70%
+        {
+            "prereq_id": "gym-2x-2months-l3-prereq1",
+            "template_id": "gym-2x-2months-l3",
+            "prereq_group": 1,
+            "kind": "success_rate",
+            "required_template_id": "gym-3x-l2",
+            "min_success_rate": 0.7,
+            "window_weeks": 4,
+        },
+        # French L2 requires L1 completion
+        {
+            "prereq_id": "french-5h-l2-prereq1",
+            "template_id": "french-5h-l2",
+            "prereq_group": 1,
+            "kind": "completed_template",
+            "required_template_id": "french-3h-l1",
+            "min_success_rate": None,
+            "window_weeks": None,
+        },
+    ]
+    
+    for p in prerequisites:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO template_prerequisites (
+                prereq_id, template_id, prereq_group, kind,
+                required_template_id, min_success_rate, window_weeks, created_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                p["prereq_id"], p["template_id"], p["prereq_group"], p["kind"],
+                p["required_template_id"], p["min_success_rate"], p["window_weeks"], now,
+            ),
+        )
 
