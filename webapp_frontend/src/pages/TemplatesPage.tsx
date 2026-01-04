@@ -39,7 +39,7 @@ export function TemplatesPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading templates...</div>
+          <div className="loading-text">Loading promise marketplace...</div>
         </div>
       </div>
     );
@@ -63,8 +63,8 @@ export function TemplatesPage() {
   return (
     <div className="app">
       <header className="page-header">
-        <h1 className="page-title">Promise Templates</h1>
-        <p className="page-subtitle">Choose a template to start tracking your goals</p>
+        <h1 className="page-title">Promise Marketplace</h1>
+        <p className="page-subtitle">Choose a promise from the marketplace to start tracking your goals</p>
       </header>
 
       {categories.length > 0 && (
@@ -90,7 +90,7 @@ export function TemplatesPage() {
       <main className="templates-grid">
         {templates.length === 0 ? (
           <div className="empty-state">
-            <h2 className="empty-title">No templates found</h2>
+            <h2 className="empty-title">No promises found in marketplace</h2>
             <p className="empty-subtitle">Try selecting a different category</p>
           </div>
         ) : (

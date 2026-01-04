@@ -11,6 +11,7 @@ export function Navigation() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [botUsername, setBotUsername] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
   const authData = initData || getDevInitData();
@@ -50,6 +51,30 @@ export function Navigation() {
       fetchBotUsername();
     }
   }, [isAuthenticated]);
+
+  // Check admin status
+  useEffect(() => {
+    const checkAdmin = async () => {
+      if (!isAuthenticated) {
+        setIsAdmin(false);
+        return;
+      }
+      
+      try {
+        // Set auth data for API client
+        if (authData) {
+          apiClient.setInitData(authData);
+        }
+        const result = await apiClient.checkAdminStatus();
+        setIsAdmin(result.is_admin);
+      } catch (error) {
+        console.error('Failed to check admin status:', error);
+        setIsAdmin(false);
+      }
+    };
+    
+    checkAdmin();
+  }, [isAuthenticated, authData]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -298,8 +323,37 @@ export function Navigation() {
                   e.currentTarget.style.background = 'none';
                 }}
               >
-                📋 Templates
+                📋 Promise Marketplace
               </button>
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    navigate('/admin');
+                    setShowProfileMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    background: 'none',
+                    border: 'none',
+                    color: '#5ba3f5',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    borderRadius: '4px',
+                    transition: 'background 0.2s',
+                    marginTop: '0.25rem'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'none';
+                  }}
+                >
+                  🔐 Admin Panel
+                </button>
+              )}
               <div style={{
                 marginTop: '0.5rem',
                 paddingTop: '0.5rem',

@@ -247,7 +247,7 @@ export function DashboardPage() {
                 fontWeight: '500'
               }}
             >
-              📋 Browse Templates
+              📋 Browse Promise Marketplace
             </button>
           </div>
         )}

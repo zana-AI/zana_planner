@@ -255,6 +255,66 @@ def create_webapp_api(
             )
         return user_id
     
+    # Admin check endpoint - lightweight check for UI
+    @app.get("/api/admin/check")
+    async def check_admin_status(
+        user_id: int = Depends(get_current_user)
+    ):
+        """Check if the current user is an admin."""
+        return {"is_admin": is_admin(user_id)}
+    
+    # Admin stats endpoint - reuse existing bot_stats code
+    _stats_cache: Optional[Dict[str, Any]] = None
+    _stats_cache_timestamp: Optional[datetime] = None
+    STATS_CACHE_TTL = timedelta(minutes=5)
+    
+    @app.get("/api/admin/stats")
+    async def get_admin_stats(
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Get app statistics (admin only).
+        Returns cached results for 5 minutes to reduce database load.
+        """
+        global _stats_cache, _stats_cache_timestamp
+        
+        now = datetime.now()
+        
+        # Return cached stats if still valid
+        if _stats_cache and _stats_cache_timestamp and (now - _stats_cache_timestamp) < STATS_CACHE_TTL:
+            logger.debug("Returning cached admin stats")
+            return _stats_cache
+        
+        try:
+            # Import bot_stats at function level to avoid circular imports
+            import sys
+            import os
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            from bot_stats import compute_stats_sql
+            
+            # Compute stats using existing function
+            stats = compute_stats_sql(app.state.root_dir)
+            
+            # Return simplified stats for admin panel
+            result = {
+                "total_users": stats.get("total_users", 0),
+                "active_users": stats.get("active_last_7_days", 0),
+                "total_promises": stats.get("users_with_promises", 0),  # Users with promises, not total promise count
+            }
+            
+            # Cache the result
+            _stats_cache = result
+            _stats_cache_timestamp = now
+            
+            logger.info(f"Admin stats computed: {result}")
+            return result
+            
+        except Exception as e:
+            logger.exception(f"Error computing admin stats: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to compute stats: {str(e)}")
+    
     @app.get("/")
     async def root():
         """Static landing page or serve React app if static_dir is set."""
@@ -968,6 +1028,110 @@ def create_webapp_api(
             logger.exception(f"Error snoozing promise: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to snooze promise: {str(e)}")
     
+    # Admin template management endpoints
+    @app.get("/api/admin/templates")
+    async def list_admin_templates(
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """List all templates (admin only, includes inactive)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            # Get all templates, including inactive
+            templates = templates_repo.list_templates(is_active=None)
+            return {"templates": templates}
+        except Exception as e:
+            logger.exception(f"Error listing admin templates: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
+    
+    @app.post("/api/admin/templates")
+    async def create_admin_template(
+        template_data: Dict[str, Any],
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Create a new template (admin only)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            
+            # Validate required fields
+            required_fields = ["category", "level", "title", "why", "done", "effort", "metric_type", "target_value", "duration_type"]
+            for field in required_fields:
+                if field not in template_data:
+                    raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+            
+            template_id = templates_repo.create_template(template_data)
+            logger.info(f"Admin {admin_id} created template {template_id}")
+            return {"status": "success", "template_id": template_id}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error creating template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
+    
+    @app.put("/api/admin/templates/{template_id}")
+    async def update_admin_template(
+        template_id: str,
+        template_data: Dict[str, Any],
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Update an existing template (admin only)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            
+            # Check if template exists
+            existing = templates_repo.get_template(template_id)
+            if not existing:
+                raise HTTPException(status_code=404, detail="Template not found")
+            
+            success = templates_repo.update_template(template_id, template_data)
+            if not success:
+                raise HTTPException(status_code=400, detail="No fields to update")
+            
+            logger.info(f"Admin {admin_id} updated template {template_id}")
+            return {"status": "success", "message": "Template updated successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
+    
+    @app.delete("/api/admin/templates/{template_id}")
+    async def delete_admin_template(
+        template_id: str,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Delete a template (admin only, with safety checks)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            
+            # Check if template exists
+            existing = templates_repo.get_template(template_id)
+            if not existing:
+                raise HTTPException(status_code=404, detail="Template not found")
+            
+            # Check if template is in use
+            in_use_check = templates_repo.check_template_in_use(template_id)
+            if in_use_check["in_use"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "Template cannot be deleted because it is in use",
+                        "reasons": in_use_check["reasons"]
+                    }
+                )
+            
+            # Delete template
+            success = templates_repo.delete_template(template_id)
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to delete template")
+            
+            logger.info(f"Admin {admin_id} deleted template {template_id}")
+            return {"status": "success", "message": "Template deleted successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error deleting template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
+    
     # Template API endpoints
     @app.get("/api/templates")
     async def list_templates(
@@ -987,6 +1151,110 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error listing templates: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
+    
+    # Admin template management endpoints
+    @app.get("/api/admin/templates")
+    async def list_admin_templates(
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """List all templates (admin only, includes inactive)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            # Get all templates, including inactive
+            templates = templates_repo.list_templates(is_active=None)
+            return {"templates": templates}
+        except Exception as e:
+            logger.exception(f"Error listing admin templates: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
+    
+    @app.post("/api/admin/templates")
+    async def create_admin_template(
+        template_data: Dict[str, Any],
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Create a new template (admin only)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            
+            # Validate required fields
+            required_fields = ["category", "level", "title", "why", "done", "effort", "metric_type", "target_value", "duration_type"]
+            for field in required_fields:
+                if field not in template_data:
+                    raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+            
+            template_id = templates_repo.create_template(template_data)
+            logger.info(f"Admin {admin_id} created template {template_id}")
+            return {"status": "success", "template_id": template_id}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error creating template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
+    
+    @app.put("/api/admin/templates/{template_id}")
+    async def update_admin_template(
+        template_id: str,
+        template_data: Dict[str, Any],
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Update an existing template (admin only)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            
+            # Check if template exists
+            existing = templates_repo.get_template(template_id)
+            if not existing:
+                raise HTTPException(status_code=404, detail="Template not found")
+            
+            success = templates_repo.update_template(template_id, template_data)
+            if not success:
+                raise HTTPException(status_code=400, detail="No fields to update")
+            
+            logger.info(f"Admin {admin_id} updated template {template_id}")
+            return {"status": "success", "message": "Template updated successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
+    
+    @app.delete("/api/admin/templates/{template_id}")
+    async def delete_admin_template(
+        template_id: str,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Delete a template (admin only, with safety checks)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            
+            # Check if template exists
+            existing = templates_repo.get_template(template_id)
+            if not existing:
+                raise HTTPException(status_code=404, detail="Template not found")
+            
+            # Check if template is in use
+            in_use_check = templates_repo.check_template_in_use(template_id)
+            if in_use_check["in_use"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "Template cannot be deleted because it is in use",
+                        "reasons": in_use_check["reasons"]
+                    }
+                )
+            
+            # Delete template
+            success = templates_repo.delete_template(template_id)
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to delete template")
+            
+            logger.info(f"Admin {admin_id} deleted template {template_id}")
+            return {"status": "success", "message": "Template deleted successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error deleting template: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
     
     @app.get("/api/templates/{template_id}")
     async def get_template(

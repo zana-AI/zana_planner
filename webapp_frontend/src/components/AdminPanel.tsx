@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { AdminUser, Broadcast, CreateBroadcastRequest } from '../types';
+import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate } from '../types';
 
 export function AdminPanel() {
   const { initData } = useTelegramWebApp();
@@ -15,7 +15,14 @@ export function AdminPanel() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
   const [sending, setSending] = useState(false);
-  const [activeTab, setActiveTab] = useState<'compose' | 'scheduled'>('compose');
+  const [activeTab, setActiveTab] = useState<'stats' | 'compose' | 'scheduled' | 'templates'>('stats');
+  const [stats, setStats] = useState<{ total_users: number; active_users: number; total_promises: number } | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<PromiseTemplate | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // Set initData for API client
   useEffect(() => {
@@ -23,6 +30,27 @@ export function AdminPanel() {
       apiClient.setInitData(initData);
     }
   }, [initData]);
+
+  // Fetch stats when Stats tab is active
+  useEffect(() => {
+    if (activeTab === 'stats' && initData) {
+      const fetchStats = async () => {
+        setLoadingStats(true);
+        try {
+          const statsData = await apiClient.getAdminStats();
+          setStats(statsData);
+        } catch (err) {
+          console.error('Failed to fetch stats:', err);
+          if (err instanceof ApiError && err.status === 403) {
+            setError('Access denied. Admin privileges required.');
+          }
+        } finally {
+          setLoadingStats(false);
+        }
+      };
+      fetchStats();
+    }
+  }, [activeTab, initData]);
 
   // Fetch users - wait for initData to be available
   useEffect(() => {
@@ -83,6 +111,27 @@ export function AdminPanel() {
       fetchBroadcasts();
     }
   }, [activeTab, initData]); // Also depend on initData
+
+  // Fetch templates when Templates tab is active
+  useEffect(() => {
+    if (activeTab === 'templates' && initData) {
+      const fetchTemplates = async () => {
+        setLoadingTemplates(true);
+        try {
+          const response = await apiClient.getAdminTemplates();
+          setTemplates(response.templates);
+        } catch (err) {
+          console.error('Failed to fetch templates:', err);
+          if (err instanceof ApiError && err.status === 403) {
+            setError('Access denied. Admin privileges required.');
+          }
+        } finally {
+          setLoadingTemplates(false);
+        }
+      };
+      fetchTemplates();
+    }
+  }, [activeTab, initData]);
 
   // Filter users based on search query
   const filteredUsers = users.filter(user => {
@@ -226,16 +275,28 @@ export function AdminPanel() {
         <h1 className="admin-panel-title">Admin Panel</h1>
         <div className="admin-panel-tabs">
           <button
+            className={`admin-tab ${activeTab === 'stats' ? 'active' : ''}`}
+            onClick={() => setActiveTab('stats')}
+          >
+            Stats
+          </button>
+          <button
             className={`admin-tab ${activeTab === 'compose' ? 'active' : ''}`}
             onClick={() => setActiveTab('compose')}
           >
-            Compose
+            Broadcast
           </button>
           <button
             className={`admin-tab ${activeTab === 'scheduled' ? 'active' : ''}`}
             onClick={() => setActiveTab('scheduled')}
           >
             Scheduled ({broadcasts.length})
+          </button>
+          <button
+            className={`admin-tab ${activeTab === 'templates' ? 'active' : ''}`}
+            onClick={() => setActiveTab('templates')}
+          >
+            Promise Marketplace
           </button>
         </div>
       </div>
@@ -244,6 +305,77 @@ export function AdminPanel() {
         <div className="admin-panel-error-banner">
           <p>{error}</p>
           <button onClick={() => setError('')}>×</button>
+        </div>
+      )}
+
+      {activeTab === 'stats' && (
+        <div className="admin-panel-stats">
+          {loadingStats ? (
+            <div className="admin-loading">
+              <div className="loading-spinner" />
+              <div className="loading-text">Loading statistics...</div>
+            </div>
+          ) : stats ? (
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
+              gap: '1.5rem',
+              padding: '1.5rem 0'
+            }}>
+              <div style={{
+                background: 'rgba(15, 23, 48, 0.6)',
+                border: '1px solid rgba(232, 238, 252, 0.1)',
+                borderRadius: '12px',
+                padding: '1.5rem',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>👥</div>
+                <div style={{ fontSize: '0.9rem', color: 'rgba(232, 238, 252, 0.6)', marginBottom: '0.5rem' }}>
+                  Total Users
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>
+                  {stats.total_users.toLocaleString()}
+                </div>
+              </div>
+              
+              <div style={{
+                background: 'rgba(15, 23, 48, 0.6)',
+                border: '1px solid rgba(232, 238, 252, 0.1)',
+                borderRadius: '12px',
+                padding: '1.5rem',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🔥</div>
+                <div style={{ fontSize: '0.9rem', color: 'rgba(232, 238, 252, 0.6)', marginBottom: '0.5rem' }}>
+                  Active Users (7d)
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>
+                  {stats.active_users.toLocaleString()}
+                </div>
+              </div>
+              
+              <div style={{
+                background: 'rgba(15, 23, 48, 0.6)',
+                border: '1px solid rgba(232, 238, 252, 0.1)',
+                borderRadius: '12px',
+                padding: '1.5rem',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎯</div>
+                <div style={{ fontSize: '0.9rem', color: 'rgba(232, 238, 252, 0.6)', marginBottom: '0.5rem' }}>
+                  Users with Promises
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>
+                  {stats.total_promises.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="admin-no-stats">
+              <div className="empty-icon">📊</div>
+              <p>Failed to load statistics</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -376,6 +508,404 @@ export function AdminPanel() {
           )}
         </div>
       )}
+
+      {activeTab === 'templates' && (
+        <div className="admin-panel-templates">
+          {loadingTemplates ? (
+            <div className="admin-loading">
+              <div className="loading-spinner" />
+              <div className="loading-text">Loading templates...</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ margin: 0, color: '#fff' }}>Promise Marketplace Templates</h2>
+                <button
+                  onClick={() => setEditingTemplate({} as PromiseTemplate)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: '500'
+                  }}
+                >
+                  + Create Template
+                </button>
+              </div>
+
+              {editingTemplate !== null && (
+                <TemplateForm
+                  template={editingTemplate}
+                  onSave={async (data) => {
+                    try {
+                      if (editingTemplate.template_id) {
+                        await apiClient.updateTemplate(editingTemplate.template_id, data);
+                      } else {
+                        await apiClient.createTemplate(data);
+                      }
+                      setEditingTemplate(null);
+                      // Refresh templates
+                      const response = await apiClient.getAdminTemplates();
+                      setTemplates(response.templates);
+                    } catch (err) {
+                      console.error('Failed to save template:', err);
+                      if (err instanceof ApiError) {
+                        setError(err.message);
+                      }
+                    }
+                  }}
+                  onCancel={() => setEditingTemplate(null)}
+                />
+              )}
+
+              {showDeleteConfirm && (
+                <DeleteConfirmModal
+                  templateId={showDeleteConfirm}
+                  templateTitle={templates.find(t => t.template_id === showDeleteConfirm)?.title || ''}
+                  onConfirm={async () => {
+                    try {
+                      await apiClient.deleteTemplate(showDeleteConfirm);
+                      setShowDeleteConfirm(null);
+                      setDeleteConfirmText('');
+                      // Refresh templates
+                      const response = await apiClient.getAdminTemplates();
+                      setTemplates(response.templates);
+                    } catch (err) {
+                      console.error('Failed to delete template:', err);
+                      if (err instanceof ApiError) {
+                        if (err.status === 409) {
+                          const detail = err.detail as any;
+                          setError(detail?.message || 'Template cannot be deleted: ' + (detail?.reasons?.join(', ') || 'Template is in use'));
+                        } else {
+                          setError(err.message);
+                        }
+                      }
+                      setShowDeleteConfirm(null);
+                      setDeleteConfirmText('');
+                    }
+                  }}
+                  onCancel={() => {
+                    setShowDeleteConfirm(null);
+                    setDeleteConfirmText('');
+                  }}
+                  confirmText={deleteConfirmText}
+                  onConfirmTextChange={setDeleteConfirmText}
+                />
+              )}
+
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                {templates.map((template) => (
+                  <div
+                    key={template.template_id}
+                    style={{
+                      background: 'rgba(15, 23, 48, 0.6)',
+                      border: '1px solid rgba(232, 238, 252, 0.1)',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff', marginBottom: '0.25rem' }}>
+                        {template.title}
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+                        {template.category} • {template.level} • {template.metric_type} • {template.is_active ? 'Active' : 'Inactive'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        onClick={() => setEditingTemplate(template)}
+                        style={{
+                          padding: '0.5rem 1rem',
+                          background: 'rgba(91, 163, 245, 0.2)',
+                          border: '1px solid rgba(91, 163, 245, 0.4)',
+                          borderRadius: '6px',
+                          color: '#5ba3f5',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem'
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(template.template_id)}
+                        style={{
+                          padding: '0.5rem 1rem',
+                          background: 'rgba(255, 107, 107, 0.2)',
+                          border: '1px solid rgba(255, 107, 107, 0.4)',
+                          borderRadius: '6px',
+                          color: '#ff6b6b',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem'
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {templates.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+                    No templates found
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Template Form Component
+function TemplateForm({ template, onSave, onCancel }: { template: Partial<PromiseTemplate>, onSave: (data: any) => void, onCancel: () => void }) {
+  const [formData, setFormData] = useState({
+    category: template.category || '',
+    program_key: template.program_key || '',
+    level: template.level || '',
+    title: template.title || '',
+    why: template.why || '',
+    done: template.done || '',
+    effort: template.effort || '',
+    template_kind: template.template_kind || 'commitment',
+    metric_type: template.metric_type || 'hours',
+    target_value: template.target_value || 0,
+    target_direction: template.target_direction || 'at_least',
+    estimated_hours_per_unit: template.estimated_hours_per_unit || 1.0,
+    duration_type: template.duration_type || 'week',
+    duration_weeks: template.duration_weeks || 1,
+    is_active: template.is_active !== undefined ? template.is_active : true,
+  });
+
+  return (
+    <div style={{
+      background: 'rgba(15, 23, 48, 0.8)',
+      border: '1px solid rgba(232, 238, 252, 0.2)',
+      borderRadius: '12px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem'
+    }}>
+      <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#fff' }}>
+        {template.template_id ? 'Edit Template' : 'Create Template'}
+      </h3>
+      <div style={{ display: 'grid', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Category *</label>
+            <input
+              type="text"
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Level *</label>
+            <input
+              type="text"
+              value={formData.level}
+              onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+          </div>
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Title *</label>
+          <input
+            type="text"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Why *</label>
+          <textarea
+            value={formData.why}
+            onChange={(e) => setFormData({ ...formData, why: e.target.value })}
+            rows={2}
+            style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Done *</label>
+          <textarea
+            value={formData.done}
+            onChange={(e) => setFormData({ ...formData, done: e.target.value })}
+            rows={2}
+            style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Effort *</label>
+          <textarea
+            value={formData.effort}
+            onChange={(e) => setFormData({ ...formData, effort: e.target.value })}
+            rows={2}
+            style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+          />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Metric Type *</label>
+            <select
+              value={formData.metric_type}
+              onChange={(e) => setFormData({ ...formData, metric_type: e.target.value as 'hours' | 'count' })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            >
+              <option value="hours">Hours</option>
+              <option value="count">Count</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Target Value *</label>
+            <input
+              type="number"
+              step="0.1"
+              value={formData.target_value}
+              onChange={(e) => setFormData({ ...formData, target_value: parseFloat(e.target.value) || 0 })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Duration Type *</label>
+            <select
+              value={formData.duration_type}
+              onChange={(e) => setFormData({ ...formData, duration_type: e.target.value as 'week' | 'one_time' | 'date' })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            >
+              <option value="week">Week</option>
+              <option value="one_time">One Time</option>
+              <option value="date">Date</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '0.5rem 1rem',
+              background: 'rgba(232, 238, 252, 0.1)',
+              border: '1px solid rgba(232, 238, 252, 0.2)',
+              borderRadius: '6px',
+              color: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(formData)}
+            disabled={!formData.category || !formData.level || !formData.title || !formData.why || !formData.done || !formData.effort}
+            style={{
+              padding: '0.5rem 1rem',
+              background: 'linear-gradient(135deg, #667eea, #764ba2)',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#fff',
+              cursor: 'pointer',
+              opacity: (!formData.category || !formData.level || !formData.title || !formData.why || !formData.done || !formData.effort) ? 0.5 : 1
+            }}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Delete Confirmation Modal
+function DeleteConfirmModal({ templateId, templateTitle, onConfirm, onCancel, confirmText, onConfirmTextChange }: {
+  templateId: string;
+  templateTitle: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirmText: string;
+  onConfirmTextChange: (text: string) => void;
+}) {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0, 0, 0, 0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        background: 'rgba(15, 23, 48, 0.98)',
+        border: '1px solid rgba(232, 238, 252, 0.2)',
+        borderRadius: '12px',
+        padding: '1.5rem',
+        maxWidth: '400px',
+        width: '90%'
+      }}>
+        <h3 style={{ marginTop: 0, color: '#ff6b6b' }}>Delete Template</h3>
+        <p style={{ color: 'rgba(232, 238, 252, 0.8)', marginBottom: '1rem' }}>
+          Are you sure you want to delete <strong>{templateTitle}</strong>?
+        </p>
+        <p style={{ color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          This action cannot be undone. Type the template ID to confirm:
+        </p>
+        <input
+          type="text"
+          value={confirmText}
+          onChange={(e) => onConfirmTextChange(e.target.value)}
+          placeholder={templateId}
+          style={{
+            width: '100%',
+            padding: '0.5rem',
+            borderRadius: '6px',
+            border: '1px solid rgba(232, 238, 252, 0.2)',
+            background: 'rgba(11, 16, 32, 0.6)',
+            color: '#fff',
+            marginBottom: '1rem'
+          }}
+        />
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '0.5rem 1rem',
+              background: 'rgba(232, 238, 252, 0.1)',
+              border: '1px solid rgba(232, 238, 252, 0.2)',
+              borderRadius: '6px',
+              color: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={confirmText !== templateId}
+            style={{
+              padding: '0.5rem 1rem',
+              background: confirmText === templateId ? '#ff6b6b' : 'rgba(255, 107, 107, 0.3)',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#fff',
+              cursor: confirmText === templateId ? 'pointer' : 'not-allowed',
+              opacity: confirmText === templateId ? 1 : 0.5
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

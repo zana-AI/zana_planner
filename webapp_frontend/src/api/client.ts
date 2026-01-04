@@ -271,6 +271,57 @@ class ApiClient {
     });
   }
 
+  // Admin API methods
+  /**
+   * Check if current user is an admin.
+   */
+  async checkAdminStatus(): Promise<{ is_admin: boolean }> {
+    return this.request<{ is_admin: boolean }>('/admin/check');
+  }
+
+  /**
+   * Get app statistics (admin only).
+   */
+  async getAdminStats(): Promise<{ total_users: number; active_users: number; total_promises: number }> {
+    return this.request<{ total_users: number; active_users: number; total_promises: number }>('/admin/stats');
+  }
+
+  /**
+   * List all templates (admin only, includes inactive).
+   */
+  async getAdminTemplates(): Promise<{ templates: PromiseTemplate[] }> {
+    return this.request<{ templates: PromiseTemplate[] }>('/admin/templates');
+  }
+
+  /**
+   * Create a new template (admin only).
+   */
+  async createTemplate(templateData: Partial<PromiseTemplate>): Promise<{ status: string; template_id: string }> {
+    return this.request<{ status: string; template_id: string }>('/admin/templates', {
+      method: 'POST',
+      body: JSON.stringify(templateData),
+    });
+  }
+
+  /**
+   * Update an existing template (admin only).
+   */
+  async updateTemplate(templateId: string, templateData: Partial<PromiseTemplate>): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/admin/templates/${templateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(templateData),
+    });
+  }
+
+  /**
+   * Delete a template (admin only).
+   */
+  async deleteTemplate(templateId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/admin/templates/${templateId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Template API methods
   /**
    * List templates with optional filters.

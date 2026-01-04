@@ -208,13 +208,13 @@ export function HomePage() {
 
       {/* Templates Section */}
       <section className="home-features">
-        <h2 className="home-section-title">Promise Templates</h2>
+        <h2 className="home-section-title">Promise Marketplace</h2>
         <div className="home-features-grid">
           <div className="home-feature-card">
             <div className="home-feature-icon">🎯</div>
-            <h3 className="home-feature-title">Curated Templates</h3>
+            <h3 className="home-feature-title">Curated Promises</h3>
             <p className="home-feature-description">
-              Start with proven promise templates. From fitness goals to language learning, choose templates designed for success.
+              Start with proven promise templates. From fitness goals to language learning, choose promises designed for success.
             </p>
           </div>
           
@@ -222,7 +222,7 @@ export function HomePage() {
             <div className="home-feature-icon">🔓</div>
             <h3 className="home-feature-title">Progressive Unlocks</h3>
             <p className="home-feature-description">
-              Unlock advanced templates as you complete easier ones. Build momentum with a structured progression system.
+              Unlock advanced promises as you complete easier ones. Build momentum with a structured progression system.
             </p>
           </div>
           

@@ -201,7 +201,7 @@ export function WeeklyReportPage() {
             fontWeight: '500'
           }}
         >
-          📋 Browse Templates
+          📋 Browse Promise Marketplace
         </button>
       </div>
 

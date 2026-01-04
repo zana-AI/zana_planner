@@ -18,12 +18,16 @@ class TemplatesRepository:
         self,
         category: Optional[str] = None,
         program_key: Optional[str] = None,
-        is_active: bool = True,
+        is_active: Optional[bool] = True,
     ) -> List[Dict[str, Any]]:
         """List templates, optionally filtered by category/program."""
         with connection_for_root(self.root_dir) as conn:
-            conditions = ["is_active = ?"]
-            params = [1 if is_active else 0]
+            conditions = []
+            params = []
+            
+            if is_active is not None:
+                conditions.append("is_active = ?")
+                params.append(1 if is_active else 0)
 
             if category:
                 conditions.append("category = ?")
@@ -82,4 +86,144 @@ class TemplatesRepository:
             ).fetchall()
 
         return [dict(row) for row in rows]
+
+    def create_template(self, template_data: Dict[str, Any]) -> str:
+        """Create a new template. Returns the template_id."""
+        template_id = template_data.get("template_id") or str(uuid.uuid4())
+        now = utc_now_iso()
+        
+        with connection_for_root(self.root_dir) as conn:
+            conn.execute(
+                """
+                INSERT INTO promise_templates (
+                    template_id, category, program_key, level, title, why, done, effort,
+                    template_kind, metric_type, target_value, target_direction,
+                    estimated_hours_per_unit, duration_type, duration_weeks, is_active,
+                    created_at_utc, updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    template_id,
+                    template_data["category"],
+                    template_data.get("program_key"),
+                    template_data["level"],
+                    template_data["title"],
+                    template_data["why"],
+                    template_data["done"],
+                    template_data["effort"],
+                    template_data.get("template_kind", "commitment"),
+                    template_data["metric_type"],
+                    template_data["target_value"],
+                    template_data.get("target_direction", "at_least"),
+                    template_data.get("estimated_hours_per_unit", 1.0),
+                    template_data["duration_type"],
+                    template_data.get("duration_weeks"),
+                    template_data.get("is_active", True),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        
+        return template_id
+
+    def update_template(self, template_id: str, template_data: Dict[str, Any]) -> bool:
+        """Update an existing template. Returns True if updated."""
+        now = utc_now_iso()
+        
+        with connection_for_root(self.root_dir) as conn:
+            # Build update query dynamically based on provided fields
+            updates = []
+            params = []
+            
+            allowed_fields = [
+                "category", "program_key", "level", "title", "why", "done", "effort",
+                "template_kind", "metric_type", "target_value", "target_direction",
+                "estimated_hours_per_unit", "duration_type", "duration_weeks", "is_active"
+            ]
+            
+            for field in allowed_fields:
+                if field in template_data:
+                    updates.append(f"{field} = ?")
+                    params.append(template_data[field])
+            
+            if not updates:
+                return False
+            
+            updates.append("updated_at_utc = ?")
+            params.append(now)
+            params.append(template_id)
+            
+            cursor = conn.execute(
+                f"""
+                UPDATE promise_templates
+                SET {", ".join(updates)}
+                WHERE template_id = ?
+                """,
+                tuple(params),
+            )
+            conn.commit()
+            
+            return cursor.rowcount > 0
+
+    def check_template_in_use(self, template_id: str) -> Dict[str, Any]:
+        """
+        Check if template is referenced by instances, prerequisites, or reviews.
+        Returns dict with 'in_use' bool and 'reasons' list.
+        """
+        reasons = []
+        with connection_for_root(self.root_dir) as conn:
+            # Check instances
+            instance_count = conn.execute(
+                "SELECT COUNT(*) FROM promise_instances WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()[0]
+            if instance_count > 0:
+                reasons.append(f"Template has {instance_count} active instance(s)")
+            
+            # Check prerequisites (templates that require this template)
+            prereq_count = conn.execute(
+                "SELECT COUNT(*) FROM template_prerequisites WHERE required_template_id = ?",
+                (template_id,),
+            ).fetchone()[0]
+            if prereq_count > 0:
+                reasons.append(f"Template is required by {prereq_count} prerequisite(s)")
+            
+            # Check reviews (if table exists)
+            try:
+                review_count = conn.execute(
+                    "SELECT COUNT(*) FROM template_reviews WHERE template_id = ?",
+                    (template_id,),
+                ).fetchone()[0]
+                if review_count > 0:
+                    reasons.append(f"Template has {review_count} review(s)")
+            except Exception:
+                # Table might not exist, skip this check
+                pass
+        
+        return {
+            "in_use": len(reasons) > 0,
+            "reasons": reasons
+        }
+
+    def delete_template(self, template_id: str) -> bool:
+        """
+        Delete a template and its prerequisites.
+        Returns True if deleted. Should check in_use first!
+        """
+        with connection_for_root(self.root_dir) as conn:
+            # Delete prerequisites first (foreign key constraint)
+            conn.execute(
+                "DELETE FROM template_prerequisites WHERE template_id = ?",
+                (template_id,),
+            )
+            
+            # Delete template
+            cursor = conn.execute(
+                "DELETE FROM promise_templates WHERE template_id = ?",
+                (template_id,),
+            )
+            conn.commit()
+            
+            return cursor.rowcount > 0
 
