@@ -8,7 +8,7 @@ Usage:
 Environment Variables:
     ROOT_DIR: Root directory for user data (default: ./USERS_DATA_DIR)
     TELEGRAM_BOT_TOKEN: Telegram bot token (required for auth validation)
-    MINIAPP_URL: URL for the mini app (default: https://zana-ai.com)
+    MINIAPP_URL: URL for the mini app (default: https://xaana.club)
 """
 
 import os

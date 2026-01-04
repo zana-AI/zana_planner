@@ -101,7 +101,7 @@ export function Navigation() {
               padding: '0.5rem'
             }}
           >
-            Zana AI
+            Xaana
           </button>
         </div>
 

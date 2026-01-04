@@ -5,12 +5,12 @@
 # Run this ONCE after initial deployment
 #
 # Usage: bash scripts/setup_infrastructure.sh [domain] [email]
-# Example: bash scripts/setup_infrastructure.sh zana-ai.com your@email.com
+# Example: bash scripts/setup_infrastructure.sh xaana.club your@email.com
 # =============================================================================
 
 set -e
 
-DOMAIN="${1:-zana-ai.com}"
+DOMAIN="${1:-xaana.club}"
 EMAIL="${2:-}"
 BACKEND_PORT="${3:-8080}"
 
@@ -75,7 +75,7 @@ fi
 echo ""
 echo "[3/5] Configuring nginx..."
 # Create nginx configuration
-$SUDO tee /etc/nginx/sites-available/zana-ai > /dev/null <<EOF
+$SUDO tee /etc/nginx/sites-available/xaana > /dev/null <<EOF
 server {
     listen 80;
     server_name $DOMAIN www.$DOMAIN;
@@ -96,7 +96,7 @@ server {
 EOF
 
 # Enable site
-$SUDO ln -sf /etc/nginx/sites-available/zana-ai /etc/nginx/sites-enabled/
+$SUDO ln -sf /etc/nginx/sites-available/xaana /etc/nginx/sites-enabled/
 $SUDO rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
 # Test nginx config

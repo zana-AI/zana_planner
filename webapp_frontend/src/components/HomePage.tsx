@@ -106,7 +106,7 @@ export function HomePage() {
         }}>
           <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Continue in Telegram</h2>
           <p style={{ color: '#aaa', marginBottom: '2rem' }}>
-            Open Zana AI in Telegram to access your workspace and continue your productivity journey.
+            Open Xaana in Telegram to access your workspace and continue your productivity journey.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <a
@@ -156,7 +156,7 @@ export function HomePage() {
         <section className="home-hero">
           <div className="home-hero-content">
             <h1 className="home-hero-title">
-              Zana AI
+              Xaana
             </h1>
             <p className="home-hero-subtitle">
               Your AI-powered assistant for productivity and goal achievement
@@ -170,7 +170,7 @@ export function HomePage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Start with Zana AI
+              Start with Xaana
             </a>
           </div>
         </section>
@@ -178,7 +178,7 @@ export function HomePage() {
 
       {/* Three Key Features Section */}
       <section className="home-features">
-        <h2 className="home-section-title">Why Choose Zana AI?</h2>
+        <h2 className="home-section-title">Why Choose Xaana?</h2>
         <div className="home-features-grid">
           <div className="home-feature-card">
             <div className="home-feature-icon">🎯</div>
@@ -282,7 +282,7 @@ export function HomePage() {
         <section className="home-final-cta">
           <h2 className="home-cta-title">Ready to Achieve Your Goals?</h2>
           <p className="home-cta-subtitle">
-            Start your productivity journey with Zana AI today
+            Start your productivity journey with Xaana today
           </p>
           <a 
             href={telegramBotLink}

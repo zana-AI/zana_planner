@@ -1,6 +1,6 @@
-# Deploy Zana Web App to GCP with Domain (zana-ai.com)
+# Deploy Zana Web App to GCP with Domain (xaana.club)
 
-This guide walks you through deploying the Zana web app to your GCP VM with the domain `zana-ai.com`.
+This guide walks you through deploying the Zana web app to your GCP VM with the domain `xaana.club`.
 
 ## 🚀 Quick Start: Automated Deployment
 
@@ -12,7 +12,7 @@ ssh your-username@34.163.204.33
 
 # Run automated deployment (first time)
 cd /opt/zana-bot/zana_planner
-bash scripts/deploy_webapp.sh zana-ai.com your-email@example.com
+bash scripts/deploy_webapp.sh xaana.club your-email@example.com
 ```
 
 This script automatically:
@@ -45,7 +45,7 @@ If you prefer manual steps or need to troubleshoot, follow the sections below.
 
 - GCP VM instance running at IP: `34.163.204.33`
 - SSH access to the VM
-- Domain `zana-ai.com` registered on Namecheap
+- Domain `xaana.club` registered on Namecheap
 - Docker and Docker Compose installed on the VM
 - Your bot token ready
 
@@ -54,7 +54,7 @@ If you prefer manual steps or need to troubleshoot, follow the sections below.
 ## Step 1: Configure DNS on Namecheap
 
 1. **Log in to Namecheap** and go to your domain management
-2. **Go to Advanced DNS** for `zana-ai.com`
+2. **Go to Advanced DNS** for `xaana.club`
 3. **Add/Update A Record**:
    - **Type**: A Record
    - **Host**: `@` (or leave blank for root domain)
@@ -71,11 +71,11 @@ If you prefer manual steps or need to troubleshoot, follow the sections below.
 **Verify DNS** (from your local machine):
 ```bash
 # Check if DNS is pointing to your VM
-nslookup zana-ai.com
+nslookup xaana.club
 # Should return: 34.163.204.33
 
 # Or use dig
-dig zana-ai.com +short
+dig xaana.club +short
 ```
 
 ---
@@ -171,7 +171,7 @@ Add this configuration:
 ```nginx
 server {
     listen 80;
-    server_name zana-ai.com www.zana-ai.com;
+    server_name xaana.club www.xaana.club;
 
     # Redirect HTTP to HTTPS (will be added by certbot)
     # For now, proxy to backend
@@ -235,14 +235,14 @@ sudo ufw reload
 
 **Wait for DNS to propagate first!** Verify with:
 ```bash
-nslookup zana-ai.com
+nslookup xaana.club
 ```
 
 Then get SSL certificate:
 
 ```bash
 # Replace with your email
-sudo certbot --nginx -d zana-ai.com -d www.zana-ai.com \
+sudo certbot --nginx -d xaana.club -d www.xaana.club \
     --non-interactive --agree-tos \
     --email your-email@example.com \
     --redirect
@@ -255,7 +255,7 @@ This will:
 
 **Test SSL**:
 ```bash
-curl https://zana-ai.com/api/health
+curl https://xaana.club/api/health
 ```
 
 ---
@@ -285,15 +285,15 @@ Look for: `Web app server started on http://0.0.0.0:8080`
 
 ```bash
 # Health check
-curl https://zana-ai.com/api/health
+curl https://xaana.club/api/health
 
 # Public users endpoint
-curl https://zana-ai.com/api/public/users?limit=10
+curl https://xaana.club/api/public/users?limit=10
 ```
 
 ### 7.2 Test in Browser
 
-1. Open: `https://zana-ai.com`
+1. Open: `https://xaana.club`
 2. Should show the public users page (or empty state if no users)
 3. Open browser console (F12) and check for errors
 
@@ -305,7 +305,7 @@ curl https://zana-ai.com/api/public/users?limit=10
    - Select your bot
    - **Bot Settings** → **Menu Button** → **Configure menu button**
    - Button text: `📊 Weekly Report` (or `👥 Community`)
-   - Web App URL: `https://zana-ai.com/`
+   - Web App URL: `https://xaana.club/`
 
 2. **Test in Telegram**:
    - Open your bot
@@ -355,8 +355,8 @@ sudo certbot renew --dry-run
 Wait longer for DNS propagation, or check:
 ```bash
 # From your local machine
-dig zana-ai.com +short
-nslookup zana-ai.com
+dig xaana.club +short
+nslookup xaana.club
 ```
 
 ---
@@ -388,8 +388,8 @@ sudo nginx -t
 sudo certbot certificates
 
 # Test endpoints
-curl https://zana-ai.com/api/health
-curl https://zana-ai.com/api/public/users?limit=10
+curl https://xaana.club/api/health
+curl https://xaana.club/api/public/users?limit=10
 ```
 
 ---
@@ -398,13 +398,13 @@ curl https://zana-ai.com/api/public/users?limit=10
 
 **What you need to do:**
 
-1. ✅ **DNS**: Point `zana-ai.com` A record to `34.163.204.33` on Namecheap
+1. ✅ **DNS**: Point `xaana.club` A record to `34.163.204.33` on Namecheap
 2. ✅ **Deploy code**: Push latest code to VM and rebuild Docker image
 3. ✅ **Enable webapp**: Uncomment webapp server code in `planner_bot.py` and rebuild
 4. ✅ **Nginx**: Install nginx on host, configure proxy to `localhost:8080`
 5. ✅ **SSL**: Get Let's Encrypt certificate with certbot
 6. ✅ **Firewall**: Open ports 80 and 443 in GCP firewall
-7. ✅ **BotFather**: Configure menu button with `https://zana-ai.com/`
+7. ✅ **BotFather**: Configure menu button with `https://xaana.club/`
 
 **Nginx setup**: Yes, you need nginx on the **host** (not in Docker) for SSL/HTTPS. The Docker container runs the FastAPI backend on port 8080, and nginx proxies from port 80/443 to 8080.
 

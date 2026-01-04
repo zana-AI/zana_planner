@@ -91,7 +91,7 @@ def create_webapp_api(
         Configured FastAPI application
     """
     app = FastAPI(
-        title="Zana AI Web App",
+        title="Xaana Web App",
         version="1.0.0",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
@@ -106,10 +106,10 @@ def create_webapp_api(
             "http://localhost:3000",
             "https://web.telegram.org",
             "https://*.telegram.org",
-            "https://zana-ai.com",
-            "https://www.zana-ai.com",
-            "http://zana-ai.com",  # Allow HTTP during initial setup
-            "http://www.zana-ai.com",
+            "https://xaana.club",
+            "https://www.xaana.club",
+            "http://xaana.club",  # Allow HTTP during initial setup
+            "http://www.xaana.club",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -278,7 +278,7 @@ def create_webapp_api(
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Zana AI - Your Personal Planning Assistant</title>
+            <title>Xaana - Your Personal Planning Assistant</title>
             <link rel="icon" type="image/png" href="/assets/zana_icon.png" />
             <link rel="apple-touch-icon" href="/assets/zana_icon.png" />
             <style>
@@ -370,7 +370,7 @@ def create_webapp_api(
         </head>
         <body>
             <div class="container">
-                <h1>✨ Zana AI</h1>
+                <h1>✨ Xaana</h1>
                 <p class="subtitle">Your intelligent planning and productivity assistant</p>
                 
                 <div class="features">

@@ -41,7 +41,7 @@ class PlannerBot:
     For Telegram, use TelegramPlatformAdapter. For other platforms, provide appropriate adapters.
     """
 
-    def __init__(self, platform_adapter: IPlatformAdapter, root_dir: str, miniapp_url: str = "https://zana-ai.com"):
+    def __init__(self, platform_adapter: IPlatformAdapter, root_dir: str, miniapp_url: str = "https://xaana.club"):
         """
         Initialize the bot with a platform adapter.
 
@@ -358,7 +358,7 @@ def main():
         logger.error("BOT_TOKEN environment variable is not set")
         raise ValueError("BOT_TOKEN environment variable is required")
 
-    MINIAPP_URL = os.getenv("MINIAPP_URL", "https://zana-ai.com")
+    MINIAPP_URL = os.getenv("MINIAPP_URL", "https://xaana.club")
 
     # Optional Sentry initialization (if DSN is provided)
     SENTRY_DSN = os.getenv("SENTRY_DSN")

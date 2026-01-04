@@ -25,7 +25,7 @@ export function NewYearBanner() {
       <div className="new-year-banner-content">
         <span className="new-year-banner-emoji">🎉</span>
         <span className="new-year-banner-text">
-          Happy New Year 2026! Start achieving your goals with Zana AI
+          Happy New Year 2026! Start achieving your goals with Xaana
         </span>
       </div>
       <button 

@@ -32,7 +32,7 @@ logger = get_logger(__name__)
 class CallbackHandlers:
     """Handles all callback query processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: IResponseService, miniapp_url: str = "https://zana-ai.com"):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: IResponseService, miniapp_url: str = "https://xaana.club"):
         self.plan_keeper = plan_keeper
         self.application = application
         self.response_service = response_service

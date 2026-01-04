@@ -48,8 +48,8 @@ export function UsersPage() {
     return (
       <div className="users-page">
         <div className="users-page-header">
-          <h1 className="users-page-title">Zana Community</h1>
-          <p className="users-page-subtitle">Meet active users on Zana</p>
+          <h1 className="users-page-title">Xaana Club</h1>
+          <p className="users-page-subtitle">Meet active users on Xaana</p>
         </div>
         <div className="users-page-loading">
           <div className="loading-spinner" />
@@ -63,8 +63,8 @@ export function UsersPage() {
     return (
       <div className="users-page">
         <div className="users-page-header">
-          <h1 className="users-page-title">Zana Community</h1>
-          <p className="users-page-subtitle">Meet active users on Zana</p>
+          <h1 className="users-page-title">Xaana Club</h1>
+          <p className="users-page-subtitle">Meet active users on Xaana</p>
         </div>
         <div className="users-page-error">
           <div className="error-icon">😕</div>
@@ -84,8 +84,8 @@ export function UsersPage() {
     return (
       <div className="users-page">
         <div className="users-page-header">
-          <h1 className="users-page-title">Zana Community</h1>
-          <p className="users-page-subtitle">Meet active users on Zana</p>
+          <h1 className="users-page-title">Xaana Club</h1>
+          <p className="users-page-subtitle">Meet active users on Xaana</p>
         </div>
         <div className="users-page-empty">
           <div className="empty-icon">👥</div>
@@ -99,8 +99,8 @@ export function UsersPage() {
   return (
     <div className="users-page">
       <div className="users-page-header">
-        <h1 className="users-page-title">Zana Community</h1>
-        <p className="users-page-subtitle">Meet active users on Zana</p>
+        <h1 className="users-page-title">Xaana Club</h1>
+        <p className="users-page-subtitle">Meet active users on Xaana</p>
       </div>
       <div className="users-page-grid">
         {users.map((user) => (

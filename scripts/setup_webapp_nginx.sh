@@ -7,7 +7,7 @@
 
 set -e
 
-DOMAIN="${1:-zanaai.duckdns.org}"
+DOMAIN="${1:-xaana.club}"
 EMAIL="${2:-}"
 PORT="${3:-8081}"
 

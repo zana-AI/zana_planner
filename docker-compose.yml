@@ -83,7 +83,7 @@ services:
 
   # =========================
   # NGINX REVERSE PROXY
-  # Serves http://zana-ai.com → zana-webapp:8080
+  # Serves http://xaana.club → zana-webapp:8080
   # =========================
   nginx:
     image: nginx:alpine

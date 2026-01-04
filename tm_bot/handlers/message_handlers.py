@@ -46,7 +46,7 @@ logger = get_logger(__name__)
 class MessageHandlers:
     """Handles all message and command processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService, miniapp_url: str = "https://zana-ai.com"):
+    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService, miniapp_url: str = "https://xaana.club"):
         self.plan_keeper = plan_keeper
         self.llm_handler = llm_handler
         self.avatar_service = AvatarService(root_dir)
@@ -1834,7 +1834,7 @@ class MessageHandlers:
         community_url = f"{self.miniapp_url}/community"
         
         # Create message
-        message = "👥 **Zana Community**\n\nOpen the app to see all active users!"
+        message = "👥 **Xaana Club**\n\nOpen the app to see all active users!"
         
         # Create mini-app keyboard button
         keyboard = mini_app_kb(community_url, button_text="Open Community")

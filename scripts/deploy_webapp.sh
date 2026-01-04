@@ -14,7 +14,7 @@
 
 set -e  # Exit on error
 
-DOMAIN="${1:-zana-ai.com}"
+DOMAIN="${1:-xaana.club}"
 EMAIL="${2:-}"
 BACKEND_PORT="${3:-8080}"
 
@@ -182,7 +182,7 @@ fi
 
 # Create nginx configuration
 echo "Creating nginx configuration..."
-$SUDO tee /etc/nginx/sites-available/zana-ai > /dev/null <<EOF
+$SUDO tee /etc/nginx/sites-available/xaana > /dev/null <<EOF
 server {
     listen 80;
     server_name $DOMAIN www.$DOMAIN;
@@ -203,7 +203,7 @@ server {
 EOF
 
 # Enable site
-$SUDO ln -sf /etc/nginx/sites-available/zana-ai /etc/nginx/sites-enabled/
+$SUDO ln -sf /etc/nginx/sites-available/xaana /etc/nginx/sites-enabled/
 $SUDO rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
 # Test nginx config
