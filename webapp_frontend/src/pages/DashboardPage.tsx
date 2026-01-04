@@ -81,17 +81,6 @@ export function DashboardPage() {
     fetchReport(authData || '');
   }, [isReady, initData, navigate, fetchReport]);
 
-  if (!isReady || loading) {
-    return (
-      <div className="app">
-        <div className="loading">
-          <div className="loading-spinner" />
-          <div className="loading-text">Loading your workspace...</div>
-        </div>
-      </div>
-    );
-  }
-
   // Filter data into promises (recurring) and tasks (one-time)
   // IMPORTANT: This hook must be called before any conditional returns
   const { promisesData, tasksData } = useMemo(() => {
@@ -142,6 +131,18 @@ export function DashboardPage() {
   }, [initData, fetchReport]);
 
   const displayName = user?.first_name || userInfo?.user_id?.toString() || 'User';
+
+  // Loading state - must come after all hooks
+  if (!isReady || loading) {
+    return (
+      <div className="app">
+        <div className="loading">
+          <div className="loading-spinner" />
+          <div className="loading-text">Loading your workspace...</div>
+        </div>
+      </div>
+    );
+  }
 
   // Error state
   if (error && !loading) {

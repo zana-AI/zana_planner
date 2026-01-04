@@ -62,6 +62,15 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
   const hapticFeedback = useCallback((type: 'success' | 'error' | 'warning' | 'light' | 'medium' | 'heavy') => {
     if (!webApp?.HapticFeedback) return;
     
+    // Check if HapticFeedback is supported (version 6.1+)
+    try {
+      if (webApp.version && parseFloat(webApp.version) < 6.1) {
+        return; // Not supported in older versions
+      }
+    } catch (e) {
+      // If version check fails, try anyway
+    }
+    
     switch (type) {
       case 'success':
       case 'error':
