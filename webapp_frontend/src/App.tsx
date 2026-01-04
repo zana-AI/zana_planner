@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
-import { WeeklyReportPage } from './pages/WeeklyReportPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
@@ -107,28 +106,15 @@ function App() {
           } 
         />
         
-        {/* Weekly Report */}
+        {/* Legacy routes - redirect to dashboard */}
         <Route 
           path="/weekly" 
-          element={
-            isAuthenticated ? (
-              <WeeklyReportPage />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          } 
+          element={<Navigate to="/dashboard" replace />}
         />
         
-        {/* Tasks - one-time tasks only */}
         <Route 
           path="/tasks" 
-          element={
-            isAuthenticated ? (
-              <WeeklyReportPage />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          } 
+          element={<Navigate to="/dashboard" replace />}
         />
         
         {/* Catch-all: redirect to home */}

@@ -60,17 +60,14 @@ export function Navigation() {
   const displayInitial = displayName.charAt(0).toUpperCase();
 
   const isActive = (path: string) => {
-    if (path === '/weekly') {
-      return location.pathname === '/weekly';
-    }
-    if (path === '/tasks') {
-      return location.pathname === '/tasks';
+    if (path === '/dashboard') {
+      return location.pathname === '/dashboard';
     }
     if (path === '/community') {
       return location.pathname === '/community';
     }
-    if (path === '/dashboard') {
-      return location.pathname === '/dashboard';
+    if (path === '/templates') {
+      return location.pathname.startsWith('/templates');
     }
     return false;
   };
@@ -233,21 +230,7 @@ export function Navigation() {
           className={`tab-button ${isActive('/dashboard') ? 'active' : ''}`}
         >
           <span className="tab-icon">🏠</span>
-          <span className="tab-label">Home</span>
-        </button>
-        <button
-          onClick={() => navigate('/weekly')}
-          className={`tab-button ${isActive('/weekly') ? 'active' : ''}`}
-        >
-          <span className="tab-icon">📊</span>
-          <span className="tab-label">Promises</span>
-        </button>
-        <button
-          onClick={() => navigate('/tasks')}
-          className={`tab-button ${isActive('/tasks') ? 'active' : ''}`}
-        >
-          <span className="tab-icon">✅</span>
-          <span className="tab-label">Tasks</span>
+          <span className="tab-label">Dashboard</span>
         </button>
         <button
           onClick={() => navigate('/community')}
@@ -255,6 +238,13 @@ export function Navigation() {
         >
           <span className="tab-icon">👥</span>
           <span className="tab-label">Community</span>
+        </button>
+        <button
+          onClick={() => navigate('/templates')}
+          className={`tab-button ${isActive('/templates') ? 'active' : ''}`}
+        >
+          <span className="tab-icon">📋</span>
+          <span className="tab-label">Templates</span>
         </button>
       </nav>
     </>

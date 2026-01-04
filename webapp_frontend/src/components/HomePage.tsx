@@ -26,6 +26,7 @@ export function HomePage() {
   const [showLogin, setShowLogin] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [botUsername, setBotUsername] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   // Check if user is already authenticated
   useEffect(() => {
@@ -34,9 +35,11 @@ export function HomePage() {
     
     if (token || hasInitData) {
       // User is authenticated, redirect to dashboard
+      setIsAuthenticated(true);
       navigate('/dashboard', { replace: true });
     } else {
       // Show login option
+      setIsAuthenticated(false);
       setShowLogin(true);
     }
   }, [navigate]);
@@ -81,6 +84,11 @@ export function HomePage() {
   // Build Telegram deep links
   const telegramBotLink = botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot';
   const telegramWebAppLink = botUsername ? `https://t.me/${botUsername}?startapp=webapp` : 'https://t.me/zana_planner_bot?startapp=webapp';
+
+  // Don't show hero section if authenticated
+  if (isAuthenticated) {
+    return null; // Will redirect to dashboard anyway
+  }
 
   return (
     <div className="home-page">
@@ -143,28 +151,30 @@ export function HomePage() {
         </section>
       )}
       
-      {/* Hero Section */}
-      <section className="home-hero">
-        <div className="home-hero-content">
-          <h1 className="home-hero-title">
-            Zana AI
-          </h1>
-          <p className="home-hero-subtitle">
-            Your AI-powered assistant for productivity and goal achievement
-          </p>
-          <p className="home-hero-description">
-            Take control of your time, track your promises, and achieve your goals with intelligent insights and personalized recommendations.
-          </p>
-          <a 
-            href="https://t.me/zana_planner_bot" 
-            className="home-cta-button"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Start with Zana AI
-          </a>
-        </div>
-      </section>
+      {/* Hero Section - only show when not authenticated */}
+      {!isAuthenticated && (
+        <section className="home-hero">
+          <div className="home-hero-content">
+            <h1 className="home-hero-title">
+              Zana AI
+            </h1>
+            <p className="home-hero-subtitle">
+              Your AI-powered assistant for productivity and goal achievement
+            </p>
+            <p className="home-hero-description">
+              Take control of your time, track your promises, and achieve your goals with intelligent insights and personalized recommendations.
+            </p>
+            <a 
+              href={telegramBotLink}
+              className="home-cta-button"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Start with Zana AI
+            </a>
+          </div>
+        </section>
+      )}
 
       {/* Three Key Features Section */}
       <section className="home-features">
@@ -267,21 +277,23 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* Final CTA Section */}
-      <section className="home-final-cta">
-        <h2 className="home-cta-title">Ready to Achieve Your Goals?</h2>
-        <p className="home-cta-subtitle">
-          Start your productivity journey with Zana AI today
-        </p>
-        <a 
-          href="https://t.me/zana_planner_bot" 
-          className="home-cta-button home-cta-button-large"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Get Started on Telegram
-        </a>
-      </section>
+      {/* Final CTA Section - only show when not authenticated */}
+      {!isAuthenticated && (
+        <section className="home-final-cta">
+          <h2 className="home-cta-title">Ready to Achieve Your Goals?</h2>
+          <p className="home-cta-subtitle">
+            Start your productivity journey with Zana AI today
+          </p>
+          <a 
+            href={telegramBotLink}
+            className="home-cta-button home-cta-button-large"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Get Started on Telegram
+          </a>
+        </section>
+      )}
     </div>
   );
 }

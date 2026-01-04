@@ -1,52 +1,85 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
-import { apiClient } from '../api/client';
+import { apiClient, ApiError } from '../api/client';
+import { WeeklyReport } from '../components/WeeklyReport';
 import type { WeeklyReportData, UserInfo } from '../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { user, initData, isReady } = useTelegramWebApp();
+  const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>('');
+
+  const fetchReport = useCallback(async (authData: string) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      // Set auth data for API client (only if we have initData)
+      if (authData) {
+        apiClient.setInitData(authData);
+      }
+      // Otherwise, API client will use token from localStorage
+
+      // Fetch weekly report
+      const data = await apiClient.getWeeklyReport();
+      setReportData(data);
+      hapticFeedback('success');
+    } catch (err) {
+      console.error('Failed to fetch report:', err);
+      
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setError('Authentication failed. Please log in again.');
+          apiClient.clearAuth();
+          window.dispatchEvent(new Event('logout'));
+          navigate('/', { replace: true });
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Failed to load your dashboard. Please try again.');
+      }
+      hapticFeedback('error');
+    } finally {
+      setLoading(false);
+    }
+  }, [hapticFeedback, navigate]);
 
   useEffect(() => {
     if (!isReady) return;
 
-    const loadDashboardData = async () => {
-      try {
-        // Check for auth
-        const authData = initData || getDevInitData();
-        const token = localStorage.getItem('telegram_auth_token');
-        
-        if (!authData && !token) {
-          navigate('/', { replace: true });
-          return;
-        }
+    // Check for auth
+    const authData = initData || getDevInitData();
+    const token = localStorage.getItem('telegram_auth_token');
+    
+    if (!authData && !token) {
+      navigate('/', { replace: true });
+      return;
+    }
 
+    // Fetch user info and weekly report
+    const loadData = async () => {
+      try {
         // Set auth for API client
         if (authData) {
           apiClient.setInitData(authData);
         }
 
-        // Fetch user info and weekly report in parallel
-        const [info, report] = await Promise.all([
-          apiClient.getUserInfo().catch(() => null),
-          apiClient.getWeeklyReport().catch(() => null)
-        ]);
-
+        // Fetch user info (optional)
+        const info = await apiClient.getUserInfo().catch(() => null);
         setUserInfo(info);
-        setReportData(report);
       } catch (error) {
-        console.error('Failed to load dashboard data:', error);
-      } finally {
-        setLoading(false);
+        console.error('Failed to load user info:', error);
       }
     };
 
-    loadDashboardData();
-  }, [isReady, initData, navigate]);
+    loadData();
+    fetchReport(authData || '');
+  }, [isReady, initData, navigate, fetchReport]);
 
   if (!isReady || loading) {
     return (
@@ -59,205 +92,121 @@ export function DashboardPage() {
     );
   }
 
+  // Filter data into promises (recurring) and tasks (one-time)
+  // IMPORTANT: This hook must be called before any conditional returns
+  const { promisesData, tasksData } = useMemo(() => {
+    if (!reportData) {
+      return { promisesData: null, tasksData: null };
+    }
+
+    const promises: Record<string, typeof reportData.promises[string]> = {};
+    const tasks: Record<string, typeof reportData.promises[string]> = {};
+    let promisesTotalPromised = 0;
+    let promisesTotalSpent = 0;
+    let tasksTotalPromised = 0;
+    let tasksTotalSpent = 0;
+
+    for (const [id, promiseData] of Object.entries(reportData.promises)) {
+      // Recurring promises (recurring === true)
+      if (promiseData.recurring === true) {
+        promises[id] = promiseData;
+        promisesTotalPromised += promiseData.hours_promised || 0;
+        promisesTotalSpent += promiseData.hours_spent || 0;
+      } else {
+        // One-time tasks (recurring === false or undefined)
+        tasks[id] = promiseData;
+        tasksTotalPromised += promiseData.hours_promised || 0;
+        tasksTotalSpent += promiseData.hours_spent || 0;
+      }
+    }
+
+    return {
+      promisesData: promisesTotalPromised > 0 || Object.keys(promises).length > 0 ? {
+        ...reportData,
+        promises,
+        total_promised: promisesTotalPromised,
+        total_spent: promisesTotalSpent,
+      } : null,
+      tasksData: tasksTotalPromised > 0 || Object.keys(tasks).length > 0 ? {
+        ...reportData,
+        promises: tasks,
+        total_promised: tasksTotalPromised,
+        total_spent: tasksTotalSpent,
+      } : null,
+    };
+  }, [reportData]);
+
+  const handleRefresh = useCallback(() => {
+    const authData = initData || getDevInitData();
+    fetchReport(authData || '');
+  }, [initData, fetchReport]);
+
   const displayName = user?.first_name || userInfo?.user_id?.toString() || 'User';
-  const totalPromises = reportData ? Object.keys(reportData.promises).length : 0;
-  const totalSpent = reportData?.total_spent || 0;
-  const totalPromised = reportData?.total_promised || 0;
+
+  // Error state
+  if (error && !loading) {
+    return (
+      <div className="app">
+        <div className="error">
+          <div className="error-icon">😕</div>
+          <h1 className="error-title">Something went wrong</h1>
+          <p className="error-message">{error}</p>
+          <button className="retry-button" onClick={handleRefresh}>
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app" style={{ padding: '1rem', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Welcome Header */}
-      <div style={{ marginBottom: '2rem' }}>
-        <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#fff' }}>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h1 style={{ fontSize: '1.8rem', marginBottom: '0.25rem', color: '#fff' }}>
           Welcome back, {displayName}! 👋
         </h1>
-        <p style={{ color: '#aaa', fontSize: '1rem' }}>
-          Here's your workspace overview
-        </p>
       </div>
 
-      {/* Quick Stats */}
-      {reportData && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '1rem',
-          marginBottom: '2rem'
-        }}>
-          <div style={{
-            background: 'rgba(11, 16, 32, 0.95)',
-            padding: '1.5rem',
-            borderRadius: '12px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
-          }}>
-            <div style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '0.5rem' }}>Active Promises</div>
-            <div style={{ color: '#fff', fontSize: '2rem', fontWeight: 'bold' }}>{totalPromises}</div>
-          </div>
-          <div style={{
-            background: 'rgba(11, 16, 32, 0.95)',
-            padding: '1.5rem',
-            borderRadius: '12px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
-          }}>
-            <div style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '0.5rem' }}>Hours This Week</div>
-            <div style={{ color: '#fff', fontSize: '2rem', fontWeight: 'bold' }}>
-              {totalSpent.toFixed(1)}h
-            </div>
-            <div style={{ color: '#666', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-              of {totalPromised.toFixed(1)}h promised
-            </div>
-          </div>
+      {/* Promises Section */}
+      {promisesData && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
+          <WeeklyReport data={promisesData} onRefresh={handleRefresh} />
         </div>
       )}
 
-      {/* Quick Actions / Navigation Cards */}
-      <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#fff' }}>Navigate</h2>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-          gap: '1rem'
-        }}>
-          {/* Promises Card */}
-          <div
-            onClick={() => navigate('/weekly')}
-            style={{
-              background: 'rgba(11, 16, 32, 0.95)',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📊</div>
-            <h3 style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '0.5rem' }}>Promises</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>
-              View and manage your weekly promises and track your progress
-            </p>
-          </div>
+      {/* Tasks Section */}
+      {tasksData && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
+          <WeeklyReport data={tasksData} onRefresh={handleRefresh} />
+        </div>
+      )}
 
-          {/* Tasks Card */}
-          <div
-            onClick={() => navigate('/tasks')}
-            style={{
-              background: 'rgba(11, 16, 32, 0.95)',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>✅</div>
-            <h3 style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '0.5rem' }}>Tasks</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>
-              Manage one-time tasks and track their completion
-            </p>
-          </div>
-
-          {/* Community Card */}
-          <div
-            onClick={() => navigate('/community')}
-            style={{
-              background: 'rgba(11, 16, 32, 0.95)',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>👥</div>
-            <h3 style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '0.5rem' }}>Community</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>
-              Connect with other users, follow progress, and stay motivated
-            </p>
-          </div>
-
-          {/* Templates Card */}
-          <div
+      {/* Empty State */}
+      {!loading && !promisesData && !tasksData && (
+        <div className="empty-state">
+          <h2 className="empty-title">No promises or tasks yet</h2>
+          <p className="empty-subtitle">
+            Start tracking your promises in the Telegram bot to see your progress here.
+          </p>
+          <button
             onClick={() => navigate('/templates')}
             style={{
-              background: 'rgba(11, 16, 32, 0.95)',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              marginTop: '1rem',
+              padding: '0.75rem 1.5rem',
+              backgroundColor: '#4CAF50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
               cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-              e.currentTarget.style.transform = 'translateY(0)';
+              fontSize: '1rem',
+              fontWeight: '500'
             }}
           >
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📋</div>
-            <h3 style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '0.5rem' }}>Templates</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>
-              Browse and subscribe to promise templates to get started quickly
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity / Resume Section */}
-      {reportData && totalPromises > 0 && (
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#fff' }}>Resume Where You Left Off</h2>
-          <div
-            onClick={() => navigate('/weekly')}
-            style={{
-              background: 'rgba(11, 16, 32, 0.95)',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            <p style={{ color: '#aaa', marginBottom: '0.5rem' }}>
-              You have {totalPromises} active {totalPromises === 1 ? 'promise' : 'promises'} this week
-            </p>
-            <p style={{ color: '#fff', fontSize: '1.1rem', fontWeight: '500' }}>
-              Continue tracking your progress →
-            </p>
-          </div>
+            📋 Browse Templates
+          </button>
         </div>
       )}
     </div>
