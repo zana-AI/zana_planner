@@ -286,16 +286,33 @@ def create_webapp_api(
             return _stats_cache
         
         try:
-            # Import bot_stats at function level to avoid circular imports
+            # Import bot_stats - add project root to path
             import sys
             import os
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            # Get project root (zana_planner directory)
+            # api.py is at: zana_planner/tm_bot/webapp/api.py
+            # bot_stats.py is at: zana_planner/bot_stats.py
+            # So we need to go up 2 levels from webapp/ to get to zana_planner/
+            current_file = os.path.abspath(__file__)
+            # webapp/ -> tm_bot/ -> zana_planner/
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
-            from bot_stats import compute_stats_sql
+            
+            try:
+                from bot_stats import compute_stats_sql
+            except ImportError as import_err:
+                logger.error(f"Failed to import bot_stats from {project_root}: {import_err}")
+                logger.error(f"Python path: {sys.path[:3]}")
+                raise
             
             # Compute stats using existing function
-            stats = compute_stats_sql(app.state.root_dir)
+            root_dir = app.state.root_dir
+            if not root_dir:
+                raise ValueError("root_dir not set in app state")
+            
+            logger.debug(f"Computing stats for root_dir: {root_dir}")
+            stats = compute_stats_sql(root_dir)
             
             # Return simplified stats for admin panel
             result = {

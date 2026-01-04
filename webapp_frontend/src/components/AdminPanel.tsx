@@ -18,6 +18,7 @@ export function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'stats' | 'compose' | 'scheduled' | 'templates'>('stats');
   const [stats, setStats] = useState<{ total_users: number; active_users: number; total_promises: number } | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [statsError, setStatsError] = useState<string>('');
   const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PromiseTemplate | null>(null);
@@ -40,14 +41,22 @@ export function AdminPanel() {
     if (activeTab === 'stats' && isAuthenticated) {
       const fetchStats = async () => {
         setLoadingStats(true);
+        setStatsError('');
         try {
           const statsData = await apiClient.getAdminStats();
           setStats(statsData);
         } catch (err) {
           console.error('Failed to fetch stats:', err);
-          if (err instanceof ApiError && err.status === 403) {
-            setError('Access denied. Admin privileges required.');
+          if (err instanceof ApiError) {
+            if (err.status === 403) {
+              setStatsError('Access denied. Admin privileges required.');
+            } else {
+              setStatsError(err.message || 'Failed to load statistics');
+            }
+          } else {
+            setStatsError('Failed to load statistics');
           }
+          setStats(null);
         } finally {
           setLoadingStats(false);
         }
@@ -374,10 +383,35 @@ export function AdminPanel() {
                 </div>
               </div>
             </div>
+          ) : statsError ? (
+            <div className="admin-no-stats">
+              <div className="empty-icon">⚠️</div>
+              <p>{statsError}</p>
+              <button
+                onClick={() => {
+                  setStatsError('');
+                  // Trigger refetch by toggling tab
+                  setActiveTab('compose');
+                  setTimeout(() => setActiveTab('stats'), 100);
+                }}
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.5rem 1rem',
+                  background: 'rgba(91, 163, 245, 0.2)',
+                  border: '1px solid rgba(91, 163, 245, 0.4)',
+                  borderRadius: '6px',
+                  color: '#5ba3f5',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem'
+                }}
+              >
+                Retry
+              </button>
+            </div>
           ) : (
             <div className="admin-no-stats">
               <div className="empty-icon">📊</div>
-              <p>Failed to load statistics</p>
+              <p>No statistics available</p>
             </div>
           )}
         </div>
