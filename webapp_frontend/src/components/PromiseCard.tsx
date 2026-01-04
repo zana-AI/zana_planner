@@ -247,53 +247,93 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         
         {/* Snooze button that appears during swipe */}
         {swipeOffset < -50 && (
-          <button
-            className={`card-snooze-button ${isSnoozeActive ? 'active' : ''}`}
-            style={{
-              opacity: snoozeButtonOpacity,
-              transform: `translateY(-50%) scale(${snoozeButtonScale})`,
-            }}
-            onClick={handleSnoozeButtonClick}
-            disabled={!isSnoozeActive}
-          >
-            {isSnoozeActive ? 'Snooze' : 'Swipe to snooze'}
-          </button>
+          <div style={{ 
+            position: 'absolute', 
+            right: '20px', 
+            top: '50%', 
+            transform: 'translateY(-50%)',
+            zIndex: 10
+          }}>
+            <button
+              className={`card-snooze-button ${isSnoozeActive ? 'active' : ''}`}
+              style={{
+                opacity: snoozeButtonOpacity,
+                transform: `scale(${snoozeButtonScale})`,
+                padding: '8px 16px',
+                backgroundColor: isSnoozeActive ? '#f59e0b' : 'rgba(245, 158, 11, 0.3)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '0.85rem',
+                fontWeight: '600',
+                cursor: isSnoozeActive ? 'pointer' : 'default',
+                boxShadow: isSnoozeActive ? '0 2px 8px rgba(245, 158, 11, 0.4)' : 'none',
+                transition: 'all 0.2s'
+              }}
+              onClick={handleSnoozeButtonClick}
+              disabled={!isSnoozeActive}
+            >
+              {isSnoozeActive ? '⏸️ Snooze until next week' : '← Swipe to snooze'}
+            </button>
+          </div>
         )}
         
         <div className="card-top">
           <div className="card-title" dir="auto">
             <span className="card-emoji">{emoji}</span>
             <span className="card-title-text">{text}</span>
+            {isBudget && (
+              <span style={{
+                padding: '2px 6px',
+                background: 'rgba(255, 68, 68, 0.2)',
+                border: '1px solid rgba(255, 68, 68, 0.4)',
+                borderRadius: '4px',
+                fontSize: '0.65rem',
+                fontWeight: '600',
+                color: '#ff6b6b',
+                marginLeft: '4px'
+              }}>
+                Budget
+              </span>
+            )}
             <button
               className="card-visibility-toggle"
               onClick={handleVisibilityToggle}
               disabled={isUpdatingVisibility}
               title={currentVisibility === 'private' ? 'Make public' : 'Make private'}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', marginLeft: 'auto' }}
             >
               {currentVisibility === 'private' ? '🔒' : '🌐'}
+              <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                {currentVisibility === 'private' ? 'Private' : 'Public'}
+              </span>
             </button>
           </div>
           <div className="card-meta">
             <span className="card-id" dir="ltr">#{id}</span>
-            <span className="card-ratio" dir="ltr">
-              {isCountBased ? (
-                <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
-              ) : (
-                <>{achieved_value.toFixed(1)}/{target_value.toFixed(1)} h</>
-              )}
-            </span>
-            <span className="card-pct" dir="ltr">{Math.round(progress)}%</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span className="card-ratio" dir="ltr">
+                {isCountBased ? (
+                  <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
+                ) : (
+                  <>{achieved_value.toFixed(1)}/{target_value.toFixed(1)} h</>
+                )}
+              </span>
+              <span className="card-pct" dir="ltr">{Math.round(progress)}%</span>
+            </div>
           </div>
         </div>
       
-      <div className="progress-row" aria-hidden="true">
-        <div className="progress-track">
-          <div 
-            className="progress-fill" 
-            style={{ width: `${progress}%` }}
-          />
+      {!isBudget && (
+        <div className="progress-row" aria-hidden="true">
+          <div className="progress-track">
+            <div 
+              className="progress-fill" 
+              style={{ width: `${progress}%` }}
+            />
+          </div>
         </div>
-      </div>
+      )}
       
       <div className="days-row" aria-hidden="true">
         {dayValues.map((value, index) => {
@@ -335,23 +375,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             + Log Time
           </button>
         )}
-        <button
-          className="card-log-button card-log-button-secondary"
-          onClick={() => setIsWeeklyNoteModalOpen(true)}
-          title="Add weekly note"
-        >
-          📝 Note
-        </button>
         {isBudget && (
           <div className="budget-bar-container" style={{ marginTop: '0.5rem', width: '100%' }}>
-            <div className="budget-bar-label" style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
-              {isCountBased ? (
-                <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
-              ) : (
-                <>{achieved_value.toFixed(1)}h / {target_value.toFixed(1)}h</>
-              )}
-            </div>
-            <div className="budget-bar" style={{ height: '8px', backgroundColor: '#2a2a3a', borderRadius: '4px', overflow: 'hidden' }}>
+            <div className="budget-bar" style={{ height: '10px', backgroundColor: '#2a2a3a', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
               <div 
                 className={`budget-bar-fill ${achieved_value > target_value ? 'over-budget' : ''}`}
                 style={{ 
@@ -361,6 +387,21 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   transition: 'width 0.3s ease'
                 }}
               />
+              <div style={{ 
+                position: 'absolute', 
+                right: '4px', 
+                top: '50%', 
+                transform: 'translateY(-50%)', 
+                fontSize: '0.7rem', 
+                color: achieved_value > target_value ? '#ff4444' : '#4CAF50',
+                fontWeight: '600'
+              }}>
+                {isCountBased ? (
+                  <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
+                ) : (
+                  <>{achieved_value.toFixed(1)}h/{target_value.toFixed(1)}h</>
+                )}
+              </div>
             </div>
           </div>
         )}

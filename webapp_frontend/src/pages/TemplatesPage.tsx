@@ -97,7 +97,7 @@ export function TemplatesPage() {
           templates.map(template => (
             <div
               key={template.template_id}
-              className={`template-card ${template.unlocked ? '' : 'locked'}`}
+              className={`template-card ${template.unlocked ? '' : 'locked'} ${template.template_kind === 'budget' ? 'budget-template' : ''}`}
               onClick={() => {
                 if (template.unlocked) {
                   navigate(`/templates/${template.template_id}`);
@@ -105,9 +105,37 @@ export function TemplatesPage() {
                   hapticFeedback('warning');
                 }
               }}
+              style={{
+                border: template.template_kind === 'budget' 
+                  ? '2px solid rgba(255, 68, 68, 0.4)' 
+                  : '1px solid rgba(232, 238, 252, 0.15)',
+                borderRadius: '12px',
+                padding: '16px',
+                background: template.template_kind === 'budget'
+                  ? 'linear-gradient(180deg, rgba(255, 68, 68, 0.08), rgba(255, 68, 68, 0.03))'
+                  : 'linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98))',
+                cursor: template.unlocked ? 'pointer' : 'not-allowed',
+                transition: 'all 0.2s'
+              }}
             >
               {!template.unlocked && (
                 <div className="template-lock-badge">🔒 Locked</div>
+              )}
+              {template.template_kind === 'budget' && (
+                <div style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  padding: '4px 8px',
+                  background: 'rgba(255, 68, 68, 0.2)',
+                  border: '1px solid rgba(255, 68, 68, 0.4)',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: '600',
+                  color: '#ff6b6b'
+                }}>
+                  📉 Budget
+                </div>
               )}
               <div className="template-header">
                 <h3 className="template-title">{template.title}</h3>

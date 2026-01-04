@@ -71,7 +71,12 @@ services:
     expose:
       - "8080"                                # internal FastAPI/uvicorn port
     volumes:
-      - .:/app                                # bind-mount project source; no code locked in image
+      # Mount project source (excluding webapp_frontend source, using built dist instead)
+      # Note: webapp_frontend/dist must be built on host before starting container
+      - ./tm_bot:/app/tm_bot                  # Python backend code
+      - ./assets:/app/assets                  # Static assets
+      - ./run_webapp_local.py:/app/run_webapp_local.py  # Webapp entry point
+      - ./webapp_frontend/dist:/app/webapp_frontend/dist  # Built frontend (must exist on host)
       - /srv/zana-users-staging:/app/USERS_DATA_DIR  # database mount (staging)
     working_dir: /app                       # important: match your dev run's -w /app
     #command: ["python", "run_webapp_local.py"]   # ← IMPORTANT

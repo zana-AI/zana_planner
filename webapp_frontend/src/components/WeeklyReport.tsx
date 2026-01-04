@@ -86,6 +86,44 @@ export function WeeklyReport({ data, onRefresh }: WeeklyReportProps) {
         </div>
       </header>
       
+      {/* Overall Progress Bar */}
+      {total_promised > 0 && (
+        <div style={{ 
+          marginBottom: '18px', 
+          padding: '12px 18px',
+          border: '1px solid rgba(232, 238, 252, 0.1)',
+          borderRadius: '12px',
+          background: 'rgba(15, 23, 48, 0.5)'
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            marginBottom: '8px'
+          }}>
+            <span style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.72)' }}>Overall Progress</span>
+            <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text)' }}>
+              {Math.round((total_spent / total_promised) * 100)}%
+            </span>
+          </div>
+          <div style={{ 
+            height: '10px', 
+            borderRadius: '999px', 
+            background: 'rgba(232, 238, 252, 0.10)',
+            overflow: 'hidden',
+            border: '1px solid rgba(232, 238, 252, 0.06)'
+          }}>
+            <div style={{ 
+              height: '100%',
+              width: `${Math.min((total_spent / total_promised) * 100, 100)}%`,
+              background: 'linear-gradient(90deg, var(--accent), var(--accent2))',
+              borderRadius: '999px',
+              transition: 'width 0.3s ease'
+            }} />
+          </div>
+        </div>
+      )}
+      
       {/* Promise Cards or Empty State */}
       {hasPromises ? (
         <main className="promises-grid">
