@@ -99,10 +99,21 @@ class ApiClient {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new ApiError(
-        response.status,
-        errorData.detail || `HTTP error ${response.status}`
-      );
+      // Handle structured error details (e.g., from FastAPI HTTPException with detail object)
+      let errorMessage: string;
+      if (errorData.detail) {
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (typeof errorData.detail === 'object') {
+          // For structured errors, include the full object as JSON in the message
+          errorMessage = JSON.stringify(errorData.detail);
+        } else {
+          errorMessage = String(errorData.detail);
+        }
+      } else {
+        errorMessage = `HTTP error ${response.status}`;
+      }
+      throw new ApiError(response.status, errorMessage);
     }
 
     return response.json();
