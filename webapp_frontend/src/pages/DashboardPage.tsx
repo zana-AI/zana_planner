@@ -3,14 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
-import type { WeeklyReportData, UserInfo, WeeklyDistractionsResponse } from '../types';
+import type { WeeklyReportData, UserInfo } from '../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
-  const [distractionsData, setDistractionsData] = useState<WeeklyDistractionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
 
@@ -25,13 +24,9 @@ export function DashboardPage() {
       }
       // Otherwise, API client will use token from localStorage
 
-      // Fetch weekly report and distractions in parallel
-      const [data, distractions] = await Promise.all([
-        apiClient.getWeeklyReport(),
-        apiClient.getWeeklyDistractions().catch(() => null)
-      ]);
+      // Fetch weekly report (distractions are included in promises as budget templates)
+      const data = await apiClient.getWeeklyReport();
       setReportData(data);
-      setDistractionsData(distractions);
       hapticFeedback('success');
     } catch (err) {
       console.error('Failed to fetch report:', err);
