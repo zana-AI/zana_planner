@@ -58,6 +58,36 @@ export function HomePage() {
         </div>
       </section>
 
+      {/* Templates Section */}
+      <section className="home-features">
+        <h2 className="home-section-title">Promise Templates</h2>
+        <div className="home-features-grid">
+          <div className="home-feature-card">
+            <div className="home-feature-icon">🎯</div>
+            <h3 className="home-feature-title">Curated Templates</h3>
+            <p className="home-feature-description">
+              Start with proven promise templates. From fitness goals to language learning, choose templates designed for success.
+            </p>
+          </div>
+          
+          <div className="home-feature-card">
+            <div className="home-feature-icon">🔓</div>
+            <h3 className="home-feature-title">Progressive Unlocks</h3>
+            <p className="home-feature-description">
+              Unlock advanced templates as you complete easier ones. Build momentum with a structured progression system.
+            </p>
+          </div>
+          
+          <div className="home-feature-card">
+            <div className="home-feature-icon">📉</div>
+            <h3 className="home-feature-title">Distraction Budgets</h3>
+            <p className="home-feature-description">
+              Set limits on distractions like social media. Track and stay within your weekly time budgets.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Additional Features Section */}
       <section className="home-additional-features">
         <h2 className="home-section-title">More Features</h2>

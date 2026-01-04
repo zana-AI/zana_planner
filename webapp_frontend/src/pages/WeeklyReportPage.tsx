@@ -128,6 +128,26 @@ export function WeeklyReportPage() {
         </div>
       )}
 
+      {/* Navigation header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0 1rem' }}>
+        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Weekly Report</h1>
+        <button
+          onClick={() => navigate('/templates')}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: '500'
+          }}
+        >
+          📋 Browse Templates
+        </button>
+      </div>
+
       {/* Weekly Report */}
       <WeeklyReport 
         data={reportData} 

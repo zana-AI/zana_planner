@@ -6,6 +6,7 @@ import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
+import { Navigation } from './components/Navigation';
 
 function App() {
   const { initData, isReady } = useTelegramWebApp();
@@ -26,6 +27,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <Navigation />
       <Routes>
         {/* Admin Panel - accessible via /admin */}
         <Route path="/admin" element={<AdminPanel />} />
