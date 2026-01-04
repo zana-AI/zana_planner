@@ -73,57 +73,6 @@ jobs:
             git fetch origin master || git fetch origin
             git reset --hard origin/master
 
-            # Build frontend BEFORE building containers (required for volume mount)
-            echo '[STAGING] Building React frontend (required step)...'
-            FRONTEND_BUILD_SUCCESS=false
-            if [ -d "webapp_frontend" ]; then
-              # Fix permissions for webapp_frontend directory to avoid permission errors
-              echo '[STAGING] Fixing permissions for webapp_frontend...'
-              if chown -R $USER:$USER webapp_frontend 2>/dev/null || chmod -R u+w webapp_frontend 2>/dev/null; then
-                echo '[STAGING] Permissions fixed without sudo'
-              elif sudo -n chown -R $USER:$USER webapp_frontend 2>/dev/null || sudo -n chmod -R u+w webapp_frontend 2>/dev/null; then
-                echo '[STAGING] Permissions fixed with sudo'
-              else
-                echo '[STAGING] ⚠️  Could not fix permissions, will try with sudo during build'
-              fi
-              
-              cd webapp_frontend
-              
-              # Fix node_modules permissions if they exist
-              if [ -d "node_modules" ]; then
-                echo '[STAGING] Fixing node_modules permissions...'
-                chmod -R u+w node_modules 2>/dev/null || sudo chmod -R u+w node_modules 2>/dev/null || true
-              fi
-              
-              # Check if node_modules exists, if not install
-              if [ ! -d "node_modules" ]; then
-                echo '[STAGING] Installing npm dependencies...'
-                npm install || sudo npm install || echo '[STAGING] ⚠️  npm install failed, continuing...'
-                # Fix permissions after install
-                if [ -d "node_modules" ]; then
-                  chmod -R u+w node_modules 2>/dev/null || sudo chmod -R u+w node_modules 2>/dev/null || true
-                fi
-              fi
-              echo '[STAGING] Building frontend...'
-              if npm run build 2>&1 || sudo npm run build 2>&1; then
-                cd ..
-                if [ -d "webapp_frontend/dist" ] && [ -f "webapp_frontend/dist/index.html" ]; then
-                  echo '[STAGING] ✓ Frontend built successfully on host'
-                  FRONTEND_BUILD_SUCCESS=true
-                  # Fix permissions on dist folder
-                  chmod -R u+w webapp_frontend/dist 2>/dev/null || sudo chmod -R u+w webapp_frontend/dist 2>/dev/null || true
-                else
-                  echo '[STAGING] ⚠️  Frontend build completed but dist not found'
-                fi
-              else
-                cd ..
-                echo '[STAGING] ❌ Frontend build failed on host - this is required!'
-                echo '[STAGING] Attempting to extract from Docker build as fallback...'
-              fi
-            else
-              echo '[STAGING] ⚠️  webapp_frontend directory not found, Docker build will handle it'
-            fi
-
             echo '[STAGING] Rebuilding containers with BuildKit (cached layers)...'
             # Enable BuildKit for better caching and performance
             export DOCKER_BUILDKIT=1
@@ -145,44 +94,11 @@ jobs:
               --build-arg GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
               --progress=plain zana-staging
 
-            # Build webapp container (includes frontend build in Dockerfile)
-            # Frontend is automatically built during Docker build, no manual step needed
+            # Build webapp container (includes frontend build in Dockerfile.webapp)
             docker compose build --progress=plain zana-webapp
             
-            # If host build failed, copy built dist from container to host (fallback)
-            if [ "$FRONTEND_BUILD_SUCCESS" = "false" ]; then
-              echo '[STAGING] Copying built frontend from Docker image to host (fallback)...'
-              # Ensure dist directory exists
-              mkdir -p webapp_frontend/dist
-              # Create a temporary container to extract the built dist folder
-              docker create --name temp-webapp-extract zana-project-webapp:latest > /dev/null 2>&1 || true
-              if docker cp temp-webapp-extract:/app/webapp_frontend/dist/. ./webapp_frontend/dist/ 2>/dev/null; then
-                echo '[STAGING] ✓ Frontend dist copied from container to host'
-                # Fix permissions on copied files
-                chmod -R u+w webapp_frontend/dist 2>/dev/null || sudo chmod -R u+w webapp_frontend/dist 2>/dev/null || true
-                # Verify the copy was successful
-                if [ -f "webapp_frontend/dist/index.html" ]; then
-                  echo '[STAGING] ✓ Verified: dist/index.html exists'
-                  FRONTEND_BUILD_SUCCESS=true
-                else
-                  echo '[STAGING] ❌ ERROR: dist/index.html not found after copy!'
-                fi
-              else
-                echo '[STAGING] ❌ ERROR: Failed to copy dist from container!'
-                echo '[STAGING] Deployment may fail - frontend dist folder is missing'
-              fi
-              docker rm temp-webapp-extract > /dev/null 2>&1 || true
-            fi
-            
-            # Final verification that dist exists before starting containers
-            if [ ! -d "webapp_frontend/dist" ] || [ ! -f "webapp_frontend/dist/index.html" ]; then
-              echo '[STAGING] ❌ CRITICAL ERROR: webapp_frontend/dist/index.html does not exist!'
-              echo '[STAGING] Cannot proceed with deployment - frontend build is required'
-              exit 1
-            fi
-            
             # Start both containers
-            docker compose up -d zana-staging zana-webapp
+            docker compose up -d --force-recreate zana-staging zana-webapp
 
             echo '[STAGING] Verifying containers are running...'
             sleep 10  # Increased wait time for webapp to be ready

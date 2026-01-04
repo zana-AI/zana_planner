@@ -24,6 +24,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy backend source + entrypoint (so we don't rely on bind-mounts in production)
+COPY tm_bot/ ./tm_bot/
+COPY run_webapp_local.py ./
+
 # Copy assets directory (icons, static files)
 COPY assets/ ./assets/
 
@@ -33,5 +37,5 @@ COPY --from=frontend-builder /app/webapp_frontend/dist ./webapp_frontend/dist
 # Expose port
 EXPOSE 8080
 
-# Default command for this image: run the minimal webapp
-CMD ["python", "-m", "run_webapp_local.app"]
+# Default command for this image: run the webapp (serve API + built frontend)
+CMD ["uvicorn", "run_webapp_local:app", "--host", "0.0.0.0", "--port", "8080"]

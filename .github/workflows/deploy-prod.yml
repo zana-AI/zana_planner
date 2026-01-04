@@ -54,6 +54,10 @@ jobs:
             echo '[PROD] Restarting production container...'
             docker compose up -d zana-prod
 
+            echo '[PROD] Building and restarting webapp (includes frontend build in Dockerfile.webapp)...'
+            docker compose build --progress=plain zana-webapp
+            docker compose up -d --force-recreate zana-webapp
+
             echo '[PROD] Verifying webapp is running...'
             sleep 5
             if curl -f -s http://localhost:8080/api/health > /dev/null; then
