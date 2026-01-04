@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
@@ -9,9 +9,13 @@ export function WeeklyReportPage() {
   const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string>('');
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
+  
+  // Determine if we're on the tasks route (one-time only)
+  const isTasksView = location.pathname === '/tasks';
 
   const fetchReport = useCallback(async (authData: string, refTime?: string) => {
     setState('loading');
@@ -106,9 +110,40 @@ export function WeeklyReportPage() {
     );
   }
 
+  // Filter and recompute totals for tasks view
+  const filteredData = useMemo(() => {
+    if (!reportData) return null;
+    
+    if (!isTasksView) {
+      // Return all promises for /weekly route
+      return reportData;
+    }
+    
+    // Filter to only one-time tasks (recurring === false)
+    const filteredPromises: Record<string, typeof reportData.promises[string]> = {};
+    let filteredTotalPromised = 0;
+    let filteredTotalSpent = 0;
+    
+    for (const [id, promiseData] of Object.entries(reportData.promises)) {
+      // Include if recurring is explicitly false or undefined (treat undefined as one-time for safety)
+      if (promiseData.recurring === false || promiseData.recurring === undefined) {
+        filteredPromises[id] = promiseData;
+        filteredTotalPromised += promiseData.hours_promised || 0;
+        filteredTotalSpent += promiseData.hours_spent || 0;
+      }
+    }
+    
+    return {
+      ...reportData,
+      promises: filteredPromises,
+      total_promised: filteredTotalPromised,
+      total_spent: filteredTotalSpent,
+    };
+  }, [reportData, isTasksView]);
+
   // Show weekly report
   // If state is ready but no reportData, show loading (shouldn't happen, but safety check)
-  if (!reportData) {
+  if (!reportData || !filteredData) {
     return (
       <div className="app">
         <div className="loading">
@@ -130,7 +165,9 @@ export function WeeklyReportPage() {
 
       {/* Navigation header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0 1rem' }}>
-        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Weekly Report</h1>
+        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>
+          {isTasksView ? 'One-time Tasks' : 'Weekly Report'}
+        </h1>
         <button
           onClick={() => navigate('/templates')}
           style={{
@@ -150,7 +187,7 @@ export function WeeklyReportPage() {
 
       {/* Weekly Report */}
       <WeeklyReport 
-        data={reportData} 
+        data={filteredData} 
         onRefresh={handleRefresh}
       />
     </div>

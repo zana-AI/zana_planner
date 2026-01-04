@@ -89,6 +89,7 @@ export interface PromiseData {
   hours_spent: number;
   sessions: SessionData[];
   visibility?: string; // "private" | "public"
+  recurring?: boolean;
 }
 
 export interface WeeklyReportData {
@@ -260,6 +261,7 @@ export interface PromiseData {
   hours_spent: number;
   sessions: SessionData[];
   visibility?: string;
+  recurring?: boolean;
   metric_type?: 'hours' | 'count';
   target_value?: number;
   target_direction?: 'at_least' | 'at_most';

@@ -81,6 +81,18 @@ function App() {
           } 
         />
         
+        {/* Tasks - one-time tasks only */}
+        <Route 
+          path="/tasks" 
+          element={
+            isAuthenticated ? (
+              <WeeklyReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
+        
         {/* Catch-all: redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

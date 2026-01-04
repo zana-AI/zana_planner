@@ -126,6 +126,7 @@ class ReportsService:
                     'hours_spent': 0.0,  # Will be updated based on metric_type
                     'sessions': [],  # List of {'date': date, 'hours': float} or {'date': date, 'count': int}
                     'visibility': getattr(promise, 'visibility', 'private'),
+                    'recurring': bool(promise.recurring),
                     'metric_type': metric_type,
                     'target_value': target_value,
                     'target_direction': target_direction,
