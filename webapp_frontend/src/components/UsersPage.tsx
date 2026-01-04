@@ -27,7 +27,11 @@ export function UsersPage() {
       
       try {
         const response = await apiClient.getPublicUsers(20);
-        setUsers(response.users);
+        // Filter out current user from the list
+        const filteredUsers = response.users.filter(
+          u => u.user_id !== currentUserId
+        );
+        setUsers(filteredUsers);
       } catch (err) {
         console.error('Failed to fetch users:', err);
         
@@ -42,7 +46,7 @@ export function UsersPage() {
     };
 
     fetchUsers();
-  }, []);
+  }, [currentUserId]);
 
   if (loading) {
     return (

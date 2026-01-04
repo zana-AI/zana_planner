@@ -80,7 +80,12 @@ export function DashboardPage() {
           apiClient.setInitData(authData);
         }
         const response = await apiClient.getPublicUsers(8); // Top 8 users
-        setCommunityUsers(response.users);
+        // Filter out current user from the list
+        const currentUserId = user?.id?.toString();
+        const filteredUsers = response.users.filter(
+          u => u.user_id !== currentUserId
+        );
+        setCommunityUsers(filteredUsers);
       } catch (err) {
         console.error('Failed to fetch community users:', err);
         // Don't show error, just leave empty
@@ -92,7 +97,7 @@ export function DashboardPage() {
     if (isReady && (initData || localStorage.getItem('telegram_auth_token'))) {
       fetchCommunityUsers();
     }
-  }, [isReady, initData]);
+  }, [isReady, initData, user]);
 
   // Filter data into promises (recurring, non-budget), tasks (one-time, non-budget), and distractions (budget templates)
   // IMPORTANT: This hook must be called before any conditional returns
