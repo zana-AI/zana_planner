@@ -43,7 +43,7 @@ export function TemplateDetailPage() {
 
     setSubscribing(true);
     try {
-      const response = await apiClient.subscribeTemplate(templateId!);
+      await apiClient.subscribeTemplate(templateId!);
       hapticFeedback('success');
       // Navigate to weekly report or show success message
       navigate('/weekly');
