@@ -24,6 +24,10 @@ export function AdminPanel() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
+  // Check for authentication (initData or browser token)
+  const hasToken = !!localStorage.getItem('telegram_auth_token');
+  const isAuthenticated = !!initData || hasToken;
+
   // Set initData for API client
   useEffect(() => {
     if (initData) {
@@ -33,7 +37,7 @@ export function AdminPanel() {
 
   // Fetch stats when Stats tab is active
   useEffect(() => {
-    if (activeTab === 'stats' && initData) {
+    if (activeTab === 'stats' && isAuthenticated) {
       const fetchStats = async () => {
         setLoadingStats(true);
         try {
@@ -50,12 +54,12 @@ export function AdminPanel() {
       };
       fetchStats();
     }
-  }, [activeTab, initData]);
+  }, [activeTab, isAuthenticated]);
 
-  // Fetch users - wait for initData to be available
+  // Fetch users - wait for authentication to be available
   useEffect(() => {
-    // Don't fetch if initData is not available yet
-    if (!initData) {
+    // Don't fetch if not authenticated yet
+    if (!isAuthenticated) {
       return;
     }
 
@@ -86,12 +90,12 @@ export function AdminPanel() {
     };
 
     fetchUsers();
-  }, [initData]); // Changed from [] to [initData] - ensures we wait for initData
+  }, [isAuthenticated]); // Wait for authentication (initData or token)
 
   // Fetch broadcasts
   const fetchBroadcasts = async () => {
-    // Don't fetch if initData is not available
-    if (!initData) {
+    // Don't fetch if not authenticated
+    if (!isAuthenticated) {
       return;
     }
     
@@ -107,14 +111,14 @@ export function AdminPanel() {
   };
 
   useEffect(() => {
-    if (activeTab === 'scheduled' && initData) {
+    if (activeTab === 'scheduled' && isAuthenticated) {
       fetchBroadcasts();
     }
-  }, [activeTab, initData]); // Also depend on initData
+  }, [activeTab, isAuthenticated]); // Also depend on isAuthenticated
 
   // Fetch templates when Templates tab is active
   useEffect(() => {
-    if (activeTab === 'templates' && initData) {
+    if (activeTab === 'templates' && isAuthenticated) {
       const fetchTemplates = async () => {
         setLoadingTemplates(true);
         try {
@@ -131,7 +135,7 @@ export function AdminPanel() {
       };
       fetchTemplates();
     }
-  }, [activeTab, initData]);
+  }, [activeTab, isAuthenticated]);
 
   // Filter users based on search query
   const filteredUsers = users.filter(user => {
