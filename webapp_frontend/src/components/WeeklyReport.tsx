@@ -5,6 +5,7 @@ import { PromiseCard } from './PromiseCard';
 interface WeeklyReportProps {
   data: WeeklyReportData;
   onRefresh?: () => void; // Callback to refresh data
+  hideHeader?: boolean; // Hide header when used in dashboard sections
 }
 
 /**
@@ -48,7 +49,7 @@ function getWeekDays(weekStart: string): string[] {
 /**
  * WeeklyReport component - displays the full weekly report with header and promise cards
  */
-export function WeeklyReport({ data, onRefresh }: WeeklyReportProps) {
+export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyReportProps) {
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
   const dateRange = useMemo(
@@ -72,19 +73,21 @@ export function WeeklyReport({ data, onRefresh }: WeeklyReportProps) {
   
   return (
     <div className="weekly-report">
-      {/* Header */}
-      <header className="report-header">
-        <div className="header-left">
-          <h1 className="header-title" dir="auto">Weekly Report</h1>
-          <div className="header-subtitle" dir="ltr">{dateRange}</div>
-        </div>
-        <div className="header-right">
-          <div className="header-totals-label" dir="ltr">Totals</div>
-          <div className="header-totals-value" dir="ltr">
-            {total_spent.toFixed(1)}/{total_promised.toFixed(1)} h
+      {/* Header - hide when used in dashboard sections */}
+      {!hideHeader && (
+        <header className="report-header">
+          <div className="header-left">
+            <h1 className="header-title" dir="auto">Weekly Report</h1>
+            <div className="header-subtitle" dir="ltr">{dateRange}</div>
           </div>
-        </div>
-      </header>
+          <div className="header-right">
+            <div className="header-totals-label" dir="ltr">Totals</div>
+            <div className="header-totals-value" dir="ltr">
+              {total_spent.toFixed(1)}/{total_promised.toFixed(1)} h
+            </div>
+          </div>
+        </header>
+      )}
       
       {/* Overall Progress Bar */}
       {total_promised > 0 && (

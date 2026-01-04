@@ -51,6 +51,7 @@ class UserInfoResponse(BaseModel):
     user_id: int
     timezone: str
     language: str
+    first_name: Optional[str] = None
 
 
 class PublicUser(BaseModel):
@@ -579,7 +580,8 @@ def create_webapp_api(
             return UserInfoResponse(
                 user_id=user_id,
                 timezone=settings.timezone if settings else "UTC",
-                language=settings.language if settings else "en"
+                language=settings.language if settings else "en",
+                first_name=settings.first_name if settings else None
             )
         except Exception as e:
             logger.exception(f"Error getting user info for user {user_id}")

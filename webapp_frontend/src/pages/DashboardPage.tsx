@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
-import type { WeeklyReportData, UserInfo } from '../types';
+import type { WeeklyReportData, UserInfo, WeeklyDistractionsResponse } from '../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
+  const [distractionsData, setDistractionsData] = useState<WeeklyDistractionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
 
@@ -24,9 +25,13 @@ export function DashboardPage() {
       }
       // Otherwise, API client will use token from localStorage
 
-      // Fetch weekly report
-      const data = await apiClient.getWeeklyReport();
+      // Fetch weekly report and distractions in parallel
+      const [data, distractions] = await Promise.all([
+        apiClient.getWeeklyReport(),
+        apiClient.getWeeklyDistractions().catch(() => null)
+      ]);
       setReportData(data);
+      setDistractionsData(distractions);
       hapticFeedback('success');
     } catch (err) {
       console.error('Failed to fetch report:', err);
@@ -81,28 +86,36 @@ export function DashboardPage() {
     fetchReport(authData || '');
   }, [isReady, initData, navigate, fetchReport]);
 
-  // Filter data into promises (recurring) and tasks (one-time)
+  // Filter data into promises (recurring, non-budget), tasks (one-time, non-budget), and distractions (budget templates)
   // IMPORTANT: This hook must be called before any conditional returns
-  const { promisesData, tasksData } = useMemo(() => {
+  const { promisesData, tasksData, distractionsPromisesData } = useMemo(() => {
     if (!reportData) {
-      return { promisesData: null, tasksData: null };
+      return { promisesData: null, tasksData: null, distractionsPromisesData: null };
     }
 
     const promises: Record<string, typeof reportData.promises[string]> = {};
     const tasks: Record<string, typeof reportData.promises[string]> = {};
+    const distractions: Record<string, typeof reportData.promises[string]> = {};
     let promisesTotalPromised = 0;
     let promisesTotalSpent = 0;
     let tasksTotalPromised = 0;
     let tasksTotalSpent = 0;
+    let distractionsTotalPromised = 0;
+    let distractionsTotalSpent = 0;
 
     for (const [id, promiseData] of Object.entries(reportData.promises)) {
-      // Recurring promises (recurring === true)
-      if (promiseData.recurring === true) {
+      // Budget templates (distractions) - separate from regular promises
+      if (promiseData.template_kind === 'budget') {
+        distractions[id] = promiseData;
+        distractionsTotalPromised += promiseData.hours_promised || 0;
+        distractionsTotalSpent += promiseData.hours_spent || 0;
+      } else if (promiseData.recurring === true) {
+        // Recurring promises (recurring === true, non-budget)
         promises[id] = promiseData;
         promisesTotalPromised += promiseData.hours_promised || 0;
         promisesTotalSpent += promiseData.hours_spent || 0;
       } else {
-        // One-time tasks (recurring === false or undefined)
+        // One-time tasks (recurring === false or undefined, non-budget)
         tasks[id] = promiseData;
         tasksTotalPromised += promiseData.hours_promised || 0;
         tasksTotalSpent += promiseData.hours_spent || 0;
@@ -122,6 +135,12 @@ export function DashboardPage() {
         total_promised: tasksTotalPromised,
         total_spent: tasksTotalSpent,
       } : null,
+      distractionsPromisesData: distractionsTotalPromised > 0 || Object.keys(distractions).length > 0 ? {
+        ...reportData,
+        promises: distractions,
+        total_promised: distractionsTotalPromised,
+        total_spent: distractionsTotalSpent,
+      } : null,
     };
   }, [reportData]);
 
@@ -130,7 +149,8 @@ export function DashboardPage() {
     fetchReport(authData || '');
   }, [initData, fetchReport]);
 
-  const displayName = user?.first_name || userInfo?.user_id?.toString() || 'User';
+  // Get display name with proper fallback: first_name → username → user_id
+  const displayName = userInfo?.first_name || user?.first_name || user?.username || userInfo?.user_id?.toString() || 'User';
 
   // Loading state - must come after all hooks
   if (!isReady || loading) {
@@ -161,7 +181,12 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="app" style={{ padding: '1rem', maxWidth: '1200px', margin: '0 auto' }}>
+    <div className="app dashboard" style={{ 
+      padding: '1rem', 
+      maxWidth: '1200px', 
+      margin: '0 auto',
+      paddingBottom: '100px' // Add bottom padding for navigation bar
+    }}>
       {/* Welcome Header */}
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: '1.8rem', marginBottom: '0.25rem', color: '#fff' }}>
@@ -169,24 +194,32 @@ export function DashboardPage() {
         </h1>
       </div>
 
-      {/* Promises Section */}
-      {promisesData && (
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
-          <WeeklyReport data={promisesData} onRefresh={handleRefresh} />
-        </div>
-      )}
-
-      {/* Tasks Section */}
+      {/* Tasks Section - First */}
       {tasksData && (
         <div style={{ marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
-          <WeeklyReport data={tasksData} onRefresh={handleRefresh} />
+          <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} />
+        </div>
+      )}
+
+      {/* Promises Section - Second */}
+      {promisesData && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
+          <WeeklyReport data={promisesData} onRefresh={handleRefresh} hideHeader={true} />
+        </div>
+      )}
+
+      {/* Distractions Section - Third */}
+      {distractionsPromisesData && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Distractions</h2>
+          <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} />
         </div>
       )}
 
       {/* Empty State */}
-      {!loading && !promisesData && !tasksData && (
+      {!loading && !promisesData && !tasksData && !distractionsPromisesData && (
         <div className="empty-state">
           <h2 className="empty-title">No promises or tasks yet</h2>
           <p className="empty-subtitle">

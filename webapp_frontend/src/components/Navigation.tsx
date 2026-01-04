@@ -56,8 +56,9 @@ export function Navigation() {
     navigate('/', { replace: true });
   };
 
-  const displayName = telegramUser?.first_name || userInfo?.user_id?.toString() || 'User';
-  const displayInitial = displayName.charAt(0).toUpperCase();
+  // Get display name with proper fallback: first_name → username → user_id
+  const displayName = userInfo?.first_name || telegramUser?.first_name || telegramUser?.username || userInfo?.user_id?.toString() || 'User';
+  const displayInitial = (userInfo?.first_name || telegramUser?.first_name || telegramUser?.username || 'U').charAt(0).toUpperCase();
 
   const isActive = (path: string) => {
     if (path === '/dashboard') {

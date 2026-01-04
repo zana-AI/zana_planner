@@ -183,9 +183,19 @@ html, body {
   gap: 14px;
 }
 
+/* Force single column layout for dashboard (one card per row) */
+.dashboard .promises-grid {
+  grid-template-columns: 1fr !important;
+}
+
 @media (min-width: 480px) {
   .promises-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  
+  /* Still force single column on dashboard */
+  .dashboard .promises-grid {
+    grid-template-columns: 1fr !important;
   }
 }
 

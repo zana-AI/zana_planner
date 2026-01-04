@@ -104,6 +104,7 @@ export interface UserInfo {
   user_id: number;
   timezone: string;
   language: string;
+  first_name?: string;
 }
 
 export interface PublicUser {
