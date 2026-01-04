@@ -36,6 +36,11 @@ from fastapi.responses import FileResponse
 
 logger = get_logger(__name__)
 
+# Admin stats cache (module-level)
+_admin_stats_cache: Optional[Dict[str, Any]] = None
+_admin_stats_cache_timestamp: Optional[datetime] = None
+ADMIN_STATS_CACHE_TTL = timedelta(minutes=5)
+
 
 class WeeklyReportResponse(BaseModel):
     """Response model for weekly report endpoint."""
@@ -264,10 +269,6 @@ def create_webapp_api(
         return {"is_admin": is_admin(user_id)}
     
     # Admin stats endpoint - reuse existing bot_stats code
-    _stats_cache: Optional[Dict[str, Any]] = None
-    _stats_cache_timestamp: Optional[datetime] = None
-    STATS_CACHE_TTL = timedelta(minutes=5)
-    
     @app.get("/api/admin/stats")
     async def get_admin_stats(
         admin_id: int = Depends(get_admin_user)
@@ -276,14 +277,14 @@ def create_webapp_api(
         Get app statistics (admin only).
         Returns cached results for 5 minutes to reduce database load.
         """
-        global _stats_cache, _stats_cache_timestamp
+        global _admin_stats_cache, _admin_stats_cache_timestamp
         
         now = datetime.now()
         
         # Return cached stats if still valid
-        if _stats_cache and _stats_cache_timestamp and (now - _stats_cache_timestamp) < STATS_CACHE_TTL:
+        if _admin_stats_cache and _admin_stats_cache_timestamp and (now - _admin_stats_cache_timestamp) < ADMIN_STATS_CACHE_TTL:
             logger.debug("Returning cached admin stats")
-            return _stats_cache
+            return _admin_stats_cache
         
         try:
             # Import bot_stats - add project root to path
@@ -322,8 +323,8 @@ def create_webapp_api(
             }
             
             # Cache the result
-            _stats_cache = result
-            _stats_cache_timestamp = now
+            _admin_stats_cache = result
+            _admin_stats_cache_timestamp = now
             
             logger.info(f"Admin stats computed: {result}")
             return result

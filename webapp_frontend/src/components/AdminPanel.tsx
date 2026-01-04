@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
+import { UserAvatar } from './UserAvatar';
 import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate } from '../types';
 
 export function AdminPanel() {
@@ -257,8 +258,14 @@ export function AdminPanel() {
   if (loading) {
     return (
       <div className="admin-panel">
-        <div className="admin-panel-header">
-          <h1 className="admin-panel-title">Admin Panel</h1>
+        <div className="admin-panel-header" style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '1rem'
+        }}>
+          <h1 className="admin-panel-title" style={{ margin: 0 }}>Admin Panel</h1>
+          <UserAvatar size={40} showMenu={false} />
         </div>
         <div className="admin-panel-loading">
           <div className="loading-spinner" />
@@ -271,8 +278,14 @@ export function AdminPanel() {
   if (error && error.includes('Access denied')) {
     return (
       <div className="admin-panel">
-        <div className="admin-panel-header">
-          <h1 className="admin-panel-title">Admin Panel</h1>
+        <div className="admin-panel-header" style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '1rem'
+        }}>
+          <h1 className="admin-panel-title" style={{ margin: 0 }}>Admin Panel</h1>
+          <UserAvatar size={40} showMenu={false} />
         </div>
         <div className="admin-panel-error">
           <div className="error-icon">🔒</div>
@@ -284,15 +297,22 @@ export function AdminPanel() {
 
   return (
     <div className="admin-panel">
-      <div className="admin-panel-header">
-        <h1 className="admin-panel-title">Admin Panel</h1>
-        <div className="admin-panel-tabs">
-          <button
-            className={`admin-tab ${activeTab === 'stats' ? 'active' : ''}`}
-            onClick={() => setActiveTab('stats')}
-          >
-            Stats
-          </button>
+      <div className="admin-panel-header" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '1rem'
+      }}>
+        <h1 className="admin-panel-title" style={{ margin: 0 }}>Admin Panel</h1>
+        <UserAvatar size={40} showMenu={false} />
+      </div>
+      <div className="admin-panel-tabs">
+        <button
+          className={`admin-tab ${activeTab === 'stats' ? 'active' : ''}`}
+          onClick={() => setActiveTab('stats')}
+        >
+          Stats
+        </button>
           <button
             className={`admin-tab ${activeTab === 'compose' ? 'active' : ''}`}
             onClick={() => setActiveTab('compose')}
