@@ -123,13 +123,14 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
   };
   
   // Construct avatar URL
-  // Always try to use API endpoint first (it will check if avatar exists and is public)
+  // Only try API endpoint if user has an avatar_path (indicates avatar exists)
   // If avatar_path is a full URL, use it directly
-  // Otherwise, try API endpoint which will serve the avatar if it exists
-  const avatarUrl = !imageError 
-    ? (user.avatar_path && user.avatar_path.startsWith('http')
+  // If avatar_path exists but is not a URL, use API endpoint
+  // Otherwise, skip API endpoint and go straight to fallback (DiceBear/initials)
+  const avatarUrl = !imageError && user.avatar_path
+    ? (user.avatar_path.startsWith('http')
         ? user.avatar_path  // Full URL (external)
-        : `/api/media/avatars/${user.user_id}`)  // Use API endpoint for local avatars (checks file existence)
+        : `/api/media/avatars/${user.user_id}`)  // Use API endpoint for local avatars
     : null;
 
   return (
