@@ -4,12 +4,11 @@ import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
 import { UserCard } from '../components/UserCard';
-import type { WeeklyReportData, UserInfo, PublicUser } from '../types';
+import type { WeeklyReportData, PublicUser } from '../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -64,23 +63,10 @@ export function DashboardPage() {
       return;
     }
 
-    // Fetch user info and weekly report
-    const loadData = async () => {
-      try {
-        // Set auth for API client
-        if (authData) {
-          apiClient.setInitData(authData);
-        }
-
-        // Fetch user info (optional)
-        const info = await apiClient.getUserInfo().catch(() => null);
-        setUserInfo(info);
-      } catch (error) {
-        console.error('Failed to load user info:', error);
-      }
-    };
-
-    loadData();
+    // Set auth for API client
+    if (authData) {
+      apiClient.setInitData(authData);
+    }
     fetchReport(authData || '');
   }, [isReady, initData, navigate, fetchReport]);
 
