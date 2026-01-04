@@ -67,12 +67,14 @@ class InstancesRepository:
         promise_text = template["title"].replace(" ", "_")
 
         # Create the promise
+        # Default to recurring=True, only set False for one_time templates
+        is_recurring = template["duration_type"] != "one_time"
         promise = Promise(
             user_id=user,
             id=promise_id,
             text=promise_text,
             hours_per_week=template["target_value"] if template["metric_type"] == "hours" else 0.0,
-            recurring=template["duration_type"] == "week",
+            recurring=is_recurring,
             start_date=start_date,
             end_date=target_date,
             angle_deg=0,

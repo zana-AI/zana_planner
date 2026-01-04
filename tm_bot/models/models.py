@@ -9,7 +9,7 @@ class Promise:
     id: str
     text: str
     hours_per_week: float
-    recurring: bool = False
+    recurring: bool = True
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     # Optional viz fields (keep if already present in CSVs)

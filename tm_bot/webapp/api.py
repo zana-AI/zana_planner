@@ -848,6 +848,34 @@ def create_webapp_api(
             logger.exception(f"Error updating promise visibility: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to update visibility: {str(e)}")
     
+    # Promise recurring endpoint
+    class UpdateRecurringRequest(BaseModel):
+        recurring: bool
+    
+    @app.patch("/api/promises/{promise_id}/recurring")
+    async def update_promise_recurring(
+        promise_id: str,
+        request: UpdateRecurringRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Update promise recurring status."""
+        try:
+            promises_repo = PromisesRepository(app.state.root_dir)
+            promise = promises_repo.get_promise(user_id, promise_id)
+            
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            promise.recurring = request.recurring
+            promises_repo.upsert_promise(user_id, promise)
+            
+            return {"status": "success", "recurring": promise.recurring}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating promise recurring status: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update recurring status: {str(e)}")
+    
     # Action logging endpoint
     class LogActionRequest(BaseModel):
         promise_id: str

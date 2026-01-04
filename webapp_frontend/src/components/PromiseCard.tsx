@@ -43,6 +43,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     hours_spent, 
     sessions, 
     visibility = 'private',
+    recurring = true,
     metric_type = 'hours',
     target_value = hours_promised,
     target_direction = 'at_least',
@@ -52,7 +53,15 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [currentVisibility, setCurrentVisibility] = useState<'private' | 'public'>(
     (visibility === 'public' ? 'public' : 'private') as 'private' | 'public'
   );
+  const [currentRecurring, setCurrentRecurring] = useState<boolean>(recurring);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
+  const [isUpdatingRecurring, setIsUpdatingRecurring] = useState(false);
+
+  // Sync recurring state when data changes
+  useEffect(() => {
+    setCurrentRecurring(recurring);
+  }, [recurring]);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isCheckinModalOpen, setIsCheckinModalOpen] = useState(false);
   const [isWeeklyNoteModalOpen, setIsWeeklyNoteModalOpen] = useState(false);
@@ -126,6 +135,36 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const handleVisibilityCancel = () => {
     setShowVisibilityConfirm(false);
     setPendingVisibility(null);
+  };
+  
+  const handleRecurringToggle = async () => {
+    if (isUpdatingRecurring) return;
+    
+    const newRecurring = !currentRecurring;
+    setIsUpdatingRecurring(true);
+    
+    try {
+      await apiClient.updatePromiseRecurring(id, newRecurring);
+      setCurrentRecurring(newRecurring);
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to update recurring status:', err);
+      // Revert on error
+      setCurrentRecurring(recurring);
+    } finally {
+      setIsUpdatingRecurring(false);
+    }
+  };
+  
+  const handleCardHeaderClick = (e: React.MouseEvent) => {
+    // Don't expand if clicking on visibility toggle or other interactive elements
+    const target = e.target as HTMLElement;
+    if (target.closest('.card-visibility-toggle') || target.closest('button')) {
+      return;
+    }
+    setIsExpanded(!isExpanded);
   };
   
   const handleSwipeStart = (e: React.TouchEvent) => {
@@ -278,7 +317,11 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           </div>
         )}
         
-        <div className="card-top">
+        <div 
+          className="card-top" 
+          onClick={handleCardHeaderClick}
+          style={{ cursor: 'pointer' }}
+        >
           <div className="card-title" dir="auto">
             <span className="card-emoji">{emoji}</span>
             <span className="card-title-text">{text}</span>
@@ -298,13 +341,16 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             )}
             <button
               className="card-visibility-toggle"
-              onClick={handleVisibilityToggle}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleVisibilityToggle();
+              }}
               disabled={isUpdatingVisibility}
               title={currentVisibility === 'private' ? 'Make public' : 'Make private'}
               style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', marginLeft: 'auto' }}
             >
               {currentVisibility === 'private' ? '🔒' : '🌐'}
-              <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              <span style={{ fontSize: '0.7rem', opacity: 0.8, color: 'rgba(232, 238, 252, 0.8)' }}>
                 {currentVisibility === 'private' ? 'Private' : 'Public'}
               </span>
             </button>
@@ -323,6 +369,55 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             </div>
           </div>
         </div>
+        
+        {/* Expanded controls section */}
+        {isExpanded && (
+          <div 
+            style={{
+              padding: '12px 16px',
+              borderTop: '1px solid rgba(232, 238, 252, 0.1)',
+              backgroundColor: 'rgba(15, 23, 48, 0.3)',
+              transition: 'all 0.3s ease'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Recurring toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text)' }}>
+                    {currentRecurring ? '🔄 Recurring Promise' : '📌 One-time Task'}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+                    {currentRecurring 
+                      ? 'This promise repeats every week' 
+                      : 'This is a one-time task'}
+                  </span>
+                </div>
+                <button
+                  onClick={handleRecurringToggle}
+                  disabled={isUpdatingRecurring}
+                  style={{
+                    padding: '8px 16px',
+                    background: currentRecurring 
+                      ? 'linear-gradient(135deg, #10b981, #059669)' 
+                      : 'rgba(232, 238, 252, 0.1)',
+                    border: `1px solid ${currentRecurring ? '#10b981' : 'rgba(232, 238, 252, 0.2)'}`,
+                    borderRadius: '8px',
+                    color: currentRecurring ? '#fff' : 'rgba(232, 238, 252, 0.8)',
+                    fontSize: '0.8rem',
+                    fontWeight: '600',
+                    cursor: isUpdatingRecurring ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                    opacity: isUpdatingRecurring ? 0.6 : 1
+                  }}
+                >
+                  {isUpdatingRecurring ? '...' : (currentRecurring ? 'Make One-time' : 'Make Recurring')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       
       {!isBudget && (
         <div className="progress-row" aria-hidden="true">

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
-import type { WeeklyReportData, UserInfo } from '../types';
+import { UserCard } from '../components/UserCard';
+import type { WeeklyReportData, UserInfo, PublicUser } from '../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -12,6 +13,8 @@ export function DashboardPage() {
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  const [communityUsers, setCommunityUsers] = useState<PublicUser[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
 
   const fetchReport = useCallback(async (authData: string) => {
     setLoading(true);
@@ -81,6 +84,30 @@ export function DashboardPage() {
     fetchReport(authData || '');
   }, [isReady, initData, navigate, fetchReport]);
 
+  // Fetch community users for sidebar
+  useEffect(() => {
+    const fetchCommunityUsers = async () => {
+      setCommunityLoading(true);
+      try {
+        const authData = initData || getDevInitData();
+        if (authData) {
+          apiClient.setInitData(authData);
+        }
+        const response = await apiClient.getPublicUsers(8); // Top 8 users
+        setCommunityUsers(response.users);
+      } catch (err) {
+        console.error('Failed to fetch community users:', err);
+        // Don't show error, just leave empty
+      } finally {
+        setCommunityLoading(false);
+      }
+    };
+
+    if (isReady && (initData || localStorage.getItem('telegram_auth_token'))) {
+      fetchCommunityUsers();
+    }
+  }, [isReady, initData]);
+
   // Filter data into promises (recurring, non-budget), tasks (one-time, non-budget), and distractions (budget templates)
   // IMPORTANT: This hook must be called before any conditional returns
   const { promisesData, tasksData, distractionsPromisesData } = useMemo(() => {
@@ -144,9 +171,6 @@ export function DashboardPage() {
     fetchReport(authData || '');
   }, [initData, fetchReport]);
 
-  // Get display name with proper fallback: first_name → username → user_id
-  const displayName = userInfo?.first_name || user?.first_name || user?.username || userInfo?.user_id?.toString() || 'User';
-
   // Loading state - must come after all hooks
   if (!isReady || loading) {
     return (
@@ -175,69 +199,164 @@ export function DashboardPage() {
     );
   }
 
+  const currentUserId = user?.id?.toString();
+
   return (
     <div className="app dashboard" style={{ 
       padding: '1rem', 
-      maxWidth: '1200px', 
+      maxWidth: '1400px', 
       margin: '0 auto',
-      paddingBottom: '100px' // Add bottom padding for navigation bar
+      paddingBottom: '100px', // Add bottom padding for navigation bar
+      display: 'flex',
+      gap: '1.5rem',
+      alignItems: 'flex-start'
     }}>
-      {/* Welcome Header */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.8rem', marginBottom: '0.25rem', color: '#fff' }}>
-          Welcome back, {displayName}! 👋
-        </h1>
+      {/* Main Content */}
+      <div style={{ 
+        flex: '1 1 0',
+        minWidth: 0 // Allow flex item to shrink below content size
+      }}>
+        {/* Tasks Section - First */}
+        {tasksData && (
+          <div style={{ marginBottom: '2rem' }}>
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
+            <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} />
+          </div>
+        )}
+
+        {/* Promises Section - Second */}
+        {promisesData && (
+          <div style={{ marginBottom: '2rem' }}>
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
+            <WeeklyReport data={promisesData} onRefresh={handleRefresh} hideHeader={true} />
+          </div>
+        )}
+
+        {/* Distractions Section - Third */}
+        {distractionsPromisesData && (
+          <div style={{ marginBottom: '2rem' }}>
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Distractions</h2>
+            <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} />
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && !promisesData && !tasksData && !distractionsPromisesData && (
+          <div className="empty-state">
+            <h2 className="empty-title">No promises or tasks yet</h2>
+            <p className="empty-subtitle">
+              Start tracking your promises in the Telegram bot to see your progress here.
+            </p>
+            <button
+              onClick={() => navigate('/templates')}
+              style={{
+                marginTop: '1rem',
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                fontWeight: '500'
+              }}
+            >
+              📋 Browse Templates
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Tasks Section - First */}
-      {tasksData && (
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
-          <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} />
-        </div>
-      )}
-
-      {/* Promises Section - Second */}
-      {promisesData && (
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
-          <WeeklyReport data={promisesData} onRefresh={handleRefresh} hideHeader={true} />
-        </div>
-      )}
-
-      {/* Distractions Section - Third */}
-      {distractionsPromisesData && (
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Distractions</h2>
-          <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} />
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && !promisesData && !tasksData && !distractionsPromisesData && (
-        <div className="empty-state">
-          <h2 className="empty-title">No promises or tasks yet</h2>
-          <p className="empty-subtitle">
-            Start tracking your promises in the Telegram bot to see your progress here.
+      {/* Right Sidebar - Community */}
+      <aside style={{
+        flex: '0 0 280px',
+        display: 'block',
+        position: 'sticky',
+        top: '1rem',
+        maxHeight: 'calc(100vh - 2rem)',
+        overflowY: 'auto',
+        padding: '1rem',
+        background: 'rgba(15, 23, 48, 0.5)',
+        border: '1px solid rgba(232, 238, 252, 0.1)',
+        borderRadius: '12px'
+      }}
+      className="community-sidebar"
+      >
+        <div style={{ marginBottom: '1rem' }}>
+          <h3 style={{ 
+            fontSize: '1.1rem', 
+            fontWeight: '700', 
+            color: '#fff', 
+            marginBottom: '0.5rem' 
+          }}>
+            👥 Community
+          </h3>
+          <p style={{ 
+            fontSize: '0.8rem', 
+            color: 'rgba(232, 238, 252, 0.6)',
+            marginBottom: '1rem'
+          }}>
+            Active users on Xaana
           </p>
-          <button
-            onClick={() => navigate('/templates')}
-            style={{
-              marginTop: '1rem',
-              padding: '0.75rem 1.5rem',
-              backgroundColor: '#4CAF50',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '1rem',
-              fontWeight: '500'
-            }}
-          >
-            📋 Browse Templates
-          </button>
         </div>
-      )}
+
+        {communityLoading ? (
+          <div style={{ 
+            padding: '2rem', 
+            textAlign: 'center',
+            color: 'rgba(232, 238, 252, 0.6)',
+            fontSize: '0.9rem'
+          }}>
+            Loading...
+          </div>
+        ) : communityUsers.length > 0 ? (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {communityUsers.map((communityUser) => (
+                <UserCard 
+                  key={communityUser.user_id} 
+                  user={communityUser} 
+                  currentUserId={currentUserId}
+                  showFollowButton={false}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => navigate('/community')}
+              style={{
+                width: '100%',
+                marginTop: '1rem',
+                padding: '0.75rem',
+                background: 'rgba(91, 163, 245, 0.1)',
+                border: '1px solid rgba(91, 163, 245, 0.3)',
+                borderRadius: '8px',
+                color: '#5ba3f5',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(91, 163, 245, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
+              }}
+            >
+              Explore Community →
+            </button>
+          </>
+        ) : (
+          <div style={{ 
+            padding: '1rem', 
+            textAlign: 'center',
+            color: 'rgba(232, 238, 252, 0.6)',
+            fontSize: '0.85rem'
+          }}>
+            No users found
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

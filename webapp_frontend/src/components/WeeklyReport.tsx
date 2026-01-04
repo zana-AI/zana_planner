@@ -106,7 +106,7 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
           }}>
             <span style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.72)' }}>Overall Progress</span>
             <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text)' }}>
-              {Math.round((total_spent / total_promised) * 100)}%
+              {Math.round((total_spent / total_promised) * 100)}% ({total_spent.toFixed(1)}h / {total_promised.toFixed(1)}h)
             </span>
           </div>
           <div style={{ 

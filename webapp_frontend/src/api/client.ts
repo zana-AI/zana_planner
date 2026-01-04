@@ -182,6 +182,16 @@ class ApiClient {
   }
 
   /**
+   * Update promise recurring status.
+   */
+  async updatePromiseRecurring(promiseId: string, recurring: boolean): Promise<{ status: string; recurring: boolean }> {
+    return this.request<{ status: string; recurring: boolean }>(`/promises/${promiseId}/recurring`, {
+      method: 'PATCH',
+      body: JSON.stringify({ recurring }),
+    });
+  }
+
+  /**
    * Log an action (time spent) for a promise.
    */
   async logAction(promiseId: string, timeSpent: number, actionDatetime?: string): Promise<{ status: string; message: string }> {

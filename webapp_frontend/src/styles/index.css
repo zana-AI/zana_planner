@@ -1823,3 +1823,14 @@ html, body {
 .app {
   padding-bottom: calc(32px + 60px + env(safe-area-inset-bottom));
 }
+
+/* Community sidebar responsive */
+@media (max-width: 1023px) {
+  .community-sidebar {
+    display: none !important;
+  }
+  
+  .app.dashboard {
+    flex-direction: column;
+  }
+}

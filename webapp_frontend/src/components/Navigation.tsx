@@ -10,6 +10,7 @@ export function Navigation() {
   const { initData, user: telegramUser } = useTelegramWebApp();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [botUsername, setBotUsername] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   
   const authData = initData || getDevInitData();
@@ -28,6 +29,27 @@ export function Navigation() {
         });
     }
   }, [hasToken, authData]);
+
+  // Fetch bot username for Telegram links
+  useEffect(() => {
+    const fetchBotUsername = async () => {
+      try {
+        const response = await fetch('/api/auth/bot-username');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.bot_username) {
+            setBotUsername(data.bot_username.trim());
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch bot username:', error);
+      }
+    };
+    
+    if (isAuthenticated) {
+      fetchBotUsername();
+    }
+  }, [isAuthenticated]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -195,14 +217,46 @@ export function Navigation() {
               >
                 👤 Profile / Dashboard
               </button>
-              <button
-                onClick={handleLogout}
+              <a
+                href={botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot'}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setShowProfileMenu(false)}
                 style={{
                   width: '100%',
                   padding: '0.75rem 1rem',
                   background: 'none',
                   border: 'none',
-                  color: '#ff6b6b',
+                  color: '#fff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  borderRadius: '4px',
+                  transition: 'background 0.2s',
+                  textDecoration: 'none',
+                  display: 'block',
+                  marginTop: '0.25rem'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none';
+                }}
+              >
+                🤖 Open Bot
+              </a>
+              <button
+                onClick={() => {
+                  navigate('/community');
+                  setShowProfileMenu(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 1rem',
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
                   textAlign: 'left',
                   cursor: 'pointer',
                   fontSize: '0.9rem',
@@ -211,14 +265,70 @@ export function Navigation() {
                   marginTop: '0.25rem'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 107, 107, 0.1)';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'none';
                 }}
               >
-                🚪 Logout
+                👥 Community
               </button>
+              <button
+                onClick={() => {
+                  navigate('/templates');
+                  setShowProfileMenu(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 1rem',
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  borderRadius: '4px',
+                  transition: 'background 0.2s',
+                  marginTop: '0.25rem'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none';
+                }}
+              >
+                📋 Templates
+              </button>
+              <div style={{
+                marginTop: '0.5rem',
+                paddingTop: '0.5rem',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+              }}>
+                <button
+                  onClick={handleLogout}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    background: 'none',
+                    border: 'none',
+                    color: '#ff6b6b',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    borderRadius: '4px',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 107, 107, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'none';
+                  }}
+                >
+                  🚪 Logout
+                </button>
+              </div>
             </div>
           )}
         </div>
