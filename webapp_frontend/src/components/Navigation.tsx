@@ -1,17 +1,63 @@
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
+import { apiClient } from '../api/client';
+import type { UserInfo } from '../types';
 
 export function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { initData } = useTelegramWebApp();
+  const { initData, user: telegramUser } = useTelegramWebApp();
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  
   const authData = initData || getDevInitData();
-  const isAuthenticated = !!authData;
+  const hasToken = !!localStorage.getItem('telegram_auth_token');
+  const isAuthenticated = !!authData || hasToken;
+
+  // Fetch user info for browser login users
+  useEffect(() => {
+    if (hasToken && !authData) {
+      // Browser login - fetch user info
+      apiClient.getUserInfo()
+        .then(setUserInfo)
+        .catch(() => {
+          // If fetch fails, user might not be authenticated
+          console.error('Failed to fetch user info');
+        });
+    }
+  }, [hasToken, authData]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    };
+
+    if (showProfileMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showProfileMenu]);
 
   // Don't show nav on home, admin, or unauthenticated pages
   if (location.pathname === '/' || location.pathname === '/admin' || !isAuthenticated) {
     return null;
   }
+
+  const handleLogout = () => {
+    apiClient.clearAuth();
+    // Dispatch custom event to update App.tsx state
+    window.dispatchEvent(new Event('logout'));
+    setShowProfileMenu(false);
+    navigate('/', { replace: true });
+  };
+
+  const displayName = telegramUser?.first_name || userInfo?.user_id?.toString() || 'User';
+  const displayInitial = displayName.charAt(0).toUpperCase();
 
   const isActive = (path: string) => {
     if (path === '/weekly') {
@@ -23,33 +69,195 @@ export function Navigation() {
     if (path === '/community') {
       return location.pathname === '/community';
     }
+    if (path === '/dashboard') {
+      return location.pathname === '/dashboard';
+    }
     return false;
   };
 
   return (
-    <nav className="tab-bar">
-      <button
-        onClick={() => navigate('/weekly')}
-        className={`tab-button ${isActive('/weekly') ? 'active' : ''}`}
-      >
-        <span className="tab-icon">📊</span>
-        <span className="tab-label">Promises</span>
-      </button>
-      <button
-        onClick={() => navigate('/tasks')}
-        className={`tab-button ${isActive('/tasks') ? 'active' : ''}`}
-      >
-        <span className="tab-icon">✅</span>
-        <span className="tab-label">Tasks</span>
-      </button>
-      <button
-        onClick={() => navigate('/community')}
-        className={`tab-button ${isActive('/community') ? 'active' : ''}`}
-      >
-        <span className="tab-icon">👥</span>
-        <span className="tab-label">Community</span>
-      </button>
-    </nav>
+    <>
+      {/* Top Header with Profile Menu (Desktop) */}
+      <header style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+        background: 'rgba(11, 16, 32, 0.95)',
+        backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        padding: '0.75rem 1rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button
+            onClick={() => navigate('/dashboard')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#fff',
+              fontSize: '1.2rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              padding: '0.5rem'
+            }}
+          >
+            Zana AI
+          </button>
+        </div>
+
+        {/* Profile Menu */}
+        <div style={{ position: 'relative' }} ref={menuRef}>
+          <button
+            onClick={() => setShowProfileMenu(!showProfileMenu)}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+            }}
+          >
+            {telegramUser?.photo_url ? (
+              <img
+                src={telegramUser.photo_url}
+                alt={displayName}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: '50%',
+                  objectFit: 'cover'
+                }}
+              />
+            ) : (
+              displayInitial
+            )}
+          </button>
+
+          {/* Dropdown Menu */}
+          {showProfileMenu && (
+            <div style={{
+              position: 'absolute',
+              top: 'calc(100% + 0.5rem)',
+              right: 0,
+              background: 'rgba(11, 16, 32, 0.98)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              padding: '0.5rem',
+              minWidth: '180px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+            }}>
+              <div style={{
+                padding: '0.75rem 1rem',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#fff',
+                fontSize: '0.9rem',
+                fontWeight: '500'
+              }}>
+                {displayName}
+              </div>
+              <button
+                onClick={() => {
+                  navigate('/dashboard');
+                  setShowProfileMenu(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 1rem',
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  borderRadius: '4px',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none';
+                }}
+              >
+                👤 Profile / Dashboard
+              </button>
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 1rem',
+                  background: 'none',
+                  border: 'none',
+                  color: '#ff6b6b',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  borderRadius: '4px',
+                  transition: 'background 0.2s',
+                  marginTop: '0.25rem'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 107, 107, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none';
+                }}
+              >
+                🚪 Logout
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Bottom Tab Bar (Mobile Navigation) */}
+      <nav className="tab-bar">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className={`tab-button ${isActive('/dashboard') ? 'active' : ''}`}
+        >
+          <span className="tab-icon">🏠</span>
+          <span className="tab-label">Home</span>
+        </button>
+        <button
+          onClick={() => navigate('/weekly')}
+          className={`tab-button ${isActive('/weekly') ? 'active' : ''}`}
+        >
+          <span className="tab-icon">📊</span>
+          <span className="tab-label">Promises</span>
+        </button>
+        <button
+          onClick={() => navigate('/tasks')}
+          className={`tab-button ${isActive('/tasks') ? 'active' : ''}`}
+        >
+          <span className="tab-icon">✅</span>
+          <span className="tab-label">Tasks</span>
+        </button>
+        <button
+          onClick={() => navigate('/community')}
+          className={`tab-button ${isActive('/community') ? 'active' : ''}`}
+        >
+          <span className="tab-icon">👥</span>
+          <span className="tab-label">Community</span>
+        </button>
+      </nav>
+    </>
   );
 }
 

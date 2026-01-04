@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
 import { WeeklyReportPage } from './pages/WeeklyReportPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { UsersPage } from './components/UsersPage';
@@ -14,10 +15,35 @@ function App() {
   const { initData, isReady } = useTelegramWebApp();
   const [hasSessionToken, setHasSessionToken] = useState(false);
   
-  // Check for session token on mount
+  // Check for session token on mount and listen for changes
   useEffect(() => {
-    const token = localStorage.getItem('telegram_auth_token');
-    setHasSessionToken(!!token);
+    const checkToken = () => {
+      const token = localStorage.getItem('telegram_auth_token');
+      setHasSessionToken(!!token);
+    };
+    
+    checkToken();
+    
+    // Listen for storage changes (e.g., logout)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'telegram_auth_token') {
+        checkToken();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for custom logout event
+    const handleLogout = () => {
+      checkToken();
+    };
+    
+    window.addEventListener('logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('logout', handleLogout);
+    };
   }, []);
 
   // Check for Telegram Mini App initData or session token
@@ -62,14 +88,26 @@ function App() {
           path="/" 
           element={
             isAuthenticated ? (
-              <Navigate to="/weekly" replace />
+              <Navigate to="/dashboard" replace />
             ) : (
               <HomePage />
             )
           } 
         />
         
-        {/* Weekly Report - default for authenticated users */}
+        {/* Dashboard - default for authenticated users */}
+        <Route 
+          path="/dashboard" 
+          element={
+            isAuthenticated ? (
+              <DashboardPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
+        
+        {/* Weekly Report */}
         <Route 
           path="/weekly" 
           element={

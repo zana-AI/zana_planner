@@ -4,9 +4,28 @@ import { NewYearBanner } from './NewYearBanner';
 import { TelegramLogin } from './TelegramLogin';
 import { apiClient } from '../api/client';
 
+// Helper to detect mobile device
+function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  
+  // Check user agent
+  const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+  const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
+  
+  // Check for touch support
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  
+  // Check viewport width (mobile typically < 768px)
+  const isSmallViewport = window.innerWidth < 768;
+  
+  return mobileRegex.test(userAgent) || (hasTouch && isSmallViewport);
+}
+
 export function HomePage() {
   const navigate = useNavigate();
   const [showLogin, setShowLogin] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [botUsername, setBotUsername] = useState<string | null>(null);
   
   // Check if user is already authenticated
   useEffect(() => {
@@ -14,25 +33,104 @@ export function HomePage() {
     const hasInitData = window.Telegram?.WebApp?.initData;
     
     if (token || hasInitData) {
-      // User is authenticated, redirect to weekly report
-      navigate('/weekly', { replace: true });
+      // User is authenticated, redirect to dashboard
+      navigate('/dashboard', { replace: true });
     } else {
       // Show login option
       setShowLogin(true);
     }
   }, [navigate]);
 
+  // Detect mobile on mount and resize
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(isMobileDevice());
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Fetch bot username for Telegram links
+  useEffect(() => {
+    const fetchBotUsername = async () => {
+      try {
+        const response = await fetch('/api/auth/bot-username');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.bot_username) {
+            setBotUsername(data.bot_username.trim());
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch bot username:', error);
+      }
+    };
+    
+    if (isMobile) {
+      fetchBotUsername();
+    }
+  }, [isMobile]);
+
   const handleAuthSuccess = (token: string) => {
     apiClient.setAuthToken(token);
-    navigate('/weekly', { replace: true });
+    navigate('/dashboard', { replace: true });
   };
+
+  // Build Telegram deep links
+  const telegramBotLink = botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot';
+  const telegramWebAppLink = botUsername ? `https://t.me/${botUsername}?startapp=webapp` : 'https://t.me/zana_planner_bot?startapp=webapp';
 
   return (
     <div className="home-page">
       <NewYearBanner />
       
-      {/* Login Section - shown when not authenticated */}
-      {showLogin && (
+      {/* Mobile: Show Telegram CTAs instead of login widget */}
+      {showLogin && isMobile && (
+        <section className="home-login-section" style={{
+          background: 'rgba(11, 16, 32, 0.95)',
+          padding: '2rem',
+          margin: '2rem auto',
+          maxWidth: '500px',
+          borderRadius: '12px',
+          textAlign: 'center'
+        }}>
+          <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Continue in Telegram</h2>
+          <p style={{ color: '#aaa', marginBottom: '2rem' }}>
+            Open Zana AI in Telegram to access your workspace and continue your productivity journey.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <a
+              href={telegramWebAppLink}
+              className="home-cta-button"
+              style={{ 
+                display: 'inline-block',
+                textDecoration: 'none',
+                padding: '0.75rem 1.5rem'
+              }}
+            >
+              Open in Telegram
+            </a>
+            <a
+              href={telegramBotLink}
+              className="home-cta-button"
+              style={{ 
+                display: 'inline-block',
+                textDecoration: 'none',
+                padding: '0.75rem 1.5rem',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)'
+              }}
+            >
+              Open Bot Chat
+            </a>
+          </div>
+        </section>
+      )}
+      
+      {/* Desktop: Show Telegram Login Widget */}
+      {showLogin && !isMobile && (
         <section className="home-login-section" style={{
           background: 'rgba(11, 16, 32, 0.95)',
           padding: '2rem',

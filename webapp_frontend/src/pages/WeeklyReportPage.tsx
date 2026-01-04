@@ -22,8 +22,11 @@ export function WeeklyReportPage() {
     setError('');
 
     try {
-      // Set auth data for API client
-      apiClient.setInitData(authData);
+      // Set auth data for API client (only if we have initData)
+      if (authData) {
+        apiClient.setInitData(authData);
+      }
+      // Otherwise, API client will use token from localStorage (set by apiClient.setAuthToken)
 
       // Fetch weekly report with optional ref_time
       const data = await apiClient.getWeeklyReport(refTime);
@@ -35,7 +38,11 @@ export function WeeklyReportPage() {
       
       if (err instanceof ApiError) {
         if (err.status === 401) {
-          setError('Authentication failed. Please reopen the app from Telegram.');
+          setError('Authentication failed. Please log in again.');
+          // Clear invalid token and redirect
+          apiClient.clearAuth();
+          window.dispatchEvent(new Event('logout'));
+          navigate('/', { replace: true });
         } else {
           setError(err.message);
         }
@@ -46,15 +53,16 @@ export function WeeklyReportPage() {
       setState('error');
       hapticFeedback('error');
     }
-  }, [hapticFeedback]);
+  }, [hapticFeedback, navigate]);
 
   useEffect(() => {
     if (!isReady) return;
 
-    // Use Telegram initData if available, otherwise try dev data
+    // Use Telegram initData if available, otherwise try dev data or browser token
     const authData = initData || getDevInitData();
+    const hasToken = !!localStorage.getItem('telegram_auth_token');
 
-    if (!authData) {
+    if (!authData && !hasToken) {
       // No auth data: redirect to home (shouldn't happen due to route guard, but safety check)
       navigate('/', { replace: true });
       return;
@@ -63,21 +71,32 @@ export function WeeklyReportPage() {
     // Extract ref_time from query params
     const refTime = searchParams.get('ref_time') || undefined;
     
-    fetchReport(authData, refTime);
+    // For browser token auth, we don't need to pass authData to fetchReport
+    // The API client will use the token from localStorage
+    if (authData) {
+      fetchReport(authData, refTime);
+    } else if (hasToken) {
+      // Browser token auth - API client will use token from localStorage
+      fetchReport('', refTime);
+    }
   }, [isReady, initData, fetchReport, searchParams, navigate]);
 
   const handleRetry = useCallback(() => {
     const authData = initData || getDevInitData();
-    if (authData) {
+    const hasToken = !!localStorage.getItem('telegram_auth_token');
+    if (authData || hasToken) {
       const refTime = searchParams.get('ref_time') || undefined;
-      fetchReport(authData, refTime);
+      fetchReport(authData || '', refTime);
     }
   }, [initData, fetchReport, searchParams]);
 
   const handleRefresh = useCallback(() => {
     const authData = initData || getDevInitData();
-    const refTime = searchParams.get('ref_time') || undefined;
-    fetchReport(authData, refTime);
+    const hasToken = !!localStorage.getItem('telegram_auth_token');
+    if (authData || hasToken) {
+      const refTime = searchParams.get('ref_time') || undefined;
+      fetchReport(authData || '', refTime);
+    }
   }, [initData, fetchReport, searchParams]);
 
   // Loading state
