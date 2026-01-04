@@ -28,8 +28,6 @@ pydantic-settings>=2.12.0       # Required by pydantic
 # Data Processing & Storage
 # ============================================================================
 pandas>=2.3.0
-motor>=3.7.0                    # async MongoDB driver
-pymongo>=4.15.0                 # used internally by motor
 
 # ============================================================================
 # Web Framework (for stats service)

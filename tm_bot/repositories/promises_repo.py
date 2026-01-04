@@ -18,7 +18,7 @@ class PromisesRepository:
     """
     SQLite-backed promises repository.
 
-    - One global DB file: <root_dir>/zana.db
+    - One global DB file: <root_dir>/<DB_FILENAME> (defaults to zana.db if DB_FILENAME not set)
     - Keeps promise history in `promise_events`
     - Supports promise ID renames via `promise_aliases`
     """

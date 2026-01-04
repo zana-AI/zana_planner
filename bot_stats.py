@@ -6,6 +6,14 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
+# Import from sqlite_db to avoid duplicating DB filename logic
+try:
+    from tm_bot.db.sqlite_db import get_db_filename
+except ImportError:
+    # Fallback for when running as standalone script
+    def get_db_filename() -> str:
+        return os.getenv("DB_FILENAME", "zana.db")
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
@@ -16,7 +24,7 @@ def _utc_iso(dt: datetime) -> str:
 
 
 def _db_path(data_dir: str) -> str:
-    return os.path.join(data_dir, "zana.db")
+    return os.path.join(data_dir, get_db_filename())
 
 
 def _connect_ro(db_path: str) -> Optional[sqlite3.Connection]:
@@ -57,7 +65,7 @@ def compute_stats_sql(data_dir: str) -> Dict:
     """
     Privacy-friendly usage stats from SQLite.
 
-    The DB file is expected at: <data_dir>/zana.db
+    The DB file is expected at: <data_dir>/<DB_FILENAME> (defaults to zana.db if DB_FILENAME not set)
     """
     db_path = _db_path(data_dir)
     conn = _connect_ro(db_path)

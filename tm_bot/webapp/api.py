@@ -56,6 +56,7 @@ class PublicUser(BaseModel):
     avatar_path: Optional[str] = None
     avatar_file_unique_id: Optional[str] = None
     activity_count: int = 0
+    promise_count: int = 0
     last_seen_utc: Optional[str] = None
 
 
@@ -469,19 +470,21 @@ def create_webapp_api(
                         u.avatar_path,
                         u.avatar_file_unique_id,
                         u.last_seen_utc,
-                        COALESCE(activity.activity_count, 0) as activity_count
+                        COALESCE(activity.activity_count, 0) as activity_count,
+                        COALESCE(promise_counts.promise_count, 0) as promise_count
                     FROM users u
                     LEFT JOIN (
                         SELECT user_id, COUNT(*) as activity_count
-                        FROM (
-                            SELECT user_id, at_utc FROM actions 
-                            WHERE at_utc >= datetime('now', '-30 days')
-                            UNION ALL
-                            SELECT user_id, started_at_utc as at_utc FROM sessions 
-                            WHERE started_at_utc >= datetime('now', '-30 days')
-                        ) recent_activity
+                        FROM actions 
+                        WHERE at_utc >= datetime('now', '-30 days')
                         GROUP BY user_id
                     ) activity ON u.user_id = activity.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) as promise_count
+                        FROM promises
+                        WHERE is_deleted = 0
+                        GROUP BY user_id
+                    ) promise_counts ON u.user_id = promise_counts.user_id
                     WHERE (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
                     ORDER BY activity_count DESC, u.last_seen_utc DESC NULLS LAST
                     LIMIT ?;
@@ -501,6 +504,7 @@ def create_webapp_api(
                             avatar_path=row["avatar_path"],
                             avatar_file_unique_id=row["avatar_file_unique_id"],
                             activity_count=int(row["activity_count"] or 0),
+                            promise_count=int(row["promise_count"] or 0),
                             last_seen_utc=row["last_seen_utc"],
                         )
                     )

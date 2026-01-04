@@ -7,6 +7,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from .sqlite_db import get_db_filename
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -17,7 +19,7 @@ def _default_data_dir() -> str:
 
 
 def _db_path(data_dir: str) -> str:
-    return os.path.join(data_dir, "zana.db")
+    return os.path.join(data_dir, get_db_filename())
 
 
 def _connect_ro(db_path: str) -> sqlite3.Connection:

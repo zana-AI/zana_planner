@@ -114,6 +114,7 @@ export interface PublicUser {
   avatar_path?: string;
   avatar_file_unique_id?: string;
   activity_count: number;
+  promise_count: number;
   last_seen_utc?: string;
 }
 

@@ -8,11 +8,16 @@ from datetime import date, datetime, timezone
 from typing import Any, Dict, Iterator, Optional
 
 
+def get_db_filename() -> str:
+    """Get the database filename from environment variable, defaulting to 'zana.db'."""
+    return os.getenv("DB_FILENAME", "zana.db")
+
+
 def resolve_db_path(root_dir: str) -> str:
     """
     Resolve SQLite DB location.
 
-    Plan default: USERS_DATA_DIR/zana.db
+    Plan default: USERS_DATA_DIR/<DB_FILENAME> (defaults to zana.db if DB_FILENAME not set)
     Runtime passes root_dir (normally USERS_DATA_DIR). Prefer the passed root_dir
     to keep tests/dev isolated.
     """
@@ -25,7 +30,7 @@ def resolve_db_path(root_dir: str) -> str:
 
     base = root_dir or os.getenv("USERS_DATA_DIR") or os.getenv("ROOT_DIR") or "."
     base = os.path.abspath(os.path.expanduser(str(base).strip().strip('"').strip("'")))
-    return os.path.join(base, "zana.db")
+    return os.path.join(base, get_db_filename())
 
 
 def utc_now_iso() -> str:

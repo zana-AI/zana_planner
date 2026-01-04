@@ -75,7 +75,6 @@ lxml==6.0.2
 lxml_html_clean==0.4.3
 marshmallow==3.26.2
 matplotlib==3.10.8
-motor==3.7.1
 msgpack==1.1.2
 multidict==6.7.0
 mypy_extensions==1.1.0
@@ -102,7 +101,6 @@ pydantic-settings==2.12.0
 pydantic_core==2.41.5
 pyee==13.0.0
 Pygments==2.19.2
-pymongo==4.15.5
 pyparsing==3.3.1
 pytest==9.0.2
 python-dateutil==2.9.0.post0
