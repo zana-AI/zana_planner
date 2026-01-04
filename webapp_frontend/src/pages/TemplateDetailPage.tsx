@@ -101,7 +101,22 @@ export function TemplateDetailPage() {
         </button>
         <h1 className="page-title">{template.title}</h1>
         <div className="template-badges">
-          <span className="template-level-badge">{template.level}</span>
+          <div className="template-level-indicator">
+            {[1, 2, 3].map((num) => {
+              const levelNum = parseInt(template.level.replace('L', '')) || 0;
+              const isFilled = num <= levelNum;
+              return (
+                <div
+                  key={num}
+                  className="template-level-square"
+                  style={{
+                    backgroundColor: isFilled ? '#22c55e' : 'rgba(232, 238, 252, 0.15)',
+                    border: isFilled ? '1px solid #22c55e' : '1px solid rgba(232, 238, 252, 0.3)'
+                  }}
+                />
+              );
+            })}
+          </div>
           <span className="template-category-badge">{template.category.replace('_', ' ')}</span>
           {template.template_kind === 'budget' && (
             <span className="template-budget-badge">Budget</span>

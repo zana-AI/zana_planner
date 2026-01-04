@@ -139,16 +139,33 @@ export function TemplatesPage() {
               )}
               <div className="template-header">
                 <h3 className="template-title">{template.title}</h3>
-                <span className="template-level">{template.level}</span>
               </div>
               <p className="template-why">{template.why}</p>
               <div className="template-meta">
                 <span className="template-category">{template.category.replace('_', ' ')}</span>
-                {template.metric_type === 'count' ? (
-                  <span className="template-metric">{template.target_value}x</span>
-                ) : (
-                  <span className="template-metric">{template.target_value}h</span>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {template.metric_type === 'count' ? (
+                    <span className="template-metric">{template.target_value}x</span>
+                  ) : (
+                    <span className="template-metric">{template.target_value}h</span>
+                  )}
+                  <div className="template-level-indicator">
+                    {[1, 2, 3].map((num) => {
+                      const levelNum = parseInt(template.level.replace('L', '')) || 0;
+                      const isFilled = num <= levelNum;
+                      return (
+                        <div
+                          key={num}
+                          className="template-level-square"
+                          style={{
+                            backgroundColor: isFilled ? '#22c55e' : 'rgba(232, 238, 252, 0.15)',
+                            border: isFilled ? '1px solid #22c55e' : '1px solid rgba(232, 238, 252, 0.3)'
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               {!template.unlocked && template.lock_reason && (
                 <p className="template-lock-reason">{template.lock_reason}</p>

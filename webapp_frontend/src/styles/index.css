@@ -263,15 +263,17 @@ html, body {
   flex: 1;
 }
 
-.template-level {
-  font-size: 0.7rem;
-  padding: 2px 6px;
-  background: rgba(91, 163, 245, 0.2);
-  border: 1px solid rgba(91, 163, 245, 0.4);
-  border-radius: 4px;
-  color: var(--accent);
-  font-weight: 600;
-  margin-left: 8px;
+.template-level-indicator {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.template-level-square {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  transition: all 0.2s;
 }
 
 .template-why {
