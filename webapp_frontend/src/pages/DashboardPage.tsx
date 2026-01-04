@@ -261,6 +261,7 @@ export function DashboardPage() {
         top: '1rem',
         maxHeight: 'calc(100vh - 2rem)',
         overflowY: 'auto',
+        overflowX: 'hidden',
         padding: '1rem',
         background: 'rgba(15, 23, 48, 0.5)',
         border: '1px solid rgba(232, 238, 252, 0.1)',
