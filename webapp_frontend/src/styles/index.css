@@ -189,6 +189,122 @@ html, body {
   }
 }
 
+/* Templates Grid */
+.templates-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+@media (min-width: 480px) {
+  .templates-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 768px) {
+  .templates-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Template Card */
+.template-card {
+  position: relative;
+  border: 1px solid rgba(232, 238, 252, 0.15);
+  border-radius: 12px;
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98));
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.template-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(232, 238, 252, 0.25);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.template-card.locked {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.template-card.locked:hover {
+  transform: none;
+}
+
+.template-lock-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 4px 8px;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.template-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.template-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  flex: 1;
+}
+
+.template-level {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  background: rgba(91, 163, 245, 0.2);
+  border: 1px solid rgba(91, 163, 245, 0.4);
+  border-radius: 4px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.template-why {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+
+.template-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.template-category {
+  text-transform: capitalize;
+}
+
+.template-metric {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.template-lock-reason {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 8px;
+  font-style: italic;
+}
+
 /* Promise Card */
 .promise-card {
   border: 1px solid var(--border);
