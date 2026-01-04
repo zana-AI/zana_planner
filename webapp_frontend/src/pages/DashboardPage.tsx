@@ -127,11 +127,7 @@ export function DashboardPage() {
               borderRadius: '12px',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               cursor: 'pointer',
-              transition: 'all 0.2s',
-              hover: {
-                borderColor: 'rgba(255, 255, 255, 0.3)',
-                transform: 'translateY(-2px)'
-              }
+              transition: 'all 0.2s'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
