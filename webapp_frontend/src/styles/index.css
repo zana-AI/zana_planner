@@ -212,12 +212,13 @@ html, body {
 /* Template Card */
 .template-card {
   position: relative;
-  border: 1px solid rgba(232, 238, 252, 0.15);
+  border: 1.5px solid rgba(232, 238, 252, 0.15);
   border-radius: 12px;
   padding: 16px;
   background: linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98));
   cursor: pointer;
   transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .template-card:hover {

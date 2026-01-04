@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { NewYearBanner } from './NewYearBanner';
 import { TelegramLogin } from './TelegramLogin';
 import { apiClient } from '../api/client';
@@ -159,13 +159,13 @@ export function HomePage() {
           <p className="home-community-description">
             Connect with other goal-achievers, share your progress, and stay motivated together.
           </p>
-          <a 
-            href="?startapp=community" 
+          <Link 
+            to="/community" 
             className="home-cta-button"
             style={{ marginTop: '1rem', display: 'inline-block' }}
           >
             View Community
-          </a>
+          </Link>
         </div>
       </section>
 
