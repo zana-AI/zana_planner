@@ -105,13 +105,32 @@ export function TemplateDetailPage() {
             {[1, 2, 3].map((num) => {
               const levelNum = parseInt(template.level.replace('L', '')) || 0;
               const isFilled = num <= levelNum;
+              let fillColor = 'rgba(232, 238, 252, 0.15)';
+              let borderColor = 'rgba(232, 238, 252, 0.3)';
+              
+              if (isFilled) {
+                if (levelNum === 1) {
+                  // L1: green
+                  fillColor = '#22c55e';
+                  borderColor = '#22c55e';
+                } else if (levelNum === 2) {
+                  // L2: orange
+                  fillColor = '#f59e0b';
+                  borderColor = '#f59e0b';
+                } else if (levelNum === 3) {
+                  // L3: red
+                  fillColor = '#ef4444';
+                  borderColor = '#ef4444';
+                }
+              }
+              
               return (
                 <div
                   key={num}
                   className="template-level-square"
                   style={{
-                    backgroundColor: isFilled ? '#22c55e' : 'rgba(232, 238, 252, 0.15)',
-                    border: isFilled ? '1px solid #22c55e' : '1px solid rgba(232, 238, 252, 0.3)'
+                    backgroundColor: fillColor,
+                    border: `1px solid ${borderColor}`
                   }}
                 />
               );
