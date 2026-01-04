@@ -158,13 +158,11 @@ def validate_telegram_widget_auth(
         
         data_check_string = "\n".join(data_pairs)
         
-        # Create secret key: HMAC-SHA256 of bot_token
-        secret_key = hmac.new(
-            bot_token.encode("utf-8"),
-            digestmod=hashlib.sha256
-        ).digest()
+        # Create secret key: SHA256 hash of bot_token (not HMAC!)
+        # Telegram Login Widget uses: secret_key = SHA256(bot_token)
+        secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
         
-        # Calculate expected hash
+        # Calculate expected hash: HMAC-SHA256(secret_key, data_check_string)
         expected_hash = hmac.new(
             secret_key,
             data_check_string.encode("utf-8"),

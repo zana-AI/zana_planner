@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, Header, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from webapp.auth import validate_telegram_init_data, extract_user_id, validate_telegram_widget_auth
@@ -1680,13 +1680,18 @@ def create_webapp_api(
         @app.exception_handler(StarletteHTTPException)
         async def custom_404_handler(request: Request, exc: StarletteHTTPException):
             """Handle 404s by checking for static files or serving index.html."""
+            path = request.url.path
+            
+            # For API routes, return proper JSON error response
+            if path.startswith("/api/"):
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.detail if hasattr(exc, 'detail') else "Error"}
+                )
+            
+            # Only handle 404s for non-API routes
             if exc.status_code == 404:
-                path = request.url.path
                 logger.info(f"[VERSION_CHECK] v2.0 - 404 handler for: {path}")
-                
-                # Don't handle API routes
-                if path.startswith("/api/"):
-                    raise exc
                 
                 # Handle paths that went through /assets mount - strip the /assets prefix
                 # and check in dist/assets/ directory
@@ -1707,7 +1712,10 @@ def create_webapp_api(
                 
                 # Don't handle /assets root path (only /assets/...)
                 if path == "/assets":
-                    raise exc
+                    return JSONResponse(
+                        status_code=exc.status_code,
+                        content={"detail": exc.detail if hasattr(exc, 'detail') else "Not found"}
+                    )
                 
                 # Check if it's a static file request in dist root (remove leading slash)
                 file_path = os.path.join(static_dir, path.lstrip("/"))
@@ -1742,7 +1750,11 @@ def create_webapp_api(
                     response.headers["Expires"] = "0"
                     return response
             
-            raise exc
+            # For non-404 errors on non-API routes, return JSON response
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail if hasattr(exc, 'detail') else "Error"}
+            )
         
         # Keep the catch-all route as backup (though exception handler should catch it)
         @app.get("/{full_path:path}")
