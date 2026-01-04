@@ -353,6 +353,7 @@ class LLMHandler:
                     promises = self.plan_adapter.get_promises(int(user_id))
                     if promises:
                         promise_list = ", ".join([f"{p['id']}: {p['text'].replace('_', ' ')}" for p in promises])
+                        promise_ids_only = ", ".join([p['id'] for p in promises])
                         sections.append(f"\n=== USER PROMISES (in context) ===")
                         sections.append(f"User has these promises: [{promise_list}]")
                         sections.append("IMPORTANT: You have access to all user promises in context. Use this information directly to answer questions about their goals and activities.")
@@ -361,7 +362,8 @@ class LLMHandler:
                         sections.append("2. If found, use the promise_id directly (e.g., P10, P01)")
                         sections.append("3. Only use search_promises if the promise is NOT in the context list")
                         sections.append("Example: If user asks 'how much did I practice sport' and you see 'P10: Do sport' in context, use P10 directly without searching.")
-                        logger.info(f"Injected {promise_count} promises into context for user {user_id}: {promise_list[:100]}...")
+                        # Log only promise IDs for privacy - do not log promise text content
+                        logger.info(f"Injected {promise_count} promises into context for user {user_id}: {promise_ids_only}")
             except Exception as e:
                 logger.warning(f"Could not get promise context for user {user_id}: {e}")
         
