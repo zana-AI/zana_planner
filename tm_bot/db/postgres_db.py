@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import os
-import socket
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Iterator, Optional
-from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -22,43 +20,6 @@ from db.sqlite_db import (
     json_compat,
     utc_now_iso,
 )
-
-
-def _resolve_hostname_to_ipv4(hostname: str) -> str:
-    """
-    Resolve hostname to IPv4 address to avoid IPv6 connectivity issues.
-    
-    Some VMs (especially GCP) don't have IPv6 connectivity, so we force IPv4.
-    """
-    try:
-        # Get all address info
-        addr_info = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
-        if addr_info:
-            # Return first IPv4 address
-            return addr_info[0][4][0]
-    except (socket.gaierror, OSError):
-        pass
-    # If resolution fails, return original hostname
-    return hostname
-
-
-def _force_ipv4_in_url(url: str) -> str:
-    """
-    Modify database URL to use IPv4 address instead of hostname.
-    This avoids IPv6 connectivity issues on VMs without IPv6 support.
-    """
-    try:
-        parsed = urlparse(url)
-        if parsed.hostname:
-            ipv4_addr = _resolve_hostname_to_ipv4(parsed.hostname)
-            if ipv4_addr != parsed.hostname:
-                # Replace hostname with IPv4 address
-                netloc = parsed.netloc.replace(parsed.hostname, ipv4_addr)
-                return urlunparse(parsed._replace(netloc=netloc))
-    except Exception:
-        # If anything fails, return original URL
-        pass
-    return url
 
 
 def get_database_url() -> str:
@@ -77,17 +38,17 @@ def get_database_url() -> str:
     if env in ("production", "prod"):
         url = os.getenv("DATABASE_URL_PROD")
         if url:
-            return _force_ipv4_in_url(url)
+            return url
     
     if env in ("staging", "stage") or not env:
         url = os.getenv("DATABASE_URL_STAGING")
         if url:
-            return _force_ipv4_in_url(url)
+            return url
     
     # Fallback to generic DATABASE_URL
     url = os.getenv("DATABASE_URL")
     if url:
-        return _force_ipv4_in_url(url)
+        return url
     
     raise ValueError(
         "No database URL found. Set DATABASE_URL_PROD, DATABASE_URL_STAGING, or DATABASE_URL"
@@ -104,7 +65,6 @@ def get_engine() -> Engine:
     global _engine
     if _engine is None:
         database_url = get_database_url()
-        # Hostname is already resolved to IPv4 in get_database_url() to avoid IPv6 issues
         _engine = create_engine(
             database_url,
             pool_size=10,
