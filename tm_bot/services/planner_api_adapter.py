@@ -304,7 +304,11 @@ class PlannerAPIAdapter:
         return round(weekly_hours / (promise.hours_per_week + 1e-6), 2)
 
     def get_weekly_report(self, user_id, reference_time: Optional[datetime] = None):
-        """Get weekly report for a user.
+        """Get weekly report text for a user.
+        
+        Use this tool when the user asks a specific question about their activity logs,
+        progress details, or needs a quick text-based summary. For general weekly report
+        viewing requests, consider using open_mini_app() to direct them to the interactive mini app.
         
         Args:
             user_id: User identifier
@@ -349,6 +353,33 @@ class PlannerAPIAdapter:
         # Return special marker that handler will detect
         timestamp_str = reference_time.isoformat()
         return f"[WEEKLY_VIZ:{timestamp_str}]"
+
+    def open_mini_app(self, user_id, path: str = "/dashboard", context: Optional[str] = None) -> str:
+        """Open the mini app for the user.
+        
+        Use this tool when the user's request can be better handled in the mini app with interactive
+        features, visualizations, or detailed views. The mini app provides:
+        - Interactive weekly reports with charts and detailed progress
+        - Promise templates marketplace for browsing and subscribing
+        - Community features to see other users
+        - Dashboard with all promises, tasks, and distractions
+        
+        Use this instead of returning long text reports when the mini app provides a better experience.
+        For quick answers or specific questions, prefer text responses with get_weekly_report() or other tools.
+        
+        Args:
+            user_id: User identifier
+            path: Mini app path to open (e.g., "/dashboard", "/templates", "/dashboard?ref_time=...")
+            context: Optional context description for the message (e.g., "weekly report", "templates")
+        
+        Returns:
+            Special marker string that triggers mini app opening in the handler.
+            Format: [MINI_APP:path:context] where path and context are URL-encoded.
+        """
+        from urllib.parse import quote
+        encoded_path = quote(path, safe='/:?=&')
+        encoded_context = quote(context or "", safe='')
+        return f"[MINI_APP:{encoded_path}:{encoded_context}]"
 
     def get_promise_report(self, user_id, promise_id: str) -> str:
         """Get promise report."""

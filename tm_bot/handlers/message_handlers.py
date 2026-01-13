@@ -1172,6 +1172,14 @@ class MessageHandlers:
                 if viz_sent:
                     return  # Image already sent, don't send text response
                 
+                # Check if mini app should be opened
+                miniapp_sent = await self._handle_miniapp_if_present(
+                    update, context, func_call_response, tool_outputs,
+                    user_id, user_lang, processing_msg
+                )
+                if miniapp_sent:
+                    return  # Mini app message already sent, don't send text response
+                
                 # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                 response_text = llm_response.get("response_to_user", "")
                 
@@ -1253,6 +1261,14 @@ class MessageHandlers:
                 )
                 if viz_sent:
                     return  # Image already sent, don't send text response
+                
+                # Check if mini app should be opened
+                miniapp_sent = await self._handle_miniapp_if_present(
+                    update, context, func_call_response, tool_outputs,
+                    user_id, user_lang, processing_msg
+                )
+                if miniapp_sent:
+                    return  # Mini app message already sent, don't send text response
                 
                 # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
                 response_text = llm_response['response_to_user']
@@ -1394,6 +1410,117 @@ class MessageHandlers:
             return True
         except Exception as e:
             logger.error(f"Error generating weekly visualization: {e}")
+            return False
+
+    async def _handle_miniapp_if_present(
+        self, update: Update, context: CallbackContext, 
+        func_call_response, tool_outputs: list, 
+        user_id: int, user_lang: Language, processing_msg=None
+    ) -> bool:
+        """
+        Check if any tool output contains mini app marker and send mini app button if found.
+        
+        Args:
+            func_call_response: Can be a string (direct tool call) or list (when executed_by_agent is True)
+            tool_outputs: List of tool output strings from agent execution
+        
+        Returns:
+            True if mini app message was sent, False otherwise
+        """
+        miniapp_data = None
+        
+        # Check func_call_response (can be string or list)
+        if isinstance(func_call_response, str) and "[MINI_APP:" in func_call_response:
+            match = re.search(r'\[MINI_APP:([^\]]+)\]', func_call_response)
+            if match:
+                miniapp_data = match.group(1)
+        elif isinstance(func_call_response, list):
+            # When executed_by_agent is True, func_call_response is the tool_outputs list
+            for output in func_call_response:
+                if isinstance(output, str) and "[MINI_APP:" in output:
+                    match = re.search(r'\[MINI_APP:([^\]]+)\]', output)
+                    if match:
+                        miniapp_data = match.group(1)
+                        break
+        
+        # Check tool_outputs (separate from func_call_response)
+        if not miniapp_data and tool_outputs:
+            for output in tool_outputs:
+                if isinstance(output, str) and "[MINI_APP:" in output:
+                    match = re.search(r'\[MINI_APP:([^\]]+)\]', output)
+                    if match:
+                        miniapp_data = match.group(1)
+                        break
+        
+        if not miniapp_data:
+            return False
+        
+        try:
+            from urllib.parse import unquote
+            # Parse path:context from marker
+            parts = miniapp_data.split(':', 1)
+            app_path = unquote(parts[0]) if parts else "/dashboard"
+            app_context = unquote(parts[1]) if len(parts) > 1 else None
+            
+            # Build mini app URL
+            if not self.miniapp_url:
+                return False
+            
+            full_url = f"{self.miniapp_url}{app_path}"
+            
+            # Create message directing user to mini app
+            if app_context == "weekly report" or ("/dashboard" in app_path and not app_context):
+                # For weekly reports, include date range if available
+                try:
+                    # Try to extract ref_time from path
+                    if "ref_time=" in app_path:
+                        from urllib.parse import parse_qs, urlparse
+                        parsed = urlparse(app_path)
+                        params = parse_qs(parsed.query)
+                        if "ref_time" in params:
+                            ref_time_str = params["ref_time"][0]
+                            ref_time = datetime.fromisoformat(ref_time_str.replace('Z', '+00:00'))
+                            week_start, week_end = get_week_range(ref_time)
+                            week_end_display = week_start + timedelta(days=6)
+                            date_range_str = f"{week_start.strftime('%d %b')} - {week_end_display.strftime('%d %b')}"
+                            header = get_message("weekly_header", user_lang, date_range=date_range_str)
+                            prompt = get_message("weekly_miniapp_prompt", user_lang)
+                            message_text = f"{header}\n\n{prompt}"
+                        else:
+                            prompt = get_message("weekly_miniapp_prompt", user_lang)
+                            message_text = f"📊 {prompt}"
+                    else:
+                        prompt = get_message("weekly_miniapp_prompt", user_lang)
+                        message_text = f"📊 {prompt}"
+                except Exception:
+                    prompt = get_message("weekly_miniapp_prompt", user_lang)
+                    message_text = f"📊 {prompt}"
+            else:
+                # Generic mini app message
+                context_text = app_context.replace('_', ' ') if app_context else "the mini app"
+                message_text = f"🌐 You can view this in the mini app! Tap the button below to open {context_text}."
+            
+            # Create keyboard with mini app button
+            keyboard = mini_app_kb(full_url, "🌐 Open in App")
+            
+            # Send message with keyboard
+            await self.response_service.reply_text(
+                update, message_text,
+                user_id=user_id,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+            
+            # Delete processing message if it exists
+            if processing_msg:
+                try:
+                    await processing_msg.delete()
+                except Exception:
+                    pass
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error opening mini app: {e}")
             return False
 
     def _format_response(self, llm_response: str, func_call_response) -> str:

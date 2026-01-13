@@ -75,6 +75,7 @@ class MessageTemplateStore:
             # Weekly reports
             "weekly_header": "Weekly: {date_range}",
             "weekly_no_data": "No data available for this week.",
+            "weekly_miniapp_prompt": "📊 Your weekly report is available in the mini app! Tap the button below to view it with interactive charts and detailed insights.",
 
             # Timezone
             "timezone_invalid": "Invalid timezone. Example: /settimezone Europe/Paris",
