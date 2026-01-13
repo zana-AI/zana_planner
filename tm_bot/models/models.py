@@ -18,6 +18,26 @@ class Promise:
     visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
     # Future: pinned/focus flags, tags
 
+    def is_check_based(self) -> bool:
+        """
+        Check if this promise is check-based (habit) rather than time-based.
+        Convention: hours_per_week <= 0 indicates a check-based promise.
+        """
+        return self.hours_per_week <= 0.0
+
+    def is_time_based(self) -> bool:
+        """
+        Check if this promise is time-based (requires hours tracking).
+        Convention: hours_per_week > 0 indicates a time-based promise.
+        """
+        return self.hours_per_week > 0.0
+
+    def promise_type(self) -> str:
+        """
+        Get the promise type as a string: 'check_based' or 'time_based'.
+        """
+        return "check_based" if self.is_check_based() else "time_based"
+
 
 @dataclass
 class Action:

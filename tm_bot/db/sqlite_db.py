@@ -204,7 +204,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -257,6 +257,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
                 (6, utc_now_iso()),
+            )
+        if current < 7:
+            _apply_v7(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (7, utc_now_iso()),
             )
 
 
@@ -1023,6 +1029,49 @@ def _apply_v6(conn: sqlite3.Connection) -> None:
     
     # Seed initial curated templates (idempotent)
     _seed_initial_templates(conn)
+
+
+def _apply_v7(conn: sqlite3.Connection) -> None:
+    """
+    Apply schema version 7 migrations: Create view for promises with promise_type.
+    
+    This view adds computed columns to identify promise types:
+    - is_check_based: 1 if hours_per_week <= 0, 0 otherwise
+    - is_time_based: 1 if hours_per_week > 0, 0 otherwise
+    - promise_type: 'check_based' or 'time_based'
+    
+    Convention: hours_per_week <= 0 indicates a check-based/habit promise.
+    No table schema changes - this is a view only.
+    """
+    # Drop view if it exists (for idempotency)
+    conn.execute("DROP VIEW IF EXISTS promises_with_type;")
+    
+    # Create view with promise type information
+    conn.execute(
+        """
+        CREATE VIEW promises_with_type AS
+        SELECT 
+            promise_uuid,
+            user_id,
+            current_id,
+            text,
+            hours_per_week,
+            recurring,
+            start_date,
+            end_date,
+            angle_deg,
+            radius,
+            is_deleted,
+            visibility,
+            created_at_utc,
+            updated_at_utc,
+            -- Computed columns for promise type
+            CASE WHEN hours_per_week <= 0 THEN 1 ELSE 0 END AS is_check_based,
+            CASE WHEN hours_per_week > 0 THEN 1 ELSE 0 END AS is_time_based,
+            CASE WHEN hours_per_week <= 0 THEN 'check_based' ELSE 'time_based' END AS promise_type
+        FROM promises;
+        """
+    )
 
 
 def _seed_initial_templates(conn: sqlite3.Connection) -> None:
