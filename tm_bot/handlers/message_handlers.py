@@ -678,7 +678,7 @@ class MessageHandlers:
         - Most other bot messages/templates are Markdown.
         """
         safe_text = "" if text is None else str(text)
-        looks_like_html = "<b>Zana:</b>" in safe_text or "<blockquote" in safe_text or "<pre>" in safe_text
+        looks_like_html = "<b>Xaana:</b>" in safe_text or "<blockquote" in safe_text or "<pre>" in safe_text
         parse_mode = "HTML" if looks_like_html else "Markdown"
         
         # If we have user_id and can create an Update, use ResponseService

@@ -25,12 +25,14 @@ PROMISE_COUNT_THRESHOLD = 50
 class ResponseService:
     """Centralized service for all bot responses with translation and logging."""
     
-    def __init__(self, root_dir: str, settings_repo=None):
+    def __init__(self, root_dir: str, settings_repo=None, llm_handler=None):
         self.root_dir = root_dir
         self.settings_repo = settings_repo
         self.conversation_repo = ConversationRepository(root_dir)
         # Cache for user language (to avoid repeated DB calls)
         self._lang_cache: Dict[int, Language] = {}
+        # Optional LLM handler for translation review
+        self.llm_handler = llm_handler
     
     def _get_user_language_cached(self, user_id: int) -> Language:
         """Get user language with caching."""
@@ -54,6 +56,10 @@ class ResponseService:
             self._lang_cache.pop(user_id, None)
         else:
             self._lang_cache.clear()
+    
+    def set_llm_handler(self, llm_handler) -> None:
+        """Set the LLM handler for translation review (can be called after initialization)."""
+        self.llm_handler = llm_handler
     
     def _should_translate(self, text: str, user_lang: Language) -> bool:
         """Simple check: translate if user language is not English."""
@@ -99,10 +105,66 @@ class ResponseService:
             for placeholder, original in placeholders.items():
                 translated = translated.replace(placeholder, original)
             
+            # Review translation for errors (e.g., proper noun mistranslations)
+            if self.llm_handler:
+                translated = self._review_translation(text, translated, user_lang, user_id)
+            
             return translated
         except Exception as e:
             logger.warning(f"Translation failed for user {user_id}: {e}")
             return text  # Fallback to original
+    
+    def _review_translation(self, original_text: str, translated_text: str, user_lang: Language, user_id: Optional[int] = None) -> str:
+        """
+        Review translated text using LLM to catch errors like proper noun mistranslations.
+        
+        Args:
+            original_text: Original English text
+            translated_text: Translated text that may contain errors
+            user_lang: Target language
+            user_id: Optional user ID for logging
+            
+        Returns:
+            Corrected translation if errors found, otherwise original translated text
+        """
+        if not self.llm_handler or not self.llm_handler.chat_model:
+            return translated_text
+        
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+            
+            review_prompt = (
+                "You are reviewing a translation for errors. The original English text was translated to another language, "
+                "but the translation may have incorrectly translated proper nouns (names, places, etc.).\n\n"
+                f"Original English text: {original_text}\n"
+                f"Translated text: {translated_text}\n\n"
+                "Your task:\n"
+                "1. Identify any proper nouns (names, places, brands, etc.) in the original text\n"
+                "2. Check if they were incorrectly translated in the translated text\n"
+                "3. If errors are found, provide a corrected version of the translated text with proper nouns restored\n"
+                "4. If no errors are found, return the translated text as-is\n\n"
+                "Return ONLY the corrected translation text, nothing else. Do not include explanations or markdown."
+            )
+            
+            messages = [
+                SystemMessage(content="You are a translation quality reviewer. Review translations and fix proper noun errors."),
+                HumanMessage(content=review_prompt)
+            ]
+            
+            result = self.llm_handler.chat_model.invoke(messages)
+            reviewed_text = getattr(result, "content", translated_text).strip()
+            
+            # If the review returned something reasonable, use it; otherwise fall back to original translation
+            if reviewed_text and len(reviewed_text) > 0 and len(reviewed_text) <= len(translated_text) * 2:
+                logger.debug(f"Translation reviewed for user {user_id}, corrections applied if any")
+                return reviewed_text
+            else:
+                logger.debug(f"Translation review returned unexpected result, using original translation")
+                return translated_text
+                
+        except Exception as e:
+            logger.warning(f"Translation review failed for user {user_id}: {e}")
+            return translated_text  # Fallback to original translation
     
     def _detect_parse_mode(self, text: str) -> Optional[str]:
         """Detect parse mode from text content."""

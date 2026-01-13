@@ -76,6 +76,10 @@ class PlannerBot:
                     root_dir=self.root_dir,
                     settings_repo=self.plan_keeper.settings_repo
                 )
+        
+        # Set LLM handler on response service for translation review
+        if hasattr(self._original_response_service, 'set_llm_handler'):
+            self._original_response_service.set_llm_handler(self.llm_handler)
 
         # Initialize handlers (still using Telegram-specific handlers for now)
         # In Phase 5, these will be refactored to use base handlers

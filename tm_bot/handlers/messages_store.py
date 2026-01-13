@@ -34,7 +34,7 @@ class MessageTemplateStore:
         return {
             # Welcome messages
             "welcome_new": (
-                "**Welcome to Zana Planner 👋**\n\n"
+                "**Welcome to Xaana Planner 👋**\n\n"
                 "I help you keep weekly promises with tiny daily check-ins. "
                 "It takes about a minute to set up your first promise.\n\n"
                 "**How it works**\n"
@@ -112,8 +112,8 @@ class MessageTemplateStore:
             "promise_deleted": "Promise deleted",
             "promise_report": "Promise report generated",
 
-            # Zana insights
-            "zana_insights": "Insights from Zana:\n{insights}",
+            # Xaana insights
+            "zana_insights": "Insights from Xaana:\n{insights}",
             "zana_no_promises": "You have no promises to report on.",
 
             # Error messages

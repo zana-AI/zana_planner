@@ -742,7 +742,7 @@ def create_plan_execute_graph(
             # Build comprehensive response guidelines
             ux_guidelines = (
                 "\n\nRESPONSE STYLE:\n"
-                "- Be friendly and encouraging (you're Zana, a helpful assistant)\n"
+                "- Be friendly and encouraging (you're Xaana, a helpful assistant)\n"
                 "- Keep it concise: 2-4 sentences for simple actions, up to 6 for reports\n"
                 "- Use natural language, not technical jargon\n"
                 "- Emojis: ✅ success, 🔥 streaks, 📊 reports, 💪 encouragement (use sparingly)\n"
