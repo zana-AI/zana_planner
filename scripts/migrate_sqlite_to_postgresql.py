@@ -60,18 +60,24 @@ def convert_sqlite_to_postgres_value(value) -> any:
 
 def get_primary_key_columns(pg_session, table_name: str) -> List[str]:
     """Get primary key column names for a table."""
+    # Use information_schema to avoid regclass casts (which can be finicky with bind params).
     result = pg_session.execute(
-        text("""
-            SELECT a.attname
-            FROM pg_index i
-            JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-            WHERE i.indrelid = :table_name::regclass
-            AND i.indisprimary
-            ORDER BY a.attnum
-        """),
-        {"table_name": table_name}
+        text(
+            """
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'PRIMARY KEY'
+              AND tc.table_schema = 'public'
+              AND tc.table_name = :table_name
+            ORDER BY kcu.ordinal_position
+            """
+        ),
+        {"table_name": table_name},
     )
-    return [row[0] for row in result]
+    return [row[0] for row in result.fetchall()]
 
 
 def migrate_table(
