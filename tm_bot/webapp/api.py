@@ -5,7 +5,7 @@ Provides API endpoints for the React frontend.
 
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Query
@@ -27,8 +27,8 @@ from repositories.instances_repo import InstancesRepository
 from repositories.reviews_repo import ReviewsRepository
 from repositories.distractions_repo import DistractionsRepository
 from services.template_unlocks import TemplateUnlocksService
-from db.sqlite_db import connection_for_root
-from db.postgres_db import get_db_session
+from db.sqlite_db import connection_for_root, dt_to_utc_iso
+from db.postgres_db import get_db_session, utc_now_iso
 from sqlalchemy import text
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
@@ -358,39 +358,48 @@ def create_webapp_api(
             return _admin_stats_cache
         
         try:
-            # Import bot_stats - add project root to path
-            import sys
-            import os
-            # Get project root (zana_planner directory)
-            # api.py is at: zana_planner/tm_bot/webapp/api.py
-            # bot_stats.py is at: zana_planner/bot_stats.py
-            # So we need to go up 2 levels from webapp/ to get to zana_planner/
-            current_file = os.path.abspath(__file__)
-            # webapp/ -> tm_bot/ -> zana_planner/
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-            if project_root not in sys.path:
-                sys.path.insert(0, project_root)
-            
-            try:
-                from bot_stats import compute_stats_sql
-            except ImportError as import_err:
-                logger.error(f"Failed to import bot_stats from {project_root}: {import_err}")
-                logger.error(f"Python path: {sys.path[:3]}")
-                raise
-            
-            # Compute stats using existing function
-            root_dir = app.state.root_dir
-            if not root_dir:
-                raise ValueError("root_dir not set in app state")
-            
-            logger.debug(f"Computing stats for root_dir: {root_dir}")
-            stats = compute_stats_sql(root_dir)
+            # Compute stats directly from PostgreSQL
+            with get_db_session() as session:
+                # Total users (distinct user_ids from any table)
+                total_users = session.execute(
+                    text("""
+                        SELECT COUNT(DISTINCT user_id) 
+                        FROM (
+                            SELECT user_id FROM users
+                            UNION
+                            SELECT user_id FROM promises
+                            UNION
+                            SELECT user_id FROM actions
+                        ) AS all_users;
+                    """)
+                ).scalar() or 0
+                
+                # Active users in last 7 days (users with actions in last 7 days)
+                seven_days_ago_dt = datetime.now(timezone.utc) - timedelta(days=7)
+                seven_days_ago = dt_to_utc_iso(seven_days_ago_dt) or utc_now_iso()
+                active_users = session.execute(
+                    text("""
+                        SELECT COUNT(DISTINCT user_id)
+                        FROM actions
+                        WHERE at_utc >= :seven_days_ago;
+                    """),
+                    {"seven_days_ago": seven_days_ago}
+                ).scalar() or 0
+                
+                # Users with promises (non-deleted)
+                users_with_promises = session.execute(
+                    text("""
+                        SELECT COUNT(DISTINCT user_id)
+                        FROM promises
+                        WHERE is_deleted = 0;
+                    """)
+                ).scalar() or 0
             
             # Return simplified stats for admin panel
             result = {
-                "total_users": stats.get("total_users", 0),
-                "active_users": stats.get("active_last_7_days", 0),
-                "total_promises": stats.get("users_with_promises", 0),  # Users with promises, not total promise count
+                "total_users": int(total_users),
+                "active_users": int(active_users),
+                "total_promises": int(users_with_promises),  # Users with promises, not total promise count
             }
             
             # Cache the result
