@@ -204,7 +204,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -263,6 +263,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
                 (7, utc_now_iso()),
+            )
+        if current < 8:
+            _apply_v8(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (8, utc_now_iso()),
             )
 
 
@@ -1063,6 +1069,7 @@ def _apply_v7(conn: sqlite3.Connection) -> None:
             radius,
             is_deleted,
             visibility,
+            description,
             created_at_utc,
             updated_at_utc,
             -- Computed columns for promise type
@@ -1072,6 +1079,56 @@ def _apply_v7(conn: sqlite3.Connection) -> None:
         FROM promises;
         """
     )
+
+
+def _apply_v8(conn: sqlite3.Connection) -> None:
+    """
+    Apply schema version 8 migrations: Add description column to promises table.
+    
+    This adds a flexible description field that can store URLs, notes, or any additional
+    content related to the promise (e.g., YouTube links, blog posts, etc.).
+    """
+    # Check if column already exists
+    existing_columns = [row[1] for row in conn.execute("PRAGMA table_info(promises);").fetchall()]
+    
+    if "description" not in existing_columns:
+        conn.execute("ALTER TABLE promises ADD COLUMN description TEXT NULL;")
+    
+    # Update the view to include description (if view exists)
+    # Check if view exists
+    view_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='view' AND name='promises_with_type';"
+    ).fetchone()
+    
+    if view_exists:
+        # Recreate view with description field
+        conn.execute("DROP VIEW IF EXISTS promises_with_type;")
+        conn.execute(
+            """
+            CREATE VIEW promises_with_type AS
+            SELECT 
+                promise_uuid,
+                user_id,
+                current_id,
+                text,
+                hours_per_week,
+                recurring,
+                start_date,
+                end_date,
+                angle_deg,
+                radius,
+                is_deleted,
+                visibility,
+                description,
+                created_at_utc,
+                updated_at_utc,
+                -- Computed columns for promise type
+                CASE WHEN hours_per_week <= 0 THEN 1 ELSE 0 END AS is_check_based,
+                CASE WHEN hours_per_week > 0 THEN 1 ELSE 0 END AS is_time_based,
+                CASE WHEN hours_per_week <= 0 THEN 'check_based' ELSE 'time_based' END AS promise_type
+            FROM promises;
+            """
+        )
 
 
 def _seed_initial_templates(conn: sqlite3.Connection) -> None:

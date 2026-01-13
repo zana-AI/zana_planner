@@ -16,6 +16,7 @@ class Promise:
     angle_deg: int = 0
     radius: Optional[int] = 0
     visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
+    description: Optional[str] = None  # Additional description/content (URLs, notes, etc.)
     # Future: pinned/focus flags, tags
 
     def is_check_based(self) -> bool:

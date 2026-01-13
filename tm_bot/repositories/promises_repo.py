@@ -32,7 +32,7 @@ class PromisesRepository:
             ensure_imported(conn, self.root_dir, user, "promises")
             rows = conn.execute(
                 """
-                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, visibility
+                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, visibility, description
                 FROM promises
                 WHERE user_id = ? AND is_deleted = 0
                 ORDER BY current_id ASC;
@@ -47,6 +47,11 @@ class PromisesRepository:
             if "visibility" in r.keys():
                 visibility = str(r["visibility"] or "private")
             
+            # Handle description column - may not exist in older schemas
+            description = None
+            if "description" in r.keys():
+                description = str(r["description"]) if r["description"] else None
+            
             promises.append(
                 Promise(
                     user_id=user,
@@ -59,6 +64,7 @@ class PromisesRepository:
                     angle_deg=int(r["angle_deg"]),
                     radius=int(r["radius"]),
                     visibility=visibility,
+                    description=description,
                 )
             )
         return promises
@@ -77,7 +83,7 @@ class PromisesRepository:
 
             row = conn.execute(
                 """
-                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted, visibility
+                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted, visibility, description
                 FROM promises
                 WHERE user_id = ? AND promise_uuid = ?
                 LIMIT 1;
@@ -93,6 +99,11 @@ class PromisesRepository:
         if "visibility" in row.keys():
             visibility = str(row["visibility"] or "private")
 
+        # Handle description column - may not exist in older schemas
+        description = None
+        if "description" in row.keys():
+            description = str(row["description"]) if row["description"] else None
+
         return Promise(
             user_id=user,
             id=str(row["current_id"]),
@@ -104,6 +115,7 @@ class PromisesRepository:
             angle_deg=int(row["angle_deg"]),
             radius=int(row["radius"]),
             visibility=visibility,
+            description=description,
         )
 
     def upsert_promise(self, user_id: int, promise: Promise) -> None:
@@ -172,9 +184,9 @@ class PromisesRepository:
                 """
                 INSERT OR REPLACE INTO promises(
                     promise_uuid, user_id, current_id, text, hours_per_week, recurring,
-                    start_date, end_date, angle_deg, radius, is_deleted, visibility,
+                    start_date, end_date, angle_deg, radius, is_deleted, visibility, description,
                     created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     p_uuid,
@@ -189,6 +201,7 @@ class PromisesRepository:
                     int(promise.radius or 0),
                     0,
                     str(promise.visibility or "private"),
+                    promise.description or None,
                     now if is_new else (now),  # best-effort timestamps per plan
                     now,
                 ),
