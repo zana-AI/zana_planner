@@ -843,25 +843,25 @@ export function AdminPanel() {
             <DevToolLink
               name="Better Stack"
               description="Monitoring and observability"
-              url="https://betterstack.com"
+              url="https://telemetry.betterstack.com/team/t480691/tail?s=1619692"
               icon="📊"
             />
             <DevToolLink
               name="Neon Database"
               description="PostgreSQL database management"
-              url="https://neon.tech"
+              url="https://console.neon.tech/app/projects/royal-shape-47999151"
               icon="🗄️"
             />
             <DevToolLink
               name="GitHub"
               description="Source code repository"
-              url="https://github.com"
+              url="https://github.com/zana-AI/zana_planner"
               icon="🐙"
             />
             <DevToolLink
               name="GitHub Actions"
               description="CI/CD pipelines and workflows"
-              url="https://github.com/features/actions"
+              url="https://github.com/zana-AI/zana_planner/actions"
               icon="⚙️"
             />
           </div>
@@ -917,19 +917,49 @@ function DevToolLink({ name, description, url, icon }: { name: string; descripti
 // Template Form Component
 function TemplateForm({ template, onSave, onCancel }: { template: Partial<PromiseTemplate>, onSave: (data: any) => void, onCancel: () => void }) {
   const [formData, setFormData] = useState({
-    category: template.category || '',
-    program_key: template.program_key || '',
-    level: template.level || '',
     title: template.title || '',
+    category: template.category || 'general',
+    level: template.level || 'beginner',
     why: template.why || '',
     done: template.done || '',
     effort: template.effort || '',
-    template_kind: template.template_kind || 'commitment',
+    target_value: template.target_value || 1,
     metric_type: template.metric_type || 'hours',
-    target_value: template.target_value || 0,
+    duration_type: template.duration_type || 'week',
+    // Hidden fields with defaults
+    program_key: template.program_key || '',
+    template_kind: template.template_kind || 'commitment',
     target_direction: template.target_direction || 'at_least',
     estimated_hours_per_unit: template.estimated_hours_per_unit || 1.0,
+    duration_weeks: template.duration_weeks || 1,
+    is_active: template.is_active !== undefined ? (typeof template.is_active === 'number' ? template.is_active !== 0 : template.is_active) : true,
+  });
+
+  return (
+    <div style={{
+      background: 'rgba(15, 23, 48, 0.8)',
+      border: '1px solid rgba(232, 238, 252, 0.2)',
+      borderRadius: '12px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem'
+    }}>
+// Template Form Component - Simplified
+function TemplateForm({ template, onSave, onCancel }: { template: Partial<PromiseTemplate>, onSave: (data: any) => void, onCancel: () => void }) {
+  const [formData, setFormData] = useState({
+    title: template.title || '',
+    category: template.category || 'general',
+    level: template.level || 'beginner',
+    why: template.why || '',
+    done: template.done || '',
+    effort: template.effort || '',
+    target_value: template.target_value || 1,
+    metric_type: template.metric_type || 'hours',
     duration_type: template.duration_type || 'week',
+    // Hidden fields with defaults
+    program_key: template.program_key || '',
+    template_kind: template.template_kind || 'commitment',
+    target_direction: template.target_direction || 'at_least',
+    estimated_hours_per_unit: template.estimated_hours_per_unit || 1.0,
     duration_weeks: template.duration_weeks || 1,
     is_active: template.is_active !== undefined ? (typeof template.is_active === 'number' ? template.is_active !== 0 : template.is_active) : true,
   });
@@ -946,88 +976,87 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
         {template.template_id ? 'Edit Template' : 'Create Template'}
       </h3>
       <div style={{ display: 'grid', gap: '1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Category *</label>
-            <input
-              type="text"
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Level *</label>
-            <input
-              type="text"
-              value={formData.level}
-              onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
-            />
-          </div>
-        </div>
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Title *</label>
           <input
             type="text"
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            placeholder="e.g., Daily Exercise"
             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
           />
         </div>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Category</label>
+            <input
+              type="text"
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              placeholder="general"
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Level</label>
+            <input
+              type="text"
+              value={formData.level}
+              onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+              placeholder="beginner"
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+          </div>
+        </div>
+
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Why *</label>
           <textarea
             value={formData.why}
             onChange={(e) => setFormData({ ...formData, why: e.target.value })}
             rows={2}
+            placeholder="Why is this important?"
             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
           />
         </div>
+        
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Done *</label>
           <textarea
             value={formData.done}
             onChange={(e) => setFormData({ ...formData, done: e.target.value })}
             rows={2}
+            placeholder="What does success look like?"
             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
           />
         </div>
+        
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Effort *</label>
           <textarea
             value={formData.effort}
             onChange={(e) => setFormData({ ...formData, effort: e.target.value })}
             rows={2}
+            placeholder="What effort is required?"
             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
           />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Program Key (Optional)</label>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Target Value</label>
             <input
-              type="text"
-              value={formData.program_key}
-              onChange={(e) => setFormData({ ...formData, program_key: e.target.value })}
-              placeholder="e.g., fitness, learning"
+              type="number"
+              step="0.1"
+              min="0.1"
+              value={formData.target_value}
+              onChange={(e) => setFormData({ ...formData, target_value: parseFloat(e.target.value) || 1 })}
               style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
             />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Template Kind *</label>
-            <select
-              value={formData.template_kind}
-              onChange={(e) => setFormData({ ...formData, template_kind: e.target.value as 'commitment' | 'budget' })}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
-            >
-              <option value="commitment">Commitment</option>
-              <option value="budget">Budget</option>
-            </select>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Metric Type *</label>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Metric Type</label>
             <select
               value={formData.metric_type}
               onChange={(e) => setFormData({ ...formData, metric_type: e.target.value as 'hours' | 'count' })}
@@ -1038,76 +1067,19 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Target Value *</label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              value={formData.target_value}
-              onChange={(e) => setFormData({ ...formData, target_value: parseFloat(e.target.value) || 0 })}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Target Direction *</label>
-            <select
-              value={formData.target_direction}
-              onChange={(e) => setFormData({ ...formData, target_direction: e.target.value as 'at_least' | 'at_most' })}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
-            >
-              <option value="at_least">At Least</option>
-              <option value="at_most">At Most</option>
-            </select>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Duration Type *</label>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Duration</label>
             <select
               value={formData.duration_type}
               onChange={(e) => setFormData({ ...formData, duration_type: e.target.value as 'week' | 'one_time' | 'date' })}
               style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
             >
-              <option value="week">Week</option>
+              <option value="week">Weekly</option>
               <option value="one_time">One Time</option>
-              <option value="date">Date</option>
+              <option value="date">By Date</option>
             </select>
           </div>
-          {formData.duration_type === 'week' && (
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Duration Weeks</label>
-              <input
-                type="number"
-                min="1"
-                value={formData.duration_weeks}
-                onChange={(e) => setFormData({ ...formData, duration_weeks: parseInt(e.target.value) || 1 })}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
-              />
-            </div>
-          )}
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Estimated Hours Per Unit</label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              value={formData.estimated_hours_per_unit}
-              onChange={(e) => setFormData({ ...formData, estimated_hours_per_unit: parseFloat(e.target.value) || 1.0 })}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
-            />
-          </div>
         </div>
-        <div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={formData.is_active}
-              onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-              style={{ cursor: 'pointer' }}
-            />
-            Active (template will be visible to users)
-          </label>
-        </div>
+
         <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
           <button
             onClick={onCancel}
@@ -1124,17 +1096,7 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
           </button>
           <button
             onClick={() => onSave(formData)}
-            disabled={
-              !formData.category || 
-              !formData.level || 
-              !formData.title || 
-              !formData.why || 
-              !formData.done || 
-              !formData.effort ||
-              !formData.metric_type ||
-              formData.target_value <= 0 ||
-              !formData.duration_type
-            }
+            disabled={!formData.title || !formData.why || !formData.done || !formData.effort}
             style={{
               padding: '0.5rem 1rem',
               background: 'linear-gradient(135deg, #667eea, #764ba2)',
@@ -1142,17 +1104,7 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
               borderRadius: '6px',
               color: '#fff',
               cursor: 'pointer',
-              opacity: (
-                !formData.category || 
-                !formData.level || 
-                !formData.title || 
-                !formData.why || 
-                !formData.done || 
-                !formData.effort ||
-                !formData.metric_type ||
-                formData.target_value <= 0 ||
-                !formData.duration_type
-              ) ? 0.5 : 1
+              opacity: (!formData.title || !formData.why || !formData.done || !formData.effort) ? 0.5 : 1
             }}
           >
             Save
