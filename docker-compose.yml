@@ -69,9 +69,10 @@ services:
     expose:
       - "8080"                                # internal FastAPI/uvicorn port
     volumes:
-      # Production-style: no source bind-mounts.
-      # Frontend is built inside Docker (Dockerfile.webapp) and served from /app/webapp_frontend/dist.
-      # Database connection via DATABASE_URL_PROD in .env.prod
+      - /srv/zana-users:/app/USERS_DATA_DIR
+    # Production-style: no source bind-mounts.
+    # Frontend is built inside Docker (Dockerfile.webapp) and served from /app/webapp_frontend/dist.
+    # Database connection via DATABASE_URL_PROD in .env.prod
     working_dir: /app                       # important: match your dev run's -w /app
     #command: ["python", "run_webapp_local.py"]   # ← IMPORTANT
     command: ["uvicorn", "run_webapp_local:app", "--host", "0.0.0.0", "--port", "8080"]
