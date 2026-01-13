@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
@@ -8,14 +8,47 @@ import type { WeeklyReportData, PublicUser } from '../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [communityUsers, setCommunityUsers] = useState<PublicUser[]>([]);
   const [communityLoading, setCommunityLoading] = useState(false);
+  const [currentRefTime, setCurrentRefTime] = useState<string | undefined>(() => {
+    // Get ref_time from URL params if present
+    return searchParams.get('ref_time') || undefined;
+  });
 
-  const fetchReport = useCallback(async (authData: string) => {
+  // Get current week's Monday for comparison
+  const getCurrentWeekMonday = useCallback(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    const monday = new Date(today.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+    return monday.toISOString().split('T')[0] + 'T00:00:00';
+  }, []);
+
+  // Check if current week is the selected week
+  const isCurrentWeek = useMemo(() => {
+    if (!currentRefTime) return true;
+    const currentWeekMonday = getCurrentWeekMonday();
+    // Compare just the date part (YYYY-MM-DD)
+    return currentRefTime.split('T')[0] === currentWeekMonday.split('T')[0];
+  }, [currentRefTime, getCurrentWeekMonday]);
+
+  // Format week range for display
+  const weekRangeDisplay = useMemo(() => {
+    if (!reportData) return '';
+    const start = new Date(reportData.week_start);
+    const end = new Date(reportData.week_end);
+    const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${startStr} - ${endStr}`;
+  }, [reportData]);
+
+  const fetchReport = useCallback(async (authData: string, refTime?: string) => {
     setLoading(true);
     setError('');
 
@@ -26,8 +59,8 @@ export function DashboardPage() {
       }
       // Otherwise, API client will use token from localStorage
 
-      // Fetch weekly report (distractions are included in promises as budget templates)
-      const data = await apiClient.getWeeklyReport();
+      // Fetch weekly report with optional ref_time
+      const data = await apiClient.getWeeklyReport(refTime);
       setReportData(data);
       hapticFeedback('success');
     } catch (err) {
@@ -51,6 +84,14 @@ export function DashboardPage() {
     }
   }, [hapticFeedback, navigate]);
 
+  // Handle URL params on mount and when they change
+  useEffect(() => {
+    const refTimeParam = searchParams.get('ref_time');
+    if (refTimeParam !== currentRefTime) {
+      setCurrentRefTime(refTimeParam || undefined);
+    }
+  }, [searchParams, currentRefTime]);
+
   useEffect(() => {
     if (!isReady) return;
 
@@ -67,8 +108,8 @@ export function DashboardPage() {
     if (authData) {
       apiClient.setInitData(authData);
     }
-    fetchReport(authData || '');
-  }, [isReady, initData, navigate, fetchReport]);
+    fetchReport(authData || '', currentRefTime);
+  }, [isReady, initData, navigate, fetchReport, currentRefTime]);
 
   // Fetch community users for sidebar
   useEffect(() => {
@@ -159,8 +200,56 @@ export function DashboardPage() {
 
   const handleRefresh = useCallback(() => {
     const authData = initData || getDevInitData();
-    fetchReport(authData || '');
-  }, [initData, fetchReport]);
+    fetchReport(authData || '', currentRefTime);
+  }, [initData, fetchReport, currentRefTime]);
+
+  const handlePreviousWeek = useCallback(() => {
+    if (!reportData) return;
+    
+    const currentStart = new Date(reportData.week_start);
+    const previousMonday = new Date(currentStart);
+    previousMonday.setDate(previousMonday.getDate() - 7);
+    
+    const refTime = previousMonday.toISOString();
+    setCurrentRefTime(refTime);
+    
+    // Update URL
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('ref_time', refTime);
+    setSearchParams(newParams, { replace: true });
+    
+    // Fetch new report
+    const authData = initData || getDevInitData();
+    fetchReport(authData || '', refTime);
+  }, [reportData, initData, fetchReport, searchParams, setSearchParams]);
+
+  const handleNextWeek = useCallback(() => {
+    if (!reportData || isCurrentWeek) return;
+    
+    const currentStart = new Date(reportData.week_start);
+    const nextMonday = new Date(currentStart);
+    nextMonday.setDate(nextMonday.getDate() + 7);
+    
+    // Check if next week would be current week
+    const currentWeekMonday = new Date(getCurrentWeekMonday());
+    if (nextMonday >= currentWeekMonday) {
+      // Go to current week
+      setCurrentRefTime(undefined);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('ref_time');
+      setSearchParams(newParams, { replace: true });
+      const authData = initData || getDevInitData();
+      fetchReport(authData || '');
+    } else {
+      const refTime = nextMonday.toISOString();
+      setCurrentRefTime(refTime);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.set('ref_time', refTime);
+      setSearchParams(newParams, { replace: true });
+      const authData = initData || getDevInitData();
+      fetchReport(authData || '', refTime);
+    }
+  }, [reportData, isCurrentWeek, initData, fetchReport, searchParams, setSearchParams, getCurrentWeekMonday]);
 
   // Loading state - must come after all hooks
   if (!isReady || loading) {
@@ -207,6 +296,91 @@ export function DashboardPage() {
         flex: '1 1 0',
         minWidth: 0 // Allow flex item to shrink below content size
       }}>
+        {/* Week Navigation Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '1.5rem',
+          padding: '12px 16px',
+          background: 'rgba(15, 23, 48, 0.5)',
+          border: '1px solid rgba(232, 238, 252, 0.1)',
+          borderRadius: '12px'
+        }}>
+          <button
+            onClick={handlePreviousWeek}
+            disabled={loading}
+            style={{
+              padding: '8px 16px',
+              background: 'rgba(232, 238, 252, 0.1)',
+              border: '1px solid rgba(232, 238, 252, 0.2)',
+              borderRadius: '8px',
+              color: 'rgba(232, 238, 252, 0.9)',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              opacity: loading ? 0.6 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            onMouseEnter={(e) => {
+              if (!loading) {
+                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.2)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!loading) {
+                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.1)';
+              }
+            }}
+          >
+            ← Previous
+          </button>
+          
+          <div style={{
+            fontSize: '1rem',
+            fontWeight: '700',
+            color: '#fff',
+            textAlign: 'center'
+          }}>
+            {weekRangeDisplay || 'Loading...'}
+          </div>
+          
+          <button
+            onClick={handleNextWeek}
+            disabled={loading || isCurrentWeek}
+            style={{
+              padding: '8px 16px',
+              background: isCurrentWeek ? 'rgba(232, 238, 252, 0.05)' : 'rgba(232, 238, 252, 0.1)',
+              border: '1px solid rgba(232, 238, 252, 0.2)',
+              borderRadius: '8px',
+              color: isCurrentWeek ? 'rgba(232, 238, 252, 0.4)' : 'rgba(232, 238, 252, 0.9)',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              cursor: (loading || isCurrentWeek) ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              opacity: (loading || isCurrentWeek) ? 0.6 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            onMouseEnter={(e) => {
+              if (!loading && !isCurrentWeek) {
+                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.2)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!loading && !isCurrentWeek) {
+                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.1)';
+              }
+            }}
+          >
+            Next →
+          </button>
+        </div>
+        
         {/* Tasks Section - First */}
         {tasksData && (
           <div style={{ marginBottom: '2rem' }}>

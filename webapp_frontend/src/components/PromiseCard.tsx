@@ -5,6 +5,7 @@ import { LogActionModal } from './LogActionModal';
 import { CheckinModal } from './CheckinModal';
 import { WeeklyNoteModal } from './WeeklyNoteModal';
 import { VisibilityConfirmModal } from './VisibilityConfirmModal';
+import { InlineCalendar } from './InlineCalendar';
 
 interface PromiseCardProps {
   id: string;
@@ -62,11 +63,25 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   useEffect(() => {
     setCurrentRecurring(recurring);
   }, [recurring]);
+  
+  // Sync editable fields when data changes
+  useEffect(() => {
+    setEditingText(text);
+    setEditingHours(hours_promised);
+    setEditingEndDate(data.end_date || '');
+  }, [text, hours_promised, data.end_date]);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isCheckinModalOpen, setIsCheckinModalOpen] = useState(false);
   const [isWeeklyNoteModalOpen, setIsWeeklyNoteModalOpen] = useState(false);
   const [showVisibilityConfirm, setShowVisibilityConfirm] = useState(false);
   const [pendingVisibility, setPendingVisibility] = useState<'private' | 'public' | null>(null);
+  
+  // Editable fields state
+  const [editingText, setEditingText] = useState(text);
+  const [editingHours, setEditingHours] = useState(hours_promised);
+  const [editingEndDate, setEditingEndDate] = useState(data.end_date || '');
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [isUpdatingPromise, setIsUpdatingPromise] = useState(false);
   
   // Swipe gesture state
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
@@ -155,6 +170,75 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       setCurrentRecurring(recurring);
     } finally {
       setIsUpdatingRecurring(false);
+    }
+  };
+  
+  const handleSavePromise = async () => {
+    if (isUpdatingPromise) return;
+    
+    // Validate hours
+    if (editingHours <= 0) {
+      alert('Hours per week must be greater than 0');
+      return;
+    }
+    
+    setIsUpdatingPromise(true);
+    
+    try {
+      const updateFields: { text?: string; hours_per_week?: number; end_date?: string } = {};
+      
+      // Only include fields that have changed
+      if (editingText !== text) {
+        updateFields.text = editingText;
+      }
+      if (editingHours !== hours_promised) {
+        updateFields.hours_per_week = editingHours;
+      }
+      if (editingEndDate !== (data.end_date || '')) {
+        updateFields.end_date = editingEndDate || undefined;
+      }
+      
+      // Only make API call if there are changes
+      if (Object.keys(updateFields).length > 0) {
+        await apiClient.updatePromise(id, updateFields);
+        if (onRefresh) {
+          onRefresh();
+        }
+        // Collapse after successful save
+        setIsExpanded(false);
+      } else {
+        // No changes, just collapse
+        setIsExpanded(false);
+      }
+    } catch (err) {
+      console.error('Failed to update promise:', err);
+      alert(err instanceof Error ? err.message : 'Failed to update promise');
+    } finally {
+      setIsUpdatingPromise(false);
+    }
+  };
+  
+  const handleCancelEdit = () => {
+    // Revert to original values
+    setEditingText(text);
+    setEditingHours(hours_promised);
+    setEditingEndDate(data.end_date || '');
+    setShowCalendar(false);
+    setIsExpanded(false);
+  };
+  
+  const handleEndDateSelect = (date: string) => {
+    setEditingEndDate(date);
+    setShowCalendar(false);
+  };
+  
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return 'Not set';
+    try {
+      const date = new Date(dateStr + 'T00:00:00');
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+      return dateStr;
     }
   };
   
@@ -381,7 +465,92 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Text field */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'rgba(232, 238, 252, 0.8)' }}>
+                  Promise Title
+                </label>
+                <input
+                  type="text"
+                  value={editingText}
+                  onChange={(e) => setEditingText(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    background: 'rgba(232, 238, 252, 0.05)',
+                    border: '1px solid rgba(232, 238, 252, 0.2)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '0.9rem',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                  }}
+                  placeholder="Enter promise title"
+                />
+              </div>
+              
+              {/* Hours per week field */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'rgba(232, 238, 252, 0.8)' }}>
+                  Hours per Week
+                </label>
+                <input
+                  type="number"
+                  value={editingHours}
+                  onChange={(e) => setEditingHours(parseFloat(e.target.value) || 0)}
+                  min="0.1"
+                  step="0.1"
+                  style={{
+                    padding: '8px 12px',
+                    background: 'rgba(232, 238, 252, 0.05)',
+                    border: '1px solid rgba(232, 238, 252, 0.2)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '0.9rem',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                  }}
+                  placeholder="0.0"
+                />
+              </div>
+              
+              {/* End date field */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'rgba(232, 238, 252, 0.8)' }}>
+                  End Date
+                </label>
+                <button
+                  onClick={() => setShowCalendar(!showCalendar)}
+                  style={{
+                    padding: '8px 12px',
+                    background: 'rgba(232, 238, 252, 0.05)',
+                    border: '1px solid rgba(232, 238, 252, 0.2)',
+                    borderRadius: '6px',
+                    color: editingEndDate ? '#fff' : 'rgba(232, 238, 252, 0.6)',
+                    fontSize: '0.9rem',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(232, 238, 252, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(232, 238, 252, 0.05)';
+                  }}
+                >
+                  {formatDate(editingEndDate)}
+                </button>
+                {showCalendar && (
+                  <InlineCalendar
+                    selectedDate={editingEndDate || undefined}
+                    onDateSelect={handleEndDateSelect}
+                    minDate={data.start_date || undefined}
+                    onClose={() => setShowCalendar(false)}
+                  />
+                )}
+              </div>
+              
               {/* Recurring toggle */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -413,6 +582,48 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   }}
                 >
                   {isUpdatingRecurring ? '...' : (currentRecurring ? 'Make One-time' : 'Make Recurring')}
+                </button>
+              </div>
+              
+              {/* Save/Cancel buttons */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button
+                  onClick={handleSavePromise}
+                  disabled={isUpdatingPromise}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    fontWeight: '600',
+                    cursor: isUpdatingPromise ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                    opacity: isUpdatingPromise ? 0.6 : 1
+                  }}
+                >
+                  {isUpdatingPromise ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isUpdatingPromise}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    background: 'rgba(232, 238, 252, 0.1)',
+                    border: '1px solid rgba(232, 238, 252, 0.2)',
+                    borderRadius: '8px',
+                    color: 'rgba(232, 238, 252, 0.8)',
+                    fontSize: '0.85rem',
+                    fontWeight: '600',
+                    cursor: isUpdatingPromise ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                    opacity: isUpdatingPromise ? 0.6 : 1
+                  }}
+                >
+                  Cancel
                 </button>
               </div>
             </div>

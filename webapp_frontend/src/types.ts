@@ -90,6 +90,8 @@ export interface PromiseData {
   sessions: SessionData[];
   visibility?: string; // "private" | "public"
   recurring?: boolean;
+  start_date?: string; // ISO date string (YYYY-MM-DD)
+  end_date?: string; // ISO date string (YYYY-MM-DD)
 }
 
 export interface WeeklyReportData {
@@ -282,6 +284,8 @@ export interface PromiseData {
   target_direction?: 'at_least' | 'at_most';
   template_kind?: 'commitment' | 'budget';
   achieved_value?: number;
+  start_date?: string; // ISO date string (YYYY-MM-DD)
+  end_date?: string; // ISO date string (YYYY-MM-DD)
 }
 
 // Extend Window interface for Telegram

@@ -235,6 +235,19 @@ class ApiClient {
   }
 
   /**
+   * Update promise fields (text, hours_per_week, end_date).
+   */
+  async updatePromise(
+    promiseId: string,
+    fields: { text?: string; hours_per_week?: number; end_date?: string }
+  ): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/promises/${promiseId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    });
+  }
+
+  /**
    * Log an action (time spent) for a promise.
    */
   async logAction(promiseId: string, timeSpent: number, actionDatetime?: string): Promise<{ status: string; message: string }> {

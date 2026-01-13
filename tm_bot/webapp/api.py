@@ -1342,6 +1342,75 @@ def create_webapp_api(
             logger.exception(f"Error updating promise recurring status: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to update recurring status: {str(e)}")
     
+    # Promise update endpoint
+    class UpdatePromiseRequest(BaseModel):
+        text: Optional[str] = None
+        hours_per_week: Optional[float] = None
+        end_date: Optional[str] = None  # ISO date string (YYYY-MM-DD)
+    
+    @app.patch("/api/promises/{promise_id}")
+    async def update_promise(
+        promise_id: str,
+        request: UpdatePromiseRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Update promise fields (text, hours_per_week, end_date)."""
+        try:
+            from services.planner_api_adapter import PlannerAPIAdapter
+            from datetime import date as date_type
+            
+            plan_keeper = PlannerAPIAdapter(app.state.root_dir)
+            
+            # Parse end_date if provided
+            end_date_obj = None
+            if request.end_date:
+                try:
+                    end_date_obj = date_type.fromisoformat(request.end_date)
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=f"Invalid end_date format: {request.end_date}. Expected YYYY-MM-DD")
+            
+            # Get current promise to validate end_date >= start_date
+            promises_repo = PromisesRepository(app.state.root_dir)
+            current_promise = promises_repo.get_promise(user_id, promise_id)
+            
+            if not current_promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Validate end_date >= start_date if both are set
+            if end_date_obj and current_promise.start_date:
+                if end_date_obj < current_promise.start_date:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"end_date ({end_date_obj}) must be >= start_date ({current_promise.start_date})"
+                    )
+            
+            # Validate hours_per_week if provided
+            if request.hours_per_week is not None:
+                if request.hours_per_week <= 0:
+                    raise HTTPException(status_code=400, detail="hours_per_week must be a positive number")
+            
+            # Update promise using PlannerAPIAdapter
+            result = plan_keeper.update_promise(
+                user_id=user_id,
+                promise_id=promise_id,
+                promise_text=request.text,
+                hours_per_week=request.hours_per_week,
+                end_date=end_date_obj
+            )
+            
+            # Check if update was successful (returns error message string on failure)
+            if result and result.startswith("Promise with ID"):
+                raise HTTPException(status_code=404, detail=result)
+            elif result and ("must be" in result or "must be a" in result):
+                raise HTTPException(status_code=400, detail=result)
+            
+            return {"status": "success", "message": result or "Promise updated successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating promise: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update promise: {str(e)}")
+    
     # Action logging endpoint
     class LogActionRequest(BaseModel):
         promise_id: str
