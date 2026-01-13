@@ -75,10 +75,16 @@ class ConversationRepository:
             with get_db_session() as session:
                 session.execute(
                     text("""
-                        UPDATE conversations 
-                        SET message_id = :message_id 
-                        WHERE user_id = :user_id AND message_id IS NULL 
-                        ORDER BY created_at_utc DESC LIMIT 1
+                        WITH target AS (
+                            SELECT id
+                            FROM conversations
+                            WHERE user_id = :user_id AND message_id IS NULL
+                            ORDER BY created_at_utc DESC
+                            LIMIT 1
+                        )
+                        UPDATE conversations
+                        SET message_id = :message_id
+                        WHERE id IN (SELECT id FROM target)
                     """),
                     {"message_id": message_id, "user_id": str(user_id)},
                 )

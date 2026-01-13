@@ -19,6 +19,7 @@ import argparse
 import os
 import sqlite3
 import sys
+import re
 from typing import Dict, List, Tuple
 
 import psycopg2
@@ -30,6 +31,41 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_SAFE_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _is_safe_ident(name: str) -> bool:
+    return bool(name and _SAFE_IDENT_RE.match(name))
+
+
+def sync_sequences(pg_session, table_names: List[str]) -> None:
+    """
+    After importing rows with explicit integer IDs, PostgreSQL sequences may be behind.
+    This updates any serial/identity sequences for single-column primary keys.
+    """
+    for table_name in table_names:
+        pk_cols = get_primary_key_columns(pg_session, table_name)
+        if len(pk_cols) != 1:
+            continue
+        pk = pk_cols[0]
+        if not (_is_safe_ident(table_name) and _is_safe_ident(pk)):
+            continue
+
+        seq_name = pg_session.execute(
+            text("SELECT pg_get_serial_sequence(:tbl, :col)"),
+            {"tbl": f"public.{table_name}", "col": pk},
+        ).scalar()
+
+        if not seq_name:
+            continue
+
+        # setval(seq, max(pk)) so next nextval() is max+1
+        pg_session.execute(
+            text(f"SELECT setval(:seq::regclass, (SELECT COALESCE(MAX({pk}), 0) FROM {table_name}))"),
+            {"seq": str(seq_name)},
+        )
+
+    pg_session.commit()
 
 def get_sqlite_tables(conn: sqlite3.Connection) -> List[str]:
     """Get list of all tables in SQLite database."""
@@ -249,6 +285,14 @@ def main():
             except Exception as e:
                 logger.error(f"Failed to migrate {table_name}: {e}")
                 raise
+
+        # Fix sequences for autoincrement PKs (e.g., conversations.id) after import
+        try:
+            logger.info("Syncing PostgreSQL sequences after import...")
+            sync_sequences(pg_session, tables_to_migrate)
+            logger.info("✓ Sequences synced")
+        except Exception as e:
+            logger.warning(f"Sequence sync failed (may be safe to ignore): {e}")
         
         logger.info(f"✓ Migration complete! Total rows migrated: {total_rows}")
         
