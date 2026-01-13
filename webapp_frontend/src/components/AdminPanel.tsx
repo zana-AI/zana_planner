@@ -751,7 +751,7 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
     estimated_hours_per_unit: template.estimated_hours_per_unit || 1.0,
     duration_type: template.duration_type || 'week',
     duration_weeks: template.duration_weeks || 1,
-    is_active: template.is_active !== undefined ? template.is_active : true,
+    is_active: template.is_active !== undefined ? (typeof template.is_active === 'number' ? template.is_active !== 0 : template.is_active) : true,
   });
 
   return (
@@ -822,6 +822,29 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
           />
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Program Key (Optional)</label>
+            <input
+              type="text"
+              value={formData.program_key}
+              onChange={(e) => setFormData({ ...formData, program_key: e.target.value })}
+              placeholder="e.g., fitness, learning"
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Template Kind *</label>
+            <select
+              value={formData.template_kind}
+              onChange={(e) => setFormData({ ...formData, template_kind: e.target.value as 'commitment' | 'budget' })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            >
+              <option value="commitment">Commitment</option>
+              <option value="budget">Budget</option>
+            </select>
+          </div>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Metric Type *</label>
@@ -839,11 +862,25 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
             <input
               type="number"
               step="0.1"
+              min="0"
               value={formData.target_value}
               onChange={(e) => setFormData({ ...formData, target_value: parseFloat(e.target.value) || 0 })}
               style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
             />
           </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Target Direction *</label>
+            <select
+              value={formData.target_direction}
+              onChange={(e) => setFormData({ ...formData, target_direction: e.target.value as 'at_least' | 'at_most' })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            >
+              <option value="at_least">At Least</option>
+              <option value="at_most">At Most</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Duration Type *</label>
             <select
@@ -856,6 +893,40 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
               <option value="date">Date</option>
             </select>
           </div>
+          {formData.duration_type === 'week' && (
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Duration Weeks</label>
+              <input
+                type="number"
+                min="1"
+                value={formData.duration_weeks}
+                onChange={(e) => setFormData({ ...formData, duration_weeks: parseInt(e.target.value) || 1 })}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+              />
+            </div>
+          )}
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Estimated Hours Per Unit</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={formData.estimated_hours_per_unit}
+              onChange={(e) => setFormData({ ...formData, estimated_hours_per_unit: parseFloat(e.target.value) || 1.0 })}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+          </div>
+        </div>
+        <div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={formData.is_active}
+              onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+              style={{ cursor: 'pointer' }}
+            />
+            Active (template will be visible to users)
+          </label>
         </div>
         <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
           <button
@@ -873,7 +944,17 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
           </button>
           <button
             onClick={() => onSave(formData)}
-            disabled={!formData.category || !formData.level || !formData.title || !formData.why || !formData.done || !formData.effort}
+            disabled={
+              !formData.category || 
+              !formData.level || 
+              !formData.title || 
+              !formData.why || 
+              !formData.done || 
+              !formData.effort ||
+              !formData.metric_type ||
+              formData.target_value <= 0 ||
+              !formData.duration_type
+            }
             style={{
               padding: '0.5rem 1rem',
               background: 'linear-gradient(135deg, #667eea, #764ba2)',
@@ -881,7 +962,17 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
               borderRadius: '6px',
               color: '#fff',
               cursor: 'pointer',
-              opacity: (!formData.category || !formData.level || !formData.title || !formData.why || !formData.done || !formData.effort) ? 0.5 : 1
+              opacity: (
+                !formData.category || 
+                !formData.level || 
+                !formData.title || 
+                !formData.why || 
+                !formData.done || 
+                !formData.effort ||
+                !formData.metric_type ||
+                formData.target_value <= 0 ||
+                !formData.duration_type
+              ) ? 0.5 : 1
             }}
           >
             Save
