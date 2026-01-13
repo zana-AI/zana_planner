@@ -5,13 +5,16 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from db.sqlite_db import connection_for_root, utc_now_iso, dt_to_utc_iso, dt_from_utc_iso
+from sqlalchemy import text
+
+from db.postgres_db import get_db_session, utc_now_iso, dt_to_utc_iso, dt_from_utc_iso
 
 
 class DistractionsRepository:
-    """SQLite-backed distractions repository."""
+    """PostgreSQL-backed distractions repository."""
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
     def log_distraction(
@@ -23,14 +26,21 @@ class DistractionsRepository:
         now = utc_now_iso()
         at_utc = dt_to_utc_iso(at, assume_local_tz=True) if at else now
 
-        with connection_for_root(self.root_dir) as conn:
-            conn.execute(
-                """
-                INSERT INTO distraction_events (
-                    event_uuid, user_id, category, minutes, at_utc, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?);
-                """,
-                (event_uuid, user, category, minutes, at_utc, now),
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    INSERT INTO distraction_events (
+                        event_uuid, user_id, category, minutes, at_utc, created_at_utc
+                    ) VALUES (:event_uuid, :user_id, :category, :minutes, :at_utc, :created_at_utc);
+                """),
+                {
+                    "event_uuid": event_uuid,
+                    "user_id": user,
+                    "category": category,
+                    "minutes": minutes,
+                    "at_utc": at_utc,
+                    "created_at_utc": now,
+                },
             )
 
         return event_uuid
@@ -43,28 +53,28 @@ class DistractionsRepository:
         week_start_utc = dt_to_utc_iso(week_start)
         week_end_utc = dt_to_utc_iso(week_end)
 
-        with connection_for_root(self.root_dir) as conn:
+        with get_db_session() as session:
             if category:
-                rows = conn.execute(
-                    """
-                    SELECT SUM(minutes) as total_minutes, COUNT(*) as event_count
-                    FROM distraction_events
-                    WHERE user_id = ? AND category = ? AND at_utc >= ? AND at_utc <= ?
-                    """,
-                    (user, category, week_start_utc, week_end_utc),
+                row = session.execute(
+                    text("""
+                        SELECT SUM(minutes) as total_minutes, COUNT(*) as event_count
+                        FROM distraction_events
+                        WHERE user_id = :user_id AND category = :category AND at_utc >= :week_start_utc AND at_utc <= :week_end_utc
+                    """),
+                    {"user_id": user, "category": category, "week_start_utc": week_start_utc, "week_end_utc": week_end_utc},
                 ).fetchone()
             else:
-                rows = conn.execute(
-                    """
-                    SELECT SUM(minutes) as total_minutes, COUNT(*) as event_count
-                    FROM distraction_events
-                    WHERE user_id = ? AND at_utc >= ? AND at_utc <= ?
-                    """,
-                    (user, week_start_utc, week_end_utc),
+                row = session.execute(
+                    text("""
+                        SELECT SUM(minutes) as total_minutes, COUNT(*) as event_count
+                        FROM distraction_events
+                        WHERE user_id = :user_id AND at_utc >= :week_start_utc AND at_utc <= :week_end_utc
+                    """),
+                    {"user_id": user, "week_start_utc": week_start_utc, "week_end_utc": week_end_utc},
                 ).fetchone()
 
-        total_minutes = float(rows["total_minutes"] or 0) if rows else 0.0
-        event_count = int(rows["event_count"] or 0) if rows else 0
+        total_minutes = float(row[0] or 0) if row and row[0] else 0.0
+        event_count = int(row[1] or 0) if row and row[1] else 0
 
         return {
             "total_minutes": total_minutes,
@@ -79,29 +89,29 @@ class DistractionsRepository:
         user = str(user_id)
         since_utc = dt_to_utc_iso(since, assume_local_tz=True) if since else None
 
-        with connection_for_root(self.root_dir) as conn:
+        with get_db_session() as session:
             if since_utc:
-                rows = conn.execute(
-                    """
-                    SELECT event_uuid, user_id, category, minutes, at_utc, created_at_utc
-                    FROM distraction_events
-                    WHERE user_id = ? AND at_utc >= ?
-                    ORDER BY at_utc DESC
-                    LIMIT ?;
-                    """,
-                    (user, since_utc, limit),
+                rows = session.execute(
+                    text("""
+                        SELECT event_uuid, user_id, category, minutes, at_utc, created_at_utc
+                        FROM distraction_events
+                        WHERE user_id = :user_id AND at_utc >= :since_utc
+                        ORDER BY at_utc DESC
+                        LIMIT :limit;
+                    """),
+                    {"user_id": user, "since_utc": since_utc, "limit": limit},
                 ).fetchall()
             else:
-                rows = conn.execute(
-                    """
-                    SELECT event_uuid, user_id, category, minutes, at_utc, created_at_utc
-                    FROM distraction_events
-                    WHERE user_id = ?
-                    ORDER BY at_utc DESC
-                    LIMIT ?;
-                    """,
-                    (user, limit),
+                rows = session.execute(
+                    text("""
+                        SELECT event_uuid, user_id, category, minutes, at_utc, created_at_utc
+                        FROM distraction_events
+                        WHERE user_id = :user_id
+                        ORDER BY at_utc DESC
+                        LIMIT :limit;
+                    """),
+                    {"user_id": user, "limit": limit},
                 ).fetchall()
 
-        return [dict(row) for row in rows]
+        return [dict(row._mapping) for row in rows]
 

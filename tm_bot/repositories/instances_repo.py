@@ -5,8 +5,11 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime, timedelta
 
-from db.sqlite_db import (
-    connection_for_root,
+from sqlalchemy import text
+
+from db.postgres_db import (
+    get_db_session,
+    resolve_promise_uuid,
     utc_now_iso,
     date_from_iso,
     date_to_iso,
@@ -17,9 +20,10 @@ from models.models import Promise
 
 
 class InstancesRepository:
-    """SQLite-backed promise instances repository."""
+    """PostgreSQL-backed promise instances repository."""
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
         self.promises_repo = PromisesRepository(root_dir)
 
@@ -89,37 +93,39 @@ class InstancesRepository:
             raise RuntimeError("Failed to create promise")
 
         # Resolve promise_uuid
-        from db.sqlite_db import resolve_promise_uuid
-        with connection_for_root(self.root_dir) as conn:
-            promise_uuid = resolve_promise_uuid(conn, user, promise_id)
+        with get_db_session() as session:
+            promise_uuid = resolve_promise_uuid(session, user, promise_id)
 
-        if not promise_uuid:
-            raise RuntimeError("Failed to resolve promise UUID")
+            if not promise_uuid:
+                raise RuntimeError("Failed to resolve promise UUID")
 
-        # Create instance
-        with connection_for_root(self.root_dir) as conn:
-            conn.execute(
-                """
-                INSERT INTO promise_instances (
-                    instance_id, user_id, template_id, promise_uuid, status,
-                    metric_type, target_value, estimated_hours_per_unit,
-                    start_date, end_date, created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    instance_id,
-                    user,
-                    template_id,
-                    promise_uuid,
-                    "active",
-                    template["metric_type"],
-                    template["target_value"],
-                    template["estimated_hours_per_unit"],
-                    date_to_iso(start_date),
-                    date_to_iso(target_date),
-                    now,
-                    now,
-                ),
+            # Create instance
+            session.execute(
+                text("""
+                    INSERT INTO promise_instances (
+                        instance_id, user_id, template_id, promise_uuid, status,
+                        metric_type, target_value, estimated_hours_per_unit,
+                        start_date, end_date, created_at_utc, updated_at_utc
+                    ) VALUES (
+                        :instance_id, :user_id, :template_id, :promise_uuid, :status,
+                        :metric_type, :target_value, :estimated_hours_per_unit,
+                        :start_date, :end_date, :created_at_utc, :updated_at_utc
+                    );
+                """),
+                {
+                    "instance_id": instance_id,
+                    "user_id": user,
+                    "template_id": template_id,
+                    "promise_uuid": promise_uuid,
+                    "status": "active",
+                    "metric_type": template["metric_type"],
+                    "target_value": template["target_value"],
+                    "estimated_hours_per_unit": template["estimated_hours_per_unit"],
+                    "start_date": date_to_iso(start_date),
+                    "end_date": date_to_iso(target_date),
+                    "created_at_utc": now,
+                    "updated_at_utc": now,
+                },
             )
 
         return {
@@ -133,92 +139,92 @@ class InstancesRepository:
     def list_active_instances(self, user_id: int) -> List[Dict[str, Any]]:
         """List all active instances for a user."""
         user = str(user_id)
-        with connection_for_root(self.root_dir) as conn:
-            rows = conn.execute(
-                """
-                SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
-                       i.metric_type, i.target_value, i.estimated_hours_per_unit,
-                       i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
-                       t.title, t.category, t.template_kind, t.target_direction
-                FROM promise_instances i
-                JOIN promise_templates t ON i.template_id = t.template_id
-                WHERE i.user_id = ? AND i.status = 'active'
-                ORDER BY i.created_at_utc DESC;
-                """,
-                (user,),
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
+                           i.metric_type, i.target_value, i.estimated_hours_per_unit,
+                           i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
+                           t.title, t.category, t.template_kind, t.target_direction
+                    FROM promise_instances i
+                    JOIN promise_templates t ON i.template_id = t.template_id
+                    WHERE i.user_id = :user_id AND i.status = 'active'
+                    ORDER BY i.created_at_utc DESC;
+                """),
+                {"user_id": user},
             ).fetchall()
 
-        return [dict(row) for row in rows]
+        return [dict(row._mapping) for row in rows]
 
     def get_instance(self, user_id: int, instance_id: str) -> Optional[Dict[str, Any]]:
         """Get a single instance by ID."""
         user = str(user_id)
-        with connection_for_root(self.root_dir) as conn:
-            row = conn.execute(
-                """
-                SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
-                       i.metric_type, i.target_value, i.estimated_hours_per_unit,
-                       i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
-                       t.title, t.category, t.template_kind, t.target_direction
-                FROM promise_instances i
-                JOIN promise_templates t ON i.template_id = t.template_id
-                WHERE i.user_id = ? AND i.instance_id = ?
-                LIMIT 1;
-                """,
-                (user, instance_id),
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
+                           i.metric_type, i.target_value, i.estimated_hours_per_unit,
+                           i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
+                           t.title, t.category, t.template_kind, t.target_direction
+                    FROM promise_instances i
+                    JOIN promise_templates t ON i.template_id = t.template_id
+                    WHERE i.user_id = :user_id AND i.instance_id = :instance_id
+                    LIMIT 1;
+                """),
+                {"user_id": user, "instance_id": instance_id},
             ).fetchone()
 
-        return dict(row) if row else None
+        return dict(row._mapping) if row else None
 
     def get_instance_by_promise_uuid(
         self, user_id: int, promise_uuid: str
     ) -> Optional[Dict[str, Any]]:
         """Get instance by promise_uuid."""
         user = str(user_id)
-        with connection_for_root(self.root_dir) as conn:
-            row = conn.execute(
-                """
-                SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
-                       i.metric_type, i.target_value, i.estimated_hours_per_unit,
-                       i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
-                       t.title, t.category, t.template_kind, t.target_direction
-                FROM promise_instances i
-                JOIN promise_templates t ON i.template_id = t.template_id
-                WHERE i.user_id = ? AND i.promise_uuid = ?
-                LIMIT 1;
-                """,
-                (user, promise_uuid),
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
+                           i.metric_type, i.target_value, i.estimated_hours_per_unit,
+                           i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
+                           t.title, t.category, t.template_kind, t.target_direction
+                    FROM promise_instances i
+                    JOIN promise_templates t ON i.template_id = t.template_id
+                    WHERE i.user_id = :user_id AND i.promise_uuid = :promise_uuid
+                    LIMIT 1;
+                """),
+                {"user_id": user, "promise_uuid": promise_uuid},
             ).fetchone()
 
-        return dict(row) if row else None
+        return dict(row._mapping) if row else None
 
     def mark_completed(self, user_id: int, instance_id: str) -> bool:
         """Mark an instance as completed."""
         user = str(user_id)
         now = utc_now_iso()
-        with connection_for_root(self.root_dir) as conn:
-            cursor = conn.execute(
-                """
-                UPDATE promise_instances
-                SET status = 'completed', updated_at_utc = ?
-                WHERE user_id = ? AND instance_id = ? AND status = 'active';
-                """,
-                (now, user, instance_id),
+        with get_db_session() as session:
+            result = session.execute(
+                text("""
+                    UPDATE promise_instances
+                    SET status = 'completed', updated_at_utc = :now
+                    WHERE user_id = :user_id AND instance_id = :instance_id AND status = 'active';
+                """),
+                {"now": now, "user_id": user, "instance_id": instance_id},
             )
-            return cursor.rowcount > 0
+            return result.rowcount > 0
 
     def mark_abandoned(self, user_id: int, instance_id: str) -> bool:
         """Mark an instance as abandoned."""
         user = str(user_id)
         now = utc_now_iso()
-        with connection_for_root(self.root_dir) as conn:
-            cursor = conn.execute(
-                """
-                UPDATE promise_instances
-                SET status = 'abandoned', updated_at_utc = ?
-                WHERE user_id = ? AND instance_id = ? AND status = 'active';
-                """,
-                (now, user, instance_id),
+        with get_db_session() as session:
+            result = session.execute(
+                text("""
+                    UPDATE promise_instances
+                    SET status = 'abandoned', updated_at_utc = :now
+                    WHERE user_id = :user_id AND instance_id = :instance_id AND status = 'active';
+                """),
+                {"now": now, "user_id": user, "instance_id": instance_id},
             )
-            return cursor.rowcount > 0
+            return result.rowcount > 0
 

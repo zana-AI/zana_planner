@@ -2,42 +2,43 @@ import json
 import uuid
 from typing import List, Optional
 
-from db.legacy_importer import ensure_imported
-from db.sqlite_db import (
+from sqlalchemy import text
+
+from db.postgres_db import (
     date_from_iso,
     date_to_iso,
     json_compat,
     resolve_promise_uuid,
     utc_now_iso,
-    connection_for_root,
+    get_db_session,
 )
 from models.models import Promise
 
 
 class PromisesRepository:
     """
-    SQLite-backed promises repository.
+    PostgreSQL-backed promises repository.
 
-    - One global DB file: <root_dir>/<DB_FILENAME> (defaults to zana.db if DB_FILENAME not set)
+    - Uses environment-based database connection (DATABASE_URL_PROD or DATABASE_URL_STAGING)
     - Keeps promise history in `promise_events`
     - Supports promise ID renames via `promise_aliases`
     """
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
     def list_promises(self, user_id: int) -> List[Promise]:
         user = str(user_id)
-        with connection_for_root(self.root_dir) as conn:
-            ensure_imported(conn, self.root_dir, user, "promises")
-            rows = conn.execute(
-                """
-                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, visibility, description
-                FROM promises
-                WHERE user_id = ? AND is_deleted = 0
-                ORDER BY current_id ASC;
-                """,
-                (user,),
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, visibility, description
+                    FROM promises
+                    WHERE user_id = :user_id AND is_deleted = 0
+                    ORDER BY current_id ASC;
+                """),
+                {"user_id": user},
             ).fetchall()
 
         promises: List[Promise] = []
@@ -75,20 +76,19 @@ class PromisesRepository:
         if not pid:
             return None
 
-        with connection_for_root(self.root_dir) as conn:
-            ensure_imported(conn, self.root_dir, user, "promises")
-            p_uuid = resolve_promise_uuid(conn, user, pid)
+        with get_db_session() as session:
+            p_uuid = resolve_promise_uuid(session, user, pid)
             if not p_uuid:
                 return None
 
-            row = conn.execute(
-                """
-                SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted, visibility, description
-                FROM promises
-                WHERE user_id = ? AND promise_uuid = ?
-                LIMIT 1;
-                """,
-                (user, p_uuid),
+            row = session.execute(
+                text("""
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted, visibility, description
+                    FROM promises
+                    WHERE user_id = :user_id AND promise_uuid = :p_uuid
+                    LIMIT 1;
+                """),
+                {"user_id": user, "p_uuid": p_uuid},
             ).fetchone()
 
         if not row or int(row["is_deleted"]) == 1:
@@ -125,22 +125,20 @@ class PromisesRepository:
             raise ValueError("Promise.id is required")
 
         now = utc_now_iso()
-        with connection_for_root(self.root_dir) as conn:
-            ensure_imported(conn, self.root_dir, user, "promises")
-
-            p_uuid = resolve_promise_uuid(conn, user, pid)
+        with get_db_session() as session:
+            p_uuid = resolve_promise_uuid(session, user, pid)
             # Optional explicit rename support: callers may set `promise.old_id`
             # to indicate this upsert should target an existing promise.
             if not p_uuid:
                 old_id = getattr(promise, "old_id", None)
                 old_id = (old_id or "").strip().upper()
                 if old_id and old_id != pid:
-                    p_uuid = resolve_promise_uuid(conn, user, old_id)
+                    p_uuid = resolve_promise_uuid(session, user, old_id)
             existing = None
             if p_uuid:
-                existing = conn.execute(
-                    "SELECT current_id, is_deleted FROM promises WHERE user_id = ? AND promise_uuid = ? LIMIT 1;",
-                    (user, p_uuid),
+                existing = session.execute(
+                    text("SELECT current_id, is_deleted FROM promises WHERE user_id = :user_id AND promise_uuid = :p_uuid LIMIT 1;"),
+                    {"user_id": user, "p_uuid": p_uuid},
                 ).fetchone()
             is_new = not bool(existing)
             if is_new:
@@ -150,70 +148,91 @@ class PromisesRepository:
             event_type = "create" if is_new else "update"
             if existing and str(existing["current_id"]) != pid:
                 # Ensure no other promise already uses the new current_id
-                clash = conn.execute(
-                    """
-                    SELECT promise_uuid FROM promises
-                    WHERE user_id = ? AND current_id = ? AND promise_uuid <> ?
-                    LIMIT 1;
-                    """,
-                    (user, pid, p_uuid),
+                clash = session.execute(
+                    text("""
+                        SELECT promise_uuid FROM promises
+                        WHERE user_id = :user_id AND current_id = :pid AND promise_uuid <> :p_uuid
+                        LIMIT 1;
+                    """),
+                    {"user_id": user, "pid": pid, "p_uuid": p_uuid},
                 ).fetchone()
                 if clash:
                     raise ValueError(f"Promise ID '{pid}' is already in use.")
 
                 # Keep old ID as an alias indefinitely
                 old_id = str(existing["current_id"])
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
-                    VALUES (?, ?, ?, ?);
-                    """,
-                    (user, old_id, p_uuid, now),
+                session.execute(
+                    text("""
+                        INSERT INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
+                        VALUES (:user_id, :old_id, :p_uuid, :now)
+                        ON CONFLICT (user_id, alias_id) DO NOTHING;
+                    """),
+                    {"user_id": user, "old_id": old_id, "p_uuid": p_uuid, "now": now},
                 )
                 # Also ensure the new ID is registered as an alias
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
-                    VALUES (?, ?, ?, ?);
-                    """,
-                    (user, pid, p_uuid, now),
+                session.execute(
+                    text("""
+                        INSERT INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
+                        VALUES (:user_id, :pid, :p_uuid, :now)
+                        ON CONFLICT (user_id, alias_id) DO NOTHING;
+                    """),
+                    {"user_id": user, "pid": pid, "p_uuid": p_uuid, "now": now},
                 )
                 event_type = "rename"
 
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO promises(
-                    promise_uuid, user_id, current_id, text, hours_per_week, recurring,
-                    start_date, end_date, angle_deg, radius, is_deleted, visibility, description,
-                    created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    p_uuid,
-                    user,
-                    pid,
-                    promise.text or "",
-                    float(promise.hours_per_week or 0.0),
-                    1 if bool(promise.recurring) else 0,
-                    date_to_iso(promise.start_date),
-                    date_to_iso(promise.end_date),
-                    int(promise.angle_deg or 0),
-                    int(promise.radius or 0),
-                    0,
-                    str(promise.visibility or "private"),
-                    promise.description or None,
-                    now if is_new else (now),  # best-effort timestamps per plan
-                    now,
-                ),
+            session.execute(
+                text("""
+                    INSERT INTO promises(
+                        promise_uuid, user_id, current_id, text, hours_per_week, recurring,
+                        start_date, end_date, angle_deg, radius, is_deleted, visibility, description,
+                        created_at_utc, updated_at_utc
+                    ) VALUES (
+                        :p_uuid, :user_id, :pid, :text, :hours_per_week, :recurring,
+                        :start_date, :end_date, :angle_deg, :radius, :is_deleted, :visibility, :description,
+                        :created_at_utc, :updated_at_utc
+                    )
+                    ON CONFLICT (promise_uuid) DO UPDATE SET
+                        user_id = EXCLUDED.user_id,
+                        current_id = EXCLUDED.current_id,
+                        text = EXCLUDED.text,
+                        hours_per_week = EXCLUDED.hours_per_week,
+                        recurring = EXCLUDED.recurring,
+                        start_date = EXCLUDED.start_date,
+                        end_date = EXCLUDED.end_date,
+                        angle_deg = EXCLUDED.angle_deg,
+                        radius = EXCLUDED.radius,
+                        is_deleted = EXCLUDED.is_deleted,
+                        visibility = EXCLUDED.visibility,
+                        description = EXCLUDED.description,
+                        updated_at_utc = EXCLUDED.updated_at_utc;
+                """),
+                {
+                    "p_uuid": p_uuid,
+                    "user_id": user,
+                    "pid": pid,
+                    "text": promise.text or "",
+                    "hours_per_week": float(promise.hours_per_week or 0.0),
+                    "recurring": 1 if bool(promise.recurring) else 0,
+                    "start_date": date_to_iso(promise.start_date),
+                    "end_date": date_to_iso(promise.end_date),
+                    "angle_deg": int(promise.angle_deg or 0),
+                    "radius": int(promise.radius or 0),
+                    "is_deleted": 0,
+                    "visibility": str(promise.visibility or "private"),
+                    "description": promise.description or None,
+                    "created_at_utc": now if is_new else now,
+                    "updated_at_utc": now,
+                },
             )
 
             # Ensure current id is an alias too
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
-                VALUES (?, ?, ?, ?);
-                """,
-                (user, pid, p_uuid, now),
+            session.execute(
+                text("""
+                    INSERT INTO promise_aliases(user_id, alias_id, promise_uuid, created_at_utc)
+                    VALUES (:user_id, :pid, :p_uuid, :now)
+                    ON CONFLICT (user_id, alias_id) DO NOTHING;
+                """),
+                {"user_id": user, "pid": pid, "p_uuid": p_uuid, "now": now},
             )
 
             snapshot = json.dumps(
@@ -224,12 +243,19 @@ class PromisesRepository:
                 },
                 ensure_ascii=False,
             )
-            conn.execute(
-                """
-                INSERT INTO promise_events(event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
-                VALUES (?, ?, ?, ?, ?, ?);
-                """,
-                (str(uuid.uuid4()), p_uuid, user, event_type, now, snapshot),
+            session.execute(
+                text("""
+                    INSERT INTO promise_events(event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
+                    VALUES (:event_uuid, :p_uuid, :user_id, :event_type, :now, :snapshot);
+                """),
+                {
+                    "event_uuid": str(uuid.uuid4()),
+                    "p_uuid": p_uuid,
+                    "user_id": user,
+                    "event_type": event_type,
+                    "now": now,
+                    "snapshot": snapshot,
+                },
             )
 
     def delete_promise(self, user_id: int, promise_id: str) -> bool:
@@ -239,23 +265,24 @@ class PromisesRepository:
             return False
 
         now = utc_now_iso()
-        with connection_for_root(self.root_dir) as conn:
-            ensure_imported(conn, self.root_dir, user, "promises")
-            p_uuid = resolve_promise_uuid(conn, user, pid)
+        with get_db_session() as session:
+            p_uuid = resolve_promise_uuid(session, user, pid)
             if not p_uuid:
                 return False
 
-            row = conn.execute(
-                "SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted "
-                "FROM promises WHERE user_id = ? AND promise_uuid = ? LIMIT 1;",
-                (user, p_uuid),
+            row = session.execute(
+                text("""
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted
+                    FROM promises WHERE user_id = :user_id AND promise_uuid = :p_uuid LIMIT 1;
+                """),
+                {"user_id": user, "p_uuid": p_uuid},
             ).fetchone()
             if not row or int(row["is_deleted"]) == 1:
                 return False
 
-            conn.execute(
-                "UPDATE promises SET is_deleted = 1, updated_at_utc = ? WHERE user_id = ? AND promise_uuid = ?;",
-                (now, user, p_uuid),
+            session.execute(
+                text("UPDATE promises SET is_deleted = 1, updated_at_utc = :now WHERE user_id = :user_id AND promise_uuid = :p_uuid;"),
+                {"now": now, "user_id": user, "p_uuid": p_uuid},
             )
 
             snapshot = json.dumps(
@@ -272,12 +299,19 @@ class PromisesRepository:
                 },
                 ensure_ascii=False,
             )
-            conn.execute(
-                """
-                INSERT INTO promise_events(event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
-                VALUES (?, ?, ?, ?, ?, ?);
-                """,
-                (str(uuid.uuid4()), p_uuid, user, "delete", now, snapshot),
+            session.execute(
+                text("""
+                    INSERT INTO promise_events(event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
+                    VALUES (:event_uuid, :p_uuid, :user_id, :event_type, :now, :snapshot);
+                """),
+                {
+                    "event_uuid": str(uuid.uuid4()),
+                    "p_uuid": p_uuid,
+                    "user_id": user,
+                    "event_type": "delete",
+                    "now": now,
+                    "snapshot": snapshot,
+                },
             )
 
         return True

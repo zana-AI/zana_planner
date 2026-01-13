@@ -3,13 +3,16 @@ import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso, json_compat
+from sqlalchemy import text
+
+from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, json_compat
 
 
 class FeedRepository:
     """Repository for managing feed items (actions, sessions, milestones)."""
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
     def create_feed_item(
@@ -35,48 +38,52 @@ class FeedRepository:
         
         context_json = json.dumps(context or {}, ensure_ascii=False)
         
-        with connection_for_root(self.root_dir) as conn:
-            conn.execute(
-                """
-                INSERT INTO feed_items(
-                    feed_item_uuid, actor_user_id, created_at_utc, visibility,
-                    title, body, action_uuid, session_id, milestone_uuid,
-                    promise_uuid, context_json, dedupe_key, is_deleted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0);
-                """,
-                (
-                    feed_item_uuid,
-                    actor,
-                    now,
-                    visibility,
-                    title,
-                    body,
-                    action_uuid,
-                    session_id,
-                    milestone_uuid,
-                    promise_uuid,
-                    context_json,
-                    dedupe_key,
-                ),
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    INSERT INTO feed_items(
+                        feed_item_uuid, actor_user_id, created_at_utc, visibility,
+                        title, body, action_uuid, session_id, milestone_uuid,
+                        promise_uuid, context_json, dedupe_key, is_deleted
+                    ) VALUES (
+                        :feed_item_uuid, :actor_user_id, :created_at_utc, :visibility,
+                        :title, :body, :action_uuid, :session_id, :milestone_uuid,
+                        :promise_uuid, :context_json, :dedupe_key, 0
+                    );
+                """),
+                {
+                    "feed_item_uuid": feed_item_uuid,
+                    "actor_user_id": actor,
+                    "created_at_utc": now,
+                    "visibility": visibility,
+                    "title": title,
+                    "body": body,
+                    "action_uuid": action_uuid,
+                    "session_id": session_id,
+                    "milestone_uuid": milestone_uuid,
+                    "promise_uuid": promise_uuid,
+                    "context_json": context_json,
+                    "dedupe_key": dedupe_key,
+                },
             )
         return feed_item_uuid
 
     def get_feed_item(self, feed_item_uuid: str) -> Optional[Dict[str, Any]]:
         """Get a feed item by UUID."""
-        with connection_for_root(self.root_dir) as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM feed_items
-                WHERE feed_item_uuid = ? AND is_deleted = 0
-                LIMIT 1;
-                """,
-                (feed_item_uuid,),
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT * FROM feed_items
+                    WHERE feed_item_uuid = :feed_item_uuid AND is_deleted = 0
+                    LIMIT 1;
+                """),
+                {"feed_item_uuid": feed_item_uuid},
             ).fetchone()
             
             if not row:
                 return None
             
-            result = dict(row)
+            result = dict(row._mapping)
             # Parse context_json
             try:
                 result["context"] = json.loads(result.get("context_json") or "{}")
@@ -101,33 +108,33 @@ class FeedRepository:
         viewer = str(viewer_user_id)
         since_utc = utc_now_iso() if since is None else utc_now_iso()
         
-        with connection_for_root(self.root_dir) as conn:
+        with get_db_session() as session:
             if actor_user_id:
                 # Filter by specific actor
-                rows = conn.execute(
-                    """
-                    SELECT * FROM feed_items
-                    WHERE actor_user_id = ? AND created_at_utc >= ? AND is_deleted = 0
-                    ORDER BY created_at_utc DESC
-                    LIMIT ?;
-                    """,
-                    (str(actor_user_id), since_utc, limit),
+                rows = session.execute(
+                    text("""
+                        SELECT * FROM feed_items
+                        WHERE actor_user_id = :actor_user_id AND created_at_utc >= :since_utc AND is_deleted = 0
+                        ORDER BY created_at_utc DESC
+                        LIMIT :limit;
+                    """),
+                    {"actor_user_id": str(actor_user_id), "since_utc": since_utc, "limit": limit},
                 ).fetchall()
             else:
                 # Get all visible items (simplified - would need visibility logic)
-                rows = conn.execute(
-                    """
-                    SELECT * FROM feed_items
-                    WHERE created_at_utc >= ? AND is_deleted = 0
-                    ORDER BY created_at_utc DESC
-                    LIMIT ?;
-                    """,
-                    (since_utc, limit),
+                rows = session.execute(
+                    text("""
+                        SELECT * FROM feed_items
+                        WHERE created_at_utc >= :since_utc AND is_deleted = 0
+                        ORDER BY created_at_utc DESC
+                        LIMIT :limit;
+                    """),
+                    {"since_utc": since_utc, "limit": limit},
                 ).fetchall()
             
             results = []
             for row in rows:
-                item = dict(row)
+                item = dict(row._mapping)
                 try:
                     item["context"] = json.loads(item.get("context_json") or "{}")
                 except Exception:
@@ -139,14 +146,14 @@ class FeedRepository:
     def delete_feed_item(self, feed_item_uuid: str, actor_user_id: int) -> bool:
         """Soft delete a feed item (only by the actor)."""
         actor = str(actor_user_id)
-        with connection_for_root(self.root_dir) as conn:
-            result = conn.execute(
-                """
-                UPDATE feed_items
-                SET is_deleted = 1
-                WHERE feed_item_uuid = ? AND actor_user_id = ?;
-                """,
-                (feed_item_uuid, actor),
+        with get_db_session() as session:
+            result = session.execute(
+                text("""
+                    UPDATE feed_items
+                    SET is_deleted = 1
+                    WHERE feed_item_uuid = :feed_item_uuid AND actor_user_id = :actor_user_id;
+                """),
+                {"feed_item_uuid": feed_item_uuid, "actor_user_id": actor},
             )
             return result.rowcount > 0
 

@@ -3,14 +3,17 @@ from datetime import datetime
 import json
 import uuid
 
-from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
+from sqlalchemy import text
+
+from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
 from models.models import Broadcast
 
 
 class BroadcastsRepository:
     """Repository for managing scheduled broadcasts."""
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
     def create_broadcast(
@@ -34,39 +37,42 @@ class BroadcastsRepository:
         target_ids_json = json.dumps([int(uid) for uid in target_user_ids])
         scheduled_time_str = dt_to_utc_iso(scheduled_time_utc)
         
-        with connection_for_root(self.root_dir) as conn:
-            conn.execute(
-                """
-                INSERT INTO broadcasts(
-                    broadcast_id, admin_id, message, target_user_ids,
-                    scheduled_time_utc, status, created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?);
-                """,
-                (
-                    broadcast_id,
-                    admin,
-                    message,
-                    target_ids_json,
-                    scheduled_time_str,
-                    now,
-                    now,
-                ),
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    INSERT INTO broadcasts(
+                        broadcast_id, admin_id, message, target_user_ids,
+                        scheduled_time_utc, status, created_at_utc, updated_at_utc
+                    ) VALUES (
+                        :broadcast_id, :admin_id, :message, :target_user_ids,
+                        :scheduled_time_utc, 'pending', :created_at_utc, :updated_at_utc
+                    );
+                """),
+                {
+                    "broadcast_id": broadcast_id,
+                    "admin_id": admin,
+                    "message": message,
+                    "target_user_ids": target_ids_json,
+                    "scheduled_time_utc": scheduled_time_str,
+                    "created_at_utc": now,
+                    "updated_at_utc": now,
+                },
             )
         
         return broadcast_id
 
     def get_broadcast(self, broadcast_id: str) -> Optional[Broadcast]:
         """Get a broadcast by ID."""
-        with connection_for_root(self.root_dir) as conn:
-            row = conn.execute(
-                """
-                SELECT broadcast_id, admin_id, message, target_user_ids,
-                       scheduled_time_utc, status, created_at_utc, updated_at_utc
-                FROM broadcasts
-                WHERE broadcast_id = ?
-                LIMIT 1;
-                """,
-                (broadcast_id,),
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT broadcast_id, admin_id, message, target_user_ids,
+                           scheduled_time_utc, status, created_at_utc, updated_at_utc
+                    FROM broadcasts
+                    WHERE broadcast_id = :broadcast_id
+                    LIMIT 1;
+                """),
+                {"broadcast_id": broadcast_id},
             ).fetchone()
             
             if not row:
@@ -102,27 +108,29 @@ class BroadcastsRepository:
         """
         broadcasts = []
         
-        with connection_for_root(self.root_dir) as conn:
-            query = """
+        with get_db_session() as session:
+            conditions = ["1=1"]
+            params = {}
+            
+            if admin_id:
+                conditions.append("admin_id = :admin_id")
+                params["admin_id"] = str(admin_id)
+            
+            if status:
+                conditions.append("status = :status")
+                params["status"] = status
+            
+            params["limit"] = limit
+            
+            query = f"""
                 SELECT broadcast_id, admin_id, message, target_user_ids,
                        scheduled_time_utc, status, created_at_utc, updated_at_utc
                 FROM broadcasts
-                WHERE 1=1
+                WHERE {' AND '.join(conditions)}
+                ORDER BY created_at_utc DESC LIMIT :limit
             """
-            params = []
             
-            if admin_id:
-                query += " AND admin_id = ?"
-                params.append(str(admin_id))
-            
-            if status:
-                query += " AND status = ?"
-                params.append(status)
-            
-            query += " ORDER BY created_at_utc DESC LIMIT ?"
-            params.append(limit)
-            
-            rows = conn.execute(query, params).fetchall()
+            rows = session.execute(text(query), params).fetchall()
             
             for row in rows:
                 # Parse target_user_ids from JSON
@@ -158,38 +166,37 @@ class BroadcastsRepository:
             True if broadcast was updated, False if not found
         """
         updates = []
-        params = []
+        params = {"broadcast_id": broadcast_id}
         
         if message is not None:
-            updates.append("message = ?")
-            params.append(message)
+            updates.append("message = :message")
+            params["message"] = message
         
         if target_user_ids is not None:
-            updates.append("target_user_ids = ?")
-            params.append(json.dumps([int(uid) for uid in target_user_ids]))
+            updates.append("target_user_ids = :target_user_ids")
+            params["target_user_ids"] = json.dumps([int(uid) for uid in target_user_ids])
         
         if scheduled_time_utc is not None:
-            updates.append("scheduled_time_utc = ?")
-            params.append(dt_to_utc_iso(scheduled_time_utc))
+            updates.append("scheduled_time_utc = :scheduled_time_utc")
+            params["scheduled_time_utc"] = dt_to_utc_iso(scheduled_time_utc)
         
         if status is not None:
-            updates.append("status = ?")
-            params.append(status)
+            updates.append("status = :status")
+            params["status"] = status
         
         if not updates:
             return False
         
-        updates.append("updated_at_utc = ?")
-        params.append(utc_now_iso())
-        params.append(broadcast_id)
+        updates.append("updated_at_utc = :updated_at_utc")
+        params["updated_at_utc"] = utc_now_iso()
         
-        with connection_for_root(self.root_dir) as conn:
-            result = conn.execute(
-                f"""
-                UPDATE broadcasts
-                SET {', '.join(updates)}
-                WHERE broadcast_id = ?;
-                """,
+        with get_db_session() as session:
+            result = session.execute(
+                text(f"""
+                    UPDATE broadcasts
+                    SET {', '.join(updates)}
+                    WHERE broadcast_id = :broadcast_id;
+                """),
                 params,
             )
             return result.rowcount > 0

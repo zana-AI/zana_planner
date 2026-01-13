@@ -14,8 +14,7 @@ services:
       - /opt/zana-config/.env.prod
     environment:
       - ENVIRONMENT=production
-    volumes:
-      - /srv/zana-users:/app/USERS_DATA_DIR
+      # DATABASE_URL_PROD should be set in .env.prod
     restart: unless-stopped
     networks:
       - web
@@ -33,8 +32,7 @@ services:
       - /opt/zana-config/.env.staging
     environment:
       - ENVIRONMENT=staging
-    volumes:
-      - /srv/zana-users-staging:/app/USERS_DATA_DIR
+      # DATABASE_URL_STAGING should be set in .env.staging
     restart: unless-stopped
     networks:
       - web
@@ -73,7 +71,7 @@ services:
     volumes:
       # Production-style: no source bind-mounts.
       # Frontend is built inside Docker (Dockerfile.webapp) and served from /app/webapp_frontend/dist.
-      - /srv/zana-users:/app/USERS_DATA_DIR   # Production database mount
+      # Database connection via DATABASE_URL_PROD in .env.prod
     working_dir: /app                       # important: match your dev run's -w /app
     #command: ["python", "run_webapp_local.py"]   # ← IMPORTANT
     command: ["uvicorn", "run_webapp_local:app", "--host", "0.0.0.0", "--port", "8080"]
@@ -103,47 +101,13 @@ services:
       - web
 
   # =========================
-  # DATABASE MONITORING (BOTH STAGING & PRODUCTION)
-  # Access via SSH port forwarding: gcloud compute ssh vm-telegram-bot -- -L 8081:127.0.0.1:8081
-  # Then open: http://localhost:8081
-  # The interface will show both databases for selection
+  # DATABASE MONITORING (PostgreSQL via Supabase Dashboard)
+  # PostgreSQL databases are now managed by Supabase and can be accessed via:
+  # - Supabase Dashboard (browser-based)
+  # - psql command-line tool
+  # - Any PostgreSQL client (pgAdmin, DBeaver, etc.)
   # =========================
-  zana-db-monitor:
-    image: coleifer/sqlite-web:latest
-    container_name: zana-db-monitor
-    user: "0:0"
-    # DEBUG MODE: Keep container running with shell for debugging
-    # To debug: sudo docker exec -it zana-db-monitor /bin/sh
-    # Then run: sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db /srv/zana-users-staging/zana.db
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "=== DEBUG MODE: Container will keep running ===" && \
-        echo "To debug, run: sudo docker exec -it zana-db-monitor /bin/sh" && \
-        echo "" && \
-        echo "Checking databases..." && \
-        ls -lh /srv/zana-users/zana.db 2>&1 && \
-        ls -lh /srv/zana-users-staging/zana.db 2>&1 && \
-        echo "" && \
-        echo "Testing database access..." && \
-        sqlite3 /srv/zana-users/zana.db "SELECT 1;" 2>&1 && echo "Production DB: OK" || echo "Production DB: FAILED" && \
-        sqlite3 /srv/zana-users-staging/zana.db "SELECT 1;" 2>&1 && echo "Staging DB: OK" || echo "Staging DB: FAILED" && \
-        echo "" && \
-        echo "Testing sqlite-web command..." && \
-        which sqlite_web && \
-        sqlite_web --help 2>&1 | head -10 && \
-        echo "" && \
-        echo "Attempting to start sqlite-web (checking error)..." && \
-        sqlite_web -H 127.0.0.1 -p 8081 -x /srv/zana-users/zana.db /srv/zana-users-staging/zana.db 2>&1 || \
-        (echo "" && echo "=== sqlite-web failed with error above ===" && echo "Container will stay alive. Run: sudo docker exec -it zana-db-monitor /bin/sh" && while true; do sleep 3600; done)
-    volumes:
-      - /srv/zana-users:/srv/zana-users:ro
-      - /srv/zana-users-staging:/srv/zana-users-staging:ro
-    ports:
-      - "127.0.0.1:8081:8081"
-    restart: "no"
-    networks:
-      - web
+  # Note: SQLite monitoring service removed - use Supabase dashboard for PostgreSQL monitoring
 
 networks:
   web:

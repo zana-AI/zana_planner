@@ -1,27 +1,28 @@
-from db.legacy_importer import ensure_imported
-from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
+from sqlalchemy import text
+
+from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
 from models.models import UserSettings
 
 
 class SettingsRepository:
-    """SQLite-backed settings repository (with lazy import from settings.yaml)."""
+    """PostgreSQL-backed settings repository."""
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
     def get_settings(self, user_id: int) -> UserSettings:
         user = str(user_id)
-        with connection_for_root(self.root_dir) as conn:
-            ensure_imported(conn, self.root_dir, user, "settings")
-            row = conn.execute(
-                """
-                SELECT timezone, nightly_hh, nightly_mm, language, voice_mode, 
-                       first_name, username, last_seen_utc
-                FROM users
-                WHERE user_id = ?
-                LIMIT 1;
-                """,
-                (user,),
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT timezone, nightly_hh, nightly_mm, language, voice_mode, 
+                           first_name, username, last_seen_utc
+                    FROM users
+                    WHERE user_id = :user_id
+                    LIMIT 1;
+                """),
+                {"user_id": user},
             ).fetchone()
 
         if not row:
@@ -42,27 +43,40 @@ class SettingsRepository:
     def save_settings(self, settings: UserSettings) -> None:
         user = str(settings.user_id)
         now = utc_now_iso()
-        with connection_for_root(self.root_dir) as conn:
-            ensure_imported(conn, self.root_dir, user, "settings")
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO users(
-                    user_id, timezone, nightly_hh, nightly_mm, language, voice_mode,
-                    first_name, username, last_seen_utc,
-                    created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    user,
-                    settings.timezone or "Europe/Paris",
-                    int(settings.nightly_hh or 22),
-                    int(settings.nightly_mm or 0),
-                    settings.language or "en",
-                    settings.voice_mode,
-                    settings.first_name,
-                    settings.username,
-                    dt_to_utc_iso(settings.last_seen) if settings.last_seen else None,
-                    now,
-                    now,
-                ),
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    INSERT INTO users(
+                        user_id, timezone, nightly_hh, nightly_mm, language, voice_mode,
+                        first_name, username, last_seen_utc,
+                        created_at_utc, updated_at_utc
+                    ) VALUES (
+                        :user_id, :timezone, :nightly_hh, :nightly_mm, :language, :voice_mode,
+                        :first_name, :username, :last_seen_utc,
+                        :created_at_utc, :updated_at_utc
+                    )
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        timezone = EXCLUDED.timezone,
+                        nightly_hh = EXCLUDED.nightly_hh,
+                        nightly_mm = EXCLUDED.nightly_mm,
+                        language = EXCLUDED.language,
+                        voice_mode = EXCLUDED.voice_mode,
+                        first_name = EXCLUDED.first_name,
+                        username = EXCLUDED.username,
+                        last_seen_utc = EXCLUDED.last_seen_utc,
+                        updated_at_utc = EXCLUDED.updated_at_utc;
+                """),
+                {
+                    "user_id": user,
+                    "timezone": settings.timezone or "Europe/Paris",
+                    "nightly_hh": int(settings.nightly_hh or 22),
+                    "nightly_mm": int(settings.nightly_mm or 0),
+                    "language": settings.language or "en",
+                    "voice_mode": settings.voice_mode,
+                    "first_name": settings.first_name,
+                    "username": settings.username,
+                    "last_seen_utc": dt_to_utc_iso(settings.last_seen) if settings.last_seen else None,
+                    "created_at_utc": now,
+                    "updated_at_utc": now,
+                },
             )

@@ -5,7 +5,9 @@ Conversation repository for storing user-bot conversation history.
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 
-from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso
+from sqlalchemy import text
+
+from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -14,7 +16,8 @@ logger = get_logger(__name__)
 class ConversationRepository:
     """Repository for managing conversation history."""
     
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
     
     def save_message(
@@ -36,23 +39,22 @@ class ConversationRepository:
             chat_id: Telegram chat ID (optional)
         """
         try:
-            with connection_for_root(self.root_dir) as conn:
-                conn.execute(
-                    """
-                    INSERT INTO conversations (
-                        user_id, chat_id, message_id, message_type, content, created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(user_id),
-                        str(chat_id) if chat_id else None,
-                        message_id,
-                        message_type,
-                        content,
-                        utc_now_iso(),
-                    ),
+            with get_db_session() as session:
+                session.execute(
+                    text("""
+                        INSERT INTO conversations (
+                            user_id, chat_id, message_id, message_type, content, created_at_utc
+                        ) VALUES (:user_id, :chat_id, :message_id, :message_type, :content, :created_at_utc)
+                    """),
+                    {
+                        "user_id": str(user_id),
+                        "chat_id": str(chat_id) if chat_id else None,
+                        "message_id": message_id,
+                        "message_type": message_type,
+                        "content": content,
+                        "created_at_utc": utc_now_iso(),
+                    },
                 )
-                conn.commit()
         except Exception as e:
             logger.warning(f"Failed to save conversation message for user {user_id}: {e}")
     
@@ -70,17 +72,16 @@ class ConversationRepository:
             message_id: Telegram message ID
         """
         try:
-            with connection_for_root(self.root_dir) as conn:
-                conn.execute(
-                    """
-                    UPDATE conversations 
-                    SET message_id = ? 
-                    WHERE user_id = ? AND message_id IS NULL 
-                    ORDER BY created_at_utc DESC LIMIT 1
-                    """,
-                    (message_id, str(user_id)),
+            with get_db_session() as session:
+                session.execute(
+                    text("""
+                        UPDATE conversations 
+                        SET message_id = :message_id 
+                        WHERE user_id = :user_id AND message_id IS NULL 
+                        ORDER BY created_at_utc DESC LIMIT 1
+                    """),
+                    {"message_id": message_id, "user_id": str(user_id)},
                 )
-                conn.commit()
         except Exception as e:
             logger.warning(f"Failed to update message_id for user {user_id}: {e}")
     
@@ -102,28 +103,28 @@ class ConversationRepository:
             List of conversation messages as dictionaries
         """
         try:
-            with connection_for_root(self.root_dir) as conn:
+            with get_db_session() as session:
                 if message_type:
-                    rows = conn.execute(
-                        """
-                        SELECT id, user_id, chat_id, message_id, message_type, content, created_at_utc
-                        FROM conversations
-                        WHERE user_id = ? AND message_type = ?
-                        ORDER BY created_at_utc DESC
-                        LIMIT ?
-                        """,
-                        (str(user_id), message_type, limit),
+                    rows = session.execute(
+                        text("""
+                            SELECT id, user_id, chat_id, message_id, message_type, content, created_at_utc
+                            FROM conversations
+                            WHERE user_id = :user_id AND message_type = :message_type
+                            ORDER BY created_at_utc DESC
+                            LIMIT :limit
+                        """),
+                        {"user_id": str(user_id), "message_type": message_type, "limit": limit},
                     ).fetchall()
                 else:
-                    rows = conn.execute(
-                        """
-                        SELECT id, user_id, chat_id, message_id, message_type, content, created_at_utc
-                        FROM conversations
-                        WHERE user_id = ?
-                        ORDER BY created_at_utc DESC
-                        LIMIT ?
-                        """,
-                        (str(user_id), limit),
+                    rows = session.execute(
+                        text("""
+                            SELECT id, user_id, chat_id, message_id, message_type, content, created_at_utc
+                            FROM conversations
+                            WHERE user_id = :user_id
+                            ORDER BY created_at_utc DESC
+                            LIMIT :limit
+                        """),
+                        {"user_id": str(user_id), "limit": limit},
                     ).fetchall()
                 
                 return [
@@ -212,16 +213,15 @@ class ConversationRepository:
             cutoff_date = datetime.now() - timedelta(days=days)
             cutoff_iso = cutoff_date.isoformat().replace("+00:00", "Z")
             
-            with connection_for_root(self.root_dir) as conn:
-                cursor = conn.execute(
-                    """
-                    DELETE FROM conversations
-                    WHERE created_at_utc < ?
-                    """,
-                    (cutoff_iso,),
+            with get_db_session() as session:
+                result = session.execute(
+                    text("""
+                        DELETE FROM conversations
+                        WHERE created_at_utc < :cutoff_iso
+                    """),
+                    {"cutoff_iso": cutoff_iso},
                 )
-                deleted_count = cursor.rowcount
-                conn.commit()
+                deleted_count = result.rowcount
                 logger.info(f"Cleaned up {deleted_count} conversation messages older than {days} days")
                 return deleted_count
         except Exception as e:

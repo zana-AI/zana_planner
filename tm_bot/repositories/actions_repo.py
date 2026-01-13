@@ -3,10 +3,10 @@ from datetime import datetime
 from typing import List, Optional
 
 import pandas as pd
+from sqlalchemy import text
 
-from db.legacy_importer import ensure_imported
-from db.sqlite_db import (
-    connection_for_root,
+from db.postgres_db import (
+    get_db_session,
     dt_to_utc_iso,
     dt_utc_iso_to_local_naive,
     resolve_promise_uuid,
@@ -16,13 +16,14 @@ from models.models import Action
 
 class ActionsRepository:
     """
-    SQLite-backed actions repository.
+    PostgreSQL-backed actions repository.
 
     Stores timestamps as UTC ISO strings, but returns naive local datetimes for
     backward compatibility with existing code comparisons.
     """
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str = None):
+        # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
     def append_action(self, action: Action) -> None:
@@ -32,60 +33,58 @@ class ActionsRepository:
         if not at_utc:
             return
 
-        with connection_for_root(self.root_dir) as conn:
-            # Import promises once so we can link promise_uuid even for old IDs
-            ensure_imported(conn, self.root_dir, user, "promises")
-            p_uuid = resolve_promise_uuid(conn, user, pid) if pid else None
+        with get_db_session() as session:
+            # Link promise_uuid even for old IDs
+            p_uuid = resolve_promise_uuid(session, user, pid) if pid else None
 
-            conn.execute(
-                """
-                INSERT INTO actions(
-                    action_uuid, user_id, promise_uuid, promise_id_text,
-                    action_type, time_spent_hours, at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    str(uuid.uuid4()),
-                    user,
-                    p_uuid,
-                    pid or "",
-                    str(action.action or "log_time"),
-                    float(action.time_spent or 0.0),
-                    at_utc,
-                ),
+            session.execute(
+                text("""
+                    INSERT INTO actions(
+                        action_uuid, user_id, promise_uuid, promise_id_text,
+                        action_type, time_spent_hours, at_utc
+                    ) VALUES (:action_uuid, :user_id, :p_uuid, :pid, :action_type, :time_spent, :at_utc);
+                """),
+                {
+                    "action_uuid": str(uuid.uuid4()),
+                    "user_id": user,
+                    "p_uuid": p_uuid,
+                    "pid": pid or "",
+                    "action_type": str(action.action or "log_time"),
+                    "time_spent": float(action.time_spent or 0.0),
+                    "at_utc": at_utc,
+                },
             )
 
     def list_actions(self, user_id: int, since: Optional[datetime] = None) -> List[Action]:
         user = str(user_id)
         since_utc = dt_to_utc_iso(since, assume_local_tz=True) if since else None
 
-        with connection_for_root(self.root_dir) as conn:
-            ensure_imported(conn, self.root_dir, user, "actions")
+        with get_db_session() as session:
             if since_utc:
-                rows = conn.execute(
-                    """
-                    SELECT
-                        a.action_type, a.time_spent_hours, a.at_utc,
-                        COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
-                    FROM actions a
-                    LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
-                    WHERE a.user_id = ? AND a.at_utc >= ?
-                    ORDER BY a.at_utc ASC;
-                    """,
-                    (user, since_utc),
+                rows = session.execute(
+                    text("""
+                        SELECT
+                            a.action_type, a.time_spent_hours, a.at_utc,
+                            COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
+                        FROM actions a
+                        LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
+                        WHERE a.user_id = :user_id AND a.at_utc >= :since_utc
+                        ORDER BY a.at_utc ASC;
+                    """),
+                    {"user_id": user, "since_utc": since_utc},
                 ).fetchall()
             else:
-                rows = conn.execute(
-                    """
-                    SELECT
-                        a.action_type, a.time_spent_hours, a.at_utc,
-                        COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
-                    FROM actions a
-                    LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
-                    WHERE a.user_id = ?
-                    ORDER BY a.at_utc ASC;
-                    """,
-                    (user,),
+                rows = session.execute(
+                    text("""
+                        SELECT
+                            a.action_type, a.time_spent_hours, a.at_utc,
+                            COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
+                        FROM actions a
+                        LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
+                        WHERE a.user_id = :user_id
+                        ORDER BY a.at_utc ASC;
+                    """),
+                    {"user_id": user},
                 ).fetchall()
 
         actions: List[Action] = []
