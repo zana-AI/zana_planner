@@ -60,8 +60,11 @@ def sync_sequences(pg_session, table_names: List[str]) -> None:
             continue
 
         # setval(seq, max(pk)) so next nextval() is max+1
+        # NOTE: avoid ":seq::regclass" (bind params + casts can be finicky); use to_regclass(text) instead.
         pg_session.execute(
-            text(f"SELECT setval(:seq::regclass, (SELECT COALESCE(MAX({pk}), 0) FROM {table_name}))"),
+            text(
+                f"SELECT setval(to_regclass(:seq), (SELECT COALESCE(MAX({pk}), 0) FROM {table_name}))"
+            ),
             {"seq": str(seq_name)},
         )
 
