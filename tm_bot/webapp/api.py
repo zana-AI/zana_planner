@@ -28,10 +28,14 @@ from repositories.reviews_repo import ReviewsRepository
 from repositories.distractions_repo import DistractionsRepository
 from services.template_unlocks import TemplateUnlocksService
 from db.sqlite_db import connection_for_root
+from db.postgres_db import get_db_session
+from sqlalchemy import text
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
 from utils.admin_utils import is_admin
 from fastapi.responses import FileResponse
+from telegram import Bot
+from telegram.error import TelegramError
 
 
 logger = get_logger(__name__)
@@ -40,6 +44,53 @@ logger = get_logger(__name__)
 _admin_stats_cache: Optional[Dict[str, Any]] = None
 _admin_stats_cache_timestamp: Optional[datetime] = None
 ADMIN_STATS_CACHE_TTL = timedelta(minutes=5)
+
+
+async def send_follow_notification(bot_token: str, follower_id: int, followee_id: int, root_dir: str) -> None:
+    """
+    Send a Telegram notification to the followee when someone follows them.
+    
+    Args:
+        bot_token: Telegram bot token
+        follower_id: User ID of the person who followed
+        followee_id: User ID of the person being followed
+        root_dir: Root directory for accessing repositories
+    """
+    try:
+        # Get follower's name
+        settings_repo = SettingsRepository(root_dir)
+        follower_settings = settings_repo.get_settings(follower_id)
+        
+        # Determine follower's display name
+        follower_name = follower_settings.first_name or follower_settings.username or f"User {follower_id}"
+        if follower_settings.username:
+            follower_name = f"@{follower_settings.username}"
+        elif follower_settings.first_name:
+            follower_name = follower_settings.first_name
+        
+        # Create bot instance
+        bot = Bot(token=bot_token)
+        
+        # Construct notification message
+        message = f"👤 {follower_name} started following you!"
+        
+        # Send notification
+        await bot.send_message(
+            chat_id=followee_id,
+            text=message,
+            parse_mode=None
+        )
+        
+        logger.info(f"Sent follow notification to user {followee_id} from follower {follower_id}")
+    except TelegramError as e:
+        # Handle cases where user blocked bot or other Telegram errors
+        error_msg = str(e).lower()
+        if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+            logger.debug(f"Could not send follow notification to user {followee_id}: user blocked bot or chat not found")
+        else:
+            logger.warning(f"Error sending follow notification to user {followee_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error sending follow notification to user {followee_id}: {e}")
 
 
 class WeeklyReportResponse(BaseModel):
@@ -77,6 +128,20 @@ class PublicUsersResponse(BaseModel):
     """Response model for public users endpoint."""
     users: List[PublicUser]
     total: int
+
+
+class PublicPromiseBadge(BaseModel):
+    """Public promise badge with stats."""
+    promise_id: str
+    text: str
+    hours_promised: float
+    hours_spent: float
+    weekly_hours: float
+    streak: int
+    progress_percentage: float
+    metric_type: str = "hours"  # Default to hours for now
+    target_value: float = 0.0
+    achieved_value: float = 0.0
 
 
 class TimezoneUpdateRequest(BaseModel):
@@ -917,7 +982,18 @@ def create_webapp_api(
             follows_repo = FollowsRepository(app.state.root_dir)
             success = follows_repo.follow(user_id, target_user_id)
             
+            # Send notification if follow was successful (new follow, not already following)
             if success:
+                # Send notification asynchronously (fire and forget)
+                import asyncio
+                asyncio.create_task(
+                    send_follow_notification(
+                        app.state.bot_token,
+                        user_id,
+                        target_user_id,
+                        app.state.root_dir
+                    )
+                )
                 return {"status": "success", "message": "User followed successfully"}
             else:
                 return {"status": "success", "message": "Already following this user"}
@@ -959,6 +1035,253 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error getting follow status for user {target_user_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get follow status: {str(e)}")
+    
+    @app.get("/api/users/{user_id}/followers", response_model=PublicUsersResponse)
+    async def get_followers(
+        user_id: int,
+        current_user_id: int = Depends(get_current_user)
+    ):
+        """Get list of users that follow the specified user."""
+        try:
+            # Only allow viewing your own followers or if viewing another user's (for future expansion)
+            if user_id != current_user_id:
+                # For now, only allow viewing own followers
+                raise HTTPException(status_code=403, detail="Can only view your own followers")
+            
+            follows_repo = FollowsRepository(app.state.root_dir)
+            settings_repo = SettingsRepository(app.state.root_dir)
+            
+            # Get follower user IDs
+            follower_ids = follows_repo.get_followers(user_id)
+            
+            # Enrich with user info
+            users = []
+            for follower_id_str in follower_ids:
+                try:
+                    follower_id = int(follower_id_str)
+                    settings = settings_repo.get_settings(follower_id)
+                    
+                    # Get activity count (simplified - could be optimized)
+                    with get_db_session() as session:
+                        activity_row = session.execute(
+                            text("""
+                                SELECT COUNT(*) as activity_count
+                                FROM actions 
+                                WHERE user_id = :user_id AND at_utc >= NOW() - INTERVAL '30 days'
+                            """),
+                            {"user_id": follower_id_str}
+                        ).mappings().fetchone()
+                        activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
+                        
+                        promise_row = session.execute(
+                            text("""
+                                SELECT COUNT(*) as promise_count
+                                FROM promises
+                                WHERE user_id = :user_id AND is_deleted = 0
+                            """),
+                            {"user_id": follower_id_str}
+                        ).mappings().fetchone()
+                        promise_count = int(promise_row["promise_count"] or 0) if promise_row else 0
+                    
+                    # Get avatar path if available
+                    avatar_path = None
+                    avatar_file_unique_id = None
+                    with get_db_session() as session:
+                        avatar_row = session.execute(
+                            text("""
+                                SELECT avatar_path, avatar_file_unique_id
+                                FROM users
+                                WHERE user_id = :user_id
+                            """),
+                            {"user_id": follower_id_str}
+                        ).mappings().fetchone()
+                        if avatar_row:
+                            avatar_path = avatar_row.get("avatar_path")
+                            avatar_file_unique_id = avatar_row.get("avatar_file_unique_id")
+                    
+                    users.append(
+                        PublicUser(
+                            user_id=follower_id_str,
+                            first_name=settings.first_name,
+                            username=settings.username,
+                            display_name=None,
+                            last_name=None,
+                            avatar_path=avatar_path,
+                            avatar_file_unique_id=avatar_file_unique_id,
+                            activity_count=activity_count,
+                            promise_count=promise_count,
+                            last_seen_utc=None,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error enriching follower {follower_id_str}: {e}")
+                    continue
+            
+            return PublicUsersResponse(users=users, total=len(users))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting followers for user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get followers: {str(e)}")
+    
+    @app.get("/api/users/{user_id}/following", response_model=PublicUsersResponse)
+    async def get_following(
+        user_id: int,
+        current_user_id: int = Depends(get_current_user)
+    ):
+        """Get list of users that the specified user follows."""
+        try:
+            # Only allow viewing your own following list
+            if user_id != current_user_id:
+                raise HTTPException(status_code=403, detail="Can only view your own following list")
+            
+            follows_repo = FollowsRepository(app.state.root_dir)
+            settings_repo = SettingsRepository(app.state.root_dir)
+            
+            # Get following user IDs
+            following_ids = follows_repo.get_following(user_id)
+            
+            # Enrich with user info
+            users = []
+            for following_id_str in following_ids:
+                try:
+                    following_id = int(following_id_str)
+                    settings = settings_repo.get_settings(following_id)
+                    
+                    # Get activity count
+                    from db.postgres_db import get_db_session
+                    from sqlalchemy import text
+                    with get_db_session() as session:
+                        activity_row = session.execute(
+                            text("""
+                                SELECT COUNT(*) as activity_count
+                                FROM actions 
+                                WHERE user_id = :user_id AND at_utc >= NOW() - INTERVAL '30 days'
+                            """),
+                            {"user_id": following_id_str}
+                        ).mappings().fetchone()
+                        activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
+                        
+                        promise_row = session.execute(
+                            text("""
+                                SELECT COUNT(*) as promise_count
+                                FROM promises
+                                WHERE user_id = :user_id AND is_deleted = 0
+                            """),
+                            {"user_id": following_id_str}
+                        ).mappings().fetchone()
+                        promise_count = int(promise_row["promise_count"] or 0) if promise_row else 0
+                    
+                    # Get avatar path if available
+                    avatar_path = None
+                    avatar_file_unique_id = None
+                    with get_db_session() as session:
+                        avatar_row = session.execute(
+                            text("""
+                                SELECT avatar_path, avatar_file_unique_id
+                                FROM users
+                                WHERE user_id = :user_id
+                            """),
+                            {"user_id": following_id_str}
+                        ).mappings().fetchone()
+                        if avatar_row:
+                            avatar_path = avatar_row.get("avatar_path")
+                            avatar_file_unique_id = avatar_row.get("avatar_file_unique_id")
+                    
+                    users.append(
+                        PublicUser(
+                            user_id=following_id_str,
+                            first_name=settings.first_name,
+                            username=settings.username,
+                            display_name=None,
+                            last_name=None,
+                            avatar_path=avatar_path,
+                            avatar_file_unique_id=avatar_file_unique_id,
+                            activity_count=activity_count,
+                            promise_count=promise_count,
+                            last_seen_utc=None,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error enriching following {following_id_str}: {e}")
+                    continue
+            
+            return PublicUsersResponse(users=users, total=len(users))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting following for user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get following: {str(e)}")
+    
+    @app.get("/api/users/{user_id}/public-promises", response_model=List[PublicPromiseBadge])
+    async def get_public_promises(
+        user_id: int
+    ):
+        """
+        Get public promises for a user with stats (streak, progress, etc.).
+        No authentication required - public promises are visible to everyone.
+        """
+        try:
+            promises_repo = PromisesRepository(app.state.root_dir)
+            actions_repo = ActionsRepository(app.state.root_dir)
+            reports_service = ReportsService(promises_repo, actions_repo, root_dir=app.state.root_dir)
+            
+            # Get all promises for the user
+            all_promises = promises_repo.list_promises(user_id)
+            
+            # Filter to only public promises
+            public_promises = [p for p in all_promises if p.visibility == "public"]
+            
+            # Get current time for calculations
+            from datetime import datetime
+            ref_time = datetime.now()
+            
+            # Calculate stats for each public promise
+            badges = []
+            for promise in public_promises:
+                try:
+                    # Get promise summary with stats
+                    summary = reports_service.get_promise_summary(user_id, promise.id, ref_time)
+                    
+                    if not summary:
+                        continue
+                    
+                    weekly_hours = summary.get('weekly_hours', 0.0)
+                    total_hours = summary.get('total_hours', 0.0)
+                    streak = summary.get('streak', 0)
+                    
+                    # Calculate progress percentage
+                    hours_promised = promise.hours_per_week
+                    if hours_promised > 0:
+                        progress_percentage = min(100, (weekly_hours / hours_promised) * 100)
+                    else:
+                        # For check-based promises, use total actions or count
+                        progress_percentage = 0.0
+                    
+                    badges.append(
+                        PublicPromiseBadge(
+                            promise_id=promise.id,
+                            text=promise.text,
+                            hours_promised=hours_promised,
+                            hours_spent=total_hours,
+                            weekly_hours=weekly_hours,
+                            streak=streak,
+                            progress_percentage=progress_percentage,
+                            metric_type="hours",  # Default to hours
+                            target_value=hours_promised,
+                            achieved_value=weekly_hours,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error calculating stats for promise {promise.id}: {e}")
+                    continue
+            
+            return badges
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting public promises for user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get public promises: {str(e)}")
     
     # Promise visibility endpoint
     class UpdateVisibilityRequest(BaseModel):

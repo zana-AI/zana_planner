@@ -194,6 +194,27 @@ class ApiClient {
   }
 
   /**
+   * Get list of users that follow the specified user.
+   */
+  async getFollowers(userId: string): Promise<PublicUsersResponse> {
+    return this.request<PublicUsersResponse>(`/users/${userId}/followers`);
+  }
+
+  /**
+   * Get list of users that the specified user follows.
+   */
+  async getFollowing(userId: string): Promise<PublicUsersResponse> {
+    return this.request<PublicUsersResponse>(`/users/${userId}/following`);
+  }
+
+  /**
+   * Get public promises for a user with stats.
+   */
+  async getPublicPromises(userId: string): Promise<import('../types').PublicPromiseBadge[]> {
+    return this.request<import('../types').PublicPromiseBadge[]>(`/users/${userId}/public-promises`);
+  }
+
+  /**
    * Update promise visibility.
    */
   async updatePromiseVisibility(promiseId: string, visibility: 'private' | 'public'): Promise<{ status: string; visibility: string }> {

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import type { PublicUser } from '../types';
+import type { PublicUser, PublicPromiseBadge } from '../types';
 import { generateUsername, getInitialsFromUsername } from '../utils/usernameGenerator';
 import { apiClient } from '../api/client';
+import { PromiseBadge } from './PromiseBadge';
 
 interface UserCardProps {
   user: PublicUser;
@@ -74,6 +75,9 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoadingFollow, setIsLoadingFollow] = useState(false);
   const [followStatusChecked, setFollowStatusChecked] = useState(false);
+  const [publicPromises, setPublicPromises] = useState<PublicPromiseBadge[]>([]);
+  const [loadingPromises, setLoadingPromises] = useState(false);
+  const [showAllPromises, setShowAllPromises] = useState(false);
   
   const initials = getInitials(user);
   const displayName = getDisplayName(user);
@@ -84,6 +88,24 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
   
   // Check if this is the current user's own card
   const isOwnCard = currentUserId && currentUserId === user.user_id;
+  
+  // Fetch public promises for this user
+  useEffect(() => {
+    const fetchPublicPromises = async () => {
+      setLoadingPromises(true);
+      try {
+        const promises = await apiClient.getPublicPromises(user.user_id);
+        setPublicPromises(promises);
+      } catch (err) {
+        console.error('Failed to fetch public promises:', err);
+        setPublicPromises([]);
+      } finally {
+        setLoadingPromises(false);
+      }
+    };
+    
+    fetchPublicPromises();
+  }, [user.user_id]);
   
   // Check follow status on mount if authenticated and not own card
   useEffect(() => {
@@ -175,6 +197,23 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
           >
             {isLoadingFollow ? '...' : isFollowing ? 'Following' : 'Follow'}
           </button>
+        )}
+        
+        {/* Public Promise Badges */}
+        {publicPromises.length > 0 && (
+          <div className="user-card-promises">
+            {(showAllPromises ? publicPromises : publicPromises.slice(0, 2)).map((badge) => (
+              <PromiseBadge key={badge.promise_id} badge={badge} compact={true} />
+            ))}
+            {publicPromises.length > 2 && !showAllPromises && (
+              <button
+                className="user-card-promises-more"
+                onClick={() => setShowAllPromises(true)}
+              >
+                +{publicPromises.length - 2} more
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

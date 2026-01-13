@@ -7,7 +7,11 @@ import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 export function UsersPage() {
   const { user, initData } = useTelegramWebApp();
   const [users, setUsers] = useState<PublicUser[]>([]);
+  const [followers, setFollowers] = useState<PublicUser[]>([]);
+  const [following, setFollowing] = useState<PublicUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [followersLoading, setFollowersLoading] = useState(false);
+  const [followingLoading, setFollowingLoading] = useState(false);
   const [error, setError] = useState<string>('');
   
   // Get current user ID if authenticated
@@ -19,6 +23,33 @@ export function UsersPage() {
       apiClient.setInitData(initData);
     }
   }, [initData]);
+
+  // Fetch followers and following when authenticated
+  useEffect(() => {
+    if (!currentUserId) return;
+    
+    const fetchSocialData = async () => {
+      setFollowersLoading(true);
+      setFollowingLoading(true);
+      
+      try {
+        const [followersRes, followingRes] = await Promise.all([
+          apiClient.getFollowers(currentUserId).catch(() => ({ users: [], total: 0 })),
+          apiClient.getFollowing(currentUserId).catch(() => ({ users: [], total: 0 }))
+        ]);
+        
+        setFollowers(followersRes.users);
+        setFollowing(followingRes.users);
+      } catch (err) {
+        console.error('Failed to fetch social data:', err);
+      } finally {
+        setFollowersLoading(false);
+        setFollowingLoading(false);
+      }
+    };
+    
+    fetchSocialData();
+  }, [currentUserId]);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -106,6 +137,64 @@ export function UsersPage() {
         <h1 className="users-page-title">Xaana Club</h1>
         <p className="users-page-subtitle">Meet active users on Xaana</p>
       </div>
+      
+      {/* Followers and Following Section - Only show when authenticated */}
+      {currentUserId && (
+        <div className="users-page-social">
+          <div className="social-section">
+            <div className="social-header">
+              <h3 className="social-title">Followers</h3>
+              <span className="social-count">{followers.length}</span>
+            </div>
+            {followersLoading ? (
+              <div className="social-loading">Loading...</div>
+            ) : followers.length > 0 ? (
+              <div className="social-list">
+                {followers.slice(0, 5).map((follower) => (
+                  <UserCard 
+                    key={follower.user_id} 
+                    user={follower} 
+                    currentUserId={currentUserId}
+                    showFollowButton={false}
+                  />
+                ))}
+                {followers.length > 5 && (
+                  <div className="social-more">+{followers.length - 5} more</div>
+                )}
+              </div>
+            ) : (
+              <div className="social-empty">No followers yet</div>
+            )}
+          </div>
+          
+          <div className="social-section">
+            <div className="social-header">
+              <h3 className="social-title">Following</h3>
+              <span className="social-count">{following.length}</span>
+            </div>
+            {followingLoading ? (
+              <div className="social-loading">Loading...</div>
+            ) : following.length > 0 ? (
+              <div className="social-list">
+                {following.slice(0, 5).map((followed) => (
+                  <UserCard 
+                    key={followed.user_id} 
+                    user={followed} 
+                    currentUserId={currentUserId}
+                    showFollowButton={false}
+                  />
+                ))}
+                {following.length > 5 && (
+                  <div className="social-more">+{following.length - 5} more</div>
+                )}
+              </div>
+            ) : (
+              <div className="social-empty">Not following anyone yet</div>
+            )}
+          </div>
+        </div>
+      )}
+      
       <div className="users-page-grid">
         {users.map((user) => (
           <UserCard 

@@ -107,6 +107,19 @@ export interface UserInfo {
   first_name?: string;
 }
 
+export interface PublicPromiseBadge {
+  promise_id: string;
+  text: string;
+  hours_promised: number;
+  hours_spent: number;
+  weekly_hours: number;
+  streak: number;
+  progress_percentage: number;
+  metric_type: string;
+  target_value: number;
+  achieved_value: number;
+}
+
 export interface PublicUser {
   user_id: string;
   first_name?: string;
@@ -118,6 +131,7 @@ export interface PublicUser {
   activity_count: number;
   promise_count: number;
   last_seen_utc?: string;
+  public_promises?: PublicPromiseBadge[];
 }
 
 export interface PublicUsersResponse {

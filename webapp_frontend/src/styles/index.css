@@ -804,6 +804,207 @@ html, body {
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* User Card Promise Badges */
+.user-card-promises {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.user-card-promises-more {
+  padding: 4px 8px;
+  background: rgba(91, 163, 245, 0.1);
+  border: 1px solid rgba(91, 163, 245, 0.2);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.user-card-promises-more:hover {
+  background: rgba(91, 163, 245, 0.15);
+  border-color: rgba(91, 163, 245, 0.3);
+}
+
+/* Promise Badge */
+.promise-badge {
+  padding: 8px 10px;
+  background: rgba(91, 163, 245, 0.08);
+  border: 1px solid rgba(91, 163, 245, 0.15);
+  border-radius: 8px;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.promise-badge:hover {
+  background: rgba(91, 163, 245, 0.12);
+  border-color: rgba(91, 163, 245, 0.25);
+}
+
+.promise-badge.compact {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.promise-badge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.promise-badge-text {
+  color: var(--text);
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promise-badge-progress-emoji {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.promise-badge-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.promise-badge-streak {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+}
+
+.promise-badge-hours {
+  font-weight: 500;
+}
+
+.promise-badge-percentage {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.promise-badge-progress-bar {
+  width: 100%;
+  height: 3px;
+  background: rgba(91, 163, 245, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.promise-badge-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), rgba(91, 163, 245, 0.7));
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Users Page Social Section */
+.users-page-social {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-bottom: 32px;
+  padding: 0 16px;
+}
+
+@media (min-width: 640px) {
+  .users-page-social {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.social-section {
+  background: linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.social-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.social-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.social-count {
+  padding: 4px 10px;
+  background: rgba(91, 163, 245, 0.15);
+  border: 1px solid rgba(91, 163, 245, 0.25);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.social-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.social-list .user-card {
+  padding: 12px;
+  margin: 0;
+}
+
+.social-list .user-card-avatar {
+  width: 50px;
+  height: 50px;
+  margin-bottom: 8px;
+}
+
+.social-list .user-card-name {
+  font-size: 14px;
+}
+
+.social-loading,
+.social-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.social-more {
+  padding: 8px;
+  text-align: center;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(91, 163, 245, 0.1);
+  border: 1px solid rgba(91, 163, 245, 0.2);
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
 /* New Year Banner */
 .new-year-banner {
   position: relative;
