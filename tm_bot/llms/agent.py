@@ -749,7 +749,8 @@ def create_plan_execute_graph(
                 "- Format lists with bullet points (•) for readability\n"
                 "- Highlight achievements and progress positively\n"
                 "- Do NOT output raw JSON or tool responses - summarize them\n"
-                "- Do NOT call any tools in your response"
+                "- Do NOT call any tools in your response\n"
+                "- Do NOT include headers like 'Zana:' or 'Xaana:' in your response - the system will add the header automatically"
             )
             
             hint = base_hint + ux_guidelines

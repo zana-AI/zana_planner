@@ -106,7 +106,7 @@ async def run_category(category: str):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Run automated scenario tests for Zana AI bot",
+        description="Run automated scenario tests for Xaana AI bot",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

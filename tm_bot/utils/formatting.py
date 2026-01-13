@@ -46,7 +46,15 @@ def format_response_html(llm_response: str, func_call_response: Any) -> str:
     else:
         formatted_log = _format_log_item(func_call_response)
 
-    zana_text = html.escape("" if llm_response is None else str(llm_response))
+    # Clean the LLM response: remove any existing "Zana:" or "Xaana:" headers that the LLM might have included
+    response_text = "" if llm_response is None else str(llm_response)
+    # Remove common header patterns (case-insensitive, with or without HTML tags)
+    import re
+    response_text = re.sub(r'^(<b>)?(Zana|Xaana):\s*(</b>)?\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
+    response_text = re.sub(r'^\*\*(Zana|Xaana):\*\*\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
+    response_text = re.sub(r'^(Zana|Xaana):\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
+    
+    zana_text = html.escape(response_text.strip())
     log_text = html.escape("" if formatted_log is None else str(formatted_log))
 
     full_response = f"<b>Xaana:</b>\n{zana_text}\n"

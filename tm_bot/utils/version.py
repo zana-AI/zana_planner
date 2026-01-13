@@ -1,5 +1,5 @@
 """
-Version tracking for Zana AI bot.
+Version tracking for Xaana AI bot.
 Reads version from git, environment variable, or VERSION file.
 Formats version as vx.y.z starting from v1.0.0
 """

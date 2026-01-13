@@ -371,7 +371,7 @@ def run_demo(project_id: str):
     
     # Test 1: Simple span
     logger.info("\n[Test 1] Simple function with span")
-    result1 = example_function_with_span("Hello, Zana!")
+    result1 = example_function_with_span("Hello, Xaana!")
     logger.info(f"Result: {result1}")
     
     # Test 2: Nested spans

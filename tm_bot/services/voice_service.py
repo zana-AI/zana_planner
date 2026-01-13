@@ -247,8 +247,8 @@ class VoiceService:
         text = re.sub(r'\s+', ' ', text)
         
         # Handle the specific format from MessageHandlers._format_response:
-        # - Older Markdown: "*Zana:*\n`text`\n\n*Log:*\n..."
-        # - New HTML: "<b>Zana:</b>\n<pre>text</pre>\n\n<b>Log:</b>\n<blockquote expandable><pre>...</pre></blockquote>"
+        # - Older Markdown: "*Xaana:*\n`text`\n\n*Log:*\n..."
+        # - New HTML: "<b>Xaana:</b>\n<pre>text</pre>\n\n<b>Log:</b>\n<blockquote expandable><pre>...</pre></blockquote>"
         # Extract just the main content, removing the structured format
         lines = text.split('\n')
         cleaned_lines = []

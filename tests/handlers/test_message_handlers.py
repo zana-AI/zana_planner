@@ -22,7 +22,7 @@ def test_reply_text_smart_selects_html_vs_markdown():
             calls.append({"text": text, "parse_mode": parse_mode})
 
     async def run():
-        await MessageHandlers._reply_text_smart(FakeMessage(), "<b>Zana:</b>\nHello")
+        await MessageHandlers._reply_text_smart(FakeMessage(), "<b>Xaana:</b>\nHello")
         await MessageHandlers._reply_text_smart(FakeMessage(), "Plain markdown-ish text")
 
     asyncio.run(run())

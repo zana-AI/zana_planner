@@ -6,7 +6,7 @@ from services.voice_service import VoiceService
 @pytest.mark.unit
 def test_clean_text_for_tts_strips_html_and_section_labels():
     raw = (
-        "<b>Zana:</b>\n"
+        "<b>Xaana:</b>\n"
         "Hello <i>world</i>!\n"
         "\n"
         "<b>Log:</b>\n"

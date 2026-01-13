@@ -84,7 +84,7 @@ def main(argv=None):
     from db.export import _default_data_dir
     
     parser = argparse.ArgumentParser(
-        description="Delete all data for a user from Zana bot. IRREVERSIBLE."
+        description="Delete all data for a user from Xaana bot. IRREVERSIBLE."
     )
     parser.add_argument(
         "--data-dir",

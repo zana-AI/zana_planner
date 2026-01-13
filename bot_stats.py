@@ -221,7 +221,7 @@ def get_version_stats(data_dir: str) -> Dict[str, int]:
         }
 
 def main():
-    parser = argparse.ArgumentParser(description="Privacy-friendly usage stats for Zana Planner bot.")
+    parser = argparse.ArgumentParser(description="Privacy-friendly usage stats for Xaana Planner bot.")
     parser.add_argument("data_dir", help="Path to USERS_DATA_DIR")
     parser.add_argument("--threshold-bytes", type=int, default=12,
                         help="Minimum bytes to consider a CSV as non-empty (default: 12)")
@@ -236,7 +236,7 @@ def main():
         return
 
     # pretty print
-    print(f"== Zana Planner usage stats ==")
+    print(f"== Xaana Planner usage stats ==")
     print(f"Data dir:    ***{report['data_dir'][-19:]}")
     print(f"Generated:   {report['generated_at']}")
     print()

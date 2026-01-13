@@ -115,7 +115,7 @@ try:
         raise
     
     logger.info("=" * 60)
-    logger.info("Zana Web App API module loaded successfully")
+    logger.info("Xaana Web App API module loaded successfully")
     logger.info(f"  Root directory: {root_dir}")
     logger.info(f"  API docs: http://localhost:8080/api/docs")
     logger.info(f"  Public users: http://localhost:8080/api/public/users")

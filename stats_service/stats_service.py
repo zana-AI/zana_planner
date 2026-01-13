@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FastAPI stats service for Zana AI bot.
+FastAPI stats service for Xaana AI bot.
 Provides read-only stats endpoint for user activity metrics.
 """
 import os
@@ -19,7 +19,7 @@ from tm_bot.utils.logger import get_logger
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from bot_stats import compute_stats_sql
 
-app = FastAPI(title="Zana AI Stats Service", version="1.0.0")
+app = FastAPI(title="Xaana AI Stats Service", version="1.0.0")
 logger = get_logger(__name__)
 
 # Cache for stats (5 minutes)

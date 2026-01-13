@@ -102,7 +102,7 @@ def export_user(conn: sqlite3.Connection, user_id: str) -> Dict[str, Any]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Export Zana SQLite data to JSON.")
+    parser = argparse.ArgumentParser(description="Export Xaana SQLite data to JSON.")
     parser.add_argument("--data-dir", default=_default_data_dir(), help="Path to USERS_DATA_DIR (default: env USERS_DATA_DIR/ROOT_DIR).")
     parser.add_argument("--out", required=True, help="Output directory.")
     parser.add_argument("--user", default=None, help="Export a single user_id (TEXT). If omitted, exports all users.")

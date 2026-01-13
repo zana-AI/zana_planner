@@ -395,7 +395,7 @@ def main():
     apscheduler_logger = std_logging.getLogger("apscheduler.scheduler")
     apscheduler_logger.setLevel(std_logging.WARNING)
 
-    logger.info(f"Starting Zana AI bot with ROOT_DIR={ROOT_DIR}")
+    logger.info(f"Starting Xaana AI bot with ROOT_DIR={ROOT_DIR}")
 
     # Web app configuration
     WEBAPP_ENABLED = os.getenv("WEBAPP_ENABLED", "false").lower() in ("true", "1", "yes")

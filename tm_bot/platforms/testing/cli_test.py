@@ -27,7 +27,7 @@ async def main():
     os.makedirs(root_dir, exist_ok=True)
     
     print("=" * 60)
-    print("Zana AI Bot - CLI Testing Interface")
+    print("Xaana AI Bot - CLI Testing Interface")
     print("=" * 60)
     print(f"Data directory: {root_dir}")
     print()

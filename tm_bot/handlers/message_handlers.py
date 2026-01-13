@@ -1785,7 +1785,7 @@ class MessageHandlers:
                 parts.append(f"{secs}s")
             return " ".join(parts)
 
-        lines = ["*Zana AI Bot — Version*"]
+        lines = ["*Xaana AI Bot — Version*"]
         lines.append(f"- Version: `{_md_code(version_info.get('version'))}`")
         lines.append(f"- Environment: `{_md_code(version_info.get('environment', 'unknown'))}`")
 

@@ -1,5 +1,5 @@
 """
-Unified logging module for Zana AI bot.
+Unified logging module for Xaana AI bot.
 Supports dual output: console (for Docker logs) and Logtail (for centralized logging).
 """
 import logging
