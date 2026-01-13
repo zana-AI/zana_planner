@@ -332,7 +332,6 @@ export function AdminPanel() {
             Promise Marketplace
           </button>
         </div>
-      </div>
 
       {error && !error.includes('Access denied') && (
         <div className="admin-panel-error-banner">

@@ -15,6 +15,8 @@ services:
     environment:
       - ENVIRONMENT=production
       # DATABASE_URL_PROD should be set in .env.prod
+    volumes:
+      - /srv/zana-users:/app/USERS_DATA_DIR
     restart: unless-stopped
     networks:
       - web
@@ -33,6 +35,8 @@ services:
     environment:
       - ENVIRONMENT=staging
       # DATABASE_URL_STAGING should be set in .env.staging
+    volumes:
+      - /srv/zana-users-staging:/app/USERS_DATA_DIR
     restart: unless-stopped
     networks:
       - web
