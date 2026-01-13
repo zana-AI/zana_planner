@@ -23,6 +23,10 @@ class RemindersService:
             if promise.start_date and promise.start_date > now.date():
                 continue
             
+            # Skip if promise has ended (end_date is in the past)
+            if promise.end_date and promise.end_date < now.date():
+                continue
+            
             # Skip non-recurring promises that have reached full weekly progress
             # (This logic would need to be implemented based on current week progress)
             # For now, include all active promises

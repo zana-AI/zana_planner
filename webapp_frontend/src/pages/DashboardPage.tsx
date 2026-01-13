@@ -4,7 +4,7 @@ import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
 import { UserCard } from '../components/UserCard';
-import type { WeeklyReportData, PublicUser } from '../types';
+import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -15,6 +15,7 @@ export function DashboardPage() {
   const [error, setError] = useState<string>('');
   const [communityUsers, setCommunityUsers] = useState<PublicUser[]>([]);
   const [communityLoading, setCommunityLoading] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [currentRefTime, setCurrentRefTime] = useState<string | undefined>(() => {
     // Get ref_time from URL params if present
     return searchParams.get('ref_time') || undefined;
@@ -111,6 +112,19 @@ export function DashboardPage() {
     fetchReport(authData || '', currentRefTime);
   }, [isReady, initData, navigate, fetchReport, currentRefTime]);
 
+  // Fetch userInfo for browser login users
+  useEffect(() => {
+    const hasToken = !!localStorage.getItem('telegram_auth_token');
+    if (hasToken && !initData) {
+      // Browser login - fetch user info to get user_id
+      apiClient.getUserInfo()
+        .then(setUserInfo)
+        .catch(() => {
+          console.error('Failed to fetch user info');
+        });
+    }
+  }, [initData]);
+
   // Fetch community users for sidebar
   useEffect(() => {
     const fetchCommunityUsers = async () => {
@@ -122,7 +136,8 @@ export function DashboardPage() {
         }
         const response = await apiClient.getPublicUsers(8); // Top 8 users
         // Filter out current user from the list
-        const currentUserId = user?.id?.toString();
+        // Use user?.id for Telegram Mini App, or userInfo?.user_id for browser login
+        const currentUserId = user?.id?.toString() || userInfo?.user_id?.toString();
         const filteredUsers = response.users.filter(
           u => u.user_id !== currentUserId
         );
@@ -138,7 +153,7 @@ export function DashboardPage() {
     if (isReady && (initData || localStorage.getItem('telegram_auth_token'))) {
       fetchCommunityUsers();
     }
-  }, [isReady, initData, user]);
+  }, [isReady, initData, user, userInfo]);
 
   // Filter data into promises (recurring, non-budget), tasks (one-time, non-budget), and distractions (budget templates)
   // IMPORTANT: This hook must be called before any conditional returns

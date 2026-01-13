@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient, ApiError } from '../api/client';
 import { UserCard } from './UserCard';
-import type { PublicUser } from '../types';
+import type { PublicUser, UserInfo } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 export function UsersPage() {
@@ -13,9 +13,7 @@ export function UsersPage() {
   const [followersLoading, setFollowersLoading] = useState(false);
   const [followingLoading, setFollowingLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  
-  // Get current user ID if authenticated
-  const currentUserId = user?.id?.toString();
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   
   // Set initData for API client if available
   useEffect(() => {
@@ -23,6 +21,23 @@ export function UsersPage() {
       apiClient.setInitData(initData);
     }
   }, [initData]);
+
+  // Fetch userInfo for browser login users
+  useEffect(() => {
+    const hasToken = !!localStorage.getItem('telegram_auth_token');
+    if (hasToken && !initData) {
+      // Browser login - fetch user info to get user_id
+      apiClient.getUserInfo()
+        .then(setUserInfo)
+        .catch(() => {
+          console.error('Failed to fetch user info');
+        });
+    }
+  }, [initData]);
+
+  // Get current user ID if authenticated
+  // Use user?.id for Telegram Mini App, or userInfo?.user_id for browser login
+  const currentUserId = user?.id?.toString() || userInfo?.user_id?.toString();
 
   // Fetch followers and following when authenticated
   useEffect(() => {

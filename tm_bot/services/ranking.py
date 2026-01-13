@@ -21,8 +21,12 @@ class RankingService:
         promises = self.promises_repo.list_promises(user_id)
         actions = self.actions_repo.list_actions(user_id)
         
-        # Filter active promises
-        active_promises = [p for p in promises if p.start_date and p.start_date <= now.date()]
+        # Filter active promises (must have started and not ended)
+        active_promises = [
+            p for p in promises 
+            if p.start_date and p.start_date <= now.date()
+            and (not p.end_date or p.end_date >= now.date())
+        ]
         
         scored_promises = []
         for promise in active_promises:

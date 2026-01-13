@@ -112,6 +112,9 @@ export function TelegramLogin({
         // Update API client
         apiClient.setAuthToken(data.session_token);
         
+        // Dispatch custom event to update App.tsx state
+        window.dispatchEvent(new Event('login'));
+        
         // Call success callback
         onAuthSuccess(data.session_token);
       } catch (error) {

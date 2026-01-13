@@ -69,8 +69,8 @@ class PlannerAPIAdapter:
                 raise ValueError("user_id is required and cannot be None")
             if not promise_text or not isinstance(promise_text, str):
                 raise ValueError("Promise text must be a non-empty string")
-            if not isinstance(num_hours_promised_per_week, (int, float)) or num_hours_promised_per_week <= 0:
-                raise ValueError("Hours promised must be a positive number")
+            if not isinstance(num_hours_promised_per_week, (int, float)) or num_hours_promised_per_week < 0:
+                raise ValueError("Hours promised must be a non-negative number (0.0 for check-based promises, > 0.0 for time-based promises)")
 
             # Generate promise ID
             promise_id = self._generate_promise_id(user_id, 'P' if recurring else 'T')

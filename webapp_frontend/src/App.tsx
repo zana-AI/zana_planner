@@ -37,15 +37,22 @@ function App() {
     
     window.addEventListener('storage', handleStorageChange);
     
+    // Listen for custom login event (browser login)
+    const handleLogin = () => {
+      checkToken();
+    };
+    
     // Also listen for custom logout event
     const handleLogout = () => {
       checkToken();
     };
     
+    window.addEventListener('login', handleLogin);
     window.addEventListener('logout', handleLogout);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('login', handleLogin);
       window.removeEventListener('logout', handleLogout);
     };
   }, []);
