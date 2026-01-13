@@ -140,7 +140,7 @@ class SessionsRepository:
                     ORDER BY s.started_at_utc ASC;
                 """),
                 {"user_id": user},
-            ).fetchall()
+            ).mappings().fetchall()
 
         result: List[Session] = []
         for r in rows:

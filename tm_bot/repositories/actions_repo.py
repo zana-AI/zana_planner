@@ -72,7 +72,7 @@ class ActionsRepository:
                         ORDER BY a.at_utc ASC;
                     """),
                     {"user_id": user, "since_utc": since_utc},
-                ).fetchall()
+                ).mappings().fetchall()
             else:
                 rows = session.execute(
                     text("""
@@ -85,7 +85,7 @@ class ActionsRepository:
                         ORDER BY a.at_utc ASC;
                     """),
                     {"user_id": user},
-                ).fetchall()
+                ).mappings().fetchall()
 
         actions: List[Action] = []
         for r in rows:
