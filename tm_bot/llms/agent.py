@@ -865,7 +865,7 @@ def create_plan_execute_graph(
                 if resolved not in (None, "", [], {}):
                     tool_args[arg_name] = resolved
                 # If field is empty or JSON parsing failed, use the string output directly
-                # This handles tools like resolve_date that return plain strings (e.g., "2026-01-14")
+                # This handles tools like resolve_datetime that return plain strings (e.g., "2026-01-14T00:00:00")
                 elif not src_field or not obj:
                     # Tool returned a string (not JSON), use it directly
                     # Strip any error messages that might start with "Could not" or "Error"

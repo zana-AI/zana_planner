@@ -1541,30 +1541,32 @@ Summary:"""
             logger.error(f"Error recording check-in: {str(e)}")
             return f"Error recording check-in: {str(e)}"
     
-    def resolve_date(self, user_id, date_text: str) -> str:
-        """Resolve a relative date phrase (e.g., 'end of March', 'in 2 months') to an absolute date (YYYY-MM-DD)."""
+    def resolve_datetime(self, user_id, datetime_text: str) -> str:
+        """Resolve a relative date/time phrase (e.g., 'tomorrow at 3pm', 'end of March', 'in 2 months', 'فردا ساعت 3') to an absolute datetime (ISO format: YYYY-MM-DDTHH:MM:SS)."""
         try:
             import dateparser
             from datetime import datetime
             
-            # Parse the date text
-            parsed = dateparser.parse(date_text, settings={'RELATIVE_BASE': datetime.now()})
+            # Parse the datetime text (handles both date and time)
+            parsed = dateparser.parse(datetime_text, settings={'RELATIVE_BASE': datetime.now()})
             if not parsed:
-                return f"Could not parse date: '{date_text}'. Please use a clearer date description."
+                return f"Could not parse datetime: '{datetime_text}'. Please use a clearer date/time description."
             
-            return parsed.date().isoformat()
+            # Return ISO format datetime (YYYY-MM-DDTHH:MM:SS)
+            # If no time specified, default to 00:00:00 (midnight)
+            return parsed.isoformat()
         except ImportError:
             # Fallback if dateparser not available
             try:
                 from datetime import datetime
                 # Try basic ISO format
-                parsed = datetime.fromisoformat(date_text.replace('Z', '+00:00'))
-                return parsed.date().isoformat()
+                parsed = datetime.fromisoformat(datetime_text.replace('Z', '+00:00'))
+                return parsed.isoformat()
             except:
-                return f"Could not parse date: '{date_text}'. Please use ISO format (YYYY-MM-DD)."
+                return f"Could not parse datetime: '{datetime_text}'. Please use ISO format (YYYY-MM-DDTHH:MM:SS)."
         except Exception as e:
-            logger.error(f"Error resolving date: {str(e)}")
-            return f"Error resolving date: {str(e)}"
+            logger.error(f"Error resolving datetime: {str(e)}")
+            return f"Error resolving datetime: {str(e)}"
     
     def get_overload_status(self, user_id) -> str:
         """Check if user is overloaded with too many active promises and suggest reducing scope."""

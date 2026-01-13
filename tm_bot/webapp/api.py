@@ -79,6 +79,12 @@ class PublicUsersResponse(BaseModel):
     total: int
 
 
+class TimezoneUpdateRequest(BaseModel):
+    """Request model for timezone update."""
+    tz: str  # IANA timezone name (e.g., "America/New_York")
+    offset_min: Optional[int] = None  # UTC offset in minutes (optional, for fallback)
+
+
 def create_webapp_api(
     root_dir: str,
     bot_token: str,
@@ -664,6 +670,65 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error getting user info for user {user_id}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/api/user/timezone")
+    async def update_user_timezone(
+        request: TimezoneUpdateRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """
+        Update user timezone.
+        Automatically called by Mini App on load to detect and set timezone.
+        Only updates if user hasn't set a timezone yet, or if explicitly updating.
+        """
+        try:
+            from zoneinfo import ZoneInfo
+            
+            # Validate timezone
+            try:
+                ZoneInfo(request.tz)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid timezone: {request.tz}. Error: {str(e)}"
+                )
+            
+            settings_repo = get_settings_repo()
+            settings = settings_repo.get_settings(user_id)
+            
+            # Only update if timezone is not set (defaults to "Europe/Paris" or "UTC")
+            # or if explicitly updating
+            current_tz = settings.timezone if settings else None
+            default_tzs = ["Europe/Paris", "UTC"]
+            
+            if not current_tz or current_tz in default_tzs:
+                # Update timezone
+                if not settings:
+                    from models.models import UserSettings
+                    settings = UserSettings(user_id=str(user_id))
+                
+                settings.timezone = request.tz
+                settings_repo.save_settings(settings)
+                
+                logger.info(f"Updated timezone for user {user_id} to {request.tz}")
+                
+                return {
+                    "status": "success",
+                    "message": f"Timezone updated to {request.tz}",
+                    "timezone": request.tz
+                }
+            else:
+                # Timezone already set, return current timezone
+                return {
+                    "status": "unchanged",
+                    "message": f"Timezone already set to {current_tz}",
+                    "timezone": current_tz
+                }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating timezone for user {user_id}")
+            raise HTTPException(status_code=500, detail=f"Failed to update timezone: {str(e)}")
     
     @app.get("/api/public/users", response_model=PublicUsersResponse)
     async def get_public_users(limit: int = Query(default=20, ge=1, le=100)):

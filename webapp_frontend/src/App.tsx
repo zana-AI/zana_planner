@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
+import { useTimezoneDetection } from './hooks/useTimezoneDetection';
 import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
@@ -13,6 +14,10 @@ import { apiClient } from './api/client';
 function App() {
   const { initData, isReady } = useTelegramWebApp();
   const [hasSessionToken, setHasSessionToken] = useState(false);
+  
+  // Automatically detect and set timezone when Mini App loads (only if authenticated)
+  const isAuthenticated = !!initData || !!getDevInitData() || hasSessionToken;
+  useTimezoneDetection(isAuthenticated && isReady);
   
   // Check for session token on mount and listen for changes
   useEffect(() => {
@@ -47,7 +52,7 @@ function App() {
 
   // Check for Telegram Mini App initData or session token
   const authData = initData || getDevInitData();
-  const isAuthenticated = !!authData || hasSessionToken;
+  // Note: isAuthenticated is now defined above for useTimezoneDetection
   
   // Update API client with initData if available
   useEffect(() => {

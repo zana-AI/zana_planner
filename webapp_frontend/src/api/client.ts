@@ -135,6 +135,17 @@ class ApiClient {
   }
 
   /**
+   * Update user timezone.
+   * Automatically called by Mini App on load to detect and set timezone.
+   */
+  async updateTimezone(tz: string, offsetMin?: number): Promise<{ status: string; message: string; timezone: string }> {
+    return this.request<{ status: string; message: string; timezone: string }>('/user/timezone', {
+      method: 'POST',
+      body: JSON.stringify({ tz, offsetMin }),
+    });
+  }
+
+  /**
    * Health check endpoint (no auth required).
    */
   async healthCheck(): Promise<{ status: string; service: string }> {
