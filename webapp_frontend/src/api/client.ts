@@ -378,6 +378,16 @@ class ApiClient {
     });
   }
 
+  /**
+   * Promote staging database to production (admin only).
+   * This copies all staging data to production database.
+   */
+  async promoteStagingToProd(): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>('/admin/promote', {
+      method: 'POST',
+    });
+  }
+
   // Template API methods
   /**
    * List templates with optional filters.

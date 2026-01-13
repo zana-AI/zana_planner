@@ -1616,6 +1616,78 @@ def create_webapp_api(
             logger.exception(f"Error deleting template: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
     
+    @app.post("/api/admin/promote")
+    async def promote_staging_to_prod(
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Promote staging database to production (admin only).
+        This copies all data from staging to production database.
+        WARNING: This will overwrite all production data!
+        """
+        try:
+            import subprocess
+            import os
+            
+            prod_url = os.getenv("DATABASE_URL_PROD")
+            staging_url = os.getenv("DATABASE_URL_STAGING")
+            
+            if not prod_url:
+                raise HTTPException(status_code=500, detail="DATABASE_URL_PROD environment variable is not set")
+            
+            if not staging_url:
+                raise HTTPException(status_code=500, detail="DATABASE_URL_STAGING environment variable is not set")
+            
+            logger.warning(f"Admin {admin_id} initiated staging to production promotion")
+            logger.warning(f"Staging: {staging_url}")
+            logger.warning(f"Production: {prod_url}")
+            
+            # Dump staging database
+            logger.info("Dumping staging database...")
+            dump_process = subprocess.run(
+                ["pg_dump", staging_url],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if dump_process.returncode != 0:
+                error_msg = dump_process.stderr or "Unknown error during pg_dump"
+                logger.error(f"pg_dump failed: {error_msg}")
+                raise HTTPException(status_code=500, detail=f"Failed to dump staging database: {error_msg}")
+            
+            dump_sql = dump_process.stdout
+            
+            # Restore to production
+            logger.info("Restoring to production database...")
+            restore_process = subprocess.run(
+                ["psql", prod_url],
+                input=dump_sql,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout
+            )
+            
+            if restore_process.returncode != 0:
+                error_msg = restore_process.stderr or "Unknown error during psql restore"
+                logger.error(f"psql restore failed: {error_msg}")
+                raise HTTPException(status_code=500, detail=f"Failed to restore to production: {error_msg}")
+            
+            logger.info(f"Admin {admin_id} successfully promoted staging to production")
+            return {
+                "status": "success",
+                "message": "Staging database successfully promoted to production"
+            }
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Promotion operation timed out")
+            raise HTTPException(status_code=500, detail="Promotion operation timed out. Please check database status.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error promoting staging to production: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to promote staging to production: {str(e)}")
+    
     # Template API endpoints
     @app.get("/api/templates")
     async def list_templates(
