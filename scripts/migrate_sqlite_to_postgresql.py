@@ -9,6 +9,10 @@ This script:
 
 Usage:
     python scripts/migrate_sqlite_to_postgresql.py --sqlite-path /path/to/zana.db --postgres-url postgresql://...
+
+Or inside Docker (recommended), relying on env vars:
+    # ENVIRONMENT=staging + DATABASE_URL_STAGING in env file
+    python scripts/migrate_sqlite_to_postgresql.py
 """
 
 import argparse
@@ -169,25 +173,53 @@ def migrate_table(
 
 def main():
     parser = argparse.ArgumentParser(description="Migrate data from SQLite to PostgreSQL")
-    parser.add_argument("--sqlite-path", required=True, help="Path to SQLite database file")
-    parser.add_argument("--postgres-url", required=True, help="PostgreSQL connection URL")
+    parser.add_argument(
+        "--sqlite-path",
+        required=False,
+        default=None,
+        help="Path to SQLite database file (default: USERS_DATA_DIR/zana.db inside containers)",
+    )
+    parser.add_argument(
+        "--postgres-url",
+        required=False,
+        default=None,
+        help="PostgreSQL connection URL (default: derived from ENVIRONMENT + DATABASE_URL_* env vars)",
+    )
     parser.add_argument("--batch-size", type=int, default=1000, help="Batch size for inserts")
     parser.add_argument("--tables", nargs="+", help="Specific tables to migrate (default: all)")
     args = parser.parse_args()
+
+    # Resolve defaults from environment to make container usage simpler
+    sqlite_path = args.sqlite_path
+    if not sqlite_path:
+        try:
+            from tm_bot.db.sqlite_db import resolve_db_path
+
+            # Prefer USERS_DATA_DIR (compose mounts it), then ROOT_DIR, else default container path
+            base_root = os.getenv("USERS_DATA_DIR") or os.getenv("ROOT_DIR") or "/app/USERS_DATA_DIR"
+            sqlite_path = resolve_db_path(base_root)
+        except Exception:
+            sqlite_path = "/app/USERS_DATA_DIR/zana.db"
+
+    postgres_url = args.postgres_url
+    if not postgres_url:
+        from tm_bot.db.postgres_db import get_database_url
+
+        postgres_url = get_database_url()
     
     # Validate SQLite file
-    if not os.path.exists(args.sqlite_path):
-        logger.error(f"SQLite database not found: {args.sqlite_path}")
+    if not os.path.exists(sqlite_path):
+        logger.error(f"SQLite database not found: {sqlite_path}")
         sys.exit(1)
     
     # Connect to SQLite
-    logger.info(f"Connecting to SQLite: {args.sqlite_path}")
-    sqlite_conn = sqlite3.connect(args.sqlite_path)
+    logger.info(f"Connecting to SQLite: {sqlite_path}")
+    sqlite_conn = sqlite3.connect(sqlite_path)
     sqlite_conn.row_factory = sqlite3.Row
     
     # Connect to PostgreSQL
     logger.info(f"Connecting to PostgreSQL...")
-    engine = create_engine(args.postgres_url)
+    engine = create_engine(postgres_url)
     SessionLocal = sessionmaker(bind=engine)
     pg_session = SessionLocal()
     
