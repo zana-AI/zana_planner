@@ -97,28 +97,22 @@ export function TemplatesPage() {
           templates.map(template => (
             <div
               key={template.template_id}
-              className={`template-card ${template.unlocked ? '' : 'locked'} ${template.template_kind === 'budget' ? 'budget-template' : ''}`}
+              className="template-card"
               onClick={() => {
-                if (template.unlocked) {
-                  navigate(`/templates/${template.template_id}`);
-                } else {
-                  hapticFeedback('warning');
-                }
+                // Allow navigation regardless of lock status (locked UI hidden)
+                navigate(`/templates/${template.template_id}`);
               }}
               style={{
-                border: template.template_kind === 'budget' 
-                  ? '2px solid rgba(255, 68, 68, 0.4)' 
-                  : '1px solid rgba(232, 238, 252, 0.15)',
+                border: '1px solid rgba(232, 238, 252, 0.15)',
                 borderRadius: '12px',
                 padding: '16px',
-                background: template.template_kind === 'budget'
-                  ? 'linear-gradient(180deg, rgba(255, 68, 68, 0.08), rgba(255, 68, 68, 0.03))'
-                  : 'linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98))',
-                cursor: template.unlocked ? 'pointer' : 'not-allowed',
+                background: 'linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98))',
+                cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              {!template.unlocked && (
+              {/* Locked and Budget badges hidden per requirements */}
+              {/* {!template.unlocked && (
                 <div className="template-lock-badge">🔒 Locked</div>
               )}
               {template.template_kind === 'budget' && (
@@ -136,7 +130,7 @@ export function TemplatesPage() {
                 }}>
                   📉 Budget
                 </div>
-              )}
+              )} */}
               <div className="template-header">
                 <h3 className="template-title">{template.title}</h3>
               </div>
@@ -149,7 +143,8 @@ export function TemplatesPage() {
                   ) : (
                     <span className="template-metric">{template.target_value}h</span>
                   )}
-                  <div className="template-level-indicator">
+                  {/* Difficulty level indicator hidden per requirements */}
+                  {/* <div className="template-level-indicator">
                     {[1, 2, 3].map((num) => {
                       const levelNum = parseInt(template.level.replace('L', '')) || 0;
                       const isFilled = num <= levelNum;
@@ -183,12 +178,13 @@ export function TemplatesPage() {
                         />
                       );
                     })}
-                  </div>
+                  </div> */}
                 </div>
               </div>
-              {!template.unlocked && template.lock_reason && (
+              {/* Lock reason hidden per requirements */}
+              {/* {!template.unlocked && template.lock_reason && (
                 <p className="template-lock-reason">{template.lock_reason}</p>
-              )}
+              )} */}
             </div>
           ))
         )}

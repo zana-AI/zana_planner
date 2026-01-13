@@ -101,7 +101,8 @@ export function TemplateDetailPage() {
         </button>
         <h1 className="page-title">{template.title}</h1>
         <div className="template-badges">
-          <div className="template-level-indicator">
+          {/* Difficulty level indicator and Budget badge hidden per requirements */}
+          {/* <div className="template-level-indicator">
             {[1, 2, 3].map((num) => {
               const levelNum = parseInt(template.level.replace('L', '')) || 0;
               const isFilled = num <= levelNum;
@@ -135,15 +136,16 @@ export function TemplateDetailPage() {
                 />
               );
             })}
-          </div>
+          </div> */}
           <span className="template-category-badge">{template.category.replace('_', ' ')}</span>
-          {template.template_kind === 'budget' && (
+          {/* {template.template_kind === 'budget' && (
             <span className="template-budget-badge">Budget</span>
-          )}
+          )} */}
         </div>
       </header>
 
-      {!template.unlocked && (
+      {/* Locked notice hidden per requirements */}
+      {/* {!template.unlocked && (
         <div className="template-locked-notice">
           <h3>🔒 This template is locked</h3>
           <p>{template.lock_reason}</p>
@@ -168,7 +170,7 @@ export function TemplateDetailPage() {
             </div>
           )}
         </div>
-      )}
+      )} */}
 
       <main className="template-detail">
         <section className="template-section">
