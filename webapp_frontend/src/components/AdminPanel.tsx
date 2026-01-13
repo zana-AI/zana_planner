@@ -943,35 +943,6 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
       padding: '1.5rem',
       marginBottom: '1.5rem'
     }}>
-// Template Form Component - Simplified
-function TemplateForm({ template, onSave, onCancel }: { template: Partial<PromiseTemplate>, onSave: (data: any) => void, onCancel: () => void }) {
-  const [formData, setFormData] = useState({
-    title: template.title || '',
-    category: template.category || 'general',
-    level: template.level || 'beginner',
-    why: template.why || '',
-    done: template.done || '',
-    effort: template.effort || '',
-    target_value: template.target_value || 1,
-    metric_type: template.metric_type || 'hours',
-    duration_type: template.duration_type || 'week',
-    // Hidden fields with defaults
-    program_key: template.program_key || '',
-    template_kind: template.template_kind || 'commitment',
-    target_direction: template.target_direction || 'at_least',
-    estimated_hours_per_unit: template.estimated_hours_per_unit || 1.0,
-    duration_weeks: template.duration_weeks || 1,
-    is_active: template.is_active !== undefined ? (typeof template.is_active === 'number' ? template.is_active !== 0 : template.is_active) : true,
-  });
-
-  return (
-    <div style={{
-      background: 'rgba(15, 23, 48, 0.8)',
-      border: '1px solid rgba(232, 238, 252, 0.2)',
-      borderRadius: '12px',
-      padding: '1.5rem',
-      marginBottom: '1.5rem'
-    }}>
       <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#fff' }}>
         {template.template_id ? 'Edit Template' : 'Create Template'}
       </h3>
