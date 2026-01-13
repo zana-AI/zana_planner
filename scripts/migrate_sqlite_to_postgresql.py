@@ -54,6 +54,22 @@ def convert_sqlite_to_postgres_value(value) -> any:
     return value
 
 
+def get_primary_key_columns(pg_session, table_name: str) -> List[str]:
+    """Get primary key column names for a table."""
+    result = pg_session.execute(
+        text("""
+            SELECT a.attname
+            FROM pg_index i
+            JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+            WHERE i.indrelid = :table_name::regclass
+            AND i.indisprimary
+            ORDER BY a.attnum
+        """),
+        {"table_name": table_name}
+    )
+    return [row[0] for row in result]
+
+
 def migrate_table(
     sqlite_conn: sqlite3.Connection,
     pg_session,
@@ -84,6 +100,9 @@ def migrate_table(
         logger.warning(f"Table {table_name} does not exist in PostgreSQL, skipping")
         return 0
     
+    # Get primary key columns for ON CONFLICT clause
+    pk_columns = get_primary_key_columns(pg_session, table_name)
+    
     # Export data from SQLite
     columns, rows = export_table_data(sqlite_conn, table_name)
     
@@ -95,6 +114,12 @@ def migrate_table(
     valid_columns = [col for col in columns if col in pg_columns]
     if not valid_columns:
         logger.warning(f"  No matching columns found for {table_name}, skipping")
+        return 0
+    
+    # Ensure all primary key columns are in valid_columns
+    missing_pk = [pk for pk in pk_columns if pk not in valid_columns]
+    if missing_pk:
+        logger.warning(f"  Primary key columns {missing_pk} not found in SQLite data, skipping")
         return 0
     
     # Convert data
@@ -114,11 +139,16 @@ def migrate_table(
         columns_str = ", ".join(valid_columns)
         placeholders = ", ".join([f":{col}" for col in valid_columns])
         
-        # Use ON CONFLICT DO NOTHING to handle duplicates
+        # Build ON CONFLICT clause if we have primary keys
+        if pk_columns:
+            conflict_clause = f"ON CONFLICT ({', '.join(pk_columns)}) DO NOTHING"
+        else:
+            conflict_clause = ""  # No primary key, just try to insert
+        
         insert_sql = f"""
             INSERT INTO {table_name} ({columns_str})
             VALUES ({placeholders})
-            ON CONFLICT DO NOTHING
+            {conflict_clause}
         """
         
         try:
