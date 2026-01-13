@@ -855,10 +855,42 @@ def create_plan_execute_graph(
                 src_field = parts[2].strip()
 
                 src_text = _last_tool_output_for(state.get("messages", []), src_tool)
+                if not src_text:
+                    continue
+                
                 obj = _parse_json_obj(src_text)
-                resolved = (obj or {}).get(src_field)
+                resolved = (obj or {}).get(src_field) if obj else None
+                
+                # If JSON parsing succeeded and field found, use it
                 if resolved not in (None, "", [], {}):
                     tool_args[arg_name] = resolved
+                # If field is empty or JSON parsing failed, use the string output directly
+                # This handles tools like resolve_date that return plain strings (e.g., "2026-01-14")
+                elif not src_field or not obj:
+                    # Tool returned a string (not JSON), use it directly
+                    # Strip any error messages that might start with "Could not" or "Error"
+                    if src_text.strip() and not src_text.strip().startswith(("Could not", "Error")):
+                        tool_args[arg_name] = src_text.strip()
+                    else:
+                        # Error in tool output, ask user
+                        pending = {
+                            "reason": "unresolved_placeholder",
+                            "tool_name": tool_name,
+                            "missing_fields": [arg_name],
+                            "partial_args": {k: v for k, v in (tool_args or {}).items() if k != arg_name},
+                            "placeholder": arg_val,
+                        }
+                        question = (
+                            f"I couldn't auto-fill `{arg_name}` from the previous `{src_tool}` result.\n"
+                            f"Please reply with `{arg_name}: <value>` (or just the value)."
+                        )
+                        return {
+                            **state,
+                            "iteration": new_iteration,
+                            "final_response": question,
+                            "pending_clarification": pending,
+                            "step_idx": idx + 1,
+                        }
                 else:
                     pending = {
                         "reason": "unresolved_placeholder",
