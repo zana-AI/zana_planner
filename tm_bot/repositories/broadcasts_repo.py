@@ -73,7 +73,7 @@ class BroadcastsRepository:
                     LIMIT 1;
                 """),
                 {"broadcast_id": broadcast_id},
-            ).fetchone()
+            ).mappings().fetchone()
             
             if not row:
                 return None
@@ -130,7 +130,7 @@ class BroadcastsRepository:
                 ORDER BY created_at_utc DESC LIMIT :limit
             """
             
-            rows = session.execute(text(query), params).fetchall()
+            rows = session.execute(text(query), params).mappings().fetchall()
             
             for row in rows:
                 # Parse target_user_ids from JSON

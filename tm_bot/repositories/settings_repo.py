@@ -14,6 +14,7 @@ class SettingsRepository:
     def get_settings(self, user_id: int) -> UserSettings:
         user = str(user_id)
         with get_db_session() as session:
+            # Use .mappings() so rows are dict-like (row["timezone"]) even for text() queries.
             row = session.execute(
                 text("""
                     SELECT timezone, nightly_hh, nightly_mm, language, voice_mode, 
@@ -23,7 +24,7 @@ class SettingsRepository:
                     LIMIT 1;
                 """),
                 {"user_id": user},
-            ).fetchone()
+            ).mappings().fetchone()
 
         if not row:
             return UserSettings(user_id=user)

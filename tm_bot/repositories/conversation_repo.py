@@ -114,7 +114,7 @@ class ConversationRepository:
                             LIMIT :limit
                         """),
                         {"user_id": str(user_id), "message_type": message_type, "limit": limit},
-                    ).fetchall()
+                    ).mappings().fetchall()
                 else:
                     rows = session.execute(
                         text("""
@@ -125,7 +125,7 @@ class ConversationRepository:
                             LIMIT :limit
                         """),
                         {"user_id": str(user_id), "limit": limit},
-                    ).fetchall()
+                    ).mappings().fetchall()
                 
                 return [
                     {

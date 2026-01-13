@@ -39,7 +39,7 @@ class PromisesRepository:
                     ORDER BY current_id ASC;
                 """),
                 {"user_id": user},
-            ).fetchall()
+            ).mappings().fetchall()
 
         promises: List[Promise] = []
         for r in rows:
@@ -89,7 +89,7 @@ class PromisesRepository:
                     LIMIT 1;
                 """),
                 {"user_id": user, "p_uuid": p_uuid},
-            ).fetchone()
+            ).mappings().fetchone()
 
         if not row or int(row["is_deleted"]) == 1:
             return None
@@ -139,7 +139,7 @@ class PromisesRepository:
                 existing = session.execute(
                     text("SELECT current_id, is_deleted FROM promises WHERE user_id = :user_id AND promise_uuid = :p_uuid LIMIT 1;"),
                     {"user_id": user, "p_uuid": p_uuid},
-                ).fetchone()
+                ).mappings().fetchone()
             is_new = not bool(existing)
             if is_new:
                 p_uuid = str(uuid.uuid4())
@@ -276,7 +276,7 @@ class PromisesRepository:
                     FROM promises WHERE user_id = :user_id AND promise_uuid = :p_uuid LIMIT 1;
                 """),
                 {"user_id": user, "p_uuid": p_uuid},
-            ).fetchone()
+            ).mappings().fetchone()
             if not row or int(row["is_deleted"]) == 1:
                 return False
 
