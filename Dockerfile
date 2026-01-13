@@ -114,6 +114,7 @@ with open("/app/COMMIT_INFO.json", "w") as f:\n\
 # Copy application code
 COPY tm_bot/ ./tm_bot/
 COPY bot_stats.py ./
+COPY scripts/ ./scripts/
 
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/webapp_frontend/dist ./webapp_frontend/dist
