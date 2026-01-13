@@ -76,7 +76,6 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
   const [isLoadingFollow, setIsLoadingFollow] = useState(false);
   const [followStatusChecked, setFollowStatusChecked] = useState(false);
   const [publicPromises, setPublicPromises] = useState<PublicPromiseBadge[]>([]);
-  const [loadingPromises, setLoadingPromises] = useState(false);
   const [showAllPromises, setShowAllPromises] = useState(false);
   
   const initials = getInitials(user);
@@ -92,15 +91,12 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
   // Fetch public promises for this user
   useEffect(() => {
     const fetchPublicPromises = async () => {
-      setLoadingPromises(true);
       try {
         const promises = await apiClient.getPublicPromises(user.user_id);
         setPublicPromises(promises);
       } catch (err) {
         console.error('Failed to fetch public promises:', err);
         setPublicPromises([]);
-      } finally {
-        setLoadingPromises(false);
       }
     };
     
