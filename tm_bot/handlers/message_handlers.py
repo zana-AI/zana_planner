@@ -159,6 +159,20 @@ class MessageHandlers:
         """Set user timezone using the settings service."""
         self.plan_keeper.settings_service.set_user_timezone(user_id, tzname)
     
+    def _get_persistent_navigation_keyboard(self) -> ReplyKeyboardMarkup:
+        """Create persistent navigation keyboard with Weekly, Community, Explore buttons."""
+        return ReplyKeyboardMarkup(
+            [
+                [
+                    KeyboardButton("📅 Weekly"),
+                    KeyboardButton("👥 Community"),
+                    KeyboardButton("🔍 Explore")
+                ]
+            ],
+            resize_keyboard=True,
+            persistent=True
+        )
+
     async def start(self, update: Update, context: CallbackContext) -> None:
         """Send a message when the command /start is issued."""
         user_id = update.effective_user.id
@@ -186,14 +200,14 @@ class MessageHandlers:
         else:
             message = get_message("welcome_return", user_lang)
 
-        # Add navigation keyboard to welcome message (Weekly, Community, Explore)
-        keyboard = navigation_kb(self.miniapp_url)
+        # Set persistent navigation keyboard
+        persistent_keyboard = self._get_persistent_navigation_keyboard()
 
         await self.response_service.reply_text(
             update, message,
             user_id=user_id,
             parse_mode='Markdown',
-            reply_markup=keyboard
+            reply_markup=persistent_keyboard
         )
         
         tzname = self.get_user_timezone(user_id)
@@ -1030,6 +1044,31 @@ class MessageHandlers:
             user_id = update.effective_user.id
             user_group_id = update.effective_chat.id if update.effective_chat.type in ['group', 'supergroup'] else None
             user_lang = get_user_language(update.effective_user)
+            
+            # Handle persistent navigation keyboard buttons
+            if user_message in ["📅 Weekly", "👥 Community", "🔍 Explore"]:
+                # Map button text to routes and display names
+                route_map = {
+                    "📅 Weekly": ("/dashboard", "Weekly"),
+                    "👥 Community": ("/community", "Community"),
+                    "🔍 Explore": ("/templates", "Explore")
+                }
+                route, display_name = route_map.get(user_message, ("/dashboard", "Weekly"))
+                
+                # Send inline keyboard with web app button for the selected route
+                from ui.keyboards import mini_app_kb
+                web_app_url = f"{self.miniapp_url}{route}"
+                keyboard = mini_app_kb(web_app_url, button_text=f"Open {display_name}")
+                
+                await self.response_service.send_message(
+                    context,
+                    chat_id=update.effective_chat.id,
+                    text=f"Tap the button below to open {display_name}:",
+                    user_id=user_id,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
+                return
             
             # Extract and update user info (first_name, username, last_seen)
             self._update_user_info(user_id, update.effective_user)
