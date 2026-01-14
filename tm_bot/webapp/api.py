@@ -1270,7 +1270,7 @@ def create_webapp_api(
                     badges.append(
                         PublicPromiseBadge(
                             promise_id=promise.id,
-                            text=promise.text,
+                            text=promise.text.replace('_', ' '),  # Convert underscores to spaces for display
                             hours_promised=hours_promised,
                             hours_spent=total_hours,
                             weekly_hours=weekly_hours,

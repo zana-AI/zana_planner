@@ -7,11 +7,12 @@ import type { UserInfo } from '../types';
 export function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { initData, user: telegramUser } = useTelegramWebApp();
+  const { initData, user: telegramUser, webApp } = useTelegramWebApp();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [botUsername, setBotUsername] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
   const authData = initData || getDevInitData();
@@ -75,6 +76,24 @@ export function Navigation() {
     
     checkAdmin();
   }, [isAuthenticated, authData]);
+
+  // Detect mobile mode
+  useEffect(() => {
+    const checkMobile = () => {
+      // Check if Telegram WebApp is available and platform is mobile
+      const isTelegramMobile = webApp?.platform && 
+        (webApp.platform === 'ios' || webApp.platform === 'android');
+      
+      // Also check viewport width as fallback
+      const isSmallViewport = window.innerWidth < 768;
+      
+      setIsMobile(isTelegramMobile || isSmallViewport);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, [webApp]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -240,7 +259,7 @@ export function Navigation() {
                   e.currentTarget.style.background = 'none';
                 }}
               >
-                👤 Profile / Dashboard
+                👤 Profile / Weekly
               </button>
               <a
                 href={botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot'}
@@ -323,7 +342,7 @@ export function Navigation() {
                   e.currentTarget.style.background = 'none';
                 }}
               >
-                📋 Promise Marketplace
+                📋 Explore
               </button>
               {isAdmin && (
                 <button
@@ -388,30 +407,58 @@ export function Navigation() {
         </div>
       </header>
 
-      {/* Bottom Tab Bar (Mobile Navigation) */}
-      <nav className="tab-bar">
-        <button
-          onClick={() => navigate('/dashboard')}
-          className={`tab-button ${isActive('/dashboard') ? 'active' : ''}`}
-        >
-          <span className="tab-icon">🏠</span>
-          <span className="tab-label">Dashboard</span>
-        </button>
-        <button
-          onClick={() => navigate('/community')}
-          className={`tab-button ${isActive('/community') ? 'active' : ''}`}
-        >
-          <span className="tab-icon">👥</span>
-          <span className="tab-label">Community</span>
-        </button>
-        <button
-          onClick={() => navigate('/templates')}
-          className={`tab-button ${isActive('/templates') ? 'active' : ''}`}
-        >
-          <span className="tab-icon">📋</span>
-          <span className="tab-label">Templates</span>
-        </button>
-      </nav>
+      {/* Bottom Tab Bar (Desktop Navigation) - Hidden on Mobile */}
+      {!isMobile && (
+        <nav className="tab-bar">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className={`tab-button ${isActive('/dashboard') ? 'active' : ''}`}
+          >
+            <span className="tab-icon">🏠</span>
+            <span className="tab-label">Weekly</span>
+          </button>
+          <button
+            onClick={() => navigate('/community')}
+            className={`tab-button ${isActive('/community') ? 'active' : ''}`}
+          >
+            <span className="tab-icon">👥</span>
+            <span className="tab-label">Community</span>
+          </button>
+          <button
+            onClick={() => navigate('/templates')}
+            className={`tab-button ${isActive('/templates') ? 'active' : ''}`}
+          >
+            <span className="tab-icon">📋</span>
+            <span className="tab-label">Explore</span>
+          </button>
+        </nav>
+      )}
+
+      {/* Telegram Keyboard (Mobile Navigation) */}
+      {isMobile && (
+        <div className="telegram-keyboard">
+          <div className="telegram-keyboard-row">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className={`telegram-keyboard-button ${isActive('/dashboard') ? 'active' : ''}`}
+            >
+              Weekly
+            </button>
+            <button
+              onClick={() => navigate('/community')}
+              className={`telegram-keyboard-button ${isActive('/community') ? 'active' : ''}`}
+            >
+              Community
+            </button>
+            <button
+              onClick={() => navigate('/templates')}
+              className={`telegram-keyboard-button ${isActive('/templates') ? 'active' : ''}`}
+            >
+              Explore
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

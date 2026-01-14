@@ -2025,6 +2025,74 @@ html, body {
   padding-bottom: calc(32px + 60px + env(safe-area-inset-bottom));
 }
 
+/* Telegram Keyboard (Mobile) */
+.telegram-keyboard {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(11, 16, 32, 0.95);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 1000;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.telegram-keyboard-row {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.telegram-keyboard-button {
+  flex: 1;
+  padding: 12px 16px;
+  background: rgba(91, 163, 245, 0.15);
+  border: 1px solid rgba(91, 163, 245, 0.3);
+  border-radius: 8px;
+  color: rgba(232, 238, 252, 0.9);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.telegram-keyboard-button:hover {
+  background: rgba(91, 163, 245, 0.25);
+  border-color: rgba(91, 163, 245, 0.5);
+  color: rgba(232, 238, 252, 1);
+}
+
+.telegram-keyboard-button.active {
+  background: rgba(91, 163, 245, 0.3);
+  border-color: rgba(91, 163, 245, 0.6);
+  color: rgba(232, 238, 252, 1);
+  box-shadow: 0 0 0 2px rgba(91, 163, 245, 0.2);
+}
+
+.telegram-keyboard-button:active {
+  transform: scale(0.98);
+  background: rgba(91, 163, 245, 0.35);
+}
+
+/* Hide tab-bar on mobile, show Telegram keyboard */
+@media (max-width: 767px) {
+  .tab-bar {
+    display: none !important;
+  }
+  
+  .app {
+    padding-bottom: calc(32px + 68px + env(safe-area-inset-bottom));
+  }
+}
+
 /* Community sidebar styling */
 .community-sidebar {
   /* Custom scrollbar for webkit browsers */
