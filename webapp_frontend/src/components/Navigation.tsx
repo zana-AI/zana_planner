@@ -235,32 +235,90 @@ export function Navigation() {
               }}>
                 {displayName}
               </div>
-              <button
-                onClick={() => {
-                  navigate('/dashboard');
-                  setShowProfileMenu(false);
-                }}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'none',
-                  border: 'none',
-                  color: '#fff',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  borderRadius: '4px',
-                  transition: 'background 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'none';
-                }}
-              >
-                👤 Profile / Weekly
-              </button>
+              {!isMobile && (
+                <>
+                  <button
+                    onClick={() => {
+                      navigate('/dashboard');
+                      setShowProfileMenu(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      background: 'none',
+                      border: 'none',
+                      color: '#fff',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      borderRadius: '4px',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'none';
+                    }}
+                  >
+                    👤 Profile / Weekly
+                  </button>
+                  <button
+                    onClick={() => {
+                      navigate('/community');
+                      setShowProfileMenu(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      background: 'none',
+                      border: 'none',
+                      color: '#fff',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      borderRadius: '4px',
+                      transition: 'background 0.2s',
+                      marginTop: '0.25rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'none';
+                    }}
+                  >
+                    👥 Community
+                  </button>
+                  <button
+                    onClick={() => {
+                      navigate('/templates');
+                      setShowProfileMenu(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      background: 'none',
+                      border: 'none',
+                      color: '#fff',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      borderRadius: '4px',
+                      transition: 'background 0.2s',
+                      marginTop: '0.25rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'none';
+                    }}
+                  >
+                    📋 Explore
+                  </button>
+                </>
+              )}
               <a
                 href={botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot'}
                 target="_blank"
@@ -279,7 +337,7 @@ export function Navigation() {
                   transition: 'background 0.2s',
                   textDecoration: 'none',
                   display: 'block',
-                  marginTop: '0.25rem'
+                  marginTop: isMobile ? '0' : '0.25rem'
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
@@ -290,60 +348,6 @@ export function Navigation() {
               >
                 🤖 Open Bot
               </a>
-              <button
-                onClick={() => {
-                  navigate('/community');
-                  setShowProfileMenu(false);
-                }}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'none',
-                  border: 'none',
-                  color: '#fff',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  borderRadius: '4px',
-                  transition: 'background 0.2s',
-                  marginTop: '0.25rem'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'none';
-                }}
-              >
-                👥 Community
-              </button>
-              <button
-                onClick={() => {
-                  navigate('/templates');
-                  setShowProfileMenu(false);
-                }}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'none',
-                  border: 'none',
-                  color: '#fff',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  borderRadius: '4px',
-                  transition: 'background 0.2s',
-                  marginTop: '0.25rem'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'none';
-                }}
-              >
-                📋 Explore
-              </button>
               {isAdmin && (
                 <button
                   onClick={() => {
@@ -407,7 +411,7 @@ export function Navigation() {
         </div>
       </header>
 
-      {/* Bottom Tab Bar (Desktop Navigation) - Hidden on Mobile */}
+      {/* Bottom Tab Bar (Desktop Navigation only - Hidden on Mobile) */}
       {!isMobile && (
         <nav className="tab-bar">
           <button
@@ -432,32 +436,6 @@ export function Navigation() {
             <span className="tab-label">Explore</span>
           </button>
         </nav>
-      )}
-
-      {/* Telegram Keyboard (Mobile Navigation) */}
-      {isMobile && (
-        <div className="telegram-keyboard">
-          <div className="telegram-keyboard-row">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className={`telegram-keyboard-button ${isActive('/dashboard') ? 'active' : ''}`}
-            >
-              Weekly
-            </button>
-            <button
-              onClick={() => navigate('/community')}
-              className={`telegram-keyboard-button ${isActive('/community') ? 'active' : ''}`}
-            >
-              Community
-            </button>
-            <button
-              onClick={() => navigate('/templates')}
-              className={`telegram-keyboard-button ${isActive('/templates') ? 'active' : ''}`}
-            >
-              Explore
-            </button>
-          </div>
-        </div>
       )}
     </>
   );

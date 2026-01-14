@@ -26,7 +26,7 @@ from utils.time_utils import get_week_range
 from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
 from utils.formatting import format_response_html
 from ui.messages import weekly_report_text
-from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb, mini_app_kb
+from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb, mini_app_kb, navigation_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily, schedule_once
 from handlers.callback_handlers import CallbackHandlers
@@ -186,8 +186,8 @@ class MessageHandlers:
         else:
             message = get_message("welcome_return", user_lang)
 
-        # Add mini app keyboard to welcome message
-        keyboard = mini_app_kb(self.miniapp_url)
+        # Add navigation keyboard to welcome message (Weekly, Community, Explore)
+        keyboard = navigation_kb(self.miniapp_url)
 
         await self.response_service.reply_text(
             update, message,

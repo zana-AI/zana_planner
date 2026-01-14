@@ -20,6 +20,7 @@ from platforms.keyboards import (
     session_controls_kb as _session_controls_kb,
     delete_confirmation_kb as _delete_confirmation_kb,
     mini_app_kb as _mini_app_kb,
+    navigation_kb as _navigation_kb,
 )
 from platforms.telegram.keyboard_adapter import TelegramKeyboardAdapter
 
@@ -133,6 +134,12 @@ def broadcast_confirmation_kb() -> InlineKeyboardMarkup:
 def mini_app_kb(mini_app_url: str, button_text: str = "Open App") -> InlineKeyboardMarkup:
     """Create keyboard with mini app button."""
     keyboard = _mini_app_kb(mini_app_url)
+    return _keyboard_adapter.build_keyboard(keyboard)
+
+
+def navigation_kb(mini_app_url: str) -> InlineKeyboardMarkup:
+    """Create navigation keyboard with Weekly, Community, and Explore buttons."""
+    keyboard = _navigation_kb(mini_app_url)
     return _keyboard_adapter.build_keyboard(keyboard)
 
 

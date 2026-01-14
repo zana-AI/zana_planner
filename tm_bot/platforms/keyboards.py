@@ -322,3 +322,27 @@ def mini_app_kb(mini_app_url: str, button_text: str = "Open App") -> Keyboard:
     keyboard.add_row(button)
     return keyboard
 
+
+def navigation_kb(mini_app_url: str) -> Keyboard:
+    """Create navigation keyboard with Weekly, Community, and Explore buttons."""
+    keyboard = Keyboard()
+    
+    # Create buttons for each navigation option
+    weekly_button = create_button(
+        text="📅 Weekly",
+        web_app_url=f"{mini_app_url}/dashboard"
+    )
+    community_button = create_button(
+        text="👥 Community",
+        web_app_url=f"{mini_app_url}/community"
+    )
+    explore_button = create_button(
+        text="🔍 Explore",
+        web_app_url=f"{mini_app_url}/templates"
+    )
+    
+    # Add all buttons in a single row
+    keyboard.add_row(weekly_button, community_button, explore_button)
+    
+    return keyboard
+
