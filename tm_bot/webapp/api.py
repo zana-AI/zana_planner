@@ -1486,39 +1486,7 @@ def create_webapp_api(
                     # Link promise to template via promise_instances (idempotent due to unique constraint)
                     with get_db_session() as session:
                         if promise_uuid:
-                        # Upsert instance link (ON CONFLICT DO NOTHING if unique constraint exists)
-                        try:
-                            session.execute(
-                                text("""
-                                    INSERT INTO promise_instances (
-                                        instance_id, user_id, template_id, promise_uuid, status,
-                                        metric_type, target_value, estimated_hours_per_unit,
-                                        start_date, end_date, created_at_utc, updated_at_utc
-                                    ) VALUES (
-                                        gen_random_uuid()::text, :user_id, :template_id, :promise_uuid, 'active',
-                                        :metric_type, :target_value, 1.0,
-                                        COALESCE(:start_date, CURRENT_DATE::text), :end_date,
-                                        :now, :now
-                                    )
-                                    ON CONFLICT (promise_uuid) DO UPDATE SET
-                                        template_id = EXCLUDED.template_id,
-                                        updated_at_utc = EXCLUDED.updated_at_utc
-                                """),
-                                {
-                                    "user_id": user_str,
-                                    "template_id": template_id,
-                                    "promise_uuid": promise_uuid,
-                                    "metric_type": metric_type,
-                                    "target_value": target_value,
-                                    "start_date": promise.start_date.isoformat() if promise.start_date else None,
-                                    "end_date": promise.end_date.isoformat() if promise.end_date else None,
-                                    "now": utc_now_iso()
-                                }
-                            )
-                        except Exception as e:
-                            # If unique constraint doesn't exist yet, try without ON CONFLICT
-                            logger.warning(f"Could not upsert instance link (may need migration): {e}")
-                            # Try simple insert (will fail if duplicate, that's OK)
+                            # Upsert instance link (ON CONFLICT DO NOTHING if unique constraint exists)
                             try:
                                 session.execute(
                                     text("""
@@ -1532,6 +1500,9 @@ def create_webapp_api(
                                             COALESCE(:start_date, CURRENT_DATE::text), :end_date,
                                             :now, :now
                                         )
+                                        ON CONFLICT (promise_uuid) DO UPDATE SET
+                                            template_id = EXCLUDED.template_id,
+                                            updated_at_utc = EXCLUDED.updated_at_utc
                                     """),
                                     {
                                         "user_id": user_str,
@@ -1544,9 +1515,38 @@ def create_webapp_api(
                                         "now": utc_now_iso()
                                     }
                                 )
-                            except Exception:
-                                # Already linked, ignore
-                                pass
+                            except Exception as e:
+                                # If unique constraint doesn't exist yet, try without ON CONFLICT
+                                logger.warning(f"Could not upsert instance link (may need migration): {e}")
+                                # Try simple insert (will fail if duplicate, that's OK)
+                                try:
+                                    session.execute(
+                                        text("""
+                                            INSERT INTO promise_instances (
+                                                instance_id, user_id, template_id, promise_uuid, status,
+                                                metric_type, target_value, estimated_hours_per_unit,
+                                                start_date, end_date, created_at_utc, updated_at_utc
+                                            ) VALUES (
+                                                gen_random_uuid()::text, :user_id, :template_id, :promise_uuid, 'active',
+                                                :metric_type, :target_value, 1.0,
+                                                COALESCE(:start_date, CURRENT_DATE::text), :end_date,
+                                                :now, :now
+                                            )
+                                        """),
+                                        {
+                                            "user_id": user_str,
+                                            "template_id": template_id,
+                                            "promise_uuid": promise_uuid,
+                                            "metric_type": metric_type,
+                                            "target_value": target_value,
+                                            "start_date": promise.start_date.isoformat() if promise.start_date else None,
+                                            "end_date": promise.end_date.isoformat() if promise.end_date else None,
+                                            "now": utc_now_iso()
+                                        }
+                                    )
+                                except Exception:
+                                    # Already linked, ignore
+                                    pass
             
             return {"status": "success", "visibility": promise.visibility}
         except HTTPException:
