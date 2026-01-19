@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { PublicUser } from '../types';
+import type { PublicUser, UserInfo } from '../types';
 import { PromiseBadge } from '../components/PromiseBadge';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 
 export function UserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
-  const { user, hapticFeedback } = useTelegramWebApp();
+  const { user, initData, hapticFeedback } = useTelegramWebApp();
   const [userData, setUserData] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -19,8 +19,30 @@ export function UserDetailPage() {
   const [followStatusChecked, setFollowStatusChecked] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [dicebearError, setDicebearError] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
-  const currentUserId = user?.id?.toString();
+  // Support both Telegram Mini App (initData + initDataUnsafe.user) and browser login token.
+  const hasToken = !!localStorage.getItem('telegram_auth_token');
+
+  // Set initData for API client if available (Telegram Mini App)
+  useEffect(() => {
+    if (initData) {
+      apiClient.setInitData(initData);
+    }
+  }, [initData]);
+
+  // Fetch userInfo for browser login users (to get user_id)
+  useEffect(() => {
+    if (hasToken && !initData) {
+      apiClient.getUserInfo()
+        .then(setUserInfo)
+        .catch(() => {
+          console.error('Failed to fetch user info');
+        });
+    }
+  }, [hasToken, initData]);
+
+  const currentUserId = user?.id?.toString() || userInfo?.user_id?.toString();
 
   useEffect(() => {
     if (!userId) {
@@ -48,6 +70,12 @@ export function UserDetailPage() {
     };
 
     fetchUser();
+  }, [userId]);
+
+  // Reset follow status when navigating between profiles
+  useEffect(() => {
+    setFollowStatusChecked(false);
+    setIsFollowing(false);
   }, [userId]);
 
   // Check follow status if authenticated and not own profile
