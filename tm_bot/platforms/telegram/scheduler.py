@@ -7,6 +7,7 @@ Wraps Telegram's JobQueue to implement the IJobScheduler interface.
 from typing import Callable, Optional
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfoNotFoundError
 from telegram.ext import JobQueue
 
 from ..interfaces import IJobScheduler
@@ -14,6 +15,22 @@ from ..interfaces import IJobScheduler
 
 class TelegramJobScheduler(IJobScheduler):
     """Telegram implementation of IJobScheduler."""
+    
+    @staticmethod
+    def _normalize_tz(tz: Optional[str]) -> str:
+        """
+        Normalize user timezone for scheduling.
+        
+        - Treat None / empty / DEFAULT placeholder as UTC
+        - If timezone key is invalid, fall back to UTC
+        """
+        if not tz or tz == "DEFAULT":
+            return "UTC"
+        try:
+            ZoneInfo(tz)
+            return tz
+        except ZoneInfoNotFoundError:
+            return "UTC"
     
     def __init__(self, job_queue: JobQueue):
         """Initialize with Telegram's JobQueue."""
@@ -30,6 +47,7 @@ class TelegramJobScheduler(IJobScheduler):
     ) -> None:
         """Schedule a daily recurring job for a user."""
         job_name = f"{name_prefix}-{user_id}"
+        tz = self._normalize_tz(tz)
         
         # Clear any existing job with the same name
         for job in self._job_queue.get_jobs_by_name(job_name):

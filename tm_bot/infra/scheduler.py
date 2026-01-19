@@ -1,11 +1,24 @@
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfoNotFoundError
 from telegram.ext import JobQueue
+
+
+def _normalize_tz(tz: str) -> str:
+    """Normalize timezone for scheduling. Falls back to UTC for DEFAULT/invalid tz."""
+    if not tz or tz == "DEFAULT":
+        return "UTC"
+    try:
+        ZoneInfo(tz)
+        return tz
+    except ZoneInfoNotFoundError:
+        return "UTC"
 
 
 def schedule_user_daily(job_queue: JobQueue, user_id: int, tz: str, callback, hh: int = 22, mm: int = 0, name_prefix: str = "nightly"):
     """Schedule a daily job for a user at timezone-aware time."""
     job_name = f"{name_prefix}-{user_id}"
+    tz = _normalize_tz(tz)
     
     # Clear any existing job with the same name
     # Disable immediately to prevent duplicate runs, then schedule removal

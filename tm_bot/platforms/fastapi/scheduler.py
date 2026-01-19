@@ -62,10 +62,12 @@ class FastAPIJobScheduler(IJobScheduler):
             # Try zoneinfo first (Python 3.9+)
             try:
                 from zoneinfo import ZoneInfo
-                timezone = ZoneInfo(tz)
+                tzname = tz if tz and tz != "DEFAULT" else "UTC"
+                timezone = ZoneInfo(tzname)
             except (ImportError, ValueError):
                 # Fallback to pytz
-                timezone = pytz.timezone(tz)
+                tzname = tz if tz and tz != "DEFAULT" else "UTC"
+                timezone = pytz.timezone(tzname)
         except Exception:
             timezone = pytz.UTC
         
@@ -88,8 +90,9 @@ class FastAPIJobScheduler(IJobScheduler):
                 
                 # Execute callback
                 context = JobContext(
+                    job_name=name,
                     user_id=user_id,
-                    data={"scheduled_time": next_run.isoformat()}
+                    data={"scheduled_time": next_run.isoformat()},
                 )
                 
                 if asyncio.iscoroutinefunction(callback):
@@ -136,7 +139,11 @@ class FastAPIJobScheduler(IJobScheduler):
             if wait_seconds > 0:
                 await asyncio.sleep(wait_seconds)
             
-            context = JobContext(user_id=data.get("user_id", 0) if data else 0, data=data or {})
+            context = JobContext(
+                job_name=name,
+                user_id=data.get("user_id", 0) if data else 0,
+                data=data or {},
+            )
             
             if asyncio.iscoroutinefunction(callback):
                 await callback(context)
@@ -180,7 +187,11 @@ class FastAPIJobScheduler(IJobScheduler):
         """Execute a repeating job."""
         try:
             while self._running and name in self._jobs:
-                context = JobContext(user_id=data.get("user_id", 0) if data else 0, data=data or {})
+                context = JobContext(
+                    job_name=name,
+                    user_id=data.get("user_id", 0) if data else 0,
+                    data=data or {},
+                )
                 
                 if asyncio.iscoroutinefunction(callback):
                     await callback(context)
