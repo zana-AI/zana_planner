@@ -1237,7 +1237,7 @@ def create_webapp_api(
                     text("""
                         SELECT COUNT(*) as activity_count
                         FROM actions 
-                        WHERE user_id = :user_id AND at_utc >= NOW() - INTERVAL '30 days'
+                        WHERE user_id = :user_id AND at_utc::timestamp with time zone >= NOW() - INTERVAL '30 days'
                     """),
                     {"user_id": str(user_id)}
                 ).mappings().fetchone()
@@ -1376,7 +1376,7 @@ def create_webapp_api(
                             text("""
                                 SELECT COUNT(*) as activity_count
                                 FROM actions 
-                                WHERE user_id = :user_id AND at_utc >= NOW() - INTERVAL '30 days'
+                                WHERE user_id = :user_id AND at_utc::timestamp with time zone >= NOW() - INTERVAL '30 days'
                             """),
                             {"user_id": follower_id_str}
                         ).mappings().fetchone()
@@ -1465,7 +1465,7 @@ def create_webapp_api(
                             text("""
                                 SELECT COUNT(*) as activity_count
                                 FROM actions 
-                                WHERE user_id = :user_id AND at_utc >= NOW() - INTERVAL '30 days'
+                                WHERE user_id = :user_id AND at_utc::timestamp with time zone >= NOW() - INTERVAL '30 days'
                             """),
                             {"user_id": following_id_str}
                         ).mappings().fetchone()
