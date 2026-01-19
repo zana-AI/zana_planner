@@ -106,7 +106,7 @@ class ReviewsRepository:
             from repositories.templates_repo import TemplatesRepository
             templates_repo = TemplatesRepository(self.root_dir)
             template = templates_repo.get_template(instance["template_id"])
-            if template and template["template_kind"] == "budget":
+            if template and template.get("template_kind") == "budget":
                 # Sum distraction minutes for this week, convert to hours
                 with get_db_session() as session:
                     week_start_utc = dt_to_utc_iso(week_start)

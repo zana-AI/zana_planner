@@ -55,21 +55,23 @@ class InstancesRepository:
         if not start_date:
             start_date = datetime.now().date()
         if not target_date:
-            if template["duration_type"] == "week":
-                weeks = template["duration_weeks"] or 1
+            duration_type = template.get("duration_type") or "week"
+            duration_weeks = template.get("duration_weeks")
+            if duration_type == "week":
+                weeks = duration_weeks or 1
                 target_date = start_date + timedelta(weeks=weeks)
-            elif template["duration_type"] == "one_time":
+            elif duration_type == "one_time":
                 target_date = start_date + timedelta(days=7)  # Default 1 week
             else:  # date
                 # For date-based, target_date should be provided or we use duration_weeks
-                weeks = template["duration_weeks"] or 4
+                weeks = duration_weeks or 4
                 target_date = start_date + timedelta(weeks=weeks)
 
         # Determine target value (use override if provided, else template default)
         target_value = target_value_override if target_value_override is not None else template["target_value"]
         
         # Generate promise ID: P-prefix for recurring, T-prefix for non-recurring
-        is_recurring = template["duration_type"] != "one_time"
+        is_recurring = (template.get("duration_type") or "week") != "one_time"
         prefix = "P" if is_recurring else "T"
         promise_id = f"{prefix}{instance_id[:6].upper()}"
         
@@ -124,7 +126,7 @@ class InstancesRepository:
                     "status": "active",
                     "metric_type": template["metric_type"],
                     "target_value": target_value,  # Use override if provided
-                    "estimated_hours_per_unit": template["estimated_hours_per_unit"],
+                    "estimated_hours_per_unit": template.get("estimated_hours_per_unit", 1.0),
                     "start_date": date_to_iso(start_date),
                     "end_date": date_to_iso(target_date),
                     "created_at_utc": now,

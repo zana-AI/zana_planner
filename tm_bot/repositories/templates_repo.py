@@ -31,13 +31,31 @@ class TemplatesRepository:
             return result is not None
         except Exception:
             return False
+    
+    def _has_column(self, session, table_name: str, column_name: str) -> bool:
+        """Check if a column exists in a table."""
+        try:
+            result = session.execute(
+                text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = :table_name 
+                    AND column_name = :column_name
+                    LIMIT 1
+                """),
+                {"table_name": table_name, "column_name": column_name}
+            ).fetchone()
+            return result is not None
+        except Exception:
+            return False
 
     def list_templates(
         self,
         category: Optional[str] = None,
+        program_key: Optional[str] = None,
         is_active: Optional[bool] = True,
     ) -> List[Dict[str, Any]]:
-        """List templates, optionally filtered by category."""
+        """List templates, optionally filtered by category (program_key ignored)."""
         with get_db_session() as session:
             conditions = []
             params = {}
@@ -53,12 +71,17 @@ class TemplatesRepository:
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             
             # Check schema version
-            if self._has_simplified_schema(session):
+            has_description = self._has_simplified_schema(session)
+            has_created_by = self._has_column(session, "promise_templates", "created_by_user_id")
+            
+            if has_description:
+                # Simplified schema
+                select_fields = "template_id, title, description, category, target_value, metric_type, emoji, is_active, created_at_utc, updated_at_utc"
+                if has_created_by:
+                    select_fields = "template_id, title, description, category, target_value, metric_type, emoji, created_by_user_id, is_active, created_at_utc, updated_at_utc"
                 rows = session.execute(
                     text(f"""
-                        SELECT template_id, title, description, category, target_value, 
-                               metric_type, emoji, created_by_user_id, is_active,
-                               created_at_utc, updated_at_utc
+                        SELECT {select_fields}
                         FROM promise_templates
                         WHERE {where_clause}
                         ORDER BY category, title;
@@ -67,12 +90,12 @@ class TemplatesRepository:
                 ).fetchall()
             else:
                 # Legacy schema - map old fields to new
+                select_fields = "template_id, title, why as description, category, target_value, metric_type, NULL as emoji, is_active, created_at_utc, updated_at_utc"
+                if has_created_by:
+                    select_fields = "template_id, title, why as description, category, target_value, metric_type, NULL as emoji, created_by_user_id, is_active, created_at_utc, updated_at_utc"
                 rows = session.execute(
                     text(f"""
-                        SELECT template_id, title, why as description, category, target_value, 
-                               metric_type, NULL as emoji, 
-                               COALESCE(created_by_user_id, NULL) as created_by_user_id, 
-                               is_active, created_at_utc, updated_at_utc
+                        SELECT {select_fields}
                         FROM promise_templates
                         WHERE {where_clause}
                         ORDER BY category, title;
@@ -82,15 +105,24 @@ class TemplatesRepository:
 
         return [dict(row._mapping) for row in rows]
 
+    def get_prerequisites(self, template_id: str) -> List[Dict[str, Any]]:
+        """Return prerequisites for a template. Simplified schema has none."""
+        return []
+
     def get_template(self, template_id: str) -> Optional[Dict[str, Any]]:
         """Get a single template by ID."""
         with get_db_session() as session:
-            if self._has_simplified_schema(session):
+            has_description = self._has_simplified_schema(session)
+            has_created_by = self._has_column(session, "promise_templates", "created_by_user_id")
+            
+            if has_description:
+                # Simplified schema
+                select_fields = "template_id, title, description, category, target_value, metric_type, emoji, is_active, created_at_utc, updated_at_utc"
+                if has_created_by:
+                    select_fields = "template_id, title, description, category, target_value, metric_type, emoji, created_by_user_id, is_active, created_at_utc, updated_at_utc"
                 row = session.execute(
-                    text("""
-                        SELECT template_id, title, description, category, target_value, 
-                               metric_type, emoji, created_by_user_id, is_active,
-                               created_at_utc, updated_at_utc
+                    text(f"""
+                        SELECT {select_fields}
                         FROM promise_templates
                         WHERE template_id = :template_id
                         LIMIT 1;
@@ -99,12 +131,12 @@ class TemplatesRepository:
                 ).fetchone()
             else:
                 # Legacy schema
+                select_fields = "template_id, title, why as description, category, target_value, metric_type, NULL as emoji, is_active, created_at_utc, updated_at_utc"
+                if has_created_by:
+                    select_fields = "template_id, title, why as description, category, target_value, metric_type, NULL as emoji, created_by_user_id, is_active, created_at_utc, updated_at_utc"
                 row = session.execute(
-                    text("""
-                        SELECT template_id, title, why as description, category, target_value, 
-                               metric_type, NULL as emoji,
-                               COALESCE(created_by_user_id, NULL) as created_by_user_id,
-                               is_active, created_at_utc, updated_at_utc
+                    text(f"""
+                        SELECT {select_fields}
                         FROM promise_templates
                         WHERE template_id = :template_id
                         LIMIT 1;
@@ -120,33 +152,37 @@ class TemplatesRepository:
         now = utc_now_iso()
         
         with get_db_session() as session:
-            if self._has_simplified_schema(session):
+            has_description = self._has_simplified_schema(session)
+            has_created_by = self._has_column(session, "promise_templates", "created_by_user_id")
+            
+            if has_description:
                 # Simplified schema
+                columns = ["template_id", "title", "description", "category", "target_value", "metric_type", "emoji", "is_active", "created_at_utc", "updated_at_utc"]
+                values = [":template_id", ":title", ":description", ":category", ":target_value", ":metric_type", ":emoji", ":is_active", ":created_at_utc", ":updated_at_utc"]
+                params = {
+                    "template_id": template_id,
+                    "title": template_data["title"],
+                    "description": template_data.get("description"),
+                    "category": template_data["category"],
+                    "target_value": template_data["target_value"],
+                    "metric_type": template_data.get("metric_type", "count"),
+                    "emoji": template_data.get("emoji"),
+                    "is_active": 1 if template_data.get("is_active", True) else 0,
+                    "created_at_utc": now,
+                    "updated_at_utc": now,
+                }
+                
+                if has_created_by:
+                    columns.insert(-2, "created_by_user_id")  # Insert before is_active
+                    values.insert(-2, ":created_by_user_id")
+                    params["created_by_user_id"] = template_data.get("created_by_user_id")
+                
                 session.execute(
-                    text("""
-                        INSERT INTO promise_templates (
-                            template_id, title, description, category, target_value,
-                            metric_type, emoji, created_by_user_id, is_active,
-                            created_at_utc, updated_at_utc
-                        ) VALUES (
-                            :template_id, :title, :description, :category, :target_value,
-                            :metric_type, :emoji, :created_by_user_id, :is_active,
-                            :created_at_utc, :updated_at_utc
-                        )
+                    text(f"""
+                        INSERT INTO promise_templates ({', '.join(columns)})
+                        VALUES ({', '.join(values)})
                     """),
-                    {
-                        "template_id": template_id,
-                        "title": template_data["title"],
-                        "description": template_data.get("description"),
-                        "category": template_data["category"],
-                        "target_value": template_data["target_value"],
-                        "metric_type": template_data.get("metric_type", "count"),
-                        "emoji": template_data.get("emoji"),
-                        "created_by_user_id": template_data.get("created_by_user_id"),
-                        "is_active": 1 if template_data.get("is_active", True) else 0,
-                        "created_at_utc": now,
-                        "updated_at_utc": now,
-                    },
+                    params,
                 )
             else:
                 # Legacy schema - insert with old field names
@@ -277,7 +313,14 @@ class TemplatesRepository:
     def get_templates_by_user(self, user_id: int) -> List[Dict[str, Any]]:
         """Get templates created by a specific user."""
         with get_db_session() as session:
-            if self._has_simplified_schema(session):
+            has_description = self._has_simplified_schema(session)
+            has_created_by = self._has_column(session, "promise_templates", "created_by_user_id")
+            
+            # Only query if created_by_user_id column exists
+            if not has_created_by:
+                return []
+            
+            if has_description:
                 rows = session.execute(
                     text("""
                         SELECT template_id, title, description, category, target_value, 
