@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { PublicUser, PublicPromiseBadge } from '../types';
+import type { PublicUser } from '../types';
 import { PromiseBadge } from '../components/PromiseBadge';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
-import { UserCard } from '../components/UserCard';
 
 export function UserDetailPage() {
   const { userId } = useParams<{ userId: string }>();

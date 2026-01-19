@@ -213,8 +213,8 @@ class ApiClient {
   /**
    * Get public user information by ID.
    */
-  async getUser(userId: string): Promise<PublicUser> {
-    return this.request<PublicUser>(`/users/${userId}`);
+  async getUser(userId: string): Promise<import('../types').PublicUser> {
+    return this.request<import('../types').PublicUser>(`/users/${userId}`);
   }
 
   /**
