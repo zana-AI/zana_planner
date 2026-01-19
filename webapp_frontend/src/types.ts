@@ -162,6 +162,7 @@ export interface Broadcast {
   target_user_ids: number[];
   scheduled_time_utc: string;
   status: 'pending' | 'completed' | 'cancelled';
+  bot_token_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -170,6 +171,16 @@ export interface CreateBroadcastRequest {
   message: string;
   target_user_ids: number[];
   scheduled_time_utc?: string;
+  bot_token_id?: string;
+}
+
+export interface BotToken {
+  bot_token_id: string;
+  bot_username?: string;
+  is_active: boolean;
+  description?: string;
+  created_at_utc: string;
+  updated_at_utc: string;
 }
 
 export interface UpdateBroadcastRequest {

@@ -59,7 +59,8 @@ async def send_broadcast(
     response_service: IResponseService,
     user_ids: List[int],
     message: str,
-    rate_limit_delay: float = 0.05
+    rate_limit_delay: float = 0.05,
+    bot_token: Optional[str] = None
 ) -> Dict[str, int]:
     """
     Send a broadcast message to all users with rate limiting.
@@ -69,23 +70,45 @@ async def send_broadcast(
         user_ids: List of user IDs to send to
         message: Message text to send
         rate_limit_delay: Delay between messages in seconds (default 0.05 = 20 msg/sec)
+        bot_token: Optional bot token to use instead of the default response service
         
     Returns:
         Dictionary with 'success' and 'failed' counts
     """
+    from telegram import Bot
+    
     success_count = 0
     failed_count = 0
     
     logger.info(f"Starting broadcast to {len(user_ids)} users")
     
+    # If bot_token is provided, create a Bot instance to use directly
+    bot = None
+    if bot_token:
+        try:
+            bot = Bot(token=bot_token)
+            logger.info(f"Using custom bot token for broadcast")
+        except Exception as e:
+            logger.error(f"Failed to create Bot instance with provided token: {e}")
+            return {"success": 0, "failed": len(user_ids)}
+    
     for user_id in user_ids:
         try:
-            await response_service.send_text(
-                user_id=user_id,
-                chat_id=user_id,  # For Telegram, chat_id == user_id for private chats
-                text=message,
-                parse_mode='Markdown'
-            )
+            if bot:
+                # Use the custom bot token directly
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=message,
+                    parse_mode='Markdown'
+                )
+            else:
+                # Use the default response service
+                await response_service.send_text(
+                    user_id=user_id,
+                    chat_id=user_id,  # For Telegram, chat_id == user_id for private chats
+                    text=message,
+                    parse_mode='Markdown'
+                )
             success_count += 1
             
             # Rate limiting: delay between messages
@@ -124,6 +147,8 @@ async def execute_broadcast_from_db(
     Returns:
         Dictionary with 'success' and 'failed' counts
     """
+    from repositories.bot_tokens_repo import BotTokensRepository
+    
     broadcasts_repo = BroadcastsRepository(root_dir)
     broadcast = broadcasts_repo.get_broadcast(broadcast_id)
     
@@ -135,11 +160,23 @@ async def execute_broadcast_from_db(
         logger.warning(f"Broadcast {broadcast_id} is not pending (status: {broadcast.status})")
         return {"success": 0, "failed": 0}
     
+    # Get bot token if specified
+    bot_token = None
+    if broadcast.bot_token_id:
+        bot_tokens_repo = BotTokensRepository(root_dir)
+        bot_token_data = bot_tokens_repo.get_bot_token(broadcast.bot_token_id)
+        if bot_token_data:
+            bot_token = bot_token_data["bot_token"]
+            logger.info(f"Using bot token {broadcast.bot_token_id} for broadcast {broadcast_id}")
+        else:
+            logger.warning(f"Bot token {broadcast.bot_token_id} not found, using default response service")
+    
     # Execute the broadcast
     results = await send_broadcast(
         response_service,
         broadcast.target_user_ids,
         broadcast.message,
+        bot_token=bot_token,
     )
     
     # Mark as completed

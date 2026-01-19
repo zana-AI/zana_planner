@@ -84,6 +84,7 @@ class Broadcast:
     target_user_ids: list[int]  # List of user IDs as integers
     scheduled_time_utc: datetime
     status: str = "pending"  # "pending" | "completed" | "cancelled"
+    bot_token_id: Optional[str] = None  # ID of the bot token to use for this broadcast
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

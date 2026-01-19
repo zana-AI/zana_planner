@@ -16,7 +16,8 @@ import type {
   LogDistractionRequest,
   WeeklyDistractionsResponse,
   PromiseSuggestion,
-  CreateSuggestionRequest
+  CreateSuggestionRequest,
+  BotToken
 } from '../types';
 
 const API_BASE = '/api';
@@ -281,6 +282,16 @@ class ApiClient {
    */
   async getAdminUsers(limit: number = 1000): Promise<AdminUsersResponse> {
     return this.request<AdminUsersResponse>(`/admin/users?limit=${limit}`);
+  }
+
+  /**
+   * Get available bot tokens (admin only).
+   */
+  async getBotTokens(isActive?: boolean): Promise<BotToken[]> {
+    const params = new URLSearchParams();
+    if (isActive !== undefined) params.append('is_active', isActive.toString());
+    const query = params.toString();
+    return this.request<BotToken[]>(`/admin/bot-tokens${query ? `?${query}` : ''}`);
   }
 
   /**

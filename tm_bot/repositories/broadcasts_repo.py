@@ -22,9 +22,17 @@ class BroadcastsRepository:
         message: str,
         target_user_ids: List[int],
         scheduled_time_utc: datetime,
+        bot_token_id: Optional[str] = None,
     ) -> str:
         """
         Create a new broadcast.
+        
+        Args:
+            admin_id: Admin user ID
+            message: Broadcast message text
+            target_user_ids: List of target user IDs
+            scheduled_time_utc: Scheduled time in UTC
+            bot_token_id: Optional bot token ID to use for this broadcast
         
         Returns:
             broadcast_id: The unique ID of the created broadcast
@@ -42,10 +50,12 @@ class BroadcastsRepository:
                 text("""
                     INSERT INTO broadcasts(
                         broadcast_id, admin_id, message, target_user_ids,
-                        scheduled_time_utc, status, created_at_utc, updated_at_utc
+                        scheduled_time_utc, status, bot_token_id,
+                        created_at_utc, updated_at_utc
                     ) VALUES (
                         :broadcast_id, :admin_id, :message, :target_user_ids,
-                        :scheduled_time_utc, 'pending', :created_at_utc, :updated_at_utc
+                        :scheduled_time_utc, 'pending', :bot_token_id,
+                        :created_at_utc, :updated_at_utc
                     );
                 """),
                 {
@@ -54,6 +64,7 @@ class BroadcastsRepository:
                     "message": message,
                     "target_user_ids": target_ids_json,
                     "scheduled_time_utc": scheduled_time_str,
+                    "bot_token_id": bot_token_id,
                     "created_at_utc": now,
                     "updated_at_utc": now,
                 },
@@ -67,7 +78,8 @@ class BroadcastsRepository:
             row = session.execute(
                 text("""
                     SELECT broadcast_id, admin_id, message, target_user_ids,
-                           scheduled_time_utc, status, created_at_utc, updated_at_utc
+                           scheduled_time_utc, status, bot_token_id,
+                           created_at_utc, updated_at_utc
                     FROM broadcasts
                     WHERE broadcast_id = :broadcast_id
                     LIMIT 1;
@@ -88,6 +100,7 @@ class BroadcastsRepository:
                 target_user_ids=[int(uid) for uid in target_ids],
                 scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
                 status=row["status"],
+                bot_token_id=row.get("bot_token_id"),
                 created_at=dt_from_utc_iso(row["created_at_utc"]),
                 updated_at=dt_from_utc_iso(row["updated_at_utc"]),
             )
@@ -124,7 +137,8 @@ class BroadcastsRepository:
             
             query = f"""
                 SELECT broadcast_id, admin_id, message, target_user_ids,
-                       scheduled_time_utc, status, created_at_utc, updated_at_utc
+                       scheduled_time_utc, status, bot_token_id,
+                       created_at_utc, updated_at_utc
                 FROM broadcasts
                 WHERE {' AND '.join(conditions)}
                 ORDER BY created_at_utc DESC LIMIT :limit
@@ -144,6 +158,7 @@ class BroadcastsRepository:
                         target_user_ids=[int(uid) for uid in target_ids],
                         scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
                         status=row["status"],
+                        bot_token_id=row.get("bot_token_id"),
                         created_at=dt_from_utc_iso(row["created_at_utc"]),
                         updated_at=dt_from_utc_iso(row["updated_at_utc"]),
                     )
@@ -158,6 +173,7 @@ class BroadcastsRepository:
         target_user_ids: Optional[List[int]] = None,
         scheduled_time_utc: Optional[datetime] = None,
         status: Optional[str] = None,
+        bot_token_id: Optional[str] = None,
     ) -> bool:
         """
         Update a broadcast.
@@ -183,6 +199,10 @@ class BroadcastsRepository:
         if status is not None:
             updates.append("status = :status")
             params["status"] = status
+        
+        if bot_token_id is not None:
+            updates.append("bot_token_id = :bot_token_id")
+            params["bot_token_id"] = bot_token_id
         
         if not updates:
             return False

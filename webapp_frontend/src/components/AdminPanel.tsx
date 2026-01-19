@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { UserAvatar } from './UserAvatar';
-import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate, UserInfo } from '../types';
+import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate, UserInfo, BotToken } from '../types';
 
 export function AdminPanel() {
   const navigate = useNavigate();
@@ -32,6 +32,9 @@ export function AdminPanel() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [botUsername, setBotUsername] = useState<string | null>(null);
+  const [botTokens, setBotTokens] = useState<BotToken[]>([]);
+  const [selectedBotTokenId, setSelectedBotTokenId] = useState<string>('');
+  const [loadingBotTokens, setLoadingBotTokens] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Check for authentication (initData or browser token)
@@ -215,6 +218,24 @@ export function AdminPanel() {
     }
   }, [activeTab, isAuthenticated]);
 
+  // Fetch bot tokens when compose tab is active
+  useEffect(() => {
+    if (activeTab === 'compose' && isAuthenticated) {
+      const fetchBotTokens = async () => {
+        setLoadingBotTokens(true);
+        try {
+          const tokens = await apiClient.getBotTokens(true); // Only fetch active tokens
+          setBotTokens(tokens);
+        } catch (err) {
+          console.error('Failed to fetch bot tokens:', err);
+        } finally {
+          setLoadingBotTokens(false);
+        }
+      };
+      fetchBotTokens();
+    }
+  }, [activeTab, isAuthenticated]);
+
   // Filter users based on search query
   const filteredUsers = users.filter(user => {
     const query = searchQuery.toLowerCase();
@@ -269,6 +290,7 @@ export function AdminPanel() {
         message: message.trim(),
         target_user_ids: Array.from(selectedUserIds),
         scheduled_time_utc: immediate ? undefined : scheduledTime || undefined,
+        bot_token_id: selectedBotTokenId || undefined,
       };
 
       await apiClient.createBroadcast(request);
@@ -802,6 +824,34 @@ export function AdminPanel() {
                 <div className="admin-no-users">No users found</div>
               )}
             </div>
+          </div>
+
+          <div className="admin-section">
+            <h2 className="admin-section-title">Bot Token (Optional)</h2>
+            {loadingBotTokens ? (
+              <div className="admin-loading">
+                <div className="loading-spinner" />
+                <div className="loading-text">Loading bot tokens...</div>
+              </div>
+            ) : (
+              <>
+                <select
+                  className="admin-select-input"
+                  value={selectedBotTokenId}
+                  onChange={(e) => setSelectedBotTokenId(e.target.value)}
+                >
+                  <option value="">Use default bot token</option>
+                  {botTokens.map((token) => (
+                    <option key={token.bot_token_id} value={token.bot_token_id}>
+                      {token.bot_username || 'Unknown'} {token.description ? `- ${token.description}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="admin-hint">
+                  Select a bot token to send through a different bot instance (e.g., old bot for users who only interacted with it)
+                </p>
+              </>
+            )}
           </div>
 
           <div className="admin-section">

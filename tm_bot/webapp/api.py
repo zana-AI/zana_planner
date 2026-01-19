@@ -22,6 +22,7 @@ from repositories.actions_repo import ActionsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.follows_repo import FollowsRepository
 from repositories.broadcasts_repo import BroadcastsRepository
+from repositories.bot_tokens_repo import BotTokensRepository
 from repositories.templates_repo import TemplatesRepository
 from repositories.instances_repo import InstancesRepository
 from repositories.reviews_repo import ReviewsRepository
@@ -2970,6 +2971,7 @@ Rules:
         message: str
         target_user_ids: List[int]
         scheduled_time_utc: Optional[str] = None  # ISO format datetime string, None for immediate
+        bot_token_id: Optional[str] = None  # Optional bot token ID to use for this broadcast
     
     class BroadcastResponse(BaseModel):
         """Response model for broadcast."""
@@ -2979,8 +2981,18 @@ Rules:
         target_user_ids: List[int]
         scheduled_time_utc: str
         status: str
+        bot_token_id: Optional[str] = None
         created_at: str
         updated_at: str
+    
+    class BotTokenResponse(BaseModel):
+        """Response model for bot token."""
+        bot_token_id: str
+        bot_username: Optional[str] = None
+        is_active: bool
+        description: Optional[str] = None
+        created_at_utc: str
+        updated_at_utc: str
     
     @app.get("/api/admin/users", response_model=AdminUsersResponse)
     async def get_admin_users(
@@ -3031,6 +3043,43 @@ Rules:
         except Exception as e:
             logger.exception(f"Error getting admin users: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+    
+    @app.get("/api/admin/bot-tokens", response_model=List[BotTokenResponse])
+    async def get_bot_tokens(
+        is_active: Optional[bool] = Query(None, description="Filter by active status"),
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        List available bot tokens (admin only).
+        
+        Args:
+            is_active: Filter by active status (optional)
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            List of bot tokens
+        """
+        try:
+            bot_tokens_repo = BotTokensRepository(app.state.root_dir)
+            tokens = bot_tokens_repo.list_bot_tokens(is_active=is_active)
+            
+            return [
+                BotTokenResponse(
+                    bot_token_id=token["bot_token_id"],
+                    bot_username=token["bot_username"],
+                    is_active=token["is_active"],
+                    description=token["description"],
+                    created_at_utc=token["created_at_utc"],
+                    updated_at_utc=token["updated_at_utc"],
+                )
+                for token in tokens
+            ]
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error listing bot tokens: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to list bot tokens: {str(e)}")
     
     @app.post("/api/admin/broadcast", response_model=BroadcastResponse)
     async def create_broadcast(
@@ -3093,6 +3142,7 @@ Rules:
                 message=request.message,
                 target_user_ids=valid_user_ids,
                 scheduled_time_utc=scheduled_dt,
+                bot_token_id=request.bot_token_id,
             )
             
             # Schedule job if not immediate (or schedule immediately if it's now)
@@ -3115,6 +3165,7 @@ Rules:
                 target_user_ids=broadcast.target_user_ids,
                 scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
                 status=broadcast.status,
+                bot_token_id=broadcast.bot_token_id,
                 created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
                 updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
             )
@@ -3158,6 +3209,7 @@ Rules:
                     target_user_ids=b.target_user_ids,
                     scheduled_time_utc=b.scheduled_time_utc.isoformat(),
                     status=b.status,
+                    bot_token_id=b.bot_token_id,
                     created_at=b.created_at.isoformat() if b.created_at else "",
                     updated_at=b.updated_at.isoformat() if b.updated_at else "",
                 )
@@ -3203,6 +3255,7 @@ Rules:
                 target_user_ids=broadcast.target_user_ids,
                 scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
                 status=broadcast.status,
+                bot_token_id=broadcast.bot_token_id,
                 created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
                 updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
             )
@@ -3292,6 +3345,7 @@ Rules:
                 target_user_ids=updated_broadcast.target_user_ids,
                 scheduled_time_utc=updated_broadcast.scheduled_time_utc.isoformat(),
                 status=updated_broadcast.status,
+                bot_token_id=updated_broadcast.bot_token_id,
                 created_at=updated_broadcast.created_at.isoformat() if updated_broadcast.created_at else "",
                 updated_at=updated_broadcast.updated_at.isoformat() if updated_broadcast.updated_at else "",
             )
