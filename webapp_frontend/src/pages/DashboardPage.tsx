@@ -4,6 +4,8 @@ import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
 import { UserCard } from '../components/UserCard';
+import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
+import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
 
 export function DashboardPage() {
@@ -20,6 +22,10 @@ export function DashboardPage() {
     // Get ref_time from URL params if present
     return searchParams.get('ref_time') || undefined;
   });
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
+  const [suggestToUserId, setSuggestToUserId] = useState<string>('');
+  const [suggestToUserName, setSuggestToUserName] = useState<string>('');
+  const [showSuggestionsInbox, setShowSuggestionsInbox] = useState(false);
 
   // Get current week's Monday for comparison
   const getCurrentWeekMonday = useCallback(() => {
@@ -154,6 +160,18 @@ export function DashboardPage() {
       fetchCommunityUsers();
     }
   }, [isReady, initData, user, userInfo]);
+
+  // Expose suggest promise handler globally for UserCard
+  useEffect(() => {
+    (window as any).onSuggestPromise = (userId: string, userName: string) => {
+      setSuggestToUserId(userId);
+      setSuggestToUserName(userName);
+      setShowSuggestModal(true);
+    };
+    return () => {
+      delete (window as any).onSuggestPromise;
+    };
+  }, []);
 
   // Filter data into promises (recurring, non-budget), tasks (one-time, non-budget), and distractions (budget templates)
   // IMPORTANT: This hook must be called before any conditional returns
@@ -492,40 +510,82 @@ export function DashboardPage() {
           </div>
         ) : communityUsers.length > 0 ? (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {communityUsers.map((communityUser) => (
-                <UserCard 
-                  key={communityUser.user_id} 
-                  user={communityUser} 
-                  currentUserId={currentUserId}
-                  showFollowButton={false}
-                />
-              ))}
-            </div>
-            <button
-              onClick={() => navigate('/community')}
-              style={{
-                width: '100%',
-                marginTop: '1rem',
-                padding: '0.75rem',
-                background: 'rgba(91, 163, 245, 0.1)',
-                border: '1px solid rgba(91, 163, 245, 0.3)',
-                borderRadius: '8px',
-                color: '#5ba3f5',
-                fontSize: '0.9rem',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(91, 163, 245, 0.2)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
-              }}
-            >
-              Explore Community →
-            </button>
+            {!showSuggestionsInbox ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {communityUsers.map((communityUser) => (
+                    <UserCard 
+                      key={communityUser.user_id} 
+                      user={communityUser} 
+                      currentUserId={currentUserId}
+                      showFollowButton={true}
+                    />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem' }}>
+                  <button
+                    onClick={() => setShowSuggestionsInbox(true)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(91, 163, 245, 0.1)',
+                      border: '1px solid rgba(91, 163, 245, 0.3)',
+                      borderRadius: '8px',
+                      color: '#5ba3f5',
+                      fontSize: '0.9rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.2)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
+                    }}
+                  >
+                    📬 View Suggestions
+                  </button>
+                  <button
+                    onClick={() => navigate('/community')}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(91, 163, 245, 0.1)',
+                      border: '1px solid rgba(91, 163, 245, 0.3)',
+                      borderRadius: '8px',
+                      color: '#5ba3f5',
+                      fontSize: '0.9rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.2)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
+                    }}
+                  >
+                    Explore Community →
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h4 style={{ color: '#fff', margin: 0 }}>Promise Suggestions</h4>
+                  <button
+                    className="button-secondary"
+                    onClick={() => setShowSuggestionsInbox(false)}
+                    style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
+                  >
+                    Back
+                  </button>
+                </div>
+                <SuggestionsInbox />
+              </div>
+            )}
           </>
         ) : (
           <div style={{ 
@@ -538,6 +598,21 @@ export function DashboardPage() {
           </div>
         )}
       </aside>
+
+      {showSuggestModal && (
+        <SuggestPromiseModal
+          toUserId={suggestToUserId}
+          toUserName={suggestToUserName}
+          onClose={() => {
+            setShowSuggestModal(false);
+            setSuggestToUserId('');
+            setSuggestToUserName('');
+          }}
+          onSuccess={() => {
+            hapticFeedback('success');
+          }}
+        />
+      )}
     </div>
   );
 }

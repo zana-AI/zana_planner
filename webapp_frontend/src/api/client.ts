@@ -14,7 +14,9 @@ import type {
   CheckinRequest,
   WeeklyNoteRequest,
   LogDistractionRequest,
-  WeeklyDistractionsResponse
+  WeeklyDistractionsResponse,
+  PromiseSuggestion,
+  CreateSuggestionRequest
 } from '../types';
 
 const API_BASE = '/api';

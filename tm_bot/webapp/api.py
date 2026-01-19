@@ -26,9 +26,12 @@ from repositories.templates_repo import TemplatesRepository
 from repositories.instances_repo import InstancesRepository
 from repositories.reviews_repo import ReviewsRepository
 from repositories.distractions_repo import DistractionsRepository
+from repositories.schedules_repo import SchedulesRepository
+from repositories.reminders_repo import RemindersRepository
 from services.template_unlocks import TemplateUnlocksService
+from services.reminder_dispatch import ReminderDispatchService
 from db.sqlite_db import connection_for_root, dt_to_utc_iso
-from db.postgres_db import get_db_session, utc_now_iso, resolve_promise_uuid
+from db.postgres_db import get_db_session, utc_now_iso, resolve_promise_uuid, date_from_iso, dt_to_utc_iso
 from sqlalchemy import text
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
@@ -41,6 +44,7 @@ from langchain_google_vertexai import ChatVertexAI
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 import json
+import uuid
 
 
 logger = get_logger(__name__)
@@ -1739,6 +1743,213 @@ def create_webapp_api(
         except Exception as e:
             logger.exception(f"Error snoozing promise: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to snooze promise: {str(e)}")
+    
+    # Schedule endpoints
+    @app.get("/api/promises/{promise_id}/schedule")
+    async def get_promise_schedule(
+        promise_id: str,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Get schedule slots for a promise."""
+        try:
+            promises_repo = PromisesRepository(app.state.root_dir)
+            schedules_repo = SchedulesRepository(app.state.root_dir)
+            
+            promise = promises_repo.get_promise(user_id, promise_id)
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Get promise_uuid
+            user_str = str(user_id)
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, user_str, promise_id)
+                if not promise_uuid:
+                    raise HTTPException(status_code=404, detail="Promise UUID not found")
+            
+            slots = schedules_repo.list_slots(promise_uuid, is_active=True)
+            return {"slots": slots}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting promise schedule: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get schedule: {str(e)}")
+    
+    class ScheduleSlotRequest(BaseModel):
+        weekday: int  # 0-6
+        start_local_time: str  # HH:MM:SS or HH:MM
+        end_local_time: Optional[str] = None
+        tz: Optional[str] = None
+        start_date: Optional[str] = None  # ISO date
+        end_date: Optional[str] = None  # ISO date
+    
+    class UpdateScheduleRequest(BaseModel):
+        slots: List[ScheduleSlotRequest]
+    
+    @app.put("/api/promises/{promise_id}/schedule")
+    async def update_promise_schedule(
+        promise_id: str,
+        request: UpdateScheduleRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Replace schedule slots for a promise."""
+        try:
+            from datetime import time as time_type
+            promises_repo = PromisesRepository(app.state.root_dir)
+            schedules_repo = SchedulesRepository(app.state.root_dir)
+            
+            promise = promises_repo.get_promise(user_id, promise_id)
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Get promise_uuid
+            user_str = str(user_id)
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, user_str, promise_id)
+                if not promise_uuid:
+                    raise HTTPException(status_code=404, detail="Promise UUID not found")
+            
+            # Validate weekdays
+            for slot_req in request.slots:
+                if slot_req.weekday < 0 or slot_req.weekday > 6:
+                    raise HTTPException(status_code=400, detail="Weekday must be 0-6")
+            
+            # Convert to slot data format
+            slots_data = []
+            for slot_req in request.slots:
+                start_time = time_type.fromisoformat(slot_req.start_local_time) if ":" in slot_req.start_local_time else time_type.fromisoformat(slot_req.start_local_time + ":00")
+                end_time = None
+                if slot_req.end_local_time:
+                    end_time = time_type.fromisoformat(slot_req.end_local_time) if ":" in slot_req.end_local_time else time_type.fromisoformat(slot_req.end_local_time + ":00")
+                
+                slot_data = {
+                    "promise_uuid": promise_uuid,
+                    "weekday": slot_req.weekday,
+                    "start_local_time": start_time,
+                    "end_local_time": end_time,
+                    "tz": slot_req.tz,
+                    "start_date": date_from_iso(slot_req.start_date) if slot_req.start_date else None,
+                    "end_date": date_from_iso(slot_req.end_date) if slot_req.end_date else None,
+                    "is_active": True
+                }
+                slots_data.append(slot_data)
+            
+            schedules_repo.replace_slots(promise_uuid, slots_data)
+            
+            return {"status": "success", "message": "Schedule updated", "slots_count": len(slots_data)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating promise schedule: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update schedule: {str(e)}")
+    
+    @app.get("/api/promises/{promise_id}/reminders")
+    async def get_promise_reminders(
+        promise_id: str,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Get reminders for a promise."""
+        try:
+            promises_repo = PromisesRepository(app.state.root_dir)
+            reminders_repo = RemindersRepository(app.state.root_dir)
+            
+            promise = promises_repo.get_promise(user_id, promise_id)
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Get promise_uuid
+            user_str = str(user_id)
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, user_str, promise_id)
+                if not promise_uuid:
+                    raise HTTPException(status_code=404, detail="Promise UUID not found")
+            
+            reminders = reminders_repo.list_reminders(promise_uuid, enabled=None)
+            return {"reminders": reminders}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting promise reminders: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get reminders: {str(e)}")
+    
+    class ReminderRequest(BaseModel):
+        kind: str  # "slot_offset" or "fixed_time"
+        slot_id: Optional[str] = None  # Required for slot_offset
+        offset_minutes: Optional[int] = None  # For slot_offset
+        weekday: Optional[int] = None  # For fixed_time (0-6)
+        time_local: Optional[str] = None  # For fixed_time (HH:MM:SS or HH:MM)
+        tz: Optional[str] = None
+        enabled: Optional[bool] = True
+    
+    class UpdateRemindersRequest(BaseModel):
+        reminders: List[ReminderRequest]
+    
+    @app.put("/api/promises/{promise_id}/reminders")
+    async def update_promise_reminders(
+        promise_id: str,
+        request: UpdateRemindersRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Replace reminders for a promise."""
+        try:
+            from datetime import time as time_type
+            promises_repo = PromisesRepository(app.state.root_dir)
+            reminders_repo = RemindersRepository(app.state.root_dir)
+            dispatch_service = ReminderDispatchService(app.state.root_dir)
+            
+            promise = promises_repo.get_promise(user_id, promise_id)
+            if not promise:
+                raise HTTPException(status_code=404, detail="Promise not found")
+            
+            # Get promise_uuid
+            user_str = str(user_id)
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, user_str, promise_id)
+                if not promise_uuid:
+                    raise HTTPException(status_code=404, detail="Promise UUID not found")
+            
+            # Validate reminders
+            for rem_req in request.reminders:
+                if rem_req.kind not in ["slot_offset", "fixed_time"]:
+                    raise HTTPException(status_code=400, detail="Reminder kind must be 'slot_offset' or 'fixed_time'")
+                
+                if rem_req.kind == "slot_offset":
+                    if not rem_req.slot_id:
+                        raise HTTPException(status_code=400, detail="slot_id required for slot_offset reminders")
+                elif rem_req.kind == "fixed_time":
+                    if rem_req.weekday is None or not rem_req.time_local:
+                        raise HTTPException(status_code=400, detail="weekday and time_local required for fixed_time reminders")
+                    if rem_req.weekday < 0 or rem_req.weekday > 6:
+                        raise HTTPException(status_code=400, detail="weekday must be 0-6")
+            
+            # Convert to reminder data format
+            reminders_data = []
+            for rem_req in request.reminders:
+                reminder_data = {
+                    "promise_uuid": promise_uuid,
+                    "kind": rem_req.kind,
+                    "slot_id": rem_req.slot_id,
+                    "offset_minutes": rem_req.offset_minutes,
+                    "weekday": rem_req.weekday,
+                    "time_local": time_type.fromisoformat(rem_req.time_local) if rem_req.time_local and ":" in rem_req.time_local else (time_type.fromisoformat(rem_req.time_local + ":00") if rem_req.time_local else None),
+                    "tz": rem_req.tz,
+                    "enabled": rem_req.enabled if rem_req.enabled is not None else True
+                }
+                
+                # Compute next_run_at_utc
+                next_run = dispatch_service.compute_next_run_at_utc(reminder_data, user_id)
+                if next_run:
+                    reminder_data["next_run_at_utc"] = dt_to_utc_iso(next_run)
+                
+                reminders_data.append(reminder_data)
+            
+            reminders_repo.replace_reminders(promise_uuid, reminders_data)
+            
+            return {"status": "success", "message": "Reminders updated", "reminders_count": len(reminders_data)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error updating promise reminders: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update reminders: {str(e)}")
     
     # Admin template management endpoints
     @app.get("/api/admin/templates")

@@ -186,13 +186,27 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
           </div>
         )}
         {showFollowButton && currentUserId && !isOwnCard && (
-          <button
-            className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}
-            onClick={handleFollowToggle}
-            disabled={isLoadingFollow || !followStatusChecked}
-          >
-            {isLoadingFollow ? '...' : isFollowing ? 'Following' : 'Follow'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <button
+              className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}
+              onClick={handleFollowToggle}
+              disabled={isLoadingFollow || !followStatusChecked}
+            >
+              {isLoadingFollow ? '...' : isFollowing ? 'Following' : 'Follow'}
+            </button>
+            <button
+              className="button-secondary"
+              onClick={() => {
+                // Trigger suggest promise modal (parent should handle this)
+                if ((window as any).onSuggestPromise) {
+                  (window as any).onSuggestPromise(user.user_id, getDisplayName(user));
+                }
+              }}
+              style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
+            >
+              Suggest Promise
+            </button>
+          </div>
         )}
         
         {/* Public Promise Badges */}

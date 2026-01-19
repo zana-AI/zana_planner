@@ -272,6 +272,28 @@ export interface WeeklyDistractionsResponse {
   event_count: number;
 }
 
+// Promise suggestion types
+export interface PromiseSuggestion {
+  suggestion_id: string;
+  from_user_id: string;
+  from_user_name?: string;
+  to_user_id: string;
+  to_user_name?: string;
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  template_id?: string;
+  draft_json?: string;
+  message?: string;
+  created_at_utc: string;
+  responded_at_utc?: string;
+}
+
+export interface CreateSuggestionRequest {
+  to_user_id: string;
+  template_id?: string;
+  freeform_text?: string;
+  message?: string;
+}
+
 // Extended PromiseData to include metric fields
 export interface PromiseData {
   text: string;
