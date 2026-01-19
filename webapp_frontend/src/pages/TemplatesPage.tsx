@@ -243,8 +243,6 @@ export function TemplatesPage() {
                       );
                     })}
                   </div> */}
-                </div>
-              </div>
               {/* Lock reason hidden per requirements */}
               {/* {!template.unlocked && template.lock_reason && (
                 <p className="template-lock-reason">{template.lock_reason}</p>
