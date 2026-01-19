@@ -17,6 +17,8 @@ export function UserDetailPage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoadingFollow, setIsLoadingFollow] = useState(false);
   const [followStatusChecked, setFollowStatusChecked] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  const [dicebearError, setDicebearError] = useState(false);
 
   const currentUserId = user?.id?.toString();
 
@@ -120,6 +122,12 @@ export function UserDetailPage() {
   }
 
   const isOwnProfile = currentUserId === userId;
+  const displayName = getDisplayName(userData);
+
+  const dicebearUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userData.user_id)}`;
+  const avatarUrl = !avatarError && userData.avatar_path
+    ? (userData.avatar_path.startsWith('http') ? userData.avatar_path : `/api/media/avatars/${userData.user_id}`)
+    : null;
 
   return (
     <div className="app">
@@ -157,10 +165,23 @@ export function UserDetailPage() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-            {userData.avatar_path ? (
+            {avatarUrl ? (
               <img
-                src={userData.avatar_path.startsWith('http') ? userData.avatar_path : `/api/media/avatars/${userData.user_id}`}
-                alt={getDisplayName(userData)}
+                src={avatarUrl}
+                alt={displayName}
+                onError={() => setAvatarError(true)}
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  objectFit: 'cover'
+                }}
+              />
+            ) : !dicebearError ? (
+              <img
+                src={dicebearUrl}
+                alt={displayName}
+                onError={() => setDicebearError(true)}
                 style={{
                   width: '64px',
                   height: '64px',
@@ -183,12 +204,12 @@ export function UserDetailPage() {
                   fontWeight: '600'
                 }}
               >
-                {getDisplayName(userData).charAt(0).toUpperCase()}
+                {displayName.charAt(0).toUpperCase()}
               </div>
             )}
             <div style={{ flex: 1 }}>
               <h2 style={{ color: '#fff', margin: 0, marginBottom: '0.25rem' }}>
-                {getDisplayName(userData)}
+                {displayName}
               </h2>
               {userData.username && (
                 <div style={{ color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.9rem' }}>

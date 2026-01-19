@@ -939,68 +939,71 @@ def create_webapp_api(
             List of public user information ranked by activity
         """
         try:
-            logger.info(f"Getting public users, limit={limit}")
-            root_dir = app.state.root_dir
-            logger.info(f"Root dir: {root_dir}")
-            if not root_dir:
-                raise HTTPException(status_code=500, detail="Server configuration error: root_dir not set")
-            
-            logger.info("Opening database connection...")
-            with connection_for_root(root_dir) as conn:
-                logger.info("Executing query...")
-                # Query users with activity count from last 30 days
-                rows = conn.execute(
-                    """
-                    SELECT 
-                        u.user_id,
-                        u.first_name,
-                        u.last_name,
-                        u.display_name,
-                        u.username,
-                        u.avatar_path,
-                        u.avatar_file_unique_id,
-                        u.last_seen_utc,
-                        COALESCE(activity.activity_count, 0) as activity_count,
-                        COALESCE(promise_counts.promise_count, 0) as promise_count
-                    FROM users u
-                    LEFT JOIN (
-                        SELECT user_id, COUNT(*) as activity_count
-                        FROM actions 
-                        WHERE at_utc >= datetime('now', '-30 days')
-                        GROUP BY user_id
-                    ) activity ON u.user_id = activity.user_id
-                    LEFT JOIN (
-                        SELECT user_id, COUNT(*) as promise_count
-                        FROM promises
-                        WHERE is_deleted = 0
-                        GROUP BY user_id
-                    ) promise_counts ON u.user_id = promise_counts.user_id
-                    WHERE (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
-                    ORDER BY activity_count DESC, u.last_seen_utc DESC NULLS LAST
-                    LIMIT ?;
-                    """,
-                    (limit,),
-                ).fetchall()
-                
-                users = []
-                for row in rows:
-                    users.append(
-                        PublicUser(
-                            user_id=str(row["user_id"]),
-                            first_name=row["first_name"],
-                            last_name=row["last_name"],
-                            display_name=row["display_name"],
-                            username=row["username"],
-                            avatar_path=row["avatar_path"],
-                            avatar_file_unique_id=row["avatar_file_unique_id"],
-                            activity_count=int(row["activity_count"] or 0),
-                            promise_count=int(row["promise_count"] or 0),
-                            last_seen_utc=row["last_seen_utc"],
-                        )
+            # IMPORTANT: Use the Postgres-backed DB (SQLAlchemy session) so counts and avatars
+            # match followers/following + user detail pages.
+            from datetime import datetime, timedelta, timezone
+            from db.postgres_db import get_db_session
+            from sqlalchemy import text
+
+            since_utc = (
+                (datetime.now(timezone.utc) - timedelta(days=30))
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+
+            with get_db_session() as session:
+                rows = session.execute(
+                    text("""
+                        SELECT 
+                            u.user_id,
+                            u.first_name,
+                            u.last_name,
+                            u.display_name,
+                            u.username,
+                            u.avatar_path,
+                            u.avatar_file_unique_id,
+                            u.last_seen_utc,
+                            COALESCE(activity.activity_count, 0) as activity_count,
+                            COALESCE(promise_counts.promise_count, 0) as promise_count
+                        FROM users u
+                        LEFT JOIN (
+                            SELECT user_id, COUNT(*) as activity_count
+                            FROM actions 
+                            WHERE at_utc >= :since_utc
+                            GROUP BY user_id
+                        ) activity ON u.user_id = activity.user_id
+                        LEFT JOIN (
+                            SELECT user_id, COUNT(*) as promise_count
+                            FROM promises
+                            WHERE is_deleted = 0
+                            GROUP BY user_id
+                        ) promise_counts ON u.user_id = promise_counts.user_id
+                        WHERE (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
+                        ORDER BY activity_count DESC, u.last_seen_utc DESC NULLS LAST
+                        LIMIT :limit;
+                    """),
+                    {"since_utc": since_utc, "limit": int(limit)},
+                ).mappings().fetchall()
+
+            users: List[PublicUser] = []
+            for r in rows:
+                users.append(
+                    PublicUser(
+                        user_id=str(r.get("user_id")),
+                        first_name=r.get("first_name"),
+                        last_name=r.get("last_name"),
+                        display_name=r.get("display_name"),
+                        username=r.get("username"),
+                        avatar_path=r.get("avatar_path"),
+                        avatar_file_unique_id=r.get("avatar_file_unique_id"),
+                        activity_count=int(r.get("activity_count") or 0),
+                        promise_count=int(r.get("promise_count") or 0),
+                        last_seen_utc=r.get("last_seen_utc"),
                     )
-                
-                logger.info(f"Found {len(users)} users")
-                return PublicUsersResponse(users=users, total=len(users))
+                )
+
+            return PublicUsersResponse(users=users, total=len(users))
                 
         except HTTPException:
             raise
@@ -1027,28 +1030,31 @@ def create_webapp_api(
             root_dir = app.state.root_dir
             if not root_dir:
                 raise HTTPException(status_code=500, detail="Server configuration error: root_dir not set")
-            
-            with connection_for_root(root_dir) as conn:
-                # Check avatar visibility and get path
-                row = conn.execute(
-                    """
-                    SELECT avatar_path, avatar_visibility 
-                    FROM users 
-                    WHERE user_id = ? 
-                    LIMIT 1;
-                    """,
-                    (user_id,),
-                ).fetchone()
-                
-                if not row:
-                    raise HTTPException(status_code=404, detail="User not found")
-                
-                # Check visibility (default to 'public' if not set)
-                visibility = row["avatar_visibility"] or "public"
-                if visibility != "public":
-                    raise HTTPException(status_code=403, detail="Avatar is private")
-                
-                avatar_path = row["avatar_path"]
+
+            # IMPORTANT: Use Postgres-backed DB (not legacy SQLite)
+            from db.postgres_db import get_db_session
+            from sqlalchemy import text
+
+            with get_db_session() as session:
+                row = session.execute(
+                    text("""
+                        SELECT avatar_path, avatar_visibility
+                        FROM users
+                        WHERE user_id = :user_id
+                        LIMIT 1;
+                    """),
+                    {"user_id": str(user_id)},
+                ).mappings().fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            # Check visibility (default to 'public' if not set)
+            visibility = row.get("avatar_visibility") or "public"
+            if visibility != "public":
+                raise HTTPException(status_code=403, detail="Avatar is private")
+
+            avatar_path = row.get("avatar_path")
                 
                 # If avatar_path is not in database, try standard location
                 if not avatar_path:
