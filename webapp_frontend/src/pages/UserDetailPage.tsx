@@ -223,8 +223,9 @@ export function UserDetailPage() {
                   className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}
                   onClick={handleFollowToggle}
                   disabled={isLoadingFollow || !followStatusChecked}
+                  title={isFollowing ? 'Click to unfollow' : 'Click to follow'}
                 >
-                  {isLoadingFollow ? '...' : isFollowing ? 'Following' : 'Follow'}
+                  {isLoadingFollow ? '...' : isFollowing ? 'Unfollow' : 'Follow'}
                 </button>
                 <button
                   className="button-primary"
