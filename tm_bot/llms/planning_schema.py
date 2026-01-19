@@ -69,3 +69,23 @@ class Plan(BaseModel):
         description="Safety metadata including flags like requires_confirmation, assumptions, risk_level.",
     )
 
+
+class RouteDecision(BaseModel):
+    """Router output: determines which agent mode to use for handling the user's request."""
+
+    mode: Literal["operator", "strategist", "social", "engagement"] = Field(
+        ...,
+        description="Agent mode to use: 'operator' for transactional actions (promises/actions/settings), 'strategist' for high-level goals/coaching, 'social' for community/followers/feed, 'engagement' for casual chat/humor.",
+    )
+
+    confidence: Literal["high", "medium", "low"] = Field(
+        ...,
+        description="Confidence level for the routing decision: 'high', 'medium', or 'low'.",
+    )
+
+    reason: str = Field(
+        ...,
+        description="Short label explaining why this mode was chosen (e.g., 'transactional_intent', 'coaching_intent', 'community_intent', 'casual_chat').",
+        max_length=100,
+    )
+

@@ -381,6 +381,132 @@ def get_edge_case_scenarios() -> List[TestScenario]:
     ]
 
 
+def get_confirmation_scenarios() -> List[TestScenario]:
+    """Scenarios that test promise creation confirmation flows."""
+    return [
+        TestScenario(
+            name="promise_creation_requires_confirmation",
+            description="Direct promise creation should require confirmation",
+            messages=[
+                "/start",
+                "I want to call a friend tomorrow"
+            ],
+            expected_keywords=["confirm", "promise", "call", "friend"],
+            expected_behavior="Bot should ask for confirmation before creating the promise",
+        ),
+        TestScenario(
+            name="promise_creation_confirmed",
+            description="User confirms promise creation",
+            messages=[
+                "/start",
+                "I want to call a friend tomorrow",
+                "yes"
+            ],
+            expected_keywords=["created", "success", "promise"],
+            expected_behavior="After confirmation, promise should be created and success message shown",
+        ),
+        TestScenario(
+            name="promise_creation_canceled",
+            description="User cancels promise creation",
+            messages=[
+                "/start",
+                "I want to call a friend tomorrow",
+                "no"
+            ],
+            expected_keywords=["cancel", "canceled"],
+            expected_behavior="After cancellation, no promise should be created",
+        ),
+        TestScenario(
+            name="template_subscription_requires_confirmation",
+            description="Template subscription should require confirmation",
+            messages=[
+                "/start",
+                "I want to go to gym 2 times this week"
+            ],
+            expected_keywords=["confirm", "template", "subscribe", "gym"],
+            expected_behavior="Bot should ask for confirmation before subscribing to template",
+        ),
+        TestScenario(
+            name="template_subscription_confirmed",
+            description="User confirms template subscription",
+            messages=[
+                "/start",
+                "I want to go to gym 2 times this week",
+                "confirm"
+            ],
+            expected_keywords=["subscribed", "success", "template"],
+            expected_behavior="After confirmation, template should be subscribed and success message shown",
+        ),
+        TestScenario(
+            name="promise_creation_with_resolved_datetime",
+            description="Promise creation with resolved datetime should still require confirmation",
+            messages=[
+                "/start",
+                "I want to walk for twenty minutes tomorrow"
+            ],
+            expected_keywords=["confirm", "walk", "tomorrow"],
+            expected_behavior="Even with resolved datetime, confirmation should be required",
+        ),
+    ]
+
+
+def get_routing_scenarios() -> List[TestScenario]:
+    """Scenarios that test routing and mode behaviors."""
+    return [
+        TestScenario(
+            name="routing_engagement_mode",
+            description="Casual chat should route to engagement mode",
+            messages=[
+                "/start",
+                "tell me a joke"
+            ],
+            expected_keywords=["joke", "fun", "laugh"],
+            expected_behavior="Should route to engagement mode and respond without tool calls",
+        ),
+        TestScenario(
+            name="routing_operator_mode",
+            description="Transactional action should route to operator mode",
+            messages=[
+                "/start",
+                "log 2 hours on reading"
+            ],
+            expected_keywords=["logged", "reading", "hours"],
+            expected_behavior="Should route to operator mode and execute tool calls",
+        ),
+        TestScenario(
+            name="routing_strategist_mode",
+            description="Coaching question should route to strategist mode",
+            messages=[
+                "/start",
+                "what should I focus on this week?"
+            ],
+            expected_keywords=["focus", "goal", "week", "suggest"],
+            expected_behavior="Should route to strategist mode and provide coaching/advice",
+        ),
+        TestScenario(
+            name="routing_social_mode",
+            description="Community query should route to social mode",
+            messages=[
+                "/start",
+                "who follows me?"
+            ],
+            expected_keywords=["follow", "follower", "community"],
+            expected_behavior="Should route to social mode and query social data",
+        ),
+        TestScenario(
+            name="strategist_blocks_mutations",
+            description="Strategist mode should block mutation tools",
+            messages=[
+                "/start",
+                "how can I improve my productivity?",
+                "create a promise to exercise daily"
+            ],
+            expected_keywords=["block", "operator", "mode", "switch"],
+            expected_behavior="Strategist should block mutation and suggest switching to operator",
+        ),
+    ]
+
+
 def get_all_scenarios() -> List[TestScenario]:
     """Get all test scenarios."""
     scenarios = []
@@ -389,6 +515,8 @@ def get_all_scenarios() -> List[TestScenario]:
     scenarios.extend(get_reasoning_scenarios())
     scenarios.extend(get_conversation_scenarios())
     scenarios.extend(get_edge_case_scenarios())
+    scenarios.extend(get_confirmation_scenarios())
+    scenarios.extend(get_routing_scenarios())
     return scenarios
 
 

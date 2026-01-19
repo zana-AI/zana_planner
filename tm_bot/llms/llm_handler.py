@@ -11,12 +11,12 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_vertexai import ChatVertexAI
 from langchain_openai import ChatOpenAI
 
-from llms.agent import AgentState, create_plan_execute_graph
+from llms.agent import AgentState, create_plan_execute_graph, create_routed_plan_execute_graph
 from llms.func_utils import get_function_args_info
 from llms.llm_env_utils import load_llm_env
 from llms.schema import LLMResponse, UserAction
-from llms.planning_schema import Plan
-from llms.tool_wrappers import _current_user_id, _sanitize_user_id, _wrap_tool
+from llms.planning_schema import Plan, RouteDecision
+from llms.tool_wrappers import _current_user_id, _current_user_language, _sanitize_user_id, _wrap_tool
 from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
 
@@ -93,12 +93,16 @@ class LLMHandler:
 
             self._initialize_context()
             self.planner_parser = JsonOutputParser(pydantic_object=Plan)
+            self.router_parser = JsonOutputParser(pydantic_object=RouteDecision)
 
-            self.agent_app = create_plan_execute_graph(
+            self.agent_app = create_routed_plan_execute_graph(
                 tools=self.tools,
+                router_model=self.chat_model,  # Router uses same model (lightweight classification)
                 planner_model=self.chat_model,   # no tools bound (planner must not call tools)
                 responder_model=self.chat_model, # no tools bound (responder must not call tools)
-                planner_prompt=self.system_message_planner_prompt,
+                router_prompt=self.system_message_router_prompt,
+                get_planner_prompt_for_mode=self._get_planner_prompt_for_mode,
+                get_system_message_for_mode=lambda user_id, mode, user_lang: self._get_system_message_main(user_lang, user_id, mode),
                 emit_plan=True,  # Always emit plan for user visibility
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
@@ -145,6 +149,38 @@ class LLMHandler:
             "Use emojis sparingly (✅ for success, 🔥 for streaks, 📊 for reports). "
             "If the user is just chatting, respond warmly without using tools."
         )
+        
+        # Router prompt: lightweight classification
+        self.system_message_router_prompt = (
+            "=== ROLE ===\n"
+            "You are a ROUTER for a task management assistant.\n"
+            "Your job: classify the user's message into one of four agent modes.\n\n"
+            
+            "=== MODES ===\n"
+            "- **operator**: Transactional actions (create/update/delete promises, log actions, change settings). "
+            "Examples: 'I want to call a friend tomorrow', 'log 2 hours on reading', 'delete my gym promise', 'change my timezone'.\n"
+            "- **strategist**: High-level goals, coaching, advice, progress analysis, strategic planning. "
+            "Examples: 'what should I focus on this week?', 'how can I improve my productivity?', 'am I on track with my goals?', 'help me plan my week'.\n"
+            "- **social**: Community features (followers, following, feed, public promises, community interactions). "
+            "Examples: 'who follows me?', 'show me my feed', 'who else is working on fitness?', 'follow user 123'.\n"
+            "- **engagement**: Casual chat, humor, keeping user engaged, no tools needed. "
+            "Examples: 'tell me a joke', 'how are you?', 'thanks', 'hi', casual banter.\n\n"
+            
+            "=== ROUTING RULES ===\n"
+            "- If the user wants to DO something (create, log, delete, update) → operator\n"
+            "- If the user wants ADVICE, COACHING, or ANALYSIS → strategist\n"
+            "- If the user asks about COMMUNITY, FOLLOWERS, or SOCIAL features → social\n"
+            "- If the user is just CHATTING or being casual → engagement\n"
+            "- When in doubt between operator and strategist, prefer operator for concrete actions, strategist for questions/advice.\n\n"
+            
+            "=== OUTPUT ===\n"
+            "Output ONLY valid JSON matching this schema:\n"
+            "{\n"
+            '  "mode": "operator" | "strategist" | "social" | "engagement",\n'
+            '  "confidence": "high" | "medium" | "low",\n'
+            '  "reason": "short label (e.g., transactional_intent, coaching_intent, community_intent, casual_chat)"\n'
+            "}\n"
+        )
 
         self.system_message_api = SystemMessage(
             content=(
@@ -158,9 +194,8 @@ class LLMHandler:
             )
         )
 
-        # Planner prompt: must output a structured plan JSON (no chain-of-thought).
-        # Structured with clear sections for better LLM understanding
-        self.system_message_planner_prompt = (
+        # Base planner prompt (will be mode-enhanced)
+        self.system_message_planner_prompt_base = (
             "=== ROLE ===\n"
             "You are the PLANNER for a task management assistant.\n"
             "Your job: produce a short, high-level plan (NOT chain-of-thought) that the executor can follow.\n\n"
@@ -378,15 +413,76 @@ class LLMHandler:
             "  }\n"
             "}\n"
         )
+        
+        # Store base prompt for mode-specific variants
+        self.system_message_planner_prompt = self.system_message_planner_prompt_base
 
-    def _get_system_message_main(self, user_language: str = None, user_id: Optional[str] = None) -> SystemMessage:
-        """Get system message with language instruction, user info, and promise context if provided."""
+    def _get_planner_prompt_for_mode(self, mode: str) -> str:
+        """Get mode-specific planner prompt."""
+        base = self.system_message_planner_prompt_base
+        
+        if mode == "operator":
+            mode_directive = (
+                "=== MODE: OPERATOR ===\n"
+                "You are in OPERATOR mode: handle transactional actions (promises, actions, settings).\n"
+                "You can use all tools including mutations (add_promise, add_action, update_setting, etc.).\n"
+                "Be action-oriented and execute user requests directly.\n\n"
+            )
+        elif mode == "strategist":
+            mode_directive = (
+                "=== MODE: STRATEGIST ===\n"
+                "You are in STRATEGIST mode: focus on high-level goals, coaching, and strategic advice.\n"
+                "AVOID mutation tools (add_promise, add_action, update_setting, delete_*).\n"
+                "Instead, use read-only tools (get_promises, get_weekly_report, get_profile_status) and provide coaching/analysis.\n"
+                "If the user explicitly wants to create/update/delete something, suggest they rephrase or confirm they want to switch to action mode.\n\n"
+            )
+        elif mode == "social":
+            mode_directive = (
+                "=== MODE: SOCIAL ===\n"
+                "You are in SOCIAL mode: handle community features (followers, following, feed, public promises).\n"
+                "You can use social tools (follow/unfollow queries, feed queries) and read public data.\n"
+                "For mutations like follow/unfollow, still require confirmation per system rules.\n\n"
+            )
+        else:  # engagement or fallback
+            mode_directive = (
+                "=== MODE: ENGAGEMENT ===\n"
+                "You are in ENGAGEMENT mode: keep the user engaged with friendly, warm responses.\n"
+                "DO NOT use any tools. Respond directly with humor, encouragement, or casual conversation.\n\n"
+            )
+        
+        return mode_directive + base
+
+    def _get_system_message_main(self, user_language: str = None, user_id: Optional[str] = None, mode: Optional[str] = None) -> SystemMessage:
+        """Get system message with language instruction, user info, and promise context if provided.
+        
+        Note: For routed graph, this is called by the planner node after routing.
+        The mode-specific planner prompt is prepended separately.
+        """
         # Build structured system message with clear sections
         sections = []
         
         # Base personality and role
         sections.append("=== ROLE & PERSONALITY ===")
         sections.append(self.system_message_main_base)
+        
+        # Add tools overview (needed for planner to know what tools are available)
+        tool_lines = []
+        for tool in self.tools:
+            name = getattr(tool, "name", "unknown")
+            desc = (getattr(tool, "description", "") or "").strip()
+            arg_names = []
+            if hasattr(self.plan_adapter, name):
+                arg_names = list(get_function_args_info(getattr(self.plan_adapter, name)).keys())
+            arg_sig = ", ".join(arg_names)
+            tool_lines.append(f"- {name}({arg_sig}) :: {desc}")
+        tools_overview = "\n".join(tool_lines)
+        sections.append(f"\n=== AVAILABLE TOOLS ===")
+        sections.append(tools_overview)
+        sections.append("\nTOOL USAGE GUIDELINES:")
+        sections.append("- Use exact argument names from signatures above.")
+        sections.append("- When promise_id is unknown but user mentions a topic, use search_promises first.")
+        sections.append("- Default time_spent to 1.0 hour if user says 'worked on X' without specifying duration.")
+        sections.append("- Prefer action over asking: make reasonable assumptions from context.")
         
         # Date and time context
         now = datetime.now()
@@ -433,8 +529,8 @@ class LLMHandler:
             except Exception as e:
                 logger.debug(f"Could not get profile context for user {user_id}: {e}")
         
-        # Promise context
-        if user_id:
+        # Promise context (skip for engagement mode to reduce context bloat)
+        if user_id and mode != "engagement":
             try:
                 promise_count = self.plan_adapter.count_promises(int(user_id))
                 logger.debug(f"User {user_id} has {promise_count} promises")
@@ -529,9 +625,9 @@ class LLMHandler:
 
             prior_history = self.chat_history.get(safe_user_id, [])
 
+            # For routed graph, system message will be injected per-node (router/planner/executor)
+            # Start with minimal messages - router will add its system message
             messages: List[BaseMessage] = [
-                self._get_system_message_main(user_language, safe_user_id),
-                self.system_message_api,
                 *prior_history,
                 HumanMessage(content=user_message),
             ]
@@ -556,8 +652,12 @@ class LLMHandler:
                 "detected_intent": None,
                 "intent_confidence": None,
                 "safety": None,
+                "mode": None,
+                "route_confidence": None,
+                "route_reason": None,
             }
             token = _current_user_id.set(safe_user_id)
+            lang_token = _current_user_language.set(user_language or "en")
             try:
                 # Wrap with LangSmith tracing if enabled
                 if self._langsmith_enabled and LANGSMITH_AVAILABLE:
@@ -576,6 +676,7 @@ class LLMHandler:
                     result_state = self.agent_app.invoke(state)
             finally:
                 _current_user_id.reset(token)
+                _current_user_language.reset(lang_token)
             final_messages = result_state.get("messages", messages)
             final_response = result_state.get("final_response")
             pending_clarification = result_state.get("pending_clarification")

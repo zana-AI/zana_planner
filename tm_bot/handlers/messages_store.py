@@ -129,6 +129,14 @@ class MessageTemplateStore:
             "error_llm_trouble": "I'm having trouble understanding that. Could you rephrase?",
             "error_llm_parsing": "Error parsing response",
             "error_llm_unexpected": "Something went wrong. Error: {error}",
+            "error_tool_not_found": "❌ Tool '{tool_name}' not found. Please try again.",
+            "error_executing_action": "❌ Error executing action: {error}",
+            
+            # Confirmation messages
+            "promise_created_confirmed": "✅ Promise '{promise_text}' created successfully!",
+            "template_subscribed_confirmed": "✅ Successfully subscribed to template '{template_id}'!",
+            "action_confirmed": "✅ Action confirmed and executed.",
+            "action_canceled": "❌ Action canceled. No changes made.",
 
             # Keyboard buttons
             "btn_start": "Start",

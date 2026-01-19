@@ -8,8 +8,9 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Context var to carry the active user_id during tool execution
+# Context vars to carry the active user_id/language during tool execution
 _current_user_id: ContextVar[Optional[str]] = ContextVar("current_user_id", default=None)
+_current_user_language: ContextVar[Optional[str]] = ContextVar("current_user_language", default=None)
 
 
 def _strip_user_id_from_signature(sig: inspect.Signature) -> inspect.Signature:

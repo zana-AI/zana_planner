@@ -1095,58 +1095,133 @@ class MessageHandlers:
             # Stateful clarification: if we previously asked for missing fields, treat this message as the answer.
             pending = (context.user_data or {}).get("pending_clarification") if hasattr(context, "user_data") else None
             if pending:
-                missing_fields = pending.get("missing_fields") or []
-                partial_args = dict(pending.get("partial_args") or {})
-                original_user_message = pending.get("original_user_message") or ""
-                options = pending.get("options") or []
+                # Handle pre-mutation confirmation (promise creation confirmations)
+                if pending.get("reason") == "pre_mutation_confirmation":
+                    tool_name = pending.get("tool_name", "")
+                    tool_args = pending.get("tool_args", {})
+                    
+                    # Detect confirm/cancel tokens (language-aware)
+                    user_text_lower = user_message.strip().lower()
+                    confirm_tokens = ["yes", "confirm", "ok", "y", "yeah", "yep", "sure", "بله", "تایید", "اوکی", "باشه"]
+                    cancel_tokens = ["no", "cancel", "nope", "nah", "stop", "خیر", "نه", "لغو"]
+                    
+                    is_confirm = any(token in user_text_lower for token in confirm_tokens)
+                    is_cancel = any(token in user_text_lower for token in cancel_tokens)
 
-                user_lang_code = user_lang.value if user_lang else "en"
-                filled = self._parse_slot_fill_values(
-                    user_text=user_message,
-                    missing_fields=missing_fields,
-                    user_id=user_id,
-                    user_lang_code=user_lang_code,
-                )
-                
-                # Replace instead of merge: if single field, replace entirely with new input
-                if len(missing_fields) == 1:
-                    # Single field: replace entirely with new input
-                    chosen = self._choose_from_options(user_message, options) if options else None
-                    partial_args[missing_fields[0]] = (chosen or user_message.strip())
-                else:
-                    # Multiple fields: only update parsed values
-                    partial_args.update({k: v for k, v in (filled or {}).items() if v})
-                
-                still_missing = [f for f in missing_fields if partial_args.get(f) in (None, "", [])]
-
-                if still_missing:
-                    # Update partial args and ask again (single message, all missing).
+                    
+                    # Clear pending regardless of outcome
                     try:
-                        context.user_data["pending_clarification"]["partial_args"] = partial_args
+                        context.user_data.pop("pending_clarification", None)
                     except Exception:
                         pass
-                    fields = ", ".join(still_missing)
-                    await self.response_service.reply_text(
-                        update,
-                        f"Thanks — I'm still missing: {fields}.\n"
-                        f"Please reply with `field: value` for: {fields}.",
+                    
+                    if is_confirm:
+                        # Execute the pending tool call
+                        try:
+                            if hasattr(self.plan_keeper, tool_name):
+                                method = getattr(self.plan_keeper, tool_name)
+                                # Add user_id to tool_args
+                                tool_args_with_user = {**tool_args, "user_id": user_id}
+                                result = method(**tool_args_with_user)
+                                
+                                # Send success message
+                                if tool_name in ("add_promise", "create_promise"):
+                                    promise_text = tool_args.get("promise_text") or tool_args.get("text", "promise")
+                                    success_msg = get_message("promise_created_confirmed", user_lang, promise_text=promise_text.replace("_", " "))
+                                elif tool_name == "subscribe_template":
+                                    template_id = tool_args.get("template_id", "template")
+                                    success_msg = get_message("template_subscribed_confirmed", user_lang, template_id=template_id)
+                                else:
+                                    success_msg = get_message("action_confirmed", user_lang)
+                                
+                                await self.response_service.reply_text(
+                                    update, success_msg,
+                                    user_id=user_id,
+                                    parse_mode='Markdown'
+                                )
+                            else:
+                                error_msg = get_message("error_tool_not_found", user_lang, tool_name=tool_name)
+                                await self.response_service.reply_text(
+                                    update, error_msg,
+                                    user_id=user_id
+                                )
+                        except Exception as e:
+                            logger.error(f"Error executing confirmed tool {tool_name}: {e}")
+                            error_msg = get_message("error_executing_action", user_lang, error=str(e))
+                            await self.response_service.reply_text(
+                                update, error_msg,
+                                user_id=user_id
+                            )
+                        return
+                    elif is_cancel:
+                        # User canceled - send cancellation message
+                        cancel_msg = get_message("action_canceled", user_lang)
+                        await self.response_service.reply_text(
+                            update, cancel_msg,
+                            user_id=user_id,
+                            parse_mode='Markdown'
+                        )
+                        return
+                    else:
+                        # User neither confirmed nor canceled - treat as new request
+                        # Clear pending and continue with normal flow (user's message will be processed normally)
+                        logger.debug(f"User response to confirmation was neither confirm nor cancel, treating as new request: {user_message}")
+                        # Continue to normal message handling below
+                
+                # Handle other pending clarification types (missing_fields slot-fill, etc.)
+                elif pending.get("reason") in ("missing_required_args", "ambiguous_promise_id", "unresolved_placeholder"):
+                    missing_fields = pending.get("missing_fields") or []
+                    partial_args = dict(pending.get("partial_args") or {})
+                    original_user_message = pending.get("original_user_message") or ""
+                    options = pending.get("options") or []
+
+                    user_lang_code = user_lang.value if user_lang else "en"
+                    filled = self._parse_slot_fill_values(
+                        user_text=user_message,
+                        missing_fields=missing_fields,
                         user_id=user_id,
-                        parse_mode="Markdown",
+                        user_lang_code=user_lang_code,
                     )
-                    return
+                    
+                    # Replace instead of merge: if single field, replace entirely with new input
+                    if len(missing_fields) == 1:
+                        # Single field: replace entirely with new input
+                        chosen = self._choose_from_options(user_message, options) if options else None
+                        partial_args[missing_fields[0]] = (chosen or user_message.strip())
+                    else:
+                        # Multiple fields: only update parsed values
+                        partial_args.update({k: v for k, v in (filled or {}).items() if v})
+                    
+                    still_missing = [f for f in missing_fields if partial_args.get(f) in (None, "", [])]
 
-                # We have enough: clear pending and re-run the agent with the original intent + provided fields.
-                try:
-                    context.user_data.pop("pending_clarification", None)
-                except Exception:
-                    pass
+                    if still_missing:
+                        # Update partial args and ask again (single message, all missing).
+                        try:
+                            context.user_data["pending_clarification"]["partial_args"] = partial_args
+                        except Exception:
+                            pass
+                        fields = ", ".join(still_missing)
+                        await self.response_service.reply_text(
+                            update,
+                            f"Thanks — I'm still missing: {fields}.\n"
+                            f"Please reply with `field: value` for: {fields}.",
+                            user_id=user_id,
+                            parse_mode="Markdown",
+                        )
+                        return
 
-                fields_block = "\n".join([f"{k}: {partial_args.get(k)}" for k in missing_fields])
-                augmented_message = (
-                    f"{original_user_message}\n\n"
-                    f"Clarifications provided:\n{fields_block}\n"
-                ).strip()
-                user_lang_code = user_lang.value if user_lang else "en"
+                    # We have enough: clear pending and re-run the agent with the original intent + provided fields.
+                    try:
+                        context.user_data.pop("pending_clarification", None)
+                    except Exception:
+                        pass
+
+                    fields_block = "\n".join([f"{k}: {partial_args.get(k)}" for k in missing_fields])
+                    augmented_message = (
+                        f"{original_user_message}\n\n"
+                        f"Clarifications provided:\n{fields_block}\n"
+                    ).strip()
+                    user_lang_code = user_lang.value if user_lang else "en"
                 
                 # Send quick processing message
                 processing_msg = await self.response_service.send_processing_message(

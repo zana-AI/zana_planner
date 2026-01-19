@@ -1096,36 +1096,19 @@ class PlannerAPIAdapter:
             if not referenced_tables:
                 return (False, "Query must reference at least one user data table (promises, actions, sessions, users).")
             
-            # SECURITY: Rewrite query to enforce user_id filter
-            # We wrap the original query as a subquery and add our own WHERE clause
-            # This ensures user_id is ALWAYS filtered, regardless of what the LLM generated
-            
-            # For safety, we use a different approach: we check if user_id is already in WHERE
-            # and if not, we inject it. If it is, we validate it matches.
-            
-            # Simpler and more secure approach: Always use parameterized execution
-            # and check that results only contain data for this user
+            # SECURITY: Always enforce user_id filtering at the SQL level.
+            # Wrap the original query and add a parameterized user_id predicate.
+            # This prevents cross-user leaks even if the model omits WHERE user_id.
+            wrapped_query = f"SELECT * FROM ({query}) AS q WHERE q.user_id = :user_id"
             
             from db.postgres_db import get_db_session
             from sqlalchemy import text
             with get_db_session() as session:
-                result = session.execute(text(query))
+                result = session.execute(text(wrapped_query), {"user_id": safe_user_id})
                 rows = result.mappings().fetchall()
                 
                 # Convert to list of dicts
                 results = [dict(row) for row in rows]
-                
-                # SECURITY CHECK: Verify all returned rows belong to this user
-                # This is a defense-in-depth measure
-                for row_dict in results:
-                    if 'user_id' in row_dict:
-                        if str(row_dict['user_id']) != safe_user_id:
-                            logger.warning(
-                                f"SQL query returned data for wrong user! "
-                                f"Expected {safe_user_id}, got {row_dict.get('user_id')}. "
-                                f"Query: {query[:100]}"
-                            )
-                            return (False, "Query validation failed: unauthorized data access attempted.")
                 
                 return (True, results)
                 
@@ -1133,6 +1116,11 @@ class PlannerAPIAdapter:
             logger.error(f"SQL query execution error: {e}")
             # Don't leak internal error details to user
             error_msg = str(e)
+            if "user_id" in error_msg.lower() and "column" in error_msg.lower():
+                return (
+                    False,
+                    "Query must include user_id in the selected columns so access can be enforced.",
+                )
             if "syntax error" in error_msg.lower():
                 return (False, "SQL syntax error. Please check your query.")
             elif "no such table" in error_msg.lower():
