@@ -15,6 +15,15 @@ export function UsersPage() {
   const [error, setError] = useState<string>('');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   
+  // Check authentication - don't render if not authenticated
+  const hasToken = !!localStorage.getItem('telegram_auth_token');
+  const isAuthenticated = !!initData || hasToken;
+  
+  if (!isAuthenticated) {
+    // This shouldn't happen due to route guard, but handle gracefully
+    return null;
+  }
+  
   // Set initData for API client if available
   useEffect(() => {
     if (initData) {
@@ -24,7 +33,6 @@ export function UsersPage() {
 
   // Fetch userInfo for browser login users
   useEffect(() => {
-    const hasToken = !!localStorage.getItem('telegram_auth_token');
     if (hasToken && !initData) {
       // Browser login - fetch user info to get user_id
       apiClient.getUserInfo()
@@ -33,7 +41,7 @@ export function UsersPage() {
           console.error('Failed to fetch user info');
         });
     }
-  }, [initData]);
+  }, [initData, hasToken]);
 
   // Get current user ID if authenticated
   // Use user?.id for Telegram Mini App, or userInfo?.user_id for browser login
@@ -67,6 +75,11 @@ export function UsersPage() {
   }, [currentUserId]);
 
   useEffect(() => {
+    // Only fetch if authenticated
+    if (!isAuthenticated) {
+      return;
+    }
+    
     const fetchUsers = async () => {
       setLoading(true);
       setError('');
@@ -92,7 +105,7 @@ export function UsersPage() {
     };
 
     fetchUsers();
-  }, [currentUserId]);
+  }, [currentUserId, isAuthenticated]);
 
   if (loading) {
     return (
