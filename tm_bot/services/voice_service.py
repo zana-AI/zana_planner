@@ -90,6 +90,7 @@ class VoiceService:
                 all_transcripts = []
                 all_confidences = []
                 alternatives_list = []
+                detected_language = primary_language or "en-US"
                 
                 for result in response.results:
                     if result.alternatives:
@@ -98,6 +99,12 @@ class VoiceService:
                         all_transcripts.append(best_alt.transcript)
                         confidence = best_alt.confidence if hasattr(best_alt, 'confidence') and best_alt.confidence > 0 else 0.0
                         all_confidences.append(confidence)
+
+                        # Prefer detected language when available (for multi-language recognition)
+                        if hasattr(result, "language_code") and result.language_code:
+                            detected_language = result.language_code
+                        elif hasattr(best_alt, "language_code") and best_alt.language_code:
+                            detected_language = best_alt.language_code
                         
                         # Collect all alternatives for this result
                         for alt in result.alternatives:
@@ -114,7 +121,7 @@ class VoiceService:
                 return TranscriptionResult(
                     text=transcribed_text,
                     confidence=avg_confidence,
-                    language_code=primary_language or "en-US",
+                    language_code=detected_language,
                     alternatives=alternatives_list
                 )
             else:
@@ -159,39 +166,70 @@ class VoiceService:
         }
         
         primary_lang = lang_map.get(user_language, "en-US")
+        user_language_base = user_language.split("-")[0] if "-" in user_language else user_language
+        common_alternatives = ["en-US", "fa-IR", "fr-FR"]
         
         # If user language is not English and fallback is enabled, try both
-        if user_language != "en" and fallback_to_english:
-            # Try user's language first
+        if user_language_base != "en" and fallback_to_english:
+            # Try user's language first with broader alternatives
+            user_alternatives = [lang for lang in common_alternatives if lang != primary_lang]
             result_user_lang = self.transcribe_voice(
                 voice_file_path,
                 primary_language=primary_lang,
-                alternative_languages=["en-US"]
+                alternative_languages=user_alternatives
             )
             
-            # Try English as primary
+            # Try English as primary with user's language as an alternative
+            english_alternatives = [lang for lang in common_alternatives if lang != "en-US"]
+            if primary_lang not in english_alternatives:
+                english_alternatives.insert(0, primary_lang)
             result_english = self.transcribe_voice(
                 voice_file_path,
                 primary_language="en-US",
-                alternative_languages=[primary_lang]
+                alternative_languages=english_alternatives
             )
-            
+
+            def _base_lang(code: str) -> str:
+                return code.split("-")[0] if code else ""
+
+            user_detected_base = _base_lang(result_user_lang.language_code)
+            english_detected_base = _base_lang(result_english.language_code)
+
+            # Prefer non-English detections when English is likely a fallback mismatch.
+            confidence_margin = 0.15
+            if user_detected_base and user_detected_base != "en" and english_detected_base == "en":
+                if result_user_lang.confidence >= result_english.confidence - confidence_margin:
+                    logger.info(
+                        f"Selected {result_user_lang.language_code} transcription "
+                        f"(confidence: {result_user_lang.confidence:.2f} vs {result_english.confidence:.2f})"
+                    )
+                    return result_user_lang
+
+            # Prefer the user's language when close in confidence.
+            if user_detected_base == user_language_base:
+                if result_user_lang.confidence >= result_english.confidence - confidence_margin:
+                    logger.info(
+                        f"Selected {result_user_lang.language_code} transcription "
+                        f"(confidence: {result_user_lang.confidence:.2f} vs {result_english.confidence:.2f})"
+                    )
+                    return result_user_lang
+
             # Compare confidence scores and return the best
             if result_user_lang.confidence >= result_english.confidence:
                 logger.info(
-                    f"Selected {primary_lang} transcription "
+                    f"Selected {result_user_lang.language_code} transcription "
                     f"(confidence: {result_user_lang.confidence:.2f} vs {result_english.confidence:.2f})"
                 )
                 return result_user_lang
             else:
                 logger.info(
-                    f"Selected English transcription "
+                    f"Selected {result_english.language_code} transcription "
                     f"(confidence: {result_english.confidence:.2f} vs {result_user_lang.confidence:.2f})"
                 )
                 return result_english
         else:
             # Single language transcription with alternatives
-            alternative_langs = ["en-US", "fa-IR", "fr-FR"] if primary_lang == "en-US" else ["en-US"]
+            alternative_langs = common_alternatives if primary_lang == "en-US" else [lang for lang in common_alternatives if lang != primary_lang]
             return self.transcribe_voice(
                 voice_file_path,
                 primary_language=primary_lang,

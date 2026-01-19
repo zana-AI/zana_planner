@@ -463,7 +463,7 @@ class MessageHandlers:
     async def on_voice(self, update: Update, context: CallbackContext):
         """Handle voice messages with ASR and optional TTS response."""
         user_id = update.effective_user.id
-        user_lang = get_user_language(update.effective_user)
+        user_lang = get_user_language(user_id)
         
         # Extract and update user info
         self._update_user_info(user_id, update.effective_user)

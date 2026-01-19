@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 
@@ -241,12 +241,25 @@ def get_message(key: str, language: Optional[Language] = None, **kwargs) -> str:
     return _translation_manager.get_message(key, language, **kwargs)
 
 
-def get_user_language(user: User) -> Language:
-    """Convenience function to get user's language."""
-    # if _translation_manager is None:
-    #     # Fallback to default if not initialized
-    #     return Language.EN
-    # return _translation_manager.get_user_language(user_id)
+def get_user_language(user: Union[User, int, str]) -> Language:
+    """Convenience function to get user's language from settings or Telegram."""
+    user_id: Optional[int] = None
+    if isinstance(user, int):
+        user_id = user
+    elif isinstance(user, str) and user.isdigit():
+        user_id = int(user)
+    else:
+        try:
+            user_id = user.id
+        except Exception:
+            user_id = None
+
+    if user_id is not None and _translation_manager is not None:
+        try:
+            return _translation_manager.get_user_language(user_id)
+        except Exception:
+            pass
+
     try:
         user_lang_id = user.language_code
         return Language(user_lang_id) if user_lang_id in [lang.value for lang in Language] else Language.EN
