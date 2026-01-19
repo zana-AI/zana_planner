@@ -25,9 +25,15 @@ class BotUtils:
     
     @staticmethod
     def get_user_timezone(plan_keeper: PlannerAPIAdapter, user_id: int) -> str:
-        """Get user timezone using the settings repository."""
+        """Get user timezone using the settings repository.
+        
+        Returns UTC if timezone is not set or is the DEFAULT placeholder.
+        """
         settings = plan_keeper.settings_repo.get_settings(user_id)
-        return settings.timezone
+        tz = settings.timezone
+        if not tz or tz == "DEFAULT":
+            return "UTC"
+        return tz
     
     @staticmethod
     def set_user_timezone(plan_keeper: PlannerAPIAdapter, user_id: int, tzname: str) -> None:

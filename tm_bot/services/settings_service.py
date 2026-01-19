@@ -18,9 +18,15 @@ class SettingsService:
         self.settings_repo.save_settings(settings)
     
     def get_user_timezone(self, user_id: int) -> str:
-        """Get user timezone."""
+        """Get user timezone.
+        
+        Returns UTC if timezone is not set or is the DEFAULT placeholder.
+        """
         settings = self.get_settings(user_id)
-        return settings.timezone
+        tz = settings.timezone
+        if not tz or tz == "DEFAULT":
+            return "UTC"
+        return tz
     
     def set_user_timezone(self, user_id: int, tzname: str) -> None:
         """Set user timezone."""

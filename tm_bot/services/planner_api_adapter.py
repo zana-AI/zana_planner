@@ -396,10 +396,14 @@ class PlannerAPIAdapter:
 
     # Settings methods
     def get_settings(self, user_id) -> Dict[str, Any]:
-        """Get user settings as a dict (timezone, nightly time, language, voice mode)."""
+        """Get user settings as a dict (timezone, nightly time, language, voice mode).
+        
+        Timezone returns UTC if not set or is DEFAULT placeholder.
+        """
         settings = self.settings_repo.get_settings(int(user_id))
+        tz = settings.timezone if settings.timezone and settings.timezone != "DEFAULT" else "UTC"
         return {
-            "timezone": settings.timezone,
+            "timezone": tz,
             "nightly_hh": settings.nightly_hh,
             "nightly_mm": settings.nightly_mm,
             "language": settings.language,
@@ -407,11 +411,15 @@ class PlannerAPIAdapter:
         }
 
     def get_setting(self, user_id, setting_key: str):
-        """Get a single user setting value by key (timezone, nightly_hh, nightly_mm, language, voice_mode)."""
+        """Get a single user setting value by key (timezone, nightly_hh, nightly_mm, language, voice_mode).
+        
+        Timezone returns UTC if not set or is DEFAULT placeholder.
+        """
         settings = self.settings_repo.get_settings(int(user_id))
         key = (setting_key or "").strip().lower()
         if key == "timezone":
-            return settings.timezone
+            tz = settings.timezone
+            return tz if tz and tz != "DEFAULT" else "UTC"
         if key == "nightly_hh":
             return settings.nightly_hh
         if key == "nightly_mm":
@@ -473,7 +481,8 @@ class PlannerAPIAdapter:
         """Count actions for 'today' in the user's timezone from settings."""
         try:
             from zoneinfo import ZoneInfo
-            tzname = self.settings_repo.get_settings(int(user_id)).timezone or "UTC"
+            tz = self.settings_repo.get_settings(int(user_id)).timezone
+            tzname = tz if tz and tz != "DEFAULT" else "UTC"
             today_iso = datetime.now(ZoneInfo(tzname)).strftime("%Y-%m-%d")
         except Exception:
             today_iso = datetime.now().strftime("%Y-%m-%d")

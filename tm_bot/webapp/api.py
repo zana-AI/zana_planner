@@ -676,10 +676,10 @@ def create_webapp_api(
                      Defaults to current time in user's timezone.
         """
         try:
-            # Get user timezone
+            # Get user timezone (fall back to UTC if not set or is DEFAULT placeholder)
             settings_repo = get_settings_repo()
             settings = settings_repo.get_settings(user_id)
-            user_tz = settings.timezone if settings else "UTC"
+            user_tz = settings.timezone if settings and settings.timezone not in (None, "DEFAULT") else "UTC"
             
             # Parse reference time or use current time
             if ref_time:
@@ -1544,7 +1544,7 @@ def create_webapp_api(
                         import pytz
                         settings_repo = get_settings_repo()
                         settings = settings_repo.get_settings(user_id)
-                        user_tz = settings.timezone if settings else "UTC"
+                        user_tz = settings.timezone if settings and settings.timezone not in (None, "DEFAULT") else "UTC"
                         tz = pytz.timezone(user_tz)
                         action_datetime = action_datetime.astimezone(tz).replace(tzinfo=None)
                 except ValueError:
@@ -2032,7 +2032,7 @@ def create_webapp_api(
                         import pytz
                         settings_repo = get_settings_repo()
                         settings = settings_repo.get_settings(user_id)
-                        user_tz = settings.timezone if settings else "UTC"
+                        user_tz = settings.timezone if settings and settings.timezone not in (None, "DEFAULT") else "UTC"
                         tz = pytz.timezone(user_tz)
                         action_datetime = action_datetime.astimezone(tz).replace(tzinfo=None)
                 except ValueError:
@@ -2128,7 +2128,7 @@ def create_webapp_api(
                         import pytz
                         settings_repo = get_settings_repo()
                         settings = settings_repo.get_settings(user_id)
-                        user_tz = settings.timezone if settings else "UTC"
+                        user_tz = settings.timezone if settings and settings.timezone not in (None, "DEFAULT") else "UTC"
                         tz = pytz.timezone(user_tz)
                         at = at.astimezone(tz).replace(tzinfo=None)
                 except ValueError:
