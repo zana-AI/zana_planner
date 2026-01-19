@@ -54,8 +54,10 @@ _admin_stats_cache: Optional[Dict[str, Any]] = None
 _admin_stats_cache_timestamp: Optional[datetime] = None
 ADMIN_STATS_CACHE_TTL = timedelta(minutes=5)
 
-# Pending follow notifications: (follower_id, followee_id) -> message_id
-_pending_follow_notifications: Dict[tuple, str] = {}
+# Pending follow-notification jobs: (follower_id, followee_id) -> job_name
+# NOTE: This is in-memory; if the server restarts within the 2-minute window,
+# the job will be lost and no notification will be sent (acceptable for best-effort).
+_pending_follow_notification_jobs: Dict[tuple, str] = {}
 
 
 async def send_follow_notification(bot_token: str, follower_id: int, followee_id: int, root_dir: str) -> None:
@@ -1111,70 +1113,69 @@ def create_webapp_api(
             
             follows_repo = FollowsRepository(app.state.root_dir)
             success = follows_repo.follow(user_id, target_user_id)
-            
-            # Queue delayed notification if follow was successful (new follow, not already following)
+
+            # Schedule follow notification after 2 minutes (cancellable if unfollow happens).
+            # IMPORTANT: This should NOT depend on the followee's inactivity.
             if success:
-                # Get delayed message service
-                from services.delayed_message_service import get_delayed_message_service
-                delayed_service = get_delayed_message_service()
-                
-                if delayed_service:
-                    # Create message_id for this follow relationship
-                    message_id = f"follow_{user_id}_{target_user_id}"
-                    notification_key = (user_id, target_user_id)
-                    
-                    # Cancel any existing pending notification for this relationship
-                    if notification_key in _pending_follow_notifications:
-                        old_message_id = _pending_follow_notifications[notification_key]
-                        delayed_service.cancel_pending(user_id, old_message_id)
-                    
-                    # Create callback that checks if follow still exists before sending
-                    async def send_follow_notification_if_still_following(context=None):
-                        """Send notification only if follow relationship still exists."""
-                        # Re-instantiate repo to check current state
-                        current_follows_repo = FollowsRepository(app.state.root_dir)
-                        # Check if still following
-                        if not current_follows_repo.is_following(user_id, target_user_id):
-                            logger.info(f"Follow notification cancelled: user {user_id} unfollowed {target_user_id} before notification")
-                            if notification_key in _pending_follow_notifications:
-                                del _pending_follow_notifications[notification_key]
-                            return
-                        
-                        # Still following, send notification
-                        await send_follow_notification(
-                            app.state.bot_token,
-                            user_id,
-                            target_user_id,
-                            app.state.root_dir
+                notification_key = (user_id, target_user_id)
+                job_name = f"follow-notif-{user_id}-{target_user_id}"
+
+                # Cancel any existing pending job for this relationship
+                existing_job = _pending_follow_notification_jobs.get(notification_key)
+                try:
+                    if existing_job and getattr(app.state, "delayed_message_service", None):
+                        app.state.delayed_message_service.scheduler.cancel_job(existing_job)
+                except Exception as e:
+                    logger.warning(f"Failed to cancel existing follow notification job {existing_job}: {e}")
+
+                from datetime import datetime, timedelta, timezone
+
+                async def send_follow_notification_if_still_following(context=None):
+                    current_follows_repo = FollowsRepository(app.state.root_dir)
+                    if not current_follows_repo.is_following(user_id, target_user_id):
+                        logger.info(
+                            f"Follow notification cancelled: user {user_id} unfollowed {target_user_id} before notification"
                         )
-                        # Clean up
-                        if notification_key in _pending_follow_notifications:
-                            del _pending_follow_notifications[notification_key]
-                    
-                    # Queue notification with 2-minute delay
-                    delayed_service.queue_message(
-                        user_id=target_user_id,  # Send to the followee
-                        message_func=send_follow_notification_if_still_following,
-                        delay_minutes=2,
-                        message_id=message_id
+                        _pending_follow_notification_jobs.pop(notification_key, None)
+                        return
+                    await send_follow_notification(
+                        app.state.bot_token,
+                        user_id,
+                        target_user_id,
+                        app.state.root_dir,
                     )
-                    
-                    # Store message_id for potential cancellation
-                    _pending_follow_notifications[notification_key] = message_id
-                    logger.info(f"Queued follow notification for user {target_user_id} from follower {user_id} (2-minute delay)")
-                else:
-                    # Fallback to immediate notification if delayed service not available
-                    logger.warning("DelayedMessageService not available, sending immediate notification")
+                    _pending_follow_notification_jobs.pop(notification_key, None)
+
+                when_dt = datetime.now(timezone.utc) + timedelta(minutes=2)
+
+                try:
+                    if getattr(app.state, "delayed_message_service", None):
+                        app.state.delayed_message_service.scheduler.schedule_once(
+                            name=job_name,
+                            callback=send_follow_notification_if_still_following,
+                            when_dt=when_dt,
+                            data={"user_id": target_user_id, "follower_id": user_id, "followee_id": target_user_id},
+                        )
+                        _pending_follow_notification_jobs[notification_key] = job_name
+                        logger.info(
+                            f"Scheduled follow notification job {job_name} for user {target_user_id} (2-minute delay)"
+                        )
+                    else:
+                        raise RuntimeError("No delayed_message_service available")
+                except Exception as e:
+                    # Fallback: send immediately
+                    logger.warning(f"Failed to schedule delayed follow notification, sending immediate: {e}")
                     import asyncio
+
                     asyncio.create_task(
                         send_follow_notification(
                             app.state.bot_token,
                             user_id,
                             target_user_id,
-                            app.state.root_dir
+                            app.state.root_dir,
                         )
                     )
-                
+
                 return {"status": "success", "message": "User followed successfully"}
             else:
                 return {"status": "success", "message": "Already following this user"}
@@ -1197,16 +1198,16 @@ def create_webapp_api(
             if success:
                 # Cancel pending follow notification if exists
                 notification_key = (user_id, target_user_id)
-                if notification_key in _pending_follow_notifications:
-                    from services.delayed_message_service import get_delayed_message_service
-                    delayed_service = get_delayed_message_service()
-                    if delayed_service:
-                        message_id = _pending_follow_notifications[notification_key]
-                        # Cancel notification (it's queued for the followee, but we cancel by message_id)
-                        delayed_service.cancel_pending(target_user_id, message_id)
-                        del _pending_follow_notifications[notification_key]
-                        logger.info(f"Cancelled pending follow notification for user {target_user_id} from follower {user_id}")
-                
+                job_name = _pending_follow_notification_jobs.pop(notification_key, None)
+                if job_name and getattr(app.state, "delayed_message_service", None):
+                    try:
+                        app.state.delayed_message_service.scheduler.cancel_job(job_name)
+                        logger.info(
+                            f"Cancelled pending follow notification job {job_name} for user {target_user_id} from follower {user_id}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to cancel follow notification job {job_name}: {e}")
+
                 return {"status": "success", "message": "User unfollowed successfully"}
             else:
                 return {"status": "success", "message": "Not following this user"}
@@ -1233,13 +1234,20 @@ def create_webapp_api(
             from db.postgres_db import get_db_session
             from sqlalchemy import text
             with get_db_session() as session:
+                from datetime import datetime, timedelta, timezone
+                since_utc = (
+                    (datetime.now(timezone.utc) - timedelta(days=30))
+                    .replace(microsecond=0)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                )
                 activity_row = session.execute(
                     text("""
                         SELECT COUNT(*) as activity_count
                         FROM actions 
-                        WHERE user_id = :user_id AND at_utc::timestamp with time zone >= NOW() - INTERVAL '30 days'
+                        WHERE user_id = :user_id AND at_utc >= :since_utc
                     """),
-                    {"user_id": str(user_id)}
+                    {"user_id": str(user_id), "since_utc": since_utc}
                 ).mappings().fetchone()
                 activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
                 
@@ -1399,13 +1407,20 @@ def create_webapp_api(
                     
                     # Get activity count (simplified - could be optimized)
                     with get_db_session() as session:
+                        from datetime import datetime, timedelta, timezone
+                        since_utc = (
+                            (datetime.now(timezone.utc) - timedelta(days=30))
+                            .replace(microsecond=0)
+                            .isoformat()
+                            .replace("+00:00", "Z")
+                        )
                         activity_row = session.execute(
                             text("""
                                 SELECT COUNT(*) as activity_count
                                 FROM actions 
-                                WHERE user_id = :user_id AND at_utc::timestamp with time zone >= NOW() - INTERVAL '30 days'
+                                WHERE user_id = :user_id AND at_utc >= :since_utc
                             """),
-                            {"user_id": follower_id_str}
+                            {"user_id": follower_id_str, "since_utc": since_utc}
                         ).mappings().fetchone()
                         activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
                         
@@ -1488,13 +1503,20 @@ def create_webapp_api(
                     from db.postgres_db import get_db_session
                     from sqlalchemy import text
                     with get_db_session() as session:
+                        from datetime import datetime, timedelta, timezone
+                        since_utc = (
+                            (datetime.now(timezone.utc) - timedelta(days=30))
+                            .replace(microsecond=0)
+                            .isoformat()
+                            .replace("+00:00", "Z")
+                        )
                         activity_row = session.execute(
                             text("""
                                 SELECT COUNT(*) as activity_count
                                 FROM actions 
-                                WHERE user_id = :user_id AND at_utc::timestamp with time zone >= NOW() - INTERVAL '30 days'
+                                WHERE user_id = :user_id AND at_utc >= :since_utc
                             """),
-                            {"user_id": following_id_str}
+                            {"user_id": following_id_str, "since_utc": since_utc}
                         ).mappings().fetchone()
                         activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
                         
