@@ -211,6 +211,13 @@ class ApiClient {
   }
 
   /**
+   * Get public user information by ID.
+   */
+  async getUser(userId: string): Promise<PublicUser> {
+    return this.request<PublicUser>(`/users/${userId}`);
+  }
+
+  /**
    * Get public promises for a user with stats.
    */
   async getPublicPromises(userId: string): Promise<import('../types').PublicPromiseBadge[]> {

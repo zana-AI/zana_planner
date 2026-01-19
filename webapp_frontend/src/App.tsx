@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
+import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
@@ -90,6 +91,9 @@ function App() {
         
         {/* Community/Users Page - accessible via /community */}
         <Route path="/community" element={<UsersPage />} />
+        
+        {/* User Detail Page */}
+        <Route path="/users/:userId" element={<UserDetailPage />} />
         
         {/* Templates Pages */}
         <Route path="/templates" element={<TemplatesPage />} />

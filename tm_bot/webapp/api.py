@@ -54,6 +54,9 @@ _admin_stats_cache: Optional[Dict[str, Any]] = None
 _admin_stats_cache_timestamp: Optional[datetime] = None
 ADMIN_STATS_CACHE_TTL = timedelta(minutes=5)
 
+# Pending follow notifications: (follower_id, followee_id) -> message_id
+_pending_follow_notifications: Dict[tuple, str] = {}
+
 
 async def send_follow_notification(bot_token: str, follower_id: int, followee_id: int, root_dir: str) -> None:
     """
@@ -271,6 +274,16 @@ def create_webapp_api(
         logger.info("Started auth session cleanup task")
     
     # Dependency to validate Telegram auth and get user_id
+    async def get_current_user_optional(
+        x_telegram_init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
+        authorization: Optional[str] = Header(None),
+    ) -> Optional[int]:
+        """Optional version of get_current_user that returns None if not authenticated."""
+        try:
+            return await get_current_user(x_telegram_init_data, authorization)
+        except HTTPException:
+            return None
+    
     async def get_current_user(
         x_telegram_init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
         authorization: Optional[str] = Header(None),
@@ -1099,18 +1112,69 @@ def create_webapp_api(
             follows_repo = FollowsRepository(app.state.root_dir)
             success = follows_repo.follow(user_id, target_user_id)
             
-            # Send notification if follow was successful (new follow, not already following)
+            # Queue delayed notification if follow was successful (new follow, not already following)
             if success:
-                # Send notification asynchronously (fire and forget)
-                import asyncio
-                asyncio.create_task(
-                    send_follow_notification(
-                        app.state.bot_token,
-                        user_id,
-                        target_user_id,
-                        app.state.root_dir
+                # Get delayed message service
+                from services.delayed_message_service import get_delayed_message_service
+                delayed_service = get_delayed_message_service()
+                
+                if delayed_service:
+                    # Create message_id for this follow relationship
+                    message_id = f"follow_{user_id}_{target_user_id}"
+                    notification_key = (user_id, target_user_id)
+                    
+                    # Cancel any existing pending notification for this relationship
+                    if notification_key in _pending_follow_notifications:
+                        old_message_id = _pending_follow_notifications[notification_key]
+                        delayed_service.cancel_pending(user_id, old_message_id)
+                    
+                    # Create callback that checks if follow still exists before sending
+                    async def send_follow_notification_if_still_following(context=None):
+                        """Send notification only if follow relationship still exists."""
+                        # Re-instantiate repo to check current state
+                        current_follows_repo = FollowsRepository(app.state.root_dir)
+                        # Check if still following
+                        if not current_follows_repo.is_following(user_id, target_user_id):
+                            logger.info(f"Follow notification cancelled: user {user_id} unfollowed {target_user_id} before notification")
+                            if notification_key in _pending_follow_notifications:
+                                del _pending_follow_notifications[notification_key]
+                            return
+                        
+                        # Still following, send notification
+                        await send_follow_notification(
+                            app.state.bot_token,
+                            user_id,
+                            target_user_id,
+                            app.state.root_dir
+                        )
+                        # Clean up
+                        if notification_key in _pending_follow_notifications:
+                            del _pending_follow_notifications[notification_key]
+                    
+                    # Queue notification with 2-minute delay
+                    delayed_service.queue_message(
+                        user_id=target_user_id,  # Send to the followee
+                        message_func=send_follow_notification_if_still_following,
+                        delay_minutes=2,
+                        message_id=message_id
                     )
-                )
+                    
+                    # Store message_id for potential cancellation
+                    _pending_follow_notifications[notification_key] = message_id
+                    logger.info(f"Queued follow notification for user {target_user_id} from follower {user_id} (2-minute delay)")
+                else:
+                    # Fallback to immediate notification if delayed service not available
+                    logger.warning("DelayedMessageService not available, sending immediate notification")
+                    import asyncio
+                    asyncio.create_task(
+                        send_follow_notification(
+                            app.state.bot_token,
+                            user_id,
+                            target_user_id,
+                            app.state.root_dir
+                        )
+                    )
+                
                 return {"status": "success", "message": "User followed successfully"}
             else:
                 return {"status": "success", "message": "Already following this user"}
@@ -1131,12 +1195,140 @@ def create_webapp_api(
             success = follows_repo.unfollow(user_id, target_user_id)
             
             if success:
+                # Cancel pending follow notification if exists
+                notification_key = (user_id, target_user_id)
+                if notification_key in _pending_follow_notifications:
+                    from services.delayed_message_service import get_delayed_message_service
+                    delayed_service = get_delayed_message_service()
+                    if delayed_service:
+                        message_id = _pending_follow_notifications[notification_key]
+                        # Cancel notification (it's queued for the followee, but we cancel by message_id)
+                        delayed_service.cancel_pending(target_user_id, message_id)
+                        del _pending_follow_notifications[notification_key]
+                        logger.info(f"Cancelled pending follow notification for user {target_user_id} from follower {user_id}")
+                
                 return {"status": "success", "message": "User unfollowed successfully"}
             else:
                 return {"status": "success", "message": "Not following this user"}
         except Exception as e:
             logger.exception(f"Error unfollowing user {target_user_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to unfollow user: {str(e)}")
+    
+    @app.get("/api/users/{user_id}", response_model=PublicUser)
+    async def get_user(
+        user_id: int,
+        current_user_id: Optional[int] = Depends(get_current_user_optional)
+    ):
+        """Get public user information by ID."""
+        try:
+            settings_repo = SettingsRepository(app.state.root_dir)
+            follows_repo = FollowsRepository(app.state.root_dir)
+            
+            # Get user settings
+            settings = settings_repo.get_settings(user_id)
+            if not settings:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Get activity count
+            from db.postgres_db import get_db_session
+            from sqlalchemy import text
+            with get_db_session() as session:
+                activity_row = session.execute(
+                    text("""
+                        SELECT COUNT(*) as activity_count
+                        FROM actions 
+                        WHERE user_id = :user_id AND at_utc >= NOW() - INTERVAL '30 days'
+                    """),
+                    {"user_id": str(user_id)}
+                ).mappings().fetchone()
+                activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
+                
+                promise_row = session.execute(
+                    text("""
+                        SELECT COUNT(*) as promise_count
+                        FROM promises
+                        WHERE user_id = :user_id AND is_deleted = 0
+                    """),
+                    {"user_id": str(user_id)}
+                ).mappings().fetchone()
+                promise_count = int(promise_row["promise_count"] or 0) if promise_row else 0
+                
+                # Get avatar path if available
+                avatar_row = session.execute(
+                    text("""
+                        SELECT avatar_path, avatar_file_unique_id
+                        FROM users
+                        WHERE user_id = :user_id
+                    """),
+                    {"user_id": str(user_id)}
+                ).mappings().fetchone()
+                avatar_path = avatar_row.get("avatar_path") if avatar_row else None
+                avatar_file_unique_id = avatar_row.get("avatar_file_unique_id") if avatar_row else None
+                
+                # Get public promises
+                public_promises = []
+                promise_rows = session.execute(
+                    text("""
+                        SELECT 
+                            p.promise_id,
+                            p.text,
+                            p.hours_per_week as hours_promised,
+                            COALESCE(SUM(s.hours), 0) as hours_spent,
+                            p.hours_per_week as weekly_hours,
+                            COALESCE(MAX(s.streak), 0) as streak,
+                            CASE 
+                                WHEN p.hours_per_week > 0 THEN 
+                                    LEAST(100, (COALESCE(SUM(s.hours), 0) / NULLIF(p.hours_per_week, 0)) * 100)
+                                ELSE 0
+                            END as progress_percentage,
+                            COALESCE(pt.metric_type, 'hours') as metric_type,
+                            COALESCE(pt.target_value, p.hours_per_week) as target_value,
+                            COALESCE(SUM(s.hours), 0) as achieved_value
+                        FROM promises p
+                        LEFT JOIN promise_instances pi ON p.promise_uuid = pi.promise_uuid
+                        LEFT JOIN promise_templates pt ON pi.template_id = pt.template_id
+                        LEFT JOIN sessions s ON p.promise_uuid = s.promise_uuid
+                            AND s.at_utc >= DATE_TRUNC('week', CURRENT_DATE)
+                        WHERE p.user_id = :user_id 
+                            AND p.visibility = 'public'
+                            AND p.is_deleted = 0
+                        GROUP BY p.promise_id, p.text, p.hours_per_week, pt.metric_type, pt.target_value
+                        ORDER BY p.created_at_utc DESC
+                    """),
+                    {"user_id": str(user_id)}
+                ).mappings().fetchall()
+                
+                for row in promise_rows:
+                    public_promises.append({
+                        "promise_id": row["promise_id"],
+                        "text": row["text"],
+                        "hours_promised": float(row["hours_promised"] or 0),
+                        "hours_spent": float(row["hours_spent"] or 0),
+                        "weekly_hours": float(row["weekly_hours"] or 0),
+                        "streak": int(row["streak"] or 0),
+                        "progress_percentage": float(row["progress_percentage"] or 0),
+                        "metric_type": row["metric_type"] or "hours",
+                        "target_value": float(row["target_value"] or 0),
+                        "achieved_value": float(row["achieved_value"] or 0)
+                    })
+            
+            return PublicUser(
+                user_id=str(user_id),
+                first_name=settings.first_name,
+                username=settings.username,
+                display_name=None,
+                avatar_path=avatar_path,
+                avatar_file_unique_id=avatar_file_unique_id,
+                activity_count=activity_count,
+                promise_count=promise_count,
+                last_seen_utc=settings.last_seen.isoformat() if settings.last_seen else None,
+                public_promises=public_promises
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get user: {str(e)}")
     
     @app.get("/api/users/{target_user_id}/follow-status")
     async def get_follow_status(

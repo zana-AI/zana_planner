@@ -39,30 +39,30 @@ export function UsersPage() {
   // Use user?.id for Telegram Mini App, or userInfo?.user_id for browser login
   const currentUserId = user?.id?.toString() || userInfo?.user_id?.toString();
 
-  // Fetch followers and following when authenticated
-  useEffect(() => {
+  const fetchSocialData = async () => {
     if (!currentUserId) return;
     
-    const fetchSocialData = async () => {
-      setFollowersLoading(true);
-      setFollowingLoading(true);
-      
-      try {
-        const [followersRes, followingRes] = await Promise.all([
-          apiClient.getFollowers(currentUserId).catch(() => ({ users: [], total: 0 })),
-          apiClient.getFollowing(currentUserId).catch(() => ({ users: [], total: 0 }))
-        ]);
-        
-        setFollowers(followersRes.users);
-        setFollowing(followingRes.users);
-      } catch (err) {
-        console.error('Failed to fetch social data:', err);
-      } finally {
-        setFollowersLoading(false);
-        setFollowingLoading(false);
-      }
-    };
+    setFollowersLoading(true);
+    setFollowingLoading(true);
     
+    try {
+      const [followersRes, followingRes] = await Promise.all([
+        apiClient.getFollowers(currentUserId).catch(() => ({ users: [], total: 0 })),
+        apiClient.getFollowing(currentUserId).catch(() => ({ users: [], total: 0 }))
+      ]);
+      
+      setFollowers(followersRes.users);
+      setFollowing(followingRes.users);
+    } catch (err) {
+      console.error('Failed to fetch social data:', err);
+    } finally {
+      setFollowersLoading(false);
+      setFollowingLoading(false);
+    }
+  };
+
+  // Fetch followers and following when authenticated
+  useEffect(() => {
     fetchSocialData();
   }, [currentUserId]);
 
@@ -197,6 +197,7 @@ export function UsersPage() {
                     user={followed} 
                     currentUserId={currentUserId}
                     showFollowButton={false}
+                    onFollowChange={fetchSocialData}
                   />
                 ))}
                 {following.length > 5 && (
@@ -217,6 +218,7 @@ export function UsersPage() {
             user={user} 
             currentUserId={currentUserId}
             showFollowButton={!!currentUserId}
+            onFollowChange={fetchSocialData}
           />
         ))}
       </div>

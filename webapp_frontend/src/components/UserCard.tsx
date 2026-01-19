@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { PublicUser, PublicPromiseBadge } from '../types';
 import { generateUsername, getInitialsFromUsername } from '../utils/usernameGenerator';
 import { apiClient } from '../api/client';
@@ -8,6 +9,8 @@ interface UserCardProps {
   user: PublicUser;
   currentUserId?: string; // Current authenticated user ID (if available)
   showFollowButton?: boolean; // Whether to show follow button
+  onFollowChange?: () => void; // Callback when follow status changes
+  onClick?: () => void; // Callback when card is clicked
 }
 
 /**
@@ -69,7 +72,8 @@ function getDisplayName(user: PublicUser): string {
   return generateUsername(user.user_id);
 }
 
-export function UserCard({ user, currentUserId, showFollowButton = false }: UserCardProps) {
+export function UserCard({ user, currentUserId, showFollowButton = false, onFollowChange, onClick }: UserCardProps) {
+  const navigate = useNavigate();
   const [imageError, setImageError] = useState(false);
   const [dicebearError, setDicebearError] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -77,6 +81,15 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
   const [followStatusChecked, setFollowStatusChecked] = useState(false);
   const [publicPromises, setPublicPromises] = useState<PublicPromiseBadge[]>([]);
   const [showAllPromises, setShowAllPromises] = useState(false);
+
+  const handleCardClick = () => {
+    if (onClick) {
+      onClick();
+    } else {
+      // Default: navigate to user detail page
+      navigate(`/users/${user.user_id}`);
+    }
+  };
   
   const initials = getInitials(user);
   const displayName = getDisplayName(user);
@@ -120,8 +133,13 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
     }
   }, [showFollowButton, currentUserId, user.user_id, isOwnCard, followStatusChecked]);
   
-  const handleFollowToggle = async () => {
+  const handleFollowToggle = async (e?: React.MouseEvent) => {
     if (!currentUserId || isOwnCard || isLoadingFollow) return;
+    
+    // Stop event propagation to prevent card click
+    if (e) {
+      e.stopPropagation();
+    }
     
     setIsLoadingFollow(true);
     try {
@@ -131,6 +149,10 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
       } else {
         await apiClient.followUser(user.user_id);
         setIsFollowing(true);
+      }
+      // Notify parent component of follow change
+      if (onFollowChange) {
+        onFollowChange();
       }
     } catch (err) {
       console.error('Failed to toggle follow:', err);
@@ -152,7 +174,11 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
     : null;
 
   return (
-    <div className="user-card">
+    <div 
+      className="user-card" 
+      onClick={handleCardClick}
+      style={{ cursor: 'pointer' }}
+    >
       <div className="user-card-avatar">
         {avatarUrl && !imageError ? (
           <img
@@ -186,27 +212,14 @@ export function UserCard({ user, currentUserId, showFollowButton = false }: User
           </div>
         )}
         {showFollowButton && currentUserId && !isOwnCard && (
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-            <button
-              className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}
-              onClick={handleFollowToggle}
-              disabled={isLoadingFollow || !followStatusChecked}
-            >
-              {isLoadingFollow ? '...' : isFollowing ? 'Following' : 'Follow'}
-            </button>
-            <button
-              className="button-secondary"
-              onClick={() => {
-                // Trigger suggest promise modal (parent should handle this)
-                if ((window as any).onSuggestPromise) {
-                  (window as any).onSuggestPromise(user.user_id, getDisplayName(user));
-                }
-              }}
-              style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
-            >
-              Suggest Promise
-            </button>
-          </div>
+          <button
+            className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}
+            onClick={handleFollowToggle}
+            disabled={isLoadingFollow || !followStatusChecked}
+            style={{ marginTop: '0.5rem' }}
+          >
+            {isLoadingFollow ? '...' : isFollowing ? 'Following' : 'Follow'}
+          </button>
         )}
         
         {/* Public Promise Badges */}
