@@ -81,17 +81,32 @@ async def send_follow_notification(bot_token: str, follower_id: int, followee_id
         elif follower_settings.first_name:
             follower_name = follower_settings.first_name
         
+        # Get mini app URL for community link
+        miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
+        community_url = f"{miniapp_url}/community"
+        
         # Create bot instance
         bot = Bot(token=bot_token)
         
-        # Construct notification message
-        message = f"👤 {follower_name} started following you!"
+        # Construct notification message with profile link if username exists
+        if follower_settings.username:
+            message = (
+                f"👤 [@{follower_settings.username}](t.me/{follower_settings.username}) started following you!\n\n"
+                f"See your Xaana community from here [Community]({community_url})"
+            )
+            parse_mode = "Markdown"
+        else:
+            message = (
+                f"👤 {follower_name} started following you!\n\n"
+                f"See your Xaana community from here [Community]({community_url})"
+            )
+            parse_mode = "Markdown"
         
         # Send notification
         await bot.send_message(
             chat_id=followee_id,
             text=message,
-            parse_mode=None
+            parse_mode=parse_mode
         )
         
         logger.info(f"Sent follow notification to user {followee_id} from follower {follower_id}")
