@@ -227,6 +227,17 @@ class LLMHandler:
             "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n"
             "- If user requests language change (e.g., 'switch to French', 'change language to Persian'), include update_setting step in plan BEFORE responding.\n\n"
             
+            "=== USER PROFILING ===\n"
+            "- The system maintains a user profile with core fields: status, schedule_type, primary_goal_1y, top_focus_area, main_constraint.\n"
+            "- Profile status is shown in the system context (completion, known facts, missing fields, pending question).\n"
+            "- If user reveals profile information implicitly (e.g., 'I'm a student', 'My main goal this year is X', 'I work night shifts'), "
+            "include upsert_profile_fact(field_key, field_value, source='inferred', confidence=0.7) in your plan.\n"
+            "- If a pending question exists (shown in USER PROFILE context) and the user's message looks like an answer, "
+            "call upsert_profile_fact(..., source='explicit_answer', confidence=1.0) then clear_profile_pending_question().\n"
+            "- For nudges: when the conversation is not urgent and profile is incomplete, you may include maybe_ask_profile_question() as a tool step. "
+            "If it returns should_ask=true, end with a respond step that asks exactly that question naturally.\n"
+            "- Use get_profile_status() if you need to check profile completion or missing fields.\n\n"
+            
             "=== MINI APP CAPABILITIES ===\n"
             "The bot has access to a mini app with interactive features:\n"
             "- Dashboard: Interactive weekly reports with charts, all promises/tasks/distractions\n"
@@ -395,6 +406,32 @@ class LLMHandler:
                     sections.append("Use their name contextually when appropriate for warmth and personalization, but let the conversation flow naturally.")
             except Exception as e:
                 logger.debug(f"Could not get user settings for personalization: {e}")
+        
+        # User profile context
+        if user_id:
+            try:
+                profile_status = self.plan_adapter.profile_service.get_profile_status(int(user_id))
+                facts = profile_status.get("facts", {})
+                missing = profile_status.get("missing_fields", [])
+                completion_text = profile_status.get("completion_text", "Core profile: 0/5")
+                pending_field = profile_status.get("pending_field_key")
+                pending_question = profile_status.get("pending_question_text")
+                
+                sections.append(f"\n=== USER PROFILE ===")
+                sections.append(f"{completion_text}")
+                
+                if facts:
+                    facts_line = ", ".join([f"{k}: {v}" for k, v in facts.items()])
+                    sections.append(f"Known: {facts_line}")
+                
+                if missing:
+                    sections.append(f"Missing: {', '.join(missing)}")
+                
+                if pending_field and pending_question:
+                    sections.append(f"Pending question ({pending_field}): {pending_question}")
+                    sections.append("If the user's message looks like an answer to this question, call upsert_profile_fact with source='explicit_answer' and confidence=1.0, then clear_profile_pending_question.")
+            except Exception as e:
+                logger.debug(f"Could not get profile context for user {user_id}: {e}")
         
         # Promise context
         if user_id:

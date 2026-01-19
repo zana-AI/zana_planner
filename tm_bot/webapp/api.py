@@ -2624,23 +2624,18 @@ Rules:
         template_id: str,
         user_id: int = Depends(get_current_user)
     ):
-        """Get template details with unlock status."""
+        """Get template details (simplified schema)."""
         try:
             templates_repo = TemplatesRepository(app.state.root_dir)
-            unlocks_service = TemplateUnlocksService(app.state.root_dir)
             
             template = templates_repo.get_template(template_id)
             if not template:
                 raise HTTPException(status_code=404, detail="Template not found")
             
-            prerequisites = templates_repo.get_prerequisites(template_id)
-            unlock_status = unlocks_service.get_unlock_status(user_id, template_id)
-            
+            # All templates are now unlocked (simplified schema)
             return {
                 **template,
-                "prerequisites": prerequisites,
-                "unlocked": unlock_status["unlocked"],
-                "lock_reason": unlock_status["lock_reason"],
+                "unlocked": True,
             }
         except HTTPException:
             raise

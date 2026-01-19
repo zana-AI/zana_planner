@@ -15,6 +15,7 @@ from repositories.nightly_state_repo import NightlyStateRepository
 from repositories.templates_repo import TemplatesRepository
 from repositories.instances_repo import InstancesRepository
 from repositories.distractions_repo import DistractionsRepository
+from repositories.profile_repo import ProfileRepository
 from services.reports import ReportsService
 from services.template_unlocks import TemplateUnlocksService
 from services.ranking import RankingService
@@ -23,6 +24,7 @@ from services.sessions import SessionsService
 from services.content_service import ContentService
 from services.time_estimation_service import TimeEstimationService
 from services.settings_service import SettingsService
+from services.profile_service import ProfileService
 from models.models import Promise, Action, UserSettings
 from models.enums import ActionType
 from utils.logger import get_logger
@@ -57,6 +59,10 @@ class PlannerAPIAdapter:
         self.instances_repo = InstancesRepository(root_dir)
         self.distractions_repo = DistractionsRepository(root_dir)
         self.unlocks_service = TemplateUnlocksService(root_dir)
+        
+        # Profile-related repos and services
+        self.profile_repo = ProfileRepository(root_dir)
+        self.profile_service = ProfileService(self.profile_repo)
 
     # Promise methods
     def add_promise(self, user_id, promise_text: str, num_hours_promised_per_week: float, 
@@ -1635,3 +1641,77 @@ Summary:"""
         except Exception as e:
             logger.error(f"Error logging distraction: {str(e)}")
             return f"Error logging distraction: {str(e)}"
+    
+    # Profile methods (exposed as LLM tools)
+    def upsert_profile_fact(
+        self,
+        user_id,
+        field_key: str,
+        field_value: str,
+        source: str = "inferred",
+        confidence: float = 0.7,
+    ) -> str:
+        """
+        Upsert a profile fact (e.g., status, schedule_type, primary_goal_1y, top_focus_area, main_constraint).
+        
+        Args:
+            field_key: Profile field name (e.g., 'status', 'primary_goal_1y')
+            field_value: The value to store
+            source: 'explicit_answer' (user directly answered), 'inferred' (extracted from conversation), or 'system'
+            confidence: Confidence score 0.0-1.0 (1.0 for explicit answers, lower for inferred)
+        
+        Returns:
+            Success message
+        """
+        try:
+            self.profile_service.upsert_fact(user_id, field_key, field_value, source, confidence)
+            return f"Profile fact '{field_key}' updated to: {field_value}"
+        except Exception as e:
+            logger.error(f"Error upserting profile fact: {str(e)}")
+            return f"Error updating profile: {str(e)}"
+    
+    def get_profile_status(self, user_id) -> str:
+        """
+        Get user profile status: completion, known facts, missing fields, pending question.
+        
+        Returns:
+            JSON string with profile status
+        """
+        try:
+            status = self.profile_service.get_profile_status(user_id)
+            return json.dumps(status, indent=2)
+        except Exception as e:
+            logger.error(f"Error getting profile status: {str(e)}")
+            return json.dumps({"error": str(e)})
+    
+    def maybe_ask_profile_question(self, user_id) -> str:
+        """
+        Check if we should ask a profile question and enqueue it if eligible.
+        Only asks if: no pending question exists, profile incomplete, cooldown passed.
+        
+        Returns:
+            JSON string: {"should_ask": bool, "field_key": str or null, "question_text": str or null}
+        """
+        try:
+            result = self.profile_service.maybe_enqueue_next_question(user_id, cooldown_hours=24)
+            if result:
+                return json.dumps(result)
+            else:
+                return json.dumps({"should_ask": False, "field_key": None, "question_text": None})
+        except Exception as e:
+            logger.error(f"Error checking profile question eligibility: {str(e)}")
+            return json.dumps({"should_ask": False, "field_key": None, "question_text": None, "error": str(e)})
+    
+    def clear_profile_pending_question(self, user_id) -> str:
+        """
+        Clear the pending profile question (call after user answers it).
+        
+        Returns:
+            Success message
+        """
+        try:
+            self.profile_service.clear_pending_question(user_id)
+            return "Pending profile question cleared."
+        except Exception as e:
+            logger.error(f"Error clearing pending question: {str(e)}")
+            return f"Error clearing pending question: {str(e)}"
