@@ -27,7 +27,7 @@ const TIMEZONES = [
 
 export function TimezoneSelectorPage() {
   const navigate = useNavigate();
-  const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
+  const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [currentTimezone, setCurrentTimezone] = useState<string>('');
   const [selectedTimezone, setSelectedTimezone] = useState<string>('');
   const [detectedTimezone, setDetectedTimezone] = useState<string>('');
