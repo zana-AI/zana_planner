@@ -11,7 +11,7 @@ from repositories.instances_repo import InstancesRepository
 from repositories.distractions_repo import DistractionsRepository
 from utils.time_utils import get_week_range
 from utils.promise_id import normalize_promise_id, promise_ids_equal
-from db.sqlite_db import resolve_promise_uuid, connection_for_root
+from db.postgres_db import resolve_promise_uuid, get_db_session
 
 
 logger = logging.getLogger(__name__)
@@ -82,9 +82,9 @@ class ReportsService:
             from repositories.instances_repo import InstancesRepository
             instances_repo = InstancesRepository(self.root_dir)
             user = str(user_id)
-            with connection_for_root(self.root_dir) as conn:
+            with get_db_session() as session_db:
                 for promise in promises:
-                    promise_uuid = resolve_promise_uuid(conn, user, promise.id)
+                    promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
                     if promise_uuid:
                         instance = instances_repo.get_instance_by_promise_uuid(user_id, promise_uuid)
                         if instance:
@@ -101,8 +101,8 @@ class ReportsService:
                 promise_uuid = None
                 instance = None
                 if self.root_dir:
-                    with connection_for_root(self.root_dir) as conn:
-                        promise_uuid = resolve_promise_uuid(conn, user, promise.id)
+                    with get_db_session() as session_db:
+                        promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
                         if promise_uuid:
                             promise_uuid_by_id[promise.id] = promise_uuid
                             instance = instances_by_promise_uuid.get(promise_uuid)

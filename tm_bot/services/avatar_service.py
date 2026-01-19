@@ -5,7 +5,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from db.sqlite_db import connection_for_root, utc_now_iso, dt_from_utc_iso
+from sqlalchemy import text
+
+from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,11 +32,11 @@ class AvatarService:
         Returns True if avatar hasn't been checked in the last 24 hours.
         """
         user = str(user_id)
-        with connection_for_root(self.root_dir) as conn:
-            row = conn.execute(
-                "SELECT avatar_checked_at_utc FROM users WHERE user_id = ? LIMIT 1;",
-                (user,),
-            ).fetchone()
+        with get_db_session() as session:
+            row = session.execute(
+                text("SELECT avatar_checked_at_utc FROM users WHERE user_id = :user_id LIMIT 1;"),
+                {"user_id": user},
+            ).mappings().fetchone()
             
             if not row or not row["avatar_checked_at_utc"]:
                 return True  # Never checked, should refresh
@@ -136,38 +138,37 @@ class AvatarService:
                 # If outside root_dir, store as absolute path
                 relative_path = abs_path
         
-        with connection_for_root(self.root_dir) as conn:
+        with get_db_session() as session:
             # Get current avatar_file_unique_id to check if it changed
-            current_row = conn.execute(
-                "SELECT avatar_file_unique_id FROM users WHERE user_id = ? LIMIT 1;",
-                (user,),
-            ).fetchone()
+            current_row = session.execute(
+                text("SELECT avatar_file_unique_id FROM users WHERE user_id = :user_id LIMIT 1;"),
+                {"user_id": user},
+            ).mappings().fetchone()
             
             current_unique_id = current_row["avatar_file_unique_id"] if current_row else None
             avatar_changed = (file_unique_id and file_unique_id != current_unique_id)
             
-            conn.execute(
-                """
-                UPDATE users 
-                SET avatar_file_id = ?,
-                    avatar_file_unique_id = ?,
-                    avatar_path = ?,
-                    avatar_updated_at_utc = ?,
-                    avatar_checked_at_utc = ?,
-                    updated_at_utc = ?
-                WHERE user_id = ?;
-                """,
-                (
-                    file_id,
-                    file_unique_id,
-                    relative_path,
-                    now if avatar_changed else None,  # Only update avatar_updated_at if changed
-                    now,  # Always update checked_at
-                    now,
-                    user,
-                ),
+            session.execute(
+                text("""
+                    UPDATE users 
+                    SET avatar_file_id = :file_id,
+                        avatar_file_unique_id = :file_unique_id,
+                        avatar_path = :avatar_path,
+                        avatar_updated_at_utc = :avatar_updated_at_utc,
+                        avatar_checked_at_utc = :avatar_checked_at_utc,
+                        updated_at_utc = :updated_at_utc
+                    WHERE user_id = :user_id;
+                """),
+                {
+                    "file_id": file_id,
+                    "file_unique_id": file_unique_id,
+                    "avatar_path": relative_path,
+                    "avatar_updated_at_utc": now if avatar_changed else None,
+                    "avatar_checked_at_utc": now,
+                    "updated_at_utc": now,
+                    "user_id": user,
+                },
             )
-            conn.commit()
             logger.debug(f"Updated avatar info for user {user_id}")
     
     async def fetch_and_store_avatar(self, bot, user_id: int) -> bool:

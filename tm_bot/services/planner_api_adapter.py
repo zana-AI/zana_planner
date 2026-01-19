@@ -1068,7 +1068,7 @@ class PlannerAPIAdapter:
         Returns:
             Tuple of (success: bool, result: list[dict] or error_message: str)
         """
-        from db.sqlite_db import connection_for_root
+        # Use PostgreSQL via get_db_session for all queries
         
         safe_user_id = str(user_id).strip()
         if not safe_user_id.isdigit():
@@ -1100,23 +1100,14 @@ class PlannerAPIAdapter:
             # Simpler and more secure approach: Always use parameterized execution
             # and check that results only contain data for this user
             
-            with connection_for_root(self.root_dir) as conn:
-                # Execute the query
-                cursor = conn.execute(query)
-                columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                rows = cursor.fetchall()
+            from db.postgres_db import get_db_session
+            from sqlalchemy import text
+            with get_db_session() as session:
+                result = session.execute(text(query))
+                rows = result.mappings().fetchall()
                 
                 # Convert to list of dicts
-                results = []
-                for row in rows:
-                    row_dict = {}
-                    for i, col in enumerate(columns):
-                        val = row[i]
-                        # Convert sqlite3.Row items properly
-                        if hasattr(row, 'keys'):
-                            val = row[col]
-                        row_dict[col] = val
-                    results.append(row_dict)
+                results = [dict(row) for row in rows]
                 
                 # SECURITY CHECK: Verify all returned rows belong to this user
                 # This is a defense-in-depth measure

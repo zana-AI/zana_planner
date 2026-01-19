@@ -4,10 +4,12 @@ Service for computing template unlock status.
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 
+from sqlalchemy import text
+
 from repositories.templates_repo import TemplatesRepository
 from repositories.instances_repo import InstancesRepository
 from repositories.reviews_repo import ReviewsRepository
-from db.sqlite_db import connection_for_root
+from db.postgres_db import get_db_session
 
 
 class TemplateUnlocksService:
@@ -111,14 +113,14 @@ class TemplateUnlocksService:
         instances = self.instances_repo.list_active_instances(user_id)
         # Also check completed instances
         user = str(user_id)
-        with connection_for_root(self.root_dir) as conn:
-            rows = conn.execute(
-                """
-                SELECT instance_id FROM promise_instances
-                WHERE user_id = ? AND template_id = ? AND status = 'completed'
-                LIMIT 1;
-                """,
-                (user, template_id),
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT instance_id FROM promise_instances
+                    WHERE user_id = :user_id AND template_id = :template_id AND status = 'completed'
+                    LIMIT 1;
+                """),
+                {"user_id": user, "template_id": template_id},
             ).fetchall()
             return len(rows) > 0
 
@@ -128,15 +130,15 @@ class TemplateUnlocksService:
         """Check if user has achieved min_rate success over window_weeks."""
         user = str(user_id)
         # Get all instances of this template
-        with connection_for_root(self.root_dir) as conn:
-            instance_rows = conn.execute(
-                """
-                SELECT instance_id FROM promise_instances
-                WHERE user_id = ? AND template_id = ?
-                ORDER BY created_at_utc DESC
-                LIMIT 10;
-                """,
-                (user, template_id),
+        with get_db_session() as session:
+            instance_rows = session.execute(
+                text("""
+                    SELECT instance_id FROM promise_instances
+                    WHERE user_id = :user_id AND template_id = :template_id
+                    ORDER BY created_at_utc DESC
+                    LIMIT 10;
+                """),
+                {"user_id": user, "template_id": template_id},
             ).fetchall()
 
         if not instance_rows:

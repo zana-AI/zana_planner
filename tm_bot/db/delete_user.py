@@ -1,52 +1,90 @@
 # zana_planner/tm_bot/db/delete_user.py
 """
 Script to delete all data for a user from the system.
-This includes SQLite database records and file system artifacts.
+This includes PostgreSQL database records and file system artifacts.
 """
 import os
-import sqlite3
 import shutil
 import argparse
 from pathlib import Path
-from db.sqlite_db import resolve_db_path, connection_for_root
+from sqlalchemy import text
+from db.postgres_db import get_db_session
 
 
-def delete_user_from_sqlite(root_dir: str, user_id: str) -> None:
-    """Delete all user data from SQLite database."""
-    db_path = resolve_db_path(root_dir)
-    if not os.path.exists(db_path):
-        print(f"Database not found at {db_path}")
-        return
-    
-    with connection_for_root(root_dir) as conn:
-        user = str(user_id)
-        
-        # Delete in order respecting foreign key constraints
-        # (Foreign keys are enabled via PRAGMA foreign_keys=ON)
-        
-        # Delete sessions (references promises)
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user,))
-        
-        # Delete actions (references promises)
-        conn.execute("DELETE FROM actions WHERE user_id = ?", (user,))
-        
-        # Delete promise_events (references promises)
-        conn.execute("DELETE FROM promise_events WHERE user_id = ?", (user,))
-        
-        # Delete promise_aliases (references promises)
-        conn.execute("DELETE FROM promise_aliases WHERE user_id = ?", (user,))
-        
-        # Delete promises
-        conn.execute("DELETE FROM promises WHERE user_id = ?", (user,))
-        
-        # Delete user settings
-        conn.execute("DELETE FROM users WHERE user_id = ?", (user,))
-        
-        # Delete legacy imports
-        conn.execute("DELETE FROM legacy_imports WHERE user_id = ?", (user,))
-        
-        conn.commit()
-        print(f"Deleted all SQLite data for user {user_id}")
+def delete_user_from_postgres(user_id: str) -> None:
+    """Delete all user data from PostgreSQL database."""
+    user = str(user_id)
+
+    with get_db_session() as session:
+        # Delete dependent rows using promise_uuid subquery
+        session.execute(
+            text("""
+                DELETE FROM promise_reminders
+                WHERE promise_uuid IN (SELECT promise_uuid FROM promises WHERE user_id = :user_id)
+            """),
+            {"user_id": user},
+        )
+        session.execute(
+            text("""
+                DELETE FROM promise_schedule_weekly_slots
+                WHERE promise_uuid IN (SELECT promise_uuid FROM promises WHERE user_id = :user_id)
+            """),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM sessions WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM actions WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM distraction_events WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM promise_weekly_reviews WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM promise_events WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM promise_aliases WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM promise_instances WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM promises WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM promise_templates WHERE created_by_user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM promise_suggestions WHERE from_user_id = :user_id OR to_user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM user_relationships WHERE source_user_id = :user_id OR target_user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM legacy_imports WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+        session.execute(
+            text("DELETE FROM users WHERE user_id = :user_id"),
+            {"user_id": user},
+        )
+
+    print(f"Deleted all PostgreSQL data for user {user_id}")
 
 
 def delete_user_directory(root_dir: str, user_id: str) -> None:
@@ -70,8 +108,8 @@ def purge_user(root_dir: str, user_id: str) -> None:
     user_id_str = str(user_id)
     print(f"Purging all data for user {user_id_str}...")
     
-    # Delete from SQLite
-    delete_user_from_sqlite(root_dir, user_id_str)
+    # Delete from PostgreSQL
+    delete_user_from_postgres(user_id_str)
     
     # Delete user directory (contains nightly_state.json and any other files)
     delete_user_directory(root_dir, user_id_str)

@@ -30,7 +30,6 @@ from repositories.schedules_repo import SchedulesRepository
 from repositories.reminders_repo import RemindersRepository
 from services.template_unlocks import TemplateUnlocksService
 from services.reminder_dispatch import ReminderDispatchService
-from db.sqlite_db import connection_for_root, dt_to_utc_iso
 from db.postgres_db import get_db_session, utc_now_iso, resolve_promise_uuid, date_from_iso, dt_to_utc_iso
 from sqlalchemy import text
 from utils.time_utils import get_week_range
@@ -2841,11 +2840,11 @@ Rules:
             instances_repo = InstancesRepository(app.state.root_dir)
             reviews_repo = ReviewsRepository(app.state.root_dir)
             
-            # Find instance by promise_id
-            from db.sqlite_db import resolve_promise_uuid
+            # Find instance by promise_id (PostgreSQL)
+            from db.postgres_db import resolve_promise_uuid, get_db_session
             user = str(user_id)
-            with connection_for_root(app.state.root_dir) as conn:
-                promise_uuid = resolve_promise_uuid(conn, user, promise_id)
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, user, promise_id)
                 if not promise_uuid:
                     raise HTTPException(status_code=404, detail="Promise not found")
             
@@ -2993,34 +2992,33 @@ Rules:
             List of all users
         """
         try:
-            root_dir = app.state.root_dir
-            if not root_dir:
-                raise HTTPException(status_code=500, detail="Server configuration error: root_dir not set")
-            
-            with connection_for_root(root_dir) as conn:
-                rows = conn.execute(
-                    """
-                    SELECT user_id, first_name, last_name, username, last_seen_utc
-                    FROM users
-                    ORDER BY last_seen_utc DESC NULLS LAST
-                    LIMIT ?;
-                    """,
-                    (limit,),
-                ).fetchall()
-                
-                users = []
-                for row in rows:
-                    users.append(
-                        AdminUser(
-                            user_id=str(row["user_id"]),
-                            first_name=row["first_name"],
-                            last_name=row["last_name"],
-                            username=row["username"],
-                            last_seen_utc=row["last_seen_utc"],
-                        )
+            from db.postgres_db import get_db_session
+            from sqlalchemy import text
+
+            with get_db_session() as session:
+                rows = session.execute(
+                    text("""
+                        SELECT user_id, first_name, last_name, username, last_seen_utc
+                        FROM users
+                        ORDER BY last_seen_utc DESC NULLS LAST
+                        LIMIT :limit;
+                    """),
+                    {"limit": int(limit)},
+                ).mappings().fetchall()
+
+            users: List[AdminUser] = []
+            for row in rows:
+                users.append(
+                    AdminUser(
+                        user_id=str(row.get("user_id")),
+                        first_name=row.get("first_name"),
+                        last_name=row.get("last_name"),
+                        username=row.get("username"),
+                        last_seen_utc=row.get("last_seen_utc"),
                     )
-                
-                return AdminUsersResponse(users=users, total=len(users))
+                )
+
+            return AdminUsersResponse(users=users, total=len(users))
                 
         except HTTPException:
             raise
