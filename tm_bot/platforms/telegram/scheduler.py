@@ -11,6 +11,9 @@ from zoneinfo import ZoneInfoNotFoundError
 from telegram.ext import JobQueue
 
 from ..interfaces import IJobScheduler
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class TelegramJobScheduler(IJobScheduler):
