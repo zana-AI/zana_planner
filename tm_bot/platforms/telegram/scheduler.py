@@ -47,21 +47,33 @@ class TelegramJobScheduler(IJobScheduler):
     ) -> None:
         """Schedule a daily recurring job for a user."""
         job_name = f"{name_prefix}-{user_id}"
+        tz_original = tz
         tz = self._normalize_tz(tz)
         
         # Clear any existing job with the same name
-        for job in self._job_queue.get_jobs_by_name(job_name):
-            job.enabled = False
-            job.schedule_removal()
+        existing_jobs = list(self._job_queue.get_jobs_by_name(job_name))
+        if existing_jobs:
+            logger.debug(f"TelegramJobScheduler: clearing {len(existing_jobs)} existing job(s) with name '{job_name}'")
+            for job in existing_jobs:
+                job.enabled = False
+                job.schedule_removal()
         
         # Schedule the new job
-        self._job_queue.run_daily(
-            callback,
-            time=time(hh, mm, tzinfo=ZoneInfo(tz)),
-            days=(0, 1, 2, 3, 4, 5, 6),  # All days of the week
-            name=job_name,
-            data={"user_id": user_id}
-        )
+        try:
+            self._job_queue.run_daily(
+                callback,
+                time=time(hh, mm, tzinfo=ZoneInfo(tz)),
+                days=(0, 1, 2, 3, 4, 5, 6),  # All days of the week
+                name=job_name,
+                data={"user_id": user_id}
+            )
+            if tz_original != tz:
+                logger.info(f"TelegramJobScheduler: ✓ scheduled '{job_name}' at {hh:02d}:{mm:02d} {tz} (normalized from '{tz_original}')")
+            else:
+                logger.info(f"TelegramJobScheduler: ✓ scheduled '{job_name}' at {hh:02d}:{mm:02d} {tz}")
+        except Exception as e:
+            logger.exception(f"TelegramJobScheduler: ✗ failed to schedule '{job_name}': {e}")
+            raise
     
     def schedule_once(
         self,

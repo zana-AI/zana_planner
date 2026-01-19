@@ -636,22 +636,29 @@ class CallbackHandlers:
         user_now, tzname = self._get_user_now(user_id_int)
         current_date = user_now.date()
         
+        logger.info(f"[REMINDER] send_nightly_reminders: user_id={user_id_int}, now={user_now}, tz={tzname}, date={current_date}")
+        
         # Reset state if it's a new day
         self.plan_keeper.nightly_state_repo.reset_for_new_day(user_id_int, current_date)
         
         # Get already shown promise IDs for today
         shown_promise_ids = self.plan_keeper.nightly_state_repo.get_shown_promise_ids(user_id_int, current_date)
+        logger.debug(f"[REMINDER] Already shown promise IDs for user {user_id_int} on {current_date}: {shown_promise_ids}")
         
         # get a bigger ranked list, then filter out already shown promises
         ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id_int, user_now, n=1000)
+        logger.info(f"[REMINDER] Found {len(ranked)} ranked promises for user {user_id_int}")
         if not ranked:
+            logger.warning(f"[REMINDER] No promises found for user {user_id_int} - skipping reminder")
             return
         
         # Filter out promises that have already been shown today
         unshown_ranked = [p for p in ranked if p.id not in shown_promise_ids]
+        logger.info(f"[REMINDER] After filtering shown promises: {len(unshown_ranked)} unshown promises remaining")
         
         if not unshown_ranked:
             # All promises have been shown today
+            logger.info(f"[REMINDER] All promises already shown for user {user_id_int} today - sending completion message")
             header_message = get_message("nightly_header", user_lang)
             await context.bot.send_message(
                 chat_id=user_id_int,
@@ -709,6 +716,7 @@ class CallbackHandlers:
         # Mark these promises as shown
         if shown_ids:
             self.plan_keeper.nightly_state_repo.mark_promises_as_shown(user_id_int, shown_ids, current_date)
+            logger.info(f"[REMINDER] Marked {len(shown_ids)} promises as shown for user {user_id_int}: {shown_ids}")
     
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""

@@ -251,9 +251,11 @@ class PlannerBot:
             return
 
         # Schedule per-user jobs. If one user fails, continue.
+        scheduled_count = 0
         for user_id in user_ids:
             try:
                 tzname = self.get_user_timezone(user_id) or "UTC"
+                logger.debug(f"bootstrap: scheduling reminders for user {user_id} (tz: {tzname})")
 
                 if self.message_handlers:
                     # Morning reminders
@@ -285,9 +287,13 @@ class PlannerBot:
                         mm=59,
                         name_prefix="nightly",
                     )
+                    scheduled_count += 1
+                    logger.info(f"bootstrap: ✓ scheduled all reminders for user {user_id} (tz: {tzname})")
             except Exception as e:
                 logger.exception(f"bootstrap_schedule_existing_users: failed scheduling for user {user_id}: {e}")
                 continue
+        
+        logger.info(f"bootstrap_schedule_existing_users: successfully scheduled reminders for {scheduled_count}/{len(user_ids)} users")
 
     def _start_webapp_server(self, host: str = "0.0.0.0", port: int = 8080) -> None:
         """Start the FastAPI web app server in a background thread."""

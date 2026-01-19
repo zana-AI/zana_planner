@@ -1623,13 +1623,24 @@ class MessageHandlers:
     async def scheduled_nightly_reminders_for_one(self, context: CallbackContext) -> None:
         """Scheduled callback for nightly reminders."""
         user_id = context.job.data["user_id"]
-        logger.info(f"Running scheduled nightly reminder for user {user_id}")
-        await self.send_nightly_reminders(context, user_id=user_id)
+        logger.info(f"[REMINDER] Running scheduled nightly reminder for user {user_id}")
+        try:
+            await self.send_nightly_reminders(context, user_id=user_id)
+            logger.info(f"[REMINDER] ✓ Successfully sent nightly reminders for user {user_id}")
+        except Exception as e:
+            logger.exception(f"[REMINDER] ✗ Failed to send nightly reminders for user {user_id}: {e}")
+            raise
     
     async def scheduled_morning_reminders_for_one(self, context: CallbackContext) -> None:
         """Scheduled callback for morning reminders."""
         user_id = context.job.data["user_id"]
-        await self.send_morning_reminders(context, user_id=user_id)
+        logger.info(f"[REMINDER] Running scheduled morning reminder for user {user_id}")
+        try:
+            await self.send_morning_reminders(context, user_id=user_id)
+            logger.info(f"[REMINDER] ✓ Successfully sent morning reminders for user {user_id}")
+        except Exception as e:
+            logger.exception(f"[REMINDER] ✗ Failed to send morning reminders for user {user_id}: {e}")
+            raise
     
     async def cmd_language(self, update: Update, context: CallbackContext) -> None:
         """Handle the /language command to change language preference."""
