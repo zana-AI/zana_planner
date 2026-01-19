@@ -1602,13 +1602,13 @@ class MessageHandlers:
     async def send_nightly_reminders(self, context: CallbackContext, user_id: int = None) -> None:
         """Send nightly reminders to users about their promises."""
         # Delegate to callback handlers which has the implementation
-        callback_handlers = CallbackHandlers(self.plan_keeper, self.application)
+        callback_handlers = CallbackHandlers(self.plan_keeper, self.application, self.response_service, self.miniapp_url)
         await callback_handlers.send_nightly_reminders(context, user_id)
 
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""
         # Delegate to callback handlers which has the implementation
-        callback_handlers = CallbackHandlers(self.plan_keeper, self.application)
+        callback_handlers = CallbackHandlers(self.plan_keeper, self.application, self.response_service, self.miniapp_url)
         await callback_handlers.send_morning_reminders(context, user_id)
     
     async def scheduled_noon_cleanup_for_one(self, context: CallbackContext) -> None:
@@ -1617,7 +1617,7 @@ class MessageHandlers:
         logger.info(f"Running scheduled noon cleanup for user {user_id}")
         
         # Delegate to callback handlers which has the implementation
-        callback_handlers = CallbackHandlers(self.plan_keeper, self.application)
+        callback_handlers = CallbackHandlers(self.plan_keeper, self.application, self.response_service, self.miniapp_url)
         await callback_handlers.cleanup_unread_morning_messages(context, user_id)
     
     async def scheduled_nightly_reminders_for_one(self, context: CallbackContext) -> None:
