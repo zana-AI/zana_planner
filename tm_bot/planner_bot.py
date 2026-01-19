@@ -221,44 +221,73 @@ class PlannerBot:
 
     def bootstrap_schedule_existing_users(self) -> None:
         """
-        On bot startup, (re)schedule nightly jobs for all existing users found under root_dir.
-        Safe to run multiple times; it removes any prior job with the same name first.
+        On bot startup, (re)schedule reminder jobs for all existing users.
+        
+        Source of truth is PostgreSQL (users table). The prior filesystem scan was legacy
+        (older SQLite/YAML versions created per-user directories). With PostgreSQL, many
+        users may not have a directory, so scanning root_dir would miss them and reminders
+        would not be scheduled.
         """
         job_scheduler = self.platform_adapter.job_scheduler
+        
+        # Fetch user ids from Postgres (user_id stored as TEXT)
+        user_ids: list[int] = []
+        try:
+            from sqlalchemy import text
+            from db.postgres_db import get_db_session
 
-        for entry in os.listdir(self.root_dir):
-            user_path = os.path.join(self.root_dir, entry)
-            if not os.path.isdir(user_path):
-                continue
+            with get_db_session() as session:
+                rows = session.execute(text("SELECT user_id FROM users;")).fetchall()
 
+            for r in rows:
+                try:
+                    user_ids.append(int(r[0]))
+                except Exception:
+                    continue
+
+            logger.info(f"bootstrap_schedule_existing_users: found {len(user_ids)} users in DB")
+        except Exception as e:
+            logger.exception(f"bootstrap_schedule_existing_users: failed to fetch users from DB: {e}")
+            return
+
+        # Schedule per-user jobs. If one user fails, continue.
+        for user_id in user_ids:
             try:
-                user_id = int(entry)
-            except ValueError:
+                tzname = self.get_user_timezone(user_id) or "UTC"
+
+                if self.message_handlers:
+                    # Morning reminders
+                    job_scheduler.schedule_daily(
+                        user_id=user_id,
+                        tz=tzname,
+                        callback=self.message_handlers.scheduled_morning_reminders_for_one,
+                        hh=8,
+                        mm=30,
+                        name_prefix="morning",
+                    )
+
+                    # Noon cleanup
+                    job_scheduler.schedule_daily(
+                        user_id=user_id,
+                        tz=tzname,
+                        callback=self.message_handlers.scheduled_noon_cleanup_for_one,
+                        hh=12,
+                        mm=0,
+                        name_prefix="noon_cleanup",
+                    )
+
+                    # Nightly reminders
+                    job_scheduler.schedule_daily(
+                        user_id=user_id,
+                        tz=tzname,
+                        callback=self.message_handlers.scheduled_nightly_reminders_for_one,
+                        hh=22,
+                        mm=59,
+                        name_prefix="nightly",
+                    )
+            except Exception as e:
+                logger.exception(f"bootstrap_schedule_existing_users: failed scheduling for user {user_id}: {e}")
                 continue
-
-            tzname = self.get_user_timezone(user_id) or "UTC"
-
-            # Schedule morning reminders
-            if self.message_handlers:
-                job_scheduler.schedule_daily(
-                    user_id=user_id, tz=tzname,
-                    callback=self.message_handlers.scheduled_morning_reminders_for_one,
-                    hh=8, mm=30, name_prefix="morning",
-                )
-
-                # Schedule noon cleanup 
-                job_scheduler.schedule_daily(
-                    user_id=user_id, tz=tzname,
-                    callback=self.message_handlers.scheduled_noon_cleanup_for_one,
-                    hh=12, mm=00, name_prefix="noon_cleanup",
-                )
-
-                # Schedule nightly reminders
-                job_scheduler.schedule_daily(
-                    user_id=user_id, tz=tzname,
-                    callback=self.message_handlers.scheduled_nightly_reminders_for_one,
-                    hh=22, mm=59, name_prefix="nightly",
-                )
 
     def _start_webapp_server(self, host: str = "0.0.0.0", port: int = 8080) -> None:
         """Start the FastAPI web app server in a background thread."""
