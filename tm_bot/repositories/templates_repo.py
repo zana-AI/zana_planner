@@ -96,47 +96,103 @@ class TemplatesRepository:
         now = utc_now_iso()
         
         with get_db_session() as session:
-            session.execute(
-                text("""
-                    INSERT INTO promise_templates (
-                        template_id, category, program_key, level, title, why, done, effort,
-                        template_kind, metric_type, target_value, target_direction,
-                        estimated_hours_per_unit, duration_type, duration_weeks, is_active,
-                        canonical_key, created_by_user_id, source_promise_uuid, origin,
-                        created_at_utc, updated_at_utc
-                    ) VALUES (
-                        :template_id, :category, :program_key, :level, :title, :why, :done, :effort,
-                        :template_kind, :metric_type, :target_value, :target_direction,
-                        :estimated_hours_per_unit, :duration_type, :duration_weeks, :is_active,
-                        :canonical_key, :created_by_user_id, :source_promise_uuid, :origin,
-                        :created_at_utc, :updated_at_utc
-                    )
-                """),
-                {
-                    "template_id": template_id,
-                    "category": template_data["category"],
-                    "program_key": template_data.get("program_key"),
-                    "level": template_data["level"],
-                    "title": template_data["title"],
-                    "why": template_data["why"],
-                    "done": template_data["done"],
-                    "effort": template_data["effort"],
-                    "template_kind": template_data.get("template_kind", "commitment"),
-                    "metric_type": template_data["metric_type"],
-                    "target_value": template_data["target_value"],
-                    "target_direction": template_data.get("target_direction", "at_least"),
-                    "estimated_hours_per_unit": template_data.get("estimated_hours_per_unit", 1.0),
-                    "duration_type": template_data["duration_type"],
-                    "duration_weeks": template_data.get("duration_weeks"),
-                    "is_active": 1 if template_data.get("is_active", True) else 0,
-                    "canonical_key": template_data.get("canonical_key"),
-                    "created_by_user_id": template_data.get("created_by_user_id"),
-                    "source_promise_uuid": template_data.get("source_promise_uuid"),
-                    "origin": template_data.get("origin"),
-                    "created_at_utc": now,
-                    "updated_at_utc": now,
-                },
-            )
+            # Check if marketplace columns exist
+            has_marketplace_fields = False
+            try:
+                result = session.execute(
+                    text("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'promise_templates' 
+                        AND column_name = 'canonical_key'
+                        LIMIT 1
+                    """)
+                ).fetchone()
+                has_marketplace_fields = result is not None
+            except Exception:
+                # If check fails, assume columns don't exist
+                has_marketplace_fields = False
+            
+            if has_marketplace_fields:
+                # Insert with marketplace fields
+                session.execute(
+                    text("""
+                        INSERT INTO promise_templates (
+                            template_id, category, program_key, level, title, why, done, effort,
+                            template_kind, metric_type, target_value, target_direction,
+                            estimated_hours_per_unit, duration_type, duration_weeks, is_active,
+                            canonical_key, created_by_user_id, source_promise_uuid, origin,
+                            created_at_utc, updated_at_utc
+                        ) VALUES (
+                            :template_id, :category, :program_key, :level, :title, :why, :done, :effort,
+                            :template_kind, :metric_type, :target_value, :target_direction,
+                            :estimated_hours_per_unit, :duration_type, :duration_weeks, :is_active,
+                            :canonical_key, :created_by_user_id, :source_promise_uuid, :origin,
+                            :created_at_utc, :updated_at_utc
+                        )
+                    """),
+                    {
+                        "template_id": template_id,
+                        "category": template_data["category"],
+                        "program_key": template_data.get("program_key"),
+                        "level": template_data["level"],
+                        "title": template_data["title"],
+                        "why": template_data["why"],
+                        "done": template_data["done"],
+                        "effort": template_data["effort"],
+                        "template_kind": template_data.get("template_kind", "commitment"),
+                        "metric_type": template_data["metric_type"],
+                        "target_value": template_data["target_value"],
+                        "target_direction": template_data.get("target_direction", "at_least"),
+                        "estimated_hours_per_unit": template_data.get("estimated_hours_per_unit", 1.0),
+                        "duration_type": template_data["duration_type"],
+                        "duration_weeks": template_data.get("duration_weeks"),
+                        "is_active": 1 if template_data.get("is_active", True) else 0,
+                        "canonical_key": template_data.get("canonical_key"),
+                        "created_by_user_id": template_data.get("created_by_user_id"),
+                        "source_promise_uuid": template_data.get("source_promise_uuid"),
+                        "origin": template_data.get("origin"),
+                        "created_at_utc": now,
+                        "updated_at_utc": now,
+                    },
+                )
+            else:
+                # Insert without marketplace fields (for databases that haven't run migration yet)
+                session.execute(
+                    text("""
+                        INSERT INTO promise_templates (
+                            template_id, category, program_key, level, title, why, done, effort,
+                            template_kind, metric_type, target_value, target_direction,
+                            estimated_hours_per_unit, duration_type, duration_weeks, is_active,
+                            created_at_utc, updated_at_utc
+                        ) VALUES (
+                            :template_id, :category, :program_key, :level, :title, :why, :done, :effort,
+                            :template_kind, :metric_type, :target_value, :target_direction,
+                            :estimated_hours_per_unit, :duration_type, :duration_weeks, :is_active,
+                            :created_at_utc, :updated_at_utc
+                        )
+                    """),
+                    {
+                        "template_id": template_id,
+                        "category": template_data["category"],
+                        "program_key": template_data.get("program_key"),
+                        "level": template_data["level"],
+                        "title": template_data["title"],
+                        "why": template_data["why"],
+                        "done": template_data["done"],
+                        "effort": template_data["effort"],
+                        "template_kind": template_data.get("template_kind", "commitment"),
+                        "metric_type": template_data["metric_type"],
+                        "target_value": template_data["target_value"],
+                        "target_direction": template_data.get("target_direction", "at_least"),
+                        "estimated_hours_per_unit": template_data.get("estimated_hours_per_unit", 1.0),
+                        "duration_type": template_data["duration_type"],
+                        "duration_weeks": template_data.get("duration_weeks"),
+                        "is_active": 1 if template_data.get("is_active", True) else 0,
+                        "created_at_utc": now,
+                        "updated_at_utc": now,
+                    },
+                )
         
         return template_id
 
