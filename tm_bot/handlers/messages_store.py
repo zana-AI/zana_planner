@@ -83,6 +83,12 @@ class MessageTemplateStore:
             "timezone_location_request": "Please share your location once so I can set your timezone.",
             "timezone_location_failed": "Sorry, I couldn't detect your timezone. You can set it manually, e.g. /settimezone Europe/Paris",
             "timezone_location_success": "Timezone set to {timezone}. I'll schedule reminders in your local time.",
+            "timezone_detected_prompt": "We noticed your timezone is not set yet. Would you like to update to \"{timezone}\" or something else?",
+            "timezone_confirm_use_detected": "Use {timezone}",
+            "timezone_confirm_not_now": "Not now",
+            "timezone_confirm_choose_different": "Choose different",
+            "timezone_updated": "Timezone updated to {timezone}",
+            "timezone_dismissed": "No problem! You can set your timezone anytime in settings.",
 
             # Pomodoro
             "pomodoro_start": "Pomodoro Timer: 25:00",

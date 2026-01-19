@@ -31,7 +31,7 @@ class SettingsRepository:
 
         return UserSettings(
             user_id=user,
-            timezone=str(row["timezone"] or "Europe/Paris"),
+            timezone=str(row["timezone"] or "DEFAULT"),
             nightly_hh=int(row["nightly_hh"] or 22),
             nightly_mm=int(row["nightly_mm"] or 0),
             language=str(row["language"] or "en"),
@@ -69,7 +69,7 @@ class SettingsRepository:
                 """),
                 {
                     "user_id": user,
-                    "timezone": settings.timezone or "Europe/Paris",
+                    "timezone": settings.timezone or "DEFAULT",
                     "nightly_hh": int(settings.nightly_hh or 22),
                     "nightly_mm": int(settings.nightly_mm or 0),
                     "language": settings.language or "en",

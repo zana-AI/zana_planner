@@ -137,11 +137,12 @@ class ApiClient {
   /**
    * Update user timezone.
    * Automatically called by Mini App on load to detect and set timezone.
+   * @param force - If true, update timezone even if already set
    */
-  async updateTimezone(tz: string, offsetMin?: number): Promise<{ status: string; message: string; timezone: string }> {
+  async updateTimezone(tz: string, offsetMin?: number, force?: boolean): Promise<{ status: string; message: string; timezone: string }> {
     return this.request<{ status: string; message: string; timezone: string }>('/user/timezone', {
       method: 'POST',
-      body: JSON.stringify({ tz, offsetMin }),
+      body: JSON.stringify({ tz, offsetMin, force: force || false }),
     });
   }
 

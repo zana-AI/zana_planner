@@ -5,6 +5,7 @@ import { useTimezoneDetection } from './hooks/useTimezoneDetection';
 import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
+import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
@@ -93,6 +94,18 @@ function App() {
         {/* Templates Pages */}
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/templates/:templateId" element={<TemplateDetailPage />} />
+        
+        {/* Timezone Selector Page */}
+        <Route 
+          path="/timezone" 
+          element={
+            isAuthenticated ? (
+              <TimezoneSelectorPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
         
         {/* Home Page - shown when not authenticated */}
         <Route 

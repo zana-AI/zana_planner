@@ -52,7 +52,7 @@ class Action:
 @dataclass
 class UserSettings:
     user_id: str
-    timezone: str = "Europe/Paris"
+    timezone: str = "DEFAULT"
     nightly_hh: int = 22
     nightly_mm: int = 0
     language: str = "en"  # "en", "fa", "fr"

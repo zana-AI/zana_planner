@@ -42,6 +42,33 @@ class CallbackHandlers:
         """Get user timezone using the settings service."""
         return self.plan_keeper.settings_service.get_user_timezone(user_id)
     
+    def _update_user_info(self, user_id: int, user) -> None:
+        """Extract and update user info (first_name, username, last_seen) from Telegram user object."""
+        try:
+            settings = self.plan_keeper.settings_service.get_settings(user_id)
+            updated = False
+            
+            # Update first_name if missing or changed
+            if user.first_name:
+                if settings.first_name != user.first_name:
+                    settings.first_name = user.first_name
+                    updated = True
+            
+            # Update username if missing or changed
+            if user.username:
+                if settings.username != user.username:
+                    settings.username = user.username
+                    updated = True
+            
+            # Always update last_seen
+            settings.last_seen = datetime.now()
+            updated = True
+            
+            if updated:
+                self.plan_keeper.settings_service.save_settings(settings)
+        except Exception as e:
+            logger.warning(f"Failed to update user info for user {user_id}: {e}")
+    
     def _get_user_now(self, user_id: int):
         """Return (now_in_user_tz, tzname)."""
         from zoneinfo import ZoneInfo
@@ -137,6 +164,9 @@ class CallbackHandlers:
         user_id = query.from_user.id
         user_lang = get_user_language(query.from_user)
         
+        # Update user info (including last_seen_utc) - user is active
+        self._update_user_info(user_id, query.from_user)
+        
         # Parse callback data
         cb = decode_cb(query.data)
         action = cb.get("a")
@@ -197,6 +227,14 @@ class CallbackHandlers:
             await self._handle_refresh_weekly(query, context, user_lang)
         elif action == "set_language":
             await self._handle_set_language(query)
+        elif action == "tz_confirm":
+            # Get timezone from callback data
+            tz = cb.get("tz")
+            await self._handle_timezone_confirm(query, tz, user_lang)
+        elif action == "tz_not_now":
+            await self._handle_timezone_dismiss(query, user_lang)
+        elif action == "tz_choose":
+            await self._handle_timezone_choose(query, user_lang)
         elif action == "voice_mode":
             await self._handle_voice_mode(query, cb, user_lang)
         elif action == "add_to_calendar_yes":
@@ -845,6 +883,76 @@ class CallbackHandlers:
             # This is a new user, show welcome message
             welcome_message = get_message("welcome_new", selected_lang)
             await query.message.reply_text(welcome_message, parse_mode='Markdown')
+    
+    async def _handle_timezone_confirm(self, query, tz: str, user_lang: Language):
+        """Handle timezone confirmation - user wants to use detected timezone."""
+        user_id = query.from_user.id
+        
+        # Cancel any pending delayed messages for this user (they're active now)
+        try:
+            from services.delayed_message_service import get_delayed_message_service
+            delayed_service = get_delayed_message_service()
+            if delayed_service:
+                delayed_service.cancel_pending(user_id)
+        except Exception as e:
+            logger.debug(f"Could not cancel pending messages: {e}")
+        
+        # Update timezone
+        if tz:
+            self.plan_keeper.settings_service.set_user_timezone(user_id, tz)
+            
+            # Send confirmation message
+            from handlers.messages_store import get_message
+            confirm_msg = get_message("timezone_updated", user_lang, timezone=tz)
+            await query.edit_message_text(confirm_msg)
+            logger.info(f"User {user_id} confirmed timezone update to {tz}")
+        else:
+            await query.answer("Error: Timezone not specified.", show_alert=True)
+    
+    async def _handle_timezone_dismiss(self, query, user_lang: Language):
+        """Handle timezone dismiss - user doesn't want to set timezone now."""
+        user_id = query.from_user.id
+        
+        # Cancel any pending delayed messages for this user (they're active now)
+        try:
+            from services.delayed_message_service import get_delayed_message_service
+            delayed_service = get_delayed_message_service()
+            if delayed_service:
+                delayed_service.cancel_pending(user_id)
+        except Exception as e:
+            logger.debug(f"Could not cancel pending messages: {e}")
+        
+        # Send dismiss message
+        from handlers.messages_store import get_message
+        dismiss_msg = get_message("timezone_dismissed", user_lang)
+        await query.edit_message_text(dismiss_msg)
+        logger.info(f"User {user_id} dismissed timezone update")
+    
+    async def _handle_timezone_choose(self, query, user_lang: Language):
+        """Handle timezone choose - user wants to select different timezone."""
+        user_id = query.from_user.id
+        
+        # Cancel any pending delayed messages for this user (they're active now)
+        try:
+            from services.delayed_message_service import get_delayed_message_service
+            delayed_service = get_delayed_message_service()
+            if delayed_service:
+                delayed_service.cancel_pending(user_id)
+        except Exception as e:
+            logger.debug(f"Could not cancel pending messages: {e}")
+        
+        # Send message with button to open timezone selector in Mini App
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+        from handlers.messages_store import get_message
+        
+        timezone_url = f"{self.miniapp_url}/timezone"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Open Timezone Selector", web_app=WebAppInfo(url=timezone_url))]
+        ])
+        
+        msg = "Please select your timezone in the app that will open."
+        await query.edit_message_text(msg, reply_markup=keyboard)
+        logger.info(f"User {user_id} chose to select timezone manually")
     
     async def _handle_voice_mode(self, query, cb, user_lang):
         """Handle voice mode preference selection."""

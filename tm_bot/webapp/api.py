@@ -148,6 +148,7 @@ class TimezoneUpdateRequest(BaseModel):
     """Request model for timezone update."""
     tz: str  # IANA timezone name (e.g., "America/New_York")
     offset_min: Optional[int] = None  # UTC offset in minutes (optional, for fallback)
+    force: Optional[bool] = False  # If True, update timezone even if already set
 
 
 def create_webapp_api(
@@ -202,6 +203,13 @@ def create_webapp_api(
     
     # Initialize bot_username (will be set in startup)
     app.state.bot_username = ""
+    
+    # Initialize delayed message service
+    from platforms.fastapi.scheduler import FastAPIJobScheduler
+    from services.delayed_message_service import DelayedMessageService
+    scheduler = FastAPIJobScheduler()
+    delayed_message_service = DelayedMessageService(scheduler, root_dir)
+    app.state.delayed_message_service = delayed_message_service
     
     # Startup event to log registered routes and fetch bot username
     @app.on_event("startup")
@@ -315,6 +323,17 @@ def create_webapp_api(
     def get_settings_repo() -> SettingsRepository:
         """Get SettingsRepository instance."""
         return SettingsRepository(app.state.root_dir)
+    
+    def update_user_activity(user_id: int) -> None:
+        """Update user's last_seen_utc to mark them as active."""
+        try:
+            settings_repo = get_settings_repo()
+            settings = settings_repo.get_settings(user_id)
+            from datetime import datetime
+            settings.last_seen = datetime.now()
+            settings_repo.save_settings(settings)
+        except Exception as e:
+            logger.warning(f"Failed to update user activity for user {user_id}: {e}")
     
     # Admin dependency - validates admin status
     async def get_admin_user(
@@ -756,6 +775,9 @@ def create_webapp_api(
         Only updates if user hasn't set a timezone yet, or if explicitly updating.
         """
         try:
+            # Update user's last_seen_utc - user is active (opening Mini App)
+            update_user_activity(user_id)
+            
             from zoneinfo import ZoneInfo
             
             # Validate timezone
@@ -770,13 +792,13 @@ def create_webapp_api(
             settings_repo = get_settings_repo()
             settings = settings_repo.get_settings(user_id)
             
-            # Only update if timezone is not set (defaults to "Europe/Paris" or "UTC")
-            # or if explicitly updating
+            # Only update if timezone is not set (defaults to "DEFAULT")
+            # or if explicitly updating with force=True
             current_tz = settings.timezone if settings else None
-            default_tzs = ["Europe/Paris", "UTC"]
+            default_tzs = ["DEFAULT"]
             
-            if not current_tz or current_tz in default_tzs:
-                # Update timezone
+            if request.force:
+                # Force update - update immediately
                 if not settings:
                     from models.models import UserSettings
                     settings = UserSettings(user_id=str(user_id))
@@ -784,11 +806,88 @@ def create_webapp_api(
                 settings.timezone = request.tz
                 settings_repo.save_settings(settings)
                 
-                logger.info(f"Updated timezone for user {user_id} to {request.tz}")
+                logger.info(f"Updated timezone for user {user_id} to {request.tz} (forced)")
                 
                 return {
                     "status": "success",
                     "message": f"Timezone updated to {request.tz}",
+                    "timezone": request.tz
+                }
+            elif not current_tz or current_tz in default_tzs:
+                # Timezone is DEFAULT - queue delayed message instead of updating immediately
+                # Cancel any existing pending timezone messages for this user
+                delayed_service = app.state.delayed_message_service
+                delayed_service.cancel_pending(user_id)
+                
+                # Queue message to be sent after 2 minutes of inactivity
+                async def send_timezone_message():
+                    """Send timezone confirmation message to user."""
+                    try:
+                        # Get user settings for language
+                        user_settings = settings_repo.get_settings(user_id)
+                        user_lang = user_settings.language if user_settings else "en"
+                        
+                        # Get message translations
+                        from handlers.messages_store import get_message, Language
+                        lang_map = {"en": Language.EN, "fa": Language.FA, "fr": Language.FR}
+                        lang = lang_map.get(user_lang, Language.EN)
+                        
+                        prompt_msg = get_message("timezone_detected_prompt", lang, timezone=request.tz)
+                        use_btn = get_message("timezone_confirm_use_detected", lang, timezone=request.tz)
+                        not_now_btn = get_message("timezone_confirm_not_now", lang)
+                        choose_btn = get_message("timezone_confirm_choose_different", lang)
+                        
+                        # Create inline keyboard
+                        from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+                        from cbdata import encode_cb
+                        
+                        # Get mini app URL
+                        miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
+                        timezone_url = f"{miniapp_url}/timezone"
+                        
+                        keyboard = InlineKeyboardMarkup([
+                            [
+                                InlineKeyboardButton(use_btn, callback_data=encode_cb("tz_confirm", tz=request.tz)),
+                                InlineKeyboardButton(not_now_btn, callback_data=encode_cb("tz_not_now"))
+                            ],
+                            [
+                                InlineKeyboardButton(choose_btn, web_app=WebAppInfo(url=timezone_url))
+                            ]
+                        ])
+                        
+                        # Send message
+                        bot = Bot(token=app.state.bot_token)
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=prompt_msg,
+                            reply_markup=keyboard,
+                            parse_mode=None
+                        )
+                        
+                        logger.info(f"Sent timezone confirmation message to user {user_id}")
+                    except TelegramError as e:
+                        error_msg = str(e).lower()
+                        if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+                            logger.debug(f"Could not send timezone message to user {user_id}: user blocked bot")
+                        else:
+                            logger.warning(f"Error sending timezone message to user {user_id}: {e}")
+                    except Exception as e:
+                        logger.error(f"Unexpected error sending timezone message to user {user_id}: {e}", exc_info=True)
+                
+                # Queue the message
+                message_id = f"timezone_{user_id}_{int(datetime.now().timestamp())}"
+                delayed_service.queue_message(
+                    user_id=user_id,
+                    message_func=send_timezone_message,
+                    delay_minutes=2,
+                    message_id=message_id
+                )
+                
+                logger.info(f"Queued timezone confirmation message for user {user_id}, will send in 2 minutes if inactive")
+                
+                return {
+                    "status": "queued",
+                    "message": "Timezone confirmation message queued",
                     "timezone": request.tz
                 }
             else:
