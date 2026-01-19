@@ -89,11 +89,29 @@ function App() {
         {/* Admin Panel - accessible via /admin */}
         <Route path="/admin" element={<AdminPanel />} />
         
-        {/* Community/Users Page - accessible via /community */}
-        <Route path="/community" element={<UsersPage />} />
+        {/* Community/Users Page - authenticated only */}
+        <Route
+          path="/community"
+          element={
+            isAuthenticated ? (
+              <UsersPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
         
-        {/* User Detail Page */}
-        <Route path="/users/:userId" element={<UserDetailPage />} />
+        {/* User Detail Page - authenticated only */}
+        <Route
+          path="/users/:userId"
+          element={
+            isAuthenticated ? (
+              <UserDetailPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
         
         {/* Templates Pages */}
         <Route path="/templates" element={<TemplatesPage />} />

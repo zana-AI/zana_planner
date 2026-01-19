@@ -315,12 +315,7 @@ else
     echo "⚠️  Backend health check failed"
 fi
 
-echo "Testing public users endpoint..."
-if curl -f -s "http://localhost:$BACKEND_PORT/api/public/users?limit=1" > /dev/null; then
-    echo "✓ Public users endpoint working"
-else
-    echo "⚠️  Public users endpoint failed"
-fi
+echo "Skipping public users endpoint (auth required)"
 
 # Test through nginx (if SSL is set up)
 if $SUDO certbot certificates 2>/dev/null | grep -q "$DOMAIN"; then
@@ -352,7 +347,7 @@ fi
 echo ""
 echo "Test endpoints:"
 echo "  curl https://$DOMAIN/api/health"
-echo "  curl https://$DOMAIN/api/public/users?limit=10"
+echo "  (public users endpoint requires auth)"
 echo ""
 echo "Next steps:"
 echo "  1. Configure BotFather menu button: https://$DOMAIN/"

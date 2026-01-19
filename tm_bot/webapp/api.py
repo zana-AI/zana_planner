@@ -927,9 +927,12 @@ def create_webapp_api(
             raise HTTPException(status_code=500, detail=f"Failed to update timezone: {str(e)}")
     
     @app.get("/api/public/users", response_model=PublicUsersResponse)
-    async def get_public_users(limit: int = Query(default=20, ge=1, le=100)):
+    async def get_public_users(
+        limit: int = Query(default=20, ge=1, le=100),
+        user_id: int = Depends(get_current_user),
+    ):
         """
-        Get public list of most active users (no authentication required).
+        Get public list of most active users (authenticated only).
         
         Args:
             limit: Maximum number of users to return (1-100, default: 20)
@@ -1015,7 +1018,10 @@ def create_webapp_api(
             raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
     
     @app.get("/api/media/avatars/{user_id}")
-    async def get_user_avatar(user_id: str):
+    async def get_user_avatar(
+        user_id: str,
+        current_user_id: int = Depends(get_current_user),
+    ):
         """
         Serve user avatar image.
         
@@ -1023,7 +1029,7 @@ def create_webapp_api(
             user_id: User ID (string)
         
         Returns:
-            Avatar image file or 404 if not found/not visible
+            Avatar image file or 404 if not found/not visible (auth required)
         """
         try:
             root_dir = app.state.root_dir
@@ -1223,7 +1229,7 @@ def create_webapp_api(
     @app.get("/api/users/{user_id}", response_model=PublicUser)
     async def get_user(
         user_id: int,
-        current_user_id: Optional[int] = Depends(get_current_user_optional)
+        current_user_id: int = Depends(get_current_user)
     ):
         """Get public user information by ID."""
         try:
@@ -1578,11 +1584,12 @@ def create_webapp_api(
     
     @app.get("/api/users/{user_id}/public-promises", response_model=List[PublicPromiseBadge])
     async def get_public_promises(
-        user_id: int
+        user_id: int,
+        current_user_id: int = Depends(get_current_user),
     ):
         """
         Get public promises for a user with stats (streak, progress, etc.).
-        No authentication required - public promises are visible to everyone.
+        Authentication required.
         """
         try:
             promises_repo = PromisesRepository(app.state.root_dir)
