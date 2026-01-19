@@ -178,23 +178,16 @@ export interface UpdateBroadcastRequest {
   scheduled_time_utc?: string;
 }
 
-// Template types
+// Template types (simplified schema)
 export interface PromiseTemplate {
   template_id: string;
-  category: string;
-  program_key?: string;
-  level: string;
   title: string;
-  why: string;
-  done: string;
-  effort: string;
-  template_kind: 'commitment' | 'budget';
-  metric_type: 'hours' | 'count';
+  description?: string;
+  category: string;
   target_value: number;
-  target_direction: 'at_least' | 'at_most';
-  estimated_hours_per_unit: number;
-  duration_type: 'week' | 'one_time' | 'date';
-  duration_weeks?: number;
+  metric_type: 'hours' | 'count';
+  emoji?: string;
+  created_by_user_id?: string;
   is_active: number;
   created_at_utc: string;
   updated_at_utc: string;
@@ -202,20 +195,8 @@ export interface PromiseTemplate {
   lock_reason?: string;
 }
 
-export interface TemplatePrerequisite {
-  prereq_id: string;
-  template_id: string;
-  prereq_group: number;
-  kind: 'completed_template' | 'success_rate';
-  required_template_id?: string;
-  min_success_rate?: number;
-  window_weeks?: number;
-  created_at_utc: string;
-}
-
-export interface TemplateDetail extends PromiseTemplate {
-  prerequisites: TemplatePrerequisite[];
-}
+// TemplateDetail is now just an alias for PromiseTemplate (simplified schema)
+export type TemplateDetail = PromiseTemplate;
 
 export interface SubscribeTemplateRequest {
   start_date?: string;

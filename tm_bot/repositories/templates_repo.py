@@ -1,29 +1,43 @@
 """
-Repository for promise templates.
+Repository for promise templates (simplified schema).
 """
 import uuid
 from typing import List, Optional, Dict, Any
-from datetime import date
 
 from sqlalchemy import text
 
-from db.postgres_db import get_db_session, utc_now_iso, date_from_iso, date_to_iso
+from db.postgres_db import get_db_session, utc_now_iso
 
 
 class TemplatesRepository:
-    """PostgreSQL-backed templates repository."""
+    """PostgreSQL-backed templates repository with simplified schema."""
 
     def __init__(self, root_dir: str = None):
         # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
+    def _has_simplified_schema(self, session) -> bool:
+        """Check if the database has the simplified schema (has 'description' column)."""
+        try:
+            result = session.execute(
+                text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'promise_templates' 
+                    AND column_name = 'description'
+                    LIMIT 1
+                """)
+            ).fetchone()
+            return result is not None
+        except Exception:
+            return False
+
     def list_templates(
         self,
         category: Optional[str] = None,
-        program_key: Optional[str] = None,
         is_active: Optional[bool] = True,
     ) -> List[Dict[str, Any]]:
-        """List templates, optionally filtered by category/program."""
+        """List templates, optionally filtered by category."""
         with get_db_session() as session:
             conditions = []
             params = {}
@@ -36,59 +50,69 @@ class TemplatesRepository:
                 conditions.append("category = :category")
                 params["category"] = category
 
-            if program_key:
-                conditions.append("program_key = :program_key")
-                params["program_key"] = program_key
-
             where_clause = " AND ".join(conditions) if conditions else "1=1"
-            rows = session.execute(
-                text(f"""
-                    SELECT template_id, category, program_key, level, title, why, done, effort,
-                           template_kind, metric_type, target_value, target_direction,
-                           estimated_hours_per_unit, duration_type, duration_weeks, is_active,
-                           created_at_utc, updated_at_utc
-                    FROM promise_templates
-                    WHERE {where_clause}
-                    ORDER BY category, program_key, level;
-                """),
-                params,
-            ).fetchall()
+            
+            # Check schema version
+            if self._has_simplified_schema(session):
+                rows = session.execute(
+                    text(f"""
+                        SELECT template_id, title, description, category, target_value, 
+                               metric_type, emoji, created_by_user_id, is_active,
+                               created_at_utc, updated_at_utc
+                        FROM promise_templates
+                        WHERE {where_clause}
+                        ORDER BY category, title;
+                    """),
+                    params,
+                ).fetchall()
+            else:
+                # Legacy schema - map old fields to new
+                rows = session.execute(
+                    text(f"""
+                        SELECT template_id, title, why as description, category, target_value, 
+                               metric_type, NULL as emoji, 
+                               COALESCE(created_by_user_id, NULL) as created_by_user_id, 
+                               is_active, created_at_utc, updated_at_utc
+                        FROM promise_templates
+                        WHERE {where_clause}
+                        ORDER BY category, title;
+                    """),
+                    params,
+                ).fetchall()
 
         return [dict(row._mapping) for row in rows]
 
     def get_template(self, template_id: str) -> Optional[Dict[str, Any]]:
         """Get a single template by ID."""
         with get_db_session() as session:
-            row = session.execute(
-                text("""
-                    SELECT template_id, category, program_key, level, title, why, done, effort,
-                           template_kind, metric_type, target_value, target_direction,
-                           estimated_hours_per_unit, duration_type, duration_weeks, is_active,
-                           created_at_utc, updated_at_utc
-                    FROM promise_templates
-                    WHERE template_id = :template_id
-                    LIMIT 1;
-                """),
-                {"template_id": template_id},
-            ).fetchone()
+            if self._has_simplified_schema(session):
+                row = session.execute(
+                    text("""
+                        SELECT template_id, title, description, category, target_value, 
+                               metric_type, emoji, created_by_user_id, is_active,
+                               created_at_utc, updated_at_utc
+                        FROM promise_templates
+                        WHERE template_id = :template_id
+                        LIMIT 1;
+                    """),
+                    {"template_id": template_id},
+                ).fetchone()
+            else:
+                # Legacy schema
+                row = session.execute(
+                    text("""
+                        SELECT template_id, title, why as description, category, target_value, 
+                               metric_type, NULL as emoji,
+                               COALESCE(created_by_user_id, NULL) as created_by_user_id,
+                               is_active, created_at_utc, updated_at_utc
+                        FROM promise_templates
+                        WHERE template_id = :template_id
+                        LIMIT 1;
+                    """),
+                    {"template_id": template_id},
+                ).fetchone()
 
         return dict(row._mapping) if row else None
-
-    def get_prerequisites(self, template_id: str) -> List[Dict[str, Any]]:
-        """Get all prerequisites for a template, grouped by prereq_group."""
-        with get_db_session() as session:
-            rows = session.execute(
-                text("""
-                    SELECT prereq_id, template_id, prereq_group, kind,
-                           required_template_id, min_success_rate, window_weeks, created_at_utc
-                    FROM template_prerequisites
-                    WHERE template_id = :template_id
-                    ORDER BY prereq_group, prereq_id;
-                """),
-                {"template_id": template_id},
-            ).fetchall()
-
-        return [dict(row._mapping) for row in rows]
 
     def create_template(self, template_data: Dict[str, Any]) -> str:
         """Create a new template. Returns the template_id."""
@@ -96,68 +120,36 @@ class TemplatesRepository:
         now = utc_now_iso()
         
         with get_db_session() as session:
-            # Check if marketplace columns exist
-            has_marketplace_fields = False
-            try:
-                result = session.execute(
-                    text("""
-                        SELECT column_name 
-                        FROM information_schema.columns 
-                        WHERE table_name = 'promise_templates' 
-                        AND column_name = 'canonical_key'
-                        LIMIT 1
-                    """)
-                ).fetchone()
-                has_marketplace_fields = result is not None
-            except Exception:
-                # If check fails, assume columns don't exist
-                has_marketplace_fields = False
-            
-            if has_marketplace_fields:
-                # Insert with marketplace fields
+            if self._has_simplified_schema(session):
+                # Simplified schema
                 session.execute(
                     text("""
                         INSERT INTO promise_templates (
-                            template_id, category, program_key, level, title, why, done, effort,
-                            template_kind, metric_type, target_value, target_direction,
-                            estimated_hours_per_unit, duration_type, duration_weeks, is_active,
-                            canonical_key, created_by_user_id, source_promise_uuid, origin,
+                            template_id, title, description, category, target_value,
+                            metric_type, emoji, created_by_user_id, is_active,
                             created_at_utc, updated_at_utc
                         ) VALUES (
-                            :template_id, :category, :program_key, :level, :title, :why, :done, :effort,
-                            :template_kind, :metric_type, :target_value, :target_direction,
-                            :estimated_hours_per_unit, :duration_type, :duration_weeks, :is_active,
-                            :canonical_key, :created_by_user_id, :source_promise_uuid, :origin,
+                            :template_id, :title, :description, :category, :target_value,
+                            :metric_type, :emoji, :created_by_user_id, :is_active,
                             :created_at_utc, :updated_at_utc
                         )
                     """),
                     {
                         "template_id": template_id,
-                        "category": template_data["category"],
-                        "program_key": template_data.get("program_key"),
-                        "level": template_data["level"],
                         "title": template_data["title"],
-                        "why": template_data["why"],
-                        "done": template_data["done"],
-                        "effort": template_data["effort"],
-                        "template_kind": template_data.get("template_kind", "commitment"),
-                        "metric_type": template_data["metric_type"],
+                        "description": template_data.get("description"),
+                        "category": template_data["category"],
                         "target_value": template_data["target_value"],
-                        "target_direction": template_data.get("target_direction", "at_least"),
-                        "estimated_hours_per_unit": template_data.get("estimated_hours_per_unit", 1.0),
-                        "duration_type": template_data["duration_type"],
-                        "duration_weeks": template_data.get("duration_weeks"),
-                        "is_active": 1 if template_data.get("is_active", True) else 0,
-                        "canonical_key": template_data.get("canonical_key"),
+                        "metric_type": template_data.get("metric_type", "count"),
+                        "emoji": template_data.get("emoji"),
                         "created_by_user_id": template_data.get("created_by_user_id"),
-                        "source_promise_uuid": template_data.get("source_promise_uuid"),
-                        "origin": template_data.get("origin"),
+                        "is_active": 1 if template_data.get("is_active", True) else 0,
                         "created_at_utc": now,
                         "updated_at_utc": now,
                     },
                 )
             else:
-                # Insert without marketplace fields (for databases that haven't run migration yet)
+                # Legacy schema - insert with old field names
                 session.execute(
                     text("""
                         INSERT INTO promise_templates (
@@ -175,19 +167,19 @@ class TemplatesRepository:
                     {
                         "template_id": template_id,
                         "category": template_data["category"],
-                        "program_key": template_data.get("program_key"),
-                        "level": template_data["level"],
+                        "program_key": "",
+                        "level": "beginner",
                         "title": template_data["title"],
-                        "why": template_data["why"],
-                        "done": template_data["done"],
-                        "effort": template_data["effort"],
-                        "template_kind": template_data.get("template_kind", "commitment"),
-                        "metric_type": template_data["metric_type"],
+                        "why": template_data.get("description", ""),
+                        "done": "",
+                        "effort": "medium",
+                        "template_kind": "commitment",
+                        "metric_type": template_data.get("metric_type", "count"),
                         "target_value": template_data["target_value"],
-                        "target_direction": template_data.get("target_direction", "at_least"),
-                        "estimated_hours_per_unit": template_data.get("estimated_hours_per_unit", 1.0),
-                        "duration_type": template_data["duration_type"],
-                        "duration_weeks": template_data.get("duration_weeks"),
+                        "target_direction": "at_least",
+                        "estimated_hours_per_unit": 1.0,
+                        "duration_type": "week",
+                        "duration_weeks": None,
                         "is_active": 1 if template_data.get("is_active", True) else 0,
                         "created_at_utc": now,
                         "updated_at_utc": now,
@@ -201,96 +193,127 @@ class TemplatesRepository:
         now = utc_now_iso()
         
         with get_db_session() as session:
-            # Build update query dynamically based on provided fields
-            updates = []
-            params = {}
-            
-            allowed_fields = [
-                "category", "program_key", "level", "title", "why", "done", "effort",
-                "template_kind", "metric_type", "target_value", "target_direction",
-                "estimated_hours_per_unit", "duration_type", "duration_weeks", "is_active"
-            ]
-            
-            for field in allowed_fields:
-                if field in template_data:
-                    updates.append(f"{field} = :{field}")
-                    params[field] = template_data[field]
-            
-            if not updates:
-                return False
-            
-            updates.append("updated_at_utc = :updated_at_utc")
-            params["updated_at_utc"] = now
-            params["template_id"] = template_id
-            
-            result = session.execute(
-                text(f"""
-                    UPDATE promise_templates
-                    SET {", ".join(updates)}
-                    WHERE template_id = :template_id
-                """),
-                params,
-            )
-            
-            return result.rowcount > 0
-
-    def check_template_in_use(self, template_id: str) -> Dict[str, Any]:
-        """
-        Check if template is referenced by instances, prerequisites, or reviews.
-        Returns dict with 'in_use' bool and 'reasons' list.
-        """
-        reasons = []
-        with get_db_session() as session:
-            # Check instances
-            instance_count = session.execute(
-                text("SELECT COUNT(*) FROM promise_instances WHERE template_id = :template_id"),
-                {"template_id": template_id},
-            ).scalar()
-            if instance_count > 0:
-                reasons.append(f"Template has {instance_count} active instance(s)")
-            
-            # Check prerequisites (templates that require this template)
-            prereq_count = session.execute(
-                text("SELECT COUNT(*) FROM template_prerequisites WHERE required_template_id = :template_id"),
-                {"template_id": template_id},
-            ).scalar()
-            if prereq_count > 0:
-                reasons.append(f"Template is required by {prereq_count} prerequisite(s)")
-            
-            # Check reviews (if table exists)
-            try:
-                review_count = session.execute(
-                    text("SELECT COUNT(*) FROM template_reviews WHERE template_id = :template_id"),
-                    {"template_id": template_id},
-                ).scalar()
-                if review_count > 0:
-                    reasons.append(f"Template has {review_count} review(s)")
-            except Exception:
-                # Table might not exist, skip this check
-                pass
+            if self._has_simplified_schema(session):
+                # Build update query dynamically
+                updates = ["updated_at_utc = :updated_at_utc"]
+                params = {"template_id": template_id, "updated_at_utc": now}
+                
+                field_map = {
+                    "title": "title",
+                    "description": "description",
+                    "category": "category",
+                    "target_value": "target_value",
+                    "metric_type": "metric_type",
+                    "emoji": "emoji",
+                    "is_active": "is_active",
+                }
+                
+                for key, col in field_map.items():
+                    if key in template_data:
+                        value = template_data[key]
+                        if key == "is_active":
+                            value = 1 if value else 0
+                        updates.append(f"{col} = :{key}")
+                        params[key] = value
+                
+                update_clause = ", ".join(updates)
+                result = session.execute(
+                    text(f"""
+                        UPDATE promise_templates 
+                        SET {update_clause}
+                        WHERE template_id = :template_id
+                    """),
+                    params,
+                )
+            else:
+                # Legacy schema
+                updates = ["updated_at_utc = :updated_at_utc"]
+                params = {"template_id": template_id, "updated_at_utc": now}
+                
+                if "title" in template_data:
+                    updates.append("title = :title")
+                    params["title"] = template_data["title"]
+                if "description" in template_data:
+                    updates.append("why = :why")
+                    params["why"] = template_data["description"]
+                if "category" in template_data:
+                    updates.append("category = :category")
+                    params["category"] = template_data["category"]
+                if "target_value" in template_data:
+                    updates.append("target_value = :target_value")
+                    params["target_value"] = template_data["target_value"]
+                if "metric_type" in template_data:
+                    updates.append("metric_type = :metric_type")
+                    params["metric_type"] = template_data["metric_type"]
+                if "is_active" in template_data:
+                    updates.append("is_active = :is_active")
+                    params["is_active"] = 1 if template_data["is_active"] else 0
+                
+                update_clause = ", ".join(updates)
+                result = session.execute(
+                    text(f"""
+                        UPDATE promise_templates 
+                        SET {update_clause}
+                        WHERE template_id = :template_id
+                    """),
+                    params,
+                )
         
-        return {
-            "in_use": len(reasons) > 0,
-            "reasons": reasons
-        }
+        return result.rowcount > 0
 
     def delete_template(self, template_id: str) -> bool:
-        """
-        Delete a template and its prerequisites.
-        Returns True if deleted. Should check in_use first!
-        """
+        """Delete a template. Returns True if deleted."""
         with get_db_session() as session:
-            # Delete prerequisites first (foreign key constraint)
-            session.execute(
-                text("DELETE FROM template_prerequisites WHERE template_id = :template_id"),
-                {"template_id": template_id},
-            )
-            
-            # Delete template
             result = session.execute(
-                text("DELETE FROM promise_templates WHERE template_id = :template_id"),
+                text("""
+                    DELETE FROM promise_templates 
+                    WHERE template_id = :template_id
+                """),
                 {"template_id": template_id},
             )
-            
-            return result.rowcount > 0
+        
+        return result.rowcount > 0
 
+    def get_templates_by_user(self, user_id: int) -> List[Dict[str, Any]]:
+        """Get templates created by a specific user."""
+        with get_db_session() as session:
+            if self._has_simplified_schema(session):
+                rows = session.execute(
+                    text("""
+                        SELECT template_id, title, description, category, target_value, 
+                               metric_type, emoji, created_by_user_id, is_active,
+                               created_at_utc, updated_at_utc
+                        FROM promise_templates
+                        WHERE created_by_user_id = :user_id AND is_active = 1
+                        ORDER BY created_at_utc DESC;
+                    """),
+                    {"user_id": str(user_id)},
+                ).fetchall()
+            else:
+                rows = session.execute(
+                    text("""
+                        SELECT template_id, title, why as description, category, target_value, 
+                               metric_type, NULL as emoji, created_by_user_id, is_active,
+                               created_at_utc, updated_at_utc
+                        FROM promise_templates
+                        WHERE created_by_user_id = :user_id AND is_active = 1
+                        ORDER BY created_at_utc DESC;
+                    """),
+                    {"user_id": str(user_id)},
+                ).fetchall()
+
+        return [dict(row._mapping) for row in rows]
+
+    def get_categories(self) -> List[str]:
+        """Get list of unique categories."""
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT DISTINCT category 
+                    FROM promise_templates 
+                    WHERE is_active = 1 AND category IS NOT NULL
+                    ORDER BY category;
+                """)
+            ).fetchall()
+
+        return [row[0] for row in rows if row[0]]

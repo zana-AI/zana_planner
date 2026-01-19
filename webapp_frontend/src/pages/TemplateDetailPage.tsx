@@ -37,7 +37,7 @@ export function TemplateDetailPage() {
   };
 
   const handleSubscribe = async () => {
-    if (!template || !template.unlocked) {
+    if (!template) {
       hapticFeedback('warning');
       return;
     }
@@ -108,162 +108,142 @@ export function TemplateDetailPage() {
         <button className="back-button" onClick={() => navigate('/templates')}>
           ← Back
         </button>
-        <h1 className="page-title">{template.title}</h1>
-        <div className="template-badges">
-          {/* Difficulty level indicator and Budget badge hidden per requirements */}
-          {/* <div className="template-level-indicator">
-            {[1, 2, 3].map((num) => {
-              const levelNum = parseInt(template.level.replace('L', '')) || 0;
-              const isFilled = num <= levelNum;
-              let fillColor = 'rgba(232, 238, 252, 0.15)';
-              let borderColor = 'rgba(232, 238, 252, 0.3)';
-              
-              if (isFilled) {
-                if (levelNum === 1) {
-                  // L1: green
-                  fillColor = '#22c55e';
-                  borderColor = '#22c55e';
-                } else if (levelNum === 2) {
-                  // L2: orange
-                  fillColor = '#f59e0b';
-                  borderColor = '#f59e0b';
-                } else if (levelNum === 3) {
-                  // L3: red
-                  fillColor = '#ef4444';
-                  borderColor = '#ef4444';
-                }
-              }
-              
-              return (
-                <div
-                  key={num}
-                  className="template-level-square"
-                  style={{
-                    backgroundColor: fillColor,
-                    border: `1px solid ${borderColor}`
-                  }}
-                />
-              );
-            })}
-          </div> */}
-          <span className="template-category-badge">{template.category.replace('_', ' ')}</span>
-          {/* {template.template_kind === 'budget' && (
-            <span className="template-budget-badge">Budget</span>
-          )} */}
-        </div>
       </header>
 
-      {/* Locked notice hidden per requirements */}
-      {/* {!template.unlocked && (
-        <div className="template-locked-notice">
-          <h3>🔒 This template is locked</h3>
-          <p>{template.lock_reason}</p>
-          {template.prerequisites.length > 0 && (
-            <div className="prerequisites-list">
-              <h4>Unlock requirements:</h4>
-              <ul>
-                {template.prerequisites.map(prereq => (
-                  <li key={prereq.prereq_id}>
-                    {prereq.kind === 'completed_template' && (
-                      <>Complete template: {prereq.required_template_id}</>
-                    )}
-                    {prereq.kind === 'success_rate' && (
-                      <>
-                        Achieve {((prereq.min_success_rate || 0) * 100).toFixed(0)}% success on{' '}
-                        {prereq.required_template_id} over {prereq.window_weeks || 4} weeks
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )} */}
-
-      <main className="template-detail">
-        <section className="template-section">
-          <h2>Why this helps</h2>
-          <p>{template.why}</p>
-        </section>
-
-        <section className="template-section">
-          <h2>What "done" means</h2>
-          <p>{template.done}</p>
-        </section>
-
-        <section className="template-section">
-          <h2>Expected effort</h2>
-          <p>{template.effort}</p>
-        </section>
-
-        <section className="template-section">
-          <h2>Details</h2>
-          <div className="template-details-grid">
-            <div className="detail-item">
-              <span className="detail-label">Target:</span>
-              <span className="detail-value">
-                {template.metric_type === 'count' ? (
-                  <>{template.target_value}x {template.target_direction === 'at_least' ? 'or more' : 'or less'}</>
-                ) : (
-                  <>{template.target_value}h {template.target_direction === 'at_least' ? 'or more' : 'or less'}</>
-                )}
-              </span>
-            </div>
-            <div className="detail-item">
-              <span className="detail-label">Duration:</span>
-              <span className="detail-value">
-                {template.duration_type === 'week' && (
-                  <>{template.duration_weeks || 1} week{template.duration_weeks !== 1 ? 's' : ''}</>
-                )}
-                {template.duration_type === 'one_time' && <>One-time</>}
-                {template.duration_type === 'date' && <>Date-based</>}
+      <main className="template-detail" style={{ paddingTop: '1rem' }}>
+        {/* Template Header Card */}
+        <div style={{
+          background: 'rgba(15, 23, 48, 0.8)',
+          borderRadius: '16px',
+          padding: '1.5rem',
+          marginBottom: '1.5rem',
+          border: '1px solid rgba(232, 238, 252, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+            <span style={{ fontSize: '3rem' }}>{template.emoji || '🎯'}</span>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#fff' }}>{template.title}</h1>
+              <span style={{
+                display: 'inline-block',
+                marginTop: '0.5rem',
+                padding: '0.25rem 0.75rem',
+                background: 'rgba(102, 126, 234, 0.2)',
+                borderRadius: '12px',
+                fontSize: '0.8rem',
+                color: 'rgba(232, 238, 252, 0.8)'
+              }}>
+                {template.category.replace('_', ' ')}
               </span>
             </div>
           </div>
-        </section>
 
-        {template.unlocked && (
-          <div className="template-actions">
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>
-                {template.metric_type === 'hours' ? 'Time commitment (hours/week)' : 'Target value'}
-              </label>
+          {template.description && (
+            <p style={{
+              margin: 0,
+              color: 'rgba(232, 238, 252, 0.7)',
+              fontSize: '0.95rem',
+              lineHeight: 1.5
+            }}>
+              {template.description}
+            </p>
+          )}
+
+          <div style={{
+            marginTop: '1rem',
+            padding: '1rem',
+            background: 'rgba(0, 0, 0, 0.2)',
+            borderRadius: '10px',
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '2rem'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#5ba3f5' }}>
+                {template.target_value}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'rgba(232, 238, 252, 0.5)' }}>
+                {template.metric_type === 'hours' ? 'hours/week' : 'times/week'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Subscribe Section */}
+        <div style={{
+          background: 'rgba(15, 23, 48, 0.8)',
+          borderRadius: '16px',
+          padding: '1.5rem',
+          border: '1px solid rgba(232, 238, 252, 0.1)'
+        }}>
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#fff' }}>
+            Start this habit
+          </h2>
+
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={{
+              display: 'block',
+              marginBottom: '0.5rem',
+              color: 'rgba(232, 238, 252, 0.7)',
+              fontSize: '0.9rem'
+            }}>
+              Your weekly target
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <input
                 type="number"
-                step="0.1"
-                min="0.1"
+                step="1"
+                min="1"
                 value={targetValue !== null ? targetValue : template.target_value}
                 onChange={(e) => setTargetValue(parseFloat(e.target.value) || template.target_value)}
                 style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(232, 238, 252, 0.2)',
+                  flex: 1,
+                  padding: '0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(232, 238, 252, 0.15)',
                   background: 'rgba(11, 16, 32, 0.6)',
                   color: '#fff',
-                  fontSize: '1rem'
+                  fontSize: '1.1rem',
+                  textAlign: 'center'
                 }}
               />
-              <p style={{ marginTop: '0.25rem', fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.6)' }}>
-                Default: {template.target_value} {template.metric_type === 'hours' ? 'hours/week' : 'times/week'}
-              </p>
+              <span style={{ color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.9rem' }}>
+                {template.metric_type === 'hours' ? 'hours/week' : 'times/week'}
+              </span>
             </div>
-            <button
-              className="subscribe-button"
-              onClick={handleSubscribe}
-              disabled={subscribing}
-            >
-              {subscribing ? 'Subscribing...' : 'Subscribe to this template'}
-            </button>
           </div>
-        )}
 
-        {error && (
-          <div className="error-message" style={{ marginTop: '1rem', color: 'red' }}>
-            {error}
-          </div>
-        )}
+          <button
+            className="subscribe-button"
+            onClick={handleSubscribe}
+            disabled={subscribing}
+            style={{
+              width: '100%',
+              padding: '1rem',
+              background: subscribing ? 'rgba(102, 126, 234, 0.3)' : 'linear-gradient(135deg, #667eea, #764ba2)',
+              border: 'none',
+              borderRadius: '10px',
+              color: '#fff',
+              fontSize: '1rem',
+              fontWeight: '600',
+              cursor: subscribing ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {subscribing ? 'Creating promise...' : '✨ Start Tracking'}
+          </button>
+
+          {error && (
+            <div style={{
+              marginTop: '1rem',
+              padding: '0.75rem',
+              background: 'rgba(255, 107, 107, 0.1)',
+              borderRadius: '8px',
+              color: '#ff6b6b',
+              fontSize: '0.9rem'
+            }}>
+              {error}
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );

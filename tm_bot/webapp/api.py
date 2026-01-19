@@ -2341,33 +2341,25 @@ def create_webapp_api(
             if not chat_model:
                 raise HTTPException(status_code=500, detail="No LLM configured")
             
-            # Create prompt for template generation
+            # Create prompt for template generation (simplified schema)
             system_prompt = """You are a template generator for a goal-tracking app. Generate a promise template from a user's description.
 
-Output ONLY valid JSON with these exact fields:
+Output ONLY valid JSON with these fields:
 {
-  "title": "string (short, clear title)",
-  "category": "string (e.g., 'general', 'fitness', 'language', 'health', 'work', 'learning')",
-  "level": "string (e.g., 'beginner', 'intermediate', 'advanced', or 'L1', 'L2', 'L3')",
-  "why": "string (why this helps, 1-2 sentences)",
-  "done": "string (what 'done' means, 1-2 sentences)",
-  "effort": "string (expected effort: 'low', 'medium', or 'high')",
-  "template_kind": "string ('commitment' or 'budget')",
-  "metric_type": "string ('hours' or 'count')",
-  "target_value": number (positive number, e.g., 3.0 for hours or 5 for count),
-  "target_direction": "string ('at_least' or 'at_most')",
-  "estimated_hours_per_unit": number (default 1.0),
-  "duration_type": "string ('week', 'one_time', or 'date')",
-  "duration_weeks": number (optional, default 1 if duration_type is 'week')
+  "title": "string (short, clear title, e.g., 'Exercise Daily', 'Read Books')",
+  "description": "string (optional - brief motivation or details, 1 sentence max)",
+  "category": "string (one of: 'health', 'fitness', 'learning', 'productivity', 'mindfulness', 'creativity', 'finance', 'social', 'self-care', 'other')",
+  "target_value": number (how many per week, e.g., 7 for daily, 3 for 3x/week),
+  "metric_type": "string ('count' for times/week or 'hours' for hours/week)",
+  "emoji": "string (single emoji that represents this activity, e.g., '🏃', '📚', '💪')"
 }
 
 Rules:
-- If user mentions time commitment (hours/week), use metric_type='hours' and set target_value accordingly
-- If user mentions count (times/week, days/week), use metric_type='count'
-- For budget templates (limiting something), use template_kind='budget' and target_direction='at_most'
-- For commitments (doing something), use template_kind='commitment' and target_direction='at_least'
-- Default to recurring weekly (duration_type='week', duration_weeks=1) unless user specifies one-time
-- Keep why, done, effort concise and actionable
+- title should be short and actionable (2-4 words)
+- If user mentions hours/week, use metric_type='hours'
+- If user mentions times/week, days/week, or daily, use metric_type='count'
+- For daily habits, target_value=7; for 3x/week, target_value=3; etc.
+- Pick a relevant emoji from: 🏃📚💪🧘🎯✍️🎨🎵💻🌱💧😴🍎💰🧠❤️
 - Output ONLY the JSON object, no markdown, no explanation"""
             
             user_prompt = f"Generate a promise template for: {request.prompt}"
@@ -2393,31 +2385,28 @@ Rules:
             
             draft = json.loads(content)
             
-            # Validate and set defaults
-            required_fields = ["title", "category", "level", "why", "done", "effort", "metric_type", "target_value", "duration_type"]
-            for field in required_fields:
-                if field not in draft:
-                    raise HTTPException(status_code=500, detail=f"Generated template missing required field: {field}")
+            # Validate required fields
+            if "title" not in draft:
+                raise HTTPException(status_code=500, detail="Generated template missing required field: title")
+            if "target_value" not in draft:
+                draft["target_value"] = 7  # Default to daily
             
             # Set defaults for optional fields
-            draft.setdefault("template_kind", "commitment")
-            draft.setdefault("target_direction", "at_least")
-            draft.setdefault("estimated_hours_per_unit", 1.0)
-            draft.setdefault("duration_weeks", 1 if draft.get("duration_type") == "week" else None)
+            draft.setdefault("description", "")
+            draft.setdefault("category", "other")
+            draft.setdefault("metric_type", "count")
+            draft.setdefault("emoji", "🎯")
             
             # Validate enums
-            if draft["template_kind"] not in ["commitment", "budget"]:
-                draft["template_kind"] = "commitment"
+            valid_categories = ['health', 'fitness', 'learning', 'productivity', 'mindfulness', 'creativity', 'finance', 'social', 'self-care', 'other']
+            if draft["category"] not in valid_categories:
+                draft["category"] = "other"
             if draft["metric_type"] not in ["hours", "count"]:
-                draft["metric_type"] = "hours"
-            if draft["target_direction"] not in ["at_least", "at_most"]:
-                draft["target_direction"] = "at_least"
-            if draft["duration_type"] not in ["week", "one_time", "date"]:
-                draft["duration_type"] = "week"
+                draft["metric_type"] = "count"
             
             # Clamp target_value
             if draft["target_value"] <= 0:
-                draft["target_value"] = 1.0
+                draft["target_value"] = 1
             
             # Set is_active default
             draft["is_active"] = True

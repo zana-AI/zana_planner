@@ -154,17 +154,18 @@ export function TemplatesPage() {
                 </div>
               )} */}
               <div className="template-header">
+                <span style={{ fontSize: '1.75rem', marginRight: '0.5rem' }}>{template.emoji || '🎯'}</span>
                 <h3 className="template-title">{template.title}</h3>
               </div>
-              <p className="template-why">{template.why}</p>
+              {template.description && (
+                <p className="template-why">{template.description}</p>
+              )}
               <div className="template-meta">
                 <span className="template-category">{template.category.replace('_', ' ')}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {template.metric_type === 'count' ? (
-                    <span className="template-metric">{template.target_value}x</span>
-                  ) : (
-                    <span className="template-metric">{template.target_value}h</span>
-                  )}
+                  <span className="template-metric">
+                    {template.target_value} {template.metric_type === 'hours' ? 'hrs' : '×'}/week
+                  </span>
                 </div>
               </div>
               {templateUsers[template.template_id] && templateUsers[template.template_id].length > 0 && (
