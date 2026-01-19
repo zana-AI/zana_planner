@@ -1287,7 +1287,14 @@ def create_routed_plan_execute_graph(
         
         route_decision: Optional[RouteDecision] = None
         try:
-            route_decision = router_parser.parse(content)
+            parsed = router_parser.parse(content)
+            # JsonOutputParser may return a dict, convert to RouteDecision if needed
+            if isinstance(parsed, dict):
+                route_decision = RouteDecision(**parsed)
+            elif isinstance(parsed, RouteDecision):
+                route_decision = parsed
+            else:
+                raise ValueError(f"Unexpected parser output type: {type(parsed)}")
         except Exception as e:
             logger.warning(f"Router parsing failed: {e}, defaulting to operator")
             route_decision = RouteDecision(mode="operator", confidence="low", reason="parsing_failed")
