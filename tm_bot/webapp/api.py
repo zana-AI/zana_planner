@@ -1265,52 +1265,79 @@ def create_webapp_api(
                 avatar_path = avatar_row.get("avatar_path") if avatar_row else None
                 avatar_file_unique_id = avatar_row.get("avatar_file_unique_id") if avatar_row else None
                 
-                # Get public promises
-                public_promises = []
-                promise_rows = session.execute(
-                    text("""
-                        SELECT 
-                            p.promise_id,
-                            p.text,
-                            p.hours_per_week as hours_promised,
-                            COALESCE(SUM(s.hours), 0) as hours_spent,
-                            p.hours_per_week as weekly_hours,
-                            COALESCE(MAX(s.streak), 0) as streak,
-                            CASE 
-                                WHEN p.hours_per_week > 0 THEN 
-                                    LEAST(100, (COALESCE(SUM(s.hours), 0) / NULLIF(p.hours_per_week, 0)) * 100)
-                                ELSE 0
-                            END as progress_percentage,
-                            COALESCE(pt.metric_type, 'hours') as metric_type,
-                            COALESCE(pt.target_value, p.hours_per_week) as target_value,
-                            COALESCE(SUM(s.hours), 0) as achieved_value
-                        FROM promises p
-                        LEFT JOIN promise_instances pi ON p.promise_uuid = pi.promise_uuid
-                        LEFT JOIN promise_templates pt ON pi.template_id = pt.template_id
-                        LEFT JOIN sessions s ON p.promise_uuid = s.promise_uuid
-                            AND s.at_utc >= DATE_TRUNC('week', CURRENT_DATE)
-                        WHERE p.user_id = :user_id 
-                            AND p.visibility = 'public'
-                            AND p.is_deleted = 0
-                        GROUP BY p.promise_id, p.text, p.hours_per_week, pt.metric_type, pt.target_value
-                        ORDER BY p.created_at_utc DESC
-                    """),
-                    {"user_id": str(user_id)}
-                ).mappings().fetchall()
+                # Get public promises using the existing service
+                from repositories.promises_repo import PromisesRepository
+                from repositories.actions_repo import ActionsRepository
+                from services.reports import ReportsService
+                from datetime import datetime
                 
-                for row in promise_rows:
-                    public_promises.append({
-                        "promise_id": row["promise_id"],
-                        "text": row["text"],
-                        "hours_promised": float(row["hours_promised"] or 0),
-                        "hours_spent": float(row["hours_spent"] or 0),
-                        "weekly_hours": float(row["weekly_hours"] or 0),
-                        "streak": int(row["streak"] or 0),
-                        "progress_percentage": float(row["progress_percentage"] or 0),
-                        "metric_type": row["metric_type"] or "hours",
-                        "target_value": float(row["target_value"] or 0),
-                        "achieved_value": float(row["achieved_value"] or 0)
-                    })
+                promises_repo = PromisesRepository(app.state.root_dir)
+                actions_repo = ActionsRepository(app.state.root_dir)
+                reports_service = ReportsService(promises_repo, actions_repo, root_dir=app.state.root_dir)
+                
+                # Get all promises for the user
+                all_promises = promises_repo.list_promises(user_id)
+                
+                # Filter to only public promises
+                public_promise_list = [p for p in all_promises if p.visibility == "public"]
+                
+                # Get current time for calculations
+                ref_time = datetime.now()
+                
+                # Calculate stats for each public promise
+                public_promises = []
+                for promise in public_promise_list:
+                    try:
+                        # Get promise summary with stats
+                        summary = reports_service.get_promise_summary(user_id, promise.id, ref_time)
+                        
+                        if not summary:
+                            continue
+                        
+                        weekly_hours = summary.get('weekly_hours', 0.0)
+                        total_hours = summary.get('total_hours', 0.0)
+                        streak = summary.get('streak', 0)
+                        
+                        # Calculate progress percentage
+                        hours_promised = promise.hours_per_week
+                        if hours_promised > 0:
+                            progress_percentage = min(100, (weekly_hours / hours_promised) * 100)
+                        else:
+                            progress_percentage = 0.0
+                        
+                        # Get metric_type and target_value from template if available
+                        metric_type = "hours"
+                        target_value = hours_promised
+                        with get_db_session() as template_session:
+                            template_row = template_session.execute(
+                                text("""
+                                    SELECT pt.metric_type, pt.target_value
+                                    FROM promise_instances pi
+                                    JOIN promise_templates pt ON pi.template_id = pt.template_id
+                                    WHERE pi.promise_uuid = :promise_uuid
+                                    LIMIT 1
+                                """),
+                                {"promise_uuid": promise.promise_uuid}
+                            ).mappings().fetchone()
+                            if template_row:
+                                metric_type = template_row.get("metric_type") or "hours"
+                                target_value = float(template_row.get("target_value") or hours_promised)
+                        
+                        public_promises.append({
+                            "promise_id": promise.id,
+                            "text": promise.text.replace('_', ' '),
+                            "hours_promised": hours_promised,
+                            "hours_spent": total_hours,
+                            "weekly_hours": weekly_hours,
+                            "streak": streak,
+                            "progress_percentage": progress_percentage,
+                            "metric_type": metric_type,
+                            "target_value": target_value,
+                            "achieved_value": weekly_hours if metric_type == "hours" else summary.get('achieved_value', 0.0)
+                        })
+                    except Exception as e:
+                        logger.warning(f"Error calculating stats for promise {promise.id}: {e}")
+                        continue
             
             return PublicUser(
                 user_id=str(user_id),
