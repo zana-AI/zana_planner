@@ -484,6 +484,34 @@ class ApiClient {
     const query = params.toString();
     return this.request<WeeklyDistractionsResponse>(`/distractions/weekly${query ? `?${query}` : ''}`);
   }
+
+  // Promise suggestions
+  async createSuggestion(request: CreateSuggestionRequest): Promise<{ status: string; suggestion_id: string }> {
+    return this.request<{ status: string; suggestion_id: string }>('/suggestions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getSuggestionsInbox(): Promise<{ suggestions: PromiseSuggestion[] }> {
+    return this.request<{ suggestions: PromiseSuggestion[] }>('/suggestions/inbox');
+  }
+
+  async getSuggestionsOutbox(): Promise<{ suggestions: PromiseSuggestion[] }> {
+    return this.request<{ suggestions: PromiseSuggestion[] }>('/suggestions/outbox');
+  }
+
+  async acceptSuggestion(suggestionId: string): Promise<{ status: string; message: string; promise_id: string; instance_id: string }> {
+    return this.request<{ status: string; message: string; promise_id: string; instance_id: string }>(`/suggestions/${suggestionId}/accept`, {
+      method: 'POST',
+    });
+  }
+
+  async declineSuggestion(suggestionId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/suggestions/${suggestionId}/decline`, {
+      method: 'POST',
+    });
+  }
 }
 
 /**

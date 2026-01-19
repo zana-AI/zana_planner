@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type { PromiseTemplate } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import { UserAvatar } from '../components/UserAvatar';
 
 interface TemplateUser {
   user_id: string;

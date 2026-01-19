@@ -36,16 +36,16 @@ export function SuggestionsInbox() {
     if (processing.has(suggestionId)) return;
     
     setProcessing(prev => new Set(prev).add(suggestionId));
-    hapticFeedback?.impactOccurred('medium');
+    hapticFeedback('medium');
     
     try {
       await apiClient.acceptSuggestion(suggestionId);
-      hapticFeedback?.notificationOccurred('success');
+      hapticFeedback('success');
       // Remove from list
       setSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
     } catch (err) {
       console.error('Failed to accept suggestion:', err);
-      hapticFeedback?.notificationOccurred('error');
+      hapticFeedback('error');
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -64,16 +64,16 @@ export function SuggestionsInbox() {
     if (processing.has(suggestionId)) return;
     
     setProcessing(prev => new Set(prev).add(suggestionId));
-    hapticFeedback?.impactOccurred('light');
+    hapticFeedback('light');
     
     try {
       await apiClient.declineSuggestion(suggestionId);
-      hapticFeedback?.notificationOccurred('success');
+      hapticFeedback('success');
       // Remove from list
       setSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
     } catch (err) {
       console.error('Failed to decline suggestion:', err);
-      hapticFeedback?.notificationOccurred('error');
+      hapticFeedback('error');
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
