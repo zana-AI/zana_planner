@@ -102,11 +102,13 @@ class TemplatesRepository:
                         template_id, category, program_key, level, title, why, done, effort,
                         template_kind, metric_type, target_value, target_direction,
                         estimated_hours_per_unit, duration_type, duration_weeks, is_active,
+                        canonical_key, created_by_user_id, source_promise_uuid, origin,
                         created_at_utc, updated_at_utc
                     ) VALUES (
                         :template_id, :category, :program_key, :level, :title, :why, :done, :effort,
                         :template_kind, :metric_type, :target_value, :target_direction,
                         :estimated_hours_per_unit, :duration_type, :duration_weeks, :is_active,
+                        :canonical_key, :created_by_user_id, :source_promise_uuid, :origin,
                         :created_at_utc, :updated_at_utc
                     )
                 """),
@@ -127,6 +129,10 @@ class TemplatesRepository:
                     "duration_type": template_data["duration_type"],
                     "duration_weeks": template_data.get("duration_weeks"),
                     "is_active": 1 if template_data.get("is_active", True) else 0,
+                    "canonical_key": template_data.get("canonical_key"),
+                    "created_by_user_id": template_data.get("created_by_user_id"),
+                    "source_promise_uuid": template_data.get("source_promise_uuid"),
+                    "origin": template_data.get("origin"),
                     "created_at_utc": now,
                     "updated_at_utc": now,
                 },

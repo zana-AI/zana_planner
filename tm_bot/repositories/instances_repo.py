@@ -33,6 +33,7 @@ class InstancesRepository:
         template_id: str,
         start_date: Optional[date] = None,
         target_date: Optional[date] = None,
+        target_value_override: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Subscribe to a template: creates a promise and an instance.
@@ -64,20 +65,23 @@ class InstancesRepository:
                 weeks = template["duration_weeks"] or 4
                 target_date = start_date + timedelta(weeks=weeks)
 
-        # Generate promise ID (use template prefix + instance short ID)
-        promise_id = f"T{instance_id[:6].upper()}"
+        # Determine target value (use override if provided, else template default)
+        target_value = target_value_override if target_value_override is not None else template["target_value"]
+        
+        # Generate promise ID: P-prefix for recurring, T-prefix for non-recurring
+        is_recurring = template["duration_type"] != "one_time"
+        prefix = "P" if is_recurring else "T"
+        promise_id = f"{prefix}{instance_id[:6].upper()}"
         
         # Create promise text from template title
         promise_text = template["title"].replace(" ", "_")
 
         # Create the promise
-        # Default to recurring=True, only set False for one_time templates
-        is_recurring = template["duration_type"] != "one_time"
         promise = Promise(
             user_id=user,
             id=promise_id,
             text=promise_text,
-            hours_per_week=template["target_value"] if template["metric_type"] == "hours" else 0.0,
+            hours_per_week=target_value if template["metric_type"] == "hours" else 0.0,
             recurring=is_recurring,
             start_date=start_date,
             end_date=target_date,
@@ -119,7 +123,7 @@ class InstancesRepository:
                     "promise_uuid": promise_uuid,
                     "status": "active",
                     "metric_type": template["metric_type"],
-                    "target_value": template["target_value"],
+                    "target_value": target_value,  # Use override if provided
                     "estimated_hours_per_unit": template["estimated_hours_per_unit"],
                     "start_date": date_to_iso(start_date),
                     "end_date": date_to_iso(target_date),

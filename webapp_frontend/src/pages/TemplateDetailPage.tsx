@@ -12,6 +12,7 @@ export function TemplateDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [subscribing, setSubscribing] = useState(false);
+  const [targetValue, setTargetValue] = useState<number | null>(null);
 
   useEffect(() => {
     if (templateId) {
@@ -43,7 +44,9 @@ export function TemplateDetailPage() {
 
     setSubscribing(true);
     try {
-      await apiClient.subscribeTemplate(templateId!);
+      await apiClient.subscribeTemplate(templateId!, {
+        target_value: targetValue !== null ? targetValue : undefined
+      });
       hapticFeedback('success');
       // Navigate to weekly report or show success message
       navigate('/weekly');
@@ -55,6 +58,12 @@ export function TemplateDetailPage() {
       setSubscribing(false);
     }
   };
+
+  useEffect(() => {
+    if (template) {
+      setTargetValue(template.target_value);
+    }
+  }, [template]);
 
   if (loading) {
     return (
@@ -216,6 +225,30 @@ export function TemplateDetailPage() {
 
         {template.unlocked && (
           <div className="template-actions">
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>
+                {template.metric_type === 'hours' ? 'Time commitment (hours/week)' : 'Target value'}
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.1"
+                value={targetValue !== null ? targetValue : template.target_value}
+                onChange={(e) => setTargetValue(parseFloat(e.target.value) || template.target_value)}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(232, 238, 252, 0.2)',
+                  background: 'rgba(11, 16, 32, 0.6)',
+                  color: '#fff',
+                  fontSize: '1rem'
+                }}
+              />
+              <p style={{ marginTop: '0.25rem', fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+                Default: {template.target_value} {template.metric_type === 'hours' ? 'hours/week' : 'times/week'}
+              </p>
+            </div>
             <button
               className="subscribe-button"
               onClick={handleSubscribe}

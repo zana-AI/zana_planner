@@ -3,6 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type { PromiseTemplate } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
+import { UserAvatar } from '../components/UserAvatar';
+
+interface TemplateUser {
+  user_id: string;
+  first_name?: string;
+  username?: string;
+  avatar_path?: string;
+  avatar_file_unique_id?: string;
+}
 
 export function TemplatesPage() {
   const navigate = useNavigate();
@@ -11,10 +20,32 @@ export function TemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [templateUsers, setTemplateUsers] = useState<Record<string, TemplateUser[]>>({});
 
   useEffect(() => {
     loadTemplates();
   }, [selectedCategory]);
+
+  useEffect(() => {
+    // Load users for each template
+    const loadTemplateUsers = async () => {
+      const usersMap: Record<string, TemplateUser[]> = {};
+      for (const template of templates) {
+        try {
+          const response = await apiClient.getTemplateUsers(template.template_id, 8);
+          usersMap[template.template_id] = response.users;
+        } catch (err) {
+          console.error(`Failed to load users for template ${template.template_id}:`, err);
+          usersMap[template.template_id] = [];
+        }
+      }
+      setTemplateUsers(usersMap);
+    };
+
+    if (templates.length > 0) {
+      loadTemplateUsers();
+    }
+  }, [templates]);
 
   const loadTemplates = async () => {
     setLoading(true);
@@ -102,14 +133,6 @@ export function TemplatesPage() {
                 // Allow navigation regardless of lock status (locked UI hidden)
                 navigate(`/templates/${template.template_id}`);
               }}
-              style={{
-                border: '1px solid rgba(232, 238, 252, 0.15)',
-                borderRadius: '12px',
-                padding: '16px',
-                background: 'linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98))',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
             >
               {/* Locked and Budget badges hidden per requirements */}
               {/* {!template.unlocked && (
@@ -143,8 +166,49 @@ export function TemplatesPage() {
                   ) : (
                     <span className="template-metric">{template.target_value}h</span>
                   )}
-                  {/* Difficulty level indicator hidden per requirements */}
-                  {/* <div className="template-level-indicator">
+                </div>
+              </div>
+              {templateUsers[template.template_id] && templateUsers[template.template_id].length > 0 && (
+                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  {templateUsers[template.template_id].slice(0, 6).map((user) => (
+                    <div
+                      key={user.user_id}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        border: '2px solid rgba(232, 238, 252, 0.2)',
+                        background: 'rgba(232, 238, 252, 0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '10px',
+                        color: '#fff',
+                        fontWeight: '500'
+                      }}
+                      title={user.first_name || user.username || `User ${user.user_id}`}
+                    >
+                      {user.avatar_path ? (
+                        <img
+                          src={user.avatar_path}
+                          alt={user.first_name || user.username || ''}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        (user.first_name || user.username || 'U').charAt(0).toUpperCase()
+                      )}
+                    </div>
+                  ))}
+                  {templateUsers[template.template_id].length > 6 && (
+                    <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+                      +{templateUsers[template.template_id].length - 6}
+                    </span>
+                  )}
+                </div>
+              )}
+              {/* Difficulty level indicator hidden per requirements */}
+              {/* <div className="template-level-indicator">
                     {[1, 2, 3].map((num) => {
                       const levelNum = parseInt(template.level.replace('L', '')) || 0;
                       const isFilled = num <= levelNum;

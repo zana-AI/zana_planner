@@ -1214,6 +1214,8 @@ function DevToolLink({ name, description, url, icon }: { name: string; descripti
 
 // Template Form Component
 function TemplateForm({ template, onSave, onCancel }: { template: Partial<PromiseTemplate>, onSave: (data: any) => void, onCancel: () => void }) {
+  const [prompt, setPrompt] = useState('');
+  const [generating, setGenerating] = useState(false);
   const [formData, setFormData] = useState({
     title: template.title || '',
     category: template.category || 'general',
@@ -1233,6 +1235,38 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
     is_active: template.is_active !== undefined ? (typeof template.is_active === 'number' ? template.is_active !== 0 : template.is_active) : true,
   });
 
+  const handleGenerate = async () => {
+    if (!prompt.trim()) {
+      return;
+    }
+    setGenerating(true);
+    try {
+      const draft = await apiClient.generateTemplateDraft(prompt);
+      setFormData({
+        title: draft.title || '',
+        category: draft.category || 'general',
+        level: draft.level || 'beginner',
+        why: draft.why || '',
+        done: draft.done || '',
+        effort: draft.effort || '',
+        target_value: draft.target_value || 1,
+        metric_type: draft.metric_type || 'hours',
+        duration_type: draft.duration_type || 'week',
+        program_key: draft.program_key || '',
+        template_kind: draft.template_kind || 'commitment',
+        target_direction: draft.target_direction || 'at_least',
+        estimated_hours_per_unit: draft.estimated_hours_per_unit || 1.0,
+        duration_weeks: draft.duration_weeks || 1,
+        is_active: draft.is_active !== undefined ? (typeof draft.is_active === 'number' ? draft.is_active !== 0 : draft.is_active) : true,
+      });
+    } catch (err) {
+      console.error('Failed to generate template:', err);
+      alert('Failed to generate template. Please try again.');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div style={{
       background: 'rgba(15, 23, 48, 0.8)',
@@ -1244,6 +1278,42 @@ function TemplateForm({ template, onSave, onCancel }: { template: Partial<Promis
       <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#fff' }}>
         {template.template_id ? 'Edit Template' : 'Create Template'}
       </h3>
+      {!template.template_id && (
+        <div style={{ marginBottom: '1rem', padding: '1rem', background: 'rgba(91, 163, 245, 0.1)', borderRadius: '8px', border: '1px solid rgba(91, 163, 245, 0.2)' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem', fontWeight: '500' }}>
+            AI Generation (Optional)
+          </label>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="e.g., Study English 3 hours a week"
+              onKeyPress={(e) => e.key === 'Enter' && handleGenerate()}
+              style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(232, 238, 252, 0.2)', background: 'rgba(11, 16, 32, 0.6)', color: '#fff' }}
+            />
+            <button
+              onClick={handleGenerate}
+              disabled={!prompt.trim() || generating}
+              style={{
+                padding: '0.5rem 1rem',
+                background: generating ? 'rgba(91, 163, 245, 0.3)' : 'linear-gradient(135deg, #5ba3f5, #667eea)',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: (!prompt.trim() || generating) ? 'not-allowed' : 'pointer',
+                opacity: (!prompt.trim() || generating) ? 0.5 : 1,
+                fontWeight: '500'
+              }}
+            >
+              {generating ? 'Generating...' : 'Generate'}
+            </button>
+          </div>
+          <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+            Enter a simple description and AI will fill in all fields. You can edit them before saving.
+          </p>
+        </div>
+      )}
       <div style={{ display: 'grid', gap: '1rem' }}>
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>Title *</label>

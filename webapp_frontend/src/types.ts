@@ -220,6 +220,7 @@ export interface TemplateDetail extends PromiseTemplate {
 export interface SubscribeTemplateRequest {
   start_date?: string;
   target_date?: string;
+  target_value?: number;
 }
 
 export interface SubscribeTemplateResponse {

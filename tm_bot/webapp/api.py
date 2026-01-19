@@ -28,7 +28,7 @@ from repositories.reviews_repo import ReviewsRepository
 from repositories.distractions_repo import DistractionsRepository
 from services.template_unlocks import TemplateUnlocksService
 from db.sqlite_db import connection_for_root, dt_to_utc_iso
-from db.postgres_db import get_db_session, utc_now_iso
+from db.postgres_db import get_db_session, utc_now_iso, resolve_promise_uuid
 from sqlalchemy import text
 from utils.time_utils import get_week_range
 from utils.logger import get_logger
@@ -36,6 +36,11 @@ from utils.admin_utils import is_admin
 from fastapi.responses import FileResponse
 from telegram import Bot
 from telegram.error import TelegramError
+from llms.llm_env_utils import load_llm_env
+from langchain_google_vertexai import ChatVertexAI
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+import json
 
 
 logger = get_logger(__name__)
@@ -1401,7 +1406,7 @@ def create_webapp_api(
         request: UpdateVisibilityRequest,
         user_id: int = Depends(get_current_user)
     ):
-        """Update promise visibility."""
+        """Update promise visibility. If making public, creates/links to marketplace template."""
         try:
             if request.visibility not in ["private", "public"]:
                 raise HTTPException(status_code=400, detail="Visibility must be 'private' or 'public'")
@@ -1412,8 +1417,132 @@ def create_webapp_api(
             if not promise:
                 raise HTTPException(status_code=404, detail="Promise not found")
             
+            was_public = promise.visibility == "public"
             promise.visibility = request.visibility
             promises_repo.upsert_promise(user_id, promise)
+            
+            # If making public, create/upsert marketplace template
+            if request.visibility == "public" and not was_public:
+                templates_repo = TemplatesRepository(app.state.root_dir)
+                instances_repo = InstancesRepository(app.state.root_dir)
+                
+                # Get promise_uuid first
+                user_str = str(user_id)
+                with get_db_session() as session:
+                    promise_uuid = resolve_promise_uuid(session, user_str, promise_id)
+                
+                if not promise_uuid:
+                    logger.warning(f"Could not resolve promise_uuid for promise {promise_id}, skipping template creation")
+                else:
+                    # Build canonical key: normalized text + metric type + target
+                    normalized_text = promise.text.lower().strip().replace("_", " ").replace("  ", " ")
+                    # Determine metric type from promise (hours_per_week > 0 = hours, else count)
+                    metric_type = "hours" if promise.hours_per_week > 0 else "count"
+                    target_value = promise.hours_per_week if metric_type == "hours" else 0.0
+                    canonical_key = f"{normalized_text}|{metric_type}|{target_value}"
+                    
+                    # Check if template with this canonical_key exists
+                    with get_db_session() as session:
+                        existing_template = session.execute(
+                            text("""
+                                SELECT template_id FROM promise_templates
+                                WHERE canonical_key = :canonical_key
+                                LIMIT 1
+                            """),
+                            {"canonical_key": canonical_key}
+                        ).fetchone()
+                    
+                    template_id = None
+                    if existing_template:
+                        template_id = existing_template[0]
+                    else:
+                        # Create new template from promise
+                        template_data = {
+                            "title": promise.text.replace("_", " "),
+                            "category": "general",
+                            "level": "beginner",
+                            "why": f"Track progress on {promise.text.replace('_', ' ')}",
+                            "done": f"Complete {promise.text.replace('_', ' ')}",
+                            "effort": "medium",
+                            "template_kind": "commitment",
+                            "metric_type": metric_type,
+                            "target_value": target_value,
+                            "target_direction": "at_least",
+                            "estimated_hours_per_unit": 1.0,
+                            "duration_type": "week" if promise.recurring else "one_time",
+                            "duration_weeks": 1 if promise.recurring else None,
+                            "is_active": True,
+                            "canonical_key": canonical_key,
+                            "created_by_user_id": str(user_id),
+                            "source_promise_uuid": promise_uuid,
+                            "origin": "user_public"
+                        }
+                        template_id = templates_repo.create_template(template_data)
+                    
+                    # Link promise to template via promise_instances (idempotent due to unique constraint)
+                    with get_db_session() as session:
+                        if promise_uuid:
+                        # Upsert instance link (ON CONFLICT DO NOTHING if unique constraint exists)
+                        try:
+                            session.execute(
+                                text("""
+                                    INSERT INTO promise_instances (
+                                        instance_id, user_id, template_id, promise_uuid, status,
+                                        metric_type, target_value, estimated_hours_per_unit,
+                                        start_date, end_date, created_at_utc, updated_at_utc
+                                    ) VALUES (
+                                        gen_random_uuid()::text, :user_id, :template_id, :promise_uuid, 'active',
+                                        :metric_type, :target_value, 1.0,
+                                        COALESCE(:start_date, CURRENT_DATE::text), :end_date,
+                                        :now, :now
+                                    )
+                                    ON CONFLICT (promise_uuid) DO UPDATE SET
+                                        template_id = EXCLUDED.template_id,
+                                        updated_at_utc = EXCLUDED.updated_at_utc
+                                """),
+                                {
+                                    "user_id": user_str,
+                                    "template_id": template_id,
+                                    "promise_uuid": promise_uuid,
+                                    "metric_type": metric_type,
+                                    "target_value": target_value,
+                                    "start_date": promise.start_date.isoformat() if promise.start_date else None,
+                                    "end_date": promise.end_date.isoformat() if promise.end_date else None,
+                                    "now": utc_now_iso()
+                                }
+                            )
+                        except Exception as e:
+                            # If unique constraint doesn't exist yet, try without ON CONFLICT
+                            logger.warning(f"Could not upsert instance link (may need migration): {e}")
+                            # Try simple insert (will fail if duplicate, that's OK)
+                            try:
+                                session.execute(
+                                    text("""
+                                        INSERT INTO promise_instances (
+                                            instance_id, user_id, template_id, promise_uuid, status,
+                                            metric_type, target_value, estimated_hours_per_unit,
+                                            start_date, end_date, created_at_utc, updated_at_utc
+                                        ) VALUES (
+                                            gen_random_uuid()::text, :user_id, :template_id, :promise_uuid, 'active',
+                                            :metric_type, :target_value, 1.0,
+                                            COALESCE(:start_date, CURRENT_DATE::text), :end_date,
+                                            :now, :now
+                                        )
+                                    """),
+                                    {
+                                        "user_id": user_str,
+                                        "template_id": template_id,
+                                        "promise_uuid": promise_uuid,
+                                        "metric_type": metric_type,
+                                        "target_value": target_value,
+                                        "start_date": promise.start_date.isoformat() if promise.start_date else None,
+                                        "end_date": promise.end_date.isoformat() if promise.end_date else None,
+                                        "now": utc_now_iso()
+                                    }
+                                )
+                            except Exception:
+                                # Already linked, ignore
+                                pass
             
             return {"status": "success", "visibility": promise.visibility}
         except HTTPException:
@@ -1715,6 +1844,132 @@ def create_webapp_api(
             logger.exception(f"Error deleting template: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
     
+    class GenerateTemplateRequest(BaseModel):
+        prompt: str
+    
+    @app.post("/api/admin/templates/generate")
+    async def generate_template_draft(
+        request: GenerateTemplateRequest,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Generate a template draft from a prompt using AI (admin only)."""
+        try:
+            # Load LLM config
+            cfg = load_llm_env()
+            
+            # Initialize chat model (same as LLMHandler)
+            chat_model = None
+            if cfg.get("GCP_PROJECT_ID", ""):
+                chat_model = ChatVertexAI(
+                    model=cfg["GCP_GEMINI_MODEL"],
+                    project=cfg["GCP_PROJECT_ID"],
+                    location=cfg["GCP_LOCATION"],
+                    temperature=0.7,
+                )
+            
+            if not chat_model and cfg.get("OPENAI_API_KEY", ""):
+                chat_model = ChatOpenAI(
+                    openai_api_key=cfg["OPENAI_API_KEY"],
+                    temperature=0.7,
+                    model="gpt-4o-mini",
+                )
+            
+            if not chat_model:
+                raise HTTPException(status_code=500, detail="No LLM configured")
+            
+            # Create prompt for template generation
+            system_prompt = """You are a template generator for a goal-tracking app. Generate a promise template from a user's description.
+
+Output ONLY valid JSON with these exact fields:
+{
+  "title": "string (short, clear title)",
+  "category": "string (e.g., 'general', 'fitness', 'language', 'health', 'work', 'learning')",
+  "level": "string (e.g., 'beginner', 'intermediate', 'advanced', or 'L1', 'L2', 'L3')",
+  "why": "string (why this helps, 1-2 sentences)",
+  "done": "string (what 'done' means, 1-2 sentences)",
+  "effort": "string (expected effort: 'low', 'medium', or 'high')",
+  "template_kind": "string ('commitment' or 'budget')",
+  "metric_type": "string ('hours' or 'count')",
+  "target_value": number (positive number, e.g., 3.0 for hours or 5 for count),
+  "target_direction": "string ('at_least' or 'at_most')",
+  "estimated_hours_per_unit": number (default 1.0),
+  "duration_type": "string ('week', 'one_time', or 'date')",
+  "duration_weeks": number (optional, default 1 if duration_type is 'week')
+}
+
+Rules:
+- If user mentions time commitment (hours/week), use metric_type='hours' and set target_value accordingly
+- If user mentions count (times/week, days/week), use metric_type='count'
+- For budget templates (limiting something), use template_kind='budget' and target_direction='at_most'
+- For commitments (doing something), use template_kind='commitment' and target_direction='at_least'
+- Default to recurring weekly (duration_type='week', duration_weeks=1) unless user specifies one-time
+- Keep why, done, effort concise and actionable
+- Output ONLY the JSON object, no markdown, no explanation"""
+            
+            user_prompt = f"Generate a promise template for: {request.prompt}"
+            
+            # Call LLM
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+            
+            response = chat_model.invoke(messages)
+            content = response.content if hasattr(response, 'content') else str(response)
+            
+            # Parse JSON (handle markdown code blocks if present)
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            
+            draft = json.loads(content)
+            
+            # Validate and set defaults
+            required_fields = ["title", "category", "level", "why", "done", "effort", "metric_type", "target_value", "duration_type"]
+            for field in required_fields:
+                if field not in draft:
+                    raise HTTPException(status_code=500, detail=f"Generated template missing required field: {field}")
+            
+            # Set defaults for optional fields
+            draft.setdefault("template_kind", "commitment")
+            draft.setdefault("target_direction", "at_least")
+            draft.setdefault("estimated_hours_per_unit", 1.0)
+            draft.setdefault("duration_weeks", 1 if draft.get("duration_type") == "week" else None)
+            
+            # Validate enums
+            if draft["template_kind"] not in ["commitment", "budget"]:
+                draft["template_kind"] = "commitment"
+            if draft["metric_type"] not in ["hours", "count"]:
+                draft["metric_type"] = "hours"
+            if draft["target_direction"] not in ["at_least", "at_most"]:
+                draft["target_direction"] = "at_least"
+            if draft["duration_type"] not in ["week", "one_time", "date"]:
+                draft["duration_type"] = "week"
+            
+            # Clamp target_value
+            if draft["target_value"] <= 0:
+                draft["target_value"] = 1.0
+            
+            # Set is_active default
+            draft["is_active"] = True
+            
+            logger.info(f"Admin {admin_id} generated template draft from prompt: {request.prompt[:50]}")
+            return draft
+            
+        except json.JSONDecodeError as e:
+            logger.exception(f"Failed to parse LLM response as JSON: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error generating template draft: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to generate template draft: {str(e)}")
+    
     @app.post("/api/admin/promote")
     async def promote_staging_to_prod(
         admin_id: int = Depends(get_admin_user)
@@ -1940,9 +2195,58 @@ def create_webapp_api(
             logger.exception(f"Error getting template: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get template: {str(e)}")
     
+    @app.get("/api/templates/{template_id}/users")
+    async def get_template_users(
+        template_id: str,
+        limit: int = Query(8, ge=1, le=20),
+        user_id: int = Depends(get_current_user)
+    ):
+        """Get users using this template (for 'used by' badges)."""
+        try:
+            templates_repo = TemplatesRepository(app.state.root_dir)
+            settings_repo = SettingsRepository(app.state.root_dir)
+            
+            # Verify template exists
+            template = templates_repo.get_template(template_id)
+            if not template:
+                raise HTTPException(status_code=404, detail="Template not found")
+            
+            # Get users with active instances for this template
+            with get_db_session() as session:
+                rows = session.execute(
+                    text("""
+                        SELECT DISTINCT i.user_id, u.first_name, u.username, u.avatar_path, u.avatar_file_unique_id
+                        FROM promise_instances i
+                        JOIN users u ON i.user_id = u.user_id
+                        WHERE i.template_id = :template_id
+                          AND i.status = 'active'
+                        ORDER BY i.created_at_utc DESC
+                        LIMIT :limit
+                    """),
+                    {"template_id": template_id, "limit": limit}
+                ).fetchall()
+            
+            users = []
+            for row in rows:
+                users.append({
+                    "user_id": row[0],
+                    "first_name": row[1],
+                    "username": row[2],
+                    "avatar_path": row[3],
+                    "avatar_file_unique_id": row[4]
+                })
+            
+            return {"users": users, "total": len(users)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting template users: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get template users: {str(e)}")
+    
     class SubscribeTemplateRequest(BaseModel):
         start_date: Optional[str] = None  # ISO date string
         target_date: Optional[str] = None  # ISO date string
+        target_value: Optional[float] = None  # Override template's target_value
     
     @app.post("/api/templates/{template_id}/subscribe")
     async def subscribe_template(
@@ -1974,13 +2278,16 @@ def create_webapp_api(
             # Parse dates
             start_date = None
             target_date = None
+            target_value_override = None
             if request:
                 if request.start_date:
                     start_date = parse_date(request.start_date).date()
                 if request.target_date:
                     target_date = parse_date(request.target_date).date()
+                if request.target_value is not None:
+                    target_value_override = float(request.target_value)
             
-            result = instances_repo.subscribe_template(user_id, template_id, start_date, target_date)
+            result = instances_repo.subscribe_template(user_id, template_id, start_date, target_date, target_value_override)
             
             return {"status": "success", **result}
         except HTTPException:

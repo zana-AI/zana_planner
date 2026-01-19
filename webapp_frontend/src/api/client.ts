@@ -351,6 +351,16 @@ class ApiClient {
   }
 
   /**
+   * Generate a template draft from a prompt using AI (admin only).
+   */
+  async generateTemplateDraft(prompt: string): Promise<Partial<PromiseTemplate>> {
+    return this.request<Partial<PromiseTemplate>>('/admin/templates/generate', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    });
+  }
+
+  /**
    * Create a new template (admin only).
    */
   async createTemplate(templateData: Partial<PromiseTemplate>): Promise<{ status: string; template_id: string }> {
@@ -406,6 +416,13 @@ class ApiClient {
    */
   async getTemplate(templateId: string): Promise<TemplateDetail> {
     return this.request<TemplateDetail>(`/templates/${templateId}`);
+  }
+
+  /**
+   * Get users using a template (for "used by" badges).
+   */
+  async getTemplateUsers(templateId: string, limit: number = 8): Promise<{ users: Array<{ user_id: string; first_name?: string; username?: string; avatar_path?: string; avatar_file_unique_id?: string }>; total: number }> {
+    return this.request<{ users: Array<{ user_id: string; first_name?: string; username?: string; avatar_path?: string; avatar_file_unique_id?: string }>; total: number }>(`/templates/${templateId}/users?limit=${limit}`);
   }
 
   /**
