@@ -1060,50 +1060,50 @@ def create_webapp_api(
                 raise HTTPException(status_code=403, detail="Avatar is private")
 
             avatar_path = row.get("avatar_path")
-                
-                # If avatar_path is not in database, try standard location
-                if not avatar_path:
-                    # Try standard avatar location: media/avatars/{user_id}.jpg
-                    standard_path = os.path.join("media", "avatars", f"{user_id}.jpg")
-                    full_path = os.path.join(root_dir, standard_path)
-                    # If file doesn't exist at standard location, return 404
-                    if not os.path.exists(full_path):
-                        raise HTTPException(status_code=404, detail="Avatar not found")
-                else:
-                    # Resolve full path from database
-                    # If path is relative, it's relative to root_dir
-                    if os.path.isabs(avatar_path):
-                        full_path = avatar_path
-                    else:
-                        full_path = os.path.join(root_dir, avatar_path)
-                
-                # Normalize path separators
-                full_path = os.path.normpath(full_path)
-                
-                # Security check: ensure path is within root_dir
-                root_dir_abs = os.path.abspath(root_dir)
-                full_path_abs = os.path.abspath(full_path)
-                if not full_path_abs.startswith(root_dir_abs):
-                    logger.warning(f"Attempted access outside root_dir: {full_path}")
-                    raise HTTPException(status_code=403, detail="Invalid path")
-                
+            
+            # If avatar_path is not in database, try standard location
+            if not avatar_path:
+                # Try standard avatar location: media/avatars/{user_id}.jpg
+                standard_path = os.path.join("media", "avatars", f"{user_id}.jpg")
+                full_path = os.path.join(root_dir, standard_path)
+                # If file doesn't exist at standard location, return 404
                 if not os.path.exists(full_path):
-                    raise HTTPException(status_code=404, detail="Avatar file not found")
-                
-                # Determine content type from file extension
-                content_type = "image/jpeg"  # Default
-                if full_path.lower().endswith(".png"):
-                    content_type = "image/png"
-                elif full_path.lower().endswith(".gif"):
-                    content_type = "image/gif"
-                
-                return FileResponse(
-                    full_path,
-                    media_type=content_type,
-                    headers={
-                        "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
-                    }
-                )
+                    raise HTTPException(status_code=404, detail="Avatar not found")
+            else:
+                # Resolve full path from database
+                # If path is relative, it's relative to root_dir
+                if os.path.isabs(avatar_path):
+                    full_path = avatar_path
+                else:
+                    full_path = os.path.join(root_dir, avatar_path)
+            
+            # Normalize path separators
+            full_path = os.path.normpath(full_path)
+            
+            # Security check: ensure path is within root_dir
+            root_dir_abs = os.path.abspath(root_dir)
+            full_path_abs = os.path.abspath(full_path)
+            if not full_path_abs.startswith(root_dir_abs):
+                logger.warning(f"Attempted access outside root_dir: {full_path}")
+                raise HTTPException(status_code=403, detail="Invalid path")
+            
+            if not os.path.exists(full_path):
+                raise HTTPException(status_code=404, detail="Avatar file not found")
+            
+            # Determine content type from file extension
+            content_type = "image/jpeg"  # Default
+            if full_path.lower().endswith(".png"):
+                content_type = "image/png"
+            elif full_path.lower().endswith(".gif"):
+                content_type = "image/gif"
+            
+            return FileResponse(
+                full_path,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                }
+            )
                 
         except HTTPException:
             raise
