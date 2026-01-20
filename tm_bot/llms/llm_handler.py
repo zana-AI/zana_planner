@@ -603,9 +603,7 @@ class LLMHandler:
                 # Write to file for debugging
                 # Use USERS_DATA_DIR (mounted volume) so files are accessible on host
                 try:
-                    import os
-                    from datetime import datetime
-                    # Default to USERS_DATA_DIR/debug_system_messages (mounted to /srv/zana-users on host)
+                    # datetime and os are already imported at module level
                     users_data_dir = os.getenv("USERS_DATA_DIR", "/app/USERS_DATA_DIR")
                     debug_dir = os.getenv("SYSTEM_MSG_DEBUG_DIR", os.path.join(users_data_dir, "debug_system_messages"))
                     os.makedirs(debug_dir, exist_ok=True)
