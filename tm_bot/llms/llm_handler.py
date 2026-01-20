@@ -599,6 +599,33 @@ class LLMHandler:
             logger.debug(f"System message for user {user_id} is {content_length} characters")
             if content_length > 8000:
                 logger.warning(f"System message for user {user_id} is very long ({content_length} chars), may be truncated by LLM")
+                
+                # Write to file for debugging
+                # Use USERS_DATA_DIR (mounted volume) so files are accessible on host
+                try:
+                    import os
+                    from datetime import datetime
+                    # Default to USERS_DATA_DIR/debug_system_messages (mounted to /srv/zana-users on host)
+                    users_data_dir = os.getenv("USERS_DATA_DIR", "/app/USERS_DATA_DIR")
+                    debug_dir = os.getenv("SYSTEM_MSG_DEBUG_DIR", os.path.join(users_data_dir, "debug_system_messages"))
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"system_msg_{user_id}_{timestamp}_{content_length}chars.txt"
+                    filepath = os.path.join(debug_dir, filename)
+                    
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(f"User ID: {user_id}\n")
+                        f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                        f.write(f"Length: {content_length} characters\n")
+                        f.write(f"Mode: {mode or 'default'}\n")
+                        f.write(f"Language: {user_language or 'en'}\n")
+                        f.write("=" * 80 + "\n\n")
+                        f.write(content)
+                    
+                    logger.info(f"Wrote long system message to {filepath}")
+                except Exception as e:
+                    logger.warning(f"Failed to write system message debug file: {e}")
         
         return SystemMessage(content=content)
 
