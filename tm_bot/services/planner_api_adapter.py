@@ -793,6 +793,124 @@ class PlannerAPIAdapter:
         
         return "\n".join(result_lines)
 
+
+    # On-demand help tools
+    def get_tool_help(self, user_id, tool_name: str) -> str:
+        """
+        Get detailed documentation for a specific tool.
+        
+        Use this when you need full documentation beyond the short description
+        available in the system message.
+        
+        Args:
+            tool_name: Name of the tool (e.g., 'query_database', 'add_action')
+        
+        Returns:
+            Full tool documentation as a formatted string.
+        """
+        # Get the method from this adapter
+        if not hasattr(self, tool_name):
+            available = [m for m in dir(self) if not m.startswith('_') and callable(getattr(self, m))]
+            return f"Tool '{tool_name}' not found. Available tools: {', '.join(available)}"
+        
+        method = getattr(self, tool_name)
+        if not callable(method):
+            return f"'{tool_name}' is not a callable tool."
+        
+        doc = method.__doc__ or "No documentation available for this tool."
+        return doc.strip()
+    
+    def get_db_schema(self, user_id) -> str:
+        """
+        Get database schema and example queries for query_database tool.
+        
+        Use this when you need to write SQL queries and need to know the table
+        structure and example patterns.
+        
+        Returns:
+            Database schema documentation with table structures and example queries.
+        """
+        return """DATABASE SCHEMA:
+
+TABLE: promises (your goals/tasks)
+- promise_uuid: TEXT (internal ID)
+- user_id: TEXT (your user ID)
+- current_id: TEXT (display ID like 'P10', 'T01')
+- text: TEXT (promise name, underscores for spaces e.g. 'Do_sport')
+- hours_per_week: REAL (target hours)
+- recurring: INTEGER (0=one-time, 1=recurring)
+- start_date: TEXT (ISO date 'YYYY-MM-DD')
+- end_date: TEXT (ISO date)
+- is_deleted: INTEGER (0=active, 1=deleted)
+- created_at_utc: TEXT (ISO timestamp)
+
+TABLE: actions (logged time entries)
+- action_uuid: TEXT (internal ID)
+- user_id: TEXT (your user ID)
+- promise_uuid: TEXT (links to promises)
+- promise_id_text: TEXT (display ID like 'P10')
+- action_type: TEXT (usually 'log_time')
+- time_spent_hours: REAL (hours logged)
+- at_utc: TEXT (ISO timestamp when logged)
+
+TABLE: sessions (active work sessions)
+- session_id: TEXT
+- user_id: TEXT
+- promise_uuid: TEXT
+- status: TEXT ('active', 'paused', 'ended')
+- started_at_utc: TEXT
+- ended_at_utc: TEXT
+- paused_seconds_total: INTEGER
+
+TABLE: users
+- user_id: TEXT PRIMARY KEY
+- timezone: TEXT
+- language: TEXT
+- nightly_hh: INTEGER (reminder hour)
+- nightly_mm: INTEGER (reminder minute)
+
+EXAMPLE QUERIES:
+
+1. Total hours by month:
+   SELECT strftime('%Y-%m', at_utc) as month, 
+          SUM(time_spent_hours) as total_hours
+   FROM actions WHERE user_id = '{user_id}' 
+   GROUP BY month ORDER BY month
+
+2. Most active promises (by total hours):
+   SELECT promise_id_text, 
+          COUNT(*) as sessions, 
+          SUM(time_spent_hours) as total_hours
+   FROM actions WHERE user_id = '{user_id}' 
+   GROUP BY promise_id_text ORDER BY total_hours DESC
+
+3. Hours in a specific date range:
+   SELECT SUM(time_spent_hours) as total
+   FROM actions 
+   WHERE user_id = '{user_id}' 
+     AND at_utc >= '2025-01-01' AND at_utc < '2025-02-01'
+
+4. Average session duration per promise:
+   SELECT promise_id_text, 
+          AVG(time_spent_hours) as avg_hours,
+          COUNT(*) as sessions
+   FROM actions WHERE user_id = '{user_id}'
+   GROUP BY promise_id_text
+
+5. Days with most activity:
+   SELECT date(at_utc) as day, 
+          SUM(time_spent_hours) as hours
+   FROM actions WHERE user_id = '{user_id}'
+   GROUP BY day ORDER BY hours DESC LIMIT 10
+
+6. Promise details with text:
+   SELECT current_id, text, hours_per_week, 
+          start_date, is_deleted
+   FROM promises WHERE user_id = '{user_id}'
+
+IMPORTANT: Always include "WHERE user_id = '{user_id}'" in your queries.
+Replace {user_id} with the actual user ID value."""
+
     # SQL Query Tool
     def query_database(self, user_id, sql_query: str) -> str:
         """
@@ -802,9 +920,9 @@ class PlannerAPIAdapter:
         filtered to your data only - you cannot access other users' data.
         Results are limited to 100 rows maximum.
         
-        DATABASE SCHEMA:
+        For database schema and example queries, call get_db_schema() first.
         
-        TABLE: promises (your goals/tasks)
+        Args:
         - promise_uuid: TEXT (internal ID)
         - user_id: TEXT (your user ID)
         - current_id: TEXT (display ID like 'P10', 'T01')
@@ -879,9 +997,6 @@ class PlannerAPIAdapter:
            SELECT current_id, text, hours_per_week, 
                   start_date, is_deleted
            FROM promises WHERE user_id = '{user_id}'
-        
-        IMPORTANT: Always include "WHERE user_id = '{user_id}'" in your queries.
-        Replace {user_id} with the actual user ID value.
         
         Args:
             sql_query: A SELECT statement. Must include user_id filter.

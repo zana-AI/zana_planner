@@ -466,6 +466,7 @@ class LLMHandler:
         sections.append(self.system_message_main_base)
         
         # Add tools overview (needed for planner to know what tools are available)
+        # Tool descriptions are already sanitized in _build_tools() (first line, capped)
         tool_lines = []
         for tool in self.tools:
             name = getattr(tool, "name", "unknown")
@@ -474,6 +475,7 @@ class LLMHandler:
             if hasattr(self.plan_adapter, name):
                 arg_names = list(get_function_args_info(getattr(self.plan_adapter, name)).keys())
             arg_sig = ", ".join(arg_names)
+            # Keep format concise: name(args) :: short_desc
             tool_lines.append(f"- {name}({arg_sig}) :: {desc}")
         tools_overview = "\n".join(tool_lines)
         sections.append(f"\n=== AVAILABLE TOOLS ===")
@@ -483,6 +485,7 @@ class LLMHandler:
         sections.append("- When promise_id is unknown but user mentions a topic, use search_promises first.")
         sections.append("- Default time_spent to 1.0 hour if user says 'worked on X' without specifying duration.")
         sections.append("- Prefer action over asking: make reasonable assumptions from context.")
+        sections.append("- For detailed tool documentation (e.g., SQL schema/examples), call get_tool_help(tool_name) or get_db_schema() when needed.")
         
         # Date and time context
         now = datetime.now()
@@ -591,17 +594,119 @@ class LLMHandler:
         sections.append("ALWAYS respond in the user's current language setting unless they explicitly use English.")
         sections.append("If user requests to change language, call update_setting(setting_key='language', setting_value='fr'/'fa'/'en') and respond in the new language.")
         
+        # Apply section-aware budget (~8k chars target)
+        TARGET_BUDGET = 8000
         content = "\n".join(sections)
-        
-        # Log system message length for debugging
         content_length = len(content)
+        
+        # Track section sizes for telemetry
+        section_sizes = {}
+        current_pos = 0
+        for i, section in enumerate(sections):
+            section_len = len(section) + 1  # +1 for newline
+            section_sizes[f"section_{i}"] = section_len
+            current_pos += section_len
+        
+        # Apply budget with priority-based trimming if needed
+        if content_length > TARGET_BUDGET:
+            logger.warning(f"System message for user {user_id} exceeds budget ({content_length} > {TARGET_BUDGET}), applying priority-based trimming")
+            
+            # Priority order: keep essential, trim optional
+            # Essential (always keep): role, tools, date/time, language
+            # Optional (trim if needed): profile details, promises, conversation, guidelines
+            
+            # Rebuild with aggressive trimming
+            trimmed_sections = []
+            trimmed_size = 0
+            
+            # Essential sections (keep fully)
+            essential_end = 0
+            for i, section in enumerate(sections):
+                if "=== ROLE & PERSONALITY ===" in section or "=== AVAILABLE TOOLS ===" in section or "=== DATE & TIME ===" in section or "=== LANGUAGE MANAGEMENT ===" in section:
+                    trimmed_sections.append(section)
+                    trimmed_size += len(section) + 1
+                    essential_end = i + 1
+                elif i < essential_end:
+                    trimmed_sections.append(section)
+                    trimmed_size += len(section) + 1
+            
+            # Optional sections (add with caps)
+            remaining_budget = TARGET_BUDGET - trimmed_size - 500  # Reserve 500 for final sections
+            optional_size = 0
+            
+            for i, section in enumerate(sections[essential_end:], start=essential_end):
+                section_len = len(section) + 1
+                section_key = section.split('\n')[0] if '\n' in section else section[:50]
+                
+                # User info/profile: cap at 300 chars
+                if "=== USER INFO ===" in section or "=== USER PROFILE ===" in section:
+                    if optional_size + section_len <= 300:
+                        trimmed_sections.append(section)
+                        optional_size += section_len
+                    else:
+                        # Truncate profile section
+                        max_profile_len = 300 - optional_size
+                        if max_profile_len > 50:
+                            trimmed_sections.append(section[:max_profile_len] + "...")
+                            optional_size += max_profile_len
+                        logger.debug(f"Truncated {section_key} to fit budget")
+                
+                # Promises: already capped at 20, but further trim if needed
+                elif "=== USER PROMISES ===" in section:
+                    if optional_size + section_len <= remaining_budget * 0.3:  # Max 30% of remaining
+                        trimmed_sections.append(section)
+                        optional_size += section_len
+                    else:
+                        # Already truncated to 20 promises, but trim text further
+                        lines = section.split('\n')
+                        trimmed_promise_section = '\n'.join(lines[:3])  # Keep only first 3 lines
+                        trimmed_sections.append(trimmed_promise_section + "\n(Use search_promises for full list)")
+                        optional_size += len(trimmed_promise_section) + 50
+                        logger.debug(f"Further truncated promises section")
+                
+                # Conversation: already capped at 1000, but trim more if needed
+                elif "=== RECENT CONVERSATION ===" in section:
+                    if optional_size + section_len <= remaining_budget * 0.2:  # Max 20% of remaining
+                        trimmed_sections.append(section)
+                        optional_size += section_len
+                    else:
+                        # Truncate conversation more aggressively
+                        max_conv_len = int(remaining_budget * 0.2) - optional_size
+                        if max_conv_len > 100:
+                            trimmed_sections.append(section[:max_conv_len] + "...")
+                            optional_size += max_conv_len
+                        logger.debug(f"Truncated conversation section")
+                
+                # Other sections: add if budget allows
+                else:
+                    if optional_size + section_len <= remaining_budget:
+                        trimmed_sections.append(section)
+                        optional_size += section_len
+                    else:
+                        logger.debug(f"Dropped section: {section_key[:50]}")
+            
+            content = "\n".join(trimmed_sections)
+            content_length = len(content)
+            logger.info(f"Trimmed system message from {len('\n'.join(sections))} to {content_length} chars for user {user_id}")
+        
+        # Log system message length and section breakdown for debugging
         if user_id:
             logger.debug(f"System message for user {user_id} is {content_length} characters")
             if content_length > 8000:
                 logger.warning(f"System message for user {user_id} is very long ({content_length} chars), may be truncated by LLM")
-                
-                # Write to file for debugging
-                # Use USERS_DATA_DIR (mounted volume) so files are accessible on host
+            
+            # Log section breakdown for telemetry
+            logger.debug({
+                "event": "system_msg_budget",
+                "user_id": user_id,
+                "total_chars": content_length,
+                "mode": mode or "default",
+                "section_count": len(sections),
+            })
+            
+            # Write to file for debugging if over threshold or if debug mode enabled
+            should_dump = content_length > 8000 or os.getenv("SYSTEM_MSG_DEBUG", "0") == "1"
+            if should_dump:
                 try:
                     # datetime and os are already imported at module level
                     users_data_dir = os.getenv("USERS_DATA_DIR", "/app/USERS_DATA_DIR")
@@ -621,7 +726,7 @@ class LLMHandler:
                         f.write("=" * 80 + "\n\n")
                         f.write(content)
                     
-                    logger.info(f"Wrote long system message to {filepath}")
+                    logger.info(f"Wrote system message to {filepath}")
                 except Exception as e:
                     logger.warning(f"Failed to write system message debug file: {e}")
         
@@ -870,11 +975,19 @@ class LLMHandler:
             if not callable(candidate):
                 continue
             doc = (candidate.__doc__ or "").strip() or f"Planner action {attr_name}"
+            
+            # Sanitize description: first line only, capped at 120 chars to keep system message short
+            # Full docstring is available via get_tool_help() if needed
+            first_line = doc.splitlines()[0].strip() if doc else ""
+            if len(first_line) > 120:
+                first_line = first_line[:120] + "..."
+            sanitized_desc = first_line or f"Planner action {attr_name}"
+            
             try:
                 tool = StructuredTool.from_function(
                     func=_wrap_tool(candidate, attr_name, debug_enabled=_DEBUG_ENABLED),
                     name=attr_name,
-                    description=doc,
+                    description=sanitized_desc,
                 )
                 tools.append(tool)
             except Exception as e:
