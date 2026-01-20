@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import time
+from collections import deque
 from contextlib import nullcontext
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
@@ -10,6 +12,9 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_vertexai import ChatVertexAI
 from langchain_openai import ChatOpenAI
+
+# Global rate limit tracker: deque of (timestamp, user_id, event_type) for recent LLM calls
+_llm_call_tracker: deque = deque(maxlen=100)
 
 from llms.agent import AgentState, create_plan_execute_graph, create_routed_plan_execute_graph
 from llms.func_utils import get_function_args_info
@@ -733,6 +738,48 @@ class LLMHandler:
         
         return SystemMessage(content=content)
 
+    def _write_rate_limit_debug(
+        self,
+        user_id: str,
+        user_message: str,
+        messages: List[BaseMessage],
+        error_str: str,
+        recent_calls: list,
+    ) -> None:
+        """Write debug file when rate limit is hit for analysis."""
+        try:
+            users_data_dir = os.getenv("USERS_DATA_DIR", "/app/USERS_DATA_DIR")
+            debug_dir = os.path.join(users_data_dir, "debug_rate_limits")
+            os.makedirs(debug_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"rate_limit_{user_id}_{timestamp}.txt"
+            filepath = os.path.join(debug_dir, filename)
+            
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(f"RATE LIMIT DEBUG - {datetime.now().isoformat()}\n")
+                f.write("=" * 80 + "\n\n")
+                f.write(f"User ID: {user_id}\n")
+                f.write(f"User Message: {user_message[:500]}\n\n")
+                f.write(f"Error: {error_str[:500]}\n\n")
+                
+                f.write("RECENT LLM CALLS (last 120s):\n")
+                f.write("-" * 40 + "\n")
+                now = time.time()
+                for t, uid, event in recent_calls:
+                    f.write(f"  {round(now - t, 1)}s ago | user={uid} | {event}\n")
+                
+                f.write("\n\nMESSAGES CONTEXT:\n")
+                f.write("-" * 40 + "\n")
+                for i, msg in enumerate(messages):
+                    msg_type = type(msg).__name__
+                    content_preview = getattr(msg, "content", "")[:300] if hasattr(msg, "content") else ""
+                    f.write(f"\n[{i}] {msg_type}:\n{content_preview}\n")
+            
+            logger.info(f"Wrote rate limit debug to {filepath}")
+        except Exception as e:
+            logger.warning(f"Failed to write rate limit debug file: {e}")
+
     def get_response_api(
         self,
         user_message: str,
@@ -803,6 +850,22 @@ class LLMHandler:
             }
             token = _current_user_id.set(safe_user_id)
             lang_token = _current_user_language.set(user_language or "en")
+            
+            # Track LLM call for rate limit debugging
+            call_start = time.time()
+            _llm_call_tracker.append((call_start, safe_user_id, "invoke_start"))
+            
+            # Log recent call history for debugging rate limits
+            recent_calls = [(t, u, e) for t, u, e in _llm_call_tracker if call_start - t < 60]
+            if len(recent_calls) > 5:
+                logger.warning({
+                    "event": "rate_limit_risk",
+                    "user_id": safe_user_id,
+                    "calls_last_60s": len(recent_calls),
+                    "unique_users_last_60s": len(set(u for _, u, _ in recent_calls)),
+                    "call_times": [round(call_start - t, 2) for t, _, _ in recent_calls[-10:]],
+                })
+            
             try:
                 # Wrap with LangSmith tracing if enabled
                 if self._langsmith_enabled and LANGSMITH_AVAILABLE:
@@ -819,6 +882,16 @@ class LLMHandler:
                         result_state = self.agent_app.invoke(state)
                 else:
                     result_state = self.agent_app.invoke(state)
+                
+                # Track successful completion
+                call_end = time.time()
+                call_duration = call_end - call_start
+                _llm_call_tracker.append((call_end, safe_user_id, "invoke_success"))
+                logger.info({
+                    "event": "agent_invoke_complete",
+                    "user_id": safe_user_id,
+                    "duration_seconds": round(call_duration, 2),
+                })
             finally:
                 _current_user_id.reset(token)
                 _current_user_language.reset(lang_token)
@@ -880,6 +953,11 @@ class LLMHandler:
                 "pending_clarification": pending_clarification,
             }
         except Exception as e:
+            # Track failed call
+            call_end = time.time()
+            call_duration = call_end - call_start if 'call_start' in dir() else 0
+            _llm_call_tracker.append((call_end, safe_user_id, "invoke_error"))
+            
             # Check for specific error types
             error_str = str(e).lower()
             error_type = type(e).__name__
@@ -894,7 +972,21 @@ class LLMHandler:
             )
             
             if is_rate_limit:
-                logger.warning(f"Rate limit hit for user {safe_user_id}: {error_type}")
+                # Log detailed rate limit info
+                recent_calls = [(t, u, ev) for t, u, ev in _llm_call_tracker if call_end - t < 120]
+                logger.error({
+                    "event": "rate_limit_error",
+                    "user_id": safe_user_id,
+                    "error_type": error_type,
+                    "duration_before_error": round(call_duration, 2),
+                    "calls_last_120s": len(recent_calls),
+                    "unique_users_last_120s": len(set(u for _, u, _ in recent_calls)),
+                    "error_summary": str(e)[:200],
+                })
+                
+                # Write debug file for rate limit analysis
+                self._write_rate_limit_debug(safe_user_id, user_message, messages, str(e), recent_calls)
+                
                 return {
                     "error": "rate_limit",
                     "function_call": "handle_error",
