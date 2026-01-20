@@ -2496,6 +2496,53 @@ Rules:
                 logger.error(f"psql restore failed: {error_msg}")
                 raise HTTPException(status_code=500, detail=f"Failed to restore to production: {error_msg}")
             
+            # CRITICAL: Sync sequences after restore
+            # pg_dump includes explicit IDs, but sequences don't auto-update
+            # This prevents duplicate key errors on the next insert
+            logger.info("Syncing PostgreSQL sequences after restore...")
+            sync_sequences_sql = """
+                DO $$
+                DECLARE
+                    r RECORD;
+                    seq_name TEXT;
+                    max_val BIGINT;
+                BEGIN
+                    FOR r IN (
+                        SELECT 
+                            t.table_name,
+                            c.column_name
+                        FROM information_schema.tables t
+                        JOIN information_schema.columns c 
+                            ON t.table_name = c.table_name 
+                            AND t.table_schema = c.table_schema
+                        WHERE t.table_schema = 'public'
+                            AND t.table_type = 'BASE TABLE'
+                            AND c.column_default LIKE 'nextval%'
+                    )
+                    LOOP
+                        seq_name := pg_get_serial_sequence('public.' || r.table_name, r.column_name);
+                        IF seq_name IS NOT NULL THEN
+                            EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM %I', r.column_name, r.table_name) INTO max_val;
+                            EXECUTE format('SELECT setval(%L, GREATEST(%s, 1))', seq_name, max_val);
+                            RAISE NOTICE 'Synced sequence % to %', seq_name, max_val;
+                        END IF;
+                    END LOOP;
+                END $$;
+            """
+            
+            sync_process = subprocess.run(
+                ["psql", prod_url, "-c", sync_sequences_sql],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if sync_process.returncode != 0:
+                # Log warning but don't fail - data was restored successfully
+                logger.warning(f"Sequence sync warning (data restored OK): {sync_process.stderr}")
+            else:
+                logger.info("Sequences synced successfully")
+            
             logger.info(f"Admin {admin_id} successfully promoted staging to production")
             return {
                 "status": "success",
