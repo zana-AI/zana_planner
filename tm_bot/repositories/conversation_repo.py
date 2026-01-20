@@ -40,21 +40,65 @@ class ConversationRepository:
         """
         try:
             with get_db_session() as session:
-                session.execute(
-                    text("""
-                        INSERT INTO conversations (
-                            user_id, chat_id, message_id, message_type, content, created_at_utc
-                        ) VALUES (:user_id, :chat_id, :message_id, :message_type, :content, :created_at_utc)
-                    """),
-                    {
-                        "user_id": str(user_id),
-                        "chat_id": str(chat_id) if chat_id else None,
-                        "message_id": message_id,
-                        "message_type": message_type,
-                        "content": content,
-                        "created_at_utc": utc_now_iso(),
-                    },
-                )
+                # Try to insert the message
+                try:
+                    session.execute(
+                        text("""
+                            INSERT INTO conversations (
+                                user_id, chat_id, message_id, message_type, content, created_at_utc
+                            ) VALUES (:user_id, :chat_id, :message_id, :message_type, :content, :created_at_utc)
+                        """),
+                        {
+                            "user_id": str(user_id),
+                            "chat_id": str(chat_id) if chat_id else None,
+                            "message_id": message_id,
+                            "message_type": message_type,
+                            "content": content,
+                            "created_at_utc": utc_now_iso(),
+                        },
+                    )
+                except Exception as insert_error:
+                    # Check if it's a duplicate key error (sequence out of sync)
+                    error_str = str(insert_error).lower()
+                    if "uniqueviolation" in error_str or "duplicate key" in error_str or "conversations_pkey" in error_str:
+                        # Fix the sequence and retry
+                        logger.warning(f"Sequence out of sync for conversations table, fixing...")
+                        try:
+                            # Fix sequence (this will be committed by the context manager)
+                            session.execute(
+                                text("""
+                                    SELECT setval('conversations_id_seq', 
+                                        GREATEST((SELECT COALESCE(MAX(id), 0) FROM conversations), 1), 
+                                        false)
+                                """)
+                            )
+                            # Force commit the sequence fix before retrying
+                            session.commit()
+                            logger.info("Fixed conversations sequence, retrying insert...")
+                            
+                            # Retry the insert
+                            session.execute(
+                                text("""
+                                    INSERT INTO conversations (
+                                        user_id, chat_id, message_id, message_type, content, created_at_utc
+                                    ) VALUES (:user_id, :chat_id, :message_id, :message_type, :content, :created_at_utc)
+                                """),
+                                {
+                                    "user_id": str(user_id),
+                                    "chat_id": str(chat_id) if chat_id else None,
+                                    "message_id": message_id,
+                                    "message_type": message_type,
+                                    "content": content,
+                                    "created_at_utc": utc_now_iso(),
+                                },
+                            )
+                        except Exception as retry_error:
+                            logger.warning(f"Failed to save conversation message after sequence fix for user {user_id}: {retry_error}")
+                            # Rollback to avoid committing partial state
+                            session.rollback()
+                    else:
+                        # Re-raise if it's a different error
+                        raise
         except Exception as e:
             logger.warning(f"Failed to save conversation message for user {user_id}: {e}")
     

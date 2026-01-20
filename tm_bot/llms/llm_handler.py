@@ -735,6 +735,28 @@ class LLMHandler:
                 "pending_clarification": pending_clarification,
             }
         except Exception as e:
+            # Check for specific error types
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            
+            # Check for rate limiting / resource exhausted errors
+            is_rate_limit = (
+                "429" in error_str
+                or "resource exhausted" in error_str
+                or "rate limit" in error_str
+                or error_type == "ResourceExhausted"
+                or "resourceexhausted" in error_type.lower()
+            )
+            
+            if is_rate_limit:
+                logger.warning(f"Rate limit hit for user {safe_user_id}: {error_type}")
+                return {
+                    "error": "rate_limit",
+                    "function_call": "handle_error",
+                    "response_to_user": "I'm receiving too many requests right now. Please wait a moment and try again.",
+                    "executed_by_agent": True,
+                }
+            
             # Do not leak raw provider errors (Vertex/Gemini often includes request/payload details).
             # Log full details for debugging, but return a user-safe message.
             logger.exception("Unexpected error in get_response_api")
