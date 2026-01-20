@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -11,6 +13,23 @@ from langgraph.graph import END, StateGraph
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+_DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lower() == "staging"
+
+# LLM call counter for rate limit debugging (per-request tracking)
+_llm_call_count = 0
+
+def _track_llm_call(call_type: str, model_name: str = "unknown") -> None:
+    """Track an LLM call for debugging rate limits."""
+    global _llm_call_count
+    _llm_call_count += 1
+    if _DEBUG_ENABLED:
+        logger.info({
+            "event": "llm_call",
+            "call_type": call_type,
+            "model": model_name,
+            "call_number": _llm_call_count,
+            "timestamp": time.time(),
+        })
 
 # ToolNode import path varies across langgraph versions.
 try:
@@ -247,6 +266,7 @@ def create_agent_graph(
 
     def call_agent(state: AgentState) -> AgentState:
         validated_messages = _ensure_messages_have_content(state["messages"])
+        _track_llm_call("agent", "model_with_tools")
         result = model_with_tools.invoke(validated_messages)
         new_iteration = state["iteration"] + 1
         _emit(
@@ -615,6 +635,7 @@ def create_plan_execute_graph(
         messages = [SystemMessage(content=planner_prompt)] + messages
         validated_messages = _ensure_messages_have_content(messages)
 
+        _track_llm_call("planner", "planner_model")
         result = planner_model.invoke(validated_messages)
         content = getattr(result, "content", "") or ""
 
@@ -695,6 +716,7 @@ def create_plan_execute_graph(
                     "Keep it friendly and helpful - don't make the user feel bad about the error."
                 )
                 messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
+                _track_llm_call("responder_error", "responder_model")
                 result = responder_model.invoke(messages_to_send)
             else:
                 # Default responder hint for good UX
@@ -717,6 +739,7 @@ def create_plan_execute_graph(
                         "acknowledge the mismatch and ask one clarifying question instead of asserting success."
                     )
                 messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=default_hint)])
+                _track_llm_call("responder_default", "responder_model")
                 result = responder_model.invoke(messages_to_send)
             return {
                 **state,
@@ -730,6 +753,7 @@ def create_plan_execute_graph(
         if new_iteration > max_iterations:
             # hard stop: respond with best effort
             validated_messages = _ensure_messages_have_content(state["messages"])
+            _track_llm_call("responder_max_iter", "responder_model")
             result = responder_model.invoke(validated_messages)
             return {
                 **state,
@@ -791,6 +815,7 @@ def create_plan_execute_graph(
                 )
                 hint = hint + failure_hint
             messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
+            _track_llm_call("responder_respond_step", "responder_model")
             result = responder_model.invoke(messages_to_send)
             return {
                 **state,
@@ -1282,6 +1307,7 @@ def create_routed_plan_execute_graph(
         ]
         
         validated_messages = _ensure_messages_have_content(router_messages)
+        _track_llm_call("router", "router_model")
         result = router_model.invoke(validated_messages)
         content = getattr(result, "content", "") or ""
         
@@ -1628,6 +1654,7 @@ def create_routed_plan_execute_graph(
                 "Respond warmly, with humor if appropriate, and keep them engaged. "
                 "Do NOT use any tools. Keep it short (1-3 sentences)."
             )
+            _track_llm_call("responder_engagement", "responder_model")
             result = responder_model.invoke(messages_to_send + [SystemMessage(content=engagement_hint)])
             return {
                 **state,
@@ -1663,6 +1690,7 @@ def create_routed_plan_execute_graph(
                 if system_msg:
                     base_messages = [system_msg] + base_messages
                 messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=hint)])
+                _track_llm_call("routed_responder_error", "responder_model")
                 result = responder_model.invoke(messages_to_send)
             else:
                 default_hint = (
@@ -1687,6 +1715,7 @@ def create_routed_plan_execute_graph(
                 if system_msg:
                     base_messages = [system_msg] + base_messages
                 messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=default_hint)])
+                _track_llm_call("routed_responder_default", "responder_model")
                 result = responder_model.invoke(messages_to_send)
             return {
                 **state,
@@ -1699,6 +1728,7 @@ def create_routed_plan_execute_graph(
 
         if new_iteration > max_iterations:
             validated_messages = _ensure_messages_have_content(state["messages"])
+            _track_llm_call("routed_responder_max_iter", "responder_model")
             result = responder_model.invoke(validated_messages)
             return {
                 **state,
@@ -1757,6 +1787,7 @@ def create_routed_plan_execute_graph(
             if system_msg:
                 base_messages = [system_msg] + base_messages
             messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=hint)])
+            _track_llm_call("routed_responder_respond_step", "responder_model")
             result = responder_model.invoke(messages_to_send)
             return {
                 **state,

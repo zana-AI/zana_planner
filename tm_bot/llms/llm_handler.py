@@ -17,6 +17,7 @@ from langchain_openai import ChatOpenAI
 _llm_call_tracker: deque = deque(maxlen=100)
 
 from llms.agent import AgentState, create_plan_execute_graph, create_routed_plan_execute_graph
+import llms.agent as agent_module  # For accessing _llm_call_count
 from llms.func_utils import get_function_args_info
 from llms.llm_env_utils import load_llm_env
 from llms.schema import LLMResponse, UserAction
@@ -851,6 +852,9 @@ class LLMHandler:
             token = _current_user_id.set(safe_user_id)
             lang_token = _current_user_language.set(user_language or "en")
             
+            # Reset LLM call counter for this request
+            agent_module._llm_call_count = 0
+            
             # Track LLM call for rate limit debugging
             call_start = time.time()
             _llm_call_tracker.append((call_start, safe_user_id, "invoke_start"))
@@ -886,11 +890,13 @@ class LLMHandler:
                 # Track successful completion
                 call_end = time.time()
                 call_duration = call_end - call_start
+                llm_calls_in_request = agent_module._llm_call_count
                 _llm_call_tracker.append((call_end, safe_user_id, "invoke_success"))
                 logger.info({
                     "event": "agent_invoke_complete",
                     "user_id": safe_user_id,
                     "duration_seconds": round(call_duration, 2),
+                    "llm_calls_in_request": llm_calls_in_request,
                 })
             finally:
                 _current_user_id.reset(token)
@@ -974,11 +980,13 @@ class LLMHandler:
             if is_rate_limit:
                 # Log detailed rate limit info
                 recent_calls = [(t, u, ev) for t, u, ev in _llm_call_tracker if call_end - t < 120]
+                llm_calls_before_error = agent_module._llm_call_count
                 logger.error({
                     "event": "rate_limit_error",
                     "user_id": safe_user_id,
                     "error_type": error_type,
                     "duration_before_error": round(call_duration, 2),
+                    "llm_calls_before_error": llm_calls_before_error,
                     "calls_last_120s": len(recent_calls),
                     "unique_users_last_120s": len(set(u for _, u, _ in recent_calls)),
                     "error_summary": str(e)[:200],
