@@ -530,6 +530,8 @@ class LLMHandler:
                 logger.debug(f"Could not get profile context for user {user_id}: {e}")
         
         # Promise context (skip for engagement mode to reduce context bloat)
+        # Limit to 20 promises max to avoid excessive system message length
+        MAX_PROMISES_IN_CONTEXT = 20
         if user_id and mode != "engagement":
             try:
                 promise_count = self.plan_adapter.count_promises(int(user_id))
@@ -537,30 +539,42 @@ class LLMHandler:
                 if promise_count <= 50:
                     promises = self.plan_adapter.get_promises(int(user_id))
                     if promises:
-                        promise_list = ", ".join([f"{p['id']}: {p['text'].replace('_', ' ')}" for p in promises])
+                        # Limit promises to avoid bloating system message
+                        if len(promises) > MAX_PROMISES_IN_CONTEXT:
+                            promises = promises[:MAX_PROMISES_IN_CONTEXT]
+                            logger.debug(f"Truncated promises from {promise_count} to {MAX_PROMISES_IN_CONTEXT} for context")
+                        
+                        # Truncate long promise texts to keep system message manageable
+                        promise_list = ", ".join([
+                            f"{p['id']}: {p['text'].replace('_', ' ')[:50]}{'...' if len(p['text']) > 50 else ''}" 
+                            for p in promises
+                        ])
                         promise_ids_only = ", ".join([p['id'] for p in promises])
                         sections.append(f"\n=== USER PROMISES (in context) ===")
                         sections.append(f"User has these promises: [{promise_list}]")
-                        sections.append("IMPORTANT: You have access to all user promises in context. Use this information directly to answer questions about their goals and activities.")
+                        if promise_count > MAX_PROMISES_IN_CONTEXT:
+                            sections.append(f"(showing {MAX_PROMISES_IN_CONTEXT} of {promise_count} - use search_promises for others)")
                         sections.append("When user mentions a category, activity, or promise name:")
-                        sections.append("1. FIRST check the promise list above to see if it matches")
-                        sections.append("2. If found, use the promise_id directly (e.g., P10, P01)")
-                        sections.append("3. Only use search_promises if the promise is NOT in the context list")
-                        sections.append("Example: If user asks 'how much did I practice sport' and you see 'P10: Do sport' in context, use P10 directly without searching.")
-                        # Log only promise IDs for privacy - do not log promise text content
-                        logger.info(f"Injected {promise_count} promises into context for user {user_id}: {promise_ids_only}")
+                        sections.append("1. Check the promise list above first")
+                        sections.append("2. If found, use the promise_id directly (e.g., P10)")
+                        sections.append("3. Use search_promises if not in context list")
+                        # Log only promise IDs for privacy
+                        logger.info(f"Injected {len(promises)} promises into context for user {user_id}: {promise_ids_only}")
             except Exception as e:
                 logger.warning(f"Could not get promise context for user {user_id}: {e}")
         
-        # Recent conversation history
+        # Recent conversation history (limited to avoid bloat)
+        MAX_CONVERSATION_CHARS = 1000
         if user_id:
             try:
                 conversation_summary = self.conversation_repo.get_recent_conversation_summary(int(user_id), limit=3)
                 if conversation_summary:
+                    # Truncate if too long
+                    if len(conversation_summary) > MAX_CONVERSATION_CHARS:
+                        conversation_summary = conversation_summary[:MAX_CONVERSATION_CHARS] + "..."
                     sections.append(f"\n=== RECENT CONVERSATION ===")
                     sections.append(conversation_summary)
-                    sections.append("Use this recent conversation context to understand follow-up questions.")
-                    sections.append("For example, if the user previously asked about 'French' and now says 'and piano', they likely want information about piano practice history (similar to what was asked about French).")
+                    sections.append("Use this context for follow-up questions.")
             except Exception as e:
                 logger.debug(f"Could not get conversation context: {e}")
         
