@@ -687,7 +687,8 @@ class LLMHandler:
             
             content = "\n".join(trimmed_sections)
             content_length = len(content)
-            logger.info(f"Trimmed system message from {len('\n'.join(sections))} to {content_length} chars for user {user_id}")
+            original_length = len("\n".join(sections))
+            logger.info(f"Trimmed system message from {original_length} to {content_length} chars for user {user_id}")
         
         # Log system message length and section breakdown for debugging
         if user_id:
