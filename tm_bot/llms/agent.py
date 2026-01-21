@@ -1226,11 +1226,15 @@ def create_plan_execute_graph(
     def should_continue(state: AgentState):
         if state.get("final_response"):
             return END
-        if int(state.get("iteration", 0) or 0) >= max_iterations:
-            return END
         last_msg = state["messages"][-1] if state.get("messages") else None
         has_tool_calls = isinstance(last_msg, AIMessage) and getattr(last_msg, "tool_calls", None)
-        return "tools" if has_tool_calls else "executor"
+        # Always execute pending tool calls, even if we're at the iteration cap,
+        # otherwise we can stop with "(calling tool)" as the last message.
+        if has_tool_calls:
+            return "tools"
+        if int(state.get("iteration", 0) or 0) >= max_iterations:
+            return END
+        return "executor"
 
     graph.add_node("planner", planner)
     graph.add_node("executor", executor)
@@ -1942,16 +1946,25 @@ def create_routed_plan_execute_graph(
                 ],
             },
         )
-        return {"messages": state["messages"] + result_messages, "iteration": state["iteration"]}
+        # After executing a tool call, advance to the next plan step.
+        return {
+            "messages": state["messages"] + result_messages,
+            "iteration": state["iteration"],
+            "step_idx": int(state.get("step_idx", 0) or 0) + 1,
+        }
     
     def should_continue(state: AgentState):
         if state.get("final_response"):
             return END
-        if int(state.get("iteration", 0) or 0) >= max_iterations:
-            return END
         last_msg = state["messages"][-1] if state.get("messages") else None
         has_tool_calls = isinstance(last_msg, AIMessage) and getattr(last_msg, "tool_calls", None)
-        return "tools" if has_tool_calls else "executor"
+        # Always execute pending tool calls, even if we're at the iteration cap,
+        # otherwise we can stop with "(calling tool)" as the last message.
+        if has_tool_calls:
+            return "tools"
+        if int(state.get("iteration", 0) or 0) >= max_iterations:
+            return END
+        return "executor"
     
     graph.add_node("router", router)
     graph.add_node("planner", planner)
