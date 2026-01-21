@@ -943,14 +943,26 @@ class LLMHandler:
                     }
                 )
 
+            # Build the response to user
+            response_text = (
+                final_response
+                or (final_ai.content if final_ai else None)
+                or "I'm having trouble responding right now."
+            )
+            
+            # Append debug footer if debug mode is enabled
+            if _DEBUG_ENABLED:
+                debug_footer = self._format_debug_footer(
+                    result_state,
+                    tool_messages,
+                    call_duration,
+                )
+                response_text = response_text + debug_footer
+            
             return {
                 "function_call": last_tool_call.get("name") if last_tool_call else "no_op",
                 "function_args": last_tool_call.get("args", {}) if last_tool_call else {},
-                "response_to_user": (
-                    final_response
-                    or (final_ai.content if final_ai else None)
-                    or "I'm having trouble responding right now."
-                ),
+                "response_to_user": response_text,
                 "executed_by_agent": True,
                 "tool_calls": getattr(final_ai, "tool_calls", None) or [],
                 "tool_outputs": [tm.content for tm in tool_messages],
@@ -1132,6 +1144,79 @@ class LLMHandler:
             except Exception:
                 # Never let progress callbacks break the agent
                 pass
+    
+    @staticmethod
+    def _format_debug_footer(result_state: dict, tool_messages: list, duration_seconds: float) -> str:
+        """
+        Format a debug footer showing routing, tools, and timing info.
+        Only shown when LLM_DEBUG=1 (staging/dev mode).
+        
+        Args:
+            result_state: The final agent state with routing info
+            tool_messages: List of ToolMessage objects from execution
+            duration_seconds: Total execution time
+        
+        Returns:
+            Formatted debug footer string to append to response
+        """
+        lines = ["\n\n---", "🔧 **Debug Info** (LLM_DEBUG=1)\n"]
+        
+        # Routing info
+        mode = result_state.get("mode", "unknown")
+        route_confidence = result_state.get("route_confidence", "unknown")
+        route_reason = result_state.get("route_reason", "unknown")
+        lines.append(f"**Route:** `{mode}` (confidence: {route_confidence})")
+        lines.append(f"**Reason:** {route_reason}")
+        
+        # Intent info if available
+        detected_intent = result_state.get("detected_intent")
+        intent_confidence = result_state.get("intent_confidence")
+        if detected_intent:
+            lines.append(f"**Intent:** {detected_intent} (confidence: {intent_confidence or 'unknown'})")
+        
+        # Iteration count
+        iterations = result_state.get("iteration", 0)
+        lines.append(f"**Iterations:** {iterations}")
+        
+        # Tools called
+        messages = result_state.get("messages", [])
+        tool_calls_info = []
+        for msg in messages:
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_name = tc.get("name", "unknown")
+                    tool_args = tc.get("args", {})
+                    # Summarize args (truncate long values)
+                    args_summary = ", ".join(
+                        f"{k}={str(v)[:30]}{'...' if len(str(v)) > 30 else ''}"
+                        for k, v in tool_args.items()
+                        if k != "user_id"  # Don't show user_id
+                    )
+                    tool_calls_info.append(f"`{tool_name}`({args_summary or 'no args'})")
+        
+        if tool_calls_info:
+            lines.append(f"**Tools called:** {len(tool_calls_info)}")
+            for i, tc in enumerate(tool_calls_info, 1):
+                lines.append(f"  {i}. {tc}")
+        else:
+            lines.append("**Tools called:** none")
+        
+        # Tool outputs summary (truncated)
+        if tool_messages:
+            lines.append(f"**Tool outputs:** {len(tool_messages)}")
+            for i, tm in enumerate(tool_messages, 1):
+                content = getattr(tm, "content", str(tm))
+                # Truncate long outputs
+                if len(content) > 100:
+                    content = content[:100] + "..."
+                # Clean up JSON for readability
+                content = content.replace("\n", " ").strip()
+                lines.append(f"  {i}. {content}")
+        
+        # Timing
+        lines.append(f"**Duration:** {duration_seconds:.2f}s")
+        
+        return "\n".join(lines)
 
 
 # Example usage
