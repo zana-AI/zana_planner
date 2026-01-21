@@ -472,17 +472,58 @@ class LLMHandler:
         sections.append(self.system_message_main_base)
         
         # Add tools overview (needed for planner to know what tools are available)
-        # Tool descriptions are already sanitized in _build_tools() (first line, capped)
-        tool_lines = []
-        for tool in self.tools:
+        # IMPORTANT: This must stay small to avoid blowing the system prompt budget.
+        # We list a compact subset with signatures; provide a hint to use get_tool_help() for details.
+        def _tool_is_mutation(tool_name: str) -> bool:
+            return (tool_name or "").startswith(("add_", "create_", "update_", "delete_", "log_")) or tool_name in {"subscribe_template"}
+
+        def _tools_for_mode(all_tools: list, active_mode: Optional[str]) -> list:
+            active_mode = (active_mode or "").lower().strip() or "operator"
+            if active_mode == "engagement":
+                return []
+            if active_mode == "social":
+                allow = {
+                    "get_my_followers",
+                    "get_my_following",
+                    "get_community_stats",
+                    "follow_user",
+                    "unfollow_user",
+                    "open_mini_app",
+                    "get_setting",
+                    "get_settings",
+                    "get_tool_help",
+                }
+                return [t for t in all_tools if getattr(t, "name", "") in allow]
+            if active_mode == "strategist":
+                # Read-only + helper tools
+                return [
+                    t
+                    for t in all_tools
+                    if not _tool_is_mutation(getattr(t, "name", ""))
+                ]
+            # operator (default): expose everything
+            return list(all_tools)
+
+        tools_for_prompt = _tools_for_mode(self.tools, mode)
+        tools_for_prompt.sort(key=lambda t: getattr(t, "name", ""))
+
+        MAX_TOOL_LINES = 45
+        tool_lines: list[str] = []
+        total_tools = len(tools_for_prompt)
+        for tool in tools_for_prompt[:MAX_TOOL_LINES]:
             name = getattr(tool, "name", "unknown")
-            desc = (getattr(tool, "description", "") or "").strip()
             arg_names = []
             if hasattr(self.plan_adapter, name):
-                arg_names = list(get_function_args_info(getattr(self.plan_adapter, name)).keys())
+                try:
+                    arg_names = list(get_function_args_info(getattr(self.plan_adapter, name)).keys())
+                except Exception:
+                    arg_names = []
             arg_sig = ", ".join(arg_names)
-            # Keep format concise: name(args) :: short_desc
-            tool_lines.append(f"- {name}({arg_sig}) :: {desc}")
+            tool_lines.append(f"- {name}({arg_sig})")
+        if total_tools > MAX_TOOL_LINES:
+            remaining = total_tools - MAX_TOOL_LINES
+            tool_lines.append(f"- ... and {remaining} more tools (use get_tool_help(tool_name) if needed)")
+
         tools_overview = "\n".join(tool_lines)
         sections.append(f"\n=== AVAILABLE TOOLS ===")
         sections.append(tools_overview)
@@ -626,6 +667,39 @@ class LLMHandler:
             section_sizes[f"section_{i}"] = section_len
             current_pos += section_len
         
+        def _build_blocks(items: list[str]) -> list[tuple[str, str]]:
+            """
+            Convert the flat `sections` list into blocks keyed by header lines (=== ... ===).
+            This fixes trimming bugs where headers were kept but their content was dropped.
+            """
+            blocks: list[tuple[str, list[str]]] = []
+            cur_header = "__preamble__"
+            cur_lines: list[str] = []
+
+            def _flush():
+                nonlocal cur_header, cur_lines
+                if cur_lines:
+                    blocks.append((cur_header, "\n".join(cur_lines)))
+                cur_lines = []
+
+            for s in items:
+                s = "" if s is None else str(s)
+                # Treat any line containing a section marker as a new header.
+                if "=== " in s and " ===" in s:
+                    _flush()
+                    cur_header = s.strip()
+                    cur_lines = [cur_header]
+                else:
+                    cur_lines.append(s)
+            _flush()
+            # Render to (header, text)
+            rendered: list[tuple[str, str]] = []
+            for h, lines in blocks:
+                # Ensure header exists even for preamble
+                header = h if h != "__preamble__" else ""
+                rendered.append((header, lines))
+            return rendered
+
         # Apply budget with priority-based trimming if needed
         if content_length > TARGET_BUDGET:
             logger.warning(f"System message for user {user_id} exceeds budget ({content_length} > {TARGET_BUDGET}), applying priority-based trimming")
@@ -634,77 +708,62 @@ class LLMHandler:
             # Essential (always keep): role, tools, date/time, language
             # Optional (trim if needed): profile details, promises, conversation, guidelines
             
-            # Rebuild with aggressive trimming
-            trimmed_sections = []
-            trimmed_size = 0
-            
-            # Essential sections (keep fully)
-            essential_end = 0
-            for i, section in enumerate(sections):
-                if "=== ROLE & PERSONALITY ===" in section or "=== AVAILABLE TOOLS ===" in section or "=== DATE & TIME ===" in section or "=== LANGUAGE MANAGEMENT ===" in section:
-                    trimmed_sections.append(section)
-                    trimmed_size += len(section) + 1
-                    essential_end = i + 1
-                elif i < essential_end:
-                    trimmed_sections.append(section)
-                    trimmed_size += len(section) + 1
-            
-            # Optional sections (add with caps)
-            remaining_budget = TARGET_BUDGET - trimmed_size - 500  # Reserve 500 for final sections
-            optional_size = 0
-            
-            for i, section in enumerate(sections[essential_end:], start=essential_end):
-                section_len = len(section) + 1
-                section_key = section.split('\n')[0] if '\n' in section else section[:50]
-                
-                # User info/profile: cap at 300 chars
-                if "=== USER INFO ===" in section or "=== USER PROFILE ===" in section:
-                    if optional_size + section_len <= 300:
-                        trimmed_sections.append(section)
-                        optional_size += section_len
+            blocks = _build_blocks(sections)
+
+            # Essential blocks (always keep)
+            essential_headers = {
+                "=== ROLE & PERSONALITY ===",
+                "=== AVAILABLE TOOLS ===",
+                "=== DATE & TIME ===",
+                "=== LANGUAGE MANAGEMENT ===",
+            }
+            optional_caps = {
+                "=== USER INFO ===": 300,
+                "=== USER PROFILE ===": 300,
+                "=== USER PROMISES (in context) ===": int(TARGET_BUDGET * 0.25),
+                "=== RECENT CONVERSATION ===": int(TARGET_BUDGET * 0.20),
+            }
+
+            trimmed_blocks: list[str] = []
+            used = 0
+
+            # First pass: essentials
+            for header, text in blocks:
+                if header.strip() in essential_headers:
+                    trimmed_blocks.append(text)
+                    used += len(text) + 1
+
+            remaining_budget = TARGET_BUDGET - used
+
+            # Second pass: optionals with caps
+            for header, text in blocks:
+                h = header.strip()
+                if h in essential_headers:
+                    continue
+                if remaining_budget <= 0:
+                    break
+
+                cap = optional_caps.get(h)
+                if cap is not None:
+                    allowed = min(cap, remaining_budget)
+                    if allowed <= 0:
+                        continue
+                    if len(text) > allowed:
+                        trimmed_blocks.append(text[: max(0, allowed - 3)] + "...")
+                        used += allowed
+                        remaining_budget -= allowed
                     else:
-                        # Truncate profile section
-                        max_profile_len = 300 - optional_size
-                        if max_profile_len > 50:
-                            trimmed_sections.append(section[:max_profile_len] + "...")
-                            optional_size += max_profile_len
-                        logger.debug(f"Truncated {section_key} to fit budget")
-                
-                # Promises: already capped at 20, but further trim if needed
-                elif "=== USER PROMISES ===" in section:
-                    if optional_size + section_len <= remaining_budget * 0.3:  # Max 30% of remaining
-                        trimmed_sections.append(section)
-                        optional_size += section_len
-                    else:
-                        # Already truncated to 20 promises, but trim text further
-                        lines = section.split('\n')
-                        trimmed_promise_section = '\n'.join(lines[:3])  # Keep only first 3 lines
-                        trimmed_sections.append(trimmed_promise_section + "\n(Use search_promises for full list)")
-                        optional_size += len(trimmed_promise_section) + 50
-                        logger.debug(f"Further truncated promises section")
-                
-                # Conversation: already capped at 1000, but trim more if needed
-                elif "=== RECENT CONVERSATION ===" in section:
-                    if optional_size + section_len <= remaining_budget * 0.2:  # Max 20% of remaining
-                        trimmed_sections.append(section)
-                        optional_size += section_len
-                    else:
-                        # Truncate conversation more aggressively
-                        max_conv_len = int(remaining_budget * 0.2) - optional_size
-                        if max_conv_len > 100:
-                            trimmed_sections.append(section[:max_conv_len] + "...")
-                            optional_size += max_conv_len
-                        logger.debug(f"Truncated conversation section")
-                
-                # Other sections: add if budget allows
+                        trimmed_blocks.append(text)
+                        used += len(text) + 1
+                        remaining_budget -= len(text) + 1
                 else:
-                    if optional_size + section_len <= remaining_budget:
-                        trimmed_sections.append(section)
-                        optional_size += section_len
-                    else:
-                        logger.debug(f"Dropped section: {section_key[:50]}")
-            
-            content = "\n".join(trimmed_sections)
+                    # Best-effort: include if it fits
+                    if len(text) + 1 <= remaining_budget:
+                        trimmed_blocks.append(text)
+                        used += len(text) + 1
+                        remaining_budget -= len(text) + 1
+
+            content = "\n".join([b for b in trimmed_blocks if b and b.strip()])
             content_length = len(content)
             original_length = len("\n".join(sections))
             logger.info(f"Trimmed system message from {original_length} to {content_length} chars for user {user_id}")
