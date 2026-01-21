@@ -266,7 +266,7 @@ class LLMHandler:
             "- Ask the user ONLY when truly blocked (e.g., completely ambiguous request with no context).\n"
             "- If you must ask, ask ONCE and request ALL missing fields together.\n"
             "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n"
-            "- If user requests language change (e.g., 'switch to French', 'change language to Persian'), include update_setting step in plan BEFORE responding.\n\n"
+            "- If user requests language change, whether implicit or explicit (e.g., 'switch to French', 'change language to Persian'), include update_setting step in plan BEFORE responding.\n\n"
             
             "=== USER PROFILING ===\n"
             "- The system maintains a user profile with core fields: status, schedule_type, primary_goal_1y, top_focus_area, main_constraint.\n"
@@ -316,7 +316,6 @@ class LLMHandler:
             "use get_promises() first to see all promises, then filter by category keywords.\n"
             "- For 'performance in X category' or 'activities in X', use get_actions_in_range() without promise_id "
             "to get all actions, then filter by related promises.\n"
-            "- For complex analysis across multiple promises, use query_database() with SQL.\n"
             "- Examples:\n"
             "  • 'my health performance' → get_promises(), filter health-related, get_actions_in_range() for those promises\n"
             "  • 'how am I doing with work?' → get_promises(), filter work-related, get_promise_report() for each, aggregate\n"
@@ -491,7 +490,7 @@ class LLMHandler:
         sections.append("- When promise_id is unknown but user mentions a topic, use search_promises first.")
         sections.append("- Default time_spent to 1.0 hour if user says 'worked on X' without specifying duration.")
         sections.append("- Prefer action over asking: make reasonable assumptions from context.")
-        sections.append("- For detailed tool documentation (e.g., SQL schema/examples), call get_tool_help(tool_name) or get_db_schema() when needed.")
+        sections.append("- For detailed tool documentation, call get_tool_help(tool_name) when needed.")
         
         # Date and time context
         now = datetime.now()
@@ -1068,9 +1067,17 @@ class LLMHandler:
 
     def _build_tools(self, adapter: PlannerAPIAdapter):
         """Convert adapter methods into LangChain StructuredTool objects."""
+        # Exclude tools that add too much context or are rarely needed
+        EXCLUDED_TOOLS = {
+            "query_database",  # SQL tool - complex, rarely needed, adds schema bloat
+            "get_db_schema",   # Database schema - on-demand only
+        }
+        
         tools = []
         for attr_name in dir(adapter):
             if attr_name.startswith("_"):
+                continue
+            if attr_name in EXCLUDED_TOOLS:
                 continue
             candidate = getattr(adapter, attr_name)
             if not callable(candidate):
