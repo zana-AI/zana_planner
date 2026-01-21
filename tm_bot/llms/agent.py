@@ -981,8 +981,8 @@ def create_plan_execute_graph(
             
             if needs_confirmation:
                 # Build a confirmation question that describes what will happen
-                detected_intent = state.get("detected_intent", "this action")
-                action_description = f"perform {detected_intent.lower()}"
+                detected_intent = state.get("detected_intent") or "this action"
+                action_description = f"perform {str(detected_intent).lower()}"
                 if tool_name == "add_action":
                     promise_id = tool_args.get("promise_id", "a promise")
                     time_spent = tool_args.get("time_spent", "some time")
@@ -1871,8 +1871,8 @@ def create_routed_plan_execute_graph(
             )
             
             if needs_confirmation:
-                detected_intent = state.get("detected_intent", "this action")
-                action_description = f"perform {detected_intent.lower()}"
+                detected_intent = state.get("detected_intent") or "this action"
+                action_description = f"perform {str(detected_intent).lower()}"
                 if tool_name == "add_action":
                     promise_id = tool_args.get("promise_id", "a promise")
                     time_spent = tool_args.get("time_spent", "some time")
