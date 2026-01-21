@@ -631,6 +631,23 @@ def create_plan_execute_graph(
     graph = StateGraph(AgentState)
 
     def planner(state: AgentState) -> AgentState:
+        # If the caller already supplied a plan (e.g., tests or resumed execution),
+        # don't overwrite it by re-invoking the planner model.
+        existing_plan = state.get("plan") or []
+        if existing_plan:
+            try:
+                plan_dicts = [dict(s) for s in existing_plan]
+            except Exception:
+                plan_dicts = existing_plan  # best effort
+            plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts)
+            return {
+                **state,
+                "plan": plan_dicts,
+                "pending_meta_by_idx": pending_meta_by_idx,
+                "pending_clarification": state.get("pending_clarification"),
+                "step_idx": int(state.get("step_idx", 0) or 0),
+            }
+
         messages = list(state.get("messages") or [])
         messages = [SystemMessage(content=planner_prompt)] + messages
         validated_messages = _ensure_messages_have_content(messages)
@@ -969,7 +986,8 @@ def create_plan_execute_graph(
             # NOW check if confirmation is required (after placeholders are resolved)
             # This ensures stored pending_clarification has resolved tool_args
             is_mutation_tool = tool_name.startswith(MUTATION_PREFIXES)
-            intent_confidence = state.get("intent_confidence", "").lower() if state.get("intent_confidence") else ""
+            # Default to "high" when planner didn't provide confidence (keeps UX smooth).
+            intent_confidence = (state.get("intent_confidence") or "high").lower()
             safety = state.get("safety") or {}
             requires_confirmation = safety.get("requires_confirmation", False)
             
@@ -1564,6 +1582,23 @@ def create_routed_plan_execute_graph(
     def planner(state: AgentState) -> AgentState:
         mode = state.get("mode") or "operator"
         mode_prompt = get_planner_prompt_for_mode(mode)
+
+        # If the caller already supplied a plan (e.g., resumed execution),
+        # don't overwrite it by re-invoking the planner model.
+        existing_plan = state.get("plan") or []
+        if existing_plan:
+            try:
+                plan_dicts = [dict(s) for s in existing_plan]
+            except Exception:
+                plan_dicts = existing_plan  # best effort
+            plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts)
+            return {
+                **state,
+                "plan": plan_dicts,
+                "pending_meta_by_idx": pending_meta_by_idx,
+                "pending_clarification": state.get("pending_clarification"),
+                "step_idx": int(state.get("step_idx", 0) or 0),
+            }
         
         messages = list(state.get("messages") or [])
         
@@ -1862,7 +1897,8 @@ def create_routed_plan_execute_graph(
                         tool_args["promise_id"] = promise_id
             
             # Confirmation check (same as existing executor)
-            intent_confidence = state.get("intent_confidence", "").lower() if state.get("intent_confidence") else ""
+            # Default to "high" when planner didn't provide confidence (keeps UX smooth).
+            intent_confidence = (state.get("intent_confidence") or "high").lower()
             safety = state.get("safety") or {}
             requires_confirmation = safety.get("requires_confirmation", False)
             needs_confirmation = (
