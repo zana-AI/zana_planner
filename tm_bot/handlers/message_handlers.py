@@ -1095,6 +1095,12 @@ class MessageHandlers:
             # Stateful clarification: if we previously asked for missing fields, treat this message as the answer.
             pending = (context.user_data or {}).get("pending_clarification") if hasattr(context, "user_data") else None
             if pending:
+                # Default to treating the message as a new request unless a specific
+                # pending-clarification flow overrides it (prevents UnboundLocalError).
+                augmented_message = user_message
+                original_user_message = user_message
+                user_lang_code = user_lang.value if user_lang else "en"
+
                 # Handle pre-mutation confirmation (promise creation confirmations)
                 if pending.get("reason") == "pre_mutation_confirmation":
                     tool_name = pending.get("tool_name", "")
@@ -1430,8 +1436,26 @@ class MessageHandlers:
         except Exception as e:
             user_lang = get_user_language(update.effective_user)
             message = get_message("error_unexpected", user_lang, error=str(e))
-            await update.message.reply_text(message, parse_mode='Markdown')
-            logger.error(f"Unexpected error handling message from user {update.effective_user.id}: {str(e)}")
+            # Never use Markdown here: `error` may contain underscores/backticks/etc and Telegram will reject it.
+            try:
+                await self.response_service.reply_text(
+                    update,
+                    message,
+                    user_id=update.effective_user.id if update.effective_user else None,
+                    user_lang=user_lang,
+                    parse_mode=None,
+                    auto_translate=False,
+                )
+            except Exception:
+                # Absolute last-resort fallback
+                try:
+                    if update and getattr(update, "effective_message", None):
+                        await update.effective_message.reply_text(message)
+                except Exception:
+                    pass
+            logger.exception(
+                f"Unexpected error handling message from user {getattr(update.effective_user, 'id', None)}"
+            )
     
     async def _handle_weekly_visualization_if_present(
         self, update: Update, context: CallbackContext, 
