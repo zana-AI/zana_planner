@@ -1271,10 +1271,7 @@ Replace {user_id} with the actual user ID value."""
             'text': promise.text,
             'hours_per_week': promise.hours_per_week,
             'recurring': promise.recurring,
-            'start_date': promise.start_date.isoformat() if promise.start_date else '',
             'end_date': promise.end_date.isoformat() if promise.end_date else '',
-            'angle_deg': promise.angle_deg,
-            'radius': promise.radius
         }
 
     def _format_weekly_report(self, summary: Dict) -> str:
