@@ -1598,6 +1598,93 @@ def create_webapp_api(
             logger.exception(f"Error getting following for user {user_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get following: {str(e)}")
     
+    # Promise Suggestions endpoints
+    class CreateSuggestionRequest(BaseModel):
+        to_user_id: str
+        template_id: Optional[str] = None
+        freeform_text: Optional[str] = None
+        message: Optional[str] = None
+    
+    @app.post("/api/suggestions")
+    async def create_suggestion(
+        request: CreateSuggestionRequest,
+        user_id: int = Depends(get_current_user)
+    ):
+        """Create a promise suggestion for another user."""
+        try:
+            from repositories.suggestions_repo import SuggestionsRepository
+            
+            # Validate: must have either template_id or freeform_text
+            if not request.template_id and not request.freeform_text:
+                raise HTTPException(status_code=400, detail="Must provide either template_id or freeform_text")
+            
+            # Can't suggest to yourself
+            if str(user_id) == str(request.to_user_id):
+                raise HTTPException(status_code=400, detail="Cannot suggest a promise to yourself")
+            
+            suggestions_repo = SuggestionsRepository(app.state.root_dir)
+            suggestion_id = suggestions_repo.create_suggestion(
+                from_user_id=str(user_id),
+                to_user_id=str(request.to_user_id),
+                template_id=request.template_id,
+                freeform_text=request.freeform_text,
+                message=request.message
+            )
+            
+            logger.info(f"User {user_id} created suggestion {suggestion_id} for user {request.to_user_id}")
+            return {"status": "success", "suggestion_id": suggestion_id}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error creating suggestion: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create suggestion: {str(e)}")
+    
+    @app.get("/api/suggestions/pending")
+    async def get_pending_suggestions(
+        user_id: int = Depends(get_current_user)
+    ):
+        """Get pending suggestions sent to the current user."""
+        try:
+            from repositories.suggestions_repo import SuggestionsRepository
+            
+            suggestions_repo = SuggestionsRepository(app.state.root_dir)
+            suggestions = suggestions_repo.get_pending_suggestions_for_user(str(user_id))
+            
+            return {"suggestions": suggestions}
+        except Exception as e:
+            logger.exception(f"Error getting pending suggestions: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get suggestions: {str(e)}")
+    
+    @app.put("/api/suggestions/{suggestion_id}/respond")
+    async def respond_to_suggestion(
+        suggestion_id: str,
+        response: str = Query(..., regex="^(accept|decline)$"),
+        user_id: int = Depends(get_current_user)
+    ):
+        """Accept or decline a suggestion."""
+        try:
+            from repositories.suggestions_repo import SuggestionsRepository
+            
+            suggestions_repo = SuggestionsRepository(app.state.root_dir)
+            
+            new_status = "accepted" if response == "accept" else "declined"
+            success = suggestions_repo.update_suggestion_status(
+                suggestion_id=suggestion_id,
+                new_status=new_status,
+                user_id=str(user_id)
+            )
+            
+            if not success:
+                raise HTTPException(status_code=404, detail="Suggestion not found or not authorized")
+            
+            logger.info(f"User {user_id} {response}ed suggestion {suggestion_id}")
+            return {"status": "success", "new_status": new_status}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error responding to suggestion: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to respond to suggestion: {str(e)}")
+    
     @app.get("/api/users/{user_id}/public-promises", response_model=List[PublicPromiseBadge])
     async def get_public_promises(
         user_id: int,
