@@ -39,25 +39,47 @@ class PromisesRepository:
         """
         user = str(user_id)
         with get_db_session() as session:
+            # Build a map of promise_uuid to current_id for parent_id resolution
+            # This needs to include all user's promises, not just filtered results
+            all_rows = session.execute(
+                text("SELECT promise_uuid, current_id FROM promises WHERE user_id = :user_id AND is_deleted = 0"),
+                {"user_id": user}
+            ).fetchall()
+            uuid_to_id = {str(r[0]): str(r[1]) for r in all_rows}
+            
             # Resolve parent_id to parent_uuid if provided
             parent_uuid = None
-            if parent_id:
-                parent_uuid = resolve_promise_uuid(session, user, parent_id)
-                if not parent_uuid:
-                    return []  # Parent doesn't exist, return empty list
+            if parent_id is not None:
+                if parent_id:  # Non-empty string
+                    parent_uuid = resolve_promise_uuid(session, user, parent_id)
+                    if not parent_uuid:
+                        return []  # Parent doesn't exist, return empty list
+                # If parent_id is empty string, parent_uuid remains None (for top-level)
             
             # Build query based on parent filter
             if parent_id is not None:
-                # Filter by specific parent (including NULL for top-level when parent_id="")
-                query = text("""
-                    SELECT promise_uuid, current_id, text, hours_per_week, recurring, start_date, end_date, 
-                           angle_deg, radius, visibility, description, parent_promise_uuid
-                    FROM promises
-                    WHERE user_id = :user_id AND is_deleted = 0 
-                      AND (parent_promise_uuid = :parent_uuid OR (:parent_uuid IS NULL AND parent_promise_uuid IS NULL))
-                    ORDER BY current_id ASC;
-                """)
-                params = {"user_id": user, "parent_uuid": parent_uuid}
+                # Filter by specific parent (or NULL if parent_id is empty string)
+                if parent_uuid:
+                    query = text("""
+                        SELECT promise_uuid, current_id, text, hours_per_week, recurring, start_date, end_date, 
+                               angle_deg, radius, visibility, description, parent_promise_uuid
+                        FROM promises
+                        WHERE user_id = :user_id AND is_deleted = 0 
+                          AND parent_promise_uuid = :parent_uuid
+                        ORDER BY current_id ASC;
+                    """)
+                    params = {"user_id": user, "parent_uuid": parent_uuid}
+                else:
+                    # Empty string parent_id means get top-level promises only
+                    query = text("""
+                        SELECT promise_uuid, current_id, text, hours_per_week, recurring, start_date, end_date, 
+                               angle_deg, radius, visibility, description, parent_promise_uuid
+                        FROM promises
+                        WHERE user_id = :user_id AND is_deleted = 0 
+                          AND parent_promise_uuid IS NULL
+                        ORDER BY current_id ASC;
+                    """)
+                    params = {"user_id": user}
             else:
                 # Return all promises regardless of parent
                 query = text("""
@@ -70,11 +92,6 @@ class PromisesRepository:
                 params = {"user_id": user}
             
             rows = session.execute(query, params).mappings().fetchall()
-            
-            # Build a map of promise_uuid to current_id for parent_id resolution
-            uuid_to_id = {}
-            for r in rows:
-                uuid_to_id[str(r["promise_uuid"])] = str(r["current_id"])
 
         promises: List[Promise] = []
         for r in rows:
@@ -88,7 +105,7 @@ class PromisesRepository:
             if "description" in r.keys():
                 description = str(r["description"]) if r["description"] else None
             
-            # Resolve parent_promise_uuid to parent_id
+            # Resolve parent_promise_uuid to parent_id using the complete map
             parent_promise_id = None
             if "parent_promise_uuid" in r.keys() and r["parent_promise_uuid"]:
                 parent_promise_uuid = str(r["parent_promise_uuid"])
@@ -142,8 +159,8 @@ class PromisesRepository:
             if "parent_promise_uuid" in row.keys() and row["parent_promise_uuid"]:
                 parent_promise_uuid = str(row["parent_promise_uuid"])
                 parent_row = session.execute(
-                    text("SELECT current_id FROM promises WHERE promise_uuid = :parent_uuid LIMIT 1"),
-                    {"parent_uuid": parent_promise_uuid}
+                    text("SELECT current_id FROM promises WHERE user_id = :user_id AND promise_uuid = :parent_uuid LIMIT 1"),
+                    {"user_id": user, "parent_uuid": parent_promise_uuid}
                 ).mappings().fetchone()
                 if parent_row:
                     parent_promise_id = str(parent_row["current_id"])
@@ -202,7 +219,7 @@ class PromisesRepository:
             # Resolve parent_id to parent_promise_uuid if provided
             parent_promise_uuid = None
             if promise.parent_id:
-                parent_id = (promise.parent_id or "").strip().upper()
+                parent_id = promise.parent_id.strip().upper()
                 parent_promise_uuid = resolve_promise_uuid(session, user, parent_id)
                 if not parent_promise_uuid:
                     raise ValueError(f"Parent promise '{parent_id}' not found")
