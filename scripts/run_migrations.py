@@ -51,7 +51,7 @@ def main():
     """Run Alembic migrations."""
     # Get the alembic directory
     alembic_dir = project_root / "tm_bot" / "db" / "alembic"
-    alembic_ini = alembic_dir / "alembic.ini"
+    alembic_ini = project_root / "tm_bot" / "db" / "alembic.ini"
     
     if not alembic_ini.exists():
         print(f"Error: alembic.ini not found at {alembic_ini}")
