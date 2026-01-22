@@ -286,6 +286,25 @@ export interface CreateSuggestionRequest {
   message?: string;
 }
 
+// Admin create promise types
+export interface DayReminder {
+  weekday: number; // 0-6 (Monday-Sunday)
+  time: string; // HH:MM format
+  enabled: boolean;
+}
+
+export interface CreatePromiseForUserRequest {
+  target_user_id: number;
+  text: string;
+  hours_per_week: number;
+  recurring?: boolean;
+  start_date?: string; // ISO date string (YYYY-MM-DD)
+  end_date?: string; // ISO date string (YYYY-MM-DD)
+  visibility?: 'private' | 'followers' | 'clubs' | 'public';
+  description?: string;
+  reminders?: DayReminder[];
+}
+
 // Extended PromiseData to include metric fields
 export interface PromiseData {
   text: string;

@@ -2439,6 +2439,160 @@ Rules:
             logger.exception(f"Error generating template draft: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to generate template draft: {str(e)}")
     
+    # Admin create promise endpoint
+    class DayReminder(BaseModel):
+        weekday: int  # 0-6 (Monday-Sunday)
+        time: str  # HH:MM format
+        enabled: bool = True
+    
+    class CreatePromiseForUserRequest(BaseModel):
+        target_user_id: int
+        text: str
+        hours_per_week: float
+        recurring: bool = True
+        start_date: Optional[str] = None  # ISO date string (YYYY-MM-DD)
+        end_date: Optional[str] = None  # ISO date string (YYYY-MM-DD)
+        visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
+        description: Optional[str] = None
+        reminders: Optional[List[DayReminder]] = None
+    
+    @app.post("/api/admin/promises")
+    async def create_promise_for_user(
+        request: CreatePromiseForUserRequest,
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """Create a promise for a user (admin only)."""
+        try:
+            from services.planner_api_adapter import PlannerAPIAdapter
+            from datetime import date as date_type
+            from datetime import time as time_type
+            
+            # Validate visibility
+            if request.visibility not in ["private", "followers", "clubs", "public"]:
+                raise HTTPException(status_code=400, detail="Visibility must be 'private', 'followers', 'clubs', or 'public'")
+            
+            # Parse dates
+            start_date_obj = None
+            end_date_obj = None
+            if request.start_date:
+                try:
+                    start_date_obj = date_type.fromisoformat(request.start_date)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail=f"Invalid start_date format: {request.start_date}. Expected YYYY-MM-DD")
+            
+            if request.end_date:
+                try:
+                    end_date_obj = date_type.fromisoformat(request.end_date)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail=f"Invalid end_date format: {request.end_date}. Expected YYYY-MM-DD")
+            
+            # Validate dates
+            if start_date_obj and end_date_obj and start_date_obj > end_date_obj:
+                raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+            
+            # Validate hours_per_week
+            if request.hours_per_week < 0:
+                raise HTTPException(status_code=400, detail="hours_per_week must be >= 0")
+            
+            # Create promise using PlannerAPIAdapter
+            plan_keeper = PlannerAPIAdapter(app.state.root_dir)
+            result = plan_keeper.add_promise(
+                user_id=request.target_user_id,
+                promise_text=request.text,
+                num_hours_promised_per_week=request.hours_per_week,
+                recurring=request.recurring,
+                start_date=start_date_obj,
+                end_date=end_date_obj
+            )
+            
+            # Extract promise_id from result message (format: "#P123456 Promise 'text' added successfully.")
+            import re
+            match = re.search(r'#([PT]\w+)', result)
+            if not match:
+                raise HTTPException(status_code=500, detail="Failed to extract promise ID from creation result")
+            promise_id = match.group(1)
+            
+            # Update visibility and description if provided
+            promises_repo = PromisesRepository(app.state.root_dir)
+            promise = promises_repo.get_promise(request.target_user_id, promise_id)
+            if not promise:
+                raise HTTPException(status_code=500, detail="Failed to retrieve created promise")
+            
+            if request.visibility != "private" or request.description:
+                promise.visibility = request.visibility
+                if request.description:
+                    promise.description = request.description
+                promises_repo.upsert_promise(request.target_user_id, promise)
+            
+            # Create reminders if provided
+            if request.reminders:
+                # Get user's timezone
+                settings_repo = SettingsRepository(app.state.root_dir)
+                settings = settings_repo.get_settings(request.target_user_id)
+                user_tz = settings.timezone if settings and settings.timezone and settings.timezone != "DEFAULT" else "UTC"
+                
+                # Get promise_uuid
+                user_str = str(request.target_user_id)
+                with get_db_session() as session:
+                    promise_uuid = resolve_promise_uuid(session, user_str, promise_id)
+                    if not promise_uuid:
+                        raise HTTPException(status_code=500, detail="Failed to resolve promise UUID")
+                
+                # Convert reminders to ReminderRequest format
+                reminders_repo = RemindersRepository(app.state.root_dir)
+                dispatch_service = ReminderDispatchService(app.state.root_dir)
+                
+                reminders_data = []
+                for rem in request.reminders:
+                    if not rem.enabled:
+                        continue
+                    
+                    # Validate weekday
+                    if rem.weekday < 0 or rem.weekday > 6:
+                        raise HTTPException(status_code=400, detail=f"Invalid weekday: {rem.weekday}. Must be 0-6 (Monday-Sunday)")
+                    
+                    # Validate time format
+                    try:
+                        time_parts = rem.time.split(":")
+                        if len(time_parts) != 2:
+                            raise ValueError
+                        hour = int(time_parts[0])
+                        minute = int(time_parts[1])
+                        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                            raise ValueError
+                        time_obj = time_type(hour, minute)
+                    except (ValueError, IndexError):
+                        raise HTTPException(status_code=400, detail=f"Invalid time format: {rem.time}. Expected HH:MM")
+                    
+                    reminder_data = {
+                        "promise_uuid": promise_uuid,
+                        "kind": "fixed_time",
+                        "weekday": rem.weekday,
+                        "time_local": time_obj,
+                        "tz": user_tz,
+                        "enabled": True
+                    }
+                    
+                    # Compute next_run_at_utc
+                    next_run = dispatch_service.compute_next_run_at_utc(reminder_data, request.target_user_id)
+                    if next_run:
+                        reminder_data["next_run_at_utc"] = dt_to_utc_iso(next_run)
+                    
+                    reminders_data.append(reminder_data)
+                
+                # Replace reminders
+                if reminders_data:
+                    reminders_repo.replace_reminders(promise_uuid, reminders_data)
+            
+            logger.info(f"Admin {admin_id} created promise {promise_id} for user {request.target_user_id}")
+            return {"status": "success", "promise_id": promise_id, "message": result}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error creating promise for user: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create promise: {str(e)}")
+    
     @app.post("/api/admin/promote")
     async def promote_staging_to_prod(
         admin_id: int = Depends(get_admin_user)

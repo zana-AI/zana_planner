@@ -17,7 +17,8 @@ import type {
   WeeklyDistractionsResponse,
   PromiseSuggestion,
   CreateSuggestionRequest,
-  BotToken
+  BotToken,
+  CreatePromiseForUserRequest
 } from '../types';
 
 const API_BASE = '/api';
@@ -520,6 +521,16 @@ class ApiClient {
   async declineSuggestion(suggestionId: string): Promise<{ status: string; message: string }> {
     return this.request<{ status: string; message: string }>(`/suggestions/${suggestionId}/decline`, {
       method: 'POST',
+    });
+  }
+
+  /**
+   * Create a promise for a user (admin only).
+   */
+  async createPromiseForUser(request: CreatePromiseForUserRequest): Promise<{ status: string; promise_id: string; message: string }> {
+    return this.request<{ status: string; promise_id: string; message: string }>('/admin/promises', {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 }
