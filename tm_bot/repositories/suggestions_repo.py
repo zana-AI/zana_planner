@@ -23,18 +23,24 @@ class SuggestionsRepository:
         
         Returns the suggestion_id.
         """
+        import json
         suggestion_id = str(uuid.uuid4())
         now = utc_now_iso()
+        
+        # Store freeform_text as draft_json (matching the DB schema)
+        draft_json = None
+        if freeform_text:
+            draft_json = json.dumps({"freeform_text": freeform_text})
         
         with get_db_session() as session:
             session.execute(
                 text("""
                     INSERT INTO promise_suggestions (
                         suggestion_id, from_user_id, to_user_id, status,
-                        template_id, freeform_text, message, created_at_utc
+                        template_id, draft_json, message, created_at_utc
                     ) VALUES (
                         :suggestion_id, :from_user_id, :to_user_id, 'pending',
-                        :template_id, :freeform_text, :message, :created_at_utc
+                        :template_id, :draft_json, :message, :created_at_utc
                     )
                 """),
                 {
@@ -42,7 +48,7 @@ class SuggestionsRepository:
                     "from_user_id": str(from_user_id),
                     "to_user_id": str(to_user_id),
                     "template_id": template_id,
-                    "freeform_text": freeform_text,
+                    "draft_json": draft_json,
                     "message": message,
                     "created_at_utc": now,
                 }
@@ -56,7 +62,7 @@ class SuggestionsRepository:
             row = session.execute(
                 text("""
                     SELECT suggestion_id, from_user_id, to_user_id, status,
-                           template_id, freeform_text, message, created_at_utc, responded_at_utc
+                           template_id, draft_json, message, created_at_utc, responded_at_utc
                     FROM promise_suggestions
                     WHERE suggestion_id = :suggestion_id
                 """),
@@ -74,7 +80,7 @@ class SuggestionsRepository:
             rows = session.execute(
                 text("""
                     SELECT s.suggestion_id, s.from_user_id, s.to_user_id, s.status,
-                           s.template_id, s.freeform_text, s.message, s.created_at_utc,
+                           s.template_id, s.draft_json, s.message, s.created_at_utc,
                            u.first_name, u.last_name, u.username,
                            t.title as template_title, t.emoji as template_emoji
                     FROM promise_suggestions s
@@ -95,7 +101,7 @@ class SuggestionsRepository:
             rows = session.execute(
                 text("""
                     SELECT s.suggestion_id, s.from_user_id, s.to_user_id, s.status,
-                           s.template_id, s.freeform_text, s.message, s.created_at_utc,
+                           s.template_id, s.draft_json, s.message, s.created_at_utc,
                            s.responded_at_utc,
                            u.first_name, u.last_name, u.username,
                            t.title as template_title, t.emoji as template_emoji
