@@ -28,18 +28,53 @@ class PromisesRepository:
         # root_dir kept for backward compatibility but not used for PostgreSQL
         self.root_dir = root_dir
 
-    def list_promises(self, user_id: int) -> List[Promise]:
+    def list_promises(self, user_id: int, parent_id: Optional[str] = None) -> List[Promise]:
+        """
+        List promises for a user, optionally filtered by parent.
+        
+        Args:
+            user_id: User ID
+            parent_id: Optional parent promise ID. If provided, only returns subtasks of that parent.
+                      If None, returns all promises (including subtasks).
+        """
         user = str(user_id)
         with get_db_session() as session:
-            rows = session.execute(
-                text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, visibility, description
+            # Resolve parent_id to parent_uuid if provided
+            parent_uuid = None
+            if parent_id:
+                parent_uuid = resolve_promise_uuid(session, user, parent_id)
+                if not parent_uuid:
+                    return []  # Parent doesn't exist, return empty list
+            
+            # Build query based on parent filter
+            if parent_id is not None:
+                # Filter by specific parent (including NULL for top-level when parent_id="")
+                query = text("""
+                    SELECT promise_uuid, current_id, text, hours_per_week, recurring, start_date, end_date, 
+                           angle_deg, radius, visibility, description, parent_promise_uuid
+                    FROM promises
+                    WHERE user_id = :user_id AND is_deleted = 0 
+                      AND (parent_promise_uuid = :parent_uuid OR (:parent_uuid IS NULL AND parent_promise_uuid IS NULL))
+                    ORDER BY current_id ASC;
+                """)
+                params = {"user_id": user, "parent_uuid": parent_uuid}
+            else:
+                # Return all promises regardless of parent
+                query = text("""
+                    SELECT promise_uuid, current_id, text, hours_per_week, recurring, start_date, end_date, 
+                           angle_deg, radius, visibility, description, parent_promise_uuid
                     FROM promises
                     WHERE user_id = :user_id AND is_deleted = 0
                     ORDER BY current_id ASC;
-                """),
-                {"user_id": user},
-            ).mappings().fetchall()
+                """)
+                params = {"user_id": user}
+            
+            rows = session.execute(query, params).mappings().fetchall()
+            
+            # Build a map of promise_uuid to current_id for parent_id resolution
+            uuid_to_id = {}
+            for r in rows:
+                uuid_to_id[str(r["promise_uuid"])] = str(r["current_id"])
 
         promises: List[Promise] = []
         for r in rows:
@@ -52,6 +87,12 @@ class PromisesRepository:
             description = None
             if "description" in r.keys():
                 description = str(r["description"]) if r["description"] else None
+            
+            # Resolve parent_promise_uuid to parent_id
+            parent_promise_id = None
+            if "parent_promise_uuid" in r.keys() and r["parent_promise_uuid"]:
+                parent_promise_uuid = str(r["parent_promise_uuid"])
+                parent_promise_id = uuid_to_id.get(parent_promise_uuid)
             
             promises.append(
                 Promise(
@@ -66,6 +107,7 @@ class PromisesRepository:
                     radius=int(r["radius"]),
                     visibility=visibility,
                     description=description,
+                    parent_id=parent_promise_id,
                 )
             )
         return promises
@@ -83,16 +125,28 @@ class PromisesRepository:
 
             row = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted, visibility, description
+                    SELECT promise_uuid, current_id, text, hours_per_week, recurring, start_date, end_date, 
+                           angle_deg, radius, is_deleted, visibility, description, parent_promise_uuid
                     FROM promises
                     WHERE user_id = :user_id AND promise_uuid = :p_uuid
                     LIMIT 1;
                 """),
                 {"user_id": user, "p_uuid": p_uuid},
             ).mappings().fetchone()
-
-        if not row or int(row["is_deleted"]) == 1:
-            return None
+            
+            if not row or int(row["is_deleted"]) == 1:
+                return None
+            
+            # Resolve parent_promise_uuid to parent_id if present
+            parent_promise_id = None
+            if "parent_promise_uuid" in row.keys() and row["parent_promise_uuid"]:
+                parent_promise_uuid = str(row["parent_promise_uuid"])
+                parent_row = session.execute(
+                    text("SELECT current_id FROM promises WHERE promise_uuid = :parent_uuid LIMIT 1"),
+                    {"parent_uuid": parent_promise_uuid}
+                ).mappings().fetchone()
+                if parent_row:
+                    parent_promise_id = str(parent_row["current_id"])
 
         # Handle visibility column - may not exist in older schemas
         visibility = "private"
@@ -116,6 +170,7 @@ class PromisesRepository:
             radius=int(row["radius"]),
             visibility=visibility,
             description=description,
+            parent_id=parent_promise_id,
         )
 
     def upsert_promise(self, user_id: int, promise: Promise) -> None:
@@ -143,6 +198,14 @@ class PromisesRepository:
             is_new = not bool(existing)
             if is_new:
                 p_uuid = str(uuid.uuid4())
+            
+            # Resolve parent_id to parent_promise_uuid if provided
+            parent_promise_uuid = None
+            if promise.parent_id:
+                parent_id = (promise.parent_id or "").strip().upper()
+                parent_promise_uuid = resolve_promise_uuid(session, user, parent_id)
+                if not parent_promise_uuid:
+                    raise ValueError(f"Parent promise '{parent_id}' not found")
 
             # If renaming current_id, ensure uniqueness and keep old id as alias
             event_type = "create" if is_new else "update"
@@ -185,11 +248,11 @@ class PromisesRepository:
                     INSERT INTO promises(
                         promise_uuid, user_id, current_id, text, hours_per_week, recurring,
                         start_date, end_date, angle_deg, radius, is_deleted, visibility, description,
-                        created_at_utc, updated_at_utc
+                        parent_promise_uuid, created_at_utc, updated_at_utc
                     ) VALUES (
                         :p_uuid, :user_id, :pid, :text, :hours_per_week, :recurring,
                         :start_date, :end_date, :angle_deg, :radius, :is_deleted, :visibility, :description,
-                        :created_at_utc, :updated_at_utc
+                        :parent_promise_uuid, :created_at_utc, :updated_at_utc
                     )
                     ON CONFLICT (promise_uuid) DO UPDATE SET
                         user_id = EXCLUDED.user_id,
@@ -204,6 +267,7 @@ class PromisesRepository:
                         is_deleted = EXCLUDED.is_deleted,
                         visibility = EXCLUDED.visibility,
                         description = EXCLUDED.description,
+                        parent_promise_uuid = EXCLUDED.parent_promise_uuid,
                         updated_at_utc = EXCLUDED.updated_at_utc;
                 """),
                 {
@@ -220,6 +284,7 @@ class PromisesRepository:
                     "is_deleted": 0,
                     "visibility": str(promise.visibility or "private"),
                     "description": promise.description or None,
+                    "parent_promise_uuid": parent_promise_uuid,
                     "created_at_utc": now if is_new else now,
                     "updated_at_utc": now,
                 },
@@ -315,3 +380,50 @@ class PromisesRepository:
             )
 
         return True
+
+    def get_subtasks(self, user_id: int, parent_id: str) -> List[Promise]:
+        """
+        Get all direct subtasks (children) of a given parent promise.
+        
+        Args:
+            user_id: User ID
+            parent_id: ID of the parent promise
+            
+        Returns:
+            List of Promise objects that are direct children of the parent
+        """
+        return self.list_promises(user_id, parent_id=parent_id)
+    
+    def has_subtasks(self, user_id: int, promise_id: str) -> bool:
+        """
+        Check if a promise has any subtasks.
+        
+        Args:
+            user_id: User ID
+            promise_id: ID of the promise to check
+            
+        Returns:
+            True if the promise has at least one subtask, False otherwise
+        """
+        user = str(user_id)
+        pid = (promise_id or "").strip().upper()
+        if not pid:
+            return False
+        
+        with get_db_session() as session:
+            p_uuid = resolve_promise_uuid(session, user, pid)
+            if not p_uuid:
+                return False
+            
+            result = session.execute(
+                text("""
+                    SELECT COUNT(*) as count 
+                    FROM promises 
+                    WHERE user_id = :user_id 
+                      AND parent_promise_uuid = :parent_uuid 
+                      AND is_deleted = 0
+                """),
+                {"user_id": user, "parent_uuid": p_uuid}
+            ).fetchone()
+            
+            return result and result[0] > 0

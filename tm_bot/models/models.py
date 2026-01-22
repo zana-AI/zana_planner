@@ -17,6 +17,7 @@ class Promise:
     radius: Optional[int] = 0
     visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
     description: Optional[str] = None  # Additional description/content (URLs, notes, etc.)
+    parent_id: Optional[str] = None  # ID of parent promise (for subtasks)
     # Future: pinned/focus flags, tags
 
     def is_check_based(self) -> bool:
