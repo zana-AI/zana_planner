@@ -34,8 +34,13 @@ class PromisesRepository:
         
         Args:
             user_id: User ID
-            parent_id: Optional parent promise ID. If provided, only returns subtasks of that parent.
-                      If None, returns all promises (including subtasks).
+            parent_id: Optional parent promise ID for filtering:
+                      - None (default): Returns all promises (including subtasks)
+                      - "PARENT_ID": Returns only direct children of that parent
+                      - "" (empty string): Returns only top-level promises (no parent)
+        
+        Returns:
+            List of Promise objects matching the filter criteria
         """
         user = str(user_id)
         with get_db_session() as session:
@@ -219,10 +224,9 @@ class PromisesRepository:
             # Resolve parent_id to parent_promise_uuid if provided
             parent_promise_uuid = None
             if promise.parent_id:
-                parent_id = promise.parent_id.strip().upper()
-                parent_promise_uuid = resolve_promise_uuid(session, user, parent_id)
+                parent_promise_uuid = resolve_promise_uuid(session, user, promise.parent_id)
                 if not parent_promise_uuid:
-                    raise ValueError(f"Parent promise '{parent_id}' not found")
+                    raise ValueError(f"Parent promise '{promise.parent_id}' not found")
 
             # If renaming current_id, ensure uniqueness and keep old id as alias
             event_type = "create" if is_new else "update"

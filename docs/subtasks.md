@@ -117,9 +117,8 @@ if repo.has_subtasks(user_id, "PROJECT01"):
 # Get all promises (top-level and subtasks)
 all_promises = repo.list_promises(user_id)
 
-# Get only top-level promises (no parent)
-# Note: This requires filtering client-side currently
-top_level = [p for p in all_promises if p.parent_id is None]
+# Get only top-level promises (no parent) using empty string filter
+top_level = repo.list_promises(user_id, parent_id="")
 ```
 
 ### Nested Hierarchies
