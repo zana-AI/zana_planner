@@ -2,8 +2,7 @@
 import uuid
 from typing import Optional, List, Dict, Any
 from sqlalchemy import text
-from tm_bot.db.connection import get_db_session
-from tm_bot.db.time_utils import utc_now_iso
+from db.postgres_db import get_db_session, utc_now_iso
 
 
 class SuggestionsRepository:
