@@ -1177,28 +1177,39 @@ Generate the calendar links now:"""
                 await query.edit_message_text(f"ℹ️ This suggestion was already {suggestion['status']}.")
                 return
             
-            # Determine promise text
+            # Determine promise text and hours per week
             promise_text = None
+            hours_per_week = 0.0
             if suggestion.get('template_id'):
                 templates_repo = TemplatesRepository(self.plan_keeper.root_dir)
                 template = templates_repo.get_template(suggestion['template_id'])
                 if template:
                     promise_text = template.get('title', 'Untitled Promise')
+                    # Use template's target_value and metric_type
+                    target_value = template.get('target_value', 0)
+                    metric_type = template.get('metric_type', 'count')
+                    
+                    if metric_type == 'hours':
+                        hours_per_week = float(target_value)
+                    else:
+                        hours_per_week = 0.0  # Check-based for count metrics
             elif suggestion.get('draft_json'):
                 try:
                     draft = json.loads(suggestion['draft_json'])
                     promise_text = draft.get('freeform_text', 'Custom Promise')
+                    hours_per_week = 0.0  # Freeform suggestions are check-based
                 except:
                     promise_text = 'Custom Promise'
+                    hours_per_week = 0.0
             
             if not promise_text:
                 promise_text = 'Suggested Promise'
             
-            # Create the promise for the user
+            # Create the promise for the user with proper hours
             result = self.plan_keeper.add_promise(
                 user_id=user_id,
                 promise_text=promise_text,
-                num_hours_promised_per_week=0,  # Check-based promise
+                num_hours_promised_per_week=hours_per_week,
                 recurring=True
             )
             
