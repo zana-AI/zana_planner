@@ -1149,3 +1149,128 @@ Generate the calendar links now:"""
         
         cancel_msg = "❌ Broadcast cancelled."
         await query.edit_message_text(cancel_msg)
+    
+    async def _handle_suggestion_accept(self, query, suggestion_id: str, user_lang: Language):
+        """Handle accepting a promise suggestion - create the promise for the user."""
+        user_id = query.from_user.id
+        
+        try:
+            from repositories.suggestions_repo import SuggestionsRepository
+            from repositories.templates_repo import TemplatesRepository
+            import json
+            
+            suggestions_repo = SuggestionsRepository(self.plan_keeper.root_dir)
+            
+            # Get the suggestion
+            suggestion = suggestions_repo.get_suggestion(suggestion_id)
+            if not suggestion:
+                await query.edit_message_text("❌ Suggestion not found or already processed.")
+                return
+            
+            # Verify this user is the recipient
+            if str(suggestion['to_user_id']) != str(user_id):
+                await query.edit_message_text("❌ You are not authorized to respond to this suggestion.")
+                return
+            
+            # Check if already processed
+            if suggestion['status'] != 'pending':
+                await query.edit_message_text(f"ℹ️ This suggestion was already {suggestion['status']}.")
+                return
+            
+            # Determine promise text
+            promise_text = None
+            if suggestion.get('template_id'):
+                templates_repo = TemplatesRepository(self.plan_keeper.root_dir)
+                template = templates_repo.get_template(suggestion['template_id'])
+                if template:
+                    promise_text = template.get('title', 'Untitled Promise')
+            elif suggestion.get('draft_json'):
+                try:
+                    draft = json.loads(suggestion['draft_json'])
+                    promise_text = draft.get('freeform_text', 'Custom Promise')
+                except:
+                    promise_text = 'Custom Promise'
+            
+            if not promise_text:
+                promise_text = 'Suggested Promise'
+            
+            # Create the promise for the user
+            result = self.plan_keeper.add_promise(
+                user_id=user_id,
+                promise_text=promise_text,
+                num_hours_promised_per_week=0,  # Check-based promise
+                recurring=True
+            )
+            
+            # Update suggestion status
+            suggestions_repo.update_suggestion_status(suggestion_id, 'accepted', str(user_id))
+            
+            # Get sender name for notification
+            from repositories.settings_repo import SettingsRepository
+            settings_repo = SettingsRepository(self.plan_keeper.root_dir)
+            sender_settings = settings_repo.get_settings(int(suggestion['from_user_id']))
+            sender_name = sender_settings.first_name or sender_settings.username or f"User {suggestion['from_user_id']}"
+            
+            # Update the message
+            success_msg = (
+                f"✅ **Promise accepted!**\n\n"
+                f"📋 {promise_text}\n\n"
+                f"Suggested by: {sender_name}\n\n"
+                f"You can now track this promise in your dashboard!"
+            )
+            await query.edit_message_text(success_msg, parse_mode='Markdown')
+            
+            # Notify the sender that their suggestion was accepted
+            try:
+                receiver_name = settings_repo.get_settings(user_id).first_name or f"User {user_id}"
+                notify_msg = f"🎉 Great news! {receiver_name} accepted your suggestion:\n\n📋 {promise_text}"
+                await self.application.bot.send_message(
+                    chat_id=int(suggestion['from_user_id']),
+                    text=notify_msg
+                )
+            except Exception as e:
+                logger.warning(f"Could not notify sender about accepted suggestion: {e}")
+            
+            logger.info(f"User {user_id} accepted suggestion {suggestion_id}")
+            
+        except Exception as e:
+            logger.error(f"Error accepting suggestion {suggestion_id}: {e}")
+            await query.edit_message_text("❌ Error accepting suggestion. Please try again.")
+    
+    async def _handle_suggestion_decline(self, query, suggestion_id: str, user_lang: Language):
+        """Handle declining a promise suggestion."""
+        user_id = query.from_user.id
+        
+        try:
+            from repositories.suggestions_repo import SuggestionsRepository
+            
+            suggestions_repo = SuggestionsRepository(self.plan_keeper.root_dir)
+            
+            # Get the suggestion
+            suggestion = suggestions_repo.get_suggestion(suggestion_id)
+            if not suggestion:
+                await query.edit_message_text("❌ Suggestion not found or already processed.")
+                return
+            
+            # Verify this user is the recipient
+            if str(suggestion['to_user_id']) != str(user_id):
+                await query.edit_message_text("❌ You are not authorized to respond to this suggestion.")
+                return
+            
+            # Check if already processed
+            if suggestion['status'] != 'pending':
+                await query.edit_message_text(f"ℹ️ This suggestion was already {suggestion['status']}.")
+                return
+            
+            # Update suggestion status
+            success = suggestions_repo.update_suggestion_status(suggestion_id, 'declined', str(user_id))
+            
+            if success:
+                await query.edit_message_text("❌ Suggestion declined.")
+                logger.info(f"User {user_id} declined suggestion {suggestion_id}")
+            else:
+                await query.edit_message_text("❌ Error declining suggestion. Please try again.")
+                
+        except Exception as e:
+            logger.error(f"Error declining suggestion {suggestion_id}: {e}")
+            await query.edit_message_text("❌ Error declining suggestion. Please try again.")
