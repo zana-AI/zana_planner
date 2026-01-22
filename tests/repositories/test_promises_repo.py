@@ -154,3 +154,236 @@ def test_promises_repo_writes_promise_events_for_create_rename_delete(tmp_path):
         assert snapshot.get("is_deleted") is True
     finally:
         conn.close()
+
+
+@pytest.mark.repo
+def test_promises_repo_create_subtask(tmp_path):
+    """Test creating a subtask with a parent promise."""
+    root = str(tmp_path)
+    repo = PromisesRepository(root)
+    user_id = 100
+
+    # Create parent promise
+    parent = Promise(
+        user_id=str(user_id),
+        id="PROJECT",
+        text="Big_Project",
+        hours_per_week=10.0,
+        recurring=True,
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 12, 31),
+    )
+    repo.upsert_promise(user_id, parent)
+
+    # Create subtask
+    subtask = Promise(
+        user_id=str(user_id),
+        id="TASK01",
+        text="Subtask_One",
+        hours_per_week=3.0,
+        recurring=True,
+        parent_id="PROJECT",
+    )
+    repo.upsert_promise(user_id, subtask)
+
+    # Verify subtask was created
+    retrieved = repo.get_promise(user_id, "TASK01")
+    assert retrieved is not None
+    assert retrieved.id == "TASK01"
+    assert retrieved.parent_id == "PROJECT"
+    assert retrieved.text == "Subtask_One"
+
+
+@pytest.mark.repo
+def test_promises_repo_list_subtasks(tmp_path):
+    """Test listing subtasks of a parent promise."""
+    root = str(tmp_path)
+    repo = PromisesRepository(root)
+    user_id = 200
+
+    # Create parent
+    parent = Promise(
+        user_id=str(user_id),
+        id="PROJ",
+        text="Project",
+        hours_per_week=10.0,
+        recurring=True,
+    )
+    repo.upsert_promise(user_id, parent)
+
+    # Create multiple subtasks
+    for i in range(1, 4):
+        subtask = Promise(
+            user_id=str(user_id),
+            id=f"SUB{i:02d}",
+            text=f"Subtask_{i}",
+            hours_per_week=2.0,
+            recurring=True,
+            parent_id="PROJ",
+        )
+        repo.upsert_promise(user_id, subtask)
+
+    # Create a top-level promise (no parent)
+    top_level = Promise(
+        user_id=str(user_id),
+        id="TOP",
+        text="Top_Level",
+        hours_per_week=1.0,
+        recurring=True,
+    )
+    repo.upsert_promise(user_id, top_level)
+
+    # Get all subtasks of PROJ
+    subtasks = repo.get_subtasks(user_id, "PROJ")
+    assert len(subtasks) == 3
+    assert all(s.parent_id == "PROJ" for s in subtasks)
+    assert sorted([s.id for s in subtasks]) == ["SUB01", "SUB02", "SUB03"]
+
+    # List all promises (should include parent and subtasks)
+    all_promises = repo.list_promises(user_id)
+    assert len(all_promises) == 5  # 1 parent + 3 subtasks + 1 top-level
+
+
+@pytest.mark.repo
+def test_promises_repo_has_subtasks(tmp_path):
+    """Test checking if a promise has subtasks."""
+    root = str(tmp_path)
+    repo = PromisesRepository(root)
+    user_id = 300
+
+    # Create parent without subtasks initially
+    parent = Promise(
+        user_id=str(user_id),
+        id="PARENT",
+        text="Parent_Promise",
+        hours_per_week=5.0,
+        recurring=True,
+    )
+    repo.upsert_promise(user_id, parent)
+
+    # Should not have subtasks yet
+    assert not repo.has_subtasks(user_id, "PARENT")
+
+    # Create a subtask
+    subtask = Promise(
+        user_id=str(user_id),
+        id="CHILD",
+        text="Child_Promise",
+        hours_per_week=2.0,
+        recurring=True,
+        parent_id="PARENT",
+    )
+    repo.upsert_promise(user_id, subtask)
+
+    # Should now have subtasks
+    assert repo.has_subtasks(user_id, "PARENT")
+
+
+@pytest.mark.repo
+def test_promises_repo_nested_subtasks(tmp_path):
+    """Test creating nested hierarchies of subtasks."""
+    root = str(tmp_path)
+    repo = PromisesRepository(root)
+    user_id = 400
+
+    # Create three-level hierarchy: PROJECT -> PHASE -> TASK
+    project = Promise(
+        user_id=str(user_id),
+        id="PROJECT",
+        text="Main_Project",
+        hours_per_week=20.0,
+        recurring=True,
+    )
+    repo.upsert_promise(user_id, project)
+
+    phase = Promise(
+        user_id=str(user_id),
+        id="PHASE1",
+        text="Phase_One",
+        hours_per_week=10.0,
+        recurring=True,
+        parent_id="PROJECT",
+    )
+    repo.upsert_promise(user_id, phase)
+
+    task = Promise(
+        user_id=str(user_id),
+        id="TASK1",
+        text="Task_One",
+        hours_per_week=5.0,
+        recurring=True,
+        parent_id="PHASE1",
+    )
+    repo.upsert_promise(user_id, task)
+
+    # Verify hierarchy
+    retrieved_task = repo.get_promise(user_id, "TASK1")
+    assert retrieved_task.parent_id == "PHASE1"
+
+    retrieved_phase = repo.get_promise(user_id, "PHASE1")
+    assert retrieved_phase.parent_id == "PROJECT"
+
+    retrieved_project = repo.get_promise(user_id, "PROJECT")
+    assert retrieved_project.parent_id is None
+
+    # Check subtasks at each level
+    project_subtasks = repo.get_subtasks(user_id, "PROJECT")
+    assert len(project_subtasks) == 1
+    assert project_subtasks[0].id == "PHASE1"
+
+    phase_subtasks = repo.get_subtasks(user_id, "PHASE1")
+    assert len(phase_subtasks) == 1
+    assert phase_subtasks[0].id == "TASK1"
+
+    task_subtasks = repo.get_subtasks(user_id, "TASK1")
+    assert len(task_subtasks) == 0
+
+
+@pytest.mark.repo
+def test_promises_repo_update_subtask_parent(tmp_path):
+    """Test updating a subtask to change its parent."""
+    root = str(tmp_path)
+    repo = PromisesRepository(root)
+    user_id = 500
+
+    # Create two parent promises
+    parent1 = Promise(
+        user_id=str(user_id),
+        id="PARENT1",
+        text="First_Parent",
+        hours_per_week=5.0,
+        recurring=True,
+    )
+    repo.upsert_promise(user_id, parent1)
+
+    parent2 = Promise(
+        user_id=str(user_id),
+        id="PARENT2",
+        text="Second_Parent",
+        hours_per_week=5.0,
+        recurring=True,
+    )
+    repo.upsert_promise(user_id, parent2)
+
+    # Create subtask under parent1
+    subtask = Promise(
+        user_id=str(user_id),
+        id="SUBTASK",
+        text="Mobile_Subtask",
+        hours_per_week=2.0,
+        recurring=True,
+        parent_id="PARENT1",
+    )
+    repo.upsert_promise(user_id, subtask)
+
+    # Verify initial parent
+    assert repo.get_subtasks(user_id, "PARENT1")[0].id == "SUBTASK"
+    assert len(repo.get_subtasks(user_id, "PARENT2")) == 0
+
+    # Move subtask to parent2
+    subtask.parent_id = "PARENT2"
+    repo.upsert_promise(user_id, subtask)
+
+    # Verify new parent
+    assert len(repo.get_subtasks(user_id, "PARENT1")) == 0
+    assert repo.get_subtasks(user_id, "PARENT2")[0].id == "SUBTASK"
