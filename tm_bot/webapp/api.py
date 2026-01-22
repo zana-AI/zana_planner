@@ -122,6 +122,98 @@ async def send_follow_notification(bot_token: str, follower_id: int, followee_id
         logger.warning(f"Unexpected error sending follow notification to user {followee_id}: {e}")
 
 
+async def send_suggestion_notifications(
+    bot_token: str,
+    sender_id: int,
+    receiver_id: int,
+    template_title: Optional[str],
+    freeform_text: Optional[str],
+    message: Optional[str],
+    root_dir: str
+) -> None:
+    """
+    Send Telegram notifications for a promise suggestion.
+    
+    Args:
+        bot_token: Telegram bot token
+        sender_id: User ID of the person who sent the suggestion
+        receiver_id: User ID of the person receiving the suggestion
+        template_title: Title of the template if template-based suggestion
+        freeform_text: Freeform text if custom suggestion
+        message: Optional personal message
+        root_dir: Root directory for accessing repositories
+    """
+    try:
+        settings_repo = SettingsRepository(root_dir)
+        sender_settings = settings_repo.get_settings(sender_id)
+        receiver_settings = settings_repo.get_settings(receiver_id)
+        
+        # Get names
+        sender_name = sender_settings.first_name or sender_settings.username or f"User {sender_id}"
+        if sender_settings.username:
+            sender_display = f"@{sender_settings.username}"
+        else:
+            sender_display = sender_name
+            
+        receiver_name = receiver_settings.first_name or receiver_settings.username or f"User {receiver_id}"
+        
+        # Determine what was suggested
+        if template_title:
+            suggestion_text = f"📋 Template: {template_title}"
+        elif freeform_text:
+            suggestion_text = f"✍️ {freeform_text[:100]}{'...' if len(freeform_text) > 100 else ''}"
+        else:
+            suggestion_text = "a promise"
+        
+        # Get mini app URL
+        miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
+        
+        bot = Bot(token=bot_token)
+        
+        # 1. Send notification to RECEIVER
+        receiver_message = f"💡 {sender_display} suggested a promise for you!\n\n{suggestion_text}"
+        if message:
+            receiver_message += f"\n\n💬 Message: \"{message}\""
+        receiver_message += f"\n\n[View in Xaana]({miniapp_url}/dashboard)"
+        
+        try:
+            await bot.send_message(
+                chat_id=receiver_id,
+                text=receiver_message,
+                parse_mode="Markdown"
+            )
+            logger.info(f"Sent suggestion notification to receiver {receiver_id}")
+        except TelegramError as e:
+            error_msg = str(e).lower()
+            if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+                logger.debug(f"Could not send suggestion notification to receiver {receiver_id}: user blocked bot")
+            else:
+                logger.warning(f"Error sending suggestion notification to receiver {receiver_id}: {e}")
+        
+        # 2. Send confirmation to SENDER
+        sender_message = f"✅ Your suggestion was sent to {receiver_name}!\n\n{suggestion_text}"
+        if message:
+            sender_message += f"\n\n💬 Your message: \"{message}\""
+        sender_message += "\n\nThey'll be notified and can accept or decline."
+        
+        try:
+            await bot.send_message(
+                chat_id=sender_id,
+                text=sender_message,
+                parse_mode="Markdown"
+            )
+            logger.info(f"Sent suggestion confirmation to sender {sender_id}")
+        except TelegramError as e:
+            error_msg = str(e).lower()
+            if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+                logger.debug(f"Could not send suggestion confirmation to sender {sender_id}: user blocked bot")
+            else:
+                logger.warning(f"Error sending suggestion confirmation to sender {sender_id}: {e}")
+                
+    except Exception as e:
+        logger.warning(f"Unexpected error sending suggestion notifications: {e}")
+
+
 class WeeklyReportResponse(BaseModel):
     """Response model for weekly report endpoint."""
     week_start: str
@@ -1632,6 +1724,29 @@ def create_webapp_api(
             )
             
             logger.info(f"User {user_id} created suggestion {suggestion_id} for user {request.to_user_id}")
+            
+            # Get template title if template-based suggestion
+            template_title = None
+            if request.template_id:
+                templates_repo = TemplatesRepository(app.state.root_dir)
+                template = templates_repo.get_template(request.template_id)
+                if template:
+                    template_title = template.get("title")
+            
+            # Send Telegram notifications to both sender and receiver
+            import asyncio
+            asyncio.create_task(
+                send_suggestion_notifications(
+                    bot_token=app.state.bot_token,
+                    sender_id=user_id,
+                    receiver_id=int(request.to_user_id),
+                    template_title=template_title,
+                    freeform_text=request.freeform_text,
+                    message=request.message,
+                    root_dir=app.state.root_dir
+                )
+            )
+            
             return {"status": "success", "suggestion_id": suggestion_id}
         except HTTPException:
             raise
