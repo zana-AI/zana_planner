@@ -257,6 +257,12 @@ class CallbackHandlers:
             await self._handle_broadcast_schedule(query, context, user_lang)
         elif action == "broadcast_cancel":
             await self._handle_broadcast_cancel(query, context, user_lang)
+        elif action == "suggest_accept":
+            suggestion_id = cb.get("sid")
+            await self._handle_suggestion_accept(query, suggestion_id, user_lang)
+        elif action == "suggest_decline":
+            suggestion_id = cb.get("sid")
+            await self._handle_suggestion_decline(query, suggestion_id, user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     

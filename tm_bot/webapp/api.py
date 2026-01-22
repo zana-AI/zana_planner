@@ -126,6 +126,7 @@ async def send_suggestion_notifications(
     bot_token: str,
     sender_id: int,
     receiver_id: int,
+    suggestion_id: str,
     template_title: Optional[str],
     freeform_text: Optional[str],
     message: Optional[str],
@@ -138,11 +139,15 @@ async def send_suggestion_notifications(
         bot_token: Telegram bot token
         sender_id: User ID of the person who sent the suggestion
         receiver_id: User ID of the person receiving the suggestion
+        suggestion_id: ID of the suggestion for callback buttons
         template_title: Title of the template if template-based suggestion
         freeform_text: Freeform text if custom suggestion
         message: Optional personal message
         root_dir: Root directory for accessing repositories
     """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from cbdata import encode_cb
+    
     try:
         settings_repo = SettingsRepository(root_dir)
         sender_settings = settings_repo.get_settings(sender_id)
@@ -165,22 +170,27 @@ async def send_suggestion_notifications(
         else:
             suggestion_text = "a promise"
         
-        # Get mini app URL
-        miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
-        
         bot = Bot(token=bot_token)
         
-        # 1. Send notification to RECEIVER
+        # 1. Send notification to RECEIVER with Accept/Decline buttons
         receiver_message = f"💡 {sender_display} suggested a promise for you!\n\n{suggestion_text}"
         if message:
             receiver_message += f"\n\n💬 Message: \"{message}\""
-        receiver_message += f"\n\n[View in Xaana]({miniapp_url}/dashboard)"
+        
+        # Create inline keyboard with Accept/Decline buttons
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Accept", callback_data=encode_cb("suggest_accept", sid=suggestion_id)),
+                InlineKeyboardButton("❌ Decline", callback_data=encode_cb("suggest_decline", sid=suggestion_id))
+            ]
+        ])
         
         try:
             await bot.send_message(
                 chat_id=receiver_id,
                 text=receiver_message,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
+                reply_markup=keyboard
             )
             logger.info(f"Sent suggestion notification to receiver {receiver_id}")
         except TelegramError as e:
@@ -1740,6 +1750,7 @@ def create_webapp_api(
                     bot_token=app.state.bot_token,
                     sender_id=user_id,
                     receiver_id=int(request.to_user_id),
+                    suggestion_id=suggestion_id,
                     template_title=template_title,
                     freeform_text=request.freeform_text,
                     message=request.message,
