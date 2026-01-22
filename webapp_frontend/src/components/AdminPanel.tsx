@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { UserAvatar } from './UserAvatar';
-import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate, UserInfo, BotToken, CreatePromiseForUserRequest, DayReminder } from '../types';
+import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate, UserInfo, BotToken, CreatePromiseForUserRequest } from '../types';
 
 export function AdminPanel() {
   const navigate = useNavigate();
@@ -1977,7 +1977,7 @@ function CreatePromiseForm({ users, searchQuery, setSearchQuery, error, setError
                 </div>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                {dayNames.map((day, index) => {
+                {dayNames.map((_day, index) => {
                   const isSelected = selectedDays.has(index);
                   return (
                     <button
