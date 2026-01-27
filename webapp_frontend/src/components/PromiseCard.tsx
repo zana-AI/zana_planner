@@ -327,6 +327,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   
   // Create a map of date -> value for quick lookup
   const sessionsByDate: Record<string, number> = {};
+  const notesByDate: Record<string, string[]> = {};
   sessions.forEach((session: SessionData) => {
     const dateKey = typeof session.date === 'string' ? session.date : session.date;
     if (isCountBased) {
@@ -335,6 +336,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       sessionsByDate[dateKey] = (sessionsByDate[dateKey] || 0) + count;
     } else {
       sessionsByDate[dateKey] = (sessionsByDate[dateKey] || 0) + (session.hours || 0);
+    }
+    // Collect notes for this date
+    if (session.notes && session.notes.length > 0) {
+      if (!notesByDate[dateKey]) {
+        notesByDate[dateKey] = [];
+      }
+      notesByDate[dateKey].push(...session.notes);
     }
   });
   
@@ -644,19 +652,46 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       <div className="days-row" aria-hidden="true">
         {dayValues.map((value, index) => {
           const heightPct = Math.round((value / baseline) * 100);
-          const title = isCountBased 
+          const dateKey = weekDays[index];
+          const dayNotes = notesByDate[dateKey] || [];
+          const hasNotes = dayNotes.length > 0;
+          
+          let title = isCountBased 
             ? `${DAY_LABELS[index]}: ${Math.round(value)}`
             : `${DAY_LABELS[index]}: ${value.toFixed(2)}h`;
+          
+          if (hasNotes) {
+            title += '\n\nNotes:\n' + dayNotes.join('\n');
+          }
+          
           return (
             <div 
               key={index} 
               className="day-col"
               title={title}
+              style={{ position: 'relative' }}
             >
               <div 
                 className="day-bar" 
                 style={{ height: `${heightPct}%` }}
               />
+              {hasNotes && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '2px',
+                    right: '2px',
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    backgroundColor: '#5ba3f5',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    pointerEvents: 'none',
+                    zIndex: 1
+                  }}
+                  title={dayNotes.join('\n')}
+                />
+              )}
               <div className="day-label" dir="ltr">{DAY_LABELS[index]}</div>
             </div>
           );

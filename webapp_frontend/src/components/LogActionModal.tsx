@@ -12,6 +12,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
   const [hours, setHours] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -47,12 +48,13 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
         actionDatetime = datetime.toISOString();
       }
 
-      await apiClient.logAction(promiseId, hoursNum, actionDatetime);
+      await apiClient.logAction(promiseId, hoursNum, actionDatetime, notes.trim() || undefined);
       
       // Reset form
       setHours('');
       setDate('');
       setTime('');
+      setNotes('');
       
       onSuccess();
       onClose();
@@ -69,6 +71,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
       setHours('');
       setDate('');
       setTime('');
+      setNotes('');
       setError('');
       onClose();
     }
@@ -131,6 +134,24 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
               onChange={(e) => setTime(e.target.value)}
               className="modal-input"
               disabled={isSubmitting}
+            />
+          </div>
+
+          <div className="modal-form-group">
+            <label htmlFor="notes" className="modal-label">Notes (optional)</label>
+            <textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="modal-input"
+              placeholder="Add any notes about this session..."
+              rows={3}
+              disabled={isSubmitting}
+              style={{
+                resize: 'vertical',
+                minHeight: '60px',
+                fontFamily: 'inherit'
+              }}
             />
           </div>
 

@@ -81,6 +81,7 @@ export interface TelegramUser {
 export interface SessionData {
   date: string;
   hours: number;
+  notes?: string[];  // Optional array of notes for actions on this date
 }
 
 export interface PromiseData {

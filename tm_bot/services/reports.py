@@ -155,13 +155,19 @@ class ReportsService:
                     if canonical not in actions_by_promise_date:
                         actions_by_promise_date[canonical] = {}
                     if action_date not in actions_by_promise_date[canonical]:
-                        actions_by_promise_date[canonical][action_date] = {'hours': 0.0, 'count': 0}
+                        actions_by_promise_date[canonical][action_date] = {'hours': 0.0, 'count': 0, 'notes': []}
                     
                     # Track both hours and count
                     if action.action == 'log_time':
                         actions_by_promise_date[canonical][action_date]['hours'] += action.time_spent
+                        # Collect notes if present
+                        if action.notes and action.notes.strip():
+                            actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
                     elif action.action == 'checkin':
                         actions_by_promise_date[canonical][action_date]['count'] += 1
+                        # Collect notes if present
+                        if action.notes and action.notes.strip():
+                            actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
                 else:
                     logger.debug(f"[DEBUG] Action for promise {action.promise_id} (normalized: {normalize_promise_id(action.promise_id)}) not matched to canonical promise. Canonical map: {canonical_by_norm}")
             else:
@@ -198,13 +204,23 @@ class ReportsService:
             total_count = 0
             
             for action_date, data in sorted(date_data.items()):
+                notes_list = data.get('notes', [])
+                # Filter out empty notes
+                notes_list = [n for n in notes_list if n and n.strip()]
+                
                 if metric_type == 'count':
                     count = data.get('count', 0)
-                    sessions.append({'date': action_date, 'count': count})
+                    session_entry = {'date': action_date, 'count': count}
+                    if notes_list:
+                        session_entry['notes'] = notes_list
+                    sessions.append(session_entry)
                     total_count += count
                 else:  # hours
                     hours = data.get('hours', 0.0)
-                    sessions.append({'date': action_date, 'hours': hours})
+                    session_entry = {'date': action_date, 'hours': hours}
+                    if notes_list:
+                        session_entry['notes'] = notes_list
+                    sessions.append(session_entry)
                     total_hours += hours
             
             if metric_type == 'count':

@@ -255,8 +255,16 @@ class PlannerAPIAdapter:
         return f"Promise #{promise.id} updated successfully."
 
     # Action methods
-    def add_action(self, user_id, promise_id: str, time_spent: float, action_datetime: Optional[datetime] = None) -> str:
-        """Add an action."""
+    def add_action(self, user_id, promise_id: str, time_spent: float, action_datetime: Optional[datetime] = None, notes: Optional[str] = None) -> str:
+        """Add an action.
+        
+        Args:
+            user_id: User identifier
+            promise_id: Promise ID (e.g., 'P10')
+            time_spent: Hours spent on the activity
+            action_datetime: Optional datetime for the action (defaults to now)
+            notes: Optional notes/description for this action
+        """
         # Validate promise exists
         if not self.promises_repo.get_promise(user_id, promise_id):
             return f"Promise with ID '{promise_id}' not found."
@@ -272,7 +280,8 @@ class PlannerAPIAdapter:
             promise_id=promise_id,
             action=ActionType.LOG_TIME.value,
             time_spent=time_spent,
-            at=action_datetime
+            at=action_datetime,
+            notes=notes if notes and notes.strip() else None
         )
 
         self.actions_repo.append_action(action)

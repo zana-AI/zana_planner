@@ -41,8 +41,8 @@ class ActionsRepository:
                 text("""
                     INSERT INTO actions(
                         action_uuid, user_id, promise_uuid, promise_id_text,
-                        action_type, time_spent_hours, at_utc
-                    ) VALUES (:action_uuid, :user_id, :p_uuid, :pid, :action_type, :time_spent, :at_utc);
+                        action_type, time_spent_hours, at_utc, notes
+                    ) VALUES (:action_uuid, :user_id, :p_uuid, :pid, :action_type, :time_spent, :at_utc, :notes);
                 """),
                 {
                     "action_uuid": str(uuid.uuid4()),
@@ -52,6 +52,7 @@ class ActionsRepository:
                     "action_type": str(action.action or "log_time"),
                     "time_spent": float(action.time_spent or 0.0),
                     "at_utc": at_utc,
+                    "notes": action.notes if action.notes else None,
                 },
             )
 
@@ -64,7 +65,7 @@ class ActionsRepository:
                 rows = session.execute(
                     text("""
                         SELECT
-                            a.action_type, a.time_spent_hours, a.at_utc,
+                            a.action_type, a.time_spent_hours, a.at_utc, a.notes,
                             COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
                         FROM actions a
                         LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
@@ -77,7 +78,7 @@ class ActionsRepository:
                 rows = session.execute(
                     text("""
                         SELECT
-                            a.action_type, a.time_spent_hours, a.at_utc,
+                            a.action_type, a.time_spent_hours, a.at_utc, a.notes,
                             COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
                         FROM actions a
                         LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
@@ -99,6 +100,7 @@ class ActionsRepository:
                     action=str(r["action_type"] or "log_time"),
                     time_spent=float(r["time_spent_hours"] or 0.0),
                     at=at,
+                    notes=r.get("notes") if r.get("notes") else None,
                 )
             )
         return actions

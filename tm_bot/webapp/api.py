@@ -2139,6 +2139,7 @@ def create_webapp_api(
         promise_id: str
         time_spent: float
         action_datetime: Optional[str] = None  # ISO format datetime string
+        notes: Optional[str] = None  # Optional notes for this action
     
     @app.post("/api/actions")
     async def log_action(
@@ -2180,7 +2181,8 @@ def create_webapp_api(
                 promise_id=request.promise_id,
                 action="log_time",
                 time_spent=request.time_spent,
-                at=action_datetime
+                at=action_datetime,
+                notes=request.notes if request.notes and request.notes.strip() else None
             )
             
             actions_repo = ActionsRepository(app.state.root_dir)

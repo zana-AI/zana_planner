@@ -255,13 +255,16 @@ class ApiClient {
   /**
    * Log an action (time spent) for a promise.
    */
-  async logAction(promiseId: string, timeSpent: number, actionDatetime?: string): Promise<{ status: string; message: string }> {
+  async logAction(promiseId: string, timeSpent: number, actionDatetime?: string, notes?: string): Promise<{ status: string; message: string }> {
     const body: any = {
       promise_id: promiseId,
       time_spent: timeSpent,
     };
     if (actionDatetime) {
       body.action_datetime = actionDatetime;
+    }
+    if (notes) {
+      body.notes = notes;
     }
     return this.request<{ status: string; message: string }>('/actions', {
       method: 'POST',

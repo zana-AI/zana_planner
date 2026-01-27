@@ -47,6 +47,7 @@ class Action:
     action: str           # e.g., "log_time", "skip", "delete", etc.
     time_spent: float     # hours (can be 0 for skip/delete)
     at: datetime          # action timestamp
+    notes: Optional[str] = None  # optional notes for this action
 
 
 @dataclass
