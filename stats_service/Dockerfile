@@ -20,9 +20,7 @@ RUN pip install --no-cache-dir fastapi==0.104.1 uvicorn[standard]==0.24.0 logtai
 
 # Copy stats service code
 COPY stats_service/stats_service.py ./stats_service.py
-COPY bot_stats.py ./
-COPY tm_bot/utils/logger.py ./tm_bot/utils/logger.py
-COPY tm_bot/utils/__init__.py ./tm_bot/utils/__init__.py
+COPY tm_bot/ ./tm_bot/
 
 # Make sure Python can find modules
 ENV PYTHONPATH=/app

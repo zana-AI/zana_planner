@@ -6,12 +6,12 @@ import pytest
 import os
 import sys
 
-# Ensure zana_planner/ is importable (bot_stats.py lives there).
+# Ensure zana_planner/ is importable (bot_stats.py lives in tm_bot/services/).
 ZANA_PLANNER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ZANA_PLANNER_DIR not in sys.path:
     sys.path.insert(0, ZANA_PLANNER_DIR)
 
-from bot_stats import compute_stats_sql  # noqa: E402
+from tm_bot.services.bot_stats import compute_stats_sql  # noqa: E402
 
 
 def _utc_iso(dt: datetime) -> str:

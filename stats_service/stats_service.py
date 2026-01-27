@@ -11,13 +11,10 @@ from typing import Dict, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-# Add parent directory to path to import logger
+# Add parent directory to path to import logger and bot_stats
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from tm_bot.utils.logger import get_logger
-
-# Import stats logic from bot_stats.py (SQLite-based)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from bot_stats import compute_stats_sql
+from tm_bot.services.bot_stats import compute_stats_sql
 
 app = FastAPI(title="Xaana AI Stats Service", version="1.0.0")
 logger = get_logger(__name__)
@@ -39,7 +36,7 @@ def get_users_data_dir() -> str:
 def compute_stats() -> Dict:
     """
     Compute statistics from SQLite in the user data directory.
-    Reuses logic from bot_stats.py.
+    Reuses logic from tm_bot.services.bot_stats.
     """
     data_dir = get_users_data_dir()
     return compute_stats_sql(data_dir)

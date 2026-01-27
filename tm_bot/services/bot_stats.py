@@ -108,7 +108,7 @@ def compute_stats_sql(data_dir: str) -> Dict:
                 (threshold,),
             )
 
-        # Best-effort “new users”: first seen in any table within window
+        # Best-effort "new users": first seen in any table within window
         new_counts: Dict[str, int] = {}
         for d in [7, 30]:
             threshold = _utc_iso(now - timedelta(days=d))

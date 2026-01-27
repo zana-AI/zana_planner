@@ -34,7 +34,7 @@ from utils.logger import get_logger
 from utils.version import get_version_info
 from utils.admin_utils import is_admin
 from services.broadcast_service import get_all_users, send_broadcast, parse_broadcast_time, execute_broadcast_from_db
-from services.stats_service import get_aggregate_stats
+from services.bot_stats import get_version_stats as get_aggregate_stats
 from services.avatar_service import AvatarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
