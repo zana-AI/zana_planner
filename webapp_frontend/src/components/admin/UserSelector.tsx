@@ -1,4 +1,3 @@
-import React from 'react';
 import type { AdminUser } from '../../types';
 
 interface UserSelectorProps {

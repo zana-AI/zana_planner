@@ -1,4 +1,3 @@
-import React from 'react';
 
 interface StatsTabProps {
   stats: { total_users: number; active_users: number; total_promises: number } | null;

@@ -1,4 +1,3 @@
-import React from 'react';
 
 export type TabType = 'stats' | 'compose' | 'scheduled' | 'templates' | 'promote' | 'devtools' | 'createPromise' | 'conversations';
 

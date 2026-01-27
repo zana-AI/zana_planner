@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { apiClient, ApiError } from '../../api/client';
 
 interface PromoteTabProps {

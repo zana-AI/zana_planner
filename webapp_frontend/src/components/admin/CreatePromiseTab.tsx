@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { apiClient, ApiError } from '../../api/client';
 import type { AdminUser, CreatePromiseForUserRequest } from '../../types';
 import { UserSelector } from './UserSelector';

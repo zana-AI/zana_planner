@@ -1,0 +1,1099 @@
+"""
+Admin-related endpoints.
+"""
+
+import os
+import json
+import subprocess
+import re
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Any, List
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from ..dependencies import get_current_user, get_admin_user
+from ..schemas import (
+    AdminUsersResponse, CreateBroadcastRequest, UpdateBroadcastRequest,
+    BroadcastResponse, BotTokenResponse, ConversationResponse, ConversationMessage,
+    GenerateTemplateRequest, CreatePromiseForUserRequest, DayReminder
+)
+from repositories.templates_repo import TemplatesRepository
+from repositories.promises_repo import PromisesRepository
+from repositories.settings_repo import SettingsRepository
+from repositories.broadcasts_repo import BroadcastsRepository
+from repositories.bot_tokens_repo import BotTokensRepository
+from repositories.reminders_repo import RemindersRepository
+from services.reminder_dispatch import ReminderDispatchService
+from db.postgres_db import get_db_session, dt_to_utc_iso, utc_now_iso, resolve_promise_uuid
+from sqlalchemy import text
+from utils.admin_utils import is_admin
+from utils.logger import get_logger
+from llms.llm_env_utils import load_llm_env
+from langchain_google_vertexai import ChatVertexAI
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+logger = get_logger(__name__)
+
+# Admin stats cache (module-level)
+_admin_stats_cache: Optional[Dict[str, Any]] = None
+_admin_stats_cache_timestamp: Optional[datetime] = None
+ADMIN_STATS_CACHE_TTL = timedelta(minutes=5)
+
+
+@router.get("/check")
+async def check_admin_status(
+    request: Request,
+    user_id: int = Depends(get_current_user)
+):
+    """Check if the current user is an admin."""
+    return {"is_admin": is_admin(user_id)}
+
+
+@router.get("/stats")
+async def get_admin_stats(
+    request: Request,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Get app statistics (admin only).
+    Returns cached results for 5 minutes to reduce database load.
+    """
+    global _admin_stats_cache, _admin_stats_cache_timestamp
+    
+    now = datetime.now()
+    
+    # Return cached stats if still valid
+    if _admin_stats_cache and _admin_stats_cache_timestamp and (now - _admin_stats_cache_timestamp) < ADMIN_STATS_CACHE_TTL:
+        logger.debug("Returning cached admin stats")
+        return _admin_stats_cache
+    
+    try:
+        # Compute stats directly from PostgreSQL
+        with get_db_session() as session:
+            # Total users (distinct user_ids from any table)
+            total_users = session.execute(
+                text("""
+                    SELECT COUNT(DISTINCT user_id) 
+                    FROM (
+                        SELECT user_id FROM users
+                        UNION
+                        SELECT user_id FROM promises
+                        UNION
+                        SELECT user_id FROM actions
+                    ) AS all_users;
+                """)
+            ).scalar() or 0
+            
+            # Active users in last 7 days (users with actions in last 7 days)
+            seven_days_ago_dt = datetime.now(timezone.utc) - timedelta(days=7)
+            seven_days_ago = dt_to_utc_iso(seven_days_ago_dt) or utc_now_iso()
+            active_users = session.execute(
+                text("""
+                    SELECT COUNT(DISTINCT user_id)
+                    FROM actions
+                    WHERE at_utc >= :seven_days_ago;
+                """),
+                {"seven_days_ago": seven_days_ago}
+            ).scalar() or 0
+            
+            # Users with promises (non-deleted)
+            users_with_promises = session.execute(
+                text("""
+                    SELECT COUNT(DISTINCT user_id)
+                    FROM promises
+                    WHERE is_deleted = 0;
+                """)
+            ).scalar() or 0
+        
+        # Return simplified stats for admin panel
+        result = {
+            "total_users": int(total_users),
+            "active_users": int(active_users),
+            "total_promises": int(users_with_promises),  # Users with promises, not total promise count
+        }
+        
+        # Cache the result
+        _admin_stats_cache = result
+        _admin_stats_cache_timestamp = now
+        
+        logger.info(f"Admin stats computed: {result}")
+        return result
+        
+    except Exception as e:
+        logger.exception(f"Error computing admin stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to compute stats: {str(e)}")
+
+
+@router.get("/users", response_model=AdminUsersResponse)
+async def get_admin_users(
+    request: Request,
+    limit: int = Query(default=1000, ge=1, le=10000),
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Get all users (admin only).
+    
+    Args:
+        limit: Maximum number of users to return
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        List of all users
+    """
+    try:
+        # Calculate 30 days ago for activity count
+        since_utc = (
+            datetime.now(timezone.utc) - timedelta(days=30)
+        ).isoformat().replace("+00:00", "Z")
+
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT 
+                        u.user_id,
+                        u.first_name,
+                        u.last_name,
+                        u.username,
+                        u.last_seen_utc,
+                        u.timezone,
+                        u.language,
+                        COALESCE(promise_counts.promise_count, 0) as promise_count,
+                        COALESCE(activity.activity_count, 0) as activity_count
+                    FROM users u
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) as promise_count
+                        FROM promises
+                        WHERE is_deleted = 0
+                        GROUP BY user_id
+                    ) promise_counts ON u.user_id = promise_counts.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) as activity_count
+                        FROM actions 
+                        WHERE at_utc >= :since_utc
+                        GROUP BY user_id
+                    ) activity ON u.user_id = activity.user_id
+                    ORDER BY u.last_seen_utc DESC NULLS LAST
+                    LIMIT :limit;
+                """),
+                {"since_utc": since_utc, "limit": int(limit)},
+            ).mappings().fetchall()
+
+        from ..schemas import AdminUser
+        users = []
+        for row in rows:
+            users.append(
+                AdminUser(
+                    user_id=str(row.get("user_id")),
+                    first_name=row.get("first_name"),
+                    last_name=row.get("last_name"),
+                    username=row.get("username"),
+                    last_seen_utc=row.get("last_seen_utc"),
+                    timezone=row.get("timezone"),
+                    language=row.get("language"),
+                    promise_count=row.get("promise_count"),
+                    activity_count=row.get("activity_count"),
+                )
+            )
+
+        return AdminUsersResponse(users=users, total=len(users))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting admin users: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+
+
+@router.get("/bot-tokens", response_model=List[BotTokenResponse])
+async def get_bot_tokens(
+    request: Request,
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    List available bot tokens (admin only).
+    
+    Args:
+        is_active: Filter by active status (optional)
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        List of bot tokens
+    """
+    try:
+        bot_tokens_repo = BotTokensRepository(request.app.state.root_dir)
+        tokens = bot_tokens_repo.list_bot_tokens(is_active=is_active)
+        
+        return [
+            BotTokenResponse(
+                bot_token_id=token["bot_token_id"],
+                bot_username=token["bot_username"],
+                is_active=token["is_active"],
+                description=token["description"],
+                created_at_utc=token["created_at_utc"],
+                updated_at_utc=token["updated_at_utc"],
+            )
+            for token in tokens
+        ]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error listing bot tokens: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list bot tokens: {str(e)}")
+
+
+@router.get("/users/{user_id}/conversations", response_model=ConversationResponse)
+async def get_user_conversations(
+    request: Request,
+    user_id: int,
+    limit: int = Query(default=100, ge=1, le=1000),
+    message_type: Optional[str] = Query(None, description="Filter by 'user' or 'bot'"),
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Get conversation history for a user (admin only).
+    
+    Args:
+        user_id: Target user ID
+        limit: Maximum number of messages to return
+        message_type: Filter by message type ('user' or 'bot'), or None for all
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        List of conversation messages
+    """
+    try:
+        from repositories.conversation_repo import ConversationRepository
+        
+        # Validate message_type if provided
+        if message_type and message_type not in ['user', 'bot']:
+            raise HTTPException(status_code=400, detail="message_type must be 'user' or 'bot'")
+        
+        conversation_repo = ConversationRepository(request.app.state.root_dir)
+        messages = conversation_repo.get_recent_history(
+            user_id=user_id,
+            limit=limit,
+            message_type=message_type
+        )
+        
+        # Convert to response models
+        conversation_messages = [
+            ConversationMessage(
+                id=msg["id"],
+                user_id=msg["user_id"],
+                chat_id=msg.get("chat_id"),
+                message_id=msg.get("message_id"),
+                message_type=msg["message_type"],
+                content=msg["content"],
+                created_at_utc=msg["created_at_utc"],
+            )
+            for msg in messages
+        ]
+        
+        return ConversationResponse(messages=conversation_messages)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting conversations for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversations: {str(e)}")
+
+
+@router.post("/broadcast", response_model=BroadcastResponse)
+async def create_broadcast(
+    request: Request,
+    broadcast_request: CreateBroadcastRequest,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Create or schedule a broadcast (admin only).
+    
+    Args:
+        broadcast_request: Broadcast creation request
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        Created broadcast
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        from services.broadcast_service import get_all_users
+        
+        # Validate message
+        if not broadcast_request.message or not broadcast_request.message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+        # Validate target users
+        if not broadcast_request.target_user_ids:
+            raise HTTPException(status_code=400, detail="At least one target user must be selected")
+        
+        # Get all valid users
+        all_users = get_all_users(request.app.state.root_dir)
+        valid_user_ids = [uid for uid in broadcast_request.target_user_ids if uid in all_users]
+        
+        if not valid_user_ids:
+            raise HTTPException(status_code=400, detail="No valid target users found")
+        
+        # Determine scheduled time
+        if broadcast_request.scheduled_time_utc:
+            # Parse scheduled time
+            try:
+                scheduled_dt = datetime.fromisoformat(broadcast_request.scheduled_time_utc.replace('Z', '+00:00'))
+                if scheduled_dt.tzinfo is None:
+                    scheduled_dt = scheduled_dt.replace(tzinfo=ZoneInfo("UTC"))
+                scheduled_dt = scheduled_dt.astimezone(ZoneInfo("UTC"))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid scheduled_time_utc format: {e}")
+            
+            # Check if time is in the past
+            now_utc = datetime.now(ZoneInfo("UTC"))
+            if scheduled_dt < now_utc:
+                raise HTTPException(status_code=400, detail="Scheduled time cannot be in the past")
+        else:
+            # Immediate broadcast - schedule for now
+            scheduled_dt = datetime.now(ZoneInfo("UTC"))
+        
+        # Create broadcast in database
+        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcast_id = broadcasts_repo.create_broadcast(
+            admin_id=admin_id,
+            message=broadcast_request.message,
+            target_user_ids=valid_user_ids,
+            scheduled_time_utc=scheduled_dt,
+            bot_token_id=broadcast_request.bot_token_id,
+        )
+        
+        # Get created broadcast
+        broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+        if not broadcast:
+            raise HTTPException(status_code=500, detail="Failed to retrieve created broadcast")
+        
+        return BroadcastResponse(
+            broadcast_id=broadcast.broadcast_id,
+            admin_id=broadcast.admin_id,
+            message=broadcast.message,
+            target_user_ids=broadcast.target_user_ids,
+            scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
+            status=broadcast.status,
+            bot_token_id=broadcast.bot_token_id,
+            created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
+            updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error creating broadcast: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create broadcast: {str(e)}")
+
+
+@router.get("/broadcasts", response_model=List[BroadcastResponse])
+async def list_broadcasts(
+    request: Request,
+    status: Optional[str] = Query(None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    List scheduled broadcasts (admin only).
+    
+    Args:
+        status: Filter by status (pending, completed, cancelled)
+        limit: Maximum number of broadcasts to return
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        List of broadcasts
+    """
+    try:
+        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcasts = broadcasts_repo.list_broadcasts(
+            admin_id=admin_id,
+            status=status,
+            limit=limit,
+        )
+        
+        return [
+            BroadcastResponse(
+                broadcast_id=b.broadcast_id,
+                admin_id=b.admin_id,
+                message=b.message,
+                target_user_ids=b.target_user_ids,
+                scheduled_time_utc=b.scheduled_time_utc.isoformat(),
+                status=b.status,
+                bot_token_id=b.bot_token_id,
+                created_at=b.created_at.isoformat() if b.created_at else "",
+                updated_at=b.updated_at.isoformat() if b.updated_at else "",
+            )
+            for b in broadcasts
+        ]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error listing broadcasts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list broadcasts: {str(e)}")
+
+
+@router.get("/broadcasts/{broadcast_id}", response_model=BroadcastResponse)
+async def get_broadcast(
+    request: Request,
+    broadcast_id: str,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Get broadcast details (admin only).
+    
+    Args:
+        broadcast_id: Broadcast ID
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        Broadcast details
+    """
+    try:
+        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+        
+        if not broadcast:
+            raise HTTPException(status_code=404, detail="Broadcast not found")
+        
+        # Verify admin owns this broadcast
+        if broadcast.admin_id != str(admin_id):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        return BroadcastResponse(
+            broadcast_id=broadcast.broadcast_id,
+            admin_id=broadcast.admin_id,
+            message=broadcast.message,
+            target_user_ids=broadcast.target_user_ids,
+            scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
+            status=broadcast.status,
+            bot_token_id=broadcast.bot_token_id,
+            created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
+            updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting broadcast: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get broadcast: {str(e)}")
+
+
+@router.patch("/broadcasts/{broadcast_id}", response_model=BroadcastResponse)
+async def update_broadcast(
+    request: Request,
+    broadcast_id: str,
+    update_request: UpdateBroadcastRequest,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Update a scheduled broadcast (admin only).
+    
+    Args:
+        broadcast_id: Broadcast ID
+        update_request: Update request
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        Updated broadcast
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        
+        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+        
+        if not broadcast:
+            raise HTTPException(status_code=404, detail="Broadcast not found")
+        
+        # Verify admin owns this broadcast
+        if broadcast.admin_id != str(admin_id):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Can only update pending broadcasts
+        if broadcast.status != "pending":
+            raise HTTPException(status_code=400, detail="Can only update pending broadcasts")
+        
+        # Parse scheduled time if provided
+        scheduled_dt = None
+        if update_request.scheduled_time_utc:
+            try:
+                scheduled_dt = datetime.fromisoformat(update_request.scheduled_time_utc.replace('Z', '+00:00'))
+                if scheduled_dt.tzinfo is None:
+                    scheduled_dt = scheduled_dt.replace(tzinfo=ZoneInfo("UTC"))
+                scheduled_dt = scheduled_dt.astimezone(ZoneInfo("UTC"))
+                
+                # Check if time is in the past
+                now_utc = datetime.now(ZoneInfo("UTC"))
+                if scheduled_dt < now_utc:
+                    raise HTTPException(status_code=400, detail="Scheduled time cannot be in the past")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid scheduled_time_utc format: {e}")
+        
+        # Update broadcast
+        success = broadcasts_repo.update_broadcast(
+            broadcast_id=broadcast_id,
+            message=update_request.message,
+            target_user_ids=update_request.target_user_ids,
+            scheduled_time_utc=scheduled_dt,
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update broadcast")
+        
+        # Get updated broadcast
+        updated_broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+        if not updated_broadcast:
+            raise HTTPException(status_code=500, detail="Failed to retrieve updated broadcast")
+        
+        return BroadcastResponse(
+            broadcast_id=updated_broadcast.broadcast_id,
+            admin_id=updated_broadcast.admin_id,
+            message=updated_broadcast.message,
+            target_user_ids=updated_broadcast.target_user_ids,
+            scheduled_time_utc=updated_broadcast.scheduled_time_utc.isoformat(),
+            status=updated_broadcast.status,
+            bot_token_id=updated_broadcast.bot_token_id,
+            created_at=updated_broadcast.created_at.isoformat() if updated_broadcast.created_at else "",
+            updated_at=updated_broadcast.updated_at.isoformat() if updated_broadcast.updated_at else "",
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating broadcast: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update broadcast: {str(e)}")
+
+
+@router.delete("/broadcasts/{broadcast_id}")
+async def cancel_broadcast(
+    request: Request,
+    broadcast_id: str,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Cancel a scheduled broadcast (admin only).
+    
+    Args:
+        broadcast_id: Broadcast ID
+        admin_id: Admin user ID (from dependency)
+    
+    Returns:
+        Success message
+    """
+    try:
+        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+        
+        if not broadcast:
+            raise HTTPException(status_code=404, detail="Broadcast not found")
+        
+        # Verify admin owns this broadcast
+        if broadcast.admin_id != str(admin_id):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Can only cancel pending broadcasts
+        if broadcast.status != "pending":
+            raise HTTPException(status_code=400, detail="Can only cancel pending broadcasts")
+        
+        # Cancel broadcast
+        success = broadcasts_repo.cancel_broadcast(broadcast_id)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to cancel broadcast")
+        
+        return {"status": "success", "message": "Broadcast cancelled successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error cancelling broadcast: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel broadcast: {str(e)}")
+
+
+@router.get("/templates")
+async def list_admin_templates(
+    request: Request,
+    admin_id: int = Depends(get_admin_user)
+):
+    """List all templates (admin only, includes inactive)."""
+    try:
+        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        # Get all templates, including inactive
+        templates = templates_repo.list_templates(is_active=None)
+        return {"templates": templates}
+    except Exception as e:
+        logger.exception(f"Error listing admin templates: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
+
+
+@router.post("/templates")
+async def create_admin_template(
+    request: Request,
+    template_data: Dict[str, Any],
+    admin_id: int = Depends(get_admin_user)
+):
+    """Create a new template (admin only)."""
+    try:
+        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        
+        # Validate required fields (simplified schema)
+        required_fields = ["title", "category", "target_value"]
+        for field in required_fields:
+            if field not in template_data:
+                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        
+        # Set defaults for optional fields
+        template_data.setdefault("metric_type", "count")
+        template_data.setdefault("is_active", True)
+        
+        template_id = templates_repo.create_template(template_data)
+        logger.info(f"Admin {admin_id} created template {template_id}")
+        return {"status": "success", "template_id": template_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error creating template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
+
+
+@router.put("/templates/{template_id}")
+async def update_admin_template(
+    request: Request,
+    template_id: str,
+    template_data: Dict[str, Any],
+    admin_id: int = Depends(get_admin_user)
+):
+    """Update an existing template (admin only)."""
+    try:
+        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        
+        # Check if template exists
+        existing = templates_repo.get_template(template_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        success = templates_repo.update_template(template_id, template_data)
+        if not success:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        logger.info(f"Admin {admin_id} updated template {template_id}")
+        return {"status": "success", "message": "Template updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
+
+
+@router.delete("/templates/{template_id}")
+async def delete_admin_template(
+    request: Request,
+    template_id: str,
+    admin_id: int = Depends(get_admin_user)
+):
+    """Delete a template (admin only, with safety checks)."""
+    try:
+        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        
+        # Check if template exists
+        existing = templates_repo.get_template(template_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Check if template is in use
+        in_use_check = templates_repo.check_template_in_use(template_id)
+        if in_use_check["in_use"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Template cannot be deleted because it is in use",
+                    "reasons": in_use_check["reasons"]
+                }
+            )
+        
+        # Delete template
+        success = templates_repo.delete_template(template_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete template")
+        
+        logger.info(f"Admin {admin_id} deleted template {template_id}")
+        return {"status": "success", "message": "Template deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
+
+
+@router.post("/templates/generate")
+async def generate_template_draft(
+    request: Request,
+    generate_request: GenerateTemplateRequest,
+    admin_id: int = Depends(get_admin_user)
+):
+    """Generate a template draft from a prompt using AI (admin only)."""
+    try:
+        # Load LLM config
+        cfg = load_llm_env()
+        
+        # Initialize chat model (same as LLMHandler)
+        chat_model = None
+        if cfg.get("GCP_PROJECT_ID", ""):
+            chat_model = ChatVertexAI(
+                model=cfg["GCP_GEMINI_MODEL"],
+                project=cfg["GCP_PROJECT_ID"],
+                location=cfg["GCP_LOCATION"],
+                temperature=0.7,
+            )
+        
+        if not chat_model and cfg.get("OPENAI_API_KEY", ""):
+            chat_model = ChatOpenAI(
+                openai_api_key=cfg["OPENAI_API_KEY"],
+                temperature=0.7,
+                model="gpt-4o-mini",
+            )
+        
+        if not chat_model:
+            raise HTTPException(status_code=500, detail="No LLM configured")
+        
+        # Create prompt for template generation (simplified schema)
+        system_prompt = """You are a template generator for a goal-tracking app. Generate a promise template from a user's description.
+
+Output ONLY valid JSON with these fields:
+{
+  "title": "string (short, clear title, e.g., 'Exercise Daily', 'Read Books')",
+  "description": "string (optional - brief motivation or details, 1 sentence max)",
+  "category": "string (one of: 'health', 'fitness', 'learning', 'productivity', 'mindfulness', 'creativity', 'finance', 'social', 'self-care', 'other')",
+  "target_value": number (how many per week, e.g., 7 for daily, 3 for 3x/week),
+  "metric_type": "string ('count' for times/week or 'hours' for hours/week)",
+  "emoji": "string (single emoji that represents this activity, e.g., '🏃', '📚', '💪')"
+}
+
+Rules:
+- title should be short and actionable (2-4 words)
+- If user mentions hours/week, use metric_type='hours'
+- If user mentions times/week, days/week, or daily, use metric_type='count'
+- For daily habits, target_value=7; for 3x/week, target_value=3; etc.
+- Pick a relevant emoji from: 🏃📚💪🧘🎯✍️🎨🎵💻🌱💧😴🍎💰🧠❤️
+- Output ONLY the JSON object, no markdown, no explanation"""
+        
+        user_prompt = f"Generate a promise template for: {generate_request.prompt}"
+        
+        # Call LLM
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        response = chat_model.invoke(messages)
+        content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Parse JSON (handle markdown code blocks if present)
+        content = content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        
+        draft = json.loads(content)
+        
+        # Validate required fields
+        if "title" not in draft:
+            raise HTTPException(status_code=500, detail="Generated template missing required field: title")
+        if "target_value" not in draft:
+            draft["target_value"] = 7  # Default to daily
+        
+        # Set defaults for optional fields
+        draft.setdefault("description", "")
+        draft.setdefault("category", "other")
+        draft.setdefault("metric_type", "count")
+        draft.setdefault("emoji", "🎯")
+        
+        # Validate enums
+        valid_categories = ['health', 'fitness', 'learning', 'productivity', 'mindfulness', 'creativity', 'finance', 'social', 'self-care', 'other']
+        if draft["category"] not in valid_categories:
+            draft["category"] = "other"
+        if draft["metric_type"] not in ["hours", "count"]:
+            draft["metric_type"] = "count"
+        
+        # Clamp target_value
+        if draft["target_value"] <= 0:
+            draft["target_value"] = 1
+        
+        # Set is_active default
+        draft["is_active"] = True
+        
+        logger.info(f"Admin {admin_id} generated template draft from prompt: {generate_request.prompt[:50]}")
+        return draft
+        
+    except json.JSONDecodeError as e:
+        logger.exception(f"Failed to parse LLM response as JSON: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error generating template draft: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate template draft: {str(e)}")
+
+
+@router.post("/promises")
+async def create_promise_for_user(
+    request: Request,
+    promise_request: CreatePromiseForUserRequest,
+    admin_id: int = Depends(get_admin_user)
+):
+    """Create a promise for a user (admin only)."""
+    try:
+        from services.planner_api_adapter import PlannerAPIAdapter
+        from datetime import date as date_type
+        from datetime import time as time_type
+        
+        # Validate visibility
+        if promise_request.visibility not in ["private", "followers", "clubs", "public"]:
+            raise HTTPException(status_code=400, detail="Visibility must be 'private', 'followers', 'clubs', or 'public'")
+        
+        # Parse dates
+        start_date_obj = None
+        end_date_obj = None
+        if promise_request.start_date:
+            try:
+                start_date_obj = date_type.fromisoformat(promise_request.start_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid start_date format: {promise_request.start_date}. Expected YYYY-MM-DD")
+        
+        if promise_request.end_date:
+            try:
+                end_date_obj = date_type.fromisoformat(promise_request.end_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid end_date format: {promise_request.end_date}. Expected YYYY-MM-DD")
+        
+        # Validate dates
+        if start_date_obj and end_date_obj and start_date_obj > end_date_obj:
+            raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+        
+        # Validate hours_per_week
+        if promise_request.hours_per_week < 0:
+            raise HTTPException(status_code=400, detail="hours_per_week must be >= 0")
+        
+        # Create promise using PlannerAPIAdapter
+        plan_keeper = PlannerAPIAdapter(request.app.state.root_dir)
+        result = plan_keeper.add_promise(
+            user_id=promise_request.target_user_id,
+            promise_text=promise_request.text,
+            num_hours_promised_per_week=promise_request.hours_per_week,
+            recurring=promise_request.recurring,
+            start_date=start_date_obj,
+            end_date=end_date_obj
+        )
+        
+        # Extract promise_id from result message (format: "#P123456 Promise 'text' added successfully.")
+        match = re.search(r'#([PT]\w+)', result)
+        if not match:
+            raise HTTPException(status_code=500, detail="Failed to extract promise ID from creation result")
+        promise_id = match.group(1)
+        
+        # Update visibility and description if provided
+        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promise = promises_repo.get_promise(promise_request.target_user_id, promise_id)
+        if not promise:
+            raise HTTPException(status_code=500, detail="Failed to retrieve created promise")
+        
+        if promise_request.visibility != "private" or promise_request.description:
+            promise.visibility = promise_request.visibility
+            if promise_request.description:
+                promise.description = promise_request.description
+            promises_repo.upsert_promise(promise_request.target_user_id, promise)
+        
+        # Create reminders if provided
+        if promise_request.reminders:
+            # Get user's timezone
+            settings_repo = SettingsRepository(request.app.state.root_dir)
+            settings = settings_repo.get_settings(promise_request.target_user_id)
+            user_tz = settings.timezone if settings and settings.timezone and settings.timezone != "DEFAULT" else "UTC"
+            
+            # Get promise_uuid
+            user_str = str(promise_request.target_user_id)
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, user_str, promise_id)
+                if not promise_uuid:
+                    raise HTTPException(status_code=500, detail="Failed to resolve promise UUID")
+            
+            # Convert reminders to ReminderRequest format
+            reminders_repo = RemindersRepository(request.app.state.root_dir)
+            dispatch_service = ReminderDispatchService(request.app.state.root_dir)
+            
+            reminders_data = []
+            for rem in promise_request.reminders:
+                if not rem.enabled:
+                    continue
+                
+                # Validate weekday
+                if rem.weekday < 0 or rem.weekday > 6:
+                    raise HTTPException(status_code=400, detail=f"Invalid weekday: {rem.weekday}. Must be 0-6 (Monday-Sunday)")
+                
+                # Validate time format
+                try:
+                    time_parts = rem.time.split(":")
+                    if len(time_parts) != 2:
+                        raise ValueError
+                    hour = int(time_parts[0])
+                    minute = int(time_parts[1])
+                    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                        raise ValueError
+                    time_obj = time_type(hour, minute)
+                except (ValueError, IndexError):
+                    raise HTTPException(status_code=400, detail=f"Invalid time format: {rem.time}. Expected HH:MM")
+                
+                reminder_data = {
+                    "promise_uuid": promise_uuid,
+                    "kind": "fixed_time",
+                    "weekday": rem.weekday,
+                    "time_local": time_obj,
+                    "tz": user_tz,
+                    "enabled": True
+                }
+                
+                # Compute next_run_at_utc
+                next_run = dispatch_service.compute_next_run_at_utc(reminder_data, promise_request.target_user_id)
+                if next_run:
+                    reminder_data["next_run_at_utc"] = dt_to_utc_iso(next_run)
+                
+                reminders_data.append(reminder_data)
+            
+            # Replace reminders
+            if reminders_data:
+                reminders_repo.replace_reminders(promise_uuid, reminders_data)
+        
+        logger.info(f"Admin {admin_id} created promise {promise_id} for user {promise_request.target_user_id}")
+        return {"status": "success", "promise_id": promise_id, "message": result}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error creating promise for user: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create promise: {str(e)}")
+
+
+@router.post("/promote")
+async def promote_staging_to_prod(
+    request: Request,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Promote staging database to production (admin only).
+    This copies all data from staging to production database.
+    WARNING: This will overwrite all production data!
+    """
+    try:
+        prod_url = os.getenv("DATABASE_URL_PROD")
+        staging_url = os.getenv("DATABASE_URL_STAGING")
+        
+        if not prod_url:
+            raise HTTPException(status_code=500, detail="DATABASE_URL_PROD environment variable is not set")
+        
+        if not staging_url:
+            raise HTTPException(status_code=500, detail="DATABASE_URL_STAGING environment variable is not set")
+        
+        logger.warning(f"Admin {admin_id} initiated staging to production promotion")
+        logger.warning(f"Staging: {staging_url}")
+        logger.warning(f"Production: {prod_url}")
+        
+        # Dump staging database
+        logger.info("Dumping staging database...")
+        dump_process = subprocess.run(
+            ["pg_dump", staging_url],
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if dump_process.returncode != 0:
+            error_msg = dump_process.stderr or "Unknown error during pg_dump"
+            logger.error(f"pg_dump failed: {error_msg}")
+            raise HTTPException(status_code=500, detail=f"Failed to dump staging database: {error_msg}")
+        
+        dump_sql = dump_process.stdout
+        
+        # Restore to production
+        logger.info("Restoring to production database...")
+        restore_process = subprocess.run(
+            ["psql", prod_url],
+            input=dump_sql,
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minute timeout
+        )
+        
+        if restore_process.returncode != 0:
+            error_msg = restore_process.stderr or "Unknown error during psql restore"
+            logger.error(f"psql restore failed: {error_msg}")
+            raise HTTPException(status_code=500, detail=f"Failed to restore to production: {error_msg}")
+        
+        # CRITICAL: Sync sequences after restore
+        # pg_dump includes explicit IDs, but sequences don't auto-update
+        # This prevents duplicate key errors on the next insert
+        logger.info("Syncing PostgreSQL sequences after restore...")
+        sync_sequences_sql = """
+            DO $$
+            DECLARE
+                r RECORD;
+                seq_name TEXT;
+                max_val BIGINT;
+            BEGIN
+                FOR r IN (
+                    SELECT 
+                        t.table_name,
+                        c.column_name
+                    FROM information_schema.tables t
+                    JOIN information_schema.columns c 
+                        ON t.table_name = c.table_name 
+                        AND t.table_schema = c.table_schema
+                    WHERE t.table_schema = 'public'
+                        AND t.table_type = 'BASE TABLE'
+                        AND c.column_default LIKE 'nextval%'
+                )
+                LOOP
+                    seq_name := pg_get_serial_sequence('public.' || r.table_name, r.column_name);
+                    IF seq_name IS NOT NULL THEN
+                        EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM %I', r.column_name, r.table_name) INTO max_val;
+                        EXECUTE format('SELECT setval(%L, GREATEST(%s, 1))', seq_name, max_val);
+                        RAISE NOTICE 'Synced sequence % to %', seq_name, max_val;
+                    END IF;
+                END LOOP;
+            END $$;
+        """
+        
+        sync_process = subprocess.run(
+            ["psql", prod_url, "-c", sync_sequences_sql],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        if sync_process.returncode != 0:
+            # Log warning but don't fail - data was restored successfully
+            logger.warning(f"Sequence sync warning (data restored OK): {sync_process.stderr}")
+        else:
+            logger.info("Sequences synced successfully")
+        
+        logger.info(f"Admin {admin_id} successfully promoted staging to production")
+        return {
+            "status": "success",
+            "message": "Staging database successfully promoted to production"
+        }
+        
+    except subprocess.TimeoutExpired:
+        logger.error("Promotion operation timed out")
+        raise HTTPException(status_code=500, detail="Promotion operation timed out. Please check database status.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error promoting staging to production: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to promote staging to production: {str(e)}")

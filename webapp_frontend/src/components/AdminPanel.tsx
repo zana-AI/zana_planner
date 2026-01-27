@@ -272,7 +272,6 @@ export function AdminPanel() {
           users={users}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
-          error={error}
           setError={setError}
           onTabChange={setActiveTab}
           onRefreshBroadcasts={fetchBroadcasts}

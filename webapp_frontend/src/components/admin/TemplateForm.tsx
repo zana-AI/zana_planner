@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { apiClient } from '../../api/client';
 import type { PromiseTemplate } from '../../types';
 import { inputStyle, labelStyle } from './styles';

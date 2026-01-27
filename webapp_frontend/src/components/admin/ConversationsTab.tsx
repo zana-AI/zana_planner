@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { apiClient } from '../../api/client';
 import type { AdminUser, ConversationMessage } from '../../types';
 import { UserSelector } from './UserSelector';

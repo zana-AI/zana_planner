@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { apiClient, ApiError } from '../../api/client';
 import type { AdminUser, BotToken, CreateBroadcastRequest } from '../../types';
 import { UserSelector } from './UserSelector';
@@ -8,7 +8,6 @@ interface BroadcastTabProps {
   users: AdminUser[];
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  error: string;
   setError: (error: string) => void;
   onTabChange: (tab: TabType) => void;
   onRefreshBroadcasts: () => void;
@@ -18,7 +17,6 @@ export function BroadcastTab({
   users,
   searchQuery,
   setSearchQuery,
-  error,
   setError,
   onTabChange,
   onRefreshBroadcasts,

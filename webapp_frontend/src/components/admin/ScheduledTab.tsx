@@ -1,4 +1,3 @@
-import React from 'react';
 import type { Broadcast } from '../../types';
 import { apiClient, ApiError } from '../../api/client';
 

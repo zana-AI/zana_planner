@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import { apiClient, ApiError } from '../../api/client';
 import type { PromiseTemplate } from '../../types';
 import { TemplateForm } from './TemplateForm';
