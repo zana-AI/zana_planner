@@ -149,6 +149,10 @@ export interface AdminUser {
   last_name?: string;
   username?: string;
   last_seen_utc?: string;
+  timezone?: string;
+  language?: string;
+  promise_count?: number;
+  activity_count?: number;
 }
 
 export interface AdminUsersResponse {

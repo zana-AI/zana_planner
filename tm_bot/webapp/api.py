@@ -3276,6 +3276,10 @@ Rules:
         last_name: Optional[str] = None
         username: Optional[str] = None
         last_seen_utc: Optional[str] = None
+        timezone: Optional[str] = None
+        language: Optional[str] = None
+        promise_count: Optional[int] = None
+        activity_count: Optional[int] = None
     
     class AdminUsersResponse(BaseModel):
         """Response model for admin users endpoint."""
@@ -3342,16 +3346,43 @@ Rules:
         try:
             from db.postgres_db import get_db_session
             from sqlalchemy import text
+            from datetime import datetime, timedelta, timezone
+
+            # Calculate 30 days ago for activity count
+            since_utc = (
+                datetime.now(timezone.utc) - timedelta(days=30)
+            ).isoformat().replace("+00:00", "Z")
 
             with get_db_session() as session:
                 rows = session.execute(
                     text("""
-                        SELECT user_id, first_name, last_name, username, last_seen_utc
-                        FROM users
-                        ORDER BY last_seen_utc DESC NULLS LAST
+                        SELECT 
+                            u.user_id,
+                            u.first_name,
+                            u.last_name,
+                            u.username,
+                            u.last_seen_utc,
+                            u.timezone,
+                            u.language,
+                            COALESCE(promise_counts.promise_count, 0) as promise_count,
+                            COALESCE(activity.activity_count, 0) as activity_count
+                        FROM users u
+                        LEFT JOIN (
+                            SELECT user_id, COUNT(*) as promise_count
+                            FROM promises
+                            WHERE is_deleted = 0
+                            GROUP BY user_id
+                        ) promise_counts ON u.user_id = promise_counts.user_id
+                        LEFT JOIN (
+                            SELECT user_id, COUNT(*) as activity_count
+                            FROM actions 
+                            WHERE at_utc >= :since_utc
+                            GROUP BY user_id
+                        ) activity ON u.user_id = activity.user_id
+                        ORDER BY u.last_seen_utc DESC NULLS LAST
                         LIMIT :limit;
                     """),
-                    {"limit": int(limit)},
+                    {"since_utc": since_utc, "limit": int(limit)},
                 ).mappings().fetchall()
 
             users: List[AdminUser] = []
@@ -3363,6 +3394,10 @@ Rules:
                         last_name=row.get("last_name"),
                         username=row.get("username"),
                         last_seen_utc=row.get("last_seen_utc"),
+                        timezone=row.get("timezone"),
+                        language=row.get("language"),
+                        promise_count=row.get("promise_count"),
+                        activity_count=row.get("activity_count"),
                     )
                 )
 
