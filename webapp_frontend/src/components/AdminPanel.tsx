@@ -1246,8 +1246,6 @@ export function AdminPanel() {
         />
       )}
 
-
-    
       {activeTab === 'conversations' && (
         <ConversationViewer
           users={users}
@@ -1265,6 +1263,802 @@ export function AdminPanel() {
           setShowAllUserMessages={setShowAllUserMessages}
         />
       )}
+    </div>
+  );
+}
+
+// Dev Tool Link Component
+function DevToolLink({ name, description, url, icon }: { name: string; description: string; url: string; icon: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: 'block',
+        background: 'rgba(15, 23, 48, 0.6)',
+        border: '1px solid rgba(232, 238, 252, 0.1)',
+        borderRadius: '8px',
+        padding: '1.5rem',
+        textDecoration: 'none',
+        color: 'inherit',
+        transition: 'all 0.2s',
+        cursor: 'pointer'
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = 'rgba(15, 23, 48, 0.8)';
+        e.currentTarget.style.borderColor = 'rgba(91, 163, 245, 0.4)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'rgba(15, 23, 48, 0.6)';
+        e.currentTarget.style.borderColor = 'rgba(232, 238, 252, 0.1)';
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ fontSize: '2rem' }}>{icon}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff', marginBottom: '0.25rem' }}>
+            {name}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+            {description}
+          </div>
+        </div>
+        <div style={{ color: 'rgba(91, 163, 245, 0.8)' }}>→</div>
+      </div>
+    </a>
+  );
+}
+
+// Template Form Component
+// Emoji picker options
+const EMOJI_OPTIONS = ['🏃', '📚', '💪', '🧘', '🎯', '✍️', '🎨', '🎵', '💻', '🌱', '💧', '😴', '🍎', '💰', '🧠', '❤️'];
+
+// Category options
+const CATEGORY_OPTIONS = ['health', 'fitness', 'learning', 'productivity', 'mindfulness', 'creativity', 'finance', 'social', 'self-care', 'other'];
+
+function TemplateForm({ template, onSave, onCancel }: { template: Partial<PromiseTemplate>, onSave: (data: any) => void, onCancel: () => void }) {
+  const [prompt, setPrompt] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [formData, setFormData] = useState({
+    title: template.title || '',
+    description: template.description || '',
+    category: template.category || 'other',
+    target_value: template.target_value || 7,
+    metric_type: template.metric_type || 'count',
+    emoji: template.emoji || '',
+    is_active: template.is_active !== undefined ? (typeof template.is_active === 'number' ? template.is_active !== 0 : template.is_active) : true,
+  });
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) return;
+    setGenerating(true);
+    try {
+      const draft = await apiClient.generateTemplateDraft(prompt);
+      setFormData({
+        title: draft.title || '',
+        description: draft.description || '',
+        category: draft.category || 'other',
+        target_value: draft.target_value || 7,
+        metric_type: draft.metric_type || 'count',
+        emoji: draft.emoji || '',
+        is_active: true,
+      });
+    } catch (err) {
+      console.error('Failed to generate template:', err);
+      alert('Failed to generate template. Please try again.');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const inputStyle = {
+    width: '100%',
+    padding: '0.75rem',
+    borderRadius: '8px',
+    border: '1px solid rgba(232, 238, 252, 0.15)',
+    background: 'rgba(11, 16, 32, 0.6)',
+    color: '#fff',
+    fontSize: '0.95rem'
+  };
+
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '0.5rem',
+    color: 'rgba(232, 238, 252, 0.7)',
+    fontSize: '0.85rem',
+    fontWeight: '500' as const
+  };
+
+  return (
+    <div style={{
+      background: 'rgba(15, 23, 48, 0.9)',
+      border: '1px solid rgba(232, 238, 252, 0.15)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem'
+    }}>
+      <h3 style={{ marginTop: 0, marginBottom: '1.25rem', color: '#fff', fontSize: '1.2rem' }}>
+        {template.template_id ? '✏️ Edit Template' : '✨ Create Template'}
+      </h3>
+
+      {/* AI Generation Section */}
+      {!template.template_id && (
+        <div style={{
+          marginBottom: '1.5rem',
+          padding: '1rem',
+          background: 'linear-gradient(135deg, rgba(91, 163, 245, 0.1), rgba(118, 75, 162, 0.1))',
+          borderRadius: '12px',
+          border: '1px solid rgba(91, 163, 245, 0.2)'
+        }}>
+          <label style={{ ...labelStyle, color: '#5ba3f5' }}>
+            🤖 Quick Create with AI
+          </label>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="e.g., Exercise 3 times a week"
+              onKeyPress={(e) => e.key === 'Enter' && handleGenerate()}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <button
+              onClick={handleGenerate}
+              disabled={!prompt.trim() || generating}
+              style={{
+                padding: '0.75rem 1.25rem',
+                background: generating ? 'rgba(91, 163, 245, 0.3)' : 'linear-gradient(135deg, #5ba3f5, #667eea)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#fff',
+                cursor: (!prompt.trim() || generating) ? 'not-allowed' : 'pointer',
+                opacity: (!prompt.trim() || generating) ? 0.6 : 1,
+                fontWeight: '600',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {generating ? '...' : 'Generate'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gap: '1.25rem' }}>
+        {/* Title + Emoji Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', alignItems: 'end' }}>
+          <div>
+            <label style={labelStyle}>Title *</label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              placeholder="e.g., Daily Exercise"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Emoji</label>
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxWidth: '200px' }}>
+              {EMOJI_OPTIONS.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => setFormData({ ...formData, emoji: formData.emoji === emoji ? '' : emoji })}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    border: formData.emoji === emoji ? '2px solid #5ba3f5' : '1px solid rgba(232, 238, 252, 0.15)',
+                    borderRadius: '6px',
+                    background: formData.emoji === emoji ? 'rgba(91, 163, 245, 0.2)' : 'rgba(11, 16, 32, 0.6)',
+                    cursor: 'pointer',
+                    fontSize: '1rem'
+                  }}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Description */}
+        <div>
+          <label style={labelStyle}>Description (optional)</label>
+          <textarea
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            rows={2}
+            placeholder="Why is this habit valuable?"
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        </div>
+
+        {/* Category + Target Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label style={labelStyle}>Category</label>
+            <select
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              style={inputStyle}
+            >
+              {CATEGORY_OPTIONS.map(cat => (
+                <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Target</label>
+            <input
+              type="number"
+              step="1"
+              min="1"
+              value={formData.target_value}
+              onChange={(e) => setFormData({ ...formData, target_value: parseFloat(e.target.value) || 1 })}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Per Week</label>
+            <select
+              value={formData.metric_type}
+              onChange={(e) => setFormData({ ...formData, metric_type: e.target.value as 'hours' | 'count' })}
+              style={inputStyle}
+            >
+              <option value="count">times</option>
+              <option value="hours">hours</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Preview */}
+        <div style={{
+          padding: '1rem',
+          background: 'rgba(0,0,0,0.2)',
+          borderRadius: '10px',
+          border: '1px dashed rgba(232, 238, 252, 0.1)'
+        }}>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(232, 238, 252, 0.5)', marginBottom: '0.5rem' }}>Preview</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '1.5rem' }}>{formData.emoji || '🎯'}</span>
+            <div>
+              <div style={{ fontWeight: '600', color: '#fff' }}>{formData.title || 'Template Title'}</div>
+              <div style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+                {formData.target_value} {formData.metric_type === 'hours' ? 'hours' : 'times'}/week • {formData.category}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.5rem' }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '0.75rem 1.5rem',
+              background: 'transparent',
+              border: '1px solid rgba(232, 238, 252, 0.2)',
+              borderRadius: '8px',
+              color: 'rgba(232, 238, 252, 0.8)',
+              cursor: 'pointer',
+              fontSize: '0.95rem'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(formData)}
+            disabled={!formData.title.trim()}
+            style={{
+              padding: '0.75rem 1.5rem',
+              background: !formData.title.trim() ? 'rgba(102, 126, 234, 0.3)' : 'linear-gradient(135deg, #667eea, #764ba2)',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              cursor: !formData.title.trim() ? 'not-allowed' : 'pointer',
+              fontSize: '0.95rem',
+              fontWeight: '600'
+            }}
+          >
+            {template.template_id ? 'Save Changes' : 'Create Template'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Delete Confirmation Modal
+function DeleteConfirmModal({ templateId, templateTitle, onConfirm, onCancel, confirmText, onConfirmTextChange }: {
+  templateId: string;
+  templateTitle: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirmText: string;
+  onConfirmTextChange: (text: string) => void;
+}) {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0, 0, 0, 0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        background: 'rgba(15, 23, 48, 0.98)',
+        border: '1px solid rgba(232, 238, 252, 0.2)',
+        borderRadius: '12px',
+        padding: '1.5rem',
+        maxWidth: '400px',
+        width: '90%'
+      }}>
+        <h3 style={{ marginTop: 0, color: '#ff6b6b' }}>Delete Template</h3>
+        <p style={{ color: 'rgba(232, 238, 252, 0.8)', marginBottom: '1rem' }}>
+          Are you sure you want to delete <strong>{templateTitle}</strong>?
+        </p>
+        <p style={{ color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          This action cannot be undone. Type the template ID to confirm:
+        </p>
+        <input
+          type="text"
+          value={confirmText}
+          onChange={(e) => onConfirmTextChange(e.target.value)}
+          placeholder={templateId}
+          style={{
+            width: '100%',
+            padding: '0.5rem',
+            borderRadius: '6px',
+            border: '1px solid rgba(232, 238, 252, 0.2)',
+            background: 'rgba(11, 16, 32, 0.6)',
+            color: '#fff',
+            marginBottom: '1rem'
+          }}
+        />
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '0.5rem 1rem',
+              background: 'rgba(232, 238, 252, 0.1)',
+              border: '1px solid rgba(232, 238, 252, 0.2)',
+              borderRadius: '6px',
+              color: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={confirmText !== templateId}
+            style={{
+              padding: '0.5rem 1rem',
+              background: confirmText === templateId ? '#ff6b6b' : 'rgba(255, 107, 107, 0.3)',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#fff',
+              cursor: confirmText === templateId ? 'pointer' : 'not-allowed',
+              opacity: confirmText === templateId ? 1 : 0.5
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Create Promise Form Component
+function CreatePromiseForm({ users, searchQuery, setSearchQuery, error, setError }: {
+  users: AdminUser[];
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  error: string;
+  setError: (error: string) => void;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [formData, setFormData] = useState({
+    text: '',
+    hours_per_week: 0,
+    recurring: true,
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: '',
+    visibility: 'private' as 'private' | 'followers' | 'clubs' | 'public',
+    description: ''
+  });
+  const [remindersEnabled, setRemindersEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState('09:00');
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
+  const [creating, setCreating] = useState(false);
+
+  const inputStyle = {
+    width: '100%',
+    padding: '0.75rem',
+    borderRadius: '8px',
+    border: '1px solid rgba(232, 238, 252, 0.15)',
+    background: 'rgba(11, 16, 32, 0.6)',
+    color: '#fff',
+    fontSize: '0.95rem'
+  };
+
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '0.5rem',
+    color: 'rgba(232, 238, 252, 0.7)',
+    fontSize: '0.85rem',
+    fontWeight: '500' as const
+  };
+
+  // Filter users based on search query
+  const filteredUsers = users.filter(user => {
+    const query = searchQuery.toLowerCase();
+    const firstName = user.first_name?.toLowerCase() || '';
+    const lastName = user.last_name?.toLowerCase() || '';
+    const username = user.username?.toLowerCase() || '';
+    const userId = user.user_id.toLowerCase();
+    
+    return firstName.includes(query) || 
+           lastName.includes(query) || 
+           username.includes(query) || 
+           userId.includes(query);
+  });
+
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const dayAbbrevs = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  const toggleDay = (weekday: number) => {
+    const newSelected = new Set(selectedDays);
+    if (newSelected.has(weekday)) {
+      newSelected.delete(weekday);
+    } else {
+      newSelected.add(weekday);
+    }
+    setSelectedDays(newSelected);
+  };
+
+  const selectAllDays = () => {
+    setSelectedDays(new Set([0, 1, 2, 3, 4, 5, 6]));
+  };
+
+  const deselectAllDays = () => {
+    setSelectedDays(new Set());
+  };
+
+  const handleSubmit = async () => {
+    // Validation
+    if (!selectedUserId) {
+      setError('Please select a user');
+      return;
+    }
+    if (!formData.text.trim()) {
+      setError('Please enter promise text');
+      return;
+    }
+    if (formData.hours_per_week < 0) {
+      setError('Hours per week must be >= 0');
+      return;
+    }
+    if (formData.end_date && formData.start_date && formData.end_date < formData.start_date) {
+      setError('End date must be >= start date');
+      return;
+    }
+    if (remindersEnabled && selectedDays.size === 0) {
+      setError('Please select at least one day for reminders');
+      return;
+    }
+
+    setCreating(true);
+    setError('');
+
+    try {
+      const request: CreatePromiseForUserRequest = {
+        target_user_id: selectedUserId,
+        text: formData.text.trim(),
+        hours_per_week: formData.hours_per_week,
+        recurring: formData.recurring,
+        start_date: formData.start_date || undefined,
+        end_date: formData.end_date || undefined,
+        visibility: formData.visibility,
+        description: formData.description.trim() || undefined,
+        reminders: remindersEnabled && selectedDays.size > 0
+          ? Array.from(selectedDays).map(weekday => ({
+              weekday,
+              time: reminderTime,
+              enabled: true
+            }))
+          : undefined
+      };
+
+      const result = await apiClient.createPromiseForUser(request);
+      alert(`✅ Promise created successfully!\n\nPromise ID: ${result.promise_id}\n${result.message}`);
+      
+      // Reset form
+      setSelectedUserId(null);
+      setFormData({
+        text: '',
+        hours_per_week: 0,
+        recurring: true,
+        start_date: new Date().toISOString().split('T')[0],
+        end_date: '',
+        visibility: 'private',
+        description: ''
+      });
+      setRemindersEnabled(false);
+      setReminderTime('09:00');
+      setSelectedDays(new Set());
+    } catch (err) {
+      console.error('Failed to create promise:', err);
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to create promise. Please try again.');
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const selectedDaysPreview = Array.from(selectedDays)
+    .sort()
+    .map(d => dayAbbrevs[d])
+    .join(', ');
+
+  return (
+    <div className="admin-panel-compose">
+      <div className="admin-section">
+        <h2 className="admin-section-title">Select User</h2>
+        <div className="admin-user-controls">
+          <input
+            type="text"
+            className="admin-search-input"
+            placeholder="Search users..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="admin-users-list" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+          {filteredUsers.map((user) => {
+            const userId = parseInt(user.user_id);
+            const isSelected = selectedUserId === userId;
+            return (
+              <label key={user.user_id} className="admin-user-item">
+                <input
+                  type="radio"
+                  name="selectedUser"
+                  checked={isSelected}
+                  onChange={() => setSelectedUserId(userId)}
+                />
+                <span className="admin-user-name">
+                  {user.first_name || ''} {user.last_name || ''} {user.username ? `(@${user.username})` : ''}
+                </span>
+                <span className="admin-user-id">ID: {user.user_id}</span>
+              </label>
+            );
+          })}
+          {filteredUsers.length === 0 && (
+            <div className="admin-no-users">No users found</div>
+          )}
+        </div>
+      </div>
+
+      <div className="admin-section">
+        <h2 className="admin-section-title">Promise Details</h2>
+        <div style={{ display: 'grid', gap: '1.25rem' }}>
+          <div>
+            <label style={labelStyle}>Promise Text *</label>
+            <input
+              type="text"
+              value={formData.text}
+              onChange={(e) => setFormData({ ...formData, text: e.target.value })}
+              placeholder="e.g., Daily Exercise"
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={labelStyle}>Hours per Week</label>
+              <input
+                type="number"
+                value={formData.hours_per_week}
+                onChange={(e) => setFormData({ ...formData, hours_per_week: parseFloat(e.target.value) || 0 })}
+                min="0"
+                step="0.1"
+                style={inputStyle}
+              />
+              <p style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.5)', marginTop: '0.25rem' }}>
+                0.0 for check-based promises
+              </p>
+            </div>
+            <div>
+              <label style={labelStyle}>Recurring</label>
+              <div style={{ display: 'flex', alignItems: 'center', marginTop: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={formData.recurring}
+                  onChange={(e) => setFormData({ ...formData, recurring: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+                <span style={{ marginLeft: '0.5rem', color: 'rgba(232, 238, 252, 0.8)' }}>Recurring promise</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={labelStyle}>Start Date</label>
+              <input
+                type="date"
+                value={formData.start_date}
+                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>End Date (Optional)</label>
+              <input
+                type="date"
+                value={formData.end_date}
+                onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                min={formData.start_date}
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Visibility</label>
+            <select
+              value={formData.visibility}
+              onChange={(e) => setFormData({ ...formData, visibility: e.target.value as any })}
+              style={inputStyle}
+            >
+              <option value="private">Private</option>
+              <option value="followers">Followers</option>
+              <option value="clubs">Clubs</option>
+              <option value="public">Public</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Description (Optional)</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              rows={3}
+              placeholder="Additional description or notes..."
+              style={{ ...inputStyle, resize: 'vertical' }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-section">
+        <h2 className="admin-section-title">Reminders (Optional)</h2>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+          <input
+            type="checkbox"
+            checked={remindersEnabled}
+            onChange={(e) => {
+              setRemindersEnabled(e.target.checked);
+              if (!e.target.checked) {
+                setSelectedDays(new Set());
+              }
+            }}
+            style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+          />
+          <span style={{ marginLeft: '0.5rem', color: 'rgba(232, 238, 252, 0.8)' }}>Enable reminders</span>
+        </div>
+
+        {remindersEnabled && (
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            <div>
+              <label style={labelStyle}>Reminder Time</label>
+              <input
+                type="time"
+                value={reminderTime}
+                onChange={(e) => setReminderTime(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <label style={labelStyle}>Days of Week</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={selectAllDays}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      background: 'rgba(91, 163, 245, 0.2)',
+                      border: '1px solid rgba(91, 163, 245, 0.4)',
+                      borderRadius: '4px',
+                      color: '#5ba3f5',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deselectAllDays}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      background: 'rgba(232, 238, 252, 0.1)',
+                      border: '1px solid rgba(232, 238, 252, 0.2)',
+                      borderRadius: '4px',
+                      color: 'rgba(232, 238, 252, 0.8)',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {dayNames.map((_day, index) => {
+                  const isSelected = selectedDays.has(index);
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => toggleDay(index)}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        background: isSelected ? 'rgba(91, 163, 245, 0.3)' : 'rgba(11, 16, 32, 0.6)',
+                        border: isSelected ? '2px solid #5ba3f5' : '1px solid rgba(232, 238, 252, 0.15)',
+                        borderRadius: '6px',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: isSelected ? '600' : '400'
+                      }}
+                    >
+                      {dayAbbrevs[index]}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedDays.size > 0 && (
+                <p style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.6)', marginTop: '0.5rem' }}>
+                  Selected: {selectedDaysPreview} at {reminderTime}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="admin-panel-error-banner">
+          <p>{error}</p>
+          <button onClick={() => setError('')}>×</button>
+        </div>
+      )}
+
+      <div className="admin-actions">
+        <button
+          className="admin-send-btn"
+          onClick={handleSubmit}
+          disabled={creating || !selectedUserId || !formData.text.trim()}
+          style={{
+            opacity: (creating || !selectedUserId || !formData.text.trim()) ? 0.5 : 1,
+            cursor: (creating || !selectedUserId || !formData.text.trim()) ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {creating ? 'Creating...' : 'Create Promise'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1299,244 +2093,98 @@ function ConversationViewer({
   showAllUserMessages: boolean;
   setShowAllUserMessages: (show: boolean) => void;
 }) {
-  // Filter users based on search query
   const filteredUsers = users.filter(user => {
     const query = searchQuery.toLowerCase();
     const firstName = user.first_name?.toLowerCase() || '';
     const lastName = user.last_name?.toLowerCase() || '';
     const username = user.username?.toLowerCase() || '';
     const userId = user.user_id.toLowerCase();
-    
-    return firstName.includes(query) || 
-           lastName.includes(query) || 
-           username.includes(query) || 
-           userId.includes(query);
+    return firstName.includes(query) || lastName.includes(query) || username.includes(query) || userId.includes(query);
   });
 
-  // Fetch conversations when user is selected
   useEffect(() => {
     if (!selectedConversationUserId) {
       setConversations([]);
       return;
     }
-
     const fetchConversations = async () => {
       setLoadingConversations(true);
       try {
         const response = await apiClient.getUserConversations(selectedConversationUserId.toString(), 100);
-        // Reverse to show oldest first
         setConversations([...response.messages].reverse());
-        // Reset revealed messages when loading new conversation
         setRevealedMessageIds(new Set());
         setShowAllUserMessages(false);
       } catch (err) {
         console.error('Failed to fetch conversations:', err);
-        if (err instanceof ApiError) {
-          alert(err.message);
-        } else {
-          alert('Failed to load conversations. Please try again.');
-        }
       } finally {
         setLoadingConversations(false);
       }
     };
-
     fetchConversations();
-  }, [selectedConversationUserId, setConversations, setLoadingConversations, setRevealedMessageIds, setShowAllUserMessages]);
+  }, [selectedConversationUserId]);
 
-  const toggleMessageReveal = (messageId: number) => {
+  const toggleRevealMessage = (messageId: number) => {
     const newRevealed = new Set(revealedMessageIds);
-    if (newRevealed.has(messageId)) {
-      newRevealed.delete(messageId);
-    } else {
-      newRevealed.add(messageId);
-    }
+    if (newRevealed.has(messageId)) newRevealed.delete(messageId);
+    else newRevealed.add(messageId);
     setRevealedMessageIds(newRevealed);
   };
 
-  const toggleShowAll = () => {
-    if (showAllUserMessages) {
-      setRevealedMessageIds(new Set());
-      setShowAllUserMessages(false);
-    } else {
-      const userMessageIds = new Set(
-        conversations
-          .filter(msg => msg.message_type === 'user')
-          .map(msg => msg.id)
-      );
-      setRevealedMessageIds(userMessageIds);
-      setShowAllUserMessages(true);
-    }
-  };
+  const toggleShowAllUserMessages = () => setShowAllUserMessages(!showAllUserMessages);
 
-  const formatTimestamp = (timestamp: string) => {
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString();
-    } catch {
-      return timestamp;
-    }
-  };
-
-  const isMessageRevealed = (message: ConversationMessage) => {
-    return showAllUserMessages || revealedMessageIds.has(message.id);
-  };
+  const isMessageRevealed = (msg: ConversationMessage) => msg.message_type === 'bot' || showAllUserMessages || revealedMessageIds.has(msg.id);
 
   return (
-    <div className="admin-panel-conversations">
+    <div className="admin-panel-compose">
       <div className="admin-section">
         <h2 className="admin-section-title">Select User</h2>
-        <div className="admin-user-controls">
-          <input
-            type="text"
-            className="admin-search-input"
-            placeholder="Search users..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        <input type="text" className="admin-search-input" placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         <div className="admin-users-list" style={{ maxHeight: '200px', overflowY: 'auto' }}>
           {filteredUsers.map((user) => {
             const userId = parseInt(user.user_id);
-            const isSelected = selectedConversationUserId === userId;
             return (
               <label key={user.user_id} className="admin-user-item">
-                <input
-                  type="radio"
-                  name="selectedConversationUser"
-                  checked={isSelected}
-                  onChange={() => setSelectedConversationUserId(userId)}
-                />
-                <span className="admin-user-name">
-                  {user.first_name || ''} {user.last_name || ''} {user.username ? `(@${user.username})` : ''}
-                </span>
+                <input type="radio" name="conversationUser" checked={selectedConversationUserId === userId} onChange={() => setSelectedConversationUserId(userId)} />
+                <span className="admin-user-name">{user.first_name || ''} {user.last_name || ''} {user.username ? (@+${user.username}) : ''}</span>
                 <span className="admin-user-id">ID: {user.user_id}</span>
               </label>
             );
           })}
-          {filteredUsers.length === 0 && (
-            <div className="admin-no-users">No users found</div>
-          )}
+          {filteredUsers.length === 0 && <div className="admin-no-users">No users found</div>}
         </div>
       </div>
 
       {selectedConversationUserId && (
         <div className="admin-section">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h2 className="admin-section-title" style={{ margin: 0 }}>Conversation</h2>
-            {conversations.some(msg => msg.message_type === 'user') && (
-              <button
-                onClick={toggleShowAll}
-                style={{
-                  padding: '0.5rem 1rem',
-                  background: showAllUserMessages ? 'rgba(255, 107, 107, 0.2)' : 'rgba(91, 163, 245, 0.2)',
-                  border: showAllUserMessages ? '1px solid rgba(255, 107, 107, 0.4)' : '1px solid rgba(91, 163, 245, 0.4)',
-                  borderRadius: '6px',
-                  color: showAllUserMessages ? '#ff6b6b' : '#5ba3f5',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem'
-                }}
-              >
+            <h2 className="admin-section-title" style={{ margin: 0 }}>Conversation History</h2>
+            {conversations.some(m => m.message_type === 'user') && (
+              <button onClick={toggleShowAllUserMessages} style={{ padding: '0.5rem 1rem', background: showAllUserMessages ? 'rgba(255, 107, 107, 0.2)' : 'rgba(91, 163, 245, 0.2)', border: '1px solid ' + (showAllUserMessages ? 'rgba(255, 107, 107, 0.4)' : 'rgba(91, 163, 245, 0.4)'), borderRadius: '6px', color: '#fff', cursor: 'pointer', fontSize: '0.85rem' }}>
                 {showAllUserMessages ? 'Hide All User Messages' : 'Show All User Messages'}
               </button>
             )}
           </div>
-
           {loadingConversations ? (
-            <div className="admin-loading">
-              <div className="loading-spinner" />
-              <div className="loading-text">Loading conversation...</div>
-            </div>
+            <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>Loading conversations...</div>
           ) : conversations.length === 0 ? (
-            <div className="admin-no-conversations" style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>
-              No conversation history found for this user.
-            </div>
+            <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>No conversations found</div>
           ) : (
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '0.75rem',
-              maxHeight: '600px',
-              overflowY: 'auto',
-              padding: '0.5rem'
-            }}>
-              {conversations.map((message) => {
-                const isUserMessage = message.message_type === 'user';
-                const isRevealed = isMessageRevealed(message);
-                
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '500px', overflowY: 'auto', padding: '0.5rem' }}>
+              {conversations.map((msg) => {
+                const isUser = msg.message_type === 'user';
+                const revealed = isMessageRevealed(msg);
                 return (
-                  <div
-                    key={message.id}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.25rem',
-                      padding: '0.75rem',
-                      borderRadius: '8px',
-                      background: isUserMessage 
-                        ? 'rgba(91, 163, 245, 0.1)' 
-                        : 'rgba(15, 23, 48, 0.6)',
-                      border: `1px solid ${isUserMessage ? 'rgba(91, 163, 245, 0.2)' : 'rgba(232, 238, 252, 0.1)'}`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ 
-                        fontSize: '0.75rem', 
-                        color: 'rgba(232, 238, 252, 0.6)',
-                        fontWeight: '600'
-                      }}>
-                        {isUserMessage ? '👤 User' : '🤖 Bot'}
-                      </span>
-                      <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.5)' }}>
-                        {formatTimestamp(message.created_at_utc)}
-                      </span>
-                    </div>
-                    <div style={{ 
-                      color: '#fff', 
-                      fontSize: '0.9rem',
-                      wordBreak: 'break-word',
-                      opacity: isUserMessage && !isRevealed ? 0.5 : 1
-                    }}>
-                      {isUserMessage && !isRevealed ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontStyle: 'italic', color: 'rgba(232, 238, 252, 0.5)' }}>
-                            [User message hidden]
-                          </span>
-                          <button
-                            onClick={() => toggleMessageReveal(message.id)}
-                            style={{
-                              padding: '0.25rem 0.5rem',
-                              background: 'rgba(91, 163, 245, 0.2)',
-                              border: '1px solid rgba(91, 163, 245, 0.4)',
-                              borderRadius: '4px',
-                              color: '#5ba3f5',
-                              cursor: 'pointer',
-                              fontSize: '0.75rem'
-                            }}
-                          >
-                            Show
-                          </button>
-                        </div>
+                  <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '80%', padding: '0.75rem 1rem', borderRadius: isUser ? '12px 12px 4px 12px' : '12px 12px 12px 4px', background: isUser ? 'rgba(91, 163, 245, 0.2)' : 'rgba(232, 238, 252, 0.1)', border: '1px solid ' + (isUser ? 'rgba(91, 163, 245, 0.3)' : 'rgba(232, 238, 252, 0.15)') }}>
+                      <div style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.5)', marginBottom: '0.25rem' }}>
+                        {isUser ? 'User' : 'Bot'} • {new Date(msg.created_at_utc).toLocaleString()}
+                      </div>
+                      {revealed ? (
+                        <div style={{ color: '#fff', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
                       ) : (
-                        <div>
-                          {message.content}
-                          {isUserMessage && isRevealed && (
-                            <button
-                              onClick={() => toggleMessageReveal(message.id)}
-                              style={{
-                                marginLeft: '0.5rem',
-                                padding: '0.25rem 0.5rem',
-                                background: 'rgba(255, 107, 107, 0.2)',
-                                border: '1px solid rgba(255, 107, 107, 0.4)',
-                                borderRadius: '4px',
-                                color: '#ff6b6b',
-                                cursor: 'pointer',
-                                fontSize: '0.75rem'
-                              }}
-                            >
-                              Hide
-                            </button>
-                          )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ color: 'rgba(232, 238, 252, 0.4)', fontStyle: 'italic' }}>[User message hidden]</span>
+                          <button onClick={() => toggleRevealMessage(msg.id)} style={{ padding: '0.25rem 0.5rem', background: 'rgba(91, 163, 245, 0.2)', border: '1px solid rgba(91, 163, 245, 0.4)', borderRadius: '4px', color: '#5ba3f5', cursor: 'pointer', fontSize: '0.75rem' }}>Show</button>
                         </div>
                       )}
                     </div>
