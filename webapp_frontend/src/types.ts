@@ -155,6 +155,20 @@ export interface AdminUsersResponse {
   total: number;
 }
 
+export interface ConversationMessage {
+  id: number;
+  user_id: string;
+  chat_id?: string;
+  message_id?: number;
+  message_type: 'user' | 'bot';
+  content: string;
+  created_at_utc: string;
+}
+
+export interface ConversationResponse {
+  messages: ConversationMessage[];
+}
+
 export interface Broadcast {
   broadcast_id: string;
   admin_id: string;

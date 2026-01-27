@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { UserAvatar } from './UserAvatar';
-import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate, UserInfo, BotToken, CreatePromiseForUserRequest } from '../types';
+import type { AdminUser, Broadcast, CreateBroadcastRequest, PromiseTemplate, UserInfo, BotToken, CreatePromiseForUserRequest, ConversationMessage, ConversationResponse } from '../types';
 
 export function AdminPanel() {
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ export function AdminPanel() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
   const [sending, setSending] = useState(false);
-  const [activeTab, setActiveTab] = useState<'stats' | 'compose' | 'scheduled' | 'templates' | 'promote' | 'devtools' | 'createPromise'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'compose' | 'scheduled' | 'templates' | 'promote' | 'devtools' | 'createPromise' | 'conversations'>('stats');
   const [promoting, setPromoting] = useState(false);
   const [promoteConfirmText, setPromoteConfirmText] = useState('');
   const [stats, setStats] = useState<{ total_users: number; active_users: number; total_promises: number } | null>(null);
@@ -35,6 +35,11 @@ export function AdminPanel() {
   const [botTokens, setBotTokens] = useState<BotToken[]>([]);
   const [selectedBotTokenId, setSelectedBotTokenId] = useState<string>('');
   const [loadingBotTokens, setLoadingBotTokens] = useState(false);
+  const [conversations, setConversations] = useState<ConversationMessage[]>([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [selectedConversationUserId, setSelectedConversationUserId] = useState<number | null>(null);
+  const [revealedMessageIds, setRevealedMessageIds] = useState<Set<number>>(new Set());
+  const [showAllUserMessages, setShowAllUserMessages] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Check for authentication (initData or browser token)
@@ -671,6 +676,12 @@ export function AdminPanel() {
           >
             Create Promise
           </button>
+          <button
+            className={`admin-tab ${activeTab === 'conversations' ? 'active' : ''}`}
+            onClick={() => setActiveTab('conversations')}
+          >
+            Conversations
+          </button>
         </div>
 
       {error && !error.includes('Access denied') && (
@@ -1232,6 +1243,42 @@ export function AdminPanel() {
           setSearchQuery={setSearchQuery}
           error={error}
           setError={setError}
+        />
+      )}
+      {activeTab === 'conversations' && (
+        <ConversationViewer
+          users={users}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          conversations={conversations}
+          setConversations={setConversations}
+          loadingConversations={loadingConversations}
+          setLoadingConversations={setLoadingConversations}
+          selectedConversationUserId={selectedConversationUserId}
+          setSelectedConversationUserId={setSelectedConversationUserId}
+          revealedMessageIds={revealedMessageIds}
+          setRevealedMessageIds={setRevealedMessageIds}
+          showAllUserMessages={showAllUserMessages}
+          setShowAllUserMessages={setShowAllUserMessages}
+        />
+      )}
+
+
+      {activeTab === 'conversations' && (
+        <ConversationViewer
+          users={users}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          conversations={conversations}
+          setConversations={setConversations}
+          loadingConversations={loadingConversations}
+          setLoadingConversations={setLoadingConversations}
+          selectedConversationUserId={selectedConversationUserId}
+          setSelectedConversationUserId={setSelectedConversationUserId}
+          revealedMessageIds={revealedMessageIds}
+          setRevealedMessageIds={setRevealedMessageIds}
+          showAllUserMessages={showAllUserMessages}
+          setShowAllUserMessages={setShowAllUserMessages}
         />
       )}
     </div>
@@ -2032,4 +2079,569 @@ function CreatePromiseForm({ users, searchQuery, setSearchQuery, error, setError
       </div>
     </div>
   );
+}
+
+// Conversation Viewer Component
+function ConversationViewer({
+  users,
+  searchQuery,
+  setSearchQuery,
+  conversations,
+  setConversations,
+  loadingConversations,
+  setLoadingConversations,
+  selectedConversationUserId,
+  setSelectedConversationUserId,
+  revealedMessageIds,
+  setRevealedMessageIds,
+  showAllUserMessages,
+  setShowAllUserMessages,
+}: {
+  users: AdminUser[];
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  conversations: ConversationMessage[];
+  setConversations: (conversations: ConversationMessage[]) => void;
+  loadingConversations: boolean;
+  setLoadingConversations: (loading: boolean) => void;
+  selectedConversationUserId: number | null;
+  setSelectedConversationUserId: (userId: number | null) => void;
+  revealedMessageIds: Set<number>;
+  setRevealedMessageIds: (ids: Set<number>) => void;
+  showAllUserMessages: boolean;
+  setShowAllUserMessages: (show: boolean) => void;
+}) {
+  // Filter users based on search query
+  const filteredUsers = users.filter(user => {
+    const query = searchQuery.toLowerCase();
+    const firstName = user.first_name?.toLowerCase() || '';
+    const lastName = user.last_name?.toLowerCase() || '';
+    const username = user.username?.toLowerCase() || '';
+    const userId = user.user_id.toLowerCase();
+    
+    return firstName.includes(query) || 
+           lastName.includes(query) || 
+           username.includes(query) || 
+           userId.includes(query);
+  });
+
+  // Fetch conversations when user is selected
+  useEffect(() => {
+    if (!selectedConversationUserId) {
+      setConversations([]);
+      return;
+    }
+
+    const fetchConversations = async () => {
+      setLoadingConversations(true);
+      try {
+        const response = await apiClient.getUserConversations(selectedConversationUserId.toString(), 100);
+        // Reverse to show oldest first
+        setConversations([...response.messages].reverse());
+        // Reset revealed messages when loading new conversation
+        setRevealedMessageIds(new Set());
+        setShowAllUserMessages(false);
+      } catch (err) {
+        console.error('Failed to fetch conversations:', err);
+        if (err instanceof ApiError) {
+          alert(err.message);
+        } else {
+          alert('Failed to load conversations. Please try again.');
+        }
+      } finally {
+        setLoadingConversations(false);
+      }
+    };
+
+    fetchConversations();
+  }, [selectedConversationUserId, setConversations, setLoadingConversations, setRevealedMessageIds, setShowAllUserMessages]);
+
+  const toggleMessageReveal = (messageId: number) => {
+    const newRevealed = new Set(revealedMessageIds);
+    if (newRevealed.has(messageId)) {
+      newRevealed.delete(messageId);
+    } else {
+      newRevealed.add(messageId);
+    }
+    setRevealedMessageIds(newRevealed);
+  };
+
+  const toggleShowAll = () => {
+    if (showAllUserMessages) {
+      setRevealedMessageIds(new Set());
+      setShowAllUserMessages(false);
+    } else {
+      const userMessageIds = new Set(
+        conversations
+          .filter(msg => msg.message_type === 'user')
+          .map(msg => msg.id)
+      );
+      setRevealedMessageIds(userMessageIds);
+      setShowAllUserMessages(true);
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const isMessageRevealed = (message: ConversationMessage) => {
+    return showAllUserMessages || revealedMessageIds.has(message.id);
+  };
+
+  return (
+    <div className="admin-panel-conversations">
+      <div className="admin-section">
+        <h2 className="admin-section-title">Select User</h2>
+        <div className="admin-user-controls">
+          <input
+            type="text"
+            className="admin-search-input"
+            placeholder="Search users..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="admin-users-list" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+          {filteredUsers.map((user) => {
+            const userId = parseInt(user.user_id);
+            const isSelected = selectedConversationUserId === userId;
+            return (
+              <label key={user.user_id} className="admin-user-item">
+                <input
+                  type="radio"
+                  name="selectedConversationUser"
+                  checked={isSelected}
+                  onChange={() => setSelectedConversationUserId(userId)}
+                />
+                <span className="admin-user-name">
+                  {user.first_name || ''} {user.last_name || ''} {user.username ? `(@${user.username})` : ''}
+                </span>
+                <span className="admin-user-id">ID: {user.user_id}</span>
+              </label>
+            );
+          })}
+          {filteredUsers.length === 0 && (
+            <div className="admin-no-users">No users found</div>
+          )}
+        </div>
+      </div>
+
+      {selectedConversationUserId && (
+        <div className="admin-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2 className="admin-section-title" style={{ margin: 0 }}>Conversation</h2>
+            {conversations.some(msg => msg.message_type === 'user') && (
+              <button
+                onClick={toggleShowAll}
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: showAllUserMessages ? 'rgba(255, 107, 107, 0.2)' : 'rgba(91, 163, 245, 0.2)',
+                  border: showAllUserMessages ? '1px solid rgba(255, 107, 107, 0.4)' : '1px solid rgba(91, 163, 245, 0.4)',
+                  borderRadius: '6px',
+                  color: showAllUserMessages ? '#ff6b6b' : '#5ba3f5',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {showAllUserMessages ? 'Hide All User Messages' : 'Show All User Messages'}
+              </button>
+            )}
+          </div>
+
+          {loadingConversations ? (
+            <div className="admin-loading">
+              <div className="loading-spinner" />
+              <div className="loading-text">Loading conversation...</div>
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="admin-no-conversations" style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+              No conversation history found for this user.
+            </div>
+          ) : (
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '0.75rem',
+              maxHeight: '600px',
+              overflowY: 'auto',
+              padding: '0.5rem'
+            }}>
+              {conversations.map((message) => {
+                const isUserMessage = message.message_type === 'user';
+                const isRevealed = isMessageRevealed(message);
+                
+                return (
+                  <div
+                    key={message.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      background: isUserMessage 
+                        ? 'rgba(91, 163, 245, 0.1)' 
+                        : 'rgba(15, 23, 48, 0.6)',
+                      border: `1px solid ${isUserMessage ? 'rgba(91, 163, 245, 0.2)' : 'rgba(232, 238, 252, 0.1)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        color: 'rgba(232, 238, 252, 0.6)',
+                        fontWeight: '600'
+                      }}>
+                        {isUserMessage ? '👤 User' : '🤖 Bot'}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.5)' }}>
+                        {formatTimestamp(message.created_at_utc)}
+                      </span>
+                    </div>
+                    <div style={{ 
+                      color: '#fff', 
+                      fontSize: '0.9rem',
+                      wordBreak: 'break-word',
+                      opacity: isUserMessage && !isRevealed ? 0.5 : 1
+                    }}>
+                      {isUserMessage && !isRevealed ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontStyle: 'italic', color: 'rgba(232, 238, 252, 0.5)' }}>
+                            [User message hidden]
+                          </span>
+                          <button
+                            onClick={() => toggleMessageReveal(message.id)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              background: 'rgba(91, 163, 245, 0.2)',
+                              border: '1px solid rgba(91, 163, 245, 0.4)',
+                              borderRadius: '4px',
+                              color: '#5ba3f5',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem'
+                            }}
+                          >
+                            Show
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          {message.content}
+                          {isUserMessage && isRevealed && (
+                            <button
+                              onClick={() => toggleMessageReveal(message.id)}
+                              style={{
+                                marginLeft: '0.5rem',
+                                padding: '0.25rem 0.5rem',
+                                background: 'rgba(255, 107, 107, 0.2)',
+                                border: '1px solid rgba(255, 107, 107, 0.4)',
+                                borderRadius: '4px',
+                                color: '#ff6b6b',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem'
+                              }}
+                            >
+                              Hide
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+// Conversation Viewer Component
+function ConversationViewer({
+  users,
+  searchQuery,
+  setSearchQuery,
+  conversations,
+  setConversations,
+  loadingConversations,
+  setLoadingConversations,
+  selectedConversationUserId,
+  setSelectedConversationUserId,
+  revealedMessageIds,
+  setRevealedMessageIds,
+  showAllUserMessages,
+  setShowAllUserMessages,
+}: {
+  users: AdminUser[];
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  conversations: ConversationMessage[];
+  setConversations: (conversations: ConversationMessage[]) => void;
+  loadingConversations: boolean;
+  setLoadingConversations: (loading: boolean) => void;
+  selectedConversationUserId: number | null;
+  setSelectedConversationUserId: (userId: number | null) => void;
+  revealedMessageIds: Set<number>;
+  setRevealedMessageIds: (ids: Set<number>) => void;
+  showAllUserMessages: boolean;
+  setShowAllUserMessages: (show: boolean) => void;
+}) {
+  // Filter users based on search query
+  const filteredUsers = users.filter(user => {
+    const query = searchQuery.toLowerCase();
+    const firstName = user.first_name?.toLowerCase() || '';
+    const lastName = user.last_name?.toLowerCase() || '';
+    const username = user.username?.toLowerCase() || '';
+    const userId = user.user_id.toLowerCase();
+    
+    return firstName.includes(query) || 
+           lastName.includes(query) || 
+           username.includes(query) || 
+           userId.includes(query);
+  });
+
+  // Fetch conversations when user is selected
+  useEffect(() => {
+    if (!selectedConversationUserId) {
+      setConversations([]);
+      return;
+    }
+
+    const fetchConversations = async () => {
+      setLoadingConversations(true);
+      try {
+        const response = await apiClient.getUserConversations(selectedConversationUserId.toString(), 100);
+        // Reverse to show oldest first
+        setConversations([...response.messages].reverse());
+        // Reset revealed messages when loading new conversation
+        setRevealedMessageIds(new Set());
+        setShowAllUserMessages(false);
+      } catch (err) {
+        console.error('Failed to fetch conversations:', err);
+        if (err instanceof ApiError) {
+          alert(err.message);
+        } else {
+          alert('Failed to load conversations. Please try again.');
+        }
+      } finally {
+        setLoadingConversations(false);
+      }
+    };
+
+    fetchConversations();
+  }, [selectedConversationUserId, setConversations, setLoadingConversations, setRevealedMessageIds, setShowAllUserMessages]);
+
+  const toggleMessageReveal = (messageId: number) => {
+    const newRevealed = new Set(revealedMessageIds);
+    if (newRevealed.has(messageId)) {
+      newRevealed.delete(messageId);
+    } else {
+      newRevealed.add(messageId);
+    }
+    setRevealedMessageIds(newRevealed);
+  };
+
+  const toggleShowAll = () => {
+    if (showAllUserMessages) {
+      setRevealedMessageIds(new Set());
+      setShowAllUserMessages(false);
+    } else {
+      const userMessageIds = new Set(
+        conversations
+          .filter(msg => msg.message_type === 'user')
+          .map(msg => msg.id)
+      );
+      setRevealedMessageIds(userMessageIds);
+      setShowAllUserMessages(true);
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const isMessageRevealed = (message: ConversationMessage) => {
+    return showAllUserMessages || revealedMessageIds.has(message.id);
+  };
+
+  return (
+    <div className="admin-panel-conversations">
+      <div className="admin-section">
+        <h2 className="admin-section-title">Select User</h2>
+        <div className="admin-user-controls">
+          <input
+            type="text"
+            className="admin-search-input"
+            placeholder="Search users..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="admin-users-list" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+          {filteredUsers.map((user) => {
+            const userId = parseInt(user.user_id);
+            const isSelected = selectedConversationUserId === userId;
+            return (
+              <label key={user.user_id} className="admin-user-item">
+                <input
+                  type="radio"
+                  name="selectedConversationUser"
+                  checked={isSelected}
+                  onChange={() => setSelectedConversationUserId(userId)}
+                />
+                <span className="admin-user-name">
+                  {user.first_name || ''} {user.last_name || ''} {user.username ? `(@${user.username})` : ''}
+                </span>
+                <span className="admin-user-id">ID: {user.user_id}</span>
+              </label>
+            );
+          })}
+          {filteredUsers.length === 0 && (
+            <div className="admin-no-users">No users found</div>
+          )}
+        </div>
+      </div>
+
+      {selectedConversationUserId && (
+        <div className="admin-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2 className="admin-section-title" style={{ margin: 0 }}>Conversation</h2>
+            {conversations.some(msg => msg.message_type === 'user') && (
+              <button
+                onClick={toggleShowAll}
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: showAllUserMessages ? 'rgba(255, 107, 107, 0.2)' : 'rgba(91, 163, 245, 0.2)',
+                  border: showAllUserMessages ? '1px solid rgba(255, 107, 107, 0.4)' : '1px solid rgba(91, 163, 245, 0.4)',
+                  borderRadius: '6px',
+                  color: showAllUserMessages ? '#ff6b6b' : '#5ba3f5',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {showAllUserMessages ? 'Hide All User Messages' : 'Show All User Messages'}
+              </button>
+            )}
+          </div>
+
+          {loadingConversations ? (
+            <div className="admin-loading">
+              <div className="loading-spinner" />
+              <div className="loading-text">Loading conversation...</div>
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="admin-no-conversations" style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+              No conversation history found for this user.
+            </div>
+          ) : (
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '0.75rem',
+              maxHeight: '600px',
+              overflowY: 'auto',
+              padding: '0.5rem'
+            }}>
+              {conversations.map((message) => {
+                const isUserMessage = message.message_type === 'user';
+                const isRevealed = isMessageRevealed(message);
+                
+                return (
+                  <div
+                    key={message.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      background: isUserMessage 
+                        ? 'rgba(91, 163, 245, 0.1)' 
+                        : 'rgba(15, 23, 48, 0.6)',
+                      border: `1px solid ${isUserMessage ? 'rgba(91, 163, 245, 0.2)' : 'rgba(232, 238, 252, 0.1)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        color: 'rgba(232, 238, 252, 0.6)',
+                        fontWeight: '600'
+                      }}>
+                        {isUserMessage ? '👤 User' : '🤖 Bot'}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.5)' }}>
+                        {formatTimestamp(message.created_at_utc)}
+                      </span>
+                    </div>
+                    <div style={{ 
+                      color: '#fff', 
+                      fontSize: '0.9rem',
+                      wordBreak: 'break-word',
+                      opacity: isUserMessage && !isRevealed ? 0.5 : 1
+                    }}>
+                      {isUserMessage && !isRevealed ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontStyle: 'italic', color: 'rgba(232, 238, 252, 0.5)' }}>
+                            [User message hidden]
+                          </span>
+                          <button
+                            onClick={() => toggleMessageReveal(message.id)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              background: 'rgba(91, 163, 245, 0.2)',
+                              border: '1px solid rgba(91, 163, 245, 0.4)',
+                              borderRadius: '4px',
+                              color: '#5ba3f5',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem'
+                            }}
+                          >
+                            Show
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          {message.content}
+                          {isUserMessage && isRevealed && (
+                            <button
+                              onClick={() => toggleMessageReveal(message.id)}
+                              style={{
+                                marginLeft: '0.5rem',
+                                padding: '0.25rem 0.5rem',
+                                background: 'rgba(255, 107, 107, 0.2)',
+                                border: '1px solid rgba(255, 107, 107, 0.4)',
+                                borderRadius: '4px',
+                                color: '#ff6b6b',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem'
+                              }}
+                            >
+                              Hide
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 }

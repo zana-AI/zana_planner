@@ -18,7 +18,8 @@ import type {
   PromiseSuggestion,
   CreateSuggestionRequest,
   BotToken,
-  CreatePromiseForUserRequest
+  CreatePromiseForUserRequest,
+  ConversationResponse
 } from '../types';
 
 const API_BASE = '/api';
@@ -283,6 +284,21 @@ class ApiClient {
    */
   async getAdminUsers(limit: number = 1000): Promise<AdminUsersResponse> {
     return this.request<AdminUsersResponse>(`/admin/users?limit=${limit}`);
+  }
+
+  /**
+   * Get conversation history for a user (admin only).
+   */
+  async getUserConversations(
+    userId: string,
+    limit?: number,
+    messageType?: 'user' | 'bot'
+  ): Promise<ConversationResponse> {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.append('limit', limit.toString());
+    if (messageType) params.append('message_type', messageType);
+    const query = params.toString();
+    return this.request<ConversationResponse>(`/admin/users/${userId}/conversations${query ? `?${query}` : ''}`);
   }
 
   /**

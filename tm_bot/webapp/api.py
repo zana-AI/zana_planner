@@ -3308,6 +3308,20 @@ Rules:
         created_at_utc: str
         updated_at_utc: str
     
+    class ConversationMessage(BaseModel):
+        """Response model for a conversation message."""
+        id: int
+        user_id: str
+        chat_id: Optional[str] = None
+        message_id: Optional[int] = None
+        message_type: str  # 'user' or 'bot'
+        content: str
+        created_at_utc: str
+    
+    class ConversationResponse(BaseModel):
+        """Response model for conversation history."""
+        messages: List[ConversationMessage]
+    
     @app.get("/api/admin/users", response_model=AdminUsersResponse)
     async def get_admin_users(
         limit: int = Query(default=1000, ge=1, le=10000),
@@ -3394,6 +3408,61 @@ Rules:
         except Exception as e:
             logger.exception(f"Error listing bot tokens: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to list bot tokens: {str(e)}")
+    
+    @app.get("/api/admin/users/{user_id}/conversations", response_model=ConversationResponse)
+    async def get_user_conversations(
+        user_id: int,
+        limit: int = Query(default=100, ge=1, le=1000),
+        message_type: Optional[str] = Query(None, description="Filter by 'user' or 'bot'"),
+        admin_id: int = Depends(get_admin_user)
+    ):
+        """
+        Get conversation history for a user (admin only).
+        
+        Args:
+            user_id: Target user ID
+            limit: Maximum number of messages to return
+            message_type: Filter by message type ('user' or 'bot'), or None for all
+            admin_id: Admin user ID (from dependency)
+        
+        Returns:
+            List of conversation messages
+        """
+        try:
+            from repositories.conversation_repo import ConversationRepository
+            
+            # Validate message_type if provided
+            if message_type and message_type not in ['user', 'bot']:
+                raise HTTPException(status_code=400, detail="message_type must be 'user' or 'bot'")
+            
+            conversation_repo = ConversationRepository(app.state.root_dir)
+            messages = conversation_repo.get_recent_history(
+                user_id=user_id,
+                limit=limit,
+                message_type=message_type
+            )
+            
+            # Convert to response models
+            conversation_messages = [
+                ConversationMessage(
+                    id=msg["id"],
+                    user_id=msg["user_id"],
+                    chat_id=msg.get("chat_id"),
+                    message_id=msg.get("message_id"),
+                    message_type=msg["message_type"],
+                    content=msg["content"],
+                    created_at_utc=msg["created_at_utc"],
+                )
+                for msg in messages
+            ]
+            
+            return ConversationResponse(messages=conversation_messages)
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error getting conversations for user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch conversations: {str(e)}")
     
     @app.post("/api/admin/broadcast", response_model=BroadcastResponse)
     async def create_broadcast(
