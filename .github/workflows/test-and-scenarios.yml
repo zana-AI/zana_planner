@@ -1,0 +1,96 @@
+name: Run Tests and Generate Reports
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - pytest
+          - scenarios
+          - both
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_suite == 'pytest' || github.event.inputs.test_suite == 'both' }}
+    
+    steps:
+    - name: Clone Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt pytest-html
+
+    - name: Run Pytest with HTML Report
+      run: |
+        mkdir -p reports
+        pytest --html=reports/test_report.html --self-contained-html -m "not e2e" -v
+      env:
+        ENVIRONMENT: staging
+        DATABASE_URL_STAGING: ${{ secrets.DATABASE_URL_STAGING }}
+        DATABASE_URL: ${{ secrets.DATABASE_URL_STAGING }}
+        GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
+        GCP_GEMINI_MODEL: ${{ secrets.GCP_GEMINI_MODEL }}
+        GCP_CREDENTIALS_B64: ${{ secrets.GCP_CREDENTIALS_B64 }}
+
+    - name: Upload Test Report Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: pytest-report
+        path: reports/test_report.html
+        retention-days: 30
+
+  scenarios:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_suite == 'scenarios' || github.event.inputs.test_suite == 'both' }}
+    
+    steps:
+    - name: Clone Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Scenario Tests
+      run: |
+        mkdir -p reports
+        set -o pipefail
+        python -m tm_bot.platforms.testing.run_scenarios 2>&1 | tee reports/scenario_report.txt
+      env:
+        ENVIRONMENT: staging
+        DATABASE_URL_STAGING: ${{ secrets.DATABASE_URL_STAGING }}
+        DATABASE_URL: ${{ secrets.DATABASE_URL_STAGING }}
+        GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
+        GCP_GEMINI_MODEL: ${{ secrets.GCP_GEMINI_MODEL }}
+        GCP_CREDENTIALS_B64: ${{ secrets.GCP_CREDENTIALS_B64 }}
+
+    - name: Upload Scenario Test Report Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: scenario-report
+        path: reports/scenario_report.txt
+        retention-days: 30

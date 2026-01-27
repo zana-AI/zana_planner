@@ -1,5 +1,5 @@
 
-export type TabType = 'stats' | 'compose' | 'scheduled' | 'templates' | 'promote' | 'devtools' | 'createPromise' | 'conversations';
+export type TabType = 'stats' | 'compose' | 'scheduled' | 'templates' | 'promote' | 'devtools' | 'createPromise' | 'conversations' | 'tests';
 
 interface AdminTabsProps {
   activeTab: TabType;
@@ -57,6 +57,12 @@ export function AdminTabs({ activeTab, onTabChange, scheduledCount }: AdminTabsP
         onClick={() => onTabChange('conversations')}
       >
         Conversations
+      </button>
+      <button
+        className={`admin-tab ${activeTab === 'tests' ? 'active' : ''}`}
+        onClick={() => onTabChange('tests')}
+      >
+        Tests
       </button>
     </div>
   );

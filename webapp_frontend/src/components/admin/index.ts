@@ -9,6 +9,7 @@ export { PromoteTab } from './PromoteTab';
 export { DevToolsTab } from './DevToolsTab';
 export { CreatePromiseTab } from './CreatePromiseTab';
 export { ConversationsTab } from './ConversationsTab';
+export { TestsTab } from './TestsTab';
 export { TemplateForm } from './TemplateForm';
 export { DeleteConfirmModal } from './DeleteConfirmModal';
 export { UserSelector } from './UserSelector';

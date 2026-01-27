@@ -254,3 +254,30 @@ class CreatePromiseForUserRequest(BaseModel):
     visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
     description: Optional[str] = None
     reminders: Optional[List[DayReminder]] = None
+
+
+# Test Run Schemas
+class RunTestsRequest(BaseModel):
+    """Request model for running tests."""
+    test_suite: str  # 'pytest', 'scenarios', or 'both'
+    timeout_seconds: Optional[int] = 600  # Default 10 minutes
+
+
+class TestRunResponse(BaseModel):
+    """Response model for test run initiation."""
+    run_id: str
+    status: str  # 'running', 'completed', 'failed'
+    test_suite: str
+    started_at: str
+
+
+class TestReportResponse(BaseModel):
+    """Response model for test report."""
+    run_id: str
+    status: str
+    test_suite: str
+    started_at: str
+    completed_at: Optional[str] = None
+    exit_code: Optional[int] = None
+    report_url: Optional[str] = None  # URL to download report
+    report_content: Optional[str] = None  # Report content (for HTML/text)

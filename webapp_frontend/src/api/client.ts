@@ -552,6 +552,31 @@ class ApiClient {
       body: JSON.stringify(request),
     });
   }
+
+  /**
+   * Start a test run (admin only).
+   */
+  async startTestRun(testSuite: 'pytest' | 'scenarios' | 'both'): Promise<{ run_id: string; status: string; test_suite: string }> {
+    return this.request<{ run_id: string; status: string; test_suite: string }>('/admin/tests/run', {
+      method: 'POST',
+      body: JSON.stringify({ test_suite: testSuite }),
+    });
+  }
+
+  /**
+   * Get test run report (admin only).
+   */
+  async getTestReport(runId: string): Promise<{
+    run_id: string;
+    status: string;
+    test_suite: string;
+    started_at: string;
+    completed_at?: string;
+    exit_code?: number;
+    report_content?: string;
+  }> {
+    return this.request(`/admin/tests/report/${runId}`);
+  }
 }
 
 /**

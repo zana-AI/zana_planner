@@ -15,6 +15,7 @@ import {
   DevToolsTab,
   CreatePromiseTab,
   ConversationsTab,
+  TestsTab,
 } from './admin';
 
 export function AdminPanel() {
@@ -325,6 +326,10 @@ export function AdminPanel() {
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
         />
+      )}
+
+      {activeTab === 'tests' && (
+        <TestsTab />
       )}
     </div>
   );

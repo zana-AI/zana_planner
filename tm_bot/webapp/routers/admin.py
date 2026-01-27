@@ -6,14 +6,20 @@ import os
 import json
 import subprocess
 import re
+import uuid
+import tempfile
+import threading
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from fastapi.responses import StreamingResponse
 from ..dependencies import get_current_user, get_admin_user
 from ..schemas import (
     AdminUsersResponse, CreateBroadcastRequest, UpdateBroadcastRequest,
     BroadcastResponse, BotTokenResponse, ConversationResponse, ConversationMessage,
-    GenerateTemplateRequest, CreatePromiseForUserRequest, DayReminder
+    GenerateTemplateRequest, CreatePromiseForUserRequest, DayReminder,
+    RunTestsRequest, TestRunResponse, TestReportResponse
 )
 from repositories.templates_repo import TemplatesRepository
 from repositories.promises_repo import PromisesRepository
@@ -38,6 +44,11 @@ logger = get_logger(__name__)
 _admin_stats_cache: Optional[Dict[str, Any]] = None
 _admin_stats_cache_timestamp: Optional[datetime] = None
 ADMIN_STATS_CACHE_TTL = timedelta(minutes=5)
+
+# Test run storage (in-memory, cleared on restart)
+_test_runs: Dict[str, Dict[str, Any]] = {}
+_test_run_lock = threading.Lock()
+_test_run_active = False  # Guard to prevent concurrent runs
 
 
 @router.get("/check")
@@ -1097,3 +1108,330 @@ async def promote_staging_to_prod(
     except Exception as e:
         logger.exception(f"Error promoting staging to production: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to promote staging to production: {str(e)}")
+
+
+# ============================================================================
+# Test Run Endpoints
+# ============================================================================
+
+@router.post("/tests/run", response_model=TestRunResponse)
+async def run_tests(
+    request: Request,
+    test_request: RunTestsRequest,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Start a test run (admin only).
+    Runs tests in a staging-only sandbox environment.
+    """
+    global _test_run_active
+    
+    # Check if a test run is already active
+    with _test_run_lock:
+        if _test_run_active:
+            raise HTTPException(status_code=409, detail="A test run is already in progress")
+        _test_run_active = True
+    
+    try:
+        # Validate test suite
+        if test_request.test_suite not in ['pytest', 'scenarios', 'both']:
+            raise HTTPException(status_code=400, detail="test_suite must be 'pytest', 'scenarios', or 'both'")
+        
+        # Generate run ID
+        run_id = str(uuid.uuid4())
+        
+        # Get staging database URL (required)
+        staging_db_url = os.getenv("DATABASE_URL_STAGING")
+        if not staging_db_url:
+            raise HTTPException(status_code=500, detail="DATABASE_URL_STAGING environment variable is not set")
+        
+        # Create temporary sandbox directory
+        sandbox_dir = tempfile.mkdtemp(prefix=f"zana_test_{run_id}_")
+        
+        # Get GCP credentials from environment (for LLM tests)
+        gcp_project_id = os.getenv("GCP_PROJECT_ID")
+        gcp_location = os.getenv("GCP_LOCATION", "us-central1")
+        gcp_model = os.getenv("GCP_GEMINI_MODEL", "gemini-2.5-flash")
+        gcp_creds_b64 = os.getenv("GCP_CREDENTIALS_B64")
+        
+        # Initialize test run record
+        test_run = {
+            'run_id': run_id,
+            'status': 'running',
+            'test_suite': test_request.test_suite,
+            'started_at': datetime.now(timezone.utc).isoformat(),
+            'completed_at': None,
+            'exit_code': None,
+            'sandbox_dir': sandbox_dir,
+            'output': [],
+            'report_path': None,
+            'error': None
+        }
+        
+        with _test_run_lock:
+            _test_runs[run_id] = test_run
+        
+        # Start test run in background thread
+        def run_tests_thread():
+            try:
+                # Build environment for subprocess (staging-only)
+                env = os.environ.copy()
+                env['ENVIRONMENT'] = 'staging'
+                env['DATABASE_URL_STAGING'] = staging_db_url
+                env['DATABASE_URL'] = staging_db_url  # Fallback
+                env['ROOT_DIR'] = sandbox_dir
+                
+                # Remove production DB URLs to prevent accidental access
+                env.pop('DATABASE_URL_PROD', None)
+                
+                # Add GCP credentials if available
+                if gcp_project_id:
+                    env['GCP_PROJECT_ID'] = gcp_project_id
+                if gcp_location:
+                    env['GCP_LOCATION'] = gcp_location
+                if gcp_model:
+                    env['GCP_GEMINI_MODEL'] = gcp_model
+                if gcp_creds_b64:
+                    env['GCP_CREDENTIALS_B64'] = gcp_creds_b64
+                
+                # Determine root directory for running tests
+                # Find zana_planner directory by starting from this file's location
+                current_file = __file__  # This file: tm_bot/webapp/routers/admin.py
+                current = os.path.abspath(os.path.dirname(current_file))
+                # Go up: routers -> webapp -> tm_bot -> zana_planner
+                repo_root = None
+                for _ in range(4):  # Max 4 levels up
+                    if os.path.basename(current) == 'zana_planner' and os.path.exists(os.path.join(current, 'requirements.txt')):
+                        repo_root = current
+                        break
+                    current = os.path.dirname(current)
+                    if current == os.path.dirname(current):  # Reached root
+                        break
+                
+                # Fallback: try to find from root_dir
+                if not repo_root:
+                    root_dir = request.app.state.root_dir
+                    current = os.path.abspath(root_dir)
+                    while current != os.path.dirname(current):
+                        if os.path.basename(current) == 'zana_planner' and os.path.exists(os.path.join(current, 'requirements.txt')):
+                            repo_root = current
+                            break
+                        current = os.path.dirname(current)
+                
+                if not repo_root:
+                    raise ValueError("Could not find zana_planner directory. Ensure tests are run from the repository root.")
+                
+                # Change to repo root for test execution
+                os.chdir(repo_root)
+                
+                # Build command based on test suite
+                commands = []
+                report_paths = []
+                
+                if test_request.test_suite in ['pytest', 'both']:
+                    reports_dir = os.path.join(sandbox_dir, 'reports')
+                    os.makedirs(reports_dir, exist_ok=True)
+                    pytest_report = os.path.join(reports_dir, 'test_report.html')
+                    commands.append({
+                        'name': 'pytest',
+                        'cmd': [
+                            'python', '-m', 'pytest',
+                            '--html', pytest_report,
+                            '--self-contained-html',
+                            '-m', 'not e2e',
+                            '-v'
+                        ],
+                        'report': pytest_report
+                    })
+                
+                if test_request.test_suite in ['scenarios', 'both']:
+                    reports_dir = os.path.join(sandbox_dir, 'reports')
+                    os.makedirs(reports_dir, exist_ok=True)
+                    scenario_report = os.path.join(reports_dir, 'scenario_report.txt')
+                    commands.append({
+                        'name': 'scenarios',
+                        'cmd': [
+                            'python', '-m', 'tm_bot.platforms.testing.run_scenarios'
+                        ],
+                        'report': scenario_report
+                    })
+                
+                # Run each command
+                all_output = []
+                exit_code = 0
+                
+                for cmd_info in commands:
+                    cmd_name = cmd_info['name']
+                    cmd = cmd_info['cmd']
+                    report_path = cmd_info['report']
+                    
+                    logger.info(f"Running {cmd_name} test suite...")
+                    
+                    # Capture output
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        env=env,
+                        cwd=repo_root
+                    )
+                    
+                    # Stream output line by line
+                    output_lines = []
+                    for line in iter(process.stdout.readline, ''):
+                        if not line:
+                            break
+                        line = line.rstrip()
+                        output_lines.append(line)
+                        all_output.append(f"[{cmd_name}] {line}")
+                        
+                        # Update test run with output
+                        with _test_run_lock:
+                            if run_id in _test_runs:
+                                _test_runs[run_id]['output'].append(f"[{cmd_name}] {line}")
+                    
+                    process.wait()
+                    cmd_exit_code = process.returncode
+                    
+                    if cmd_exit_code != 0:
+                        exit_code = cmd_exit_code
+                    
+                    # Save report if it exists
+                    if os.path.exists(report_path):
+                        with _test_run_lock:
+                            if run_id in _test_runs:
+                                _test_runs[run_id]['report_path'] = report_path
+                    
+                    # For scenarios, also save output as report
+                    if cmd_name == 'scenarios' and output_lines:
+                        with open(report_path, 'w', encoding='utf-8') as f:
+                            f.write('\n'.join(output_lines))
+                        with _test_run_lock:
+                            if run_id in _test_runs:
+                                _test_runs[run_id]['report_path'] = report_path
+                
+                # Update test run status
+                with _test_run_lock:
+                    if run_id in _test_runs:
+                        _test_runs[run_id]['status'] = 'completed' if exit_code == 0 else 'failed'
+                        _test_runs[run_id]['completed_at'] = datetime.now(timezone.utc).isoformat()
+                        _test_runs[run_id]['exit_code'] = exit_code
+                        _test_runs[run_id]['output'] = all_output
+                
+            except Exception as e:
+                logger.exception(f"Error running tests: {e}")
+                with _test_run_lock:
+                    if run_id in _test_runs:
+                        _test_runs[run_id]['status'] = 'failed'
+                        _test_runs[run_id]['completed_at'] = datetime.now(timezone.utc).isoformat()
+                        _test_runs[run_id]['error'] = str(e)
+            finally:
+                global _test_run_active
+                with _test_run_lock:
+                    _test_run_active = False
+        
+        # Start thread
+        thread = threading.Thread(target=run_tests_thread, daemon=True)
+        thread.start()
+        
+        return TestRunResponse(
+            run_id=run_id,
+            status='running',
+            test_suite=test_request.test_suite
+        )
+        
+    except HTTPException:
+        with _test_run_lock:
+            _test_run_active = False
+        raise
+    except Exception as e:
+        logger.exception(f"Error starting test run: {e}")
+        with _test_run_lock:
+            _test_run_active = False
+        raise HTTPException(status_code=500, detail=f"Failed to start test run: {str(e)}")
+
+
+@router.get("/tests/stream/{run_id}")
+async def stream_test_output(
+    request: Request,
+    run_id: str,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Stream test run output via Server-Sent Events (SSE).
+    """
+    async def event_generator():
+        last_index = 0
+        
+        while True:
+            with _test_run_lock:
+                if run_id not in _test_runs:
+                    yield f"data: {json.dumps({'error': 'Test run not found'})}\n\n"
+                    break
+                
+                test_run = _test_runs[run_id]
+                status = test_run['status']
+                output = test_run.get('output', [])
+                
+                # Send new output lines
+                if len(output) > last_index:
+                    for line in output[last_index:]:
+                        yield f"data: {json.dumps({'type': 'output', 'line': line})}\n\n"
+                    last_index = len(output)
+                
+                # Send status updates
+                yield f"data: {json.dumps({'type': 'status', 'status': status, 'exit_code': test_run.get('exit_code')})}\n\n"
+                
+                # If completed, send final message and break
+                if status in ['completed', 'failed']:
+                    yield f"data: {json.dumps({'type': 'complete', 'status': status, 'exit_code': test_run.get('exit_code')})}\n\n"
+                    break
+            
+            await asyncio.sleep(0.5)  # Poll every 500ms
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
+        }
+    )
+
+
+@router.get("/tests/report/{run_id}", response_model=TestReportResponse)
+async def get_test_report(
+    request: Request,
+    run_id: str,
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Get test run report (admin only).
+    """
+    with _test_run_lock:
+        if run_id not in _test_runs:
+            raise HTTPException(status_code=404, detail="Test run not found")
+        
+        test_run = _test_runs[run_id]
+    
+    # Read report content if available
+    report_content = None
+    if test_run.get('report_path') and os.path.exists(test_run['report_path']):
+        try:
+            with open(test_run['report_path'], 'r', encoding='utf-8') as f:
+                report_content = f.read()
+        except Exception as e:
+            logger.warning(f"Failed to read report file: {e}")
+    
+    return TestReportResponse(
+        run_id=test_run['run_id'],
+        status=test_run['status'],
+        test_suite=test_run['test_suite'],
+        started_at=test_run['started_at'],
+        completed_at=test_run.get('completed_at'),
+        exit_code=test_run.get('exit_code'),
+        report_content=report_content
+    )
