@@ -1845,6 +1845,93 @@ html, body {
   padding: 8px;
 }
 
+.admin-users-table-container {
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(232, 238, 252, 0.08);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-users-table th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  z-index: 1;
+}
+
+.admin-user-row {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.admin-user-row:hover {
+  background: rgba(91, 163, 245, 0.05);
+}
+
+.admin-user-row.selected {
+  background: rgba(91, 163, 245, 0.08);
+}
+
+.admin-users-col-select {
+  width: 40px;
+  text-align: center;
+}
+
+.admin-users-col-name {
+  min-width: 150px;
+}
+
+.admin-users-col-name .admin-user-name {
+  display: block;
+}
+
+.admin-users-col-tz {
+  width: 80px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.admin-users-col-lang {
+  width: 60px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.admin-users-col-count {
+  width: 60px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.admin-users-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .admin-user-item {
   display: flex;
   align-items: center;

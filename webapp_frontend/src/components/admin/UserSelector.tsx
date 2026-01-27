@@ -66,27 +66,60 @@ export function UserSelector({
             )}
           </div>
         )}
-        <div className="admin-users-list" style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined}>
-          {filteredUsers.map((user) => {
-            const userId = parseInt(user.user_id);
-            const isSelected = selectedUserIds?.has(userId) || false;
-            return (
-              <label key={user.user_id} className="admin-user-item">
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => onToggleUser?.(userId)}
-                />
-                <span className="admin-user-name">
-                  {user.first_name || ''} {user.last_name || ''} {user.username ? `(@${user.username})` : ''}
-                </span>
-                <span className="admin-user-id">ID: {user.user_id}</span>
-              </label>
-            );
-          })}
-          {filteredUsers.length === 0 && (
-            <div className="admin-no-users">No users found</div>
-          )}
+        <div
+          className="admin-users-table-container"
+          style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined}
+        >
+          <table className="admin-users-table">
+            <thead>
+              <tr>
+                <th className="admin-users-col-select">Sel</th>
+                <th className="admin-users-col-name">Name</th>
+                <th className="admin-users-col-tz">TZ</th>
+                <th className="admin-users-col-lang">Lang</th>
+                <th className="admin-users-col-count">Prom</th>
+                <th className="admin-users-col-count">Acts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.map((user) => {
+                const userId = parseInt(user.user_id);
+                const isSelected = selectedUserIds?.has(userId) || false;
+                const displayName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
+                const usernameDisplay = user.username ? `(@${user.username})` : '';
+                return (
+                  <tr
+                    key={user.user_id}
+                    className={`admin-user-row ${isSelected ? 'selected' : ''}`}
+                    onClick={() => onToggleUser?.(userId)}
+                  >
+                    <td className="admin-users-col-select">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleUser?.(userId)}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                    </td>
+                    <td className="admin-users-col-name">
+                      <span className="admin-user-name">
+                        {displayName} {usernameDisplay}
+                      </span>
+                    </td>
+                    <td className="admin-users-col-tz">{user.timezone || '-'}</td>
+                    <td className="admin-users-col-lang">{user.language || '-'}</td>
+                    <td className="admin-users-col-count">{user.promise_count ?? '-'}</td>
+                    <td className="admin-users-col-count">{user.activity_count ?? '-'}</td>
+                  </tr>
+                );
+              })}
+              {filteredUsers.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="admin-no-users">No users found</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </>
     );
