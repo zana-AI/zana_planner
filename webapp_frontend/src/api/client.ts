@@ -554,6 +554,23 @@ class ApiClient {
   }
 
   /**
+   * Get reminders for a promise.
+   */
+  async getPromiseReminders(promiseId: string): Promise<{ reminders: any[] }> {
+    return this.request<{ reminders: any[] }>(`/promises/${promiseId}/reminders`);
+  }
+
+  /**
+   * Update reminders for a promise.
+   */
+  async updatePromiseReminders(promiseId: string, reminders: any[]): Promise<{ status: string; message: string; reminders_count: number }> {
+    return this.request<{ status: string; message: string; reminders_count: number }>(`/promises/${promiseId}/reminders`, {
+      method: 'PUT',
+      body: JSON.stringify({ reminders }),
+    });
+  }
+
+  /**
    * Start a test run (admin only).
    */
   async startTestRun(testSuite: 'pytest' | 'scenarios' | 'both'): Promise<{ run_id: string; status: string; test_suite: string }> {
