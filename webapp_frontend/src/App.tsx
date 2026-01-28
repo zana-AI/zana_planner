@@ -7,6 +7,7 @@ import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
 import { UserDetailPage } from './pages/UserDetailPage';
+import { FocusPage } from './pages/FocusPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
@@ -123,6 +124,18 @@ function App() {
           element={
             isAuthenticated ? (
               <TimezoneSelectorPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
+        
+        {/* Focus Page - authenticated only */}
+        <Route 
+          path="/focus" 
+          element={
+            isAuthenticated ? (
+              <FocusPage />
             ) : (
               <Navigate to="/" replace />
             )
