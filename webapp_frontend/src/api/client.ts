@@ -328,10 +328,6 @@ class ApiClient {
       body: JSON.stringify({ session_id: sessionId }),
     });
   }
-    return this.request<{ status: string; message: string }>(`/promises/${promiseId}/snooze`, {
-      method: 'POST',
-    });
-  }
 
   /**
    * Get recent logs/actions for a promise.
