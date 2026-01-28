@@ -82,10 +82,10 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 2000;
-  padding: 1rem;
+  padding: 2rem 1rem;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   /* Ensure modal is always accessible */
@@ -101,19 +101,16 @@
   padding: 1.5rem;
   width: 100%;
   max-width: 500px;
-  max-height: 90vh;
-  max-height: 90dvh; /* Dynamic viewport height for mobile */
+  max-height: calc(100vh - 4rem);
+  max-height: calc(100dvh - 4rem); /* Dynamic viewport height for mobile */
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  margin: auto;
+  margin: 0 auto;
   position: relative;
-  /* Ensure it's centered and scrollable */
+  /* Ensure it's scrollable */
   display: flex;
   flex-direction: column;
-  /* Center vertically and horizontally */
-  align-self: center;
-  justify-self: center;
 }
 
 .focus-picker-content h3 {
@@ -397,8 +394,8 @@
   }
 
   .focus-picker-modal {
-    padding: 0.75rem;
-    align-items: center;
+    padding: 1rem 0.75rem;
+    align-items: flex-start;
     /* Ensure it works in mini-app viewport */
     padding-top: max(1rem, env(safe-area-inset-top));
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
@@ -407,10 +404,11 @@
   .focus-picker-content {
     padding: 1.25rem;
     max-width: calc(100% - 1.5rem);
-    max-height: 85vh;
-    max-height: 85dvh;
+    /* Conservative max-height to account for padding and safe-area-insets */
+    max-height: calc(100vh - 4rem);
+    max-height: calc(100dvh - 4rem);
     border-radius: 16px;
-    /* Ensure it's centered */
+    /* Ensure it's at the top and scrollable */
     margin: 0 auto;
   }
 
