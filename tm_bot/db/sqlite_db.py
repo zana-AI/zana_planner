@@ -204,7 +204,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -269,6 +269,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
                 (8, utc_now_iso()),
+            )
+        if current < 9:
+            _apply_v9(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (9, utc_now_iso()),
             )
 
 
@@ -1097,6 +1103,69 @@ def _apply_v8(conn: sqlite3.Connection) -> None:
     
     if view_exists:
         # Recreate view with description field
+        conn.execute("DROP VIEW IF EXISTS promises_with_type;")
+        conn.execute(
+            """
+            CREATE VIEW promises_with_type AS
+            SELECT 
+                promise_uuid,
+                user_id,
+                current_id,
+                text,
+                hours_per_week,
+                recurring,
+                start_date,
+                end_date,
+                is_deleted,
+                visibility,
+                description,
+                created_at_utc,
+                updated_at_utc,
+                -- Computed columns for promise type
+                CASE WHEN hours_per_week <= 0 THEN 1 ELSE 0 END AS is_check_based,
+                CASE WHEN hours_per_week > 0 THEN 1 ELSE 0 END AS is_time_based,
+                CASE WHEN hours_per_week <= 0 THEN 'check_based' ELSE 'time_based' END AS promise_type
+            FROM promises;
+            """
+        )
+
+
+def _apply_v9(conn: sqlite3.Connection) -> None:
+    """
+    Apply schema version 9 migrations: Remove angle_deg and radius columns from promises table.
+    
+    These visualization fields are no longer used in the application.
+    Note: SQLite 3.35.0+ supports ALTER TABLE DROP COLUMN. For older versions,
+    this migration will be skipped (columns will remain but unused).
+    """
+    # Check if columns exist
+    existing_columns = [row[1] for row in conn.execute("PRAGMA table_info(promises);").fetchall()]
+    
+    # SQLite 3.35.0+ supports DROP COLUMN
+    # Try to drop columns if they exist
+    if "angle_deg" in existing_columns:
+        try:
+            conn.execute("ALTER TABLE promises DROP COLUMN angle_deg;")
+        except sqlite3.OperationalError:
+            # Older SQLite version doesn't support DROP COLUMN
+            # Columns will remain but are unused - this is acceptable
+            pass
+    
+    if "radius" in existing_columns:
+        try:
+            conn.execute("ALTER TABLE promises DROP COLUMN radius;")
+        except sqlite3.OperationalError:
+            # Older SQLite version doesn't support DROP COLUMN
+            # Columns will remain but are unused - this is acceptable
+            pass
+    
+    # Update the view to exclude these columns (if view exists)
+    view_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='view' AND name='promises_with_type';"
+    ).fetchone()
+    
+    if view_exists:
+        # Recreate view without angle_deg and radius
         conn.execute("DROP VIEW IF EXISTS promises_with_type;")
         conn.execute(
             """
