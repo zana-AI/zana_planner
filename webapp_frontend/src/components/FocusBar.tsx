@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import type { FocusSession, WeeklyReportData } from '../types';
+import { DurationWheelPicker } from './DurationWheelPicker';
 import './FocusBar.css';
 
 // Mobile breakpoint constant - matches CSS media query
@@ -353,24 +354,13 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
                 </div>
 
                 <div className="focus-picker-section">
-                  <label>Duration (minutes):</label>
-                  <div className="focus-duration-picker-wrapper">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min="1"
-                      max="180"
-                      step="1"
-                      value={selectedDuration}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 25;
-                        setSelectedDuration(Math.max(1, Math.min(180, val)));
-                      }}
-                      className="focus-duration-input"
-                      placeholder="25"
-                    />
-                    <div className="focus-duration-unit">minutes</div>
-                  </div>
+                  <label>Duration:</label>
+                  <DurationWheelPicker
+                    value={selectedDuration}
+                    onChange={setSelectedDuration}
+                    min={1}
+                    max={120}
+                  />
                 </div>
 
                 {error && <div className="focus-error">{error}</div>}

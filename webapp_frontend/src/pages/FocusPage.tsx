@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import type { WeeklyReportData } from '../types';
+import { DurationWheelPicker } from '../components/DurationWheelPicker';
 import './FocusPage.css';
 
 export function FocusPage() {
@@ -113,26 +114,13 @@ export function FocusPage() {
             </div>
 
             <div className="focus-page-section">
-              <label htmlFor="duration-input">Duration (minutes):</label>
-              <div className="focus-duration-picker-wrapper">
-                <input
-                  id="duration-input"
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  max="180"
-                  step="1"
-                  value={selectedDuration}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value) || 25;
-                    setSelectedDuration(Math.max(1, Math.min(180, val)));
-                  }}
-                  className="focus-duration-input"
-                  placeholder="25"
-                  disabled={loadingPromises}
-                />
-                <div className="focus-duration-unit">minutes</div>
-              </div>
+              <label>Duration:</label>
+              <DurationWheelPicker
+                value={selectedDuration}
+                onChange={setSelectedDuration}
+                min={1}
+                max={120}
+              />
             </div>
 
             {error && <div className="focus-page-error" role="alert">{error}</div>}

@@ -1,0 +1,91 @@
+.wheel-picker-container {
+  position: relative;
+  width: 100%;
+  max-width: 200px;
+  margin: 0 auto;
+  background: rgba(30, 30, 50, 0.95);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.wheel-picker-scroll {
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.wheel-picker-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.wheel-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  scroll-snap-align: center;
+  user-select: none;
+}
+
+.wheel-picker-item:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.wheel-picker-item.selected {
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+/* Highlight bar for selected item */
+.wheel-picker-highlight {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  right: 8px;
+  height: 44px;
+  transform: translateY(-50%);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.5);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Fade gradients for depth effect */
+.wheel-picker-fade-top,
+.wheel-picker-fade-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 60px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.wheel-picker-fade-top {
+  top: 0;
+  background: linear-gradient(to bottom, rgba(30, 30, 50, 1) 0%, rgba(30, 30, 50, 0) 100%);
+}
+
+.wheel-picker-fade-bottom {
+  bottom: 24px;
+  background: linear-gradient(to top, rgba(30, 30, 50, 1) 0%, rgba(30, 30, 50, 0) 100%);
+}
+
+.wheel-picker-unit {
+  text-align: center;
+  padding: 8px 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: rgba(30, 30, 50, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
