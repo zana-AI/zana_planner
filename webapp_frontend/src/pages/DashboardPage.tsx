@@ -623,8 +623,12 @@ export function DashboardPage() {
         <FocusBar
           promisesData={promisesData}
           onSessionComplete={() => {
-            // Refresh data when session completes
-            handleRefresh();
+            // Refresh data when session completes, but don't force immediate refresh
+            // The backend sweeper will send Telegram notification
+            // Only refresh if user is still on the page after a delay
+            setTimeout(() => {
+              handleRefresh();
+            }, 500);
           }}
         />
       )}

@@ -23,6 +23,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const completionHandledRef = useRef<boolean>(false);
 
   // Detect mobile viewport
   useEffect(() => {
@@ -50,6 +51,11 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     loadCurrentSession();
   }, []);
 
+  // Reset completion flag when session changes
+  useEffect(() => {
+    completionHandledRef.current = false;
+  }, [currentSession?.session_id]);
+
   // Update remaining time when session changes
   useEffect(() => {
     if (currentSession && currentSession.status === 'running') {
@@ -65,7 +71,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     return () => {
       stopTimer();
     };
-  }, [currentSession?.session_id, currentSession?.status, currentSession?.expected_end_utc]);
+  }, [currentSession?.session_id, currentSession?.status, currentSession?.expected_end_utc, updateRemainingTime, startTimer]);
 
   const loadCurrentSession = async () => {
     try {
@@ -81,6 +87,58 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     }
   };
 
+  const handleTimerComplete = useCallback(async (sessionId: string) => {
+    // Prevent multiple calls
+    if (completionHandledRef.current) {
+      return;
+    }
+    completionHandledRef.current = true;
+    
+    stopTimer();
+    
+    // Show completion state - backend will send Telegram notification
+    setCurrentSession((prev) => {
+      if (prev && prev.session_id === sessionId) {
+        return { ...prev, status: 'finished' };
+      }
+      return prev;
+    });
+    
+    // Request browser notification if available (do this first, before any refresh)
+    try {
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification('🎉 Focus session complete!', {
+            body: 'Check Telegram for confirmation options.',
+            icon: '/assets/zana_icon.png',
+            tag: `focus-complete-${sessionId}`, // Prevent duplicate notifications
+          });
+        } else if (Notification.permission === 'default') {
+          // Request permission if not yet asked
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            new Notification('🎉 Focus session complete!', {
+              body: 'Check Telegram for confirmation options.',
+              icon: '/assets/zana_icon.png',
+              tag: `focus-complete-${sessionId}`,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to show browser notification:', err);
+      // Don't fail the completion flow if notification fails
+    }
+    
+    // Call onSessionComplete callback (which may trigger refresh) after notification
+    // Use setTimeout to ensure notification is shown before any potential page refresh
+    setTimeout(() => {
+      if (onSessionComplete) {
+        onSessionComplete();
+      }
+    }, 100);
+  }, [onSessionComplete]);
+
   const updateRemainingTime = useCallback(() => {
     if (!currentSession || !currentSession.expected_end_utc) {
       setRemainingSeconds(0);
@@ -93,18 +151,21 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
     setRemainingSeconds(remaining);
 
-    // If timer completed, check with backend
-    if (remaining === 0 && currentSession.status === 'running') {
-      handleTimerComplete();
+    // If timer completed, handle it (only once)
+    if (remaining === 0 && currentSession.status === 'running' && !completionHandledRef.current) {
+      handleTimerComplete(currentSession.session_id);
     }
-  }, [currentSession?.expected_end_utc, currentSession?.status]);
+  }, [currentSession, handleTimerComplete]);
 
-  const startTimer = () => {
+  const startTimer = useCallback(() => {
     stopTimer();
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
     intervalRef.current = setInterval(() => {
       updateRemainingTime();
     }, 1000);
-  };
+  }, [updateRemainingTime]);
 
   const stopTimer = () => {
     if (intervalRef.current) {
@@ -113,23 +174,6 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     }
   };
 
-  const handleTimerComplete = async () => {
-    stopTimer();
-    // Show completion state - backend will send Telegram notification
-    if (currentSession) {
-      setCurrentSession({ ...currentSession, status: 'finished' });
-    }
-    if (onSessionComplete) {
-      onSessionComplete();
-    }
-    // Request browser notification if available
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('🎉 Focus session complete!', {
-        body: 'Check Telegram for confirmation options.',
-        icon: '/assets/zana_icon.png',
-      });
-    }
-  };
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
