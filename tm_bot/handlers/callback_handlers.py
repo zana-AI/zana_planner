@@ -20,7 +20,8 @@ from utils.time_utils import beautify_time, round_time, get_week_range
 from ui.keyboards import (
     time_options_kb, session_running_kb, session_paused_kb, 
     session_finish_confirm_kb, session_adjust_kb, preping_kb,
-    language_selection_kb, weekly_report_kb, morning_calendar_kb
+    language_selection_kb, weekly_report_kb, morning_calendar_kb,
+    mini_app_kb
 )
 from ui.messages import weekly_report_text
 from cbdata import encode_cb, decode_cb
@@ -644,85 +645,25 @@ class CallbackHandlers:
         
         logger.info(f"[REMINDER] send_nightly_reminders: user_id={user_id_int}, now={user_now}, tz={tzname}, date={current_date}")
         
-        # Reset state if it's a new day
-        self.plan_keeper.nightly_state_repo.reset_for_new_day(user_id_int, current_date)
-        
-        # Get already shown promise IDs for today
-        shown_promise_ids = self.plan_keeper.nightly_state_repo.get_shown_promise_ids(user_id_int, current_date)
-        logger.debug(f"[REMINDER] Already shown promise IDs for user {user_id_int} on {current_date}: {shown_promise_ids}")
-        
-        # get a bigger ranked list, then filter out already shown promises
+        # Check if user has any promises
         ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id_int, user_now, n=1000)
         logger.info(f"[REMINDER] Found {len(ranked)} ranked promises for user {user_id_int}")
         if not ranked:
             logger.warning(f"[REMINDER] No promises found for user {user_id_int} - skipping reminder")
             return
         
-        # Filter out promises that have already been shown today
-        unshown_ranked = [p for p in ranked if p.id not in shown_promise_ids]
-        logger.info(f"[REMINDER] After filtering shown promises: {len(unshown_ranked)} unshown promises remaining")
+        # Send single wrap-up message with mini app button
+        prompt = get_message("nightly_wrapup_prompt", user_lang)
+        button_text = get_message("btn_open_app", user_lang)
+        url = f"{self.miniapp_url}/dashboard"
         
-        if not unshown_ranked:
-            # All promises have been shown today
-            logger.info(f"[REMINDER] All promises already shown for user {user_id_int} today - sending completion message")
-            header_message = get_message("nightly_header", user_lang)
-            await context.bot.send_message(
-                chat_id=user_id_int,
-                text=header_message + "\n\nAll tasks for today have already been shown.",
-                parse_mode="Markdown",
-            )
-            return
-        
-        # Show next batch (default 3, but adjust if fewer remain)
-        batch_size = 3
-        next_batch = unshown_ranked[:batch_size]
-        remaining = unshown_ranked[batch_size:]
-        
-        # (optional) header message with "Show more"
-        if remaining:
-            header_message = get_message("nightly_header_with_more", user_lang, date=user_now.strftime("%A, %d %B %Y"))
-            button_text = get_message("show_more_button", user_lang, count=len(remaining))
-            await context.bot.send_message(
-                chat_id=user_id_int,
-                text=header_message,
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
-                        button_text,
-                        callback_data=encode_cb("show_more", n=5)
-                    )
-                ]]),
-                parse_mode="Markdown",
-            )
-        else:
-            header_message = get_message("nightly_header", user_lang)
-            await context.bot.send_message(
-                chat_id=user_id_int,
-                text=header_message,
-                parse_mode="Markdown",
-            )
-        
-        # send batch of messages with time options
-        shown_ids = []
-        for p in next_batch:
-            weekly_h = float(getattr(p, "hours_per_week", 0.0) or 0.0)
-            base_day_h = weekly_h / 7.0
-            last = self.plan_keeper.get_last_action_on_promise(user_id_int, p.id)
-            curr_h = float(getattr(last, "time_spent", 0.0) or base_day_h)
-            
-            kb = time_options_kb(p.id, curr_h=curr_h, base_day_h=base_day_h, weekly_h=weekly_h)
-            message = get_message("nightly_question", user_lang, promise_text=p.text.replace('_', ' '))
-            await context.bot.send_message(
-                chat_id=user_id_int,
-                text=message,
-                reply_markup=kb,
-                parse_mode="Markdown",
-            )
-            shown_ids.append(p.id)
-        
-        # Mark these promises as shown
-        if shown_ids:
-            self.plan_keeper.nightly_state_repo.mark_promises_as_shown(user_id_int, shown_ids, current_date)
-            logger.info(f"[REMINDER] Marked {len(shown_ids)} promises as shown for user {user_id_int}: {shown_ids}")
+        await context.bot.send_message(
+            chat_id=user_id_int,
+            text=prompt,
+            reply_markup=mini_app_kb(url, button_text=button_text),
+            parse_mode="Markdown",
+        )
+        logger.info(f"[REMINDER] Sent nightly wrap-up message with mini app button for user {user_id_int}")
     
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""

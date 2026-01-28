@@ -61,6 +61,11 @@ class MessageTemplateStore:
             "nightly_header": "🌙 *Nightly reminders*",
             "nightly_header_with_more": "🌙 *Nightly reminders*\n_{date}_\nHere are today's top 3. Tap \"Show more\" for additional suggestions.",
             "nightly_question": "How much time did you spend today on *{promise_text}*?",
+            "nightly_wrapup_prompt": (
+                "🌙 Time to wrap up your day.\n"
+                "Tap **Open App** to review your promises and log today's activity.\n"
+                "Prefer voice? Send a quick voice note about what you did for each promise."
+            ),
             "show_more_button": "Show more ({count})",
             "thats_all": "✅ That's all for today.",
 
@@ -147,6 +152,7 @@ class MessageTemplateStore:
             "btn_refresh": "🔄 Refresh",
             "btn_show_more": "Show more promises",
             "btn_log_time": "Log time for #{promise_id}",
+            "btn_open_app": "Open App",
             "btn_none": "🙅 None",
             "btn_skip_week": "⏭️ Skip (wk)",
             "btn_not_today": "Not today 🙅",
