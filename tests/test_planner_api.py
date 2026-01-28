@@ -99,7 +99,7 @@ def test_search_promises_no_results(tmp_path):
 
 @pytest.mark.integration
 def test_get_hours_for_promise_with_date_range(tmp_path):
-    """Test get_hours_for_promise with date filtering."""
+    """Test get_promise_hours_total with date filtering."""
     from datetime import datetime, timedelta
     
     adapter = PlannerAPIAdapter(str(tmp_path))
@@ -115,18 +115,18 @@ def test_get_hours_for_promise_with_date_range(tmp_path):
     adapter.add_action(user_id, promise_id, 3.0, action_datetime=now - timedelta(days=10))
     
     # Get hours for all time
-    result_all = adapter.get_hours_for_promise(user_id, promise_id)
+    result_all = adapter.get_promise_hours_total(user_id, promise_id)
     assert "6.5 hours" in result_all
     
     # Get hours since 5 days ago (should exclude the 10-day-old action)
     since_date = (now - timedelta(days=5)).strftime("%Y-%m-%d")
-    result_filtered = adapter.get_hours_for_promise(user_id, promise_id, since_date=since_date)
+    result_filtered = adapter.get_promise_hours_total(user_id, promise_id, since_date=since_date)
     assert "3.5 hours" in result_filtered
 
 
 @pytest.mark.integration
 def test_get_hours_for_promise_all_time(tmp_path):
-    """Test get_hours_for_promise without date filter returns all hours."""
+    """Test get_promise_hours_total without date filter returns all hours."""
     adapter = PlannerAPIAdapter(str(tmp_path))
     user_id = 123
     
@@ -137,14 +137,14 @@ def test_get_hours_for_promise_all_time(tmp_path):
     adapter.add_action(user_id, promise_id, 0.75)
     adapter.add_action(user_id, promise_id, 0.25)
     
-    result = adapter.get_hours_for_promise(user_id, promise_id)
+    result = adapter.get_promise_hours_total(user_id, promise_id)
     assert "1.5 hours" in result
     assert "3" in result  # 3 sessions
 
 
 @pytest.mark.integration
 def test_get_total_hours_aggregates_all(tmp_path):
-    """Test get_total_hours aggregates across all promises."""
+    """Test get_all_hours_total aggregates across all promises."""
     adapter = PlannerAPIAdapter(str(tmp_path))
     user_id = 123
     
@@ -159,7 +159,7 @@ def test_get_total_hours_aggregates_all(tmp_path):
     adapter.add_action(user_id, pid1, 2.0)
     adapter.add_action(user_id, pid2, 1.5)
     
-    result = adapter.get_total_hours(user_id)
+    result = adapter.get_all_hours_total(user_id)
     assert "7.5 hours" in result
     assert "Coding" in result
     assert "Reading" in result
@@ -169,7 +169,7 @@ def test_get_total_hours_aggregates_all(tmp_path):
 
 @pytest.mark.integration
 def test_get_total_hours_respects_date_range(tmp_path):
-    """Test get_total_hours filters by date range."""
+    """Test get_all_hours_total filters by date range."""
     from datetime import datetime, timedelta
     
     adapter = PlannerAPIAdapter(str(tmp_path))
@@ -184,13 +184,13 @@ def test_get_total_hours_respects_date_range(tmp_path):
     
     # Get hours since 10 days ago (should only include recent action)
     since_date = (now - timedelta(days=10)).strftime("%Y-%m-%d")
-    result = adapter.get_total_hours(user_id, since_date=since_date)
+    result = adapter.get_all_hours_total(user_id, since_date=since_date)
     assert "1.0 hours" in result
 
 
 @pytest.mark.integration
 def test_get_actions_in_range_filters_correctly(tmp_path):
-    """Test get_actions_in_range with combined filters."""
+    """Test list_actions_filtered with combined filters."""
     from datetime import datetime, timedelta
     
     adapter = PlannerAPIAdapter(str(tmp_path))
@@ -209,18 +209,18 @@ def test_get_actions_in_range_filters_correctly(tmp_path):
     adapter.add_action(user_id, pid2, 3.0, action_datetime=now - timedelta(days=2))
     
     # Filter by promise only
-    result_promise = adapter.get_actions_in_range(user_id, promise_id=pid1)
+    result_promise = adapter.list_actions_filtered(user_id, promise_id=pid1)
     assert f"#{pid1}" in result_promise
     assert "3.0 hours" in result_promise  # 2.0 + 1.0
     assert "2 session" in result_promise
     
     # Filter by date only (last 3 days)
     since_date = (now - timedelta(days=3)).strftime("%Y-%m-%d")
-    result_date = adapter.get_actions_in_range(user_id, since_date=since_date)
+    result_date = adapter.list_actions_filtered(user_id, since_date=since_date)
     assert "5.0 hours" in result_date  # 2.0 + 3.0 (excludes 5-day-old action)
     
     # Combined filter
-    result_both = adapter.get_actions_in_range(user_id, promise_id=pid1, since_date=since_date)
+    result_both = adapter.list_actions_filtered(user_id, promise_id=pid1, since_date=since_date)
     assert "2.0 hours" in result_both  # Only the recent pid1 action
 
 

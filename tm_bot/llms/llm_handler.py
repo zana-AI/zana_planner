@@ -315,12 +315,12 @@ class LLMHandler:
             "=== CATEGORY & MULTI-PROMISE QUERIES ===\n"
             "- When user asks about a category (e.g., 'health', 'work', 'learning', 'living healthy'), "
             "use get_promises() first to see all promises, then filter by category keywords.\n"
-            "- For 'performance in X category' or 'activities in X', use get_actions_in_range() without promise_id "
+            "- For 'performance in X category' or 'activities in X', use list_actions_filtered() without promise_id "
             "to get all actions, then filter by related promises.\n"
             "- Examples:\n"
-            "  • 'my health performance' → get_promises(), filter health-related, get_actions_in_range() for those promises\n"
+            "  • 'my health performance' → get_promises(), filter health-related, list_actions_filtered() for those promises\n"
             "  • 'how am I doing with work?' → get_promises(), filter work-related, get_promise_report() for each, aggregate\n"
-            "  • 'activities in health category' → get_actions_in_range(), filter by health-related promise IDs\n\n"
+            "  • 'activities in health category' → list_actions_filtered(), filter by health-related promise IDs\n\n"
             
             "=== EXAMPLES ===\n\n"
             

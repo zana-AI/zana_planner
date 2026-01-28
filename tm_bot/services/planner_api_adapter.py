@@ -2,7 +2,6 @@
 Adapter to provide compatibility with the existing PlannerAPI interface
 while using the new repository and service layers underneath.
 """
-import re
 import json
 from datetime import datetime, date
 from typing import List, Dict, Optional, Any
@@ -26,6 +25,9 @@ from services.content_service import ContentService
 from services.time_estimation_service import TimeEstimationService
 from services.settings_service import SettingsService
 from services.profile_service import ProfileService
+from services.schema_service import SchemaService
+from services.query_service import QueryService
+from services.social_service import SocialService
 from models.models import Promise, Action, UserSettings
 from models.enums import ActionType
 from utils.logger import get_logger
@@ -65,8 +67,13 @@ class PlannerAPIAdapter:
         self.profile_repo = ProfileRepository(root_dir)
         self.profile_service = ProfileService(self.profile_repo)
         
-        # Social/community repos
+        # Social/community repos and services
         self.follows_repo = FollowsRepository(root_dir)
+        self.social_service = SocialService(self.follows_repo, self.settings_repo)
+        
+        # Schema and query services
+        self.schema_service = SchemaService()
+        self.query_service = QueryService()
 
     # Promise methods
     def add_promise(self, user_id, promise_text: str, num_hours_promised_per_week: float, 
@@ -323,42 +330,15 @@ class PlannerAPIAdapter:
         return round(weekly_hours / (promise.hours_per_week + 1e-6), 2)
 
     def get_weekly_report(self, user_id, reference_time: Optional[datetime] = None):
-        """Get weekly report text for a user.
-        
-        Use this tool when the user asks a specific question about their activity logs,
-        progress details, or needs a quick text-based summary. For general weekly report
-        viewing requests, consider using open_mini_app() to direct them to the interactive mini app.
-        
-        Args:
-            user_id: User identifier
-            reference_time: Optional datetime to use as reference for the week. 
-                          If None, uses current datetime.
-        
-        Returns:
-            Formatted weekly report string showing progress for all promises.
-        """
+        """Get weekly report text for a user."""
         if not reference_time:
             reference_time = datetime.now()
         
         summary = self.reports_service.get_weekly_summary(user_id, reference_time)
-        return self._format_weekly_report(summary)
+        return self.reports_service.format_weekly_report(summary)
 
     def get_weekly_visualization(self, user_id, reference_time: Optional[datetime] = None) -> str:
-        """Generate weekly visualization image for a user.
-        
-        This tool generates a visual chart/graph of the weekly report. The handler will
-        automatically send the image to the user when this tool is called.
-        
-        Args:
-            user_id: User identifier
-            reference_time: Optional datetime to use as reference for the week.
-                          If None, uses current datetime. Can be a datetime string in ISO format
-                          or a relative description like "last week" (which will be parsed).
-        
-        Returns:
-            Special marker string that triggers image generation and sending in the handler.
-            Format: [WEEKLY_VIZ:timestamp] where timestamp is ISO format of reference_time.
-        """
+        """Generate weekly visualization image for a user."""
         if not reference_time:
             reference_time = datetime.now()
         elif isinstance(reference_time, str):
@@ -374,27 +354,7 @@ class PlannerAPIAdapter:
         return f"[WEEKLY_VIZ:{timestamp_str}]"
 
     def open_mini_app(self, user_id, path: str = "/dashboard", context: Optional[str] = None) -> str:
-        """Open the mini app for the user.
-        
-        Use this tool when the user's request can be better handled in the mini app with interactive
-        features, visualizations, or detailed views. The mini app provides:
-        - Interactive weekly reports with charts and detailed progress
-        - Promise templates marketplace for browsing and subscribing
-        - Community features to see other users
-        - Dashboard with all promises, tasks, and distractions
-        
-        Use this instead of returning long text reports when the mini app provides a better experience.
-        For quick answers or specific questions, prefer text responses with get_weekly_report() or other tools.
-        
-        Args:
-            user_id: User identifier
-            path: Mini app path to open (e.g., "/dashboard", "/templates", "/dashboard?ref_time=...")
-            context: Optional context description for the message (e.g., "weekly report", "templates")
-        
-        Returns:
-            Special marker string that triggers mini app opening in the handler.
-            Format: [MINI_APP:path:context] where path and context are URL-encoded.
-        """
+        """Open the mini app for the user."""
         from urllib.parse import quote
         encoded_path = quote(path, safe='/:?=&')
         encoded_context = quote(context or "", safe='')
@@ -406,7 +366,7 @@ class PlannerAPIAdapter:
         if not summary:
             return f"Promise with ID '{promise_id}' not found."
         
-        return self._format_promise_report(summary)
+        return self.reports_service.format_promise_report(summary)
 
     def get_promise_streak(self, user_id, promise_id: str) -> int:
         """Get promise streak."""
@@ -509,15 +469,7 @@ class PlannerAPIAdapter:
 
     # Query and statistics methods
     def search_promises(self, user_id, query: str) -> str:
-        """
-        Search promises by text (case-insensitive substring match).
-        
-        Args:
-            query: Search term to match against promise text/description.
-        
-        Returns:
-            Formatted string with matching promises and their total hours logged.
-        """
+        """Search promises by text (case-insensitive substring match)."""
         if not query or not query.strip():
             return "Please provide a search term."
         
@@ -569,19 +521,9 @@ class PlannerAPIAdapter:
         
         return "\n".join(result_lines)
 
-    def get_hours_for_promise(self, user_id, promise_id: str, 
+    def get_promise_hours_total(self, user_id, promise_id: str, 
                               since_date: str = None, until_date: str = None) -> str:
-        """
-        Get total hours logged for a promise, optionally within a date range.
-        
-        Args:
-            promise_id: The promise ID (e.g., 'P10').
-            since_date: Optional start date in YYYY-MM-DD format.
-            until_date: Optional end date in YYYY-MM-DD format.
-        
-        Returns:
-            Human-readable summary of hours logged.
-        """
+        """Get total hours logged for a promise, optionally within a date range."""
         if not promise_id or not promise_id.strip():
             return "Please provide a promise ID."
         
@@ -628,17 +570,8 @@ class PlannerAPIAdapter:
             f"Number of sessions: {action_count}"
         )
 
-    def get_total_hours(self, user_id, since_date: str = None, until_date: str = None) -> str:
-        """
-        Get total hours logged across all promises, optionally within a date range.
-        
-        Args:
-            since_date: Optional start date in YYYY-MM-DD format.
-            until_date: Optional end date in YYYY-MM-DD format.
-        
-        Returns:
-            Summary with total hours and per-promise breakdown.
-        """
+    def get_all_hours_total(self, user_id, since_date: str = None, until_date: str = None) -> str:
+        """Get total hours logged across all promises, optionally within a date range."""
         # Parse date arguments
         since = self._parse_date_arg(since_date)
         until = self._parse_date_arg(until_date)
@@ -699,19 +632,9 @@ class PlannerAPIAdapter:
         
         return "\n".join(result_lines)
 
-    def get_actions_in_range(self, user_id, promise_id: str = None,
+    def list_actions_filtered(self, user_id, promise_id: str = None,
                              since_date: str = None, until_date: str = None) -> str:
-        """
-        Get list of actions with optional filtering by promise and date range.
-        
-        Args:
-            promise_id: Optional promise ID to filter by.
-            since_date: Optional start date in YYYY-MM-DD format.
-            until_date: Optional end date in YYYY-MM-DD format.
-        
-        Returns:
-            Formatted list of actions with dates and hours.
-        """
+        """Get list of actions with optional filtering by promise and date range."""
         # Parse date arguments
         since = self._parse_date_arg(since_date)
         until = self._parse_date_arg(until_date)
@@ -834,277 +757,22 @@ class PlannerAPIAdapter:
         return doc.strip()
     
     def get_db_schema(self, user_id) -> str:
-        """
-        Get database schema and example queries for query_database tool.
-        
-        Use this when you need to write SQL queries and need to know the table
-        structure and example patterns.
-        
-        Returns:
-            Database schema documentation with table structures and example queries.
-        """
-        return """DATABASE SCHEMA:
+        """Get database schema and example queries for query_database tool."""
+        return self.schema_service.get_schema_documentation()
 
-TABLE: promises (your goals/tasks)
-- promise_uuid: TEXT (internal ID)
-- user_id: TEXT (your user ID)
-- current_id: TEXT (display ID like 'P10', 'T01')
-- text: TEXT (promise name, underscores for spaces e.g. 'Do_sport')
-- hours_per_week: REAL (target hours)
-- recurring: INTEGER (0=one-time, 1=recurring)
-- start_date: TEXT (ISO date 'YYYY-MM-DD')
-- end_date: TEXT (ISO date)
-- is_deleted: INTEGER (0=active, 1=deleted)
-- created_at_utc: TEXT (ISO timestamp)
-
-TABLE: actions (logged time entries)
-- action_uuid: TEXT (internal ID)
-- user_id: TEXT (your user ID)
-- promise_uuid: TEXT (links to promises)
-- promise_id_text: TEXT (display ID like 'P10')
-- action_type: TEXT (usually 'log_time')
-- time_spent_hours: REAL (hours logged)
-- at_utc: TEXT (ISO timestamp when logged)
-
-TABLE: sessions (active work sessions)
-- session_id: TEXT
-- user_id: TEXT
-- promise_uuid: TEXT
-- status: TEXT ('active', 'paused', 'ended')
-- started_at_utc: TEXT
-- ended_at_utc: TEXT
-- paused_seconds_total: INTEGER
-
-TABLE: users
-- user_id: TEXT PRIMARY KEY
-- timezone: TEXT
-- language: TEXT
-- nightly_hh: INTEGER (reminder hour)
-- nightly_mm: INTEGER (reminder minute)
-
-EXAMPLE QUERIES:
-
-1. Total hours by month:
-   SELECT strftime('%Y-%m', at_utc) as month, 
-          SUM(time_spent_hours) as total_hours
-   FROM actions WHERE user_id = '{user_id}' 
-   GROUP BY month ORDER BY month
-
-2. Most active promises (by total hours):
-   SELECT promise_id_text, 
-          COUNT(*) as sessions, 
-          SUM(time_spent_hours) as total_hours
-   FROM actions WHERE user_id = '{user_id}' 
-   GROUP BY promise_id_text ORDER BY total_hours DESC
-
-3. Hours in a specific date range:
-   SELECT SUM(time_spent_hours) as total
-   FROM actions 
-   WHERE user_id = '{user_id}' 
-     AND at_utc >= '2025-01-01' AND at_utc < '2025-02-01'
-
-4. Average session duration per promise:
-   SELECT promise_id_text, 
-          AVG(time_spent_hours) as avg_hours,
-          COUNT(*) as sessions
-   FROM actions WHERE user_id = '{user_id}'
-   GROUP BY promise_id_text
-
-5. Days with most activity:
-   SELECT date(at_utc) as day, 
-          SUM(time_spent_hours) as hours
-   FROM actions WHERE user_id = '{user_id}'
-   GROUP BY day ORDER BY hours DESC LIMIT 10
-
-6. Promise details with text:
-   SELECT current_id, text, hours_per_week, 
-          start_date, is_deleted
-   FROM promises WHERE user_id = '{user_id}'
-
-IMPORTANT: Always include "WHERE user_id = '{user_id}'" in your queries.
-Replace {user_id} with the actual user ID value."""
-
-    # SQL Query Tool
     def query_database(self, user_id, sql_query: str) -> str:
-        """
-        Execute a read-only SQL query against your data for complex analytics.
-        
-        SECURITY: Only SELECT statements are allowed. All queries are automatically
-        filtered to your data only - you cannot access other users' data.
-        Results are limited to 100 rows maximum.
-        
-        For database schema and example queries, call get_db_schema() first.
-        
-        Args:
-        - promise_uuid: TEXT (internal ID)
-        - user_id: TEXT (your user ID)
-        - current_id: TEXT (display ID like 'P10', 'T01')
-        - text: TEXT (promise name, underscores for spaces e.g. 'Do_sport')
-        - hours_per_week: REAL (target hours)
-        - recurring: INTEGER (0=one-time, 1=recurring)
-        - start_date: TEXT (ISO date 'YYYY-MM-DD')
-        - end_date: TEXT (ISO date)
-        - is_deleted: INTEGER (0=active, 1=deleted)
-        - created_at_utc: TEXT (ISO timestamp)
-        
-        TABLE: actions (logged time entries)
-        - action_uuid: TEXT (internal ID)
-        - user_id: TEXT (your user ID)
-        - promise_uuid: TEXT (links to promises)
-        - promise_id_text: TEXT (display ID like 'P10')
-        - action_type: TEXT (usually 'log_time')
-        - time_spent_hours: REAL (hours logged)
-        - at_utc: TEXT (ISO timestamp when logged)
-        
-        TABLE: sessions (active work sessions)
-        - session_id: TEXT
-        - user_id: TEXT
-        - promise_uuid: TEXT
-        - status: TEXT ('active', 'paused', 'ended')
-        - started_at_utc: TEXT
-        - ended_at_utc: TEXT
-        - paused_seconds_total: INTEGER
-        
-        TABLE: users
-        - user_id: TEXT PRIMARY KEY
-        - timezone: TEXT
-        - language: TEXT
-        - nightly_hh: INTEGER (reminder hour)
-        - nightly_mm: INTEGER (reminder minute)
-        
-        EXAMPLE QUERIES:
-        
-        1. Total hours by month:
-           SELECT strftime('%Y-%m', at_utc) as month, 
-                  SUM(time_spent_hours) as total_hours
-           FROM actions WHERE user_id = '{user_id}' 
-           GROUP BY month ORDER BY month
-        
-        2. Most active promises (by total hours):
-           SELECT promise_id_text, 
-                  COUNT(*) as sessions, 
-                  SUM(time_spent_hours) as total_hours
-           FROM actions WHERE user_id = '{user_id}' 
-           GROUP BY promise_id_text ORDER BY total_hours DESC
-        
-        3. Hours in a specific date range:
-           SELECT SUM(time_spent_hours) as total
-           FROM actions 
-           WHERE user_id = '{user_id}' 
-             AND at_utc >= '2025-01-01' AND at_utc < '2025-02-01'
-        
-        4. Average session duration per promise:
-           SELECT promise_id_text, 
-                  AVG(time_spent_hours) as avg_hours,
-                  COUNT(*) as sessions
-           FROM actions WHERE user_id = '{user_id}'
-           GROUP BY promise_id_text
-        
-        5. Days with most activity:
-           SELECT date(at_utc) as day, 
-                  SUM(time_spent_hours) as hours
-           FROM actions WHERE user_id = '{user_id}'
-           GROUP BY day ORDER BY hours DESC LIMIT 10
-        
-        6. Promise details with text:
-           SELECT current_id, text, hours_per_week, 
-                  start_date, is_deleted
-           FROM promises WHERE user_id = '{user_id}'
-        
-        Args:
-            sql_query: A SELECT statement. Must include user_id filter.
-        
-        Returns:
-            Query results as formatted text, or an error message if query is invalid.
-        """
+        """Execute a read-only SQL query against your data for complex analytics."""
         if not sql_query or not sql_query.strip():
             return "Please provide a SQL query."
         
-        safe_user_id = str(user_id).strip()
-        
-        # Auto-inject user_id for common placeholder patterns (safe: uses authenticated user_id)
-        original_query = sql_query
-        placeholder_patterns = [
-            (r"'\{user_id\}'", f"'{safe_user_id}'"),         # '{user_id}'
-            (r'"\{user_id\}"', f"'{safe_user_id}'"),         # "{user_id}"
-            (r"\{user_id\}", f"'{safe_user_id}'"),           # {user_id} unquoted
-        ]
-        for pattern, replacement in placeholder_patterns:
-            sql_query = re.sub(pattern, replacement, sql_query, flags=re.IGNORECASE)
-        
-        if sql_query != original_query:
-            logger.info(
-                f"[query_database] Auto-injected user_id={safe_user_id}. "
-                f"Original: {original_query[:150]}..."
-            )
-        
-        # Validate the query
-        is_valid, sanitized_query, error_msg = self._validate_sql_query(sql_query, safe_user_id)
-        if not is_valid:
-            return f"Query rejected: {error_msg}"
-        
-        # Check that user_id filter is present in the query
-        query_upper = sanitized_query.upper()
-        if "USER_ID" not in query_upper:
-            return (
-                "Query rejected: Your query must include a user_id filter. "
-                f"Add \"WHERE user_id = '{safe_user_id}'\" to your query."
-            )
-        
-        # Additional check: make sure the user_id value in the query matches
-        if f"'{safe_user_id}'" not in sanitized_query and f'"{safe_user_id}"' not in sanitized_query:
-            # Try to find any user_id value in the query
-            user_id_patterns = [
-                rf"user_id\s*=\s*'([^']+)'",
-                rf'user_id\s*=\s*"([^"]+)"',
-                rf"user_id\s*=\s*(\d+)",
-            ]
-            for pattern in user_id_patterns:
-                match = re.search(pattern, sanitized_query, re.IGNORECASE)
-                if match:
-                    found_id = match.group(1)
-                    if found_id != safe_user_id:
-                        logger.warning(
-                            f"[query_database] SECURITY: Query user_id mismatch! "
-                            f"Authenticated user: {safe_user_id}, Query attempted for: {found_id}. "
-                            f"Original query: {original_query[:200]}. "
-                            f"After auto-inject: {sanitized_query[:200]}"
-                        )
-                        return "Query rejected: You can only query your own data."
-        
-        # Execute the query
-        success, result = self._execute_readonly_query(sanitized_query, safe_user_id)
+        success, results, error_msg = self.query_service.validate_and_execute_query(
+            sql_query, str(user_id), auto_inject_user_id=True
+        )
         
         if not success:
-            return f"Query failed: {result}"
+            return error_msg or "Query failed."
         
-        # Format results
-        if not result:
-            return "Query returned no results."
-        
-        # Format as readable text
-        output_lines = [f"Query returned {len(result)} row(s):\n"]
-        
-        # Get column names from first result
-        if result:
-            columns = list(result[0].keys())
-            
-            # Build a simple table format
-            for i, row in enumerate(result[:100]):  # Cap at 100 rows
-                row_parts = []
-                for col in columns:
-                    val = row.get(col)
-                    if val is None:
-                        val = "NULL"
-                    elif isinstance(val, float):
-                        val = f"{val:.2f}"
-                    row_parts.append(f"{col}: {val}")
-                output_lines.append(f"  [{i+1}] {', '.join(row_parts)}")
-            
-            if len(result) > 100:
-                output_lines.append(f"\n  ... and {len(result) - 100} more rows (truncated)")
-        
-        return "\n".join(output_lines)
+        return self.query_service.format_query_results(results or [])
 
     # Utility methods
     def _parse_date_arg(self, date_str: str, default: date = None) -> Optional[date]:
@@ -1116,147 +784,6 @@ Replace {user_id} with the actual user ID value."""
         except ValueError:
             return default
 
-    def _validate_sql_query(self, query: str, user_id: str) -> tuple:
-        """
-        Validate and sanitize SQL query for safe execution.
-        
-        Security checks:
-        1. Only SELECT statements allowed (whitelist)
-        2. Dangerous keywords blocked (blacklist as secondary defense)
-        3. User ID filter enforced
-        4. LIMIT clause added if missing
-        
-        Args:
-            query: The SQL query string to validate
-            user_id: The user ID that must be enforced in the query
-            
-        Returns:
-            Tuple of (is_valid: bool, result: str, error_msg: str or None)
-            - If valid: (True, sanitized_query, None)
-            - If invalid: (False, None, error_message)
-        """
-        if not query or not query.strip():
-            return (False, None, "Query cannot be empty.")
-        
-        # Normalize query
-        normalized = query.strip()
-        query_upper = normalized.upper()
-        
-        # WHITELIST: Must start with SELECT
-        if not query_upper.startswith("SELECT"):
-            return (False, None, "Only SELECT queries are allowed. Query must start with SELECT.")
-        
-        # BLACKLIST: Block dangerous keywords as secondary defense
-        dangerous_keywords = [
-            "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", 
-            "TRUNCATE", "REPLACE", "GRANT", "REVOKE", "ATTACH", "DETACH",
-            "PRAGMA", "VACUUM", "REINDEX", "--", "/*", "*/", ";"
-        ]
-        
-        # Check for dangerous keywords (but allow them in string literals)
-        # Simple check: look for keywords not inside quotes
-        for keyword in dangerous_keywords:
-            # Check if keyword appears outside of string literals
-            # This is a simplified check - we split by quotes and check odd-indexed parts
-            if keyword == ";":
-                # Special handling: only allow one statement (no semicolons except at end)
-                semicolon_count = normalized.count(";")
-                if semicolon_count > 1 or (semicolon_count == 1 and not normalized.rstrip().endswith(";")):
-                    return (False, None, "Multiple statements are not allowed.")
-            elif keyword in query_upper:
-                # More sophisticated check: make sure it's not inside a string
-                parts = query_upper.replace("''", "").split("'")
-                for i, part in enumerate(parts):
-                    if i % 2 == 0 and keyword in part:  # Outside quotes
-                        return (False, None, f"Dangerous keyword '{keyword}' is not allowed.")
-        
-        # Remove trailing semicolon for cleaner processing
-        if normalized.rstrip().endswith(";"):
-            normalized = normalized.rstrip()[:-1].strip()
-        
-        # Check if LIMIT is present, add if not (cap at 100)
-        if "LIMIT" not in query_upper:
-            normalized = f"{normalized} LIMIT 100"
-        else:
-            # Ensure existing LIMIT is not too high
-            limit_match = re.search(r'LIMIT\s+(\d+)', query_upper)
-            if limit_match:
-                limit_val = int(limit_match.group(1))
-                if limit_val > 100:
-                    # Replace with max 100
-                    normalized = re.sub(r'LIMIT\s+\d+', 'LIMIT 100', normalized, flags=re.IGNORECASE)
-        
-        return (True, normalized, None)
-
-    def _execute_readonly_query(self, query: str, user_id: str) -> tuple:
-        """
-        Execute a validated read-only query with enforced user_id filtering.
-        
-        CRITICAL SECURITY: This method rewrites the query to ALWAYS filter by user_id.
-        The user_id is passed as a parameter, never interpolated into the query string.
-        
-        Args:
-            query: The validated SQL query (must be SELECT)
-            user_id: The user ID to enforce in the query
-            
-        Returns:
-            Tuple of (success: bool, result: list[dict] or error_message: str)
-        """
-        # Use PostgreSQL via get_db_session for all queries
-        
-        safe_user_id = str(user_id).strip()
-        if not safe_user_id.isdigit():
-            return (False, "Invalid user ID.")
-        
-        try:
-            # Tables that have user_id column
-            user_tables = ["promises", "actions", "sessions", "users", 
-                          "promise_aliases", "promise_events"]
-            
-            query_upper = query.upper()
-            
-            # Check which tables are referenced in the query
-            referenced_tables = []
-            for table in user_tables:
-                if table.upper() in query_upper:
-                    referenced_tables.append(table)
-            
-            if not referenced_tables:
-                return (False, "Query must reference at least one user data table (promises, actions, sessions, users).")
-            
-            # SECURITY: Always enforce user_id filtering at the SQL level.
-            # Wrap the original query and add a parameterized user_id predicate.
-            # This prevents cross-user leaks even if the model omits WHERE user_id.
-            wrapped_query = f"SELECT * FROM ({query}) AS q WHERE q.user_id = :user_id"
-            
-            from db.postgres_db import get_db_session
-            from sqlalchemy import text
-            with get_db_session() as session:
-                result = session.execute(text(wrapped_query), {"user_id": safe_user_id})
-                rows = result.mappings().fetchall()
-                
-                # Convert to list of dicts
-                results = [dict(row) for row in rows]
-                
-                return (True, results)
-                
-        except Exception as e:
-            logger.error(f"SQL query execution error: {e}")
-            # Don't leak internal error details to user
-            error_msg = str(e)
-            if "user_id" in error_msg.lower() and "column" in error_msg.lower():
-                return (
-                    False,
-                    "Query must include user_id in the selected columns so access can be enforced.",
-                )
-            if "syntax error" in error_msg.lower():
-                return (False, "SQL syntax error. Please check your query.")
-            elif "no such table" in error_msg.lower():
-                return (False, "Referenced table does not exist.")
-            elif "no such column" in error_msg.lower():
-                return (False, "Referenced column does not exist.")
-            else:
-                return (False, "Query execution failed. Please check your query syntax.")
 
     def _generate_promise_id(self, user_id, promise_type='P'):
         """Generate unique promise ID."""
@@ -1283,65 +810,6 @@ Replace {user_id} with the actual user ID value."""
             'end_date': promise.end_date.isoformat() if promise.end_date else '',
         }
 
-    def _format_weekly_report(self, summary: Dict) -> str:
-        """Format weekly report from summary data."""
-        if not summary:
-            return "No data available for this week."
-        
-        report_lines = []
-        for promise_id, data in summary.items():
-            hours_promised = data['hours_promised']
-            hours_spent = data['hours_spent']
-            progress = min(100, int((hours_spent / hours_promised) * 100)) if hours_promised > 0 else 0
-
-            bar_width = 10
-            filled_length = (progress * bar_width) // 100
-            empty_length = bar_width - filled_length
-            progress_bar = f"{'█' * filled_length}{'_' * empty_length}"
-
-            if progress < 30:
-                diamond = "🔴"
-            elif progress < 60:
-                diamond = "🟠"
-            elif progress < 90:
-                diamond = "🟡"
-            else:
-                diamond = "✅"
-
-            report_lines.append(
-                f"{diamond} #{promise_id} **{data['text'][:36].replace('_', ' ')}**:\n"
-                f" └──`[{progress_bar}] {progress:2d}%` ({hours_spent:.1f}/{hours_promised:.1f} h)"
-            )
-
-        return "\n".join(report_lines)
-
-    def _format_promise_report(self, summary: Dict) -> str:
-        """Format promise report from summary data."""
-        promise = summary['promise']
-        weekly_hours = summary['weekly_hours']
-        total_hours = summary['total_hours']
-        streak = summary['streak']
-        
-        progress = min(100, int((weekly_hours / promise.hours_per_week) * 100)) if promise.hours_per_week > 0 else 0
-        
-        if streak < 0:
-            streak_str = f"{-streak} days since last action"
-        elif streak == 0:
-            streak_str = "🆕 No actions yet"
-        else:
-            streak_str = f"🔥 {streak} day{'s' if streak > 1 else ''} in a row"
-
-        report = (
-            f"**Report #{promise.id}**\n"
-            f"*{promise.text.replace('_', ' ')}*\n"
-            f"**You promised:** {promise.hours_per_week:.1f} hours/week\n"
-            f"**This week:** {weekly_hours:.1f}/{promise.hours_per_week:.1f} hours "
-            f"**Total {total_hours:.1f} hours spent** since {promise.start_date}\n"
-            f"({progress}%)\n"
-            f"**Streak:** {streak_str}"
-        )
-
-        return report
     
     # Link processing methods
     def process_shared_link(self, user_id, url: str) -> str:
@@ -1839,264 +1307,21 @@ Summary:"""
     # - Follow/unfollow actions are always from the authenticated user's account
     
     def get_my_followers(self, user_id) -> str:
-        """
-        Get list of users who follow you.
-        
-        Returns your followers with their display names. Only shows public profile
-        information (username, first name) - no sensitive data is exposed.
-        
-        Returns:
-            Formatted list of followers with display names, or message if no followers.
-        """
-        try:
-            follower_ids = self.follows_repo.get_followers(int(user_id))
-            
-            if not follower_ids:
-                return "You don't have any followers yet. Share your profile or promises to grow your community!"
-            
-            # Get display info for each follower (privacy-safe: only public info)
-            followers_info = []
-            for fid in follower_ids:
-                try:
-                    settings = self.settings_repo.get_settings(int(fid))
-                    # Only include public info: username or first_name
-                    display_name = None
-                    if settings.username:
-                        display_name = f"@{settings.username}"
-                    elif settings.first_name:
-                        display_name = settings.first_name
-                    else:
-                        display_name = f"User #{fid[-4:]}"  # Show only last 4 digits for privacy
-                    
-                    followers_info.append({
-                        "display_name": display_name,
-                        "has_username": bool(settings.username),
-                    })
-                except Exception:
-                    # If we can't get settings, use anonymized identifier
-                    followers_info.append({
-                        "display_name": f"User #{fid[-4:]}",
-                        "has_username": False,
-                    })
-            
-            # Format response
-            count = len(followers_info)
-            result_lines = [f"👥 **You have {count} follower{'s' if count != 1 else ''}:**\n"]
-            
-            for i, f in enumerate(followers_info, 1):
-                result_lines.append(f"{i}. {f['display_name']}")
-            
-            return "\n".join(result_lines)
-        
-        except Exception as e:
-            logger.error(f"Error getting followers for user {user_id}: {str(e)}")
-            return f"Error retrieving followers: {str(e)}"
+        """Get list of users who follow you."""
+        return self.social_service.get_followers(int(user_id))
     
     def get_my_following(self, user_id) -> str:
-        """
-        Get list of users you follow.
-        
-        Returns the users you're following with their display names. Only shows
-        public profile information (username, first name) - no sensitive data.
-        
-        Returns:
-            Formatted list of users you follow, or message if not following anyone.
-        """
-        try:
-            following_ids = self.follows_repo.get_following(int(user_id))
-            
-            if not following_ids:
-                return "You're not following anyone yet. Explore the community to find inspiring people!"
-            
-            # Get display info for each user (privacy-safe: only public info)
-            following_info = []
-            for fid in following_ids:
-                try:
-                    settings = self.settings_repo.get_settings(int(fid))
-                    display_name = None
-                    if settings.username:
-                        display_name = f"@{settings.username}"
-                    elif settings.first_name:
-                        display_name = settings.first_name
-                    else:
-                        display_name = f"User #{fid[-4:]}"
-                    
-                    following_info.append({
-                        "display_name": display_name,
-                        "has_username": bool(settings.username),
-                    })
-                except Exception:
-                    following_info.append({
-                        "display_name": f"User #{fid[-4:]}",
-                        "has_username": False,
-                    })
-            
-            # Format response
-            count = len(following_info)
-            result_lines = [f"👤 **You're following {count} user{'s' if count != 1 else ''}:**\n"]
-            
-            for i, f in enumerate(following_info, 1):
-                result_lines.append(f"{i}. {f['display_name']}")
-            
-            return "\n".join(result_lines)
-        
-        except Exception as e:
-            logger.error(f"Error getting following for user {user_id}: {str(e)}")
-            return f"Error retrieving following list: {str(e)}"
+        """Get list of users you follow."""
+        return self.social_service.get_following(int(user_id))
     
     def get_community_stats(self, user_id) -> str:
-        """
-        Get your community statistics (follower and following counts).
-        
-        Returns a summary of your social connections in the community.
-        
-        Returns:
-            Formatted community stats summary.
-        """
-        try:
-            follower_count = self.follows_repo.get_follower_count(int(user_id))
-            following_count = self.follows_repo.get_following_count(int(user_id))
-            
-            result = [
-                "📊 **Your Community Stats:**\n",
-                f"👥 Followers: **{follower_count}**",
-                f"👤 Following: **{following_count}**",
-            ]
-            
-            # Add contextual message
-            if follower_count == 0 and following_count == 0:
-                result.append("\n💡 Tip: Start by following others who share your interests!")
-            elif follower_count > following_count * 2:
-                result.append("\n🌟 You have a great following! Keep sharing your progress.")
-            elif following_count > 0 and follower_count == 0:
-                result.append("\n💪 Great start! Stay active and others will notice you.")
-            
-            return "\n".join(result)
-        
-        except Exception as e:
-            logger.error(f"Error getting community stats for user {user_id}: {str(e)}")
-            return f"Error retrieving community stats: {str(e)}"
+        """Get your community statistics (follower and following counts)."""
+        return self.social_service.get_community_stats(int(user_id))
     
     def follow_user(self, user_id, target_username: str) -> str:
-        """
-        Follow another user by their username.
-        
-        You can only follow users who have a public username. This creates a
-        one-way follow relationship - they won't automatically follow you back.
-        
-        Args:
-            target_username: The username of the user to follow (without @ symbol).
-        
-        Returns:
-            Success or error message.
-        """
-        try:
-            if not target_username or not target_username.strip():
-                return "Please provide a username to follow."
-            
-            # Clean username (remove @ if present)
-            clean_username = target_username.strip().lstrip("@").lower()
-            
-            if not clean_username:
-                return "Please provide a valid username."
-            
-            # Look up user by username (privacy: only find users with public usernames)
-            target_user_id = self._find_user_by_username(clean_username)
-            
-            if not target_user_id:
-                return f"User '@{clean_username}' not found. Make sure you have the correct username."
-            
-            # Check if trying to follow self
-            if str(target_user_id) == str(user_id):
-                return "You can't follow yourself! 😄"
-            
-            # Check if already following
-            if self.follows_repo.is_following(int(user_id), int(target_user_id)):
-                return f"You're already following @{clean_username}."
-            
-            # Create follow relationship
-            success = self.follows_repo.follow(int(user_id), int(target_user_id))
-            
-            if success:
-                return f"✅ You're now following @{clean_username}! You'll see their public activity in your feed."
-            else:
-                return f"You're already following @{clean_username}."
-        
-        except ValueError as e:
-            return str(e)
-        except Exception as e:
-            logger.error(f"Error following user for {user_id}: {str(e)}")
-            return f"Error following user: {str(e)}"
+        """Follow another user by their username."""
+        return self.social_service.follow_user(int(user_id), target_username)
     
     def unfollow_user(self, user_id, target_username: str) -> str:
-        """
-        Unfollow a user by their username.
-        
-        Removes your follow relationship with the specified user. They won't
-        be notified that you unfollowed them.
-        
-        Args:
-            target_username: The username of the user to unfollow (without @ symbol).
-        
-        Returns:
-            Success or error message.
-        """
-        try:
-            if not target_username or not target_username.strip():
-                return "Please provide a username to unfollow."
-            
-            # Clean username (remove @ if present)
-            clean_username = target_username.strip().lstrip("@").lower()
-            
-            if not clean_username:
-                return "Please provide a valid username."
-            
-            # Look up user by username
-            target_user_id = self._find_user_by_username(clean_username)
-            
-            if not target_user_id:
-                return f"User '@{clean_username}' not found."
-            
-            # Check if actually following
-            if not self.follows_repo.is_following(int(user_id), int(target_user_id)):
-                return f"You're not following @{clean_username}."
-            
-            # Remove follow relationship
-            success = self.follows_repo.unfollow(int(user_id), int(target_user_id))
-            
-            if success:
-                return f"✅ You've unfollowed @{clean_username}."
-            else:
-                return f"You're not following @{clean_username}."
-        
-        except Exception as e:
-            logger.error(f"Error unfollowing user for {user_id}: {str(e)}")
-            return f"Error unfollowing user: {str(e)}"
-    
-    def _find_user_by_username(self, username: str) -> Optional[str]:
-        """
-        Find a user ID by their username (internal helper, not exposed as tool).
-        
-        Privacy: Only returns users who have set a public username.
-        """
-        try:
-            from db.postgres_db import get_db_session
-            from sqlalchemy import text
-            
-            with get_db_session() as session:
-                # Case-insensitive username lookup
-                row = session.execute(
-                    text("""
-                        SELECT user_id FROM users
-                        WHERE LOWER(username) = LOWER(:username)
-                        LIMIT 1;
-                    """),
-                    {"username": username},
-                ).fetchone()
-                
-                if row:
-                    return str(row[0])
-                return None
-        except Exception as e:
-            logger.error(f"Error finding user by username: {str(e)}")
-            return None
+        """Unfollow a user by their username."""
+        return self.social_service.unfollow_user(int(user_id), target_username)
