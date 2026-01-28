@@ -453,6 +453,7 @@ html, body {
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .card-title {
@@ -465,6 +466,7 @@ html, body {
   gap: 8px;
   align-items: flex-start;
   unicode-bidi: plaintext;
+  flex-wrap: wrap;
 }
 
 .card-emoji {
@@ -613,6 +615,37 @@ html, body {
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .card-top {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .card-title {
+    width: 100%;
+    order: 1;
+  }
+  
+  .card-meta {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    order: 2;
+  }
+  
+  .card-edit-button,
+  .card-visibility-toggle {
+    flex-shrink: 0;
+  }
+  
+  .card-title-text {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 .card-id {
@@ -963,9 +996,24 @@ html, body {
   transition: all 0.2s;
 }
 
+.promise-badge.clickable {
+  cursor: pointer;
+}
+
 .promise-badge:hover {
   background: rgba(91, 163, 245, 0.12);
   border-color: rgba(91, 163, 245, 0.25);
+}
+
+.promise-badge.clickable:hover {
+  background: rgba(91, 163, 245, 0.15);
+  border-color: rgba(91, 163, 245, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.promise-badge.clickable:active {
+  transform: translateY(0);
 }
 
 .promise-badge.compact {
@@ -991,6 +1039,22 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .promise-badge-header {
+    flex-wrap: wrap;
+  }
+  
+  .promise-badge-stats {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  
+  .promise-badge-text {
+    width: 100%;
+    margin-bottom: 4px;
+  }
 }
 
 .promise-badge-progress-emoji {
@@ -1559,8 +1623,83 @@ html, body {
   cursor: not-allowed;
 }
 
+.modal-body {
+  padding: 20px;
+}
+
 .modal-form {
   padding: 20px;
+}
+
+/* Promise Logs Modal */
+.promise-logs-modal {
+  max-width: 500px;
+}
+
+.promise-logs-promise-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.promise-logs-loading,
+.promise-logs-error,
+.promise-logs-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.promise-logs-error {
+  color: #ff6b6b;
+}
+
+.promise-logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.promise-logs-entry {
+  padding: 12px;
+  background: rgba(15, 23, 48, 0.4);
+  border: 1px solid rgba(91, 163, 245, 0.15);
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.promise-logs-entry:hover {
+  background: rgba(15, 23, 48, 0.6);
+  border-color: rgba(91, 163, 245, 0.25);
+}
+
+.promise-logs-entry-main {
+  margin-bottom: 8px;
+}
+
+.promise-logs-log-text {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.promise-logs-notes {
+  font-size: 13px;
+  color: rgba(232, 238, 252, 0.85);
+  line-height: 1.5;
+  padding-left: 12px;
+  border-left: 2px solid rgba(91, 163, 245, 0.3);
+  margin-top: 8px;
+}
+
+@media (max-width: 767px) {
+  .promise-logs-modal {
+    max-width: 95vw;
+  }
 }
 
 .modal-form-group {

@@ -642,3 +642,77 @@ async def update_weekly_note(
     except Exception as e:
         logger.exception(f"Error updating weekly note: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update weekly note: {str(e)}")
+
+
+@router.get("/promises/{promise_id}/logs")
+async def get_promise_logs(
+    request: Request,
+    promise_id: str,
+    limit: int = 20,
+    user_id: int = Depends(get_current_user)
+):
+    """Get recent logs/actions for a promise."""
+    try:
+        promises_repo = PromisesRepository(request.app.state.root_dir)
+        actions_repo = ActionsRepository(request.app.state.root_dir)
+        
+        # Verify promise exists and belongs to user
+        promise = promises_repo.get_promise(user_id, promise_id)
+        if not promise:
+            raise HTTPException(status_code=404, detail="Promise not found")
+        
+        # Get all actions for this promise, sorted by date (most recent first)
+        all_actions = actions_repo.list_actions(user_id)
+        promise_actions = [
+            a for a in all_actions 
+            if (a.promise_id or "").strip().upper() == promise_id.strip().upper()
+        ]
+        
+        # Sort by date descending and limit
+        promise_actions.sort(key=lambda a: a.at, reverse=True)
+        recent_actions = promise_actions[:limit]
+        
+        # Format response
+        logs = []
+        for action in recent_actions:
+            # Format time spent
+            if action.time_spent > 0:
+                hours = int(action.time_spent)
+                minutes = int((action.time_spent - hours) * 60)
+                if hours > 0 and minutes > 0:
+                    time_str = f"{hours} hour{'s' if hours != 1 else ''} {minutes} minute{'s' if minutes != 1 else ''}"
+                elif hours > 0:
+                    time_str = f"{hours} hour{'s' if hours != 1 else ''}"
+                else:
+                    time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+            else:
+                time_str = "check-in"
+            
+            # Format date
+            date = action.at.date()
+            weekday = action.at.strftime("%A")
+            day = date.day
+            month = action.at.strftime("%b")
+            year = action.at.year
+            # Format: "Wednesday 21 Dec." (without year if current year)
+            from datetime import datetime
+            current_year = datetime.now().year
+            if year == current_year:
+                date_str = f"{weekday} {day} {month}."
+            else:
+                date_str = f"{weekday} {day} {month}. {year}"
+            
+            logs.append({
+                "datetime": action.at.isoformat(),
+                "date": date_str,
+                "time_spent": action.time_spent,
+                "time_str": time_str,
+                "notes": action.notes if action.notes else None
+            })
+        
+        return {"logs": logs}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting promise logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get promise logs: {str(e)}")

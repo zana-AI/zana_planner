@@ -479,3 +479,61 @@ class ReportsService:
             raise
         
         return image_path
+    
+    def format_weekly_report(self, summary: Dict[str, Any]) -> str:
+        """Format weekly report from summary data."""
+        if not summary:
+            return "No data available for this week."
+        
+        report_lines = []
+        for promise_id, data in summary.items():
+            hours_promised = data['hours_promised']
+            hours_spent = data['hours_spent']
+            progress = min(100, int((hours_spent / hours_promised) * 100)) if hours_promised > 0 else 0
+
+            bar_width = 10
+            filled_length = (progress * bar_width) // 100
+            empty_length = bar_width - filled_length
+            progress_bar = f"{'█' * filled_length}{'_' * empty_length}"
+
+            if progress < 30:
+                diamond = "🔴"
+            elif progress < 60:
+                diamond = "🟠"
+            elif progress < 90:
+                diamond = "🟡"
+            else:
+                diamond = "✅"
+
+            report_lines.append(
+                f"{diamond} #{promise_id} **{data['text'][:36].replace('_', ' ')}**:\n"
+                f" └──`[{progress_bar}] {progress:2d}%` ({hours_spent:.1f}/{hours_promised:.1f} h)"
+            )
+
+        return "\n".join(report_lines)
+    
+    def format_promise_report(self, summary: Dict[str, Any]) -> str:
+        """Format promise report from summary data."""
+        promise = summary['promise']
+        weekly_hours = summary['weekly_hours']
+        total_hours = summary['total_hours']
+        streak = summary['streak']
+        
+        progress = min(100, int((weekly_hours / promise.hours_per_week) * 100)) if promise.hours_per_week > 0 else 0
+        
+        if streak < 0:
+            streak_str = f"{-streak} days since last action"
+        elif streak == 0:
+            streak_str = "🆕 No actions yet"
+        else:
+            streak_str = f"🔥 {streak} day{'s' if streak > 1 else ''} in a row"
+
+        report = (
+            f"**Report #{promise.id}**\n"
+            f"*{promise.text.replace('_', ' ')}*\n"
+            f"**You promised:** {promise.hours_per_week:.1f} hours/week\n"
+            f"**This week:** {weekly_hours:.1f}/{promise.hours_per_week:.1f} hours "
+            f"**Total {total_hours:.1f} hours spent** since {promise.start_date}\n"
+            f"({progress}%)\n"
+            f"**Streak:** {streak_str}"
+        )        return report
