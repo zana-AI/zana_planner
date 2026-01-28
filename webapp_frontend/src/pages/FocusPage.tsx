@@ -113,18 +113,25 @@ export function FocusPage() {
             </div>
 
             <div className="focus-page-section">
-              <label htmlFor="duration-presets">Duration:</label>
-              <div id="duration-presets" className="focus-duration-presets" role="group" aria-label="Duration presets">
-                {[25, 45, 60].map((mins) => (
-                  <button
-                    key={mins}
-                    className={`focus-duration-btn ${selectedDuration === mins ? 'active' : ''}`}
-                    onClick={() => setSelectedDuration(mins)}
-                    aria-pressed={selectedDuration === mins}
-                  >
-                    {mins}m
-                  </button>
-                ))}
+              <label htmlFor="duration-input">Duration (minutes):</label>
+              <div className="focus-duration-picker-wrapper">
+                <input
+                  id="duration-input"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="180"
+                  step="1"
+                  value={selectedDuration}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 25;
+                    setSelectedDuration(Math.max(1, Math.min(180, val)));
+                  }}
+                  className="focus-duration-input"
+                  placeholder="25"
+                  disabled={loadingPromises}
+                />
+                <div className="focus-duration-unit">minutes</div>
               </div>
             </div>
 

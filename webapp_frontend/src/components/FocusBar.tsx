@@ -340,17 +340,23 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
                 </div>
 
                 <div className="focus-picker-section">
-                  <label>Duration:</label>
-                  <div className="focus-duration-presets">
-                    {[25, 45, 60].map((mins) => (
-                      <button
-                        key={mins}
-                        className={`focus-duration-btn ${selectedDuration === mins ? 'active' : ''}`}
-                        onClick={() => setSelectedDuration(mins)}
-                      >
-                        {mins}m
-                      </button>
-                    ))}
+                  <label>Duration (minutes):</label>
+                  <div className="focus-duration-picker-wrapper">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min="1"
+                      max="180"
+                      step="1"
+                      value={selectedDuration}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 25;
+                        setSelectedDuration(Math.max(1, Math.min(180, val)));
+                      }}
+                      className="focus-duration-input"
+                      placeholder="25"
+                    />
+                    <div className="focus-duration-unit">minutes</div>
                   </div>
                 </div>
 
