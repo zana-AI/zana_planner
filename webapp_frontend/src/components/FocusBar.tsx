@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient, ApiError } from '../api/client';
-import type { FocusSession, PromiseData, WeeklyReportData } from '../types';
+import type { FocusSession, WeeklyReportData } from '../types';
 import './FocusBar.css';
 
 interface FocusBarProps {
@@ -16,7 +16,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const [selectedDuration, setSelectedDuration] = useState<number>(25);
   const [showPromisePicker, setShowPromisePicker] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load current session on mount
   useEffect(() => {

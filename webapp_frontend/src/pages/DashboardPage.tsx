@@ -314,14 +314,16 @@ export function DashboardPage() {
   }
 
   const currentUserId = user?.id?.toString();
+  
+  // Determine if user is authenticated
+  const isAuthenticated = !!(initData || getDevInitData() || localStorage.getItem('telegram_auth_token'));
 
   return (
     <div className="app dashboard" style={{ 
       padding: '1rem', 
-      paddingBottom: '120px', // Extra padding for FocusBar
+      paddingBottom: '180px', // Add bottom padding for navigation bar + FocusBar
       maxWidth: '1400px', 
       margin: '0 auto',
-      paddingBottom: '180px', // Add bottom padding for navigation bar + FocusBar
       display: 'flex',
       gap: '1.5rem',
       alignItems: 'flex-start'
