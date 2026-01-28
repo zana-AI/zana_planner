@@ -1358,11 +1358,52 @@ async def run_tests(
 async def stream_test_output(
     request: Request,
     run_id: str,
-    admin_id: int = Depends(get_admin_user)
+    token: Optional[str] = Query(None, description="Session token for authentication"),
+    init_data: Optional[str] = Query(None, description="Telegram initData for authentication")
 ):
     """
     Stream test run output via Server-Sent Events (SSE).
+    Note: EventSource doesn't support custom headers, so auth is passed via query params.
     """
+    # Authenticate using query parameters (EventSource limitation)
+    app = request.app
+    user_id = None
+    
+    # Try session token first
+    if token:
+        auth_session_repo = app.state.auth_session_repo
+        session = auth_session_repo.get_session(token)
+        if session:
+            user_id = session.user_id
+    
+    # Fall back to initData (URL-decoded automatically by FastAPI)
+    if not user_id and init_data:
+        try:
+            from webapp.auth import validate_telegram_init_data, extract_user_id
+            # FastAPI automatically URL-decodes query params, but handle edge cases
+            validated = validate_telegram_init_data(init_data, app.state.bot_token)
+            if validated:
+                user_id = extract_user_id(validated)
+        except Exception as e:
+            logger.debug(f"Failed to validate initData from query param: {e}")
+            pass
+    
+    # Also try headers as fallback (for direct browser access)
+    if not user_id:
+        try:
+            from ..dependencies import get_current_user
+            user_id = await get_current_user(request)
+        except HTTPException:
+            pass
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Check admin status
+    from utils.admin_utils import is_admin
+    if not is_admin(user_id):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
     async def event_generator():
         last_index = 0
         

@@ -29,7 +29,7 @@ const API_BASE = '/api';
  * All requests include Telegram initData for authentication.
  */
 class ApiClient {
-  private initData: string = '';
+  public initData: string = '';  // Made public for TestsTab to access
   private authToken: string | null = null;
 
   /**

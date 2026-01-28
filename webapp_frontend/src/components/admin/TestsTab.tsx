@@ -46,7 +46,20 @@ export function TestsTab() {
       setCurrentRunId(response.run_id);
       
       // Start SSE stream (use full API path)
-      const eventSource = new EventSource(`/api/admin/tests/stream/${response.run_id}`);
+      // Note: EventSource doesn't support custom headers, so we pass auth via query params
+      const token = localStorage.getItem('telegram_auth_token');
+      const initData = apiClient.initData || '';
+      
+      // Build URL with auth query params
+      const params = new URLSearchParams();
+      if (token) {
+        params.append('token', token);
+      } else if (initData) {
+        params.append('init_data', initData);
+      }
+      
+      const streamUrl = `/api/admin/tests/stream/${response.run_id}${params.toString() ? '?' + params.toString() : ''}`;
+      const eventSource = new EventSource(streamUrl);
       eventSourceRef.current = eventSource;
 
       eventSource.onmessage = (event) => {
