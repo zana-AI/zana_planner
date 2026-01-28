@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import type { FocusSession, WeeklyReportData } from '../types';
 import './FocusBar.css';
+
+// Mobile breakpoint constant - matches CSS media query
+const MOBILE_BREAKPOINT = 768;
 
 interface FocusBarProps {
   promisesData: WeeklyReportData | null;
@@ -9,6 +13,7 @@ interface FocusBarProps {
 }
 
 export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
+  const navigate = useNavigate();
   const [currentSession, setCurrentSession] = useState<FocusSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
@@ -17,6 +22,28 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const [showPromisePicker, setShowPromisePicker] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile viewport
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
+
+  // Close modal when switching from desktop to mobile
+  useEffect(() => {
+    if (isMobile && showPromisePicker) {
+      setShowPromisePicker(false);
+    }
+  }, [isMobile, showPromisePicker]);
 
   // Load current session on mount
   useEffect(() => {
@@ -214,18 +241,28 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
   // Render idle state (no active session)
   if (!currentSession) {
+    const handleStartClick = () => {
+      if (isMobile) {
+        // On mobile, navigate to dedicated focus page
+        navigate('/focus');
+      } else {
+        // On desktop, show modal
+        setShowPromisePicker(true);
+      }
+    };
+
     return (
       <div className="focus-bar focus-bar-idle">
         <div className="focus-bar-content">
           <button
             className="focus-start-button"
-            onClick={() => setShowPromisePicker(true)}
+            onClick={handleStartClick}
             disabled={loading}
           >
             🎯 Start Focus
           </button>
           
-          {showPromisePicker && (
+          {showPromisePicker && !isMobile && (
             <div 
               className="focus-picker-modal"
               onClick={(e) => {
