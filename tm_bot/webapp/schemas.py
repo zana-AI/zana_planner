@@ -281,3 +281,38 @@ class TestReportResponse(BaseModel):
     exit_code: Optional[int] = None
     report_url: Optional[str] = None  # URL to download report
     report_content: Optional[str] = None  # Report content (for HTML/text)
+
+
+# Focus Timer / Pomodoro
+class StartFocusRequest(BaseModel):
+    """Request model for starting a focus session."""
+    promise_id: str
+    duration_minutes: int  # Default 25, but allow custom
+
+
+class FocusSessionResponse(BaseModel):
+    """Response model for focus session."""
+    session_id: str
+    promise_id: str
+    promise_text: Optional[str] = None
+    status: str  # "running" | "paused" | "finished" | "aborted"
+    started_at: str  # ISO datetime
+    expected_end_utc: str  # ISO datetime
+    planned_duration_minutes: int
+    timer_kind: str = "focus"  # "focus" | "break"
+    elapsed_seconds: Optional[int] = None  # Current elapsed time if running/paused
+
+
+class PauseFocusRequest(BaseModel):
+    """Request model for pausing a focus session."""
+    session_id: str
+
+
+class ResumeFocusRequest(BaseModel):
+    """Request model for resuming a focus session."""
+    session_id: str
+
+
+class StopFocusRequest(BaseModel):
+    """Request model for stopping/aborting a focus session."""
+    session_id: str

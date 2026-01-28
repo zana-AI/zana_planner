@@ -1,0 +1,421 @@
+/* Focus Bar - Premium Pomodoro Timer */
+
+.focus-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: rgba(26, 26, 46, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  padding: 1rem;
+  transition: all 0.3s ease;
+}
+
+.focus-bar-idle {
+  padding: 0.75rem 1rem;
+}
+
+.focus-bar-active {
+  padding: 1rem;
+}
+
+.focus-bar.running {
+  border-top-color: rgba(76, 175, 80, 0.5);
+  box-shadow: 0 -4px 20px rgba(76, 175, 80, 0.2);
+}
+
+.focus-bar.paused {
+  border-top-color: rgba(255, 193, 7, 0.5);
+  box-shadow: 0 -4px 20px rgba(255, 193, 7, 0.2);
+}
+
+.focus-bar.finished {
+  border-top-color: rgba(33, 150, 243, 0.5);
+  box-shadow: 0 -4px 20px rgba(33, 150, 243, 0.2);
+}
+
+.focus-bar-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Idle State */
+.focus-start-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.focus-start-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+}
+
+.focus-start-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Promise Picker Modal */
+.focus-picker-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 1rem;
+}
+
+.focus-picker-content {
+  background: rgba(26, 26, 46, 0.98);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 2rem;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.focus-picker-content h3 {
+  color: #fff;
+  margin: 0 0 1.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.focus-picker-section {
+  margin-bottom: 1.5rem;
+}
+
+.focus-picker-section label {
+  display: block;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.focus-picker-select {
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.focus-picker-select:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.focus-picker-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.focus-duration-presets {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.focus-duration-btn {
+  flex: 1;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.focus-duration-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.focus-duration-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.focus-picker-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.focus-confirm-button,
+.focus-cancel-button {
+  flex: 1;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.focus-confirm-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.focus-confirm-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+}
+
+.focus-confirm-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.focus-cancel-button {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.focus-cancel-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.focus-error {
+  color: #ff5252;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(255, 82, 82, 0.1);
+  border-radius: 6px;
+}
+
+/* Active Session State */
+.focus-session-info {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex: 1;
+}
+
+.focus-promise-name {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-timer-display {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+}
+
+.focus-time {
+  position: absolute;
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  z-index: 1;
+}
+
+.focus-progress-ring {
+  width: 100%;
+  height: 100%;
+}
+
+.focus-progress-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.focus-progress-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 6;
+}
+
+.focus-progress-fill {
+  fill: none;
+  stroke: #4CAF50;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.focus-bar.paused .focus-progress-fill {
+  stroke: #FFC107;
+}
+
+.focus-bar.finished .focus-progress-fill {
+  stroke: #2196F3;
+}
+
+.focus-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.focus-control-btn {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.focus-control-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.focus-control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.focus-control-btn.pause {
+  border-color: rgba(255, 193, 7, 0.5);
+}
+
+.focus-control-btn.resume {
+  border-color: rgba(76, 175, 80, 0.5);
+}
+
+.focus-control-btn.stop {
+  border-color: rgba(244, 67, 54, 0.5);
+}
+
+.focus-complete-message {
+  color: #4CAF50;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  background: rgba(76, 175, 80, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .focus-bar-content {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .focus-session-info {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .focus-promise-name {
+    max-width: 150px;
+    font-size: 0.85rem;
+  }
+
+  .focus-timer-display {
+    width: 60px;
+    height: 60px;
+  }
+
+  .focus-time {
+    font-size: 1rem;
+  }
+
+  .focus-controls {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .focus-picker-content {
+    padding: 1.5rem;
+    margin: 1rem;
+  }
+}
+
+/* Dark mode support (already dark by default) */
+@media (prefers-color-scheme: light) {
+  .focus-bar {
+    background: rgba(255, 255, 255, 0.95);
+    border-top-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .focus-picker-content {
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .focus-picker-content h3 {
+    color: #333;
+  }
+
+  .focus-picker-section label {
+    color: rgba(0, 0, 0, 0.7);
+  }
+
+  .focus-picker-select {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: #333;
+  }
+
+  .focus-promise-name {
+    color: rgba(0, 0, 0, 0.8);
+  }
+
+  .focus-time {
+    color: #333;
+  }
+
+  .focus-control-btn {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: rgba(0, 0, 0, 0.8);
+  }
+}

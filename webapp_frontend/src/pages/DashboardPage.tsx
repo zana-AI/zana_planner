@@ -6,6 +6,7 @@ import { WeeklyReport } from '../components/WeeklyReport';
 import { UserCard } from '../components/UserCard';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
+import { FocusBar } from '../components/FocusBar';
 import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
 
 export function DashboardPage() {
@@ -317,9 +318,10 @@ export function DashboardPage() {
   return (
     <div className="app dashboard" style={{ 
       padding: '1rem', 
+      paddingBottom: '120px', // Extra padding for FocusBar
       maxWidth: '1400px', 
       margin: '0 auto',
-      paddingBottom: '100px', // Add bottom padding for navigation bar
+      paddingBottom: '180px', // Add bottom padding for navigation bar + FocusBar
       display: 'flex',
       gap: '1.5rem',
       alignItems: 'flex-start'
@@ -610,6 +612,17 @@ export function DashboardPage() {
           }}
           onSuccess={() => {
             hapticFeedback('success');
+          }}
+        />
+      )}
+
+      {/* Focus Bar - Global Pomodoro Timer */}
+      {isAuthenticated && (
+        <FocusBar
+          promisesData={promisesData}
+          onSessionComplete={() => {
+            // Refresh data when session completes
+            handleRefresh();
           }}
         />
       )}

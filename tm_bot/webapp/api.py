@@ -15,7 +15,7 @@ from repositories.auth_session_repo import AuthSessionRepository
 from utils.logger import get_logger
 
 # Import all routers
-from .routers import health, auth, users, promises, templates, distractions, admin, community
+from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer
 
 logger = get_logger(__name__)
 
@@ -89,6 +89,7 @@ def create_webapp_api(
     app.include_router(distractions.router)
     app.include_router(admin.router)
     app.include_router(community.router)
+    app.include_router(focus_timer.router)
     
     # Startup event to log registered routes and fetch bot username
     @app.on_event("startup")
@@ -139,6 +140,57 @@ def create_webapp_api(
         
         asyncio.create_task(cleanup_task())
         logger.info("Started auth session cleanup task")
+        
+        # Start background task for focus timer completion notifications
+        async def focus_timer_sweeper():
+            """Periodically check for overdue focus sessions and send Telegram notifications."""
+            from repositories.sessions_repo import SessionsRepository
+            from webapp.notifications import send_focus_finished_notification
+            import os
+            
+            while True:
+                try:
+                    await asyncio.sleep(30)  # Check every 30 seconds
+                    
+                    sessions_repo = SessionsRepository(root_dir)
+                    overdue_sessions = sessions_repo.list_overdue_sessions_needing_notification()
+                    
+                    for session in overdue_sessions:
+                        try:
+                            # Mark as notified first to avoid duplicate sends
+                            sessions_repo.mark_session_notified(session.session_id)
+                            
+                            # Get promise text
+                            from repositories.promises_repo import PromisesRepository
+                            promises_repo = PromisesRepository(root_dir)
+                            promise = promises_repo.get_promise(int(session.user_id), session.promise_id)
+                            promise_text = promise.text if promise else f"Promise #{session.promise_id}"
+                            
+                            # Calculate proposed hours
+                            proposed_hours = (session.planned_duration_minutes or 25) / 60.0
+                            
+                            # Send notification
+                            miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
+                            await send_focus_finished_notification(
+                                bot_token=bot_token,
+                                user_id=int(session.user_id),
+                                session_id=session.session_id,
+                                promise_text=promise_text,
+                                proposed_hours=proposed_hours,
+                                miniapp_url=miniapp_url,
+                                root_dir=root_dir
+                            )
+                            
+                            logger.info(f"Sent focus completion notification for session {session.session_id} to user {session.user_id}")
+                        except Exception as e:
+                            logger.error(f"Error sending focus notification for session {session.session_id}: {e}", exc_info=True)
+                            
+                except Exception as e:
+                    logger.error(f"Error in focus timer sweeper: {e}", exc_info=True)
+                    await asyncio.sleep(60)  # Wait longer on error
+        
+        asyncio.create_task(focus_timer_sweeper())
+        logger.info("Started focus timer completion sweeper")
     
     @app.get("/")
     async def root():

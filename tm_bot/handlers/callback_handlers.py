@@ -224,6 +224,8 @@ class CallbackHandlers:
             await self._handle_session_adjust_open(query, session_id, value)
         elif action == "session_adjust_set":
             await self._handle_session_adjust_set(query, session_id, value, user_lang)
+        elif action == "session_abort":
+            await self._handle_session_abort(query, session_id, user_lang)
         elif action == "refresh_weekly":
             await self._handle_refresh_weekly(query, context, user_lang)
         elif action == "set_language":
@@ -589,6 +591,21 @@ class CallbackHandlers:
         self._stop_ticker(session_id)
         message = get_message("session_logged", user_lang, time=beautify_time(float(value)), promise_id=logged.promise_id)
         await query.edit_message_text(message)
+    
+    async def _handle_session_abort(self, query, session_id: str, user_lang: Language):
+        """Handle session abort (discard without logging)."""
+        user_id = query.from_user.id
+        aborted = self.plan_keeper.sessions_service.abort(user_id, session_id)
+        self._stop_ticker(session_id)
+        if aborted:
+            # Try to get a translated message, fallback to English
+            try:
+                message = get_message("session_discarded", user_lang)
+            except:
+                message = "❌ Session discarded — not logged."
+            await query.edit_message_text(message, parse_mode="Markdown")
+        else:
+            await query.answer("Session not found or already finished.", show_alert=True)
     
     async def start_pomodoro_timer(self, query, context):
         """Start the Pomodoro timer."""

@@ -19,7 +19,8 @@ import type {
   CreateSuggestionRequest,
   BotToken,
   CreatePromiseForUserRequest,
-  ConversationResponse
+  ConversationResponse,
+  FocusSession
 } from '../types';
 
 const API_BASE = '/api';
@@ -276,6 +277,57 @@ class ApiClient {
    * Snooze a promise until next week.
    */
   async snoozePromise(promiseId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/promises/${promiseId}/snooze`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Focus Timer / Pomodoro methods
+   */
+  async startFocus(promiseId: string, durationMinutes: number): Promise<FocusSession> {
+    return this.request<FocusSession>('/focus/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        promise_id: promiseId,
+        duration_minutes: durationMinutes,
+      }),
+    });
+  }
+
+  async getCurrentFocus(): Promise<FocusSession | null> {
+    try {
+      return await this.request<FocusSession>('/focus/current', {
+        method: 'GET',
+      });
+    } catch (err: any) {
+      if (err.status === 404 || err.status === 400) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async pauseFocus(sessionId: string): Promise<FocusSession> {
+    return this.request<FocusSession>('/focus/pause', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+  }
+
+  async resumeFocus(sessionId: string): Promise<FocusSession> {
+    return this.request<FocusSession>('/focus/resume', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+  }
+
+  async stopFocus(sessionId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>('/focus/stop', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+  }
     return this.request<{ status: string; message: string }>(`/promises/${promiseId}/snooze`, {
       method: 'POST',
     });

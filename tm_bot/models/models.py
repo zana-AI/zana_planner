@@ -72,6 +72,11 @@ class Session:
     last_state_change_at: Optional[datetime] = None
     message_id: Optional[int] = None
     chat_id: Optional[int] = None
+    # Focus timer fields
+    expected_end_utc: Optional[datetime] = None  # When the timer should complete
+    planned_duration_minutes: Optional[int] = None  # Planned duration in minutes
+    timer_kind: Optional[str] = None  # "focus" | "break"
+    notified_at_utc: Optional[datetime] = None  # When Telegram notification was sent
 
 
 @dataclass

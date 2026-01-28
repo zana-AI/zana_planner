@@ -341,6 +341,19 @@ export interface PromiseData {
   end_date?: string; // ISO date string (YYYY-MM-DD)
 }
 
+// Focus Timer / Pomodoro types
+export interface FocusSession {
+  session_id: string;
+  promise_id: string;
+  promise_text?: string;
+  status: 'running' | 'paused' | 'finished' | 'aborted';
+  started_at: string; // ISO datetime
+  expected_end_utc: string; // ISO datetime
+  planned_duration_minutes: number;
+  timer_kind: 'focus' | 'break';
+  elapsed_seconds?: number; // Current elapsed time if running/paused
+}
+
 // Extend Window interface for Telegram
 declare global {
   interface Window {

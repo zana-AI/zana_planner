@@ -35,11 +35,13 @@ class SessionsRepository:
                     INSERT INTO sessions(
                         session_id, user_id, promise_uuid, status,
                         started_at_utc, ended_at_utc, paused_seconds_total,
-                        last_state_change_at_utc, message_id, chat_id
+                        last_state_change_at_utc, message_id, chat_id,
+                        expected_end_utc, planned_duration_minutes, timer_kind, notified_at_utc
                     ) VALUES (
                         :session_id, :user_id, :p_uuid, :status,
                         :started_at_utc, :ended_at_utc, :paused_seconds_total,
-                        :last_state_change_at_utc, :message_id, :chat_id
+                        :last_state_change_at_utc, :message_id, :chat_id,
+                        :expected_end_utc, :planned_duration_minutes, :timer_kind, :notified_at_utc
                     )
                     ON CONFLICT (session_id) DO UPDATE SET
                         user_id = EXCLUDED.user_id,
@@ -50,7 +52,11 @@ class SessionsRepository:
                         paused_seconds_total = EXCLUDED.paused_seconds_total,
                         last_state_change_at_utc = EXCLUDED.last_state_change_at_utc,
                         message_id = EXCLUDED.message_id,
-                        chat_id = EXCLUDED.chat_id;
+                        chat_id = EXCLUDED.chat_id,
+                        expected_end_utc = EXCLUDED.expected_end_utc,
+                        planned_duration_minutes = EXCLUDED.planned_duration_minutes,
+                        timer_kind = EXCLUDED.timer_kind,
+                        notified_at_utc = EXCLUDED.notified_at_utc;
                 """),
                 {
                     "session_id": str(session.session_id),
@@ -63,6 +69,10 @@ class SessionsRepository:
                     "last_state_change_at_utc": dt_to_utc_iso(session.last_state_change_at, assume_local_tz=True),
                     "message_id": session.message_id,
                     "chat_id": session.chat_id,
+                    "expected_end_utc": dt_to_utc_iso(session.expected_end_utc, assume_local_tz=True) if session.expected_end_utc else None,
+                    "planned_duration_minutes": session.planned_duration_minutes,
+                    "timer_kind": session.timer_kind,
+                    "notified_at_utc": dt_to_utc_iso(session.notified_at_utc, assume_local_tz=True) if session.notified_at_utc else None,
                 },
             )
 
@@ -80,11 +90,13 @@ class SessionsRepository:
                     INSERT INTO sessions(
                         session_id, user_id, promise_uuid, status,
                         started_at_utc, ended_at_utc, paused_seconds_total,
-                        last_state_change_at_utc, message_id, chat_id
+                        last_state_change_at_utc, message_id, chat_id,
+                        expected_end_utc, planned_duration_minutes, timer_kind, notified_at_utc
                     ) VALUES (
                         :session_id, :user_id, :p_uuid, :status,
                         :started_at_utc, :ended_at_utc, :paused_seconds_total,
-                        :last_state_change_at_utc, :message_id, :chat_id
+                        :last_state_change_at_utc, :message_id, :chat_id,
+                        :expected_end_utc, :planned_duration_minutes, :timer_kind, :notified_at_utc
                     )
                     ON CONFLICT (session_id) DO UPDATE SET
                         user_id = EXCLUDED.user_id,
@@ -95,7 +107,11 @@ class SessionsRepository:
                         paused_seconds_total = EXCLUDED.paused_seconds_total,
                         last_state_change_at_utc = EXCLUDED.last_state_change_at_utc,
                         message_id = EXCLUDED.message_id,
-                        chat_id = EXCLUDED.chat_id;
+                        chat_id = EXCLUDED.chat_id,
+                        expected_end_utc = EXCLUDED.expected_end_utc,
+                        planned_duration_minutes = EXCLUDED.planned_duration_minutes,
+                        timer_kind = EXCLUDED.timer_kind,
+                        notified_at_utc = EXCLUDED.notified_at_utc;
                 """),
                 {
                     "session_id": str(session.session_id),
@@ -108,6 +124,10 @@ class SessionsRepository:
                     "last_state_change_at_utc": dt_to_utc_iso(session.last_state_change_at, assume_local_tz=True),
                     "message_id": session.message_id,
                     "chat_id": session.chat_id,
+                    "expected_end_utc": dt_to_utc_iso(session.expected_end_utc, assume_local_tz=True) if session.expected_end_utc else None,
+                    "planned_duration_minutes": session.planned_duration_minutes,
+                    "timer_kind": session.timer_kind,
+                    "notified_at_utc": dt_to_utc_iso(session.notified_at_utc, assume_local_tz=True) if session.notified_at_utc else None,
                 },
             )
 
@@ -133,7 +153,11 @@ class SessionsRepository:
                         s.paused_seconds_total,
                         s.last_state_change_at_utc,
                         s.message_id,
-                        s.chat_id
+                        s.chat_id,
+                        s.expected_end_utc,
+                        s.planned_duration_minutes,
+                        s.timer_kind,
+                        s.notified_at_utc
                     FROM sessions s
                     LEFT JOIN promises p ON p.promise_uuid = s.promise_uuid AND p.user_id = s.user_id
                     WHERE s.user_id = :user_id
@@ -159,6 +183,10 @@ class SessionsRepository:
                     last_state_change_at=dt_utc_iso_to_local_naive(r["last_state_change_at_utc"]),
                     message_id=int(r["message_id"]) if r["message_id"] is not None else None,
                     chat_id=int(r["chat_id"]) if r["chat_id"] is not None else None,
+                    expected_end_utc=dt_utc_iso_to_local_naive(r["expected_end_utc"]) if r.get("expected_end_utc") else None,
+                    planned_duration_minutes=int(r["planned_duration_minutes"]) if r.get("planned_duration_minutes") is not None else None,
+                    timer_kind=str(r["timer_kind"]) if r.get("timer_kind") else None,
+                    notified_at_utc=dt_utc_iso_to_local_naive(r["notified_at_utc"]) if r.get("notified_at_utc") else None,
                 )
             )
         return result
@@ -166,3 +194,83 @@ class SessionsRepository:
     def list_active_sessions(self, user_id: int) -> List[Session]:
         all_sessions = self.list_sessions(user_id)
         return [s for s in all_sessions if s.status in ["running", "paused"]]
+
+    def get_current_active_session(self, user_id: int) -> Optional[Session]:
+        """Get the current active (running or paused) session for a user."""
+        active = self.list_active_sessions(user_id)
+        # Return the most recent active session
+        if active:
+            return max(active, key=lambda s: s.started_at)
+        return None
+
+    def list_overdue_sessions_needing_notification(self) -> List[Session]:
+        """Find running sessions that have passed their expected_end_utc and haven't been notified yet."""
+        with get_db_session() as session_db:
+            rows = session_db.execute(
+                text("""
+                    SELECT
+                        s.session_id,
+                        COALESCE(p.current_id, '') AS promise_id,
+                        s.user_id,
+                        s.status,
+                        s.started_at_utc,
+                        s.ended_at_utc,
+                        s.paused_seconds_total,
+                        s.last_state_change_at_utc,
+                        s.message_id,
+                        s.chat_id,
+                        s.expected_end_utc,
+                        s.planned_duration_minutes,
+                        s.timer_kind,
+                        s.notified_at_utc
+                    FROM sessions s
+                    LEFT JOIN promises p ON p.promise_uuid = s.promise_uuid AND p.user_id = s.user_id
+                    WHERE s.status = 'running'
+                        AND s.expected_end_utc IS NOT NULL
+                        AND s.expected_end_utc <= :now_utc
+                        AND s.notified_at_utc IS NULL
+                    ORDER BY s.expected_end_utc ASC;
+                """),
+                {"now_utc": utc_now_iso()},
+            ).mappings().fetchall()
+
+        result: List[Session] = []
+        for r in rows:
+            started_at = dt_utc_iso_to_local_naive(r["started_at_utc"])
+            if not started_at:
+                continue
+            result.append(
+                Session(
+                    session_id=str(r["session_id"]),
+                    user_id=str(r["user_id"]),
+                    promise_id=str(r["promise_id"] or ""),
+                    status=str(r["status"] or ""),
+                    started_at=started_at,
+                    ended_at=dt_utc_iso_to_local_naive(r["ended_at_utc"]),
+                    paused_seconds_total=int(r["paused_seconds_total"] or 0),
+                    last_state_change_at=dt_utc_iso_to_local_naive(r["last_state_change_at_utc"]),
+                    message_id=int(r["message_id"]) if r["message_id"] is not None else None,
+                    chat_id=int(r["chat_id"]) if r["chat_id"] is not None else None,
+                    expected_end_utc=dt_utc_iso_to_local_naive(r["expected_end_utc"]) if r.get("expected_end_utc") else None,
+                    planned_duration_minutes=int(r["planned_duration_minutes"]) if r.get("planned_duration_minutes") is not None else None,
+                    timer_kind=str(r["timer_kind"]) if r.get("timer_kind") else None,
+                    notified_at_utc=dt_utc_iso_to_local_naive(r["notified_at_utc"]) if r.get("notified_at_utc") else None,
+                )
+            )
+        return result
+
+    def mark_session_notified(self, session_id: str) -> None:
+        """Mark a session as notified (set notified_at_utc to current time)."""
+        with get_db_session() as session_db:
+            session_db.execute(
+                text("""
+                    UPDATE sessions
+                    SET notified_at_utc = :notified_at_utc
+                    WHERE session_id = :session_id;
+                """),
+                {
+                    "session_id": session_id,
+                    "notified_at_utc": utc_now_iso(),
+                },
+            )
+            session_db.commit()

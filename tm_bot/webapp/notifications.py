@@ -172,3 +172,88 @@ async def send_suggestion_notifications(
                 
     except Exception as e:
         logger.warning(f"Unexpected error sending suggestion notifications: {e}")
+
+
+async def send_focus_finished_notification(
+    bot_token: str,
+    user_id: int,
+    session_id: str,
+    promise_text: str,
+    proposed_hours: float,
+    miniapp_url: str,
+    root_dir: str
+) -> None:
+    """
+    Send a Telegram notification when a focus session completes.
+    
+    Args:
+        bot_token: Telegram bot token
+        user_id: User ID
+        session_id: Session ID
+        promise_text: Promise text
+        proposed_hours: Proposed hours to log (from planned duration)
+        miniapp_url: Mini app URL
+        root_dir: Root directory for accessing repositories
+    """
+    try:
+        from handlers.messages_store import get_message, Language
+        from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+        from cbdata import encode_cb
+        from utils.time_utils import beautify_time
+        
+        # Get user language
+        settings_repo = SettingsRepository(root_dir)
+        user_settings = settings_repo.get_settings(user_id)
+        user_lang = user_settings.language if user_settings else "en"
+        lang_map = {"en": Language.EN, "fa": Language.FA, "fr": Language.FR}
+        lang = lang_map.get(user_lang, Language.EN)
+        
+        # Create encouraging message
+        message = get_message("focus_session_complete", lang, promise_text=promise_text.replace('_', ' '))
+        if not message or message == "focus_session_complete":  # Fallback if message not found
+            message = f"🎉 Great work! You completed a {beautify_time(proposed_hours)} focus session for:\n\n*{promise_text}*\n\nLog this time?"
+        
+        # Create inline keyboard with Confirm, Adjust, Discard buttons
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    f"✅ Confirm ({beautify_time(proposed_hours)})",
+                    callback_data=encode_cb("session_finish_confirm", s=session_id, v=proposed_hours)
+                ),
+                InlineKeyboardButton(
+                    "Adjust…",
+                    callback_data=encode_cb("session_adjust_open", s=session_id, v=proposed_hours)
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "❌ Discard",
+                    callback_data=encode_cb("session_abort", s=session_id)
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "📱 Open App",
+                    web_app=WebAppInfo(url=f"{miniapp_url}/dashboard")
+                )
+            ]
+        ])
+        
+        # Send message
+        bot = Bot(token=bot_token)
+        await bot.send_message(
+            chat_id=user_id,
+            text=message,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        logger.info(f"Sent focus completion notification to user {user_id} for session {session_id}")
+    except TelegramError as e:
+        error_msg = str(e).lower()
+        if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+            logger.debug(f"Could not send focus notification to user {user_id}: user blocked bot or chat not found")
+        else:
+            logger.warning(f"Error sending focus notification to user {user_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error sending focus notification to user {user_id}: {e}")
