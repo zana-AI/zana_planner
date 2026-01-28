@@ -446,28 +446,12 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         
         {/* Snooze button that appears during swipe */}
         {swipeOffset < -50 && (
-          <div style={{ 
-            position: 'absolute', 
-            right: '20px', 
-            top: '50%', 
-            transform: 'translateY(-50%)',
-            zIndex: 10
-          }}>
+          <div className="card-snooze-container">
             <button
               className={`card-snooze-button ${isSnoozeActive ? 'active' : ''}`}
               style={{
                 opacity: snoozeButtonOpacity,
                 transform: `scale(${snoozeButtonScale})`,
-                padding: '8px 16px',
-                backgroundColor: isSnoozeActive ? '#f59e0b' : 'rgba(245, 158, 11, 0.3)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                fontWeight: '600',
-                cursor: isSnoozeActive ? 'pointer' : 'default',
-                boxShadow: isSnoozeActive ? '0 2px 8px rgba(245, 158, 11, 0.4)' : 'none',
-                transition: 'all 0.2s'
               }}
               onClick={handleSnoozeButtonClick}
               disabled={!isSnoozeActive}
@@ -486,16 +470,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             <span className="card-emoji">{emoji}</span>
             <span className="card-title-text">{text}</span>
             {isBudget && (
-              <span style={{
-                padding: '2px 6px',
-                background: 'rgba(255, 68, 68, 0.2)',
-                border: '1px solid rgba(255, 68, 68, 0.4)',
-                borderRadius: '4px',
-                fontSize: '0.65rem',
-                fontWeight: '600',
-                color: '#ff6b6b',
-                marginLeft: '4px'
-              }}>
+              <span className="card-budget-badge">
                 Budget
               </span>
             )}
@@ -503,30 +478,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               className="card-edit-button"
               onClick={handleEditClick}
               title="Edit promise"
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '4px', 
-                fontSize: '0.75rem', 
-                marginLeft: 'auto',
-                marginRight: '8px',
-                padding: '4px 8px',
-                background: 'rgba(232, 238, 252, 0.1)',
-                border: '1px solid rgba(232, 238, 252, 0.2)',
-                borderRadius: '6px',
-                color: 'rgba(232, 238, 252, 0.9)',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.15)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.1)';
-              }}
             >
               ✏️
-              <span style={{ fontSize: '0.7rem' }}>Edit</span>
+              <span>Edit</span>
             </button>
             <button
               className="card-visibility-toggle"
@@ -536,17 +490,16 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               }}
               disabled={isUpdatingVisibility}
               title={currentVisibility === 'private' ? 'Make public' : 'Make private'}
-              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}
             >
               {currentVisibility === 'private' ? '🔒' : '🌐'}
-              <span style={{ fontSize: '0.7rem', opacity: 0.8, color: 'rgba(232, 238, 252, 0.8)' }}>
+              <span>
                 {currentVisibility === 'private' ? 'Private' : 'Public'}
               </span>
             </button>
           </div>
           <div className="card-meta">
             <span className="card-id" dir="ltr">#{id}</span>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <div className="card-meta-ratio">
               <span className="card-ratio" dir="ltr">
                 {isCountBased ? (
                   <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
@@ -562,89 +515,50 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         {/* Expanded section - shows notes when expanded, editable fields when editing */}
         {isExpanded && (
           <div 
-            style={{
-              padding: '12px 16px',
-              borderTop: '1px solid rgba(232, 238, 252, 0.1)',
-              backgroundColor: 'rgba(15, 23, 48, 0.3)',
-              transition: 'all 0.3s ease'
-            }}
+            className="card-expanded-section"
             onClick={(e) => e.stopPropagation()}
           >
             {isEditing ? (
               /* Edit mode - show editable fields */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card-edit-form">
                 {/* Text field */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'rgba(232, 238, 252, 0.8)' }}>
+                <div className="card-form-group">
+                  <label className="card-form-label">
                     Promise Title
                   </label>
                   <input
                     type="text"
+                    className="card-form-input"
                     value={editingText}
                     onChange={(e) => setEditingText(e.target.value)}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(232, 238, 252, 0.05)',
-                      border: '1px solid rgba(232, 238, 252, 0.2)',
-                      borderRadius: '6px',
-                      color: '#fff',
-                      fontSize: '0.9rem',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
                     placeholder="Enter promise title"
                   />
                 </div>
                 
                 {/* Hours per week field */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'rgba(232, 238, 252, 0.8)' }}>
+                <div className="card-form-group">
+                  <label className="card-form-label">
                     Hours per Week
                   </label>
                   <input
                     type="number"
+                    className="card-form-input"
                     value={editingHours}
                     onChange={(e) => setEditingHours(parseFloat(e.target.value) || 0)}
                     min="0.1"
                     step="0.1"
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(232, 238, 252, 0.05)',
-                      border: '1px solid rgba(232, 238, 252, 0.2)',
-                      borderRadius: '6px',
-                      color: '#fff',
-                      fontSize: '0.9rem',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
                     placeholder="0.0"
                   />
                 </div>
                 
                 {/* End date field */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'rgba(232, 238, 252, 0.8)' }}>
+                <div className="card-form-group">
+                  <label className="card-form-label">
                     End Date
                   </label>
                   <button
+                    className="card-form-date-button"
                     onClick={() => setShowCalendar(!showCalendar)}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(232, 238, 252, 0.05)',
-                      border: '1px solid rgba(232, 238, 252, 0.2)',
-                      borderRadius: '6px',
-                      color: editingEndDate ? '#fff' : 'rgba(232, 238, 252, 0.6)',
-                      fontSize: '0.9rem',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(232, 238, 252, 0.1)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(232, 238, 252, 0.05)';
-                    }}
                   >
                     {formatDate(editingEndDate)}
                   </button>
@@ -659,112 +573,56 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 </div>
                 
                 {/* Recurring toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text)' }}>
+                <div className="card-recurring-section">
+                  <div className="card-recurring-info">
+                    <span className="card-recurring-title">
                       {currentRecurring ? '🔄 Recurring Promise' : '📌 One-time Task'}
                     </span>
-                    <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.6)' }}>
+                    <span className="card-recurring-subtitle">
                       {currentRecurring 
                         ? 'This promise repeats every week' 
                         : 'This is a one-time task'}
                     </span>
                   </div>
                   <button
+                    className={`card-recurring-toggle-button ${currentRecurring ? 'active' : ''}`}
                     onClick={handleRecurringToggle}
                     disabled={isUpdatingRecurring}
-                    style={{
-                      padding: '8px 16px',
-                      background: currentRecurring 
-                        ? 'linear-gradient(135deg, #10b981, #059669)' 
-                        : 'rgba(232, 238, 252, 0.1)',
-                      border: `1px solid ${currentRecurring ? '#10b981' : 'rgba(232, 238, 252, 0.2)'}`,
-                      borderRadius: '8px',
-                      color: currentRecurring ? '#fff' : 'rgba(232, 238, 252, 0.8)',
-                      fontSize: '0.8rem',
-                      fontWeight: '600',
-                      cursor: isUpdatingRecurring ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s',
-                      opacity: isUpdatingRecurring ? 0.6 : 1
-                    }}
                   >
                     {isUpdatingRecurring ? '...' : (currentRecurring ? 'Make One-time' : 'Make Recurring')}
                   </button>
                 </div>
                 
                 {/* Reminders section */}
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  gap: '8px',
-                  padding: '12px',
-                  background: 'rgba(245, 158, 11, 0.08)',
-                  border: '1px solid rgba(245, 158, 11, 0.15)',
-                  borderRadius: '8px'
-                }}>
-                  <div style={{ 
-                    fontSize: '0.85rem', 
-                    fontWeight: '600', 
-                    color: '#f59e0b',
-                    marginBottom: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      ⏰ Reminders
-                    </span>
+                <div className="card-section card-reminders-section">
+                  <div className="card-section-header">
+                    <span>⏰ Reminders</span>
                     <button
+                      className="card-reminders-add-button"
                       onClick={handleAddReminder}
-                      style={{
-                        padding: '4px 8px',
-                        background: 'rgba(245, 158, 11, 0.2)',
-                        border: '1px solid rgba(245, 158, 11, 0.3)',
-                        borderRadius: '6px',
-                        color: '#f59e0b',
-                        fontSize: '0.75rem',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
                     >
                       + Add
                     </button>
                   </div>
                   
                   {isLoadingReminders ? (
-                    <div style={{ padding: '8px', textAlign: 'center', color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.8rem' }}>
+                    <div className="card-empty-state">
                       Loading reminders...
                     </div>
                   ) : reminders.length === 0 ? (
-                    <div style={{ padding: '8px', textAlign: 'center', color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.8rem' }}>
+                    <div className="card-empty-state">
                       No reminders set. Click "+ Add" to create one.
                     </div>
                   ) : (
                     reminders.map((reminder, index) => (
                       <div 
                         key={index}
-                        style={{
-                          padding: '8px 10px',
-                          background: 'rgba(15, 23, 48, 0.4)',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(245, 158, 11, 0.1)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}
+                        className="card-reminder-item"
                       >
                         <select
+                          className="card-reminder-weekday"
                           value={reminder.weekday}
                           onChange={(e) => handleUpdateReminder(index, 'weekday', parseInt(e.target.value))}
-                          style={{
-                            flex: 1,
-                            padding: '6px 8px',
-                            background: 'rgba(232, 238, 252, 0.05)',
-                            border: '1px solid rgba(232, 238, 252, 0.2)',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontSize: '0.8rem'
-                          }}
                         >
                           {WEEKDAY_NAMES.map((name, i) => (
                             <option key={i} value={i}>{name}</option>
@@ -772,46 +630,20 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                         </select>
                         <input
                           type="time"
+                          className="card-reminder-time"
                           value={reminder.time}
                           onChange={(e) => handleUpdateReminder(index, 'time', e.target.value)}
-                          style={{
-                            padding: '6px 8px',
-                            background: 'rgba(232, 238, 252, 0.05)',
-                            border: '1px solid rgba(232, 238, 252, 0.2)',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontSize: '0.8rem',
-                            width: '100px'
-                          }}
                         />
                         <button
+                          className={`card-reminder-toggle ${reminder.enabled ? 'enabled' : ''}`}
                           onClick={() => handleUpdateReminder(index, 'enabled', !reminder.enabled)}
-                          style={{
-                            padding: '6px 10px',
-                            background: reminder.enabled 
-                              ? 'rgba(245, 158, 11, 0.2)' 
-                              : 'rgba(232, 238, 252, 0.1)',
-                            border: `1px solid ${reminder.enabled ? 'rgba(245, 158, 11, 0.3)' : 'rgba(232, 238, 252, 0.2)'}`,
-                            borderRadius: '6px',
-                            color: reminder.enabled ? '#f59e0b' : 'rgba(232, 238, 252, 0.6)',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer'
-                          }}
                           title={reminder.enabled ? 'Disable' : 'Enable'}
                         >
                           {reminder.enabled ? '✓' : '○'}
                         </button>
                         <button
+                          className="card-reminder-remove"
                           onClick={() => handleRemoveReminder(index)}
-                          style={{
-                            padding: '6px 10px',
-                            background: 'rgba(255, 68, 68, 0.1)',
-                            border: '1px solid rgba(255, 68, 68, 0.2)',
-                            borderRadius: '6px',
-                            color: '#ff4444',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer'
-                          }}
                           title="Remove"
                         >
                           ×
@@ -822,18 +654,8 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   
                   {reminders.length > 0 && (
                     <button
+                      className="card-reminders-save-button"
                       onClick={handleSaveReminders}
-                      style={{
-                        marginTop: '8px',
-                        padding: '8px 12px',
-                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                        border: 'none',
-                        borderRadius: '6px',
-                        color: '#fff',
-                        fontSize: '0.8rem',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
                     >
                       Save Reminders
                     </button>
@@ -841,42 +663,18 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 </div>
                 
                 {/* Save/Cancel buttons */}
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <div className="card-form-button-group">
                   <button
+                    className="card-form-button-primary"
                     onClick={handleSavePromise}
                     disabled={isUpdatingPromise}
-                    style={{
-                      flex: 1,
-                      padding: '10px 16px',
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '0.85rem',
-                      fontWeight: '600',
-                      cursor: isUpdatingPromise ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s',
-                      opacity: isUpdatingPromise ? 0.6 : 1
-                    }}
                   >
                     {isUpdatingPromise ? 'Saving...' : 'Save Changes'}
                   </button>
                   <button
+                    className="card-form-button-secondary"
                     onClick={handleCancelEdit}
                     disabled={isUpdatingPromise}
-                    style={{
-                      flex: 1,
-                      padding: '10px 16px',
-                      background: 'rgba(232, 238, 252, 0.1)',
-                      border: '1px solid rgba(232, 238, 252, 0.2)',
-                      borderRadius: '8px',
-                      color: 'rgba(232, 238, 252, 0.8)',
-                      fontSize: '0.85rem',
-                      fontWeight: '600',
-                      cursor: isUpdatingPromise ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s',
-                      opacity: isUpdatingPromise ? 0.6 : 1
-                    }}
                   >
                     Cancel
                   </button>
@@ -884,27 +682,11 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               </div>
             ) : (
               /* View mode - show notes and other info */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card-edit-form">
                 {/* Notes section - show all notes for the week */}
                 {Object.keys(notesByDate).length > 0 && (
-                  <div style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: '8px',
-                    padding: '12px',
-                    background: 'rgba(91, 163, 245, 0.08)',
-                    border: '1px solid rgba(91, 163, 245, 0.15)',
-                    borderRadius: '8px'
-                  }}>
-                    <div style={{ 
-                      fontSize: '0.85rem', 
-                      fontWeight: '600', 
-                      color: 'var(--accent)',
-                      marginBottom: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}>
+                  <div className="card-section card-notes-section">
+                    <div className="card-section-header">
                       📝 Notes for This Week
                     </div>
                     {weekDays.map((dateKey, index) => {
@@ -919,32 +701,15 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       return (
                         <div 
                           key={dateKey}
-                          style={{
-                            padding: '8px 10px',
-                            background: 'rgba(15, 23, 48, 0.4)',
-                            borderRadius: '6px',
-                            border: '1px solid rgba(91, 163, 245, 0.1)'
-                          }}
+                          className="card-notes-day-group"
                         >
-                          <div style={{
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            color: 'rgba(91, 163, 245, 0.9)',
-                            marginBottom: '6px'
-                          }}>
+                          <div className="card-notes-day-header">
                             {dayName}, {month} {dayNumber}
                           </div>
                           {dayNotes.map((note, noteIndex) => (
                             <div 
                               key={noteIndex}
-                              style={{
-                                fontSize: '0.8rem',
-                                color: 'rgba(232, 238, 252, 0.85)',
-                                lineHeight: '1.4',
-                                marginTop: noteIndex > 0 ? '6px' : '0',
-                                paddingLeft: '8px',
-                                borderLeft: '2px solid rgba(91, 163, 245, 0.3)'
-                              }}
+                              className="card-notes-item"
                             >
                               {note}
                             </div>
@@ -956,12 +721,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 )}
                 
                 {Object.keys(notesByDate).length === 0 && (
-                  <div style={{
-                    padding: '12px',
-                    textAlign: 'center',
-                    color: 'rgba(232, 238, 252, 0.6)',
-                    fontSize: '0.85rem'
-                  }}>
+                  <div className="card-empty-state">
                     No notes for this week. Click the ✏️ Edit button to modify this promise.
                   </div>
                 )}
@@ -1001,7 +761,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               key={index} 
               className="day-col"
               title={title}
-              style={{ position: 'relative' }}
             >
               <div 
                 className="day-bar" 
@@ -1009,18 +768,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               />
               {hasNotes && (
                 <div
-                  style={{
-                    position: 'absolute',
-                    top: '2px',
-                    right: '2px',
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    backgroundColor: '#5ba3f5',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    pointerEvents: 'none',
-                    zIndex: 1
-                  }}
+                  className="card-day-indicator"
                   title={dayNotes.join('\n')}
                 />
               )}
@@ -1049,26 +797,15 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           </button>
         )}
         {isBudget && (
-          <div className="budget-bar-container" style={{ marginTop: '0.5rem', width: '100%' }}>
-            <div className="budget-bar" style={{ height: '10px', backgroundColor: '#2a2a3a', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
+          <div className="budget-bar-container">
+            <div className="budget-bar">
               <div 
                 className={`budget-bar-fill ${achieved_value > target_value ? 'over-budget' : ''}`}
                 style={{ 
-                  height: '100%',
-                  width: `${Math.min((achieved_value / target_value) * 100, 100)}%`,
-                  backgroundColor: achieved_value > target_value ? '#ff4444' : '#4CAF50',
-                  transition: 'width 0.3s ease'
+                  width: `${Math.min((achieved_value / target_value) * 100, 100)}%`
                 }}
               />
-              <div style={{ 
-                position: 'absolute', 
-                right: '4px', 
-                top: '50%', 
-                transform: 'translateY(-50%)', 
-                fontSize: '0.7rem', 
-                color: achieved_value > target_value ? '#ff4444' : '#4CAF50',
-                fontWeight: '600'
-              }}>
+              <div className={`budget-bar-label ${achieved_value > target_value ? 'over-budget' : ''}`}>
                 {isCountBased ? (
                   <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
                 ) : (

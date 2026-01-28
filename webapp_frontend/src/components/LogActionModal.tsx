@@ -147,11 +147,6 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
               placeholder="Add any notes about this session..."
               rows={3}
               disabled={isSubmitting}
-              style={{
-                resize: 'vertical',
-                minHeight: '60px',
-                fontFamily: 'inherit'
-              }}
             />
           </div>
 

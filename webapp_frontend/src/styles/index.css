@@ -15,6 +15,12 @@
   --good: #22c55e;
   --warn: #f59e0b;
   --bad: #ef4444;
+  /* Spacing variables */
+  --spacing-xs: 4px;
+  --spacing-sm: 6px;
+  --spacing-md: 8px;
+  --spacing-lg: 12px;
+  --spacing-xl: 16px;
 }
 
 /* Reset and base styles */
@@ -1604,6 +1610,12 @@ html, body {
   cursor: not-allowed;
 }
 
+textarea.modal-input {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
 .modal-error {
   padding: 12px;
   background: rgba(239, 68, 68, 0.1);
@@ -2500,4 +2512,496 @@ html, body {
   color: #86efac;
   font-size: 14px;
   margin: 0;
+}
+
+/* ========================================
+   Promise Card Extended Styles
+   ======================================== */
+
+/* Edit Button */
+.card-edit-button {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.75rem;
+  margin-left: auto;
+  margin-right: var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: rgba(232, 238, 252, 0.1);
+  border: 1px solid rgba(232, 238, 252, 0.2);
+  border-radius: 6px;
+  color: rgba(232, 238, 252, 0.9);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.card-edit-button:hover {
+  background: rgba(232, 238, 252, 0.15);
+}
+
+.card-edit-button span {
+  font-size: 0.7rem;
+}
+
+/* Budget Badge */
+.card-budget-badge {
+  padding: 2px 6px;
+  background: rgba(255, 68, 68, 0.2);
+  border: 1px solid rgba(255, 68, 68, 0.4);
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #ff6b6b;
+  margin-left: var(--spacing-xs);
+}
+
+/* Expanded Section */
+.card-expanded-section {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  border-top: 1px solid rgba(232, 238, 252, 0.1);
+  background-color: rgba(15, 23, 48, 0.3);
+  transition: all 0.3s ease;
+}
+
+/* Edit Form */
+.card-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+/* Form Groups */
+.card-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.card-form-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(232, 238, 252, 0.8);
+}
+
+/* Form Inputs */
+.card-form-input,
+.card-form-select,
+.card-form-time {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: rgba(232, 238, 252, 0.05);
+  border: 1px solid rgba(232, 238, 252, 0.2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.card-form-input:focus,
+.card-form-select:focus,
+.card-form-time:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(232, 238, 252, 0.08);
+}
+
+.card-form-select {
+  flex: 1;
+  font-size: 0.8rem;
+}
+
+.card-form-time {
+  width: 100px;
+  font-size: 0.8rem;
+}
+
+/* Date Button */
+.card-form-date-button {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: rgba(232, 238, 252, 0.05);
+  border: 1px solid rgba(232, 238, 252, 0.2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  font-family: inherit;
+}
+
+.card-form-date-button:hover {
+  background: rgba(232, 238, 252, 0.1);
+}
+
+.card-form-date-button:empty::before {
+  content: 'Not set';
+  color: rgba(232, 238, 252, 0.6);
+}
+
+/* Recurring Toggle Section */
+.card-recurring-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-recurring-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.card-recurring-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.card-recurring-subtitle {
+  font-size: 0.75rem;
+  color: rgba(232, 238, 252, 0.6);
+}
+
+.card-recurring-toggle-button {
+  padding: var(--spacing-md) var(--spacing-xl);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid;
+}
+
+.card-recurring-toggle-button.active {
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-color: #10b981;
+  color: #fff;
+}
+
+.card-recurring-toggle-button:not(.active) {
+  background: rgba(232, 238, 252, 0.1);
+  border-color: rgba(232, 238, 252, 0.2);
+  color: rgba(232, 238, 252, 0.8);
+}
+
+.card-recurring-toggle-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Form Button Group */
+.card-form-button-group {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.card-form-button-primary,
+.card-form-button-secondary {
+  flex: 1;
+  padding: 10px var(--spacing-xl);
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.card-form-button-primary {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+}
+
+.card-form-button-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.card-form-button-secondary {
+  background: rgba(232, 238, 252, 0.1);
+  border: 1px solid rgba(232, 238, 252, 0.2);
+  color: rgba(232, 238, 252, 0.8);
+}
+
+.card-form-button-secondary:hover:not(:disabled) {
+  background: rgba(232, 238, 252, 0.15);
+}
+
+.card-form-button-primary:disabled,
+.card-form-button-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Section Container (for notes, reminders, etc.) */
+.card-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border-radius: 8px;
+}
+
+.card-section-header {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* Notes Section */
+.card-notes-section {
+  background: rgba(91, 163, 245, 0.08);
+  border: 1px solid rgba(91, 163, 245, 0.15);
+}
+
+.card-notes-section .card-section-header {
+  color: var(--accent);
+}
+
+.card-notes-day-group {
+  padding: var(--spacing-md) 10px;
+  background: rgba(15, 23, 48, 0.4);
+  border-radius: 6px;
+  border: 1px solid rgba(91, 163, 245, 0.1);
+}
+
+.card-notes-day-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(91, 163, 245, 0.9);
+  margin-bottom: var(--spacing-sm);
+}
+
+.card-notes-item {
+  font-size: 0.8rem;
+  color: rgba(232, 238, 252, 0.85);
+  line-height: 1.4;
+  padding-left: var(--spacing-md);
+  border-left: 2px solid rgba(91, 163, 245, 0.3);
+}
+
+.card-notes-item:not(:first-child) {
+  margin-top: var(--spacing-sm);
+}
+
+/* Reminders Section */
+.card-reminders-section {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.card-reminders-section .card-section-header {
+  color: var(--warn);
+  justify-content: space-between;
+}
+
+.card-reminders-add-button {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  color: var(--warn);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.card-reminders-add-button:hover {
+  background: rgba(245, 158, 11, 0.25);
+}
+
+.card-reminder-item {
+  padding: var(--spacing-md) 10px;
+  background: rgba(15, 23, 48, 0.4);
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.1);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.card-reminder-weekday {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(232, 238, 252, 0.05);
+  border: 1px solid rgba(232, 238, 252, 0.2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.card-reminder-time {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(232, 238, 252, 0.05);
+  border: 1px solid rgba(232, 238, 252, 0.2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.8rem;
+  width: 100px;
+  font-family: inherit;
+}
+
+.card-reminder-toggle {
+  padding: var(--spacing-sm) 10px;
+  border-radius: 6px;
+  color: var(--warn);
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+  border: 1px solid;
+  transition: all 0.2s;
+}
+
+.card-reminder-toggle.enabled {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warn);
+}
+
+.card-reminder-toggle:not(.enabled) {
+  background: rgba(232, 238, 252, 0.1);
+  border-color: rgba(232, 238, 252, 0.2);
+  color: rgba(232, 238, 252, 0.6);
+}
+
+.card-reminder-remove {
+  padding: var(--spacing-sm) 10px;
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.2);
+  border-radius: 6px;
+  color: #ff4444;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.card-reminder-remove:hover {
+  background: rgba(255, 68, 68, 0.15);
+}
+
+.card-reminders-save-button {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.card-reminders-save-button:hover {
+  opacity: 0.9;
+}
+
+/* Empty State */
+.card-empty-state {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: rgba(232, 238, 252, 0.6);
+  font-size: 0.85rem;
+}
+
+/* Day Indicator */
+.card-day-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Day Column */
+.day-col {
+  position: relative;
+}
+
+/* Snooze Button Container */
+.card-snooze-container {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+
+/* Meta Ratio Container */
+.card-meta-ratio {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+
+/* Visibility Toggle Text */
+.card-visibility-toggle span {
+  font-size: 0.7rem;
+  opacity: 0.8;
+  color: rgba(232, 238, 252, 0.8);
+}
+
+/* Budget Bar */
+.budget-bar-container {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.budget-bar {
+  height: 10px;
+  background-color: #2a2a3a;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.budget-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.budget-bar-fill.over-budget {
+  background-color: #ff4444;
+}
+
+.budget-bar-fill:not(.over-budget) {
+  background-color: #4CAF50;
+}
+
+.budget-bar-label {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.budget-bar-label.over-budget {
+  color: #ff4444;
+}
+
+.budget-bar-label:not(.over-budget) {
+  color: #4CAF50;
+}
+
+/* Card Top Clickable */
+.card-top {
+  cursor: pointer;
 }
