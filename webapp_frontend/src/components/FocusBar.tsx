@@ -4,6 +4,9 @@ import { apiClient, ApiError } from '../api/client';
 import type { FocusSession, WeeklyReportData } from '../types';
 import './FocusBar.css';
 
+// Mobile breakpoint constant - matches CSS media query
+const MOBILE_BREAKPOINT = 768;
+
 interface FocusBarProps {
   promisesData: WeeklyReportData | null;
   onSessionComplete?: () => void;
@@ -24,7 +27,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   // Detect mobile viewport
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768);
+      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
     };
     
     checkMobile();
@@ -34,6 +37,13 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
       window.removeEventListener('resize', checkMobile);
     };
   }, []);
+
+  // Close modal when switching from desktop to mobile
+  useEffect(() => {
+    if (isMobile && showPromisePicker) {
+      setShowPromisePicker(false);
+    }
+  }, [isMobile, showPromisePicker]);
 
   // Load current session on mount
   useEffect(() => {

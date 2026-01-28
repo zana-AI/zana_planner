@@ -96,6 +96,36 @@
   color: #fff;
 }
 
+.focus-duration-presets {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.focus-duration-btn {
+  flex: 1;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.focus-duration-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.focus-duration-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
 .focus-page-error {
   color: #ff5252;
   font-size: 0.95rem;
@@ -113,6 +143,43 @@
   margin-top: 2rem;
 }
 
+.focus-confirm-button,
+.focus-cancel-button {
+  padding: 0.75rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.focus-confirm-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.focus-confirm-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+}
+
+.focus-confirm-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.focus-cancel-button {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.focus-cancel-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
 @media (min-width: 769px) {
   .focus-page-container {
     padding-top: 4rem;
@@ -128,6 +195,11 @@
 
   .focus-page-actions {
     flex-direction: row;
+  }
+
+  .focus-confirm-button,
+  .focus-cancel-button {
+    flex: 1;
   }
 }
 
@@ -168,5 +240,11 @@
   .focus-page-select option {
     background: #fff;
     color: #333;
+  }
+
+  .focus-cancel-button {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: rgba(0, 0, 0, 0.8);
   }
 }

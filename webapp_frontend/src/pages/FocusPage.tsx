@@ -9,17 +9,22 @@ export function FocusPage() {
   const [promisesData, setPromisesData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [loadingPromises, setLoadingPromises] = useState(true);
   const [selectedPromiseId, setSelectedPromiseId] = useState<string>('');
   const [selectedDuration, setSelectedDuration] = useState<number>(25);
 
   useEffect(() => {
     // Load promises data
     const loadPromises = async () => {
+      setLoadingPromises(true);
       try {
         const data = await apiClient.getWeeklyReport();
         setPromisesData(data);
       } catch (err) {
         console.error('Failed to load promises:', err);
+        setError('Failed to load promises. Please try again.');
+      } finally {
+        setLoadingPromises(false);
       }
     };
     loadPromises();
@@ -74,63 +79,74 @@ export function FocusPage() {
           <button 
             className="focus-back-button"
             onClick={handleCancel}
-            aria-label="Go back"
+            aria-label="Go back to dashboard"
           >
             ← Back
           </button>
           <h1>Start Focus Session</h1>
         </div>
 
-        <div className="focus-page-content">
-          <div className="focus-page-section">
-            <label>Select Promise:</label>
-            <select
-              value={selectedPromiseId}
-              onChange={(e) => setSelectedPromiseId(e.target.value)}
-              className="focus-page-select"
-            >
-              <option value="">-- Choose a promise --</option>
-              {getAvailablePromises().map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.text}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="focus-page-section">
-            <label>Duration:</label>
-            <div className="focus-duration-presets">
-              {[25, 45, 60].map((mins) => (
-                <button
-                  key={mins}
-                  className={`focus-duration-btn ${selectedDuration === mins ? 'active' : ''}`}
-                  onClick={() => setSelectedDuration(mins)}
-                >
-                  {mins}m
-                </button>
-              ))}
+        {loadingPromises ? (
+          <div className="focus-page-content">
+            <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+              Loading promises...
             </div>
           </div>
+        ) : (
+          <div className="focus-page-content">
+            <div className="focus-page-section">
+              <label htmlFor="promise-select">Select Promise:</label>
+              <select
+                id="promise-select"
+                value={selectedPromiseId}
+                onChange={(e) => setSelectedPromiseId(e.target.value)}
+                className="focus-page-select"
+                disabled={loadingPromises}
+              >
+                <option value="">-- Choose a promise --</option>
+                {getAvailablePromises().map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.text}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          {error && <div className="focus-page-error">{error}</div>}
+            <div className="focus-page-section">
+              <label htmlFor="duration-presets">Duration:</label>
+              <div id="duration-presets" className="focus-duration-presets" role="group" aria-label="Duration presets">
+                {[25, 45, 60].map((mins) => (
+                  <button
+                    key={mins}
+                    className={`focus-duration-btn ${selectedDuration === mins ? 'active' : ''}`}
+                    onClick={() => setSelectedDuration(mins)}
+                    aria-pressed={selectedDuration === mins}
+                  >
+                    {mins}m
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          <div className="focus-page-actions">
-            <button
-              className="focus-confirm-button"
-              onClick={handleStart}
-              disabled={loading || !selectedPromiseId}
-            >
-              {loading ? 'Starting...' : 'Start Focus Session'}
-            </button>
-            <button
-              className="focus-cancel-button"
-              onClick={handleCancel}
-            >
-              Cancel
-            </button>
+            {error && <div className="focus-page-error" role="alert">{error}</div>}
+
+            <div className="focus-page-actions">
+              <button
+                className="focus-confirm-button"
+                onClick={handleStart}
+                disabled={loading || !selectedPromiseId || loadingPromises}
+              >
+                {loading ? 'Starting...' : 'Start Focus Session'}
+              </button>
+              <button
+                className="focus-cancel-button"
+                onClick={handleCancel}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
