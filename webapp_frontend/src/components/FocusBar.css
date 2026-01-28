@@ -78,35 +78,55 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 2000;
   padding: 1rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Ensure modal is always accessible */
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
 }
 
 .focus-picker-content {
   background: rgba(26, 26, 46, 0.98);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-radius: 20px;
-  padding: 2rem;
-  max-width: 500px;
+  padding: 1.5rem;
   width: 100%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 500px;
+  max-height: 90vh;
+  max-height: 90dvh; /* Dynamic viewport height for mobile */
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  margin: auto;
+  position: relative;
+  /* Ensure it's centered and scrollable */
+  display: flex;
+  flex-direction: column;
+  /* Center vertically and horizontally */
+  align-self: center;
+  justify-self: center;
 }
 
 .focus-picker-content h3 {
   color: #fff;
-  margin: 0 0 1.5rem 0;
-  font-size: 1.5rem;
+  margin: 0 0 1.25rem 0;
+  font-size: 1.25rem;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .focus-picker-section {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
+  flex-shrink: 0;
 }
 
 .focus-picker-section label {
@@ -173,7 +193,9 @@
 .focus-picker-actions {
   display: flex;
   gap: 1rem;
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  flex-shrink: 0;
+  padding-top: 0.5rem;
 }
 
 .focus-confirm-button,
@@ -374,9 +396,41 @@
     justify-content: center;
   }
 
+  .focus-picker-modal {
+    padding: 0.75rem;
+    align-items: center;
+    /* Ensure it works in mini-app viewport */
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
   .focus-picker-content {
-    padding: 1.5rem;
-    margin: 1rem;
+    padding: 1.25rem;
+    max-width: calc(100% - 1.5rem);
+    max-height: 85vh;
+    max-height: 85dvh;
+    border-radius: 16px;
+    /* Ensure it's centered */
+    margin: 0 auto;
+  }
+
+  .focus-picker-content h3 {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+  }
+
+  .focus-picker-section {
+    margin-bottom: 1rem;
+  }
+
+  .focus-picker-actions {
+    margin-top: 1rem;
+    flex-direction: column;
+  }
+
+  .focus-confirm-button,
+  .focus-cancel-button {
+    width: 100%;
   }
 }
 

@@ -226,8 +226,20 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
           </button>
           
           {showPromisePicker && (
-            <div className="focus-picker-modal">
-              <div className="focus-picker-content">
+            <div 
+              className="focus-picker-modal"
+              onClick={(e) => {
+                // Close modal when clicking backdrop
+                if (e.target === e.currentTarget) {
+                  setShowPromisePicker(false);
+                  setError('');
+                }
+              }}
+            >
+              <div 
+                className="focus-picker-content"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <h3>Start Focus Session</h3>
                 
                 <div className="focus-picker-section">
