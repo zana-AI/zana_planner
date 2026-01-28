@@ -23,7 +23,8 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const completionHandledRef = useRef<boolean>(false);
+  // Track which session ID was completed to prevent re-triggering
+  const completedSessionIdRef = useRef<string | null>(null);
 
   // Detect mobile viewport
   useEffect(() => {
@@ -51,9 +52,14 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     loadCurrentSession();
   }, []);
 
-  // Reset completion flag when session changes
+  // Reset completion flag only when switching to a genuinely new session
   useEffect(() => {
-    completionHandledRef.current = false;
+    if (currentSession?.session_id && 
+        completedSessionIdRef.current && 
+        currentSession.session_id !== completedSessionIdRef.current) {
+      // Only reset if we have a different session
+      completedSessionIdRef.current = null;
+    }
   }, [currentSession?.session_id]);
 
   const loadCurrentSession = async () => {
@@ -78,12 +84,15 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   };
 
   const handleTimerComplete = useCallback(async (sessionId: string) => {
-    // Prevent multiple calls
-    if (completionHandledRef.current) {
+    // Prevent multiple calls for the same session
+    if (completedSessionIdRef.current === sessionId) {
       return;
     }
-    completionHandledRef.current = true;
     
+    // Mark this session as completed FIRST, before any async operations
+    completedSessionIdRef.current = sessionId;
+    
+    // Stop the timer immediately
     stopTimer();
     
     // Show completion state - backend will send Telegram notification
@@ -141,8 +150,12 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
     setRemainingSeconds(remaining);
 
-    // If timer completed, handle it (only once)
-    if (remaining === 0 && currentSession.status === 'running' && !completionHandledRef.current) {
+    // If timer completed, handle it (only once per session)
+    if (remaining === 0 && 
+        currentSession.status === 'running' && 
+        completedSessionIdRef.current !== currentSession.session_id) {
+      // Stop timer immediately to prevent further calls
+      stopTimer();
       handleTimerComplete(currentSession.session_id);
     }
   }, [currentSession, handleTimerComplete]);
