@@ -28,6 +28,7 @@ from services.profile_service import ProfileService
 from services.schema_service import SchemaService
 from services.query_service import QueryService
 from services.social_service import SocialService
+from services.content_management_service import ContentManagementService
 from models.models import Promise, Action, UserSettings
 from models.enums import ActionType
 from utils.logger import get_logger
@@ -56,6 +57,9 @@ class PlannerAPIAdapter:
         self.sessions_service = SessionsService(self.sessions_repo, self.actions_repo)
         self.content_service = ContentService()
         self.time_estimation_service = TimeEstimationService(self.actions_repo)
+        self.content_management_service = ContentManagementService(
+            self.content_service, self.time_estimation_service
+        )
         
         # Template-related repos and services
         self.templates_repo = TemplatesRepository(root_dir)
@@ -811,210 +815,34 @@ class PlannerAPIAdapter:
         }
 
     
-    # Link processing methods
+    # Content management methods
     def process_shared_link(self, user_id, url: str) -> str:
-        """
-        Process a shared link and return summary with calendar link.
-        
-        Args:
-            user_id: User ID
-            url: URL to process
-        
-        Returns:
-            Formatted string with link summary and calendar link
-        """
-        try:
-            # Process the link
-            link_metadata = self.content_service.process_link(url)
-            
-            # Estimate time needed
-            # Set LLM handler if available (will be set externally)
-            estimated_duration = self.time_estimation_service.estimate_content_duration(
-                link_metadata, user_id
-            )
-            
-            # Format duration string
-            if estimated_duration:
-                if estimated_duration < 1.0:
-                    duration_str = f"{int(estimated_duration * 60)} minutes"
-                else:
-                    hours = int(estimated_duration)
-                    minutes = int((estimated_duration - hours) * 60)
-                    if minutes > 0:
-                        duration_str = f"{hours}h {minutes}m"
-                    else:
-                        duration_str = f"{hours} hour{'s' if hours > 1 else ''}"
-            else:
-                duration_str = "Unknown"
-            
-            # Generate summary
-            title = link_metadata.get('title', 'Content')
-            description = link_metadata.get('description', 'No description available')
-            url_type = link_metadata.get('type', 'unknown')
-            
-            summary = (
-                f"📄 *{title}*\n\n"
-                f"{description[:300]}{'...' if len(description) > 300 else ''}\n\n"
-                f"⏱ Estimated time: {duration_str}\n"
-                f"🔗 Type: {url_type}"
-            )
-            
-            return summary
-        
-        except Exception as e:
-            return f"Error processing link: {str(e)}"
+        """Process a shared link and return formatted summary with time estimate."""
+        return self.content_management_service.process_shared_link(int(user_id), url)
     
     def estimate_time_for_content(self, user_id, content_type: str, metadata: dict) -> float:
-        """
-        Estimate time needed for content.
-        
-        Args:
-            user_id: User ID
-            content_type: Type of content (blog, youtube, podcast, etc.)
-            metadata: Content metadata dict
-        
-        Returns:
-            Estimated duration in hours
-        """
-        try:
-            content_metadata = {
-                'type': content_type,
-                **metadata
-            }
-            return self.time_estimation_service.estimate_content_duration(content_metadata, user_id)
-        except Exception as e:
-            # Return default estimate on error
-            if content_type == 'youtube':
-                return 0.17  # ~10 minutes
-            elif content_type == 'blog':
-                return 0.08  # ~5 minutes
-            elif content_type == 'podcast':
-                return 0.5  # 30 minutes
-            return 0.25  # 15 minutes default
+        """Estimate time needed for content."""
+        return self.content_management_service.estimate_time_for_content(
+            int(user_id), content_type, metadata
+        )
     
     def get_work_hour_suggestion(self, user_id, day_of_week: str = None) -> dict:
-        """
-        Get work hour suggestion based on user patterns.
-        
-        Args:
-            user_id: User ID
-            day_of_week: Optional day name (e.g., 'Monday'). If None, uses current day.
-        
-        Returns:
-            Dict with suggested_hours, day_of_week, reasoning, and patterns
-        """
-        try:
-            # Set LLM handler if available (will be set externally)
-            return self.time_estimation_service.suggest_daily_work_hours(
-                user_id, day_of_week, self._llm_handler
-            )
-        except Exception as e:
-            return {
-                'suggested_hours': 0.0,
-                'day_of_week': day_of_week or 'Unknown',
-                'reasoning': f'Error: {str(e)}',
-                'patterns': {}
-            }
+        """Get work hour suggestion based on user patterns."""
+        return self.content_management_service.get_work_hour_suggestion(
+            int(user_id), day_of_week
+        )
     
     def set_llm_handler(self, llm_handler):
-        """Set LLM handler for time estimation service."""
+        """Set LLM handler for content management and time estimation services."""
         self._llm_handler = llm_handler
         self.time_estimation_service.llm_handler = llm_handler
+        self.content_management_service.set_llm_handler(llm_handler)
     
     def summarize_content(self, user_id, url: str, content_metadata: dict) -> str:
-        """
-        Summarize content using LLM.
-        
-        Args:
-            user_id: User ID
-            url: URL of the content
-            content_metadata: Content metadata dict with title, description, type, etc.
-        
-        Returns:
-            Summary string
-        """
-        try:
-            content_type = content_metadata.get('type', 'unknown')
-            title = content_metadata.get('title', 'Content')
-            description = content_metadata.get('description', '')
-            metadata = content_metadata.get('metadata', {})
-            
-            # For blogs/articles, try to get full content using Trafilatura if available
-            full_content = None
-            if content_type == 'blog' or content_type == 'unknown':
-                try:
-                    from services.content_service import ContentService
-                    content_service = ContentService()
-                    # Re-fetch with Trafilatura to get full content
-                    if hasattr(content_service, '_process_blog'):
-                        # Try to get full content
-                        try:
-                            import trafilatura
-                            downloaded = trafilatura.fetch_url(url)
-                            if downloaded:
-                                extracted = trafilatura.extract(
-                                    downloaded,
-                                    include_comments=False,
-                                    include_tables=False,
-                                    include_images=False,
-                                    include_links=False
-                                )
-                                if extracted and len(extracted) > len(description):
-                                    full_content = extracted
-                        except Exception:
-                            pass  # Fallback to description
-                except Exception:
-                    pass  # Fallback to description
-            
-            # Build content text for summarization
-            content_text = f"Title: {title}\n\n"
-            
-            if content_type == 'youtube':
-                # For YouTube, use description and subtitles if available
-                if description:
-                    content_text += f"Description: {description}\n\n"
-                if metadata.get('has_subtitles'):
-                    content_text += "Note: This video has subtitles available.\n\n"
-                content_text += f"Video URL: {url}"
-            else:
-                # For blogs/articles, use full content if available, otherwise description
-                if full_content:
-                    # Use full content but limit length for LLM
-                    content_text += f"Content: {full_content[:3000]}\n\n"  # Limit to 3000 chars
-                    if len(full_content) > 3000:
-                        content_text += "[Content truncated...]\n\n"
-                elif description:
-                    content_text += f"Content: {description}\n\n"
-                content_text += f"Article URL: {url}"
-            
-            # Build summarization prompt
-            prompt = f"""Please provide a concise summary of the following content:
-
-{content_text}
-
-Provide a summary that:
-- Captures the main points and key ideas
-- Is 2-4 sentences long
-- Helps the reader decide if they want to consume the full content
-- Is clear and informative
-
-Summary:"""
-            
-            # Call LLM
-            if self._llm_handler:
-                user_id_str = str(user_id)
-                summary = self._llm_handler.get_response_custom(prompt, user_id_str)
-                return summary
-            else:
-                # Fallback: return a basic summary from description
-                if description:
-                    # Take first 200 characters as summary
-                    return description[:200] + ("..." if len(description) > 200 else "")
-                return f"Summary of: {title}"
-        
-        except Exception as e:
-            logger.error(f"Error summarizing content: {str(e)}")
-            return f"Unable to generate summary. Error: {str(e)}"
+        """Summarize content using LLM."""
+        return self.content_management_service.summarize_content(
+            int(user_id), url, content_metadata
+        )
     
     # Template methods
     def list_templates(self, user_id, category: Optional[str] = None) -> str:
