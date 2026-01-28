@@ -56,23 +56,6 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     completionHandledRef.current = false;
   }, [currentSession?.session_id]);
 
-  // Update remaining time when session changes
-  useEffect(() => {
-    if (currentSession && currentSession.status === 'running') {
-      updateRemainingTime();
-      startTimer();
-    } else if (currentSession && currentSession.status === 'paused') {
-      updateRemainingTime();
-      stopTimer();
-    } else {
-      stopTimer();
-    }
-
-    return () => {
-      stopTimer();
-    };
-  }, [currentSession?.session_id, currentSession?.status, currentSession?.expected_end_utc, updateRemainingTime, startTimer]);
-
   const loadCurrentSession = async () => {
     try {
       const session = await apiClient.getCurrentFocus();
@@ -84,6 +67,13 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
       }
     } catch (err) {
       console.error('Failed to load current session:', err);
+    }
+  };
+
+  const stopTimer = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
   };
 
@@ -167,12 +157,22 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     }, 1000);
   }, [updateRemainingTime]);
 
-  const stopTimer = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+  // Update remaining time when session changes
+  useEffect(() => {
+    if (currentSession && currentSession.status === 'running') {
+      updateRemainingTime();
+      startTimer();
+    } else if (currentSession && currentSession.status === 'paused') {
+      updateRemainingTime();
+      stopTimer();
+    } else {
+      stopTimer();
     }
-  };
+
+    return () => {
+      stopTimer();
+    };
+  }, [currentSession?.session_id, currentSession?.status, currentSession?.expected_end_utc, updateRemainingTime, startTimer]);
 
 
   const formatTime = (seconds: number): string => {
