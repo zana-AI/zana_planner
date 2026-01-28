@@ -1,16 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiClient, ApiError } from '../../api/client';
 
-interface TestRun {
-  run_id: string;
-  status: string;
-  test_suite: string;
-  started_at: string;
-  completed_at?: string;
-  exit_code?: number;
-  report_content?: string;
-}
-
 export function TestsTab() {
   const [testSuite, setTestSuite] = useState<'pytest' | 'scenarios' | 'both'>('both');
   const [isRunning, setIsRunning] = useState(false);
@@ -56,7 +46,7 @@ export function TestsTab() {
       setCurrentRunId(response.run_id);
       
       // Start SSE stream (use full API path)
-      const eventSource = new EventSource(`${apiClient['API_BASE'] || '/api'}/admin/tests/stream/${response.run_id}`);
+      const eventSource = new EventSource(`/api/admin/tests/stream/${response.run_id}`);
       eventSourceRef.current = eventSource;
 
       eventSource.onmessage = (event) => {
