@@ -21,8 +21,6 @@ def test_promises_repo_upsert_and_list_roundtrip(tmp_path):
         recurring=True,
         start_date=date(2025, 1, 1),
         end_date=date(2025, 12, 31),
-        angle_deg=10,
-        radius=2,
     )
 
     repo.upsert_promise(user_id, p)
@@ -51,8 +49,6 @@ def test_promises_repo_imports_legacy_json_when_csv_missing(tmp_path):
             "recurring": True,
             "start_date": "2025-01-01",
             "end_date": "2025-12-31",
-            "angle_deg": 0,
-            "radius": 0,
         }
     ]
     (user_dir / "promises.json").write_text(json.dumps(legacy), encoding="utf-8")

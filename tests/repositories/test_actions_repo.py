@@ -62,8 +62,8 @@ def test_actions_repo_imports_legacy_actions_csv(tmp_path):
     user_dir = tmp_path / str(user_id)
     user_dir.mkdir(parents=True, exist_ok=True)
     (user_dir / "promises.csv").write_text(
-        "id,text,hours_per_week,recurring,start_date,end_date,angle_deg,radius\n"
-        "P01,Legacy,2.0,True,2025-01-01,2025-12-31,0,0\n",
+        "id,text,hours_per_week,recurring,start_date,end_date\n"
+        "P01,Legacy,2.0,True,2025-01-01,2025-12-31\n",
         encoding="utf-8",
     )
     # Legacy actions.csv has no header: date,time,promise_id,time_spent

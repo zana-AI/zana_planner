@@ -12,9 +12,6 @@ class Promise:
     recurring: bool = True
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    # Optional viz fields (keep if already present in CSVs)
-    angle_deg: int = 0
-    radius: Optional[int] = 0
     visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
     description: Optional[str] = None  # Additional description/content (URLs, notes, etc.)
     # Future: pinned/focus flags, tags

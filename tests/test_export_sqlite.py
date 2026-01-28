@@ -30,8 +30,6 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             recurring INTEGER NOT NULL,
             start_date TEXT NULL,
             end_date TEXT NULL,
-            angle_deg INTEGER NOT NULL,
-            radius INTEGER NOT NULL,
             is_deleted INTEGER NOT NULL,
             created_at_utc TEXT NOT NULL,
             updated_at_utc TEXT NOT NULL

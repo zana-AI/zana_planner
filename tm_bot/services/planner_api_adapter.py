@@ -82,8 +82,7 @@ class PlannerAPIAdapter:
     # Promise methods
     def add_promise(self, user_id, promise_text: str, num_hours_promised_per_week: float, 
                    recurring: bool = True, start_date: Optional[datetime] = None, 
-                   end_date: Optional[datetime] = None, promise_angle_deg: int = 0, 
-                   promise_radius: Optional[int] = 0):
+                   end_date: Optional[datetime] = None):
         """Add a new promise."""
         try:
             if user_id is None:
@@ -108,9 +107,7 @@ class PlannerAPIAdapter:
                 hours_per_week=num_hours_promised_per_week,
                 recurring=recurring,
                 start_date=start_date,
-                end_date=end_date,
-                angle_deg=promise_angle_deg,
-                radius=promise_radius or 0
+                end_date=end_date
             )
 
             self.promises_repo.upsert_promise(user_id, promise)
@@ -193,8 +190,6 @@ class PlannerAPIAdapter:
         recurring: Optional[bool] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
-        angle_deg: Optional[int] = None,
-        radius: Optional[int] = None,
     ) -> str:
         """
         Update an existing promise (PATCH-style).
@@ -206,8 +201,6 @@ class PlannerAPIAdapter:
             recurring: Whether this promise is recurring.
             start_date: Optional new start date.
             end_date: Optional new end date.
-            angle_deg: Optional visualization angle.
-            radius: Optional visualization radius.
 
         Returns:
             Human-readable confirmation message.
@@ -249,18 +242,6 @@ class PlannerAPIAdapter:
         # Basic date sanity if both are set
         if promise.start_date and promise.end_date and promise.start_date > promise.end_date:
             return "Start date must be on/before end date."
-
-        if angle_deg is not None:
-            try:
-                promise.angle_deg = int(angle_deg)
-            except Exception:
-                return "angle_deg must be an integer."
-
-        if radius is not None:
-            try:
-                promise.radius = int(radius)
-            except Exception:
-                return "radius must be an integer."
 
         self.promises_repo.upsert_promise(user_id, promise)
         return f"Promise #{promise.id} updated successfully."

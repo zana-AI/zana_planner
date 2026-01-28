@@ -20,8 +20,8 @@ def test_legacy_import_is_idempotent_and_tracked(tmp_path):
 
     # Legacy promises.csv (with header)
     (udir / "promises.csv").write_text(
-        "id,text,hours_per_week,recurring,start_date,end_date,angle_deg,radius\n"
-        "P01,LegacyPromise,2.0,True,2025-01-01,2025-12-31,0,0\n",
+        "id,text,hours_per_week,recurring,start_date,end_date\n"
+        "P01,LegacyPromise,2.0,True,2025-01-01,2025-12-31\n",
         encoding="utf-8",
     )
     # Legacy actions.csv (no header)
@@ -85,8 +85,8 @@ def test_sessions_repo_imports_legacy_sessions_csv(tmp_path):
 
     # Need a promise so sessions can resolve promise_uuid
     (udir / "promises.csv").write_text(
-        "id,text,hours_per_week,recurring,start_date,end_date,angle_deg,radius\n"
-        "P01,Seed,1.0,True,2025-01-01,2025-12-31,0,0\n",
+        "id,text,hours_per_week,recurring,start_date,end_date\n"
+        "P01,Seed,1.0,True,2025-01-01,2025-12-31\n",
         encoding="utf-8",
     )
 

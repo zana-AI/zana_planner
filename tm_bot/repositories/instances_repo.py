@@ -87,8 +87,6 @@ class InstancesRepository:
             recurring=is_recurring,
             start_date=start_date,
             end_date=target_date,
-            angle_deg=0,
-            radius=0,
             visibility="private",
         )
         self.promises_repo.upsert_promise(user_id, promise)

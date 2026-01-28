@@ -33,7 +33,7 @@ class PromisesRepository:
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, visibility, description
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, visibility, description
                     FROM promises
                     WHERE user_id = :user_id AND is_deleted = 0
                     ORDER BY current_id ASC;
@@ -62,8 +62,6 @@ class PromisesRepository:
                     recurring=bool(int(r["recurring"])),
                     start_date=date_from_iso(r["start_date"]),
                     end_date=date_from_iso(r["end_date"]),
-                    angle_deg=int(r["angle_deg"]),
-                    radius=int(r["radius"]),
                     visibility=visibility,
                     description=description,
                 )
@@ -83,7 +81,7 @@ class PromisesRepository:
 
             row = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted, visibility, description
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, is_deleted, visibility, description
                     FROM promises
                     WHERE user_id = :user_id AND promise_uuid = :p_uuid
                     LIMIT 1;
@@ -112,8 +110,6 @@ class PromisesRepository:
             recurring=bool(int(row["recurring"])),
             start_date=date_from_iso(row["start_date"]),
             end_date=date_from_iso(row["end_date"]),
-            angle_deg=int(row["angle_deg"]),
-            radius=int(row["radius"]),
             visibility=visibility,
             description=description,
         )
@@ -184,11 +180,11 @@ class PromisesRepository:
                 text("""
                     INSERT INTO promises(
                         promise_uuid, user_id, current_id, text, hours_per_week, recurring,
-                        start_date, end_date, angle_deg, radius, is_deleted, visibility, description,
+                        start_date, end_date, is_deleted, visibility, description,
                         created_at_utc, updated_at_utc
                     ) VALUES (
                         :p_uuid, :user_id, :pid, :text, :hours_per_week, :recurring,
-                        :start_date, :end_date, :angle_deg, :radius, :is_deleted, :visibility, :description,
+                        :start_date, :end_date, :is_deleted, :visibility, :description,
                         :created_at_utc, :updated_at_utc
                     )
                     ON CONFLICT (promise_uuid) DO UPDATE SET
@@ -199,8 +195,6 @@ class PromisesRepository:
                         recurring = EXCLUDED.recurring,
                         start_date = EXCLUDED.start_date,
                         end_date = EXCLUDED.end_date,
-                        angle_deg = EXCLUDED.angle_deg,
-                        radius = EXCLUDED.radius,
                         is_deleted = EXCLUDED.is_deleted,
                         visibility = EXCLUDED.visibility,
                         description = EXCLUDED.description,
@@ -215,8 +209,6 @@ class PromisesRepository:
                     "recurring": 1 if bool(promise.recurring) else 0,
                     "start_date": date_to_iso(promise.start_date),
                     "end_date": date_to_iso(promise.end_date),
-                    "angle_deg": int(promise.angle_deg or 0),
-                    "radius": int(promise.radius or 0),
                     "is_deleted": 0,
                     "visibility": str(promise.visibility or "private"),
                     "description": promise.description or None,
@@ -235,14 +227,20 @@ class PromisesRepository:
                 {"user_id": user, "pid": pid, "p_uuid": p_uuid, "now": now},
             )
 
-            snapshot = json.dumps(
-                {
-                    **json_compat(promise),
-                    "id": pid,
-                    "is_deleted": False,
-                },
-                ensure_ascii=False,
-            )
+            # Create snapshot without angle_deg and radius
+            promise_dict = {
+                "user_id": promise.user_id,
+                "id": pid,
+                "text": promise.text,
+                "hours_per_week": promise.hours_per_week,
+                "recurring": promise.recurring,
+                "start_date": date_to_iso(promise.start_date) if promise.start_date else None,
+                "end_date": date_to_iso(promise.end_date) if promise.end_date else None,
+                "visibility": promise.visibility,
+                "description": promise.description,
+                "is_deleted": False,
+            }
+            snapshot = json.dumps(promise_dict, ensure_ascii=False)
             session.execute(
                 text("""
                     INSERT INTO promise_events(event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
@@ -272,7 +270,7 @@ class PromisesRepository:
 
             row = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, angle_deg, radius, is_deleted
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, is_deleted
                     FROM promises WHERE user_id = :user_id AND promise_uuid = :p_uuid LIMIT 1;
                 """),
                 {"user_id": user, "p_uuid": p_uuid},
@@ -293,8 +291,6 @@ class PromisesRepository:
                     "recurring": bool(int(row["recurring"])),
                     "start_date": str(row["start_date"] or ""),
                     "end_date": str(row["end_date"] or ""),
-                    "angle_deg": int(row["angle_deg"]),
-                    "radius": int(row["radius"]),
                     "is_deleted": True,
                 },
                 ensure_ascii=False,
