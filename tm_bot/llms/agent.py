@@ -61,6 +61,8 @@ class AgentState(TypedDict):
     mode: Optional[str]  # "operator", "strategist", "social", "engagement"
     route_confidence: Optional[str]  # "high", "medium", "low"
     route_reason: Optional[str]  # Short label for telemetry
+    # Explicit tracking of executed actions for response validation
+    executed_actions: Optional[List[Dict[str, Any]]]  # List of {"tool_name": str, "args": dict, "result": str, "success": bool}
 
 
 def _run_tool_calls(messages: List[BaseMessage], tools_by_name: Dict[str, object]) -> List[ToolMessage]:
@@ -365,6 +367,10 @@ def create_plan_execute_graph(
     
     # Tools that ALWAYS require user confirmation before execution
     ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "subscribe_template"}
+    
+    # Tools that require confirmation when intent confidence is NOT high
+    # This catches the "کتاب ؟" case where add_action shouldn't fire on ambiguous input
+    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action"}
 
     # Helper functions moved to module level - use the module-level versions
 
@@ -818,6 +824,30 @@ def create_plan_execute_graph(
                     "acknowledge the mismatch and ask one clarifying question instead of asserting success."
                 )
             
+            # CRITICAL: Add executed actions validation
+            # This ensures the response reflects ONLY what was actually executed
+            executed_actions = state.get("executed_actions") or []
+            if executed_actions:
+                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
+                if mutation_actions:
+                    actions_summary = "; ".join([
+                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) → {'success' if a.get('success') else 'failed'}"
+                        for a in mutation_actions
+                    ])
+                    hint += (
+                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
+                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
+                        "Do NOT claim actions were performed if they are not in this list. "
+                        "If an action failed, explain what went wrong instead of claiming success."
+                    )
+            else:
+                # No actions were executed - make this explicit
+                hint += (
+                    "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
+                    "Do NOT claim any actions were performed. If the user expected an action, "
+                    "ask for clarification about what they want to do."
+                )
+            
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
                 err_type = tool_err.get("error_type", "unknown")
@@ -986,15 +1016,24 @@ def create_plan_execute_graph(
             # NOW check if confirmation is required (after placeholders are resolved)
             # This ensures stored pending_clarification has resolved tool_args
             is_mutation_tool = tool_name.startswith(MUTATION_PREFIXES)
-            # Default to "high" when planner didn't provide confidence (keeps UX smooth).
-            intent_confidence = (state.get("intent_confidence") or "high").lower()
+            # Default to "medium" when planner didn't provide confidence (safer approach).
+            # This catches ambiguous inputs like "کتاب ؟" where confidence should not be assumed high.
+            intent_confidence = (state.get("intent_confidence") or "medium").lower()
             safety = state.get("safety") or {}
             requires_confirmation = safety.get("requires_confirmation", False)
             
-            # Always confirm for promise creation tools, OR if existing mutation rule applies
+            # Check if this is a tool that needs confirmation on low/medium confidence
+            needs_low_confidence_confirm = (
+                tool_name in CONFIRM_ON_LOW_CONFIDENCE_TOOLS and 
+                intent_confidence in ("low", "medium")
+            )
+            
+            # Always confirm for promise creation tools, OR if existing mutation rule applies,
+            # OR if it's a sensitive tool with low/medium confidence
             needs_confirmation = (
                 tool_name in ALWAYS_CONFIRM_TOOLS or
-                (is_mutation_tool and (intent_confidence != "high" or requires_confirmation))
+                needs_low_confidence_confirm or
+                (is_mutation_tool and (intent_confidence == "low" or requires_confirmation))
             )
             
             if needs_confirmation:
@@ -1072,8 +1111,18 @@ def create_plan_execute_graph(
         last_msg = state["messages"][-1] if state.get("messages") else None
         last_tool_calls = getattr(last_msg, "tool_calls", None) if last_msg else None
         call_id = None
+        executed_action: Optional[Dict[str, Any]] = None
+        
         if last_tool_calls and isinstance(last_tool_calls, list):
             call_id = last_tool_calls[-1].get("id")
+            # Extract tool info for tracking
+            last_call = last_tool_calls[-1] or {}
+            executed_action = {
+                "tool_name": (last_call.get("name") or "").strip(),
+                "args": last_call.get("args") or {},
+                "result": None,
+                "success": False,
+            }
 
         def _is_transient_error(err: Exception) -> bool:
             # Best-effort: treat common network/timeouts as transient.
@@ -1087,6 +1136,13 @@ def create_plan_execute_graph(
 
         retry_counts = dict(state.get("tool_retry_counts") or {})
         attempts = retry_counts.get(call_id or "", 0)
+        
+        # Helper to update executed_action tracking
+        def _track_execution(result_content: str, success: bool) -> None:
+            nonlocal executed_action
+            if executed_action:
+                executed_action["result"] = result_content[:500] if result_content else ""
+                executed_action["success"] = success
 
         # If ToolNode isn't available (older langgraph), run the last tool call manually
         # so we can support retry-once semantics.
@@ -1129,7 +1185,9 @@ def create_plan_execute_graph(
                             "retryable": False,
                             "retried": True,
                         }
-                        result_messages = [ToolMessage(content=json.dumps(err_payload), tool_call_id=tool_call_id)]
+                        content = json.dumps(err_payload)
+                        _track_execution(content, False)
+                        result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
                     else:
                         if result is None:
                             content = "{}"
@@ -1140,6 +1198,7 @@ def create_plan_execute_graph(
                         # Ensure content is never empty
                         if not content or (isinstance(content, str) and not content.strip()):
                             content = "{}"
+                        _track_execution(content, True)
                         result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
                 else:
                     err_payload = {
@@ -1148,7 +1207,9 @@ def create_plan_execute_graph(
                         "retryable": _is_transient_error(e) and attempts < 1,
                         "retried": False,
                     }
-                    result_messages = [ToolMessage(content=json.dumps(err_payload), tool_call_id=tool_call_id)]
+                    content = json.dumps(err_payload)
+                    _track_execution(content, False)
+                    result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
             else:
                 if result is None:
                     content = "{}"
@@ -1159,6 +1220,7 @@ def create_plan_execute_graph(
                 # Ensure content is never empty
                 if not content or (isinstance(content, str) and not content.strip()):
                     content = "{}"
+                _track_execution(content, True)
                 result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
 
             _emit(
@@ -1172,11 +1234,17 @@ def create_plan_execute_graph(
                 },
             )
 
+            # Update executed_actions list
+            existing_actions = list(state.get("executed_actions") or [])
+            if executed_action:
+                existing_actions.append(executed_action)
+
             return {
                 **state,
                 "messages": state["messages"] + result_messages,
                 "step_idx": int(state.get("step_idx", 0) or 0) + 1,
                 "tool_retry_counts": retry_counts,
+                "executed_actions": existing_actions,
             }
 
         try:
@@ -1185,6 +1253,10 @@ def create_plan_execute_graph(
                 result_messages = tool_results.get("messages", [])
             else:
                 result_messages = _run_tool_calls(state["messages"], tool_by_name)
+            # Track successful execution
+            if result_messages:
+                content = getattr(result_messages[0], "content", "") if result_messages else ""
+                _track_execution(content, True)
         except Exception as e:
             # Retry once for transient failures.
             if call_id and attempts < 1 and _is_transient_error(e):
@@ -1200,6 +1272,10 @@ def create_plan_execute_graph(
                         result_messages = tool_results.get("messages", [])
                     else:
                         result_messages = _run_tool_calls(state["messages"], tool_by_name)
+                    # Track successful retry
+                    if result_messages:
+                        content = getattr(result_messages[0], "content", "") if result_messages else ""
+                        _track_execution(content, True)
                 except Exception as e2:
                     err_payload = {
                         "error": str(e2),
@@ -1207,8 +1283,10 @@ def create_plan_execute_graph(
                         "retryable": False,
                         "retried": True,
                     }
+                    content = json.dumps(err_payload)
+                    _track_execution(content, False)
                     result_messages = [
-                        ToolMessage(content=json.dumps(err_payload), tool_call_id=call_id or "tool_error")
+                        ToolMessage(content=content, tool_call_id=call_id or "tool_error")
                     ]
             else:
                 # Preserve loop stability: convert tool error into ToolMessage.
@@ -1218,8 +1296,10 @@ def create_plan_execute_graph(
                     "retryable": _is_transient_error(e) and attempts < 1,
                     "retried": False,
                 }
+                content = json.dumps(err_payload)
+                _track_execution(content, False)
                 result_messages = [
-                    ToolMessage(content=json.dumps(err_payload), tool_call_id=call_id or "tool_error")
+                    ToolMessage(content=content, tool_call_id=call_id or "tool_error")
                 ]
 
         _emit(
@@ -1233,12 +1313,18 @@ def create_plan_execute_graph(
             },
         )
 
+        # Update executed_actions list
+        existing_actions = list(state.get("executed_actions") or [])
+        if executed_action:
+            existing_actions.append(executed_action)
+
         # After a tool step, advance plan index.
         return {
             **state,
             "messages": state["messages"] + result_messages,
             "step_idx": int(state.get("step_idx", 0) or 0) + 1,
             "tool_retry_counts": retry_counts,
+            "executed_actions": existing_actions,
         }
 
     def should_continue(state: AgentState):
@@ -1289,6 +1375,9 @@ def create_routed_plan_execute_graph(
     
     MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
     ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "subscribe_template"}
+    
+    # Tools that require confirmation when intent confidence is NOT high
+    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action"}
     
     # Allowed mutation tools per mode
     ALLOWED_MUTATIONS_BY_MODE = {
@@ -1808,6 +1897,29 @@ def create_routed_plan_execute_graph(
                     "Verify that your response aligns with this intent. If the actions taken don't match the intent, "
                     "acknowledge the mismatch and ask one clarifying question instead of asserting success."
                 )
+            
+            # CRITICAL: Add executed actions validation for routed graph
+            executed_actions = state.get("executed_actions") or []
+            if executed_actions:
+                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
+                if mutation_actions:
+                    actions_summary = "; ".join([
+                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) → {'success' if a.get('success') else 'failed'}"
+                        for a in mutation_actions
+                    ])
+                    hint += (
+                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
+                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
+                        "Do NOT claim actions were performed if they are not in this list. "
+                        "If an action failed, explain what went wrong instead of claiming success."
+                    )
+            else:
+                hint += (
+                    "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
+                    "Do NOT claim any actions were performed. If the user expected an action, "
+                    "ask for clarification about what they want to do."
+                )
+            
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
                 err_type = tool_err.get("error_type", "unknown")
@@ -1897,13 +2009,21 @@ def create_routed_plan_execute_graph(
                         tool_args["promise_id"] = promise_id
             
             # Confirmation check (same as existing executor)
-            # Default to "high" when planner didn't provide confidence (keeps UX smooth).
-            intent_confidence = (state.get("intent_confidence") or "high").lower()
+            # Default to "medium" when planner didn't provide confidence (safer approach).
+            intent_confidence = (state.get("intent_confidence") or "medium").lower()
             safety = state.get("safety") or {}
             requires_confirmation = safety.get("requires_confirmation", False)
+            
+            # Check if this is a tool that needs confirmation on low/medium confidence
+            needs_low_confidence_confirm = (
+                tool_name in CONFIRM_ON_LOW_CONFIDENCE_TOOLS and 
+                intent_confidence in ("low", "medium")
+            )
+            
             needs_confirmation = (
                 tool_name in ALWAYS_CONFIRM_TOOLS or
-                (is_mutation_tool and (intent_confidence != "high" or requires_confirmation))
+                needs_low_confidence_confirm or
+                (is_mutation_tool and (intent_confidence == "low" or requires_confirmation))
             )
             
             if needs_confirmation:
@@ -1966,12 +2086,41 @@ def create_routed_plan_execute_graph(
         return {**state, "iteration": new_iteration, "step_idx": idx + 1}
     
     def tools_node(state: AgentState) -> AgentState:
+        # Track executed action for validation
+        last_msg = state["messages"][-1] if state.get("messages") else None
+        last_tool_calls = getattr(last_msg, "tool_calls", None) if last_msg else None
+        executed_action: Optional[Dict[str, Any]] = None
+        
+        if last_tool_calls and isinstance(last_tool_calls, list):
+            last_call = last_tool_calls[-1] or {}
+            executed_action = {
+                "tool_name": (last_call.get("name") or "").strip(),
+                "args": last_call.get("args") or {},
+                "result": None,
+                "success": False,
+            }
+        
         if tool_node:
             tool_results = tool_node.invoke({"messages": state["messages"]})
             result_messages = tool_results.get("messages", [])
         else:
             tools_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
             result_messages = _run_tool_calls(state["messages"], tools_by_name)
+        
+        # Track execution result
+        if executed_action and result_messages:
+            content = getattr(result_messages[0], "content", "") if result_messages else ""
+            # Check if result indicates an error
+            is_error = False
+            if content:
+                try:
+                    parsed = json.loads(content)
+                    is_error = isinstance(parsed, dict) and "error" in parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            executed_action["result"] = content[:500] if content else ""
+            executed_action["success"] = not is_error
+        
         _emit(
             progress_getter,
             "tool_step",
@@ -1982,11 +2131,18 @@ def create_routed_plan_execute_graph(
                 ],
             },
         )
+        
+        # Update executed_actions list
+        existing_actions = list(state.get("executed_actions") or [])
+        if executed_action:
+            existing_actions.append(executed_action)
+        
         # After executing a tool call, advance to the next plan step.
         return {
             "messages": state["messages"] + result_messages,
             "iteration": state["iteration"],
             "step_idx": int(state.get("step_idx", 0) or 0) + 1,
+            "executed_actions": existing_actions,
         }
     
     def should_continue(state: AgentState):

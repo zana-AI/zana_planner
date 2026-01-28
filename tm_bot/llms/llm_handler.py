@@ -225,13 +225,28 @@ class LLMHandler:
             "- SETTINGS: User wants to change preferences (language, timezone, notifications)\n"
             "- CLARIFY / DISAMBIGUATE: User is answering a question you asked (slot-filling)\n"
             "- USER_CORRECTION / MISTAKE: User is correcting their own mistake or flagging an error\n"
+            "- QUESTION / INQUIRY: User is asking a question about something (NOT requesting an action)\n"
             "- NO_OP / CHAT: Casual conversation, no action needed\n\n"
+            
+            "=== CRITICAL: DETECTING QUESTIONS vs ACTIONS ===\n"
+            "IMPORTANT: Messages ending with '?' or containing question words are likely QUESTIONS, not action requests.\n"
+            "- A single word/phrase with '?' (e.g., 'book?', 'کتاب؟', 'sport?') is a QUESTION about that topic, NOT a request to log time.\n"
+            "- Short messages (<4 words) are often ambiguous - set intent_confidence to 'low' or 'medium'.\n"
+            "- For LOG_ACTION intent, user typically uses past tense ('I did', 'worked on', 'spent time') or explicit logging phrases.\n"
+            "- When in doubt about short/ambiguous messages, prefer QUESTION or NO_OP over LOG_ACTION.\n"
+            "- NEVER assume LOG_ACTION for messages that look like questions or single-word queries.\n\n"
+            
             "Set 'detected_intent' to an open-text label describing the intent.\n"
             "Set 'intent_confidence' to 'high', 'medium', or 'low' based on how clear the intent is.\n"
+            "CONFIDENCE RULES:\n"
+            "  - 'low': Message is very short (<4 words), ends with '?', or is highly ambiguous\n"
+            "  - 'medium': Message could have multiple interpretations but context suggests one\n"
+            "  - 'high': Clear, unambiguous action request with explicit verbs (e.g., 'log 2 hours on sport')\n"
             "Set 'safety.requires_confirmation' to true if:\n"
             "  - The plan includes a mutation tool (add_*, create_*, update_*, delete_*, log_*) AND confidence is not 'high'\n"
             "  - The user input seems contradictory or ambiguous\n"
-            "  - The user appears to be correcting a mistake\n\n"
+            "  - The user appears to be correcting a mistake\n"
+            "  - The message is very short (<4 words) and involves a mutation\n\n"
             
             "=== CORE PRINCIPLES ===\n"
             "1. BE PROACTIVE: Make reasonable assumptions rather than asking. Users prefer action over questions.\n"
@@ -920,6 +935,7 @@ class LLMHandler:
                 "mode": None,
                 "route_confidence": None,
                 "route_reason": None,
+                "executed_actions": [],  # Track what was actually executed for response validation
             }
             token = _current_user_id.set(safe_user_id)
             lang_token = _current_user_language.set(user_language or "en")
@@ -1033,6 +1049,9 @@ class LLMHandler:
                 )
                 response_text = response_text + debug_footer
             
+            # Get executed actions for transparency
+            executed_actions = result_state.get("executed_actions") or []
+            
             return {
                 "function_call": last_tool_call.get("name") if last_tool_call else "no_op",
                 "function_args": last_tool_call.get("args", {}) if last_tool_call else {},
@@ -1042,6 +1061,9 @@ class LLMHandler:
                 "tool_outputs": [tm.content for tm in tool_messages],
                 "stop_reason": stop_reason,
                 "pending_clarification": pending_clarification,
+                "executed_actions": executed_actions,  # Explicit tracking of what was actually executed
+                "detected_intent": result_state.get("detected_intent"),
+                "intent_confidence": result_state.get("intent_confidence"),
             }
         except Exception as e:
             # Track failed call
@@ -1265,6 +1287,20 @@ class LLMHandler:
         iterations = result_state.get("iteration", 0)
         lines.append(f"**Iterations:** {iterations}")
         
+        # EXECUTED ACTIONS (actual executions, not planned)
+        executed_actions = result_state.get("executed_actions") or []
+        mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(("add_", "create_", "update_", "delete_", "log_"))]
+        if mutation_actions:
+            lines.append(f"**Mutations executed:** {len(mutation_actions)}")
+            for i, action in enumerate(mutation_actions, 1):
+                tool_name = action.get("tool_name", "unknown")
+                success = "✅" if action.get("success") else "❌"
+                args = action.get("args", {})
+                args_str = ", ".join(f"{k}={v}" for k, v in args.items() if k != "user_id")[:50]
+                lines.append(f"  {i}. {success} `{tool_name}`({args_str})")
+        else:
+            lines.append("**Mutations executed:** none")
+        
         # Tools called (ONLY from this invocation).
         # NOTE: Do NOT scan full message history here; it can include prior-turn tool calls.
         tool_calls_info = []
@@ -1281,11 +1317,9 @@ class LLMHandler:
             tool_calls_info.append(f"`{tool_name}`({args_summary or 'no args'})")
         
         if tool_calls_info:
-            lines.append(f"**Tools called:** {len(tool_calls_info)}")
+            lines.append(f"**Tools planned:** {len(tool_calls_info)}")
             for i, tc in enumerate(tool_calls_info, 1):
                 lines.append(f"  {i}. {tc}")
-        else:
-            lines.append("**Tools called:** none")
         
         # Tool outputs summary (truncated)
         if tool_messages:
