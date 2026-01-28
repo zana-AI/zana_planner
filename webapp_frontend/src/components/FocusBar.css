@@ -404,8 +404,9 @@
   .focus-picker-content {
     padding: 1.25rem;
     max-width: calc(100% - 1.5rem);
-    max-height: calc(100vh - 2rem);
-    max-height: calc(100dvh - 2rem);
+    /* Conservative max-height to account for padding and safe-area-insets */
+    max-height: calc(100vh - 4rem);
+    max-height: calc(100dvh - 4rem);
     border-radius: 16px;
     /* Ensure it's at the top and scrollable */
     margin: 0 auto;
