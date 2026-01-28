@@ -1339,7 +1339,8 @@ async def run_tests(
         return TestRunResponse(
             run_id=run_id,
             status='running',
-            test_suite=test_request.test_suite
+            test_suite=test_request.test_suite,
+            started_at=test_run['started_at']
         )
         
     except HTTPException:
