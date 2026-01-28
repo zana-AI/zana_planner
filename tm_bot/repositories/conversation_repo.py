@@ -277,4 +277,68 @@ class ConversationRepository:
         except Exception as e:
             logger.warning(f"Failed to cleanup old conversation messages: {e}")
             return 0
+    
+    def get_recent_history_by_importance(
+        self,
+        user_id: int,
+        limit: int = 50,
+        min_importance: Optional[int] = None,
+        session_id: Optional[str] = None,
+    ) -> List[Dict[str, any]]:
+        """
+        Get recent conversation history prioritized by importance score.
+        
+        Args:
+            user_id: User ID
+            limit: Maximum number of messages to return
+            min_importance: Minimum importance score (optional filter)
+            session_id: Filter by conversation session (optional)
+        
+        Returns:
+            List of conversation messages as dictionaries
+        """
+        try:
+            with get_db_session() as session:
+                query_parts = [
+                    "SELECT id, user_id, chat_id, message_id, message_type, content, created_at_utc, importance_score, intent_category"
+                ]
+                query_parts.append("FROM conversations")
+                query_parts.append("WHERE user_id = :user_id")
+                
+                params = {"user_id": str(user_id), "limit": limit}
+                
+                if min_importance is not None:
+                    query_parts.append("AND (importance_score IS NULL OR importance_score >= :min_importance)")
+                    params["min_importance"] = min_importance
+                
+                if session_id:
+                    query_parts.append("AND conversation_session_id = :session_id")
+                    params["session_id"] = session_id
+                
+                # Order by: current session first, then by importance score, then by time
+                query_parts.append("ORDER BY created_at_utc DESC")
+                query_parts.append("LIMIT :limit")
+                
+                query = text(" ".join(query_parts))
+                
+                rows = session.execute(query, params).mappings().fetchall()
+                
+                return [
+                    {
+                        "id": row["id"],
+                        "user_id": row["user_id"],
+                        "chat_id": row["chat_id"],
+                        "message_id": row["message_id"],
+                        "message_type": row["message_type"],
+                        "content": row["content"],
+                        "created_at_utc": row["created_at_utc"],
+                        "created_at": dt_from_utc_iso(row["created_at_utc"]),
+                        "importance_score": row.get("importance_score"),
+                        "intent_category": row.get("intent_category"),
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.warning(f"Failed to get conversation history by importance for user {user_id}: {e}")
+            return []
 
