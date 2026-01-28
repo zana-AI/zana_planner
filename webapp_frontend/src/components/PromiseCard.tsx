@@ -689,7 +689,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     <div className="card-section-header">
                       📝 Notes for This Week
                     </div>
-                    {weekDays.map((dateKey, index) => {
+                    {weekDays.map((dateKey) => {
                       const dayNotes = notesByDate[dateKey] || [];
                       if (dayNotes.length === 0) return null;
                       
