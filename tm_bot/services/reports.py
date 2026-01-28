@@ -536,4 +536,5 @@ class ReportsService:
             f"**Total {total_hours:.1f} hours spent** since {promise.start_date}\n"
             f"({progress}%)\n"
             f"**Streak:** {streak_str}"
-        )        return report
+        )
+        return report
