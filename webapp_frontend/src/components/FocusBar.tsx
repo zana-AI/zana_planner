@@ -25,7 +25,26 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   // Track which session ID was completed to prevent re-triggering
-  const completedSessionIdRef = useRef<string | null>(null);
+  // Use sessionStorage to persist across component remounts
+  const getCompletedSessionId = (): string | null => {
+    try {
+      return sessionStorage.getItem('focus_completed_session_id');
+    } catch {
+      return null;
+    }
+  };
+  const setCompletedSessionId = (sessionId: string | null) => {
+    try {
+      if (sessionId) {
+        sessionStorage.setItem('focus_completed_session_id', sessionId);
+      } else {
+        sessionStorage.removeItem('focus_completed_session_id');
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  };
+  const completedSessionIdRef = useRef<string | null>(getCompletedSessionId());
 
   // Detect mobile viewport
   useEffect(() => {
@@ -55,10 +74,12 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
   // Reset completion flag only when switching to a genuinely new session
   useEffect(() => {
+    const completedId = getCompletedSessionId();
     if (currentSession?.session_id && 
-        completedSessionIdRef.current && 
-        currentSession.session_id !== completedSessionIdRef.current) {
+        completedId && 
+        currentSession.session_id !== completedId) {
       // Only reset if we have a different session
+      setCompletedSessionId(null);
       completedSessionIdRef.current = null;
     }
   }, [currentSession?.session_id]);
@@ -67,10 +88,22 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     try {
       const session = await apiClient.getCurrentFocus();
       if (session) {
-        setCurrentSession(session);
+        // Check if this session was already completed locally
+        const completedId = getCompletedSessionId();
+        if (completedId === session.session_id) {
+          // Session was completed but backend still shows running
+          // Keep showing as finished locally
+          setCurrentSession({ ...session, status: 'finished' });
+        } else {
+          setCurrentSession(session);
+        }
         if (session.promise_id && !selectedPromiseId) {
           setSelectedPromiseId(session.promise_id);
         }
+      } else {
+        // No active session - clear any completed session tracking
+        setCompletedSessionId(null);
+        completedSessionIdRef.current = null;
       }
     } catch (err) {
       console.error('Failed to load current session:', err);
@@ -86,12 +119,14 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
   const handleTimerComplete = useCallback(async (sessionId: string) => {
     // Prevent multiple calls for the same session
-    if (completedSessionIdRef.current === sessionId) {
+    if (completedSessionIdRef.current === sessionId || getCompletedSessionId() === sessionId) {
       return;
     }
     
     // Mark this session as completed FIRST, before any async operations
+    // Store in both ref AND sessionStorage to persist across remounts
     completedSessionIdRef.current = sessionId;
+    setCompletedSessionId(sessionId);
     
     // Stop the timer immediately
     stopTimer();
@@ -272,6 +307,9 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     setLoading(true);
     try {
       await apiClient.stopFocus(currentSession.session_id);
+      // Clear completed session tracking
+      setCompletedSessionId(null);
+      completedSessionIdRef.current = null;
       setCurrentSession(null);
       setSelectedPromiseId('');
     } catch (err) {
