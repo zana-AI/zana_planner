@@ -155,8 +155,20 @@ def create_webapp_api(
                     sessions_repo = SessionsRepository(root_dir)
                     overdue_sessions = sessions_repo.list_overdue_sessions_needing_notification()
                     
+                    if overdue_sessions:
+                        logger.info(f"Found {len(overdue_sessions)} overdue focus session(s) needing notification")
+                    else:
+                        # Log occasionally to confirm sweeper is running (every 5 minutes)
+                        import time
+                        if int(time.time()) % 300 < 30:  # Log roughly every 5 minutes
+                            logger.debug("Focus timer sweeper running - no overdue sessions found")
+                    
                     for session in overdue_sessions:
                         try:
+                            logger.info(f"Processing overdue session {session.session_id} for user {session.user_id}, "
+                                      f"expected_end: {session.expected_end_utc}, "
+                                      f"planned_duration: {session.planned_duration_minutes} minutes")
+                            
                             # Mark as notified first to avoid duplicate sends
                             sessions_repo.mark_session_notified(session.session_id)
                             
@@ -171,6 +183,7 @@ def create_webapp_api(
                             
                             # Send notification
                             miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
+                            logger.info(f"Sending focus completion notification to user {session.user_id} for session {session.session_id}")
                             await send_focus_finished_notification(
                                 bot_token=bot_token,
                                 user_id=int(session.user_id),
@@ -181,7 +194,7 @@ def create_webapp_api(
                                 root_dir=root_dir
                             )
                             
-                            logger.info(f"Sent focus completion notification for session {session.session_id} to user {session.user_id}")
+                            logger.info(f"✓ Successfully sent focus completion notification for session {session.session_id} to user {session.user_id}")
                         except Exception as e:
                             logger.error(f"Error sending focus notification for session {session.session_id}: {e}", exc_info=True)
                             
@@ -190,7 +203,7 @@ def create_webapp_api(
                     await asyncio.sleep(60)  # Wait longer on error
         
         asyncio.create_task(focus_timer_sweeper())
-        logger.info("Started focus timer completion sweeper")
+        logger.info("✓ Started focus timer completion sweeper (checks every 30 seconds)")
     
     @app.get("/")
     async def root():
