@@ -332,6 +332,18 @@
   background: rgba(76, 175, 80, 0.1);
   border-radius: 8px;
   border: 1px solid rgba(76, 175, 80, 0.3);
+  flex: 1;
+}
+
+.focus-control-btn.dismiss {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.focus-control-btn.dismiss:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Responsive */

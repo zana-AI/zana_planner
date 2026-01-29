@@ -240,20 +240,25 @@ async def send_focus_finished_notification(
         ])
         
         # Send message
+        logger.info(f"Attempting to send Telegram notification to user {user_id} for session {session_id}")
+        logger.debug(f"Bot token present: {bool(bot_token)}, token length: {len(bot_token) if bot_token else 0}")
+        
         bot = Bot(token=bot_token)
-        await bot.send_message(
+        result = await bot.send_message(
             chat_id=user_id,
             text=message,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
         
-        logger.info(f"Sent focus completion notification to user {user_id} for session {session_id}")
+        logger.info(f"✓ Successfully sent focus completion notification to user {user_id} for session {session_id}, message_id: {result.message_id}")
     except TelegramError as e:
         error_msg = str(e).lower()
         if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
-            logger.debug(f"Could not send focus notification to user {user_id}: user blocked bot or chat not found")
+            logger.warning(f"Could not send focus notification to user {user_id}: user blocked bot or chat not found - {e}")
         else:
-            logger.warning(f"Error sending focus notification to user {user_id}: {e}")
+            logger.error(f"TelegramError sending focus notification to user {user_id} for session {session_id}: {e}", exc_info=True)
+            raise  # Re-raise to be caught by sweeper
     except Exception as e:
-        logger.warning(f"Unexpected error sending focus notification to user {user_id}: {e}")
+        logger.error(f"Unexpected error sending focus notification to user {user_id} for session {session_id}: {e}", exc_info=True)
+        raise  # Re-raise to be caught by sweeper

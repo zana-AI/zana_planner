@@ -21,7 +21,7 @@ def _install_excepthook():
 def main():
     _install_excepthook()
     try:
-        from tm_bot.planner_bot import main as bot_main  # noqa: WPS433
+        from planner_bot import main as bot_main  # noqa: WPS433
     except Exception:
         logger.exception("failed_to_import_planner_bot")
         sys.exit(1)

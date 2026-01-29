@@ -227,3 +227,57 @@ async def stop_focus(
     except Exception as e:
         logger.exception(f"Error stopping focus session for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop focus session: {str(e)}")
+
+
+@router.get("/debug/check-overdue")
+async def debug_check_overdue(
+    request: Request,
+    user_id: int = Depends(get_current_user)
+):
+    """Debug endpoint to check for overdue sessions for the current user."""
+    try:
+        from db.postgres_db import utc_now_iso
+        from datetime import datetime
+        
+        sessions_repo = SessionsRepository(request.app.state.root_dir)
+        
+        # Get current session
+        current_session = sessions_repo.get_current_active_session(user_id)
+        
+        # Get all overdue sessions (for all users, but we'll filter)
+        overdue_sessions = sessions_repo.list_overdue_sessions_needing_notification()
+        
+        # Filter to current user
+        user_overdue = [s for s in overdue_sessions if int(s.user_id) == user_id]
+        
+        result = {
+            "now_utc": utc_now_iso(),
+            "current_session": None,
+            "total_overdue_all_users": len(overdue_sessions),
+            "user_overdue_count": len(user_overdue),
+            "user_overdue_sessions": []
+        }
+        
+        if current_session:
+            result["current_session"] = {
+                "session_id": current_session.session_id,
+                "status": current_session.status,
+                "expected_end_utc": current_session.expected_end_utc.isoformat() if current_session.expected_end_utc else None,
+                "planned_duration_minutes": current_session.planned_duration_minutes,
+                "notified_at_utc": current_session.notified_at_utc.isoformat() if current_session.notified_at_utc else None,
+                "is_overdue": current_session.expected_end_utc and current_session.expected_end_utc <= datetime.now() if current_session.expected_end_utc else False,
+            }
+        
+        for session in user_overdue:
+            result["user_overdue_sessions"].append({
+                "session_id": session.session_id,
+                "expected_end_utc": session.expected_end_utc.isoformat() if session.expected_end_utc else None,
+                "planned_duration_minutes": session.planned_duration_minutes,
+                "status": session.status,
+                "notified_at_utc": session.notified_at_utc.isoformat() if session.notified_at_utc else None,
+            })
+        
+        return result
+    except Exception as e:
+        logger.exception(f"Error in debug check overdue: {e}")
+        raise HTTPException(status_code=500, detail=f"Debug check failed: {str(e)}")

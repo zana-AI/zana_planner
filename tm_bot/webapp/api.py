@@ -196,7 +196,9 @@ def create_webapp_api(
                             
                             logger.info(f"✓ Successfully sent focus completion notification for session {session.session_id} to user {session.user_id}")
                         except Exception as e:
-                            logger.error(f"Error sending focus notification for session {session.session_id}: {e}", exc_info=True)
+                            logger.error(f"❌ FAILED to send focus notification for session {session.session_id} to user {session.user_id}: {e}", exc_info=True)
+                            # Note: Session is already marked as notified, so it won't retry
+                            # This is intentional to avoid spam, but means failed notifications won't retry
                             
                 except Exception as e:
                     logger.error(f"Error in focus timer sweeper: {e}", exc_info=True)

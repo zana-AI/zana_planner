@@ -503,9 +503,24 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
             </>
           )}
           {isFinished && (
-            <div className="focus-complete-message">
-              🎉 Session complete! Check Telegram to confirm.
-            </div>
+            <>
+              <div className="focus-complete-message">
+                🎉 Session complete! Check Telegram to confirm.
+              </div>
+              <button
+                className="focus-control-btn dismiss"
+                onClick={() => {
+                  // Clear the session from local state to return to idle
+                  // The backend will still send the Telegram notification
+                  setCurrentSession(null);
+                  setCompletedSessionId(null);
+                  completedSessionIdRef.current = null;
+                }}
+                disabled={loading}
+              >
+                ✕ Dismiss
+              </button>
+            </>
           )}
         </div>
       </div>
