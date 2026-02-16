@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import type { FocusSession, WeeklyReportData } from '../types';
 import { DurationWheelPicker } from './DurationWheelPicker';
+import { useModalBodyLock } from '../hooks/useModalBodyLock';
 import './FocusBar.css';
 
 // Mobile breakpoint constant - matches CSS media query
@@ -59,6 +60,8 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
       window.removeEventListener('resize', checkMobile);
     };
   }, []);
+
+  useModalBodyLock(showPromisePicker && !isMobile);
 
   // Close modal when switching from desktop to mobile
   useEffect(() => {

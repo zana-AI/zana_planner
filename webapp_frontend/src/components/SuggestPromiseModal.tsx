@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient, ApiError } from '../api/client';
+import { useModalBodyLock } from '../hooks/useModalBodyLock';
 import type { PromiseTemplate, CreateSuggestionRequest } from '../types';
 
 interface SuggestPromiseModalProps {
@@ -18,6 +19,8 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loadingTemplates, setLoadingTemplates] = useState(true);
+
+  useModalBodyLock(true);
 
   useEffect(() => {
     const loadTemplates = async () => {

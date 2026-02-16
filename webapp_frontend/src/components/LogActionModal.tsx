@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useModalBodyLock } from '../hooks/useModalBodyLock';
 
 interface LogActionModalProps {
   promiseId: string;
@@ -15,6 +16,8 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useModalBodyLock(isOpen);
 
   // Initialize date/time to current if not set
   if (isOpen && !date && !time) {

@@ -40,6 +40,11 @@ html, body {
   overflow-x: hidden;
 }
 
+/* Prevent page scroll when a modal is open (e.g. promise badge / log time) */
+body.modal-open {
+  overflow: hidden;
+}
+
 #root {
   min-height: 100vh;
 }
@@ -1569,8 +1574,10 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 1100;
   padding: 20px;
+  /* Extra bottom padding so modal content stays above the Start Focus bar */
+  padding-bottom: 100px;
 }
 
 .modal-content {
@@ -1578,7 +1585,7 @@ html, body {
   border-radius: 16px;
   width: 100%;
   max-width: 400px;
-  max-height: 90vh;
+  max-height: min(90vh, calc(100vh - 120px));
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
@@ -1769,6 +1776,7 @@ textarea.modal-input {
   display: flex;
   gap: 12px;
   margin-top: 24px;
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .modal-button {

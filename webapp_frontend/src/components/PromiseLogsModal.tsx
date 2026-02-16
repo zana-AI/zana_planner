@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
+import { useModalBodyLock } from '../hooks/useModalBodyLock';
 
 interface PromiseLogsModalProps {
   promiseId: string;
@@ -20,6 +21,8 @@ export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose }: Pr
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+
+  useModalBodyLock(isOpen);
 
   useEffect(() => {
     if (isOpen && promiseId) {

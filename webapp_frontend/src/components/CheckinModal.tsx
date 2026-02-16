@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiClient } from '../api/client';
+import { useModalBodyLock } from '../hooks/useModalBodyLock';
 
 interface CheckinModalProps {
   promiseId: string;
@@ -14,6 +15,8 @@ export function CheckinModal({ promiseId, promiseText, isOpen, onClose, onSucces
   const [time, setTime] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useModalBodyLock(isOpen);
 
   // Initialize date/time to current if not set
   if (isOpen && !date && !time) {
