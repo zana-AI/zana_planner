@@ -91,8 +91,8 @@ def test_export_writes_manifest_and_user_json(tmp_path):
             ("123", "UTC", 22, 0, "en", None, "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z"),
         )
         conn.execute(
-            "INSERT INTO promises VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?);",
-            ("pu1", "123", "P01", "Hello", 1.0, 1, None, None, 0, 0, 0, "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z"),
+            "INSERT INTO promises VALUES (?,?,?,?,?,?,?,?,?,?,?);",
+            ("pu1", "123", "P01", "Hello", 1.0, 1, None, None, 0, "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO promise_events VALUES (?,?,?,?,?,?);",

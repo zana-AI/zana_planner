@@ -87,8 +87,8 @@ def test_compute_stats_sql_counts_users_and_activity(tmp_path):
         _create_schema(conn)
         # user 1 has promises + recent actions
         conn.execute(
-            "INSERT INTO promises VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?);",
-            ("pu1", "1", "P01", "t", 1.0, 1, None, None, 0, 0, 0, _utc_iso(now), _utc_iso(now)),
+            "INSERT INTO promises VALUES (?,?,?,?,?,?,?,?,?,?,?);",
+            ("pu1", "1", "P01", "t", 1.0, 1, None, None, 0, _utc_iso(now), _utc_iso(now)),
         )
         conn.execute(
             "INSERT INTO actions VALUES (?,?,?,?,?,?,?);",

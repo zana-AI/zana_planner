@@ -21,9 +21,11 @@ def test_reply_text_smart_selects_html_vs_markdown():
         async def reply_text(self, text, parse_mode=None):
             calls.append({"text": text, "parse_mode": parse_mode})
 
+    mh = MessageHandlers.__new__(MessageHandlers)
+
     async def run():
-        await MessageHandlers._reply_text_smart(FakeMessage(), "<b>Xaana:</b>\nHello")
-        await MessageHandlers._reply_text_smart(FakeMessage(), "Plain markdown-ish text")
+        await mh._reply_text_smart(FakeMessage(), "<b>Xaana:</b>\nHello")
+        await mh._reply_text_smart(FakeMessage(), "Plain markdown-ish text")
 
     asyncio.run(run())
 
@@ -63,10 +65,18 @@ def test_handle_message_routes_urls_to_handle_link_message(tmp_path, monkeypatch
 
     mh = MessageHandlers.__new__(MessageHandlers)
     mh.root_dir = str(root_dir)
-    mh.plan_keeper = types.SimpleNamespace(settings_repo=types.SimpleNamespace(get_settings=lambda _uid: types.SimpleNamespace(voice_mode=None)))
+    _settings = types.SimpleNamespace(timezone="UTC", first_name="", username=None, last_seen=None)
+    mh.plan_keeper = types.SimpleNamespace(
+        settings_repo=types.SimpleNamespace(get_settings=lambda _uid: types.SimpleNamespace(voice_mode=None)),
+        settings_service=types.SimpleNamespace(
+            get_settings=lambda _uid: _settings,
+            save_settings=lambda s: None,
+        ),
+    )
     mh.llm_handler = types.SimpleNamespace(get_response_api=lambda *_a, **_k: {"response_to_user": "ok", "function_call": "no_op"})
     mh.application = types.SimpleNamespace(bot_data={})
     mh.content_service = types.SimpleNamespace(detect_urls=lambda text: ["https://example.com"], process_link=lambda url: {})
+    mh.response_service = types.SimpleNamespace(log_user_message=lambda **kw: None)
 
     routed = {"called": False}
 
@@ -80,6 +90,7 @@ def test_handle_message_routes_urls_to_handle_link_message(tmp_path, monkeypatch
     class FakeMessage:
         def __init__(self):
             self.text = "see https://example.com"
+            self.message_id = 1
 
         async def reply_text(self, *_a, **_k):
             return None
