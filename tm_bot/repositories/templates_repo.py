@@ -12,9 +12,8 @@ from db.postgres_db import get_db_session, utc_now_iso
 class TemplatesRepository:
     """PostgreSQL-backed templates repository with simplified schema."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def _has_simplified_schema(self, session) -> bool:
         """Check if the database has the simplified schema (has 'description' column)."""

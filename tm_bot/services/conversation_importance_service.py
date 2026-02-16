@@ -95,15 +95,8 @@ Provide ONLY a JSON object with:
 
 class ConversationImportanceService:
     """Service for scoring conversation importance using LLM."""
-    
-    def __init__(self, root_dir: Optional[str] = None):
-        """
-        Initialize the importance scoring service.
-        
-        Args:
-            root_dir: Root directory (kept for compatibility, not used)
-        """
-        self.root_dir = root_dir
+
+    def __init__(self) -> None:
         self._llm_model = None
         self._parser = JsonOutputParser(pydantic_object=ImportanceScoreOutput)
         self._initialize_llm()

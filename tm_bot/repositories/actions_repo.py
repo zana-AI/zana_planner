@@ -22,9 +22,8 @@ class ActionsRepository:
     backward compatibility with existing code comparisons.
     """
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def append_action(self, action: Action) -> None:
         user = str(action.user_id)

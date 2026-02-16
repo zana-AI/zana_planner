@@ -21,9 +21,8 @@ from utils.time_utils import get_week_range
 class ReviewsRepository:
     """PostgreSQL-backed weekly reviews repository."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def compute_or_get_weekly_review(
         self, user_id: int, instance_id: str, ref_time: datetime
@@ -35,7 +34,7 @@ class ReviewsRepository:
         achieved_value, success_ratio, note.
         """
         from repositories.instances_repo import InstancesRepository
-        instances_repo = InstancesRepository(self.root_dir)
+        instances_repo = InstancesRepository()
         instance = instances_repo.get_instance(user_id, instance_id)
         if not instance:
             raise ValueError(f"Instance {instance_id} not found")
@@ -68,7 +67,7 @@ class ReviewsRepository:
         target_direction = instance["target_direction"]
 
         from repositories.actions_repo import ActionsRepository
-        actions_repo = ActionsRepository(self.root_dir)
+        actions_repo = ActionsRepository()
         
         if metric_type == "count":
             # Count check-in actions for this promise in this week
@@ -83,7 +82,7 @@ class ReviewsRepository:
             )
             # Need to match by promise_uuid - let's get the promise_id first
             from repositories.promises_repo import PromisesRepository
-            promises_repo = PromisesRepository(self.root_dir)
+            promises_repo = PromisesRepository()
             # Find promise by UUID
             with get_db_session() as session:
                 promise_row = session.execute(
@@ -104,7 +103,7 @@ class ReviewsRepository:
         elif metric_type == "hours":
             # For budget templates, use distraction_events
             from repositories.templates_repo import TemplatesRepository
-            templates_repo = TemplatesRepository(self.root_dir)
+            templates_repo = TemplatesRepository()
             template = templates_repo.get_template(instance["template_id"])
             if template and template.get("template_kind") == "budget":
                 # Sum distraction minutes for this week, convert to hours

@@ -37,7 +37,7 @@ def test_actions_csv_parsing_handles_many_rows(tmp_path):
     from repositories.actions_repo import ActionsRepository
     from models.models import Action
 
-    repo = ActionsRepository(str(tmp_path))
+    repo = ActionsRepository()
     user_id = 999
 
     # Write many rows using append_action (legacy no-header format).

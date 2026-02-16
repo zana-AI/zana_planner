@@ -36,9 +36,9 @@ def test_legacy_import_is_idempotent_and_tracked(tmp_path):
     )
 
     # First read/import
-    promises_repo = PromisesRepository(root)
-    actions_repo = ActionsRepository(root)
-    settings_repo = SettingsRepository(root)
+    promises_repo = PromisesRepository()
+    actions_repo = ActionsRepository()
+    settings_repo = SettingsRepository()
 
     assert len(promises_repo.list_promises(user_id)) == 1
     assert len(actions_repo.list_actions(user_id)) == 1
@@ -97,7 +97,7 @@ def test_sessions_repo_imports_legacy_sessions_csv(tmp_path):
         encoding="utf-8",
     )
 
-    repo = SessionsRepository(root)
+    repo = SessionsRepository()
     sessions = repo.list_sessions(user_id)
     assert len(sessions) == 1
     assert sessions[0].session_id == "S01"

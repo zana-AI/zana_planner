@@ -18,11 +18,10 @@ logger = get_logger(__name__)
 class ReminderDispatchService:
     """Service for computing reminder next_run times and dispatching them."""
 
-    def __init__(self, root_dir: str = None):
-        self.root_dir = root_dir
-        self.reminders_repo = RemindersRepository(root_dir)
-        self.schedules_repo = SchedulesRepository(root_dir)
-        self.settings_repo = SettingsRepository(root_dir)
+    def __init__(self) -> None:
+        self.reminders_repo = RemindersRepository()
+        self.schedules_repo = SchedulesRepository()
+        self.settings_repo = SettingsRepository()
 
     def _get_user_timezone(self, user_id: int) -> str:
         """Get user's timezone, defaulting to UTC."""

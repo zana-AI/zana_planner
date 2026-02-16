@@ -9,8 +9,7 @@ from repositories.promises_repo import PromisesRepository
 
 @pytest.mark.repo
 def test_promises_repo_upsert_and_list_roundtrip(tmp_path):
-    root = str(tmp_path)
-    repo = PromisesRepository(root)
+    repo = PromisesRepository()
     user_id = 123
 
     p = Promise(
@@ -34,8 +33,7 @@ def test_promises_repo_upsert_and_list_roundtrip(tmp_path):
 
 @pytest.mark.repo
 def test_promises_repo_imports_legacy_json_when_csv_missing(tmp_path):
-    root = str(tmp_path)
-    repo = PromisesRepository(root)
+    repo = PromisesRepository()
     user_id = 555
     user_dir = tmp_path / str(user_id)
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -62,8 +60,7 @@ def test_promises_repo_imports_legacy_json_when_csv_missing(tmp_path):
 
 @pytest.mark.repo
 def test_promises_repo_rename_creates_alias_and_old_id_resolves(tmp_path):
-    root = str(tmp_path)
-    repo = PromisesRepository(root)
+    repo = PromisesRepository()
     user_id = 42
 
     # Create initial promise P01
@@ -117,8 +114,7 @@ def test_promises_repo_rename_creates_alias_and_old_id_resolves(tmp_path):
 
 @pytest.mark.repo
 def test_promises_repo_writes_promise_events_for_create_rename_delete(tmp_path):
-    root = str(tmp_path)
-    repo = PromisesRepository(root)
+    repo = PromisesRepository()
     user_id = 77
 
     repo.upsert_promise(

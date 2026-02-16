@@ -55,6 +55,28 @@ def get_all_users(root_dir: str) -> List[int]:
     return sorted(user_ids)
 
 
+def get_all_users_from_db() -> List[int]:
+    """
+    Get all user IDs from the PostgreSQL users table.
+    Use this instead of get_all_users(root_dir) when the app uses Postgres.
+    """
+    from sqlalchemy import text
+    from db.postgres_db import get_db_session
+
+    user_ids: List[int] = []
+    try:
+        with get_db_session() as session:
+            rows = session.execute(text("SELECT user_id FROM users;")).fetchall()
+            for r in rows:
+                try:
+                    user_ids.append(int(r[0]))
+                except (ValueError, TypeError):
+                    continue
+    except Exception as e:
+        logger.error(f"Error reading users from DB: {e}")
+    return sorted(user_ids)
+
+
 async def send_broadcast(
     response_service: IResponseService,
     user_ids: List[int],
@@ -132,38 +154,36 @@ async def send_broadcast(
 
 async def execute_broadcast_from_db(
     response_service: IResponseService,
-    root_dir: str,
     broadcast_id: str,
 ) -> Dict[str, int]:
     """
     Execute a broadcast from the database by ID.
     Marks the broadcast as completed after execution.
-    
+
     Args:
         response_service: Platform-agnostic response service
-        root_dir: Root directory for database access
         broadcast_id: Broadcast ID from database
-        
+
     Returns:
         Dictionary with 'success' and 'failed' counts
     """
     from repositories.bot_tokens_repo import BotTokensRepository
-    
-    broadcasts_repo = BroadcastsRepository(root_dir)
+
+    broadcasts_repo = BroadcastsRepository()
     broadcast = broadcasts_repo.get_broadcast(broadcast_id)
-    
+
     if not broadcast:
         logger.error(f"Broadcast {broadcast_id} not found in database")
         return {"success": 0, "failed": 0}
-    
+
     if broadcast.status != "pending":
         logger.warning(f"Broadcast {broadcast_id} is not pending (status: {broadcast.status})")
         return {"success": 0, "failed": 0}
-    
+
     # Get bot token if specified
     bot_token = None
     if broadcast.bot_token_id:
-        bot_tokens_repo = BotTokensRepository(root_dir)
+        bot_tokens_repo = BotTokensRepository()
         bot_token_data = bot_tokens_repo.get_bot_token(broadcast.bot_token_id)
         if bot_token_data:
             bot_token = bot_token_data["bot_token"]

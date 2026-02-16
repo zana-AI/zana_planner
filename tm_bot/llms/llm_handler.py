@@ -95,7 +95,7 @@ class LLMHandler:
             self.tools = self._build_tools(self.plan_adapter)
             # Initialize conversation repository for context injection
             from repositories.conversation_repo import ConversationRepository
-            self.conversation_repo = ConversationRepository(adapter_root)
+            self.conversation_repo = ConversationRepository()
 
             self._initialize_context()
             self.planner_parser = JsonOutputParser(pydantic_object=Plan)

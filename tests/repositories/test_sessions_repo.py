@@ -9,9 +9,8 @@ from repositories.promises_repo import PromisesRepository
 
 @pytest.mark.repo
 def test_sessions_repo_create_list_and_active_filter(tmp_path):
-    root = str(tmp_path)
     # Sessions require a valid promise_uuid link, so seed a promise first.
-    promises_repo = PromisesRepository(root)
+    promises_repo = PromisesRepository()
     promises_repo.upsert_promise(
         user_id=7,
         promise=Promise(
@@ -23,7 +22,7 @@ def test_sessions_repo_create_list_and_active_filter(tmp_path):
         ),
     )
 
-    repo = SessionsRepository(root)
+    repo = SessionsRepository()
     user_id = 7
 
     s1 = Session(

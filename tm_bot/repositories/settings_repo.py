@@ -7,9 +7,8 @@ from models.models import UserSettings
 class SettingsRepository:
     """PostgreSQL-backed settings repository."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def get_settings(self, user_id: int) -> UserSettings:
         user = str(user_id)

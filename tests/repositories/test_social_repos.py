@@ -13,7 +13,7 @@ from repositories.feed_repo import FeedRepository
 def test_follows_repo_basic_operations(tmp_path):
     """Test basic follow/unfollow operations."""
     root = str(tmp_path)
-    repo = FollowsRepository(root)
+    repo = FollowsRepository()
     
     user1 = 100
     user2 = 200
@@ -37,7 +37,7 @@ def test_follows_repo_basic_operations(tmp_path):
 def test_blocks_repo_basic_operations(tmp_path):
     """Test basic block/unblock operations."""
     root = str(tmp_path)
-    repo = BlocksRepository(root)
+    repo = BlocksRepository()
     
     user1 = 100
     user2 = 200
@@ -65,7 +65,7 @@ def test_blocks_repo_basic_operations(tmp_path):
 def test_mutes_repo_basic_operations(tmp_path):
     """Test basic mute/unmute operations."""
     root = str(tmp_path)
-    repo = MutesRepository(root)
+    repo = MutesRepository()
     
     user1 = 100
     user2 = 200
@@ -89,8 +89,8 @@ def test_mutes_repo_basic_operations(tmp_path):
 def test_reactions_repo_basic_operations(tmp_path):
     """Test basic reaction operations."""
     root = str(tmp_path)
-    feed_repo = FeedRepository(root)
-    reactions_repo = ReactionsRepository(root)
+    feed_repo = FeedRepository()
+    reactions_repo = ReactionsRepository()
     
     user1 = 100
     feed_item_uuid = feed_repo.create_feed_item(
@@ -118,7 +118,7 @@ def test_reactions_repo_basic_operations(tmp_path):
 def test_clubs_repo_basic_operations(tmp_path):
     """Test basic club operations."""
     root = str(tmp_path)
-    repo = ClubsRepository(root)
+    repo = ClubsRepository()
     
     owner = 100
     member = 200

@@ -12,9 +12,8 @@ from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, dt_to_u
 class ProfileRepository:
     """PostgreSQL-backed profile repository."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def upsert_fact(
         self,

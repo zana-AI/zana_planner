@@ -18,10 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 class ReportsService:
-    def __init__(self, promises_repo: PromisesRepository, actions_repo: ActionsRepository, root_dir: str = None):
+    def __init__(self, promises_repo: PromisesRepository, actions_repo: ActionsRepository) -> None:
         self.promises_repo = promises_repo
         self.actions_repo = actions_repo
-        self.root_dir = root_dir
 
     def get_weekly_summary(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
         """Get weekly summary data for a user."""
@@ -78,17 +77,15 @@ class ReportsService:
         
         # Get instances to check for template-derived promises
         instances_by_promise_uuid: Dict[str, Dict] = {}
-        if self.root_dir:
-            from repositories.instances_repo import InstancesRepository
-            instances_repo = InstancesRepository(self.root_dir)
-            user = str(user_id)
-            with get_db_session() as session_db:
-                for promise in promises:
-                    promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
-                    if promise_uuid:
-                        instance = instances_repo.get_instance_by_promise_uuid(user_id, promise_uuid)
-                        if instance:
-                            instances_by_promise_uuid[promise_uuid] = instance
+        instances_repo = InstancesRepository()
+        user = str(user_id)
+        with get_db_session() as session_db:
+            for promise in promises:
+                promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
+                if promise_uuid:
+                    instance = instances_repo.get_instance_by_promise_uuid(user_id, promise_uuid)
+                    if instance:
+                        instances_by_promise_uuid[promise_uuid] = instance
         
         # Initialize report data (keyed by canonical promise.id from storage)
         report_data: Dict[str, Any] = {}
@@ -100,12 +97,11 @@ class ReportsService:
                 user = str(user_id)
                 promise_uuid = None
                 instance = None
-                if self.root_dir:
-                    with get_db_session() as session_db:
-                        promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
-                        if promise_uuid:
-                            promise_uuid_by_id[promise.id] = promise_uuid
-                            instance = instances_by_promise_uuid.get(promise_uuid)
+                with get_db_session() as session_db:
+                    promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
+                    if promise_uuid:
+                        promise_uuid_by_id[promise.id] = promise_uuid
+                        instance = instances_by_promise_uuid.get(promise_uuid)
                 
                 # Determine metric type and target
                 if instance:
@@ -176,24 +172,21 @@ class ReportsService:
         logger.debug(f"[DEBUG] {actions_in_range} actions in week range, grouped into {len(actions_by_promise_date)} promises")
         
         # Handle budget templates with distraction_events
-        if self.root_dir:
-            from repositories.distractions_repo import DistractionsRepository
-            distractions_repo = DistractionsRepository(self.root_dir)
-            for promise_id, promise_data in report_data.items():
-                if promise_data.get('template_kind') == 'budget' and promise_data.get('metric_type') == 'hours':
-                    promise_uuid = promise_uuid_by_id.get(promise_id)
-                    if promise_uuid:
-                        instance = instances_by_promise_uuid.get(promise_uuid)
-                        if instance:
-                            # Get distraction events for this week
-                            distraction_data = distractions_repo.get_weekly_distractions(
-                                user_id, week_start, week_end
-                            )
-                            promise_data['achieved_value'] = distraction_data['total_hours']
-                            promise_data['hours_spent'] = distraction_data['total_hours']  # For backward compat
-                            # Create sessions from distraction events (simplified: one session per day with hours)
-                            # For now, we'll just set total - detailed per-day distraction tracking can be added later
-                            promise_data['sessions'] = [{'date': week_start.date(), 'hours': distraction_data['total_hours']}]
+        distractions_repo = DistractionsRepository()
+        for promise_id, promise_data in report_data.items():
+            if promise_data.get('template_kind') == 'budget' and promise_data.get('metric_type') == 'hours':
+                promise_uuid = promise_uuid_by_id.get(promise_id)
+                if promise_uuid:
+                    instance = instances_by_promise_uuid.get(promise_uuid)
+                    if instance:
+                        # Get distraction events for this week
+                        distraction_data = distractions_repo.get_weekly_distractions(
+                            user_id, week_start, week_end
+                        )
+                        promise_data['achieved_value'] = distraction_data['total_hours']
+                        promise_data['hours_spent'] = distraction_data['total_hours']  # For backward compat
+                        # Create sessions from distraction events (simplified: one session per day with hours)
+                        promise_data['sessions'] = [{'date': week_start.date(), 'hours': distraction_data['total_hours']}]
         
         # Convert to sessions format and accumulate totals
         for promise_id, date_data in actions_by_promise_date.items():

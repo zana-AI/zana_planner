@@ -103,14 +103,14 @@ async def get_admin_user(
 
 def get_reports_service(request: Request, user_id: int = Depends(get_current_user)) -> ReportsService:
     """Get ReportsService instance for a user."""
-    promises_repo = PromisesRepository(request.app.state.root_dir)
-    actions_repo = ActionsRepository(request.app.state.root_dir)
-    return ReportsService(promises_repo, actions_repo, root_dir=request.app.state.root_dir)
+    promises_repo = PromisesRepository()
+    actions_repo = ActionsRepository()
+    return ReportsService(promises_repo, actions_repo)
 
 
 def get_settings_repo(request: Request) -> SettingsRepository:
     """Get SettingsRepository instance."""
-    return SettingsRepository(request.app.state.root_dir)
+    return SettingsRepository()
 
 
 def update_user_activity(request: Request, user_id: int = Depends(get_current_user)) -> None:

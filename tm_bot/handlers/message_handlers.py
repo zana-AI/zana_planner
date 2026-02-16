@@ -33,8 +33,8 @@ from handlers.callback_handlers import CallbackHandlers
 from utils.logger import get_logger
 from utils.version import get_version_info
 from utils.admin_utils import is_admin
-from services.broadcast_service import get_all_users, send_broadcast, parse_broadcast_time, execute_broadcast_from_db
-from services.bot_stats import get_version_stats as get_aggregate_stats
+from services.broadcast_service import get_all_users_from_db, send_broadcast, parse_broadcast_time, execute_broadcast_from_db
+from services.bot_stats import get_version_stats_postgres
 from services.avatar_service import AvatarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -1989,7 +1989,7 @@ class MessageHandlers:
 
         # Database statistics
         try:
-            stats = get_aggregate_stats(self.root_dir)
+            stats = get_version_stats_postgres()
             lines.append("")
             lines.append("*Database Statistics*")
             lines.append(f"- Total users: `{stats.get('total_users', 0)}`")
@@ -2204,7 +2204,7 @@ class MessageHandlers:
             return
         
         # Get all users
-        user_ids = get_all_users(self.root_dir)
+        user_ids = get_all_users_from_db()
         if not user_ids:
             await update.message.reply_text("❌ No users found to broadcast to.")
             context.user_data.pop('broadcast_state', None)
@@ -2258,13 +2258,12 @@ class MessageHandlers:
             logger.info(f"Executing scheduled broadcast {broadcast_id} from database")
             results = await execute_broadcast_from_db(
                 self.response_service,
-                self.root_dir,
                 broadcast_id,
             )
             
             # Get broadcast details for admin notification
             from repositories.broadcasts_repo import BroadcastsRepository
-            broadcasts_repo = BroadcastsRepository(self.root_dir)
+            broadcasts_repo = BroadcastsRepository()
             broadcast = broadcasts_repo.get_broadcast(broadcast_id)
             
             admin_id = int(broadcast.admin_id) if broadcast else None

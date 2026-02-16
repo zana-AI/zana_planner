@@ -39,17 +39,15 @@ def set_delayed_message_service(service: 'DelayedMessageService') -> None:
 class DelayedMessageService:
     """Service for managing delayed messages based on user inactivity."""
     
-    def __init__(self, scheduler: IJobScheduler, root_dir: Optional[str] = None):
+    def __init__(self, scheduler: IJobScheduler) -> None:
         """
         Initialize delayed message service.
-        
+
         Args:
             scheduler: Job scheduler instance for scheduling delayed messages
-            root_dir: Root directory for accessing repositories (optional)
         """
         self.scheduler = scheduler
-        self.root_dir = root_dir
-        self.settings_repo = SettingsRepository(root_dir)
+        self.settings_repo = SettingsRepository()
         self._pending_messages: Dict[str, str] = {}  # message_id -> job_name
         
         # Register this instance globally

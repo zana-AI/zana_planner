@@ -13,8 +13,8 @@ from db.postgres_db import get_db_session, utc_now_iso, date_from_iso, date_to_i
 class SchedulesRepository:
     """PostgreSQL-backed schedules repository."""
 
-    def __init__(self, root_dir: str = None):
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def list_slots(self, promise_uuid: str, is_active: Optional[bool] = True) -> List[Dict[str, Any]]:
         """List schedule slots for a promise."""

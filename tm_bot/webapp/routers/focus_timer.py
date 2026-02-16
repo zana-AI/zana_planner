@@ -25,8 +25,8 @@ logger = get_logger(__name__)
 
 def get_sessions_service(request: Request) -> SessionsService:
     """Get sessions service instance."""
-    sessions_repo = SessionsRepository(request.app.state.root_dir)
-    actions_repo = ActionsRepository(request.app.state.root_dir)
+    sessions_repo = SessionsRepository()
+    actions_repo = ActionsRepository()
     return SessionsService(sessions_repo, actions_repo)
 
 
@@ -72,7 +72,7 @@ async def start_focus(
     """Start a new focus session. If user has an active session, it will be aborted first."""
     try:
         sessions_service = get_sessions_service(request)
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         
         # Verify promise exists
         promise = promises_repo.get_promise(user_id, focus_request.promise_id)
@@ -135,7 +135,7 @@ async def get_current_focus(
     try:
         sessions_service = get_sessions_service(request)
         sessions_repo = sessions_service.sessions_repo
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         
         active_session = sessions_repo.get_current_active_session(user_id)
         if not active_session:
@@ -161,7 +161,7 @@ async def pause_focus(
     """Pause the current focus session."""
     try:
         sessions_service = get_sessions_service(request)
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         
         session = sessions_service.pause(user_id, pause_request.session_id)
         if not session:
@@ -188,7 +188,7 @@ async def resume_focus(
     """Resume a paused focus session."""
     try:
         sessions_service = get_sessions_service(request)
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         
         session = sessions_service.resume(user_id, resume_request.session_id)
         if not session:
@@ -239,7 +239,7 @@ async def debug_check_overdue(
         from db.postgres_db import utc_now_iso
         from datetime import datetime
         
-        sessions_repo = SessionsRepository(request.app.state.root_dir)
+        sessions_repo = SessionsRepository()
         
         # Get current session
         current_session = sessions_repo.get_current_active_session(user_id)

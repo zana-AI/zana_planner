@@ -24,9 +24,8 @@ class PromisesRepository:
     - Supports promise ID renames via `promise_aliases`
     """
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def list_promises(self, user_id: int) -> List[Promise]:
         user = str(user_id)

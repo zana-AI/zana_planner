@@ -27,8 +27,8 @@ async def list_templates(
 ):
     """List templates with unlock status."""
     try:
-        templates_repo = TemplatesRepository(request.app.state.root_dir)
-        unlocks_service = TemplateUnlocksService(request.app.state.root_dir)
+        templates_repo = TemplatesRepository()
+        unlocks_service = TemplateUnlocksService()
         
         templates = templates_repo.list_templates(category=category, program_key=program_key, is_active=True)
         templates_with_status = unlocks_service.annotate_templates_with_unlock_status(user_id, templates)
@@ -47,7 +47,7 @@ async def get_template(
 ):
     """Get template details (simplified schema)."""
     try:
-        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        templates_repo = TemplatesRepository()
         
         template = templates_repo.get_template(template_id)
         if not template:
@@ -74,7 +74,7 @@ async def get_template_users(
 ):
     """Get users using this template (for 'used by' badges)."""
     try:
-        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        templates_repo = TemplatesRepository()
         
         # Verify template exists
         template = templates_repo.get_template(template_id)
@@ -131,8 +131,8 @@ async def subscribe_template(
             def parse_date(s: str) -> date_type:
                 return date_type.fromisoformat(s.split('T')[0])
         
-        instances_repo = InstancesRepository(request.app.state.root_dir)
-        unlocks_service = TemplateUnlocksService(request.app.state.root_dir)
+        instances_repo = InstancesRepository()
+        unlocks_service = TemplateUnlocksService()
         
         # Check if template is unlocked
         unlock_status = unlocks_service.get_unlock_status(user_id, template_id)
@@ -171,7 +171,7 @@ async def list_active_instances(
 ):
     """List active template instances for the user."""
     try:
-        instances_repo = InstancesRepository(request.app.state.root_dir)
+        instances_repo = InstancesRepository()
         instances = instances_repo.list_active_instances(user_id)
         return {"instances": instances}
     except Exception as e:

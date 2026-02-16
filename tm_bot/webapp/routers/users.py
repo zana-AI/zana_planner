@@ -367,7 +367,7 @@ async def follow_user(
         if user_id == target_user_id:
             raise HTTPException(status_code=400, detail="Cannot follow yourself")
         
-        follows_repo = FollowsRepository(request.app.state.root_dir)
+        follows_repo = FollowsRepository()
         success = follows_repo.follow(user_id, target_user_id)
 
         # Schedule follow notification after 2 minutes (cancellable if unfollow happens).
@@ -386,7 +386,7 @@ async def follow_user(
 
             async def send_follow_notification_if_still_following(context=None):
                 from ..notifications import send_follow_notification
-                current_follows_repo = FollowsRepository(request.app.state.root_dir)
+                current_follows_repo = FollowsRepository()
                 if not current_follows_repo.is_following(user_id, target_user_id):
                     logger.info(
                         f"Follow notification cancelled: user {user_id} unfollowed {target_user_id} before notification"
@@ -397,7 +397,6 @@ async def follow_user(
                     request.app.state.bot_token,
                     user_id,
                     target_user_id,
-                    request.app.state.root_dir,
                 )
                 _pending_follow_notification_jobs.pop(notification_key, None)
 
@@ -428,7 +427,6 @@ async def follow_user(
                         request.app.state.bot_token,
                         user_id,
                         target_user_id,
-                        request.app.state.root_dir,
                     )
                 )
 
@@ -450,7 +448,7 @@ async def unfollow_user(
 ):
     """Unfollow a user."""
     try:
-        follows_repo = FollowsRepository(request.app.state.root_dir)
+        follows_repo = FollowsRepository()
         success = follows_repo.unfollow(user_id, target_user_id)
         
         if success:
@@ -482,8 +480,8 @@ async def get_user(
 ):
     """Get public user information by ID."""
     try:
-        settings_repo = SettingsRepository(request.app.state.root_dir)
-        follows_repo = FollowsRepository(request.app.state.root_dir)
+        settings_repo = SettingsRepository()
+        follows_repo = FollowsRepository()
         
         # Get user settings
         settings = settings_repo.get_settings(user_id)
@@ -535,9 +533,9 @@ async def get_user(
             from repositories.actions_repo import ActionsRepository
             from services.reports import ReportsService
             
-            promises_repo = PromisesRepository(request.app.state.root_dir)
-            actions_repo = ActionsRepository(request.app.state.root_dir)
-            reports_service = ReportsService(promises_repo, actions_repo, root_dir=request.app.state.root_dir)
+            promises_repo = PromisesRepository()
+            actions_repo = ActionsRepository()
+            reports_service = ReportsService(promises_repo, actions_repo)
             
             # Get all promises for the user
             all_promises = promises_repo.list_promises(user_id)
@@ -629,7 +627,7 @@ async def get_follow_status(
 ):
     """Check if current user is following target user."""
     try:
-        follows_repo = FollowsRepository(request.app.state.root_dir)
+        follows_repo = FollowsRepository()
         is_following = follows_repo.is_following(user_id, target_user_id)
         
         return {"is_following": is_following}
@@ -651,8 +649,8 @@ async def get_followers(
             # For now, only allow viewing own followers
             raise HTTPException(status_code=403, detail="Can only view your own followers")
         
-        follows_repo = FollowsRepository(request.app.state.root_dir)
-        settings_repo = SettingsRepository(request.app.state.root_dir)
+        follows_repo = FollowsRepository()
+        settings_repo = SettingsRepository()
         
         # Get follower user IDs
         follower_ids = follows_repo.get_followers(user_id)
@@ -746,8 +744,8 @@ async def get_following(
         if user_id != current_user_id:
             raise HTTPException(status_code=403, detail="Can only view your own following list")
         
-        follows_repo = FollowsRepository(request.app.state.root_dir)
-        settings_repo = SettingsRepository(request.app.state.root_dir)
+        follows_repo = FollowsRepository()
+        settings_repo = SettingsRepository()
         
         # Get following user IDs
         following_ids = follows_repo.get_following(user_id)

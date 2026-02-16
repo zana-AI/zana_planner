@@ -12,9 +12,8 @@ from models.models import Broadcast
 class BroadcastsRepository:
     """Repository for managing scheduled broadcasts."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def create_broadcast(
         self,

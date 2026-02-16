@@ -8,8 +8,7 @@ from repositories.actions_repo import ActionsRepository
 
 @pytest.mark.repo
 def test_actions_repo_append_and_list_roundtrip(tmp_path):
-    root = str(tmp_path)
-    repo = ActionsRepository(root)
+    repo = ActionsRepository()
     user_id = 100
 
     a = Action(
@@ -29,8 +28,7 @@ def test_actions_repo_append_and_list_roundtrip(tmp_path):
 
 @pytest.mark.repo
 def test_actions_repo_is_legacy_no_header_csv(tmp_path):
-    root = str(tmp_path)
-    repo = ActionsRepository(root)
+    repo = ActionsRepository()
     user_id = 200
 
     a = Action(
@@ -72,7 +70,7 @@ def test_actions_repo_imports_legacy_actions_csv(tmp_path):
         encoding="utf-8",
     )
 
-    repo = ActionsRepository(root)
+    repo = ActionsRepository()
     items = repo.list_actions(user_id)
     assert len(items) == 1
     assert items[0].promise_id == "P01"

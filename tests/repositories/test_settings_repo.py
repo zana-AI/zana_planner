@@ -6,7 +6,7 @@ from repositories.settings_repo import SettingsRepository
 
 @pytest.mark.repo
 def test_settings_repo_defaults_when_missing(tmp_path):
-    repo = SettingsRepository(str(tmp_path))
+    repo = SettingsRepository()
     s = repo.get_settings(user_id=1)
     assert s.timezone
     assert s.nightly_hh is not None
@@ -16,7 +16,7 @@ def test_settings_repo_defaults_when_missing(tmp_path):
 
 @pytest.mark.repo
 def test_settings_repo_save_and_load_roundtrip(tmp_path):
-    repo = SettingsRepository(str(tmp_path))
+    repo = SettingsRepository()
     user_id = 42
     settings = UserSettings(
         user_id=str(user_id),
@@ -48,7 +48,7 @@ def test_settings_repo_imports_legacy_yaml_once(tmp_path):
         encoding="utf-8",
     )
 
-    repo = SettingsRepository(str(tmp_path))
+    repo = SettingsRepository()
 
     # Act: first read should import legacy file into SQLite
     s = repo.get_settings(user_id)

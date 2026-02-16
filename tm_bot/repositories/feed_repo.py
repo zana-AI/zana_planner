@@ -11,9 +11,8 @@ from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, json_co
 class FeedRepository:
     """Repository for managing feed items (actions, sessions, milestones)."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def create_feed_item(
         self,

@@ -38,7 +38,7 @@ async def update_promise_visibility(
         if vis_request.visibility not in ["private", "public"]:
             raise HTTPException(status_code=400, detail="Visibility must be 'private' or 'public'")
         
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         promise = promises_repo.get_promise(user_id, promise_id)
         
         if not promise:
@@ -50,7 +50,7 @@ async def update_promise_visibility(
         
         # If making public, create/upsert marketplace template
         if vis_request.visibility == "public" and not was_public:
-            templates_repo = TemplatesRepository(request.app.state.root_dir)
+            templates_repo = TemplatesRepository()
             
             # Get promise_uuid first
             user_str = str(user_id)
@@ -187,7 +187,7 @@ async def update_promise_recurring(
 ):
     """Update promise recurring status."""
     try:
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         promise = promises_repo.get_promise(user_id, promise_id)
         
         if not promise:
@@ -227,7 +227,7 @@ async def update_promise(
                 raise HTTPException(status_code=400, detail=f"Invalid end_date format: {update_request.end_date}. Expected YYYY-MM-DD")
         
         # Get current promise to validate end_date >= start_date
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         current_promise = promises_repo.get_promise(user_id, promise_id)
         
         if not current_promise:
@@ -298,7 +298,7 @@ async def log_action(
             action_datetime = datetime.now()
         
         # Verify promise exists
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         promise = promises_repo.get_promise(user_id, action_request.promise_id)
         if not promise:
             raise HTTPException(status_code=404, detail="Promise not found")
@@ -314,7 +314,7 @@ async def log_action(
             notes=action_request.notes if action_request.notes and action_request.notes.strip() else None
         )
         
-        actions_repo = ActionsRepository(request.app.state.root_dir)
+        actions_repo = ActionsRepository()
         actions_repo.append_action(action)
         
         return {"status": "success", "message": "Action logged successfully"}
@@ -333,7 +333,7 @@ async def snooze_promise(
 ):
     """Snooze a promise until next week (hide from current week)."""
     try:
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         promise = promises_repo.get_promise(user_id, promise_id)
         
         if not promise:
@@ -366,8 +366,8 @@ async def get_promise_schedule(
 ):
     """Get schedule slots for a promise."""
     try:
-        promises_repo = PromisesRepository(request.app.state.root_dir)
-        schedules_repo = SchedulesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
+        schedules_repo = SchedulesRepository()
         
         promise = promises_repo.get_promise(user_id, promise_id)
         if not promise:
@@ -399,8 +399,8 @@ async def update_promise_schedule(
     """Replace schedule slots for a promise."""
     try:
         from datetime import time as time_type
-        promises_repo = PromisesRepository(request.app.state.root_dir)
-        schedules_repo = SchedulesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
+        schedules_repo = SchedulesRepository()
         
         promise = promises_repo.get_promise(user_id, promise_id)
         if not promise:
@@ -456,8 +456,8 @@ async def get_promise_reminders(
 ):
     """Get reminders for a promise."""
     try:
-        promises_repo = PromisesRepository(request.app.state.root_dir)
-        reminders_repo = RemindersRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
+        reminders_repo = RemindersRepository()
         
         promise = promises_repo.get_promise(user_id, promise_id)
         if not promise:
@@ -489,9 +489,9 @@ async def update_promise_reminders(
     """Replace reminders for a promise."""
     try:
         from datetime import time as time_type
-        promises_repo = PromisesRepository(request.app.state.root_dir)
-        reminders_repo = RemindersRepository(request.app.state.root_dir)
-        dispatch_service = ReminderDispatchService(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
+        reminders_repo = RemindersRepository()
+        dispatch_service = ReminderDispatchService()
         
         promise = promises_repo.get_promise(user_id, promise_id)
         if not promise:
@@ -560,7 +560,7 @@ async def checkin_promise(
     try:
         from dateutil.parser import parse as parse_datetime
         
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         promise = promises_repo.get_promise(user_id, promise_id)
         
         if not promise:
@@ -594,7 +594,7 @@ async def checkin_promise(
             at=action_datetime
         )
         
-        actions_repo = ActionsRepository(request.app.state.root_dir)
+        actions_repo = ActionsRepository()
         actions_repo.append_action(action)
         
         return {"status": "success", "message": "Check-in recorded successfully"}
@@ -614,9 +614,9 @@ async def update_weekly_note(
 ):
     """Update weekly note for a promise instance."""
     try:
-        instances_repo = InstancesRepository(request.app.state.root_dir)
+        instances_repo = InstancesRepository()
         from repositories.reviews_repo import ReviewsRepository
-        reviews_repo = ReviewsRepository(request.app.state.root_dir)
+        reviews_repo = ReviewsRepository()
         
         # Find instance by promise_id (PostgreSQL)
         user = str(user_id)
@@ -653,8 +653,8 @@ async def get_promise_logs(
 ):
     """Get recent logs/actions for a promise."""
     try:
-        promises_repo = PromisesRepository(request.app.state.root_dir)
-        actions_repo = ActionsRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
+        actions_repo = ActionsRepository()
         
         # Verify promise exists and belongs to user
         promise = promises_repo.get_promise(user_id, promise_id)

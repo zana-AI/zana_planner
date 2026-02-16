@@ -8,8 +8,8 @@ from db.postgres_db import get_db_session, utc_now_iso
 class SuggestionsRepository:
     """Repository for promise suggestions."""
 
-    def __init__(self, root_dir: str):
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def create_suggestion(
         self,

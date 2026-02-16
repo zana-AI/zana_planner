@@ -16,9 +16,8 @@ from models.models import Session
 class SessionsRepository:
     """PostgreSQL-backed sessions repository."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def create_session(self, session: Session) -> None:
         user = str(session.user_id)

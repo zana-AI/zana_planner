@@ -10,9 +10,8 @@ from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, dt_to_u
 class FollowsRepository:
     """Repository for managing user follow relationships."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def follow(self, follower_user_id: int, followee_user_id: int) -> bool:
         """

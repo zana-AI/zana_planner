@@ -13,8 +13,8 @@ from db.postgres_db import get_db_session, utc_now_iso, dt_to_utc_iso
 class RemindersRepository:
     """PostgreSQL-backed reminders repository."""
 
-    def __init__(self, root_dir: str = None):
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def list_reminders(self, promise_uuid: str, enabled: Optional[bool] = None) -> List[Dict[str, Any]]:
         """List reminders for a promise."""

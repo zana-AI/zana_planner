@@ -1,11 +1,11 @@
 """
 Refactored bot for the planner application.
 This version uses platform abstraction to support multiple platforms (Telegram, Discord, etc.).
+The web app runs as a separate process; this module runs the Telegram (or other platform) bot only.
 """
 import asyncio
 import os
 import subprocess
-import threading
 from unittest.mock import Mock
 
 # Platform abstraction imports
@@ -73,7 +73,6 @@ class PlannerBot:
             else:
                 # Fallback: create a response service if adapter doesn't provide one
                 self._original_response_service = ResponseService(
-                    root_dir=self.root_dir,
                     settings_repo=self.plan_keeper.settings_repo
                 )
         
@@ -295,82 +294,14 @@ class PlannerBot:
         
         logger.info(f"bootstrap_schedule_existing_users: successfully scheduled reminders for {scheduled_count}/{len(user_ids)} users")
 
-    def _start_webapp_server(self, host: str = "0.0.0.0", port: int = 8080) -> None:
-        """Start the FastAPI web app server in a background thread."""
-        logger.info(f"[DEBUG] Starting webapp server on {host}:{port}")
-        try:
-            import uvicorn
-            from webapp.api import create_webapp_api
-            
-            # Determine static files directory (React build output)
-            static_dir = os.path.join(os.path.dirname(__file__), "..", "webapp_frontend", "dist")
-            if not os.path.isdir(static_dir):
-                static_dir = None
-                logger.info("Web app static files not found, API-only mode")
-            else:
-                logger.info(f"Serving web app static files from {static_dir}")
-            
-            # Get bot token from environment variable
-            bot_token = os.getenv("BOT_TOKEN")
-            if not bot_token:
-                logger.error("BOT_TOKEN environment variable is not set, cannot start webapp server")
-                return
-            
-            logger.info("[DEBUG] Creating FastAPI app...")
-            # Create FastAPI app
-            webapp = create_webapp_api(
-                root_dir=self.root_dir,
-                bot_token=bot_token,
-                static_dir=static_dir
-            )
-            
-            logger.info("[DEBUG] Starting uvicorn server...")
-            # Run uvicorn in a separate thread
-            config = uvicorn.Config(
-                webapp,
-                host=host,
-                port=port,
-                log_level="info",
-                access_log=True
-            )
-            server = uvicorn.Server(config)
-            
-            def run_server():
-                try:
-                    asyncio.run(server.serve())
-                except Exception as e:
-                    logger.error(f"[DEBUG] Exception in uvicorn thread: {e}", exc_info=True)
-            
-            self.webapp_server = threading.Thread(target=run_server, daemon=True)
-            self.webapp_server.start()
-            logger.info(f"Web app server started on http://{host}:{port}")
-            
-        except ImportError as e:
-            logger.warning(f"Web app server dependencies not installed: {e}")
-        except Exception as e:
-            logger.error(f"Failed to start web app server: {e}", exc_info=True)
-
-    def run(self, enable_webapp: bool = True, webapp_port: int = 8080) -> None:
+    def run(self) -> None:
         """
-        Start the bot and optionally the web app server.
-        
-        Args:
-            enable_webapp: Whether to start the FastAPI web app server
-            webapp_port: Port for the web app server (default: 8080)
+        Start the bot. For Telegram this runs polling; for other platforms, their event loop.
+        The web app is run separately (e.g. via run_server.py or another process).
         """
-        logger.info(f"[DEBUG] run() called with enable_webapp={enable_webapp}, webapp_port={webapp_port}")
-        if enable_webapp:
-            self._start_webapp_server(port=webapp_port)
-        
-        # Start platform bot (blocking)
-        # For Telegram, this calls application.run_polling()
-        # For other platforms, this will start their respective event loops
-        if hasattr(self.platform_adapter, 'application'):
-            # Telegram-specific: use run_polling for backward compatibility
+        if hasattr(self.platform_adapter, "application"):
             self.application.run_polling()
         else:
-            # For other platforms, use async start
-            import asyncio
             asyncio.run(self.platform_adapter.start())
 
 
@@ -399,13 +330,12 @@ def main():
 
     MINIAPP_URL = os.getenv("MINIAPP_URL", "https://xaana.club")
 
-    # Optional Sentry initialization (if DSN is provided)
+    # Optional Sentry initialization (if DSN is provided). Web app has its own Sentry if needed.
     SENTRY_DSN = os.getenv("SENTRY_DSN")
     if SENTRY_DSN:
         try:
             import sentry_sdk
             from sentry_sdk.integrations.logging import LoggingIntegration
-            from sentry_sdk.integrations.fastapi import FastApiIntegration
             import logging as std_logging
             sentry_logging = LoggingIntegration(
                 level=std_logging.INFO,  # capture >= INFO as breadcrumbs
@@ -414,8 +344,8 @@ def main():
             sentry_sdk.init(
                 dsn=SENTRY_DSN,
                 send_default_pii=True,
-                integrations=[sentry_logging, FastApiIntegration()],
-                traces_sample_rate=1.0
+                integrations=[sentry_logging],
+                traces_sample_rate=1.0,
             )
             logger.info("Sentry initialized successfully")
         except Exception as e:
@@ -432,10 +362,6 @@ def main():
 
     logger.info(f"Starting Xaana AI bot with ROOT_DIR={ROOT_DIR}")
 
-    # Web app configuration
-    WEBAPP_ENABLED = os.getenv("WEBAPP_ENABLED", "false").lower() in ("true", "1", "yes")
-    WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
-
     # Create Telegram platform adapter
     request = HTTPXRequest(connect_timeout=10, read_timeout=20)
     application = Application.builder().token(BOT_TOKEN).request(request).build()
@@ -445,7 +371,6 @@ def main():
     
     # Initialize response service with settings_repo
     response_service = ResponseService(
-        root_dir=ROOT_DIR,
         settings_repo=plan_keeper.settings_repo
     )
     
@@ -456,8 +381,7 @@ def main():
     bot = PlannerBot(platform_adapter, ROOT_DIR, MINIAPP_URL)
     
     bot.bootstrap_schedule_existing_users()
-    logger.debug(f"Starting bot with platform adapter")
-    bot.run(enable_webapp=WEBAPP_ENABLED, webapp_port=WEBAPP_PORT)
+    bot.run()
 
 
 if __name__ == '__main__':

@@ -15,11 +15,10 @@ from db.postgres_db import get_db_session
 class TemplateUnlocksService:
     """Service to compute which templates are unlocked for a user."""
 
-    def __init__(self, root_dir: str):
-        self.root_dir = root_dir
-        self.templates_repo = TemplatesRepository(root_dir)
-        self.instances_repo = InstancesRepository(root_dir)
-        self.reviews_repo = ReviewsRepository(root_dir)
+    def __init__(self) -> None:
+        self.templates_repo = TemplatesRepository()
+        self.instances_repo = InstancesRepository()
+        self.reviews_repo = ReviewsRepository()
 
     def get_unlock_status(
         self, user_id: int, template_id: str

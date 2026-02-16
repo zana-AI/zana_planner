@@ -35,7 +35,7 @@ async def create_suggestion(
         if str(user_id) == str(suggestion_request.to_user_id):
             raise HTTPException(status_code=400, detail="Cannot suggest a promise to yourself")
         
-        suggestions_repo = SuggestionsRepository(request.app.state.root_dir)
+        suggestions_repo = SuggestionsRepository()
         suggestion_id = suggestions_repo.create_suggestion(
             from_user_id=str(user_id),
             to_user_id=str(suggestion_request.to_user_id),
@@ -49,7 +49,7 @@ async def create_suggestion(
         # Get template title if template-based suggestion
         template_title = None
         if suggestion_request.template_id:
-            templates_repo = TemplatesRepository(request.app.state.root_dir)
+            templates_repo = TemplatesRepository()
             template = templates_repo.get_template(suggestion_request.template_id)
             if template:
                 template_title = template.get("title")
@@ -64,7 +64,6 @@ async def create_suggestion(
                 template_title=template_title,
                 freeform_text=suggestion_request.freeform_text,
                 message=suggestion_request.message,
-                root_dir=request.app.state.root_dir
             )
         )
         
@@ -83,7 +82,7 @@ async def get_pending_suggestions(
 ):
     """Get pending suggestions sent to the current user."""
     try:
-        suggestions_repo = SuggestionsRepository(request.app.state.root_dir)
+        suggestions_repo = SuggestionsRepository()
         suggestions = suggestions_repo.get_pending_suggestions_for_user(str(user_id))
         
         return {"suggestions": suggestions}
@@ -101,7 +100,7 @@ async def respond_to_suggestion(
 ):
     """Accept or decline a suggestion."""
     try:
-        suggestions_repo = SuggestionsRepository(request.app.state.root_dir)
+        suggestions_repo = SuggestionsRepository()
         
         new_status = "accepted" if response == "accept" else "declined"
         success = suggestions_repo.update_suggestion_status(
@@ -133,9 +132,9 @@ async def get_public_promises(
     Authentication required.
     """
     try:
-        promises_repo = PromisesRepository(request.app.state.root_dir)
-        actions_repo = ActionsRepository(request.app.state.root_dir)
-        reports_service = ReportsService(promises_repo, actions_repo, root_dir=request.app.state.root_dir)
+        promises_repo = PromisesRepository()
+        actions_repo = ActionsRepository()
+        reports_service = ReportsService(promises_repo, actions_repo)
         
         # Get all promises for the user
         all_promises = promises_repo.list_promises(user_id)

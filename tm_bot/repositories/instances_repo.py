@@ -22,10 +22,8 @@ from models.models import Promise
 class InstancesRepository:
     """PostgreSQL-backed promise instances repository."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
-        self.promises_repo = PromisesRepository(root_dir)
+    def __init__(self) -> None:
+        self.promises_repo = PromisesRepository()
 
     def subscribe_template(
         self,
@@ -42,7 +40,7 @@ class InstancesRepository:
         """
         from repositories.templates_repo import TemplatesRepository
 
-        templates_repo = TemplatesRepository(self.root_dir)
+        templates_repo = TemplatesRepository()
         template = templates_repo.get_template(template_id)
         if not template:
             raise ValueError(f"Template {template_id} not found")

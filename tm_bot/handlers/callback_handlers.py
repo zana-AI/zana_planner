@@ -1117,7 +1117,7 @@ Generate the calendar links now:"""
             from repositories.templates_repo import TemplatesRepository
             import json
             
-            suggestions_repo = SuggestionsRepository(self.plan_keeper.root_dir)
+            suggestions_repo = SuggestionsRepository()
             
             # Get the suggestion
             suggestion = suggestions_repo.get_suggestion(suggestion_id)
@@ -1139,7 +1139,7 @@ Generate the calendar links now:"""
             promise_text = None
             hours_per_week = 0.0
             if suggestion.get('template_id'):
-                templates_repo = TemplatesRepository(self.plan_keeper.root_dir)
+                templates_repo = TemplatesRepository()
                 template = templates_repo.get_template(suggestion['template_id'])
                 if template:
                     promise_text = template.get('title', 'Untitled Promise')
@@ -1176,7 +1176,7 @@ Generate the calendar links now:"""
             
             # Get sender name for notification
             from repositories.settings_repo import SettingsRepository
-            settings_repo = SettingsRepository(self.plan_keeper.root_dir)
+            settings_repo = SettingsRepository()
             sender_settings = settings_repo.get_settings(int(suggestion['from_user_id']))
             sender_name = sender_settings.first_name or sender_settings.username or f"User {suggestion['from_user_id']}"
             
@@ -1213,7 +1213,7 @@ Generate the calendar links now:"""
         try:
             from repositories.suggestions_repo import SuggestionsRepository
             
-            suggestions_repo = SuggestionsRepository(self.plan_keeper.root_dir)
+            suggestions_repo = SuggestionsRepository()
             
             # Get the suggestion
             suggestion = suggestions_repo.get_suggestion(suggestion_id)

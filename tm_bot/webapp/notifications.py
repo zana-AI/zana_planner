@@ -13,19 +13,18 @@ from cbdata import encode_cb
 logger = get_logger(__name__)
 
 
-async def send_follow_notification(bot_token: str, follower_id: int, followee_id: int, root_dir: str) -> None:
+async def send_follow_notification(bot_token: str, follower_id: int, followee_id: int) -> None:
     """
     Send a Telegram notification to the followee when someone follows them.
-    
+
     Args:
         bot_token: Telegram bot token
         follower_id: User ID of the person who followed
         followee_id: User ID of the person being followed
-        root_dir: Root directory for accessing repositories
     """
     try:
         # Get follower's name
-        settings_repo = SettingsRepository(root_dir)
+        settings_repo = SettingsRepository()
         follower_settings = settings_repo.get_settings(follower_id)
         
         # Determine follower's display name
@@ -83,11 +82,10 @@ async def send_suggestion_notifications(
     template_title: Optional[str],
     freeform_text: Optional[str],
     message: Optional[str],
-    root_dir: str
 ) -> None:
     """
     Send Telegram notifications for a promise suggestion.
-    
+
     Args:
         bot_token: Telegram bot token
         sender_id: User ID of the person who sent the suggestion
@@ -96,10 +94,9 @@ async def send_suggestion_notifications(
         template_title: Title of the template if template-based suggestion
         freeform_text: Freeform text if custom suggestion
         message: Optional personal message
-        root_dir: Root directory for accessing repositories
     """
     try:
-        settings_repo = SettingsRepository(root_dir)
+        settings_repo = SettingsRepository()
         sender_settings = settings_repo.get_settings(sender_id)
         receiver_settings = settings_repo.get_settings(receiver_id)
         
@@ -181,11 +178,10 @@ async def send_focus_finished_notification(
     promise_text: str,
     proposed_hours: float,
     miniapp_url: str,
-    root_dir: str
 ) -> None:
     """
     Send a Telegram notification when a focus session completes.
-    
+
     Args:
         bot_token: Telegram bot token
         user_id: User ID
@@ -193,16 +189,15 @@ async def send_focus_finished_notification(
         promise_text: Promise text
         proposed_hours: Proposed hours to log (from planned duration)
         miniapp_url: Mini app URL
-        root_dir: Root directory for accessing repositories
     """
     try:
         from handlers.messages_store import get_message, Language
         from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         from cbdata import encode_cb
         from utils.time_utils import beautify_time
-        
+
         # Get user language
-        settings_repo = SettingsRepository(root_dir)
+        settings_repo = SettingsRepository()
         user_settings = settings_repo.get_settings(user_id)
         user_lang = user_settings.language if user_settings else "en"
         lang_map = {"en": Language.EN, "fa": Language.FA, "fr": Language.FR}

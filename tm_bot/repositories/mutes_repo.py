@@ -10,9 +10,8 @@ from db.postgres_db import get_db_session, utc_now_iso
 class MutesRepository:
     """Repository for managing user mute relationships."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def mute(self, muter_user_id: int, muted_user_id: int, scope: str = "all") -> bool:
         """

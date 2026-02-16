@@ -25,7 +25,7 @@ async def log_distraction(
     try:
         from dateutil.parser import parse as parse_datetime
         
-        distractions_repo = DistractionsRepository(request.app.state.root_dir)
+        distractions_repo = DistractionsRepository()
         
         at = None
         if distraction_request.at_utc:
@@ -64,7 +64,7 @@ async def get_weekly_distractions(
     try:
         from dateutil.parser import parse as parse_datetime
         
-        distractions_repo = DistractionsRepository(request.app.state.root_dir)
+        distractions_repo = DistractionsRepository()
         
         if ref_time:
             try:

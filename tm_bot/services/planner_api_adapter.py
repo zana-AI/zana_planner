@@ -43,15 +43,15 @@ class PlannerAPIAdapter:
         self.root_dir = root_dir
         
         # Initialize repositories
-        self.promises_repo = PromisesRepository(root_dir)
-        self.actions_repo = ActionsRepository(root_dir)
-        self.settings_repo = SettingsRepository(root_dir)
-        self.sessions_repo = SessionsRepository(root_dir)
+        self.promises_repo = PromisesRepository()
+        self.actions_repo = ActionsRepository()
+        self.settings_repo = SettingsRepository()
+        self.sessions_repo = SessionsRepository()
         self.nightly_state_repo = NightlyStateRepository(root_dir)
         
         # Initialize services
         self.settings_service = SettingsService(self.settings_repo)
-        self.reports_service = ReportsService(self.promises_repo, self.actions_repo, root_dir=self.root_dir)
+        self.reports_service = ReportsService(self.promises_repo, self.actions_repo)
         self.ranking_service = RankingService(self.promises_repo, self.actions_repo, self.settings_repo)
         self.reminders_service = RemindersService(self.ranking_service, self.settings_repo)
         self.sessions_service = SessionsService(self.sessions_repo, self.actions_repo)
@@ -62,17 +62,17 @@ class PlannerAPIAdapter:
         )
         
         # Template-related repos and services
-        self.templates_repo = TemplatesRepository(root_dir)
-        self.instances_repo = InstancesRepository(root_dir)
-        self.distractions_repo = DistractionsRepository(root_dir)
-        self.unlocks_service = TemplateUnlocksService(root_dir)
+        self.templates_repo = TemplatesRepository()
+        self.instances_repo = InstancesRepository()
+        self.distractions_repo = DistractionsRepository()
+        self.unlocks_service = TemplateUnlocksService()
         
         # Profile-related repos and services
-        self.profile_repo = ProfileRepository(root_dir)
+        self.profile_repo = ProfileRepository()
         self.profile_service = ProfileService(self.profile_repo)
         
         # Social/community repos and services
-        self.follows_repo = FollowsRepository(root_dir)
+        self.follows_repo = FollowsRepository()
         self.social_service = SocialService(self.follows_repo, self.settings_repo)
         
         # Schema and query services

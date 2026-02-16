@@ -177,10 +177,9 @@ def compute_stats_sql(data_dir: str) -> Dict:
 
 def get_version_stats(data_dir: str) -> Dict[str, int]:
     """
-    Get lightweight aggregate stats for version command.
+    Get lightweight aggregate stats for version command (SQLite).
     Returns only: total_users, total_promises, actions_24h.
-    
-    This is a simplified version of compute_stats_sql() for the /version command.
+    Prefer get_version_stats_postgres() when using PostgreSQL.
     """
     db_path = _db_path(data_dir)
     conn = _connect_ro(db_path)
@@ -219,6 +218,42 @@ def get_version_stats(data_dir: str) -> Dict[str, int]:
             "total_promises": total_promises,
             "actions_24h": actions_24h,
         }
+
+
+def get_version_stats_postgres() -> Dict[str, int]:
+    """
+    Get lightweight aggregate stats for version command from PostgreSQL.
+    Returns: total_users, total_promises, actions_24h.
+    """
+    from sqlalchemy import text
+    from db.postgres_db import get_db_session, dt_to_utc_iso
+
+    result = {"total_users": 0, "total_promises": 0, "actions_24h": 0}
+    try:
+        # 24h ago in UTC ISO (same format as at_utc in actions)
+        threshold_dt = datetime.now(timezone.utc) - timedelta(hours=24)
+        threshold = dt_to_utc_iso(threshold_dt, assume_local_tz=False) or threshold_dt.isoformat()
+
+        with get_db_session() as session:
+            row = session.execute(
+                text("SELECT COUNT(DISTINCT user_id) FROM users;")
+            ).fetchone()
+            result["total_users"] = int(row[0] or 0) if row else 0
+
+            row = session.execute(
+                text("SELECT COUNT(*) FROM promises WHERE is_deleted = 0;")
+            ).fetchone()
+            result["total_promises"] = int(row[0] or 0) if row else 0
+
+            row = session.execute(
+                text("SELECT COUNT(*) FROM actions WHERE at_utc >= :threshold;"),
+                {"threshold": threshold},
+            ).fetchone()
+            result["actions_24h"] = int(row[0] or 0) if row else 0
+    except Exception:
+        pass
+    return result
+
 
 def main():
     parser = argparse.ArgumentParser(description="Privacy-friendly usage stats for Xaana Planner bot.")

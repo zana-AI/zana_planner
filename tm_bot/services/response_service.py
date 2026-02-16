@@ -25,10 +25,9 @@ PROMISE_COUNT_THRESHOLD = 50
 class ResponseService:
     """Centralized service for all bot responses with translation and logging."""
     
-    def __init__(self, root_dir: str, settings_repo=None, llm_handler=None):
-        self.root_dir = root_dir
+    def __init__(self, settings_repo=None, llm_handler=None) -> None:
         self.settings_repo = settings_repo
-        self.conversation_repo = ConversationRepository(root_dir)
+        self.conversation_repo = ConversationRepository()
         # Cache for user language (to avoid repeated DB calls)
         self._lang_cache: Dict[int, Language] = {}
         # Optional LLM handler for translation review

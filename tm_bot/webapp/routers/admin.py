@@ -232,7 +232,7 @@ async def get_bot_tokens(
         List of bot tokens
     """
     try:
-        bot_tokens_repo = BotTokensRepository(request.app.state.root_dir)
+        bot_tokens_repo = BotTokensRepository()
         tokens = bot_tokens_repo.list_bot_tokens(is_active=is_active)
         
         return [
@@ -281,7 +281,7 @@ async def get_user_conversations(
         if message_type and message_type not in ['user', 'bot']:
             raise HTTPException(status_code=400, detail="message_type must be 'user' or 'bot'")
         
-        conversation_repo = ConversationRepository(request.app.state.root_dir)
+        conversation_repo = ConversationRepository()
         messages = conversation_repo.get_recent_history(
             user_id=user_id,
             limit=limit,
@@ -329,18 +329,18 @@ async def create_broadcast(
     """
     try:
         from zoneinfo import ZoneInfo
-        from services.broadcast_service import get_all_users
-        
+        from services.broadcast_service import get_all_users_from_db
+
         # Validate message
         if not broadcast_request.message or not broadcast_request.message.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
-        
+
         # Validate target users
         if not broadcast_request.target_user_ids:
             raise HTTPException(status_code=400, detail="At least one target user must be selected")
-        
+
         # Get all valid users
-        all_users = get_all_users(request.app.state.root_dir)
+        all_users = get_all_users_from_db()
         valid_user_ids = [uid for uid in broadcast_request.target_user_ids if uid in all_users]
         
         if not valid_user_ids:
@@ -366,7 +366,7 @@ async def create_broadcast(
             scheduled_dt = datetime.now(ZoneInfo("UTC"))
         
         # Create broadcast in database
-        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcasts_repo = BroadcastsRepository()
         broadcast_id = broadcasts_repo.create_broadcast(
             admin_id=admin_id,
             message=broadcast_request.message,
@@ -418,7 +418,7 @@ async def list_broadcasts(
         List of broadcasts
     """
     try:
-        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcasts_repo = BroadcastsRepository()
         broadcasts = broadcasts_repo.list_broadcasts(
             admin_id=admin_id,
             status=status,
@@ -464,7 +464,7 @@ async def get_broadcast(
         Broadcast details
     """
     try:
-        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcasts_repo = BroadcastsRepository()
         broadcast = broadcasts_repo.get_broadcast(broadcast_id)
         
         if not broadcast:
@@ -514,7 +514,7 @@ async def update_broadcast(
     try:
         from zoneinfo import ZoneInfo
         
-        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcasts_repo = BroadcastsRepository()
         broadcast = broadcasts_repo.get_broadcast(broadcast_id)
         
         if not broadcast:
@@ -596,7 +596,7 @@ async def cancel_broadcast(
         Success message
     """
     try:
-        broadcasts_repo = BroadcastsRepository(request.app.state.root_dir)
+        broadcasts_repo = BroadcastsRepository()
         broadcast = broadcasts_repo.get_broadcast(broadcast_id)
         
         if not broadcast:
@@ -632,7 +632,7 @@ async def list_admin_templates(
 ):
     """List all templates (admin only, includes inactive)."""
     try:
-        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        templates_repo = TemplatesRepository()
         # Get all templates, including inactive
         templates = templates_repo.list_templates(is_active=None)
         return {"templates": templates}
@@ -649,7 +649,7 @@ async def create_admin_template(
 ):
     """Create a new template (admin only)."""
     try:
-        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        templates_repo = TemplatesRepository()
         
         # Validate required fields (simplified schema)
         required_fields = ["title", "category", "target_value"]
@@ -680,7 +680,7 @@ async def update_admin_template(
 ):
     """Update an existing template (admin only)."""
     try:
-        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        templates_repo = TemplatesRepository()
         
         # Check if template exists
         existing = templates_repo.get_template(template_id)
@@ -708,7 +708,7 @@ async def delete_admin_template(
 ):
     """Delete a template (admin only, with safety checks)."""
     try:
-        templates_repo = TemplatesRepository(request.app.state.root_dir)
+        templates_repo = TemplatesRepository()
         
         # Check if template exists
         existing = templates_repo.get_template(template_id)
@@ -911,7 +911,7 @@ async def create_promise_for_user(
         promise_id = match.group(1)
         
         # Update visibility and description if provided
-        promises_repo = PromisesRepository(request.app.state.root_dir)
+        promises_repo = PromisesRepository()
         promise = promises_repo.get_promise(promise_request.target_user_id, promise_id)
         if not promise:
             raise HTTPException(status_code=500, detail="Failed to retrieve created promise")
@@ -925,7 +925,7 @@ async def create_promise_for_user(
         # Create reminders if provided
         if promise_request.reminders:
             # Get user's timezone
-            settings_repo = SettingsRepository(request.app.state.root_dir)
+            settings_repo = SettingsRepository()
             settings = settings_repo.get_settings(promise_request.target_user_id)
             user_tz = settings.timezone if settings and settings.timezone and settings.timezone != "DEFAULT" else "UTC"
             
@@ -937,8 +937,8 @@ async def create_promise_for_user(
                     raise HTTPException(status_code=500, detail="Failed to resolve promise UUID")
             
             # Convert reminders to ReminderRequest format
-            reminders_repo = RemindersRepository(request.app.state.root_dir)
-            dispatch_service = ReminderDispatchService(request.app.state.root_dir)
+            reminders_repo = RemindersRepository()
+            dispatch_service = ReminderDispatchService()
             
             reminders_data = []
             for rem in promise_request.reminders:

@@ -28,14 +28,12 @@ class BaseMessageHandler(ABC):
         plan_keeper: PlannerAPIAdapter,
         llm_handler: LLMHandler,
         response_service: IResponseService,
-        root_dir: str,
-    ):
+    ) -> None:
         """Initialize base message handler."""
         self.plan_keeper = plan_keeper
         self.llm_handler = llm_handler
         self.response_service = response_service
-        self.root_dir = root_dir
-    
+
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings service."""
         return self.plan_keeper.settings_service.get_user_timezone(user_id)

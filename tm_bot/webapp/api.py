@@ -77,7 +77,7 @@ def create_webapp_api(
     from platforms.fastapi.scheduler import FastAPIJobScheduler
     from services.delayed_message_service import DelayedMessageService
     scheduler = FastAPIJobScheduler()
-    delayed_message_service = DelayedMessageService(scheduler, root_dir)
+    delayed_message_service = DelayedMessageService(scheduler)
     app.state.delayed_message_service = delayed_message_service
     
     # Include all routers
@@ -152,7 +152,7 @@ def create_webapp_api(
                 try:
                     await asyncio.sleep(30)  # Check every 30 seconds
                     
-                    sessions_repo = SessionsRepository(root_dir)
+                    sessions_repo = SessionsRepository()
                     overdue_sessions = sessions_repo.list_overdue_sessions_needing_notification()
                     
                     if overdue_sessions:
@@ -174,7 +174,7 @@ def create_webapp_api(
                             
                             # Get promise text
                             from repositories.promises_repo import PromisesRepository
-                            promises_repo = PromisesRepository(root_dir)
+                            promises_repo = PromisesRepository()
                             promise = promises_repo.get_promise(int(session.user_id), session.promise_id)
                             promise_text = promise.text if promise else f"Promise #{session.promise_id}"
                             
@@ -191,7 +191,6 @@ def create_webapp_api(
                                 promise_text=promise_text,
                                 proposed_hours=proposed_hours,
                                 miniapp_url=miniapp_url,
-                                root_dir=root_dir
                             )
                             
                             logger.info(f"✓ Successfully sent focus completion notification for session {session.session_id} to user {session.user_id}")

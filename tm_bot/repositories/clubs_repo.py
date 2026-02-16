@@ -11,9 +11,8 @@ from db.postgres_db import get_db_session, utc_now_iso
 class ClubsRepository:
     """Repository for managing clubs (groups) and memberships."""
 
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
+    def __init__(self) -> None:
+        pass
 
     def create_club(
         self,

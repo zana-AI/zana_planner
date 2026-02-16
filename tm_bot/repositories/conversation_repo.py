@@ -15,11 +15,10 @@ logger = get_logger(__name__)
 
 class ConversationRepository:
     """Repository for managing conversation history."""
-    
-    def __init__(self, root_dir: str = None):
-        # root_dir kept for backward compatibility but not used for PostgreSQL
-        self.root_dir = root_dir
-    
+
+    def __init__(self) -> None:
+        pass
+
     def save_message(
         self,
         user_id: int,
