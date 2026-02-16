@@ -4,15 +4,13 @@ from services.planner_api_adapter import PlannerAPIAdapter
 
 
 @pytest.mark.integration
-def test_planner_api_adapter_add_promise_persists_to_sqlite(tmp_path):
+def test_planner_api_adapter_add_promise_persists(tmp_path):
     adapter = PlannerAPIAdapter(str(tmp_path))
     user_id = 123
 
     msg = adapter.add_promise(user_id, promise_text="Test Promise", num_hours_promised_per_week=5.0, recurring=True)
     assert "added successfully" in msg
 
-    # Repository should have created the SQLite DB.
-    assert (tmp_path / "zana.db").exists()
     promises = adapter.get_promises(user_id)
     assert len(promises) == 1
     assert promises[0]["text"] == "Test_Promise"
@@ -28,7 +26,6 @@ def test_planner_api_adapter_add_action_and_weekly_progress(tmp_path):
 
     out = adapter.add_action(user_id, promise_id, 5.0)
     assert "Action logged" in out
-    assert (tmp_path / "zana.db").exists()
 
     progress = adapter.get_promise_weekly_progress(user_id, promise_id)
     assert progress == pytest.approx(0.5, abs=0.05)

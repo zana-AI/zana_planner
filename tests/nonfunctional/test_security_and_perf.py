@@ -40,7 +40,7 @@ def test_actions_csv_parsing_handles_many_rows(tmp_path):
     repo = ActionsRepository()
     user_id = 999
 
-    # Write many rows using append_action (legacy no-header format).
+    # Write many rows using append_action.
     for i in range(2000):
         repo.append_action(
             Action(
