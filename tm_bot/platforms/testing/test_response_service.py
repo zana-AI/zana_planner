@@ -26,7 +26,8 @@ class TestResponseService(IResponseService):
     Test implementation of IResponseService that captures all responses
     for testing and assertions.
     """
-    
+    __test__ = False  # Not a pytest test class; used as a helper in tests.
+
     def __init__(self):
         """Initialize test response service."""
         self.sent_messages: List[Dict[str, Any]] = []

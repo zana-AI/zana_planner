@@ -6,6 +6,7 @@ from repositories.actions_repo import ActionsRepository
 
 
 @pytest.mark.repo
+@pytest.mark.requires_postgres
 def test_actions_repo_append_and_list_roundtrip(tmp_path):
     repo = ActionsRepository()
     user_id = 100

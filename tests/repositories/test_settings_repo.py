@@ -3,6 +3,8 @@ import pytest
 from models.models import UserSettings
 from repositories.settings_repo import SettingsRepository
 
+pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
+
 
 @pytest.mark.repo
 def test_settings_repo_defaults_when_missing(tmp_path):

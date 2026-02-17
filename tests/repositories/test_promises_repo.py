@@ -4,6 +4,8 @@ from datetime import date
 from models.models import Promise
 from repositories.promises_repo import PromisesRepository
 
+pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
+
 
 @pytest.mark.repo
 def test_promises_repo_upsert_and_list_roundtrip(tmp_path):

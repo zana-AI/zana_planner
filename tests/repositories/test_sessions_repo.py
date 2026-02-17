@@ -6,6 +6,8 @@ from repositories.sessions_repo import SessionsRepository
 from models.models import Promise
 from repositories.promises_repo import PromisesRepository
 
+pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
+
 
 @pytest.mark.repo
 def test_sessions_repo_create_list_and_active_filter(tmp_path):

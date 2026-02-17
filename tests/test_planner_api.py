@@ -2,6 +2,8 @@ import pytest
 
 from services.planner_api_adapter import PlannerAPIAdapter
 
+pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+
 
 @pytest.mark.integration
 def test_planner_api_adapter_add_promise_persists(tmp_path):

@@ -33,6 +33,7 @@ def test_url_detection_handles_large_text():
 
 
 @pytest.mark.nonfunctional
+@pytest.mark.requires_postgres
 def test_actions_csv_parsing_handles_many_rows(tmp_path):
     from repositories.actions_repo import ActionsRepository
     from models.models import Action

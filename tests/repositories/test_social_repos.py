@@ -8,6 +8,8 @@ from repositories.reactions_repo import ReactionsRepository
 from repositories.clubs_repo import ClubsRepository
 from repositories.feed_repo import FeedRepository
 
+pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
+
 
 @pytest.mark.repo
 def test_follows_repo_basic_operations(tmp_path):

@@ -247,7 +247,10 @@ def test_verify_by_reading_appends_verification_tool_after_mutation():
                 "tool_args": {"promise_id": "P01", "time_spent": 1.0},
             },
             {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm success."},
-        ]
+        ],
+        "detected_intent": "LOG_ACTION",
+        "intent_confidence": "high",
+        "safety": {"requires_confirmation": False},
     }
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
