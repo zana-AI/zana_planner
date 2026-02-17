@@ -2,13 +2,15 @@ import pytest
 
 from services.planner_api_adapter import PlannerAPIAdapter
 
+from tests.test_config import unique_user_id
+
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest.mark.integration
 def test_planner_api_adapter_add_promise_persists(tmp_path):
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
 
     msg = adapter.add_promise(user_id, promise_text="Test Promise", num_hours_promised_per_week=5.0, recurring=True)
     assert "added successfully" in msg
@@ -21,7 +23,7 @@ def test_planner_api_adapter_add_promise_persists(tmp_path):
 @pytest.mark.integration
 def test_planner_api_adapter_add_action_and_weekly_progress(tmp_path):
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
 
     msg = adapter.add_promise(user_id, promise_text="Weekly Progress", num_hours_promised_per_week=10.0)
     promise_id = msg.split()[0].lstrip("#")
@@ -36,7 +38,7 @@ def test_planner_api_adapter_add_action_and_weekly_progress(tmp_path):
 @pytest.mark.integration
 def test_planner_api_adapter_weekly_report_mentions_promise(tmp_path):
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     msg = adapter.add_promise(user_id, promise_text="Report Test", num_hours_promised_per_week=8.0)
     promise_id = msg.split()[0].lstrip("#")
     adapter.add_action(user_id, promise_id, 1.0)
@@ -52,7 +54,7 @@ def test_planner_api_adapter_weekly_report_mentions_promise(tmp_path):
 def test_search_promises_finds_by_text(tmp_path):
     """Test that search_promises finds promises by keyword."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     # Create multiple promises
     adapter.add_promise(user_id, promise_text="Go to gym", num_hours_promised_per_week=3.0)
@@ -70,7 +72,7 @@ def test_search_promises_finds_by_text(tmp_path):
 def test_search_promises_case_insensitive(tmp_path):
     """Test that search is case-insensitive."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     adapter.add_promise(user_id, promise_text="Do Sport", num_hours_promised_per_week=3.0)
     
@@ -88,7 +90,7 @@ def test_search_promises_case_insensitive(tmp_path):
 def test_search_promises_no_results(tmp_path):
     """Test search returns appropriate message when no matches."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     adapter.add_promise(user_id, promise_text="Study Python", num_hours_promised_per_week=5.0)
     
@@ -102,7 +104,7 @@ def test_get_hours_for_promise_with_date_range(tmp_path):
     from datetime import datetime, timedelta
     
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     msg = adapter.add_promise(user_id, promise_text="Exercise", num_hours_promised_per_week=5.0)
     promise_id = msg.split()[0].lstrip("#")
@@ -127,7 +129,7 @@ def test_get_hours_for_promise_with_date_range(tmp_path):
 def test_get_hours_for_promise_all_time(tmp_path):
     """Test get_promise_hours_total without date filter returns all hours."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     msg = adapter.add_promise(user_id, promise_text="Meditation", num_hours_promised_per_week=1.0)
     promise_id = msg.split()[0].lstrip("#")
@@ -145,7 +147,7 @@ def test_get_hours_for_promise_all_time(tmp_path):
 def test_get_total_hours_aggregates_all(tmp_path):
     """Test get_all_hours_total aggregates across all promises."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     # Create two promises with actions
     msg1 = adapter.add_promise(user_id, promise_text="Coding", num_hours_promised_per_week=10.0)
@@ -172,7 +174,7 @@ def test_get_total_hours_respects_date_range(tmp_path):
     from datetime import datetime, timedelta
     
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     msg = adapter.add_promise(user_id, promise_text="Writing", num_hours_promised_per_week=3.0)
     promise_id = msg.split()[0].lstrip("#")
@@ -193,7 +195,7 @@ def test_get_actions_in_range_filters_correctly(tmp_path):
     from datetime import datetime, timedelta
     
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     # Create two promises
     msg1 = adapter.add_promise(user_id, promise_text="Project A", num_hours_promised_per_week=10.0)
@@ -229,7 +231,7 @@ def test_get_actions_in_range_filters_correctly(tmp_path):
 def test_query_database_select_allowed(tmp_path):
     """Test that valid SELECT queries work."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     # Create some data first
     msg = adapter.add_promise(user_id, promise_text="Test Query", num_hours_promised_per_week=5.0)
@@ -250,7 +252,7 @@ def test_query_database_select_allowed(tmp_path):
 def test_query_database_blocks_insert(tmp_path):
     """Test that INSERT statements are rejected."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     result = adapter.query_database(
         user_id,
@@ -264,7 +266,7 @@ def test_query_database_blocks_insert(tmp_path):
 def test_query_database_blocks_update(tmp_path):
     """Test that UPDATE statements are rejected."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     result = adapter.query_database(
         user_id,
@@ -278,7 +280,7 @@ def test_query_database_blocks_update(tmp_path):
 def test_query_database_blocks_delete(tmp_path):
     """Test that DELETE statements are rejected."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     result = adapter.query_database(
         user_id,
@@ -292,7 +294,7 @@ def test_query_database_blocks_delete(tmp_path):
 def test_query_database_blocks_drop(tmp_path):
     """Test that DROP statements are rejected."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     result = adapter.query_database(
         user_id,
@@ -306,7 +308,7 @@ def test_query_database_blocks_drop(tmp_path):
 def test_query_database_enforces_user_id(tmp_path):
     """Test that queries for other users are rejected."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     other_user_id = 999
     
     # Create data for user 123
@@ -328,7 +330,7 @@ def test_query_database_enforces_user_id(tmp_path):
 def test_query_database_requires_user_id_filter(tmp_path):
     """Test that queries without user_id filter are rejected."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     # Query without user_id filter
     result = adapter.query_database(
@@ -344,7 +346,7 @@ def test_query_database_requires_user_id_filter(tmp_path):
 def test_query_database_limits_results(tmp_path):
     """Test that results are capped at 100 rows."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     # Create a promise
     msg = adapter.add_promise(user_id, promise_text="Many Actions", num_hours_promised_per_week=100.0)
@@ -373,7 +375,7 @@ def test_query_database_limits_results(tmp_path):
 def test_query_database_handles_syntax_error(tmp_path):
     """Test that SQL syntax errors are handled gracefully."""
     adapter = PlannerAPIAdapter(str(tmp_path))
-    user_id = 123
+    user_id = unique_user_id()
     
     # Query with syntax error
     result = adapter.query_database(

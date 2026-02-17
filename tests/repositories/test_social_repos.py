@@ -1,5 +1,4 @@
 import pytest
-import uuid
 
 from repositories.follows_repo import FollowsRepository
 from repositories.blocks_repo import BlocksRepository
@@ -8,6 +7,8 @@ from repositories.reactions_repo import ReactionsRepository
 from repositories.clubs_repo import ClubsRepository
 from repositories.feed_repo import FeedRepository
 
+from tests.test_config import unique_user_id, ensure_users_exist
+
 pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
 
 
@@ -15,11 +16,12 @@ pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
 def test_follows_repo_basic_operations(tmp_path):
     """Test basic follow/unfollow operations."""
     root = str(tmp_path)
+    user1 = unique_user_id()
+    user2 = unique_user_id()
+    ensure_users_exist(user1, user2)
+
     repo = FollowsRepository()
-    
-    user1 = 100
-    user2 = 200
-    
+
     # Follow
     assert repo.follow(user1, user2) is True
     assert repo.is_following(user1, user2) is True
@@ -39,11 +41,12 @@ def test_follows_repo_basic_operations(tmp_path):
 def test_blocks_repo_basic_operations(tmp_path):
     """Test basic block/unblock operations."""
     root = str(tmp_path)
+    user1 = unique_user_id()
+    user2 = unique_user_id()
+    ensure_users_exist(user1, user2)
+
     repo = BlocksRepository()
-    
-    user1 = 100
-    user2 = 200
-    
+
     # Block
     assert repo.block(user1, user2) is True
     assert repo.is_blocked(user1, user2) is True
@@ -67,11 +70,12 @@ def test_blocks_repo_basic_operations(tmp_path):
 def test_mutes_repo_basic_operations(tmp_path):
     """Test basic mute/unmute operations."""
     root = str(tmp_path)
+    user1 = unique_user_id()
+    user2 = unique_user_id()
+    ensure_users_exist(user1, user2)
+
     repo = MutesRepository()
-    
-    user1 = 100
-    user2 = 200
-    
+
     # Mute
     assert repo.mute(user1, user2) is True
     assert repo.is_muted(user1, user2) is True
@@ -91,10 +95,12 @@ def test_mutes_repo_basic_operations(tmp_path):
 def test_reactions_repo_basic_operations(tmp_path):
     """Test basic reaction operations."""
     root = str(tmp_path)
+    user1 = unique_user_id()
+    ensure_users_exist(user1)
+
     feed_repo = FeedRepository()
     reactions_repo = ReactionsRepository()
-    
-    user1 = 100
+
     feed_item_uuid = feed_repo.create_feed_item(
         actor_user_id=user1,
         visibility="public",
@@ -120,11 +126,12 @@ def test_reactions_repo_basic_operations(tmp_path):
 def test_clubs_repo_basic_operations(tmp_path):
     """Test basic club operations."""
     root = str(tmp_path)
+    owner = unique_user_id()
+    member = unique_user_id()
+    ensure_users_exist(owner, member)
+
     repo = ClubsRepository()
-    
-    owner = 100
-    member = 200
-    
+
     # Create club
     club_id = repo.create_club(owner, "Test Club", "A test club")
     assert club_id is not None

@@ -1,8 +1,11 @@
+"""Promises repository tests (PostgreSQL). Requires DB at schema head: run `cd tm_bot/db && alembic upgrade head`."""
 import pytest
 from datetime import date
 
 from models.models import Promise
 from repositories.promises_repo import PromisesRepository
+
+from tests.test_config import unique_user_id
 
 pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
 
@@ -10,7 +13,7 @@ pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
 @pytest.mark.repo
 def test_promises_repo_upsert_and_list_roundtrip(tmp_path):
     repo = PromisesRepository()
-    user_id = 123
+    user_id = unique_user_id()
 
     p = Promise(
         user_id=str(user_id),
@@ -33,7 +36,7 @@ def test_promises_repo_upsert_and_list_roundtrip(tmp_path):
 @pytest.mark.repo
 def test_promises_repo_rename_creates_alias_and_old_id_resolves(tmp_path):
     repo = PromisesRepository()
-    user_id = 42
+    user_id = unique_user_id()
 
     # Create initial promise P01
     p1 = Promise(
@@ -74,7 +77,7 @@ def test_promises_repo_rename_creates_alias_and_old_id_resolves(tmp_path):
 @pytest.mark.repo
 def test_promises_repo_writes_promise_events_for_create_rename_delete(tmp_path):
     repo = PromisesRepository()
-    user_id = 77
+    user_id = unique_user_id()
 
     repo.upsert_promise(
         user_id,

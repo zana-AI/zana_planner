@@ -25,7 +25,7 @@ def pytest_collection_modifyitems(config, items):
     if _postgres_available():
         return
     skip = pytest.mark.skip(
-        reason="PostgreSQL required: install psycopg2-binary and set DATABASE_URL or DATABASE_URL_STAGING"
+        reason="PostgreSQL required: install psycopg2-binary, set DATABASE_URL or DATABASE_URL_STAGING, and run scripts/run_migrations.py so DB is at schema head"
     )
     for item in items:
         if "requires_postgres" in item.keywords:
