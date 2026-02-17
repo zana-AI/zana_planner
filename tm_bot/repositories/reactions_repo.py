@@ -36,7 +36,7 @@ class ReactionsRepository:
                     LIMIT 1;
                 """),
                 {"feed_item_uuid": feed_item_uuid, "actor_user_id": actor, "reaction_type": reaction_type},
-            ).fetchone()
+            ).mappings().fetchone()
             
             if existing:
                 if int(existing["is_deleted"]) == 0:

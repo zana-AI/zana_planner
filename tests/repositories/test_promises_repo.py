@@ -78,6 +78,9 @@ def test_promises_repo_rename_creates_alias_and_old_id_resolves(tmp_path):
 def test_promises_repo_writes_promise_events_for_create_rename_delete(tmp_path):
     repo = PromisesRepository()
     user_id = unique_user_id()
+    # Self-clean: remove any leftover promises for this user from previous runs (counter reuses IDs).
+    for p in repo.list_promises(user_id):
+        repo.delete_promise(user_id, p.id)
 
     repo.upsert_promise(
         user_id,

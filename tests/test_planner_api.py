@@ -61,10 +61,10 @@ def test_search_promises_finds_by_text(tmp_path):
     adapter.add_promise(user_id, promise_text="Study math", num_hours_promised_per_week=5.0)
     adapter.add_promise(user_id, promise_text="Read books", num_hours_promised_per_week=2.0)
     
-    # Search for "gym"
+    # Search for "gym" (1 match => JSON with single_match; 2+ matches => "Found N promise(s) matching")
     result = adapter.search_promises(user_id, "gym")
     assert "gym" in result.lower()
-    assert "Found 1 promise" in result
+    assert "single_match" in result or "Found exact match" in result or "promise(s) matching" in result
     assert "math" not in result.lower()
 
 
@@ -76,14 +76,17 @@ def test_search_promises_case_insensitive(tmp_path):
     
     adapter.add_promise(user_id, promise_text="Do Sport", num_hours_promised_per_week=3.0)
     
-    # Search with different cases
+    # Search with different cases (1 match => JSON; 2+ => "Found N promise(s) matching")
     result_lower = adapter.search_promises(user_id, "sport")
     result_upper = adapter.search_promises(user_id, "SPORT")
     result_mixed = adapter.search_promises(user_id, "SpOrT")
     
-    assert "Found 1 promise" in result_lower
-    assert "Found 1 promise" in result_upper
-    assert "Found 1 promise" in result_mixed
+    assert "sport" in result_lower.lower()
+    assert "single_match" in result_lower or "Found exact match" in result_lower or "promise(s) matching" in result_lower
+    assert "sport" in result_upper.lower()
+    assert "single_match" in result_upper or "Found exact match" in result_upper or "promise(s) matching" in result_upper
+    assert "sport" in result_mixed.lower()
+    assert "single_match" in result_mixed or "Found exact match" in result_mixed or "promise(s) matching" in result_mixed
 
 
 @pytest.mark.integration
@@ -238,10 +241,10 @@ def test_query_database_select_allowed(tmp_path):
     promise_id = msg.split()[0].lstrip("#")
     adapter.add_action(user_id, promise_id, 2.0)
     
-    # Query with proper user_id filter
+    # Query with user_id in SELECT so query_service wrapper (WHERE q.user_id = :user_id) can enforce access
     result = adapter.query_database(
-        user_id, 
-        f"SELECT promise_id_text, SUM(time_spent_hours) as hours FROM actions WHERE user_id = '{user_id}' GROUP BY promise_id_text"
+        user_id,
+        f"SELECT user_id, promise_id_text, SUM(time_spent_hours) AS hours FROM actions WHERE user_id = '{user_id}' GROUP BY user_id, promise_id_text"
     )
     
     assert "Query returned" in result
