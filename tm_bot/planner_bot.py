@@ -21,6 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from telegram.request import HTTPXRequest
+from telegram import error as telegram_error
 
 from llms.llm_handler import LLMHandler
 from services.planner_api_adapter import PlannerAPIAdapter
@@ -365,7 +366,15 @@ def main():
     # Create Telegram platform adapter
     request = HTTPXRequest(connect_timeout=10, read_timeout=20)
     application = Application.builder().token(BOT_TOKEN).request(request).build()
-    
+
+    async def error_handler(update, context):
+        if isinstance(context.error, telegram_error.NetworkError):
+            logger.warning("Telegram network error (will retry): %s", context.error)
+            return
+        logger.exception("Update %s caused error %s", update, context.error)
+
+    application.add_error_handler(error_handler)
+
     # Create plan_keeper first to get settings_repo
     plan_keeper = PlannerAPIAdapter(ROOT_DIR)
     
