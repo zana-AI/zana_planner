@@ -22,6 +22,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 from telegram import error as telegram_error
+from sqlalchemy.exc import OperationalError as SQLOperationalError
 
 from llms.llm_handler import LLMHandler
 from services.planner_api_adapter import PlannerAPIAdapter
@@ -368,10 +369,14 @@ def main():
     application = Application.builder().token(BOT_TOKEN).request(request).build()
 
     async def error_handler(update, context):
-        if isinstance(context.error, telegram_error.NetworkError):
-            logger.warning("Telegram network error (will retry): %s", context.error)
+        err = context.error
+        if isinstance(err, telegram_error.NetworkError):
+            logger.warning("Telegram network error (will retry): %s", err)
             return
-        logger.exception("Update %s caused error %s", update, context.error)
+        if isinstance(err, SQLOperationalError):
+            logger.warning("Database connection error (check Cloud SQL / authorized networks): %s", err)
+            return
+        logger.exception("Update %s caused error %s", update, err)
 
     application.add_error_handler(error_handler)
 

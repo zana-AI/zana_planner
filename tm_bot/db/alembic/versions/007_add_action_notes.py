@@ -20,8 +20,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add notes column to actions table (nullable for backward compatibility)
-    op.add_column('actions', sa.Column('notes', sa.Text(), nullable=True))
+    # Add notes column to actions table (nullable for backward compatibility).
+    # Idempotent: skip if column already exists (e.g. added by ad-hoc script).
+    conn = op.get_bind()
+    result = conn.execute(sa.text("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'actions' AND column_name = 'notes'
+    """))
+    if result.fetchone() is None:
+        op.add_column('actions', sa.Column('notes', sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
