@@ -236,6 +236,8 @@ class ConversationMessage(BaseModel):
     message_type: str  # 'user' or 'bot'
     content: str
     created_at_utc: str
+    conversation_session_id: Optional[str] = None
+    conversation_session_time_tag_utc: Optional[str] = None
 
 
 class ConversationResponse(BaseModel):

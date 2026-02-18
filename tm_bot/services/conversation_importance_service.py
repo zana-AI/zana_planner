@@ -5,7 +5,7 @@ Processes users separately to prevent data leakage.
 
 import uuid
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
 from sqlalchemy import text
@@ -100,6 +100,18 @@ class ConversationImportanceService:
         self._llm_model = None
         self._parser = JsonOutputParser(pydantic_object=ImportanceScoreOutput)
         self._initialize_llm()
+
+    @staticmethod
+    def _ensure_utc(ts: datetime) -> datetime:
+        if ts.tzinfo is None:
+            return ts.replace(tzinfo=timezone.utc)
+        return ts.astimezone(timezone.utc)
+
+    @classmethod
+    def _new_session_id(cls, start_ts: datetime) -> str:
+        ts = cls._ensure_utc(start_ts)
+        # Time-tagged session ID to make session start visible from the value itself.
+        return f"s-{ts.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     
     def _initialize_llm(self) -> None:
         """Initialize LLM model for importance scoring."""
@@ -260,7 +272,7 @@ class ConversationImportanceService:
             gap_threshold_minutes: Minutes threshold for new session (default: 30)
         
         Returns:
-            conversation_session_id (UUID string)
+            conversation_session_id
         """
         try:
             with get_db_session() as session:
@@ -278,9 +290,7 @@ class ConversationImportanceService:
                 ).fetchone()
                 
                 if not last_row or not last_row[1]:  # No previous conversation or no session_id
-                    # Generate new session ID
-                    new_session_id = str(uuid.uuid4())
-                    return new_session_id
+                    return self._new_session_id(message_timestamp)
                 
                 # Check time gap
                 last_timestamp = dt_from_utc_iso(last_row[2])
@@ -289,8 +299,7 @@ class ConversationImportanceService:
                     
                     if time_gap_minutes > gap_threshold_minutes:
                         # New session - user was away
-                        new_session_id = str(uuid.uuid4())
-                        return new_session_id
+                        return self._new_session_id(message_timestamp)
                 
                 # Continue existing session
                 return last_row[1]
@@ -298,7 +307,7 @@ class ConversationImportanceService:
         except Exception as e:
             logger.warning(f"Failed to assign session ID for conversation {conversation_id}: {e}")
             # Fallback: generate new session ID
-            return str(uuid.uuid4())
+            return self._new_session_id(message_timestamp)
     
     def score_user_conversations(
         self,

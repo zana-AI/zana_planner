@@ -298,6 +298,8 @@ async def get_user_conversations(
                 message_type=msg["message_type"],
                 content=msg["content"],
                 created_at_utc=msg["created_at_utc"],
+                conversation_session_id=msg.get("conversation_session_id"),
+                conversation_session_time_tag_utc=msg.get("conversation_session_time_tag_utc"),
             )
             for msg in messages
         ]
