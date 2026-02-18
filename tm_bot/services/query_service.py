@@ -80,26 +80,26 @@ class QueryService:
                 f"Add \"WHERE user_id = '{safe_user_id}'\" to your query."
             )
         
-        # Additional check: make sure the user_id value in the query matches
-        if f"'{safe_user_id}'" not in sanitized_query and f'"{safe_user_id}"' not in sanitized_query:
-            # Try to find any user_id value in the query
-            user_id_patterns = [
-                rf"user_id\s*=\s*'([^']+)'",
-                rf'user_id\s*=\s*"([^"]+)"',
-                rf"user_id\s*=\s*(\d+)",
-            ]
-            for pattern in user_id_patterns:
-                match = re.search(pattern, sanitized_query, re.IGNORECASE)
-                if match:
-                    found_id = match.group(1)
-                    if found_id != safe_user_id:
-                        logger.warning(
-                            f"[query_service] SECURITY: Query user_id mismatch! "
-                            f"Authenticated user: {safe_user_id}, Query attempted for: {found_id}. "
-                            f"Original query: {original_query[:200]}. "
-                            f"After auto-inject: {sanitized_query[:200]}"
-                        )
-                        return (False, None, "Query rejected: You can only query your own data.")
+        # SECURITY: Ensure every user_id referenced in the query is the authenticated user.
+        # Scan all occurrences (handles UNION, subqueries, forged SELECT ... AS user_id).
+        user_id_patterns = [
+            re.compile(r"user_id\s*=\s*'([^']*)'", re.IGNORECASE),
+            re.compile(r'user_id\s*=\s*"([^"]*)"', re.IGNORECASE),
+            re.compile(r"user_id\s*=\s*(\d+)", re.IGNORECASE),
+        ]
+        found_ids = set()
+        for pat in user_id_patterns:
+            for match in pat.finditer(sanitized_query):
+                found_ids.add(match.group(1).strip())
+        for found_id in found_ids:
+            if found_id != safe_user_id:
+                logger.warning(
+                    f"[query_service] SECURITY: Query user_id mismatch! "
+                    f"Authenticated user: {safe_user_id}, Query attempted for: {found_id}. "
+                    f"Original query: {original_query[:200]}. "
+                    f"After auto-inject: {sanitized_query[:200]}"
+                )
+                return (False, None, "Query rejected: You can only query your own data. Access to other users' data is not allowed.")
         
         # Execute the query
         success, result = self._execute_readonly_query(sanitized_query, safe_user_id)
