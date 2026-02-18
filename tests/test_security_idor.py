@@ -208,3 +208,19 @@ def test_query_database_rejects_forged_user_id_in_select(tmp_path):
     )
     # Should be rejected: query contains user_id = user_b which does not match authenticated user_a
     assert "rejected" in result.lower() or "own data" in result.lower()
+
+
+@pytest.mark.integration
+def test_query_database_rejects_user_id_in_with_other_user(tmp_path):
+    """Attack: user_id IN (my_id, other_id) to request multiple users' data. Must be rejected."""
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_a = unique_user_id()
+    user_b = unique_user_id()
+    ensure_users_exist(user_a, user_b)
+
+    adapter.add_promise(user_a, promise_text="Mine", num_hours_promised_per_week=5.0)
+    result = adapter.query_database(
+        user_a,
+        f"SELECT * FROM actions WHERE user_id IN ('{user_a}', '{user_b}')"
+    )
+    assert "rejected" in result.lower() or "own data" in result.lower() or "not allowed" in result.lower()

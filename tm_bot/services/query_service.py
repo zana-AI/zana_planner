@@ -81,7 +81,7 @@ class QueryService:
             )
         
         # SECURITY: Ensure every user_id referenced in the query is the authenticated user.
-        # Scan all occurrences (handles UNION, subqueries, forged SELECT ... AS user_id).
+        # Scan all occurrences (handles UNION, subqueries, forged SELECT, user_id IN (...)).
         user_id_patterns = [
             re.compile(r"user_id\s*=\s*'([^']*)'", re.IGNORECASE),
             re.compile(r'user_id\s*=\s*"([^"]*)"', re.IGNORECASE),
@@ -91,6 +91,16 @@ class QueryService:
         for pat in user_id_patterns:
             for match in pat.finditer(sanitized_query):
                 found_ids.add(match.group(1).strip())
+        # Also extract user_id values from IN (...) e.g. user_id IN ('id1', 'id2')
+        in_clause = re.compile(r"user_id\s+IN\s*\(\s*([^)]+)\s*\)", re.IGNORECASE)
+        for match in in_clause.finditer(sanitized_query):
+            inner = match.group(1)
+            for lit in re.findall(r"'([^']*)'", inner):
+                found_ids.add(lit.strip())
+            for lit in re.findall(r'"([^"]*)"', inner):
+                found_ids.add(lit.strip())
+            for lit in re.findall(r"\b(\d+)\b", inner):
+                found_ids.add(lit)
         for found_id in found_ids:
             if found_id != safe_user_id:
                 logger.warning(
