@@ -1,0 +1,41 @@
+# Phase 3: User cancels create promise - expect pending_clarification, do not execute pending tool, then list shows 0 promises
+name: cancel_create_promise
+description: User asks to create a promise, confirmation requested; user declines (execute_pending false); list promises shows 0
+tier: 1
+turns:
+  - user: "Create a promise called SkipMe"
+    plan:
+      steps:
+        - kind: tool
+          purpose: Create a promise called SkipMe.
+          tool_name: add_promise
+          tool_args:
+            promise_text: SkipMe
+            num_hours_promised_per_week: 1
+            recurring: true
+        - kind: respond
+          purpose: Confirm.
+          response_hint: Confirm success.
+      detected_intent: CREATE_PROMISE
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+    expect_pending_clarification: true
+    execute_pending: false
+  - user: "What are my promises?"
+    plan:
+      steps:
+        - kind: tool
+          purpose: List promises.
+          tool_name: get_promises
+          tool_args: {}
+        - kind: respond
+          purpose: Show list.
+          response_hint: List promises briefly.
+      detected_intent: QUERY_PROGRESS
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 0
