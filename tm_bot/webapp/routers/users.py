@@ -6,7 +6,6 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
-from fastapi.responses import FileResponse
 from ..dependencies import get_current_user, get_settings_repo, update_user_activity, get_reports_service
 from ..schemas import (
     WeeklyReportResponse, UserInfoResponse, TimezoneUpdateRequest,
