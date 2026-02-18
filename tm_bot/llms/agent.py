@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import random
 import re
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypedDict
@@ -53,6 +55,8 @@ class AgentState(TypedDict):
     pending_meta_by_idx: Optional[Dict[int, dict]]
     pending_clarification: Optional[dict]
     tool_retry_counts: Optional[Dict[str, int]]
+    tool_call_history: Optional[List[dict]]
+    tool_loop_warning_buckets: Optional[Dict[str, int]]
     # Intent detection and validation
     detected_intent: Optional[str]
     intent_confidence: Optional[str]
@@ -192,6 +196,427 @@ def _last_tool_error(messages: List[BaseMessage]) -> Optional[dict]:
     return None
 
 
+def _env_int(name: str, default: int, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except Exception:
+        return default
+    return max(minimum, value)
+
+
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except Exception:
+        return default
+    return max(minimum, value)
+
+
+def _env_enabled(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _stable_json(value: Any) -> str:
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    except Exception:
+        return str(value)
+
+
+def _hash_text(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _tool_signature(tool_name: str, tool_args: Any) -> str:
+    return f"{tool_name}:{_hash_text(_stable_json(tool_args))}"
+
+
+def _resolve_retry_policy() -> Dict[str, Any]:
+    attempts = _env_int("LLM_TOOL_RETRY_ATTEMPTS", 3, minimum=1)
+    return {
+        "max_retries": max(0, attempts - 1),
+        "min_delay_ms": _env_int("LLM_TOOL_RETRY_MIN_DELAY_MS", 400, minimum=0),
+        "max_delay_ms": _env_int("LLM_TOOL_RETRY_MAX_DELAY_MS", 30_000, minimum=0),
+        "jitter": _env_float("LLM_TOOL_RETRY_JITTER", 0.1, minimum=0.0),
+    }
+
+
+def _extract_retry_after_ms(err: Exception) -> Optional[int]:
+    try:
+        # Common direct attrs.
+        for attr in ("retry_after_ms", "retry_after"):
+            raw = getattr(err, attr, None)
+            if isinstance(raw, (int, float)) and raw > 0:
+                # Heuristic: small values are usually seconds.
+                return int(raw * 1000 if raw <= 120 else raw)
+
+        # Telegram-style payloads.
+        params = getattr(err, "parameters", None)
+        if isinstance(params, dict):
+            raw = params.get("retry_after")
+            if isinstance(raw, (int, float)) and raw > 0:
+                return int(raw * 1000)
+
+        response = getattr(err, "response", None)
+        headers = None
+        if isinstance(response, dict):
+            headers = response.get("headers")
+        else:
+            headers = getattr(response, "headers", None)
+        if headers:
+            value = None
+            if isinstance(headers, dict):
+                value = headers.get("Retry-After") or headers.get("retry-after")
+            else:
+                value = headers.get("Retry-After") if hasattr(headers, "get") else None
+            if isinstance(value, str):
+                value = value.strip()
+                if value.isdigit():
+                    return int(value) * 1000
+            if isinstance(value, (int, float)) and value > 0:
+                return int(value * 1000)
+    except Exception:
+        return None
+    return None
+
+
+def _is_transient_error(err: Exception) -> bool:
+    transient_types = (TimeoutError, ConnectionError, OSError)
+    if isinstance(err, transient_types):
+        return True
+    text = str(err).lower()
+    transient_hints = (
+        "429",
+        "rate limit",
+        "resource exhausted",
+        "timeout",
+        "timed out",
+        "temporarily unavailable",
+        "connection reset",
+        "connection aborted",
+        "service unavailable",
+        "try again",
+    )
+    return any(hint in text for hint in transient_hints)
+
+
+def _compute_retry_delay_ms(retry_number: int, err: Exception, policy: Dict[str, Any]) -> int:
+    retry_after_ms = _extract_retry_after_ms(err)
+    if retry_after_ms is not None:
+        delay = retry_after_ms
+    else:
+        base = int(policy["min_delay_ms"]) * (2 ** max(0, retry_number - 1))
+        delay = base
+    max_delay = int(policy["max_delay_ms"])
+    if max_delay > 0:
+        delay = min(delay, max_delay)
+    jitter = float(policy["jitter"])
+    if delay > 0 and jitter > 0:
+        span = int(delay * jitter)
+        if span > 0:
+            delay = max(0, delay + random.randint(-span, span))
+    return max(0, int(delay))
+
+
+def _resolve_loop_policy() -> Dict[str, int | bool]:
+    warning = _env_int("LLM_TOOL_LOOP_WARNING_THRESHOLD", 10, minimum=1)
+    critical = _env_int("LLM_TOOL_LOOP_CRITICAL_THRESHOLD", 20, minimum=2)
+    if critical <= warning:
+        critical = warning + 1
+    global_threshold = _env_int("LLM_TOOL_LOOP_GLOBAL_THRESHOLD", 30, minimum=3)
+    if global_threshold <= critical:
+        global_threshold = critical + 1
+    return {
+        "enabled": _env_enabled("LLM_TOOL_LOOP_DETECTION_ENABLED", default=True),
+        "history_size": _env_int("LLM_TOOL_LOOP_HISTORY_SIZE", 30, minimum=5),
+        "warning_threshold": warning,
+        "critical_threshold": critical,
+        "global_threshold": global_threshold,
+        "warning_bucket_size": _env_int("LLM_TOOL_LOOP_WARNING_BUCKET_SIZE", 10, minimum=1),
+    }
+
+
+def _count_tail_same_signature(history: List[dict], signature: str) -> int:
+    count = 0
+    for entry in reversed(history):
+        if entry.get("signature") != signature:
+            break
+        count += 1
+    return count
+
+
+def _count_tail_same_result(history: List[dict], signature: str) -> int:
+    count = 0
+    result_hash = None
+    for entry in reversed(history):
+        if entry.get("signature") != signature:
+            break
+        cur = entry.get("result_hash")
+        if not cur:
+            break
+        if result_hash is None:
+            result_hash = cur
+        if cur != result_hash:
+            break
+        count += 1
+    return count
+
+
+def _count_ping_pong(history: List[dict], current_signature: str) -> int:
+    signatures = [str(entry.get("signature") or "") for entry in history if entry.get("signature")]
+    signatures.append(current_signature)
+    if len(signatures) < 3:
+        return 0
+
+    a = signatures[-1]
+    b = signatures[-2]
+    if not a or not b or a == b:
+        return 0
+
+    streak = 2
+    expected = a
+    for sig in reversed(signatures[:-2]):
+        if sig != expected:
+            break
+        streak += 1
+        expected = b if expected == a else a
+    return streak
+
+
+def _should_emit_loop_warning(
+    warning_buckets: Dict[str, int],
+    warning_key: str,
+    count: int,
+    bucket_size: int,
+) -> bool:
+    bucket = max(1, count // max(1, bucket_size))
+    last_bucket = warning_buckets.get(warning_key, 0)
+    if bucket <= last_bucket:
+        return False
+    warning_buckets[warning_key] = bucket
+    if len(warning_buckets) > 256:
+        oldest_key = next(iter(warning_buckets))
+        warning_buckets.pop(oldest_key, None)
+    return True
+
+
+def _maybe_detect_loop(
+    tool_name: str,
+    signature: str,
+    history: List[dict],
+    warning_buckets: Dict[str, int],
+) -> Optional[dict]:
+    policy = _resolve_loop_policy()
+    if not bool(policy["enabled"]):
+        return None
+
+    same_count = _count_tail_same_signature(history, signature) + 1
+    no_progress_count = _count_tail_same_result(history, signature) + 1
+    ping_pong_count = _count_ping_pong(history, signature)
+
+    if no_progress_count >= int(policy["global_threshold"]):
+        return {
+            "level": "critical",
+            "detector": "global_circuit_breaker",
+            "count": no_progress_count,
+            "message": (
+                f"CRITICAL: {tool_name} repeated identical no-progress outcomes "
+                f"{no_progress_count} times. Execution blocked to prevent runaway loops."
+            ),
+        }
+
+    if (
+        no_progress_count >= int(policy["critical_threshold"])
+        or same_count >= int(policy["critical_threshold"])
+        or ping_pong_count >= int(policy["critical_threshold"])
+    ):
+        detector = "ping_pong" if ping_pong_count >= int(policy["critical_threshold"]) else "generic_repeat"
+        count = max(no_progress_count, same_count, ping_pong_count)
+        return {
+            "level": "critical",
+            "detector": detector,
+            "count": count,
+            "message": (
+                f"CRITICAL: detected repeated tool-call loop for {tool_name} "
+                f"({count} consecutive patterns). Execution blocked."
+            ),
+        }
+
+    if (
+        no_progress_count >= int(policy["warning_threshold"])
+        or same_count >= int(policy["warning_threshold"])
+        or ping_pong_count >= int(policy["warning_threshold"])
+    ):
+        detector = "ping_pong" if ping_pong_count >= int(policy["warning_threshold"]) else "generic_repeat"
+        count = max(no_progress_count, same_count, ping_pong_count)
+        warning_key = f"{detector}:{tool_name}:{signature}"
+        if _should_emit_loop_warning(
+            warning_buckets,
+            warning_key,
+            count,
+            int(policy["warning_bucket_size"]),
+        ):
+            return {
+                "level": "warning",
+                "detector": detector,
+                "count": count,
+                "message": (
+                    f"WARNING: potential tool-call loop for {tool_name} "
+                    f"({count} consecutive patterns)."
+                ),
+            }
+    return None
+
+
+def _invoke_tool(tool: object, args: dict):
+    if hasattr(tool, "invoke"):
+        return tool.invoke(args)
+    if hasattr(tool, "run"):
+        return tool.run(**args)  # type: ignore
+    return tool(**args)  # type: ignore
+
+
+def _result_to_content(result: Any) -> str:
+    if result is None:
+        return "{}"
+    if isinstance(result, (dict, list)):
+        content = json.dumps(result)
+    else:
+        content = str(result)
+    return content if (content and content.strip()) else "{}"
+
+
+def _execute_tool_calls_with_policies(
+    tool_calls: List[dict],
+    tools_by_name: Dict[str, object],
+    retry_counts: Dict[str, int],
+    call_history: List[dict],
+    warning_buckets: Dict[str, int],
+    progress_getter: Optional[Callable[[], Optional[Callable[[str, dict], None]]]],
+    iteration: int,
+) -> tuple[List[ToolMessage], Dict[str, int], List[dict], Dict[str, int]]:
+    results: List[ToolMessage] = []
+    retry_policy = _resolve_retry_policy()
+    loop_policy = _resolve_loop_policy()
+
+    for call in tool_calls or []:
+        call = call or {}
+        tool_name = (call.get("name") or "").strip()
+        tool_args = call.get("args") or {}
+        call_id = call.get("id") or "tool_call"
+        signature = _tool_signature(tool_name, tool_args)
+
+        loop_signal = _maybe_detect_loop(tool_name, signature, call_history, warning_buckets)
+        if loop_signal and loop_signal.get("level") == "critical":
+            payload = {
+                "error": loop_signal.get("message"),
+                "error_type": "loop_detected",
+                "retryable": False,
+                "retried": False,
+                "detector": loop_signal.get("detector"),
+                "count": loop_signal.get("count"),
+            }
+            content = json.dumps(payload)
+            results.append(ToolMessage(content=content, tool_call_id=call_id))
+            call_history.append(
+                {
+                    "signature": signature,
+                    "result_hash": _hash_text(content),
+                    "tool_name": tool_name,
+                }
+            )
+            continue
+        if loop_signal and loop_signal.get("level") == "warning":
+            logger.warning(
+                f"Potential tool loop: {loop_signal.get('message')} "
+                f"(tool={tool_name}, count={loop_signal.get('count')})"
+            )
+
+        tool_obj = tools_by_name.get(tool_name)
+        if tool_obj is None:
+            payload = {"error": f"Unknown tool: {tool_name}", "error_type": "unknown", "retryable": False}
+            content = json.dumps(payload)
+            results.append(ToolMessage(content=content, tool_call_id=call_id))
+            call_history.append(
+                {
+                    "signature": signature,
+                    "result_hash": _hash_text(content),
+                    "tool_name": tool_name,
+                }
+            )
+            continue
+
+        retries_used = int(retry_counts.get(call_id, 0))
+        while True:
+            try:
+                result = _invoke_tool(tool_obj, tool_args)
+                content = _result_to_content(result)
+                results.append(ToolMessage(content=content, tool_call_id=call_id))
+                call_history.append(
+                    {
+                        "signature": signature,
+                        "result_hash": _hash_text(content),
+                        "tool_name": tool_name,
+                    }
+                )
+                break
+            except Exception as e:
+                transient = _is_transient_error(e)
+                can_retry = transient and retries_used < int(retry_policy["max_retries"])
+                if can_retry:
+                    retries_used += 1
+                    retry_counts[call_id] = retries_used
+                    delay_ms = _compute_retry_delay_ms(retries_used, e, retry_policy)
+                    _emit(
+                        progress_getter,
+                        "tool_retry",
+                        {
+                            "iteration": iteration,
+                            "tool_call_id": call_id,
+                            "attempt": retries_used,
+                            "delay_ms": delay_ms,
+                        },
+                    )
+                    if delay_ms > 0:
+                        time.sleep(delay_ms / 1000.0)
+                    continue
+
+                retryable = transient and retries_used < int(retry_policy["max_retries"])
+                payload = {
+                    "error": str(e),
+                    "error_type": "transient" if transient else "unknown",
+                    "retryable": retryable,
+                    "retried": retries_used > 0,
+                }
+                retry_after_ms = _extract_retry_after_ms(e)
+                if retry_after_ms is not None:
+                    payload["retry_after_ms"] = retry_after_ms
+                content = json.dumps(payload)
+                results.append(ToolMessage(content=content, tool_call_id=call_id))
+                call_history.append(
+                    {
+                        "signature": signature,
+                        "result_hash": _hash_text(content),
+                        "tool_name": tool_name,
+                    }
+                )
+                break
+
+    history_size = int(loop_policy["history_size"])
+    if history_size > 0 and len(call_history) > history_size:
+        call_history = call_history[-history_size:]
+    return results, retry_counts, call_history, warning_buckets
+
+
 def _parse_plan(text: str) -> Plan:
     # Be forgiving: allow fenced JSON or extra text.
     cleaned = (text or "").strip()
@@ -328,7 +753,6 @@ def create_plan_execute_graph(
     - Planner: produces a structured Plan JSON (no tool calls).
     - Executor: runs one step at a time (tool calls via ToolNode), then responds.
     """
-    tool_node = _ToolNode(tools) if _ToolNode else None
     tool_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
 
     def _required_args_for_tool(tool_obj) -> List[str]:
@@ -1107,16 +1531,14 @@ def create_plan_execute_graph(
         return {**state, "iteration": new_iteration, "step_idx": idx + 1}
 
     def tools_node(state: AgentState) -> AgentState:
-        # Execute the last tool call (ToolNode supports multiple tool calls too).
+        # Execute last tool calls with retry/backoff and loop safeguards.
         last_msg = state["messages"][-1] if state.get("messages") else None
         last_tool_calls = getattr(last_msg, "tool_calls", None) if last_msg else None
-        call_id = None
+        tool_calls = list(last_tool_calls or []) if isinstance(last_tool_calls, list) else []
+
         executed_action: Optional[Dict[str, Any]] = None
-        
-        if last_tool_calls and isinstance(last_tool_calls, list):
-            call_id = last_tool_calls[-1].get("id")
-            # Extract tool info for tracking
-            last_call = last_tool_calls[-1] or {}
+        if tool_calls:
+            last_call = tool_calls[-1] or {}
             executed_action = {
                 "tool_name": (last_call.get("name") or "").strip(),
                 "args": last_call.get("args") or {},
@@ -1124,183 +1546,28 @@ def create_plan_execute_graph(
                 "success": False,
             }
 
-        def _is_transient_error(err: Exception) -> bool:
-            # Best-effort: treat common network/timeouts as transient.
-            transient_types = (TimeoutError, ConnectionError)
-            if isinstance(err, transient_types):
-                return True
-            # Some libs raise OSError/socket-related errors for transient failures.
-            if isinstance(err, OSError):
-                return True
-            return False
-
         retry_counts = dict(state.get("tool_retry_counts") or {})
-        attempts = retry_counts.get(call_id or "", 0)
-        
-        # Helper to update executed_action tracking
-        def _track_execution(result_content: str, success: bool) -> None:
-            nonlocal executed_action
-            if executed_action:
-                executed_action["result"] = result_content[:500] if result_content else ""
-                executed_action["success"] = success
+        call_history = list(state.get("tool_call_history") or [])
+        warning_buckets = dict(state.get("tool_loop_warning_buckets") or {})
 
-        # If ToolNode isn't available (older langgraph), run the last tool call manually
-        # so we can support retry-once semantics.
-        if not tool_node and last_tool_calls and isinstance(last_tool_calls, list) and last_tool_calls:
-            call = last_tool_calls[-1] or {}
-            tool_name = (call.get("name") or "").strip()
-            tool_args = call.get("args") or {}
-            tool_call_id = call.get("id") or "tool_call"
-            tool_obj = tool_by_name.get(tool_name)
-            try:
-                if tool_obj is None:
-                    raise ValueError(f"Unknown tool: {tool_name}")
-                if hasattr(tool_obj, "invoke"):
-                    result = tool_obj.invoke(tool_args)
-                elif hasattr(tool_obj, "run"):
-                    result = tool_obj.run(**tool_args)  # type: ignore
-                else:
-                    result = tool_obj(**tool_args)  # type: ignore
-            except Exception as e:
-                if tool_call_id and attempts < 1 and _is_transient_error(e):
-                    retry_counts[tool_call_id] = attempts + 1
-                    _emit(
-                        progress_getter,
-                        "tool_retry",
-                        {"iteration": state.get("iteration", 0), "tool_call_id": tool_call_id, "attempt": attempts + 1},
-                    )
-                    try:
-                        if tool_obj is None:
-                            raise ValueError(f"Unknown tool: {tool_name}")
-                        if hasattr(tool_obj, "invoke"):
-                            result = tool_obj.invoke(tool_args)
-                        elif hasattr(tool_obj, "run"):
-                            result = tool_obj.run(**tool_args)  # type: ignore
-                        else:
-                            result = tool_obj(**tool_args)  # type: ignore
-                    except Exception as e2:
-                        err_payload = {
-                            "error": str(e2),
-                            "error_type": "transient" if _is_transient_error(e2) else "unknown",
-                            "retryable": False,
-                            "retried": True,
-                        }
-                        content = json.dumps(err_payload)
-                        _track_execution(content, False)
-                        result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
-                    else:
-                        if result is None:
-                            content = "{}"
-                        elif isinstance(result, (dict, list)):
-                            content = json.dumps(result)
-                        else:
-                            content = str(result)
-                        # Ensure content is never empty
-                        if not content or (isinstance(content, str) and not content.strip()):
-                            content = "{}"
-                        _track_execution(content, True)
-                        result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
-                else:
-                    err_payload = {
-                        "error": str(e),
-                        "error_type": "transient" if _is_transient_error(e) else "unknown",
-                        "retryable": _is_transient_error(e) and attempts < 1,
-                        "retried": False,
-                    }
-                    content = json.dumps(err_payload)
-                    _track_execution(content, False)
-                    result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
-            else:
-                if result is None:
-                    content = "{}"
-                elif isinstance(result, (dict, list)):
-                    content = json.dumps(result)
-                else:
-                    content = str(result)
-                # Ensure content is never empty
-                if not content or (isinstance(content, str) and not content.strip()):
-                    content = "{}"
-                _track_execution(content, True)
-                result_messages = [ToolMessage(content=content, tool_call_id=tool_call_id)]
+        result_messages, retry_counts, call_history, warning_buckets = _execute_tool_calls_with_policies(
+            tool_calls=tool_calls,
+            tools_by_name=tool_by_name,
+            retry_counts=retry_counts,
+            call_history=call_history,
+            warning_buckets=warning_buckets,
+            progress_getter=progress_getter,
+            iteration=int(state.get("iteration", 0) or 0),
+        )
 
-            _emit(
-                progress_getter,
-                "tool_step",
-                {
-                    "iteration": state.get("iteration", 0),
-                    "tool_results": [
-                        getattr(m, "content", None) for m in result_messages if isinstance(m, ToolMessage)
-                    ],
-                },
-            )
-
-            # Update executed_actions list
-            existing_actions = list(state.get("executed_actions") or [])
-            if executed_action:
-                existing_actions.append(executed_action)
-
-            return {
-                **state,
-                "messages": state["messages"] + result_messages,
-                "step_idx": int(state.get("step_idx", 0) or 0) + 1,
-                "tool_retry_counts": retry_counts,
-                "executed_actions": existing_actions,
-            }
-
-        try:
-            if tool_node:
-                tool_results = tool_node.invoke({"messages": state["messages"]})
-                result_messages = tool_results.get("messages", [])
-            else:
-                result_messages = _run_tool_calls(state["messages"], tool_by_name)
-            # Track successful execution
-            if result_messages:
-                content = getattr(result_messages[0], "content", "") if result_messages else ""
-                _track_execution(content, True)
-        except Exception as e:
-            # Retry once for transient failures.
-            if call_id and attempts < 1 and _is_transient_error(e):
-                retry_counts[call_id] = attempts + 1
-                _emit(
-                    progress_getter,
-                    "tool_retry",
-                    {"iteration": state.get("iteration", 0), "tool_call_id": call_id, "attempt": attempts + 1},
-                )
-                try:
-                    if tool_node:
-                        tool_results = tool_node.invoke({"messages": state["messages"]})
-                        result_messages = tool_results.get("messages", [])
-                    else:
-                        result_messages = _run_tool_calls(state["messages"], tool_by_name)
-                    # Track successful retry
-                    if result_messages:
-                        content = getattr(result_messages[0], "content", "") if result_messages else ""
-                        _track_execution(content, True)
-                except Exception as e2:
-                    err_payload = {
-                        "error": str(e2),
-                        "error_type": "transient" if _is_transient_error(e2) else "unknown",
-                        "retryable": False,
-                        "retried": True,
-                    }
-                    content = json.dumps(err_payload)
-                    _track_execution(content, False)
-                    result_messages = [
-                        ToolMessage(content=content, tool_call_id=call_id or "tool_error")
-                    ]
-            else:
-                # Preserve loop stability: convert tool error into ToolMessage.
-                err_payload = {
-                    "error": str(e),
-                    "error_type": "transient" if _is_transient_error(e) else "unknown",
-                    "retryable": _is_transient_error(e) and attempts < 1,
-                    "retried": False,
-                }
-                content = json.dumps(err_payload)
-                _track_execution(content, False)
-                result_messages = [
-                    ToolMessage(content=content, tool_call_id=call_id or "tool_error")
-                ]
+        if executed_action and result_messages:
+            first_content = getattr(result_messages[0], "content", "") if result_messages else ""
+            is_error = False
+            if first_content:
+                parsed = _parse_json_obj(first_content)
+                is_error = bool(isinstance(parsed, dict) and parsed.get("error"))
+            executed_action["result"] = first_content[:500] if first_content else ""
+            executed_action["success"] = not is_error
 
         _emit(
             progress_getter,
@@ -1313,17 +1580,17 @@ def create_plan_execute_graph(
             },
         )
 
-        # Update executed_actions list
         existing_actions = list(state.get("executed_actions") or [])
         if executed_action:
             existing_actions.append(executed_action)
 
-        # After a tool step, advance plan index.
         return {
             **state,
             "messages": state["messages"] + result_messages,
             "step_idx": int(state.get("step_idx", 0) or 0) + 1,
             "tool_retry_counts": retry_counts,
+            "tool_call_history": call_history,
+            "tool_loop_warning_buckets": warning_buckets,
             "executed_actions": existing_actions,
         }
 
@@ -1370,7 +1637,6 @@ def create_routed_plan_execute_graph(
     - Planner: mode-aware planning (uses mode-specific prompt)
     - Executor: executes plan with mode guardrails
     """
-    tool_node = _ToolNode(tools) if _ToolNode else None
     tool_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
     
     MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
@@ -2089,24 +2355,32 @@ def create_routed_plan_execute_graph(
         # Track executed action for validation
         last_msg = state["messages"][-1] if state.get("messages") else None
         last_tool_calls = getattr(last_msg, "tool_calls", None) if last_msg else None
+        tool_calls = list(last_tool_calls or []) if isinstance(last_tool_calls, list) else []
         executed_action: Optional[Dict[str, Any]] = None
-        
-        if last_tool_calls and isinstance(last_tool_calls, list):
-            last_call = last_tool_calls[-1] or {}
+
+        if tool_calls:
+            last_call = tool_calls[-1] or {}
             executed_action = {
                 "tool_name": (last_call.get("name") or "").strip(),
                 "args": last_call.get("args") or {},
                 "result": None,
                 "success": False,
             }
-        
-        if tool_node:
-            tool_results = tool_node.invoke({"messages": state["messages"]})
-            result_messages = tool_results.get("messages", [])
-        else:
-            tools_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
-            result_messages = _run_tool_calls(state["messages"], tools_by_name)
-        
+
+        retry_counts = dict(state.get("tool_retry_counts") or {})
+        call_history = list(state.get("tool_call_history") or [])
+        warning_buckets = dict(state.get("tool_loop_warning_buckets") or {})
+
+        result_messages, retry_counts, call_history, warning_buckets = _execute_tool_calls_with_policies(
+            tool_calls=tool_calls,
+            tools_by_name=tool_by_name,
+            retry_counts=retry_counts,
+            call_history=call_history,
+            warning_buckets=warning_buckets,
+            progress_getter=progress_getter,
+            iteration=int(state.get("iteration", 0) or 0),
+        )
+
         # Track execution result
         if executed_action and result_messages:
             content = getattr(result_messages[0], "content", "") if result_messages else ""
@@ -2139,9 +2413,13 @@ def create_routed_plan_execute_graph(
         
         # After executing a tool call, advance to the next plan step.
         return {
+            **state,
             "messages": state["messages"] + result_messages,
             "iteration": state["iteration"],
             "step_idx": int(state.get("step_idx", 0) or 0) + 1,
+            "tool_retry_counts": retry_counts,
+            "tool_call_history": call_history,
+            "tool_loop_warning_buckets": warning_buckets,
             "executed_actions": existing_actions,
         }
     

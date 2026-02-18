@@ -352,13 +352,72 @@ def test_retry_once_on_transient_tool_failure():
         }
     )
 
-    # When ToolNode is used (default), it swallows tool exceptions and returns error ToolMessages,
-    # so our retry logic is not triggered and the responder gets the error and returns "done".
-    # When tools run in the manual path (no ToolNode), retry runs and we get "ok:2".
-    assert result.get("final_response") in ("ok:2", "done")
-    assert attempts["n"] >= 1
-    if result.get("final_response") == "ok:2":
-        assert attempts["n"] == 2
+    assert result.get("final_response") == "ok:2"
+    assert attempts["n"] == 2
+
+
+def test_loop_detection_blocks_repeated_tool_calls(monkeypatch):
+    monkeypatch.setenv("LLM_TOOL_LOOP_DETECTION_ENABLED", "1")
+    monkeypatch.setenv("LLM_TOOL_LOOP_WARNING_THRESHOLD", "2")
+    monkeypatch.setenv("LLM_TOOL_LOOP_CRITICAL_THRESHOLD", "3")
+    monkeypatch.setenv("LLM_TOOL_LOOP_GLOBAL_THRESHOLD", "4")
+
+    def _poll_status():
+        return {"status": "pending"}
+
+    tools = [
+        StructuredTool.from_function(
+            func=_poll_status,
+            name="poll_status",
+            description="Poll status.",
+        )
+    ]
+
+    plan = {
+        "steps": [
+            {"kind": "tool", "purpose": "Poll.", "tool_name": "poll_status", "tool_args": {}},
+            {"kind": "tool", "purpose": "Poll again.", "tool_name": "poll_status", "tool_args": {}},
+            {"kind": "tool", "purpose": "Poll again.", "tool_name": "poll_status", "tool_args": {}},
+            {"kind": "tool", "purpose": "Poll again.", "tool_name": "poll_status", "tool_args": {}},
+            {"kind": "respond", "purpose": "Answer.", "response_hint": "Use final tool output."},
+        ]
+    }
+
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+
+    def responder_fn(messages):
+        for m in reversed(messages):
+            if isinstance(m, ToolMessage):
+                return AIMessage(content=str(m.content))
+        return AIMessage(content="done")
+
+    responder = FakeModel(responder_fn=responder_fn)
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=10,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="poll until done")],
+            "iteration": 0,
+            "plan": None,
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
+        }
+    )
+
+    tool_outputs = [m.content for m in result.get("messages", []) if isinstance(m, ToolMessage)]
+    assert any("loop_detected" in str(content) for content in tool_outputs)
 
 
 def test_dynamic_replan_asks_user_when_from_search_is_ambiguous():
@@ -670,6 +729,5 @@ def test_safety_requires_confirmation_triggers_ask():
     assert pending.get("reason") == "pre_mutation_confirmation"
     # Tool should NOT have been called yet
     assert len(calls) == 0
-
 
 

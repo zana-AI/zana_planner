@@ -19,6 +19,7 @@ from handlers.translator import translate_text
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
 from services.content_service import ContentService
+from services.inbound_message_queue import InboundBatch, InboundMessageQueue, QueuedInboundMessage
 from services.response_service import ResponseService
 from platforms.interfaces import IResponseService
 from llms.llm_handler import LLMHandler
@@ -63,6 +64,18 @@ class MessageHandlers:
         except Exception as e:
             logger.error(f"Failed to initialize ImageService: {str(e)}")
             self.image_service = None
+        self.inbound_message_queue = InboundMessageQueue(
+            debounce_ms=int(os.getenv("INBOUND_QUEUE_DEBOUNCE_MS", "1000")),
+            cap=int(os.getenv("INBOUND_QUEUE_CAP", "20")),
+            drop_policy=os.getenv("INBOUND_QUEUE_DROP", "summarize"),
+        )
+
+    def _get_inbound_message_queue(self) -> InboundMessageQueue:
+        queue = getattr(self, "inbound_message_queue", None)
+        if queue is None:
+            queue = InboundMessageQueue()
+            self.inbound_message_queue = queue
+        return queue
     
     def _update_user_info(self, user_id: int, user) -> None:
         """Extract and update user info (first_name, username, last_seen) from Telegram user object."""
@@ -1038,9 +1051,60 @@ class MessageHandlers:
         )
 
     async def handle_message(self, update: Update, context: CallbackContext) -> None:
-        """Handle general text messages."""
+        """Handle inbound text messages with per-session queueing/collection."""
+        queue = self._get_inbound_message_queue()
+        user_id = getattr(getattr(update, "effective_user", None), "id", None)
+        chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
+        message_obj = getattr(update, "message", None)
+        message_text = getattr(message_obj, "text", None)
+
+        if user_id is None or message_text is None:
+            await self._handle_message_core(update, context)
+            return
+
+        queue_key = f"{user_id}:{chat_id if chat_id is not None else user_id}"
+        payload = QueuedInboundMessage(update=update, context=context, message_text=str(message_text))
+
+        # If another run is in-flight, just enqueue; the active runner will drain it.
+        if not queue.begin_or_enqueue(queue_key, payload):
+            return
+
+        current_batch = InboundBatch(messages=[payload])
         try:
-            user_message = update.message.text
+            while True:
+                latest = current_batch.messages[-1]
+                merged_text = queue.build_collect_message(current_batch)
+                await self._handle_message_core(
+                    latest.update,
+                    latest.context,
+                    user_message_override=merged_text,
+                )
+
+                if queue.debounce_seconds > 0:
+                    await asyncio.sleep(queue.debounce_seconds)
+
+                next_batch = queue.drain_or_finish(queue_key)
+                if not next_batch:
+                    break
+                current_batch = next_batch
+        except Exception:
+            # Keep queue resilient if an unexpected exception escapes core handling.
+            queue.force_release(queue_key)
+            raise
+
+    async def _handle_message_core(
+        self,
+        update: Update,
+        context: CallbackContext,
+        user_message_override: Optional[str] = None,
+    ) -> None:
+        """Core general text-message flow (single run, no queue orchestration)."""
+        try:
+            user_message = (
+                user_message_override
+                if user_message_override is not None
+                else update.message.text
+            )
             user_id = update.effective_user.id
             user_group_id = update.effective_chat.id if update.effective_chat.type in ['group', 'supergroup'] else None
             user_lang = get_user_language(update.effective_user)
@@ -1078,7 +1142,9 @@ class MessageHandlers:
             # Log user message
             self.response_service.log_user_message(
                 user_id=user_id,
-                content=user_message,
+                # Keep logs faithful to what user actually typed, even when queue
+                # builds a synthetic coalesced prompt for the model.
+                content=update.message.text or user_message,
                 message_id=update.message.message_id,
                 chat_id=update.effective_chat.id if update.effective_chat else None,
             )
