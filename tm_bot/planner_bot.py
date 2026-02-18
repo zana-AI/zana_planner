@@ -336,8 +336,8 @@ def main():
     SENTRY_DSN = os.getenv("SENTRY_DSN")
     if SENTRY_DSN:
         try:
-            import sentry_sdk
-            from sentry_sdk.integrations.logging import LoggingIntegration
+            import sentry_sdk  # pylint: disable=import-error
+            from sentry_sdk.integrations.logging import LoggingIntegration  # pylint: disable=import-error
             import logging as std_logging
             sentry_logging = LoggingIntegration(
                 level=std_logging.INFO,  # capture >= INFO as breadcrumbs

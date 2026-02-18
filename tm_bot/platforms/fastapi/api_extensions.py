@@ -347,8 +347,8 @@ def create_bot_api(
     bot_adapter = FastAPIPlatformAdapter(app=app)
     bot_adapter.app = app
     
-    # Initialize bot with adapter
-    from tm_bot.planner_bot import PlannerBot
+    # Initialize bot with adapter (late import to avoid circular imports)
+    from tm_bot.planner_bot import PlannerBot  # pylint: disable=import-error
     bot = PlannerBot(bot_adapter, root_dir=root_dir)
     
     # Create handler wrapper

@@ -474,7 +474,7 @@ def render_weekly_report_card_png(
     Render the weekly report card HTML to a PNG at output_path.
     """
     # Local import so the bot can still run without Playwright installed (text-only fallback).
-    from playwright.sync_api import sync_playwright  # type: ignore
+    from playwright.sync_api import sync_playwright  # type: ignore  # pylint: disable=import-error
 
     html_doc = build_weekly_report_card_html(
         summary,
@@ -525,7 +525,7 @@ async def render_weekly_report_card_png_async(
     IMPORTANT: Use this from async Telegram handlers to avoid:
     "It looks like you are using Playwright Sync API inside the asyncio loop."
     """
-    from playwright.async_api import async_playwright  # type: ignore
+    from playwright.async_api import async_playwright  # type: ignore  # pylint: disable=import-error
 
     html_doc = build_weekly_report_card_html(
         summary,

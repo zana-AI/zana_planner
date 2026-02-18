@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from platforms.testing import MockPlatformAdapter, CLIPlatformAdapter, TestResponseService
 from platforms.types import UserMessage, MessageType
-from tm_bot.planner_bot import PlannerBot
+from tm_bot.planner_bot import PlannerBot  # pylint: disable=import-error
 from platforms.testing.cli_handler_wrapper import CLIHandlerWrapper
 from utils.logger import get_logger
 

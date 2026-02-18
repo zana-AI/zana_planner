@@ -11,7 +11,7 @@ from datetime import datetime
 
 from platforms.testing import MockPlatformAdapter, CLIPlatformAdapter, TestResponseService
 from platforms.types import UserMessage, MessageType
-from tm_bot.planner_bot import PlannerBot
+from tm_bot.planner_bot import PlannerBot  # pylint: disable=import-error
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -91,6 +91,7 @@ async def test_response_service_capture():
     
     # Check last message
     last = response_service.get_last_message()
+    assert last is not None, "get_last_message() should return a message after two sends"
     assert last["text"] == "This is another message"
     
     print("✓ Response service capture test passed")

@@ -323,7 +323,7 @@ async def render_streak_heatmap_png(
     Uses async Playwright API to work within asyncio event loop.
     """
     # Local import so the bot can still run without Playwright installed (text-only fallback).
-    from playwright.async_api import async_playwright  # type: ignore
+    from playwright.async_api import async_playwright  # type: ignore  # pylint: disable=import-error
 
     html_doc = build_streak_heatmap_html(
         heatmap_data,

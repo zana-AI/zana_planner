@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from platforms.testing import CLIPlatformAdapter
-from tm_bot.planner_bot import PlannerBot
+from tm_bot.planner_bot import PlannerBot  # pylint: disable=import-error
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
