@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from ..dependencies import get_current_user, get_settings_repo, update_user_activity, get_reports_service
 from ..schemas import (
     WeeklyReportResponse, UserInfoResponse, TimezoneUpdateRequest,
-    PublicUser, PublicUsersResponse
+    UserSettingsUpdateRequest, PublicUser, PublicUsersResponse
 )
 from repositories.follows_repo import FollowsRepository
 from repositories.settings_repo import SettingsRepository
@@ -123,11 +123,62 @@ async def get_user_info(request: Request, user_id: int = Depends(get_current_use
             user_id=user_id,
             timezone=settings.timezone if settings else "UTC",
             language=settings.language if settings else "en",
-            first_name=settings.first_name if settings else None
+            first_name=settings.first_name if settings else None,
+            voice_mode=settings.voice_mode if settings else None
         )
     except Exception as e:
         logger.exception(f"Error getting user info for user {user_id}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/user/settings", response_model=UserInfoResponse)
+async def update_user_settings(
+    request: Request,
+    payload: UserSettingsUpdateRequest,
+    user_id: int = Depends(get_current_user)
+):
+    """
+    Update user settings (partial update). Only provided fields are updated.
+    Valid: timezone (IANA), language (en|fa|fr), voice_mode (enabled|disabled|null), first_name.
+    """
+    from zoneinfo import ZoneInfo
+    from models.models import UserSettings
+
+    settings_repo = get_settings_repo(request)
+    settings = settings_repo.get_settings(user_id)
+    if not settings:
+        settings = UserSettings(user_id=str(user_id))
+
+    if payload.timezone is not None:
+        try:
+            ZoneInfo(payload.timezone)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid timezone: {payload.timezone}. Error: {str(e)}")
+        settings.timezone = payload.timezone
+
+    if payload.language is not None:
+        if payload.language not in ("en", "fa", "fr"):
+            raise HTTPException(status_code=400, detail="language must be one of: en, fa, fr")
+        settings.language = payload.language
+
+    if payload.voice_mode is not None:
+        if payload.voice_mode not in ("enabled", "disabled"):
+            raise HTTPException(status_code=400, detail="voice_mode must be one of: enabled, disabled")
+        settings.voice_mode = payload.voice_mode
+
+    if payload.first_name is not None:
+        settings.first_name = payload.first_name
+
+    settings_repo.save_settings(settings)
+    update_user_activity(request, user_id)
+
+    return UserInfoResponse(
+        user_id=user_id,
+        timezone=settings.timezone or "UTC",
+        language=settings.language or "en",
+        first_name=settings.first_name,
+        voice_mode=settings.voice_mode
+    )
 
 
 @router.post("/user/timezone")

@@ -153,6 +153,21 @@ class ApiClient {
   }
 
   /**
+   * Update user settings (partial). Only provided fields are updated.
+   */
+  async updateUserSettings(payload: {
+    timezone?: string;
+    language?: string;
+    voice_mode?: string | null;
+    first_name?: string | null;
+  }): Promise<UserInfo> {
+    return this.request<UserInfo>('/user/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
    * Health check endpoint (no auth required).
    */
   async healthCheck(): Promise<{ status: string; service: string }> {

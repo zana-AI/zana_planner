@@ -23,6 +23,15 @@ class UserInfoResponse(BaseModel):
     timezone: str
     language: str
     first_name: Optional[str] = None
+    voice_mode: Optional[str] = None
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    """Request model for partial user settings update (all fields optional)."""
+    timezone: Optional[str] = None
+    language: Optional[str] = None
+    voice_mode: Optional[str] = None
+    first_name: Optional[str] = None
 
 
 class TimezoneUpdateRequest(BaseModel):

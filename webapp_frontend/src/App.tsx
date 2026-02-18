@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { FocusPage } from './pages/FocusPage';
 import { UsersPage } from './components/UsersPage';
@@ -124,6 +125,18 @@ function App() {
           element={
             isAuthenticated ? (
               <TimezoneSelectorPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
+
+        {/* Settings Page */}
+        <Route 
+          path="/settings" 
+          element={
+            isAuthenticated ? (
+              <SettingsPage />
             ) : (
               <Navigate to="/" replace />
             )

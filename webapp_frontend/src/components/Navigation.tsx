@@ -319,6 +319,33 @@ export function Navigation() {
                   </button>
                 </>
               )}
+              <button
+                onClick={() => {
+                  navigate('/settings');
+                  setShowProfileMenu(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 1rem',
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  borderRadius: '4px',
+                  transition: 'background 0.2s',
+                  marginTop: isMobile ? '0' : '0.25rem'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none';
+                }}
+              >
+                ⚙️ Settings
+              </button>
               <a
                 href={botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot'}
                 target="_blank"

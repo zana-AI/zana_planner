@@ -108,6 +108,7 @@ export interface UserInfo {
   timezone: string;
   language: string;
   first_name?: string;
+  voice_mode?: string | null;
 }
 
 export interface PublicPromiseBadge {
