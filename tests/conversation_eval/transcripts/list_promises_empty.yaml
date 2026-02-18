@@ -1,0 +1,22 @@
+name: list_promises_empty
+description: List promises when none exist
+tier: 1
+turns:
+  - user: "What are my promises?"
+    plan:
+      steps:
+        - kind: tool
+          purpose: List promises.
+          tool_name: get_promises
+          tool_args: {}
+        - kind: respond
+          purpose: Show list.
+          response_hint: List promises or say none.
+      detected_intent: QUERY_PROGRESS
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 0

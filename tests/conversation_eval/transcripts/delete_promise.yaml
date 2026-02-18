@@ -1,0 +1,29 @@
+name: delete_promise
+description: Delete existing promise; assert it is gone
+tier: 1
+setup:
+  - add_promise:
+      promise_text: ToDelete
+      num_hours_promised_per_week: 0
+      recurring: true
+turns:
+  - user: "Delete my promise"
+    plan:
+      steps:
+        - kind: tool
+          purpose: Delete promise.
+          tool_name: delete_promise
+          tool_args:
+            promise_id: P01
+        - kind: respond
+          purpose: Confirm.
+          response_hint: Confirm deleted.
+      detected_intent: DELETE_PROMISE
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 0
+    promise_deleted_id: P01

@@ -1,0 +1,32 @@
+name: log_action_single_turn
+description: Log 2 hours on P01 (setup creates P01 first)
+tier: 1
+setup:
+  - add_promise:
+      promise_text: Reading
+      num_hours_promised_per_week: 2
+      recurring: true
+turns:
+  - user: "Log 2 hours on P01"
+    plan:
+      steps:
+        - kind: tool
+          purpose: Log 2 hours on P01.
+          tool_name: add_action
+          tool_args:
+            promise_id: P01
+            time_spent: 2.0
+        - kind: respond
+          purpose: Confirm.
+          response_hint: Confirm logged.
+      detected_intent: LOG_ACTION
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 1
+    action_on_promise:
+      promise_id: P01
+      time_spent: 2.0

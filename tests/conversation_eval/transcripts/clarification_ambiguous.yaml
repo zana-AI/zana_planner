@@ -1,0 +1,32 @@
+name: clarification_ambiguous
+description: Log 1 hour on Reading promise (P01 from setup)
+tier: 1
+setup:
+  - add_promise:
+      promise_text: Reading
+      num_hours_promised_per_week: 2
+      recurring: true
+turns:
+  - user: "Log 1 hour on reading"
+    plan:
+      steps:
+        - kind: tool
+          purpose: Log 1 hour on Reading promise.
+          tool_name: add_action
+          tool_args:
+            promise_id: P01
+            time_spent: 1.0
+        - kind: respond
+          purpose: Confirm.
+          response_hint: Confirm logged.
+      detected_intent: LOG_ACTION
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 1
+    action_on_promise:
+      promise_id: P01
+      time_spent: 1.0

@@ -1,0 +1,40 @@
+name: create_promise_then_list
+description: Create a promise then list promises
+tier: 1
+turns:
+  - user: "Create a promise called Reading"
+    plan:
+      steps:
+        - kind: tool
+          purpose: Create a promise called Reading.
+          tool_name: add_promise
+          tool_args:
+            promise_text: Reading
+            num_hours_promised_per_week: 2
+            recurring: true
+        - kind: respond
+          purpose: Confirm.
+          response_hint: Confirm success.
+      detected_intent: CREATE_PROMISE
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+    expect_pending_clarification: true
+  - user: "What are my promises?"
+    plan:
+      steps:
+        - kind: tool
+          purpose: List promises.
+          tool_name: get_promises
+          tool_args: {}
+        - kind: respond
+          purpose: Show list.
+          response_hint: List promises briefly.
+      detected_intent: QUERY_PROGRESS
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 1
+    promise_text_contains: Reading

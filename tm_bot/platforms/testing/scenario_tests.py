@@ -34,6 +34,10 @@ class TestScenario:
     expected_keywords: List[str] = None  # Keywords that should appear in responses
     expected_behavior: str = None  # Description of expected behavior
     skip_reason: Optional[str] = None  # Reason to skip this test
+    # Structured assertions (Phase 4)
+    expected_db_state: Optional[Dict[str, Any]] = None  # e.g. promises_count, promise_text_contains, action_on_promise, promise_deleted_id
+    expected_tool_calls: Optional[List[Dict[str, Any]]] = None  # Not implemented yet; reserved for later
+    expected_state_keys: Optional[Dict[str, Any]] = None  # Not implemented yet; reserved for later
 
 
 class ScenarioTestRunner:
@@ -91,39 +95,51 @@ class ScenarioTestRunner:
             'assertions': [],
             'response_texts': []
         }
-        
+
+        # User isolation: use unique_user_id when DB assertions are requested (Phase 4)
+        user_id = 1
+        run_db_assertions = bool(scenario.expected_db_state)
+        if run_db_assertions:
+            try:
+                from tests.test_config import unique_user_id, ensure_users_exist
+                user_id = unique_user_id()
+                ensure_users_exist(user_id)
+            except Exception as e:
+                logger.warning(f"Cannot use unique_user_id for DB assertions: {e}; using user_id=1, skipping DB checks")
+                run_db_assertions = False
+
         try:
             # Clear previous messages
             self.adapter.response_service.clear()
-            
+
             # Process each message in sequence
             for i, user_message in enumerate(scenario.messages):
                 logger.info(f"Scenario '{scenario.name}': Processing message {i+1}/{len(scenario.messages)}: {user_message[:50]}...")
-                
+
                 try:
                     if user_message.startswith('/'):
                         # Handle command
                         command = user_message.split()[0][1:]
                         args = user_message.split()[1:] if len(user_message.split()) > 1 else []
-                        await self.handler_wrapper.handle_command(command, user_id=1, args=args)
+                        await self.handler_wrapper.handle_command(command, user_id=user_id, args=args)
                     else:
                         # Handle regular message
-                        await self.handler_wrapper.handle_message(user_message, user_id=1)
-                    
+                        await self.handler_wrapper.handle_message(user_message, user_id=user_id)
+
                     # Wait a bit for async processing
                     await asyncio.sleep(0.5)
-                    
+
                 except Exception as e:
                     error_msg = f"Error processing message '{user_message}': {str(e)}"
                     logger.error(error_msg, exc_info=True)
                     results['errors'].append(error_msg)
-            
+
             # Get all responses
-            messages = self.adapter.response_service.get_messages_for_user(1)
+            messages = self.adapter.response_service.get_messages_for_user(user_id)
             results['messages'] = messages
             results['response_texts'] = [msg.get('text', '') for msg in messages]
-            
-            # Check assertions
+
+            # Check keyword assertions
             if scenario.expected_keywords:
                 for keyword in scenario.expected_keywords:
                     found = any(keyword.lower() in msg.get('text', '').lower() for msg in messages)
@@ -134,7 +150,53 @@ class ScenarioTestRunner:
                     })
                     if not found:
                         logger.warning(f"Assertion failed: {assertion}")
-            
+
+            # DB assertions (Phase 4): same shape as conversation_eval rubric db_final
+            if run_db_assertions and scenario.expected_db_state and self.bot and getattr(self.bot, 'plan_keeper', None):
+                adapter = self.bot.plan_keeper
+                db_spec = scenario.expected_db_state
+                try:
+                    promises = adapter.get_promises(user_id)
+                    actions = adapter.get_actions(user_id)
+                except Exception as e:
+                    results['errors'].append(f"DB read failed: {e}")
+                    results['assertions'].append({'assertion': 'db: read promises/actions', 'passed': False})
+                else:
+                    if "promises_count" in db_spec:
+                        expected = int(db_spec["promises_count"])
+                        passed = len(promises) == expected
+                        results['assertions'].append({'assertion': f'db: promises_count == {expected}', 'passed': passed})
+                        if not passed:
+                            logger.warning(f"Assertion failed: promises_count == {expected} (got {len(promises)})")
+                    if "promises_count_min" in db_spec:
+                        min_count = int(db_spec["promises_count_min"])
+                        passed = len(promises) >= min_count
+                        results['assertions'].append({'assertion': f'db: promises_count >= {min_count}', 'passed': passed})
+                        if not passed:
+                            logger.warning(f"Assertion failed: promises_count >= {min_count} (got {len(promises)})")
+                    if "promise_text_contains" in db_spec:
+                        sub = str(db_spec["promise_text_contains"]).lower()
+                        passed = any(sub in (p.get("text") or "").lower() for p in promises)
+                        results['assertions'].append({'assertion': f'db: promise_text_contains "{db_spec["promise_text_contains"]}"', 'passed': passed})
+                        if not passed:
+                            logger.warning(f"Assertion failed: promise_text_contains")
+                    if "action_on_promise" in db_spec:
+                        spec = db_spec["action_on_promise"]
+                        pid = spec.get("promise_id")
+                        time_spent = spec.get("time_spent")
+                        matching = [a for a in actions if (pid is None or a[2] == pid) and (time_spent is None or a[3] == time_spent)]
+                        passed = len(matching) >= 1
+                        results['assertions'].append({'assertion': 'db: action_on_promise', 'passed': passed})
+                        if not passed:
+                            logger.warning(f"Assertion failed: action_on_promise")
+                    if "promise_deleted_id" in db_spec:
+                        deleted_id = str(db_spec["promise_deleted_id"])
+                        ids_now = [p["id"] for p in promises]
+                        passed = deleted_id not in ids_now
+                        results['assertions'].append({'assertion': f'db: promise_deleted_id {deleted_id} not in list', 'passed': passed})
+                        if not passed:
+                            logger.warning(f"Assertion failed: promise_deleted_id")
+
             # Overall pass if no errors and all assertions passed
             results['passed'] = (
                 len(results['errors']) == 0 and
@@ -192,12 +254,14 @@ def get_basic_command_scenarios() -> List[TestScenario]:
             description="Test /start command",
             messages=["/start"],
             expected_keywords=["welcome", "language", "choose"],
+            expected_db_state={"promises_count": 0},
         ),
         TestScenario(
             name="promises_command",
             description="Test /promises command",
             messages=["/start", "/promises"],
             expected_keywords=["promise", "list"],
+            expected_db_state={"promises_count": 0},
         ),
         TestScenario(
             name="me_command",
@@ -219,6 +283,7 @@ def get_task_creation_scenarios() -> List[TestScenario]:
                 "Add a task to exercise 30 minutes every day"
             ],
             expected_keywords=["task", "exercise", "created", "added"],
+            expected_db_state={"promises_count_min": 1, "promise_text_contains": "exercise"},
         ),
         TestScenario(
             name="complex_task_with_duration",
@@ -228,6 +293,7 @@ def get_task_creation_scenarios() -> List[TestScenario]:
                 "I want to read books for 2 hours per day"
             ],
             expected_keywords=["read", "book", "hour", "day"],
+            expected_db_state={"promises_count_min": 1, "promise_text_contains": "read"},
         ),
         TestScenario(
             name="weekly_commitment",
@@ -237,6 +303,7 @@ def get_task_creation_scenarios() -> List[TestScenario]:
                 "I promise to practice guitar 5 hours per week"
             ],
             expected_keywords=["guitar", "week", "promise"],
+            expected_db_state={"promises_count_min": 1, "promise_text_contains": "guitar"},
         ),
         TestScenario(
             name="multiple_tasks",
@@ -318,6 +385,7 @@ def get_conversation_scenarios() -> List[TestScenario]:
                 "I can exercise 1 hour per day"
             ],
             expected_keywords=["health", "fitness", "plan", "exercise"],
+            expected_db_state={"promises_count_min": 1},
         ),
         TestScenario(
             name="modification_request",
@@ -328,6 +396,7 @@ def get_conversation_scenarios() -> List[TestScenario]:
                 "Actually, make it 45 minutes instead"
             ],
             expected_keywords=["run", "minute", "updated", "changed"],
+            expected_db_state={"promises_count_min": 1},
         ),
         TestScenario(
             name="question_answering",
