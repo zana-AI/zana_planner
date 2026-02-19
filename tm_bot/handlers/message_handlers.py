@@ -76,6 +76,23 @@ class MessageHandlers:
             queue = InboundMessageQueue()
             self.inbound_message_queue = queue
         return queue
+
+    @staticmethod
+    def _extract_youtube_video_id(text: str) -> Optional[str]:
+        """Extract YouTube video ID from message text. Returns None if not found."""
+        if not text or not text.strip():
+            return None
+        # youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID
+        patterns = [
+            r"(?:youtube\.com/watch\?v=)([a-zA-Z0-9_-]{11})",
+            r"(?:youtu\.be/)([a-zA-Z0-9_-]{11})",
+            r"(?:youtube\.com/embed/)([a-zA-Z0-9_-]{11})",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        return None
     
     def _update_user_info(self, user_id: int, user) -> None:
         """Extract and update user info (first_name, username, last_seen) from Telegram user object."""
@@ -1384,6 +1401,21 @@ class MessageHandlers:
                     )
                 return
             
+            # YouTube link: reply with "Watch in Mini App" and skip generic URL handling
+            video_id = self._extract_youtube_video_id(user_message)
+            if video_id and self.miniapp_url:
+                from ui.keyboards import mini_app_kb
+                web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
+                keyboard = mini_app_kb(web_app_url, button_text="Watch in Mini App")
+                await self.response_service.send_message(
+                    context,
+                    chat_id=update.effective_chat.id,
+                    text="You can watch this video in the Mini App. Tap the button below:",
+                    user_id=user_id,
+                    reply_markup=keyboard,
+                )
+                return
+
             # Check for URLs in the message
             urls = self.content_service.detect_urls(user_message)
             if urls:
