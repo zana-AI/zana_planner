@@ -60,6 +60,16 @@ Optional (memory and pre-compaction flush):
 
 ### 📂 Directory Structure
 
+Optional (content-to-learning pipeline):
+
+- `CONTENT_LEARNING_PIPELINE_ENABLED` - Set to `1` to enable background content analysis jobs.
+- `QDRANT_URL` - Qdrant base URL (for example `http://qdrant:6333` in Docker Compose).
+- `QDRANT_API_KEY` - Optional API key for secured Qdrant deployments.
+- `QDRANT_COLLECTION` - Vector collection name (default: `content_chunks_v1`).
+- `VERTEX_EMBEDDING_MODEL` - Embedding model (default: `gemini-embedding-001`).
+- `LLM_FALLBACK_ENABLED` - Emergency fallback toggle (`true`/`false`, default `false`).
+- `LLM_FALLBACK_PROVIDER` - Fallback provider name (default: `openai`).
+
 The codebase has been refactored into a clean, layered architecture:
 
 *   `tm_bot/` — Main package

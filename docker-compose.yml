@@ -67,8 +67,16 @@ services:
       dockerfile: Dockerfile.webapp           # the new minimal webapp Dockerfile
     image: zana-project-webapp
     container_name: zana-webapp
+    depends_on:
+      - qdrant
     env_file:
       - /opt/zana-config/.env.prod            # Production environment
+    environment:
+      - CONTENT_LEARNING_PIPELINE_ENABLED=${CONTENT_LEARNING_PIPELINE_ENABLED:-0}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-content_chunks_v1}
+      - VERTEX_EMBEDDING_MODEL=${VERTEX_EMBEDDING_MODEL:-gemini-embedding-001}
     # IMPORTANT: no host port here – nginx will reach it via Docker network
     expose:
       - "8080"                                # internal FastAPI/uvicorn port
@@ -80,6 +88,21 @@ services:
     working_dir: /app                       # important: match your dev run's -w /app
     #command: ["python", "run_webapp_local.py"]   # ← IMPORTANT
     command: ["uvicorn", "run_webapp_local:app", "--host", "0.0.0.0", "--port", "8080"]
+    restart: unless-stopped
+    networks:
+      - web
+
+  # =========================
+  # VECTOR SEARCH (Qdrant)
+  # =========================
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    container_name: zana-qdrant
+    expose:
+      - "6333"
+      - "6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
     restart: unless-stopped
     networks:
       - web
@@ -117,3 +140,6 @@ services:
 networks:
   web:
     driver: bridge
+
+volumes:
+  qdrant-storage:

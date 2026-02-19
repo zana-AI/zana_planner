@@ -107,6 +107,7 @@ pytest-asyncio>=0.24.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 python-telegram-bot==22.5
+qdrant-client==1.15.1
 pytz==2025.2
 PyYAML==6.0.3
 regex==2025.11.3

@@ -3,16 +3,22 @@ Content consumption manager API: resolve URL, user library, consume events, heat
 """
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from ..dependencies import get_current_user
 from ..schemas import (
     ResolveContentRequest,
     AddUserContentRequest,
     ConsumeEventRequest,
     UpdateUserContentRequest,
+    AnalyzeContentRequest,
+    AskContentRequest,
+    CreateQuizRequest,
+    SubmitQuizRequest,
 )
 from services.content_resolve_service import ContentResolveService
 from services.content_progress_service import ContentProgressService
+from services.learning_pipeline.embedding_service import VectorStoreUnavailableError
+from services.learning_pipeline.service import LearningPipelineService
 from repositories.content_repo import ContentRepository
 from utils.logger import get_logger
 
@@ -30,6 +36,10 @@ def get_resolve_service() -> ContentResolveService:
 
 def get_progress_service() -> ContentProgressService:
     return ContentProgressService(content_repo=get_content_repo())
+
+
+def get_learning_service() -> LearningPipelineService:
+    return LearningPipelineService()
 
 
 @router.post("/content/resolve")
@@ -139,3 +149,153 @@ async def update_user_content(
         rating=body.rating,
     )
     return {"content_id": content_id, "updated": True}
+
+
+@router.post("/content/{content_id}/analyze")
+async def analyze_content(
+    content_id: str,
+    body: AnalyzeContentRequest,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    service = get_learning_service()
+    try:
+        return service.enqueue_analysis(
+            user_id=user_id,
+            content_id=content_id,
+            force_rebuild=bool(body.force_rebuild),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    except Exception as exc:
+        logger.exception("enqueue analysis failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to enqueue content analysis")
+
+
+@router.get("/content/jobs/{job_id}")
+async def get_content_job(
+    job_id: str,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    service = get_learning_service()
+    try:
+        return service.get_job_status(job_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.exception("get content job failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch content job")
+
+
+@router.get("/content/{content_id}/summary")
+async def get_content_summary(
+    content_id: str,
+    level: str = "global",
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    service = get_learning_service()
+    try:
+        return service.get_summary(content_id=content_id, level=level)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    except Exception as exc:
+        logger.exception("get content summary failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch content summary")
+
+
+@router.post("/content/{content_id}/ask")
+async def ask_content_question(
+    content_id: str,
+    body: AskContentRequest,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    service = get_learning_service()
+    try:
+        return service.ask(content_id=content_id, question=body.question)
+    except VectorStoreUnavailableError:
+        raise HTTPException(status_code=503, detail={"message": "Vector search is temporarily unavailable", "retryable": True})
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("content ask failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to answer content question")
+
+
+@router.post("/content/{content_id}/quiz")
+async def create_content_quiz(
+    content_id: str,
+    body: CreateQuizRequest,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    service = get_learning_service()
+    try:
+        return service.create_quiz(
+            content_id=content_id,
+            difficulty=body.difficulty or "medium",
+            question_count=int(body.question_count or 8),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("content quiz creation failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create content quiz")
+
+
+@router.post("/quiz/{quiz_set_id}/submit")
+async def submit_content_quiz(
+    quiz_set_id: str,
+    body: SubmitQuizRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    service = get_learning_service()
+    try:
+        answers = [{"question_id": item.question_id, "answer": item.answer} for item in body.answers]
+        return service.submit_quiz(
+            user_id=user_id,
+            quiz_set_id=quiz_set_id,
+            answers=answers,
+            idempotency_key=idempotency_key,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    except Exception as exc:
+        logger.exception("content quiz submit failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to submit content quiz")
+
+
+@router.get("/content/{content_id}/concepts")
+async def get_content_concepts(
+    content_id: str,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    service = get_learning_service()
+    try:
+        return service.get_concepts(content_id=content_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("get content concepts failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch content concepts")

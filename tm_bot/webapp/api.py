@@ -76,9 +76,11 @@ def create_webapp_api(
     # Initialize delayed message service
     from platforms.fastapi.scheduler import FastAPIJobScheduler
     from services.delayed_message_service import DelayedMessageService
+    from services.learning_pipeline.worker import LearningPipelineWorker
     scheduler = FastAPIJobScheduler()
     delayed_message_service = DelayedMessageService(scheduler)
     app.state.delayed_message_service = delayed_message_service
+    app.state.learning_pipeline_worker = LearningPipelineWorker()
     
     # Include all routers
     app.include_router(health.router)
@@ -207,6 +209,21 @@ def create_webapp_api(
         
         asyncio.create_task(focus_timer_sweeper())
         logger.info("✓ Started focus timer completion sweeper (checks every 30 seconds)")
+
+        # Start content learning pipeline dispatcher (every 5 seconds when enabled)
+        try:
+            await app.state.learning_pipeline_worker.start()
+        except Exception as e:
+            logger.error(f"Failed to start learning pipeline worker: {e}", exc_info=True)
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        try:
+            worker = getattr(app.state, "learning_pipeline_worker", None)
+            if worker:
+                await worker.stop()
+        except Exception as e:
+            logger.warning(f"Failed to stop learning pipeline worker cleanly: {e}")
     
     @app.get("/")
     async def root():

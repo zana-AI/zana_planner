@@ -79,6 +79,8 @@ class LLMHandler:
             cfg = load_llm_env()  # returns dict with project, location, model
 
             self.chat_model = None
+            fallback_enabled = bool(cfg.get("LLM_FALLBACK_ENABLED"))
+            fallback_provider = str(cfg.get("LLM_FALLBACK_PROVIDER") or "openai").lower()
             if cfg.get("GCP_PROJECT_ID", ""):
                 self.chat_model = ChatVertexAI(
                     model=cfg["GCP_GEMINI_MODEL"],
@@ -87,7 +89,13 @@ class LLMHandler:
                     temperature=0.7,
                 )
 
-            if not self.chat_model and cfg.get("OPENAI_API_KEY", ""):
+            if (
+                not self.chat_model
+                and fallback_enabled
+                and fallback_provider == "openai"
+                and cfg.get("OPENAI_API_KEY", "")
+            ):
+                logger.warning("Gemini unavailable; using emergency OpenAI fallback for LLMHandler")
                 self.chat_model = ChatOpenAI(
                     openai_api_key=cfg["OPENAI_API_KEY"],
                     temperature=0.7,
@@ -95,7 +103,10 @@ class LLMHandler:
                 )
 
             if not self.chat_model:
-                raise ValueError("No LLM configured. Provide GCP or OpenAI credentials.")
+                raise ValueError(
+                    "No LLM configured. Provide Gemini credentials, or enable emergency fallback "
+                    "with LLM_FALLBACK_ENABLED=true."
+                )
 
             self.parser = JsonOutputParser(pydantic_object=LLMResponse)
             self.max_iterations = max_iterations or int(os.getenv("LLM_MAX_ITERATIONS", "6"))

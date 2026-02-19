@@ -46,6 +46,7 @@ beautifulsoup4>=4.12.0          # HTML parsing
 lxml>=5.0.0                     # HTML parser backend
 trafilatura>=1.6.0              # Advanced article content extraction
 podcastparser>=0.6.11           # Podcast RSS feed parsing
+qdrant-client>=1.12.0           # Self-hosted vector DB client
 
 # ============================================================================
 # Visualization

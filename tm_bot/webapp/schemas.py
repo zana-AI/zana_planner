@@ -2,8 +2,8 @@
 Pydantic models for API request/response schemas.
 """
 
-from typing import Optional, Dict, Any, List
-from pydantic import BaseModel
+from typing import Optional, Dict, Any, List, Literal
+from pydantic import BaseModel, Field
 
 
 # Weekly Report
@@ -356,3 +356,30 @@ class UpdateUserContentRequest(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
     rating: Optional[int] = None
+
+
+class AnalyzeContentRequest(BaseModel):
+    """Request model for enqueueing content analysis."""
+    force_rebuild: Optional[bool] = False
+
+
+class AskContentRequest(BaseModel):
+    """Request model for grounded Q&A."""
+    question: str = Field(..., min_length=1, max_length=4000)
+
+
+class CreateQuizRequest(BaseModel):
+    """Request model for quiz generation."""
+    difficulty: Optional[Literal["easy", "medium", "hard"]] = "medium"
+    question_count: Optional[int] = Field(default=8, ge=1, le=20)
+
+
+class QuizAnswerInput(BaseModel):
+    """Single quiz answer payload."""
+    question_id: str = Field(..., min_length=1)
+    answer: Any
+
+
+class SubmitQuizRequest(BaseModel):
+    """Submit quiz answers payload."""
+    answers: List[QuizAnswerInput] = Field(..., min_length=1, max_length=100)

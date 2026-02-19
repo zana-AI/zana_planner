@@ -19,6 +19,8 @@ def load_llm_env():
     project_id = os.getenv("GCP_PROJECT_ID")
     location   = os.getenv("GCP_LOCATION", "us-central1")
     model_name = os.getenv("GCP_GEMINI_MODEL", "gemini-2.5-flash")
+    fallback_enabled = os.getenv("LLM_FALLBACK_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+    fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").strip().lower() or "openai"
 
     if not project_id:
         raise ValueError("GCP_PROJECT_ID is missing in .env")
@@ -52,6 +54,8 @@ def load_llm_env():
         "GCP_LOCATION": location,
         "GCP_GEMINI_MODEL": model_name,
         "OPENAI_API_KEY": openai_key,
+        "LLM_FALLBACK_ENABLED": fallback_enabled,
+        "LLM_FALLBACK_PROVIDER": fallback_provider,
         "LANGSMITH_ENABLED": langsmith_enabled,
         "LANGSMITH_PROJECT": langsmith_project if langsmith_enabled else None,
     }
