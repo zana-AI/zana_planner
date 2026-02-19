@@ -838,8 +838,9 @@ class PlannerAPIAdapter:
             result = []
             for t in templates_with_status:
                 status = "🔓 Unlocked" if t.get('unlocked', False) else "🔒 Locked"
-                metric = f"{t['target_value']}{'x' if t['metric_type'] == 'count' else 'h'}"
-                result.append(f"{status} - {t['title']} ({t['level']}) - {metric} - {t['category']}")
+                metric = f"{t.get('target_value', 0)}{'x' if t.get('metric_type') == 'count' else 'h'}"
+                level_part = f" ({t['level']})" if t.get('level') else ""
+                result.append(f"{status} - {t['title']}{level_part} - {metric} - {t.get('category', '')}")
             
             return "\n".join(result)
         except Exception as e:
@@ -857,15 +858,21 @@ class PlannerAPIAdapter:
             prerequisites = self.templates_repo.get_prerequisites(template_id)
             
             result = [f"Template: {template['title']}"]
-            result.append(f"Category: {template['category']}")
-            result.append(f"Level: {template['level']}")
+            result.append(f"Category: {template.get('category', '')}")
+            if template.get('level'):
+                result.append(f"Level: {template['level']}")
             result.append(f"Status: {'🔓 Unlocked' if unlock_status['unlocked'] else '🔒 Locked'}")
             if not unlock_status['unlocked']:
                 result.append(f"Lock reason: {unlock_status['lock_reason']}")
-            result.append(f"Why: {template['why']}")
-            result.append(f"Done means: {template['done']}")
-            result.append(f"Effort: {template['effort']}")
-            result.append(f"Target: {template['target_value']}{'x' if template['metric_type'] == 'count' else 'h'} ({template['target_direction']})")
+            desc = template.get('why') or template.get('description') or ''
+            if desc:
+                result.append(f"Description: {desc}")
+            if template.get('done'):
+                result.append(f"Done means: {template['done']}")
+            if template.get('effort'):
+                result.append(f"Effort: {template['effort']}")
+            target_dir = template.get('target_direction', 'at_least')
+            result.append(f"Target: {template.get('target_value', 0)}{'x' if template.get('metric_type') == 'count' else 'h'} ({target_dir})")
             
             if prerequisites:
                 result.append("Prerequisites:")

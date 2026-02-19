@@ -105,10 +105,10 @@ class ReportsService:
                 
                 # Determine metric type and target
                 if instance:
-                    metric_type = instance['metric_type']
-                    target_value = instance['target_value']
-                    target_direction = instance['target_direction']
-                    template_kind = instance['template_kind']
+                    metric_type = instance.get('metric_type', 'hours')
+                    target_value = instance.get('target_value', 0)
+                    target_direction = instance.get('target_direction', 'at_least')
+                    template_kind = instance.get('template_kind', 'commitment')
                 else:
                     # Legacy promise: hours-based
                     metric_type = 'hours'

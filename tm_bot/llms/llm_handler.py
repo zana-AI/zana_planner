@@ -337,7 +337,7 @@ class LLMHandler:
             "- 'browse templates' / 'show me templates' → open_mini_app('/templates', 'templates')\n"
             "- 'my promises' / 'show tasks' → get_promises()\n"
             "- 'I want to go to gym 2 times this week' → list_templates(category='fitness'), find matching template, check unlock status, subscribe_template()\n"
-            "- 'I want to learn French for 3 hours this week' → list_templates(category='language'), find matching template, subscribe_template()\n"
+            "- 'I want to learn French/Chinese for 3 hours this week' → list_templates(category='language'); if a matching template exists, subscribe_template(); otherwise create_promise with title and hours_per_week (e.g. 3). Do not ask for level.\n"
             "- 'I want to limit social media to 2 hours this week' → list_templates(category='digital_wellness'), find budget template, subscribe_template()\n"
             "- 'create a promise to finish project by end of March' → resolve_datetime('end of March'), then create_promise with target_date\n"
             "- User fails a week → suggest downgrading to lower-level templates (e.g., L2 → L1) using list_templates() and subscribe_template()\n"
