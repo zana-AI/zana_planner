@@ -7,6 +7,7 @@ import { PromiseBadge } from '../components/PromiseBadge';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
+import { buildActivitySummaryText } from '../utils/activitySummary';
 
 export function UserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
@@ -143,6 +144,7 @@ export function UserDetailPage() {
 
   const isOwnProfile = currentUserId === userId;
   const displayName = getDisplayName(userData);
+  const activitySummary = buildActivitySummaryText(userData.weekly_activity_count, userData.last_activity_at_utc);
 
   const dicebearUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userData.user_id)}`;
   const avatarUrl =
@@ -190,11 +192,7 @@ export function UserDetailPage() {
           </div>
 
           <div className="user-detail-metrics">
-            {userData.activity_count > 0 ? (
-              <div>
-                <strong>{userData.activity_count}</strong> {userData.activity_count === 1 ? 'activity' : 'activities'}
-              </div>
-            ) : null}
+            <div>{activitySummary}</div>
             {userData.promise_count > 0 ? (
               <div>
                 <strong>{userData.promise_count}</strong> {userData.promise_count === 1 ? 'promise' : 'promises'}

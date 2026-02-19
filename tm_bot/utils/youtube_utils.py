@@ -32,22 +32,18 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 
-# Patterns to extract video_id from URLs (same logic as message_handlers._extract_youtube_video_id)
-_YOUTUBE_VIDEO_ID_PATTERNS = [
-    r"(?:youtube\.com/watch\?v=)([a-zA-Z0-9_-]{11})",
-    r"(?:youtu\.be/)([a-zA-Z0-9_-]{11})",
-    r"(?:youtube\.com/embed/)([a-zA-Z0-9_-]{11})",
-]
-_VIDEO_ID_RE = re.compile("|".join(f"({p})" for p in _YOUTUBE_VIDEO_ID_PATTERNS))
+# Pattern to extract video_id from YouTube URLs.
+_VIDEO_ID_RE = re.compile(
+    r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})"
+)
 
 
 def extract_video_id(url_or_text: str) -> Optional[str]:
     """Extract YouTube video ID from a URL or text containing a YouTube link."""
-    for m in _VIDEO_ID_RE.finditer(url_or_text):
-        for g in m.groups():
-            if g:
-                return g
-    return None
+    if not url_or_text:
+        return None
+    match = _VIDEO_ID_RE.search(url_or_text)
+    return match.group(1) if match else None
 
 
 def format_duration(seconds: Optional[float]) -> str:

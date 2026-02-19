@@ -13,6 +13,103 @@ from cbdata import encode_cb
 logger = get_logger(__name__)
 
 
+def _language_name(language_code: str) -> str:
+    names = {
+        "en": "English",
+        "fa": "Persian",
+        "fr": "French",
+    }
+    return names.get((language_code or "").lower(), language_code)
+
+
+def _voice_mode_name(voice_mode: str) -> str:
+    labels = {
+        "enabled": "enabled",
+        "disabled": "disabled",
+    }
+    return labels.get((voice_mode or "").lower(), voice_mode)
+
+
+async def send_settings_change_notification(
+    bot_token: str,
+    user_id: int,
+    timezone: Optional[str] = None,
+    language: Optional[str] = None,
+    voice_mode: Optional[str] = None,
+    user_language: Optional[str] = "en",
+) -> None:
+    """
+    Send minimal settings-change notification(s) to the user chat.
+    """
+    try:
+        if not bot_token:
+            return
+
+        from handlers.messages_store import get_message, Language
+
+        lang_map = {"en": Language.EN, "fa": Language.FA, "fr": Language.FR}
+        msg_lang = lang_map.get((user_language or "en").lower(), Language.EN)
+
+        lines = []
+        if language is not None:
+            lines.append(
+                get_message(
+                    "settings_language_changed",
+                    msg_lang,
+                    lang_name=_language_name(language),
+                )
+            )
+        if timezone is not None:
+            lines.append(
+                get_message(
+                    "settings_timezone_changed",
+                    msg_lang,
+                    timezone=timezone,
+                )
+            )
+        if voice_mode is not None:
+            lines.append(
+                get_message(
+                    "settings_voice_mode_changed",
+                    msg_lang,
+                    voice_mode=_voice_mode_name(voice_mode),
+                )
+            )
+
+        if not lines:
+            return
+
+        bot = Bot(token=bot_token)
+        await bot.send_message(
+            chat_id=user_id,
+            text="\n".join(lines),
+            parse_mode=None,
+        )
+
+        changed_fields = [
+            name
+            for name, value in (
+                ("timezone", timezone),
+                ("language", language),
+                ("voice_mode", voice_mode),
+            )
+            if value is not None
+        ]
+        logger.info(
+            f"Sent settings-change notification to user {user_id}: {', '.join(changed_fields)}"
+        )
+    except TelegramError as e:
+        error_msg = str(e).lower()
+        if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+            logger.debug(
+                f"Could not send settings-change notification to user {user_id}: user blocked bot or chat not found"
+            )
+        else:
+            logger.warning(f"Error sending settings-change notification to user {user_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error sending settings-change notification to user {user_id}: {e}")
+
+
 async def send_follow_notification(bot_token: str, follower_id: int, followee_id: int) -> None:
     """
     Send a Telegram notification to the followee when someone follows them.

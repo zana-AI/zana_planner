@@ -143,6 +143,8 @@ export interface PublicUser {
   avatar_path?: string;
   avatar_file_unique_id?: string;
   activity_count: number;
+  weekly_activity_count?: number;
+  last_activity_at_utc?: string;
   promise_count: number;
   last_seen_utc?: string;
   public_promises?: PublicPromiseBadge[];

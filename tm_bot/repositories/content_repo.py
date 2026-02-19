@@ -52,7 +52,7 @@ class ContentRepository:
                         :id, :canonical_url, :original_url, :provider, :content_type,
                         :title, :description, :author_channel, :language, :published_at,
                         :duration_seconds, :estimated_read_seconds, :thumbnail_url,
-                        :metadata_json::jsonb, :created_at, :updated_at
+                        CAST(:metadata_json AS jsonb), :created_at, :updated_at
                     )
                     ON CONFLICT (canonical_url) DO UPDATE SET
                         original_url = EXCLUDED.original_url,
@@ -66,7 +66,7 @@ class ContentRepository:
                         duration_seconds = COALESCE(EXCLUDED.duration_seconds, content.duration_seconds),
                         estimated_read_seconds = COALESCE(EXCLUDED.estimated_read_seconds, content.estimated_read_seconds),
                         thumbnail_url = COALESCE(EXCLUDED.thumbnail_url, content.thumbnail_url),
-                        metadata_json = COALESCE(EXCLUDED.metadata_json::jsonb, content.metadata_json),
+                        metadata_json = COALESCE(EXCLUDED.metadata_json, content.metadata_json),
                         updated_at = EXCLUDED.updated_at
                 """),
                 {

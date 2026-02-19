@@ -172,6 +172,9 @@ class MessageTemplateStore:
             # Language selection
             "language_set": "Language set to {lang}",
             "choose_language": "Choose bot language",
+            "settings_language_changed": "Language changed to {lang_name}.",
+            "settings_timezone_changed": "Timezone set to {timezone}.",
+            "settings_voice_mode_changed": "Voice mode {voice_mode}.",
             
             # Voice messages
             "voice_received": "Got your voice note. Processing...",

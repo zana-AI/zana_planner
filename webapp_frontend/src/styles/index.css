@@ -1088,6 +1088,9 @@ body.modal-open {
   color: var(--accent);
   font-weight: 600;
   margin-top: 4px;
+  max-width: 100%;
+  text-align: center;
+  white-space: normal;
 }
 
 .user-card-follow-btn {
@@ -3633,9 +3636,10 @@ textarea.modal-input {
 
 .user-detail-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .user-detail-avatar {
@@ -3657,6 +3661,7 @@ textarea.modal-input {
 
 .user-detail-main {
   flex: 1;
+  min-width: 0;
 }
 
 .user-detail-main h2 {
@@ -3673,6 +3678,10 @@ textarea.modal-input {
 .user-detail-actions {
   display: flex;
   gap: 8px;
+  margin-left: auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .user-detail-metrics {
@@ -3701,6 +3710,18 @@ textarea.modal-input {
   padding: 24px;
   text-align: center;
   color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .user-detail-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .user-detail-actions .ui-button {
+    flex: 1 1 140px;
+  }
 }
 
 /* Admin grouped navigation */

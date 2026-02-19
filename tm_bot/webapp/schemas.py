@@ -52,6 +52,8 @@ class PublicUser(BaseModel):
     avatar_path: Optional[str] = None
     avatar_file_unique_id: Optional[str] = None
     activity_count: int = 0
+    weekly_activity_count: int = 0
+    last_activity_at_utc: Optional[str] = None
     promise_count: int = 0
     last_seen_utc: Optional[str] = None
 

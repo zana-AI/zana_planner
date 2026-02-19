@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PublicUser } from '../types';
 import { generateUsername, getInitialsFromUsername } from '../utils/usernameGenerator';
+import { buildActivitySummaryText } from '../utils/activitySummary';
 import { apiClient } from '../api/client';
 
 interface UserCardProps {
@@ -91,6 +92,7 @@ export function UserCard({ user, currentUserId, showFollowButton = false, onFoll
   const initials = getInitials(user);
   const displayName = getDisplayName(user);
   const avatarColor = getAvatarColor(user.user_id);
+  const activitySummary = buildActivitySummaryText(user.weekly_activity_count, user.last_activity_at_utc);
   
   // Generate DiceBear avatar URL (deterministic based on user_id)
   const dicebearUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.user_id)}`;
@@ -191,11 +193,7 @@ export function UserCard({ user, currentUserId, showFollowButton = false, onFoll
       
       <div className="user-card-info">
         <div className="user-card-name">{displayName}</div>
-        {user.activity_count > 0 && (
-          <div className="user-card-activity">
-            {user.activity_count} {user.activity_count === 1 ? 'activity' : 'activities'}
-          </div>
-        )}
+        <div className="user-card-activity">{activitySummary}</div>
         {showFollowButton && currentUserId && !isOwnCard && (
           <button
             className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}

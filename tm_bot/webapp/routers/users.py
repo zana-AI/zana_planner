@@ -25,6 +25,76 @@ logger = get_logger(__name__)
 _pending_follow_notification_jobs: dict = {}
 
 
+def _activity_window_starts_utc() -> tuple[str, str]:
+    now_utc = datetime.now(timezone.utc)
+    since_utc_30 = (now_utc - timedelta(days=30)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    since_utc_week = (now_utc - timedelta(days=7)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return since_utc_30, since_utc_week
+
+
+def _fetch_user_activity_metrics(session, user_id: str, since_utc_30: str, since_utc_week: str):
+    row = session.execute(
+        text("""
+            SELECT
+                COUNT(*) FILTER (WHERE at_utc >= :since_utc_30) AS activity_count,
+                COUNT(*) FILTER (WHERE at_utc >= :since_utc_week) AS weekly_activity_count,
+                MAX(at_utc) AS last_activity_at_utc
+            FROM actions
+            WHERE user_id = :user_id
+        """),
+        {
+            "user_id": str(user_id),
+            "since_utc_30": since_utc_30,
+            "since_utc_week": since_utc_week,
+        },
+    ).mappings().fetchone()
+    if not row:
+        return 0, 0, None
+    return (
+        int(row.get("activity_count") or 0),
+        int(row.get("weekly_activity_count") or 0),
+        row.get("last_activity_at_utc"),
+    )
+
+
+def _notify_settings_change(
+    request: Request,
+    user_id: int,
+    *,
+    timezone: Optional[str] = None,
+    language: Optional[str] = None,
+    voice_mode: Optional[str] = None,
+    user_language: Optional[str] = None,
+) -> None:
+    """
+    Fire-and-forget chat notification for settings changes.
+    """
+    if timezone is None and language is None and voice_mode is None:
+        return
+
+    bot_token = getattr(request.app.state, "bot_token", None)
+    if not bot_token:
+        logger.debug("Skipping settings-change notification: missing bot token in app state")
+        return
+
+    try:
+        import asyncio
+        from ..notifications import send_settings_change_notification
+
+        asyncio.create_task(
+            send_settings_change_notification(
+                bot_token=bot_token,
+                user_id=user_id,
+                timezone=timezone,
+                language=language,
+                voice_mode=voice_mode,
+                user_language=user_language or "en",
+            )
+        )
+    except Exception as e:
+        logger.warning(f"Failed to queue settings-change notification for user {user_id}: {e}")
+
+
 @router.get("/weekly", response_model=WeeklyReportResponse)
 async def get_weekly_report(
     request: Request,
@@ -148,21 +218,35 @@ async def update_user_settings(
     if not settings:
         settings = UserSettings(user_id=str(user_id))
 
+    previous_timezone = settings.timezone
+    previous_language = settings.language
+    previous_voice_mode = settings.voice_mode
+
+    timezone_changed_to: Optional[str] = None
+    language_changed_to: Optional[str] = None
+    voice_mode_changed_to: Optional[str] = None
+
     if payload.timezone is not None:
         try:
             ZoneInfo(payload.timezone)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Invalid timezone: {payload.timezone}. Error: {str(e)}")
+        if payload.timezone != previous_timezone:
+            timezone_changed_to = payload.timezone
         settings.timezone = payload.timezone
 
     if payload.language is not None:
         if payload.language not in ("en", "fa", "fr"):
             raise HTTPException(status_code=400, detail="language must be one of: en, fa, fr")
+        if payload.language != previous_language:
+            language_changed_to = payload.language
         settings.language = payload.language
 
     if payload.voice_mode is not None:
         if payload.voice_mode not in ("enabled", "disabled"):
             raise HTTPException(status_code=400, detail="voice_mode must be one of: enabled, disabled")
+        if payload.voice_mode != previous_voice_mode:
+            voice_mode_changed_to = payload.voice_mode
         settings.voice_mode = payload.voice_mode
 
     if payload.first_name is not None:
@@ -170,6 +254,14 @@ async def update_user_settings(
 
     settings_repo.save_settings(settings)
     update_user_activity(request, user_id)
+    _notify_settings_change(
+        request,
+        user_id,
+        timezone=timezone_changed_to,
+        language=language_changed_to,
+        voice_mode=voice_mode_changed_to,
+        user_language=settings.language or "en",
+    )
 
     return UserInfoResponse(
         user_id=user_id,
@@ -222,6 +314,13 @@ async def update_user_timezone(
             
             settings.timezone = tz_request.tz
             settings_repo.save_settings(settings)
+            if current_tz != tz_request.tz:
+                _notify_settings_change(
+                    request,
+                    user_id,
+                    timezone=tz_request.tz,
+                    user_language=settings.language or "en",
+                )
             
             logger.info(f"Updated timezone for user {user_id} to {tz_request.tz} (forced)")
             
@@ -334,12 +433,7 @@ async def get_public_users(
     try:
         # IMPORTANT: Use the Postgres-backed DB (SQLAlchemy session) so counts and avatars
         # match followers/following + user detail pages.
-        since_utc = (
-            (datetime.now(timezone.utc) - timedelta(days=30))
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
+        since_utc_30, since_utc_week = _activity_window_starts_utc()
 
         with get_db_session() as session:
             rows = session.execute(
@@ -354,12 +448,17 @@ async def get_public_users(
                         u.avatar_file_unique_id,
                         u.last_seen_utc,
                         COALESCE(activity.activity_count, 0) as activity_count,
+                        COALESCE(activity.weekly_activity_count, 0) as weekly_activity_count,
+                        activity.last_activity_at_utc,
                         COALESCE(promise_counts.promise_count, 0) as promise_count
                     FROM users u
                     LEFT JOIN (
-                        SELECT user_id, COUNT(*) as activity_count
+                        SELECT
+                            user_id,
+                            COUNT(*) FILTER (WHERE at_utc >= :since_utc_30) as activity_count,
+                            COUNT(*) FILTER (WHERE at_utc >= :since_utc_week) as weekly_activity_count,
+                            MAX(at_utc) as last_activity_at_utc
                         FROM actions 
-                        WHERE at_utc >= :since_utc
                         GROUP BY user_id
                     ) activity ON u.user_id = activity.user_id
                     LEFT JOIN (
@@ -372,7 +471,11 @@ async def get_public_users(
                     ORDER BY activity_count DESC, u.last_seen_utc DESC NULLS LAST
                     LIMIT :limit;
                 """),
-                {"since_utc": since_utc, "limit": int(limit)},
+                {
+                    "since_utc_30": since_utc_30,
+                    "since_utc_week": since_utc_week,
+                    "limit": int(limit),
+                },
             ).mappings().fetchall()
 
         from ..schemas import PublicUser
@@ -388,6 +491,8 @@ async def get_public_users(
                     avatar_path=r.get("avatar_path"),
                     avatar_file_unique_id=r.get("avatar_file_unique_id"),
                     activity_count=int(r.get("activity_count") or 0),
+                    weekly_activity_count=int(r.get("weekly_activity_count") or 0),
+                    last_activity_at_utc=r.get("last_activity_at_utc"),
                     promise_count=int(r.get("promise_count") or 0),
                     last_seen_utc=r.get("last_seen_utc"),
                 )
@@ -538,23 +643,15 @@ async def get_user(
         if not settings:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Get activity count
+        # Get activity metrics
+        since_utc_30, since_utc_week = _activity_window_starts_utc()
         with get_db_session() as session:
-            since_utc = (
-                (datetime.now(timezone.utc) - timedelta(days=30))
-                .replace(microsecond=0)
-                .isoformat()
-                .replace("+00:00", "Z")
+            activity_count, weekly_activity_count, last_activity_at_utc = _fetch_user_activity_metrics(
+                session,
+                str(user_id),
+                since_utc_30,
+                since_utc_week,
             )
-            activity_row = session.execute(
-                text("""
-                    SELECT COUNT(*) as activity_count
-                    FROM actions 
-                    WHERE user_id = :user_id AND at_utc >= :since_utc
-                """),
-                {"user_id": str(user_id), "since_utc": since_utc}
-            ).mappings().fetchone()
-            activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
             
             promise_row = session.execute(
                 text("""
@@ -659,6 +756,8 @@ async def get_user(
             avatar_path=avatar_path,
             avatar_file_unique_id=avatar_file_unique_id,
             activity_count=activity_count,
+            weekly_activity_count=weekly_activity_count,
+            last_activity_at_utc=last_activity_at_utc,
             promise_count=promise_count,
             last_seen_utc=settings.last_seen.isoformat() if settings.last_seen else None,
         )
@@ -704,6 +803,7 @@ async def get_followers(
         
         # Get follower user IDs
         follower_ids = follows_repo.get_followers(user_id)
+        since_utc_30, since_utc_week = _activity_window_starts_utc()
         
         # Enrich with user info
         users = []
@@ -712,23 +812,16 @@ async def get_followers(
                 follower_id = int(follower_id_str)
                 settings = settings_repo.get_settings(follower_id)
                 
-                # Get activity count (simplified - could be optimized)
+                # Get activity / promise metrics and avatar
+                avatar_path = None
+                avatar_file_unique_id = None
                 with get_db_session() as session:
-                    since_utc = (
-                        (datetime.now(timezone.utc) - timedelta(days=30))
-                        .replace(microsecond=0)
-                        .isoformat()
-                        .replace("+00:00", "Z")
+                    activity_count, weekly_activity_count, last_activity_at_utc = _fetch_user_activity_metrics(
+                        session,
+                        follower_id_str,
+                        since_utc_30,
+                        since_utc_week,
                     )
-                    activity_row = session.execute(
-                        text("""
-                            SELECT COUNT(*) as activity_count
-                            FROM actions 
-                            WHERE user_id = :user_id AND at_utc >= :since_utc
-                        """),
-                        {"user_id": follower_id_str, "since_utc": since_utc}
-                    ).mappings().fetchone()
-                    activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
                     
                     promise_row = session.execute(
                         text("""
@@ -739,11 +832,7 @@ async def get_followers(
                         {"user_id": follower_id_str}
                     ).mappings().fetchone()
                     promise_count = int(promise_row["promise_count"] or 0) if promise_row else 0
-                
-                # Get avatar path if available
-                avatar_path = None
-                avatar_file_unique_id = None
-                with get_db_session() as session:
+
                     avatar_row = session.execute(
                         text("""
                             SELECT avatar_path, avatar_file_unique_id
@@ -766,6 +855,8 @@ async def get_followers(
                         avatar_path=avatar_path,
                         avatar_file_unique_id=avatar_file_unique_id,
                         activity_count=activity_count,
+                        weekly_activity_count=weekly_activity_count,
+                        last_activity_at_utc=last_activity_at_utc,
                         promise_count=promise_count,
                         last_seen_utc=None,
                     )
@@ -799,6 +890,7 @@ async def get_following(
         
         # Get following user IDs
         following_ids = follows_repo.get_following(user_id)
+        since_utc_30, since_utc_week = _activity_window_starts_utc()
         
         # Enrich with user info
         users = []
@@ -807,23 +899,16 @@ async def get_following(
                 following_id = int(following_id_str)
                 settings = settings_repo.get_settings(following_id)
                 
-                # Get activity count
+                # Get activity / promise metrics and avatar
+                avatar_path = None
+                avatar_file_unique_id = None
                 with get_db_session() as session:
-                    since_utc = (
-                        (datetime.now(timezone.utc) - timedelta(days=30))
-                        .replace(microsecond=0)
-                        .isoformat()
-                        .replace("+00:00", "Z")
+                    activity_count, weekly_activity_count, last_activity_at_utc = _fetch_user_activity_metrics(
+                        session,
+                        following_id_str,
+                        since_utc_30,
+                        since_utc_week,
                     )
-                    activity_row = session.execute(
-                        text("""
-                            SELECT COUNT(*) as activity_count
-                            FROM actions 
-                            WHERE user_id = :user_id AND at_utc >= :since_utc
-                        """),
-                        {"user_id": following_id_str, "since_utc": since_utc}
-                    ).mappings().fetchone()
-                    activity_count = int(activity_row["activity_count"] or 0) if activity_row else 0
                     
                     promise_row = session.execute(
                         text("""
@@ -834,11 +919,7 @@ async def get_following(
                         {"user_id": following_id_str}
                     ).mappings().fetchone()
                     promise_count = int(promise_row["promise_count"] or 0) if promise_row else 0
-                
-                # Get avatar path if available
-                avatar_path = None
-                avatar_file_unique_id = None
-                with get_db_session() as session:
+
                     avatar_row = session.execute(
                         text("""
                             SELECT avatar_path, avatar_file_unique_id
@@ -861,6 +942,8 @@ async def get_following(
                         avatar_path=avatar_path,
                         avatar_file_unique_id=avatar_file_unique_id,
                         activity_count=activity_count,
+                        weekly_activity_count=weekly_activity_count,
+                        last_activity_at_utc=last_activity_at_utc,
                         promise_count=promise_count,
                         last_seen_utc=None,
                     )
