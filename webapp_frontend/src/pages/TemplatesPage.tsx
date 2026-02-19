@@ -17,6 +17,7 @@ export function TemplatesPage() {
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
   const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
+  const [allCategories, setAllCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -29,6 +30,11 @@ export function TemplatesPage() {
       try {
         const response = await apiClient.getTemplates(selectedCategory || undefined);
         setTemplates(response.templates);
+        setAllCategories((prev) => {
+          const next = new Set(prev);
+          response.templates.forEach((template) => next.add(template.category));
+          return Array.from(next).sort((a, b) => a.localeCompare(b));
+        });
         hapticFeedback('success');
       } catch (err) {
         console.error('Failed to load templates:', err);
@@ -60,7 +66,11 @@ export function TemplatesPage() {
     }
   }, [templates]);
 
-  const categories = Array.from(new Set(templates.map((template) => template.category)));
+  const categories = allCategories;
+  const formatCategoryLabel = (category: string) =>
+    category
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (match) => match.toUpperCase());
 
   if (loading) {
     return (
@@ -103,7 +113,7 @@ export function TemplatesPage() {
               className={`category-filter ${selectedCategory === category ? 'active' : ''}`}
               onClick={() => setSelectedCategory(category)}
             >
-              {category.replace('_', ' ')}
+              {formatCategoryLabel(category)}
             </button>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, type CSSProperties } from 'react';
 import './DurationWheelPicker.css';
 
 interface DurationWheelPickerProps {
@@ -72,31 +72,37 @@ export function DurationWheelPicker({
     onChange(num);
   };
 
+  const containerStyle = {
+    '--wheel-item-height': `${itemHeight}px`,
+    '--wheel-visible-items': `${visibleItems}`,
+  } as CSSProperties;
+
   return (
-    <div className="wheel-picker-container">
-      <div className="wheel-picker-highlight" />
-      <div className="wheel-picker-fade-top" />
-      <div className="wheel-picker-fade-bottom" />
-      <div
-        ref={containerRef}
-        className="wheel-picker-scroll"
-        onScroll={handleScroll}
-        style={{
-          height: itemHeight * visibleItems,
-          paddingTop: itemHeight * Math.floor(visibleItems / 2),
-          paddingBottom: itemHeight * Math.floor(visibleItems / 2),
-        }}
-      >
-        {numbers.map((num) => (
-          <div
-            key={num}
-            className={`wheel-picker-item ${num === value ? 'selected' : ''}`}
-            style={{ height: itemHeight }}
-            onClick={() => handleItemClick(num)}
-          >
-            {num}
-          </div>
-        ))}
+    <div className="wheel-picker-container" style={containerStyle}>
+      <div className="wheel-picker-viewport">
+        <div className="wheel-picker-highlight" />
+        <div className="wheel-picker-fade-top" />
+        <div className="wheel-picker-fade-bottom" />
+        <div
+          ref={containerRef}
+          className="wheel-picker-scroll"
+          onScroll={handleScroll}
+          style={{
+            paddingTop: itemHeight * Math.floor(visibleItems / 2),
+            paddingBottom: itemHeight * Math.floor(visibleItems / 2),
+          }}
+        >
+          {numbers.map((num) => (
+            <div
+              key={num}
+              className={`wheel-picker-item ${num === value ? 'selected' : ''}`}
+              style={{ height: itemHeight }}
+              onClick={() => handleItemClick(num)}
+            >
+              {num}
+            </div>
+          ))}
+        </div>
       </div>
       <div className="wheel-picker-unit">minutes</div>
     </div>

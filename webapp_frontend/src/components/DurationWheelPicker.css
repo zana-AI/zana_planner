@@ -1,15 +1,22 @@
 .wheel-picker-container {
   position: relative;
   width: 100%;
-  max-width: 200px;
+  max-width: 220px;
   margin: 0 auto;
-  background: rgba(30, 30, 50, 0.95);
-  border-radius: 12px;
+  background: rgba(15, 24, 50, 0.94);
+  border-radius: var(--radius-16);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border);
+}
+
+.wheel-picker-viewport {
+  position: relative;
+  height: calc(var(--wheel-item-height) * var(--wheel-visible-items));
+  overflow: hidden;
 }
 
 .wheel-picker-scroll {
+  height: 100%;
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
   -webkit-overflow-scrolling: touch;
@@ -26,8 +33,8 @@
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+  color: var(--text-subtle);
   cursor: pointer;
   transition: all 0.15s ease;
   scroll-snap-align: center;
@@ -35,12 +42,12 @@
 }
 
 .wheel-picker-item:hover {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
 }
 
 .wheel-picker-item.selected {
-  color: #fff;
-  font-size: 2rem;
+  color: var(--text);
+  font-size: 2.05rem;
   font-weight: 700;
 }
 
@@ -48,13 +55,13 @@
 .wheel-picker-highlight {
   position: absolute;
   top: 50%;
-  left: 8px;
-  right: 8px;
-  height: 44px;
+  left: 10px;
+  right: 10px;
+  height: var(--wheel-item-height);
   transform: translateY(-50%);
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
-  border-radius: 8px;
-  border: 1px solid rgba(102, 126, 234, 0.5);
+  background: rgba(99, 167, 247, 0.16);
+  border-radius: var(--radius-8);
+  border: 1px solid var(--accent-soft-border);
   pointer-events: none;
   z-index: 1;
 }
@@ -65,27 +72,27 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 60px;
+  height: 56px;
   pointer-events: none;
   z-index: 2;
 }
 
 .wheel-picker-fade-top {
   top: 0;
-  background: linear-gradient(to bottom, rgba(30, 30, 50, 1) 0%, rgba(30, 30, 50, 0) 100%);
+  background: linear-gradient(to bottom, rgba(15, 24, 50, 1) 0%, rgba(15, 24, 50, 0) 100%);
 }
 
 .wheel-picker-fade-bottom {
-  bottom: 24px;
-  background: linear-gradient(to top, rgba(30, 30, 50, 1) 0%, rgba(30, 30, 50, 0) 100%);
+  bottom: 0;
+  background: linear-gradient(to top, rgba(15, 24, 50, 1) 0%, rgba(15, 24, 50, 0) 100%);
 }
 
 .wheel-picker-unit {
   text-align: center;
-  padding: 8px 0;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.9rem;
-  font-weight: 500;
-  background: rgba(30, 30, 50, 0.95);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 0 11px;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  background: rgba(8, 13, 28, 0.58);
+  border-top: 1px solid var(--border);
 }
