@@ -89,8 +89,8 @@ async def get_weekly_report(
             if "sessions" in formatted_data:
                 formatted_data["sessions"] = [
                     {
+                        **{k: v for k, v in s.items() if k != "date"},
                         "date": s["date"].isoformat() if hasattr(s["date"], "isoformat") else str(s["date"]),
-                        "hours": s["hours"]
                     }
                     for s in formatted_data["sessions"]
                 ]

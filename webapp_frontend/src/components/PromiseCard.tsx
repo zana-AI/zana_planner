@@ -414,12 +414,21 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     } else {
       sessionsByDate[dateKey] = (sessionsByDate[dateKey] || 0) + (session.hours || 0);
     }
-    // Collect notes for this date
-    if (session.notes && session.notes.length > 0) {
+    // Collect notes for this date (support both string[] and legacy string payloads)
+    const rawNotes = (session as { notes?: unknown }).notes;
+    const normalizedNotes = Array.isArray(rawNotes)
+      ? rawNotes
+          .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+          .map((n) => n.trim())
+      : typeof rawNotes === 'string' && rawNotes.trim()
+        ? [rawNotes.trim()]
+        : [];
+
+    if (normalizedNotes.length > 0) {
       if (!notesByDate[dateKey]) {
         notesByDate[dateKey] = [];
       }
-      notesByDate[dateKey].push(...session.notes);
+      notesByDate[dateKey].push(...normalizedNotes);
     }
   });
   
