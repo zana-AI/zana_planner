@@ -11,6 +11,23 @@
     .video-wrap { position: relative; width: 100%; padding-bottom: 56.25%; height: 0; }
     .video-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
     .hint { font-size: 12px; color: var(--tg-theme-hint-color, #999); margin-top: 8px; }
+    .controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+    .toggle input { width: 18px; height: 18px; }
+    .debug {
+      margin-top: 10px;
+      padding: 10px;
+      font-size: 12px;
+      color: var(--tg-theme-text-color, #000);
+      background: rgba(0, 0, 0, 0.06);
+      background: color-mix(in srgb, var(--tg-theme-bg-color, #fff) 85%, #000 15%);
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #999) 40%, transparent);
+      border-radius: 10px;
+      white-space: pre-wrap;
+      max-height: 160px;
+      overflow: auto;
+    }
   </style>
 </head>
 <body>
@@ -18,47 +35,203 @@
     <iframe id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
   <p class="hint">When done, tap the button below to close and get your watch summary.</p>
+  <div class="controls">
+    <label class="toggle">
+      <input type="checkbox" id="trackToggle" checked>
+      Track
+    </label>
+    <span class="hint">Track watched segments (polling fallback).</span>
+  </div>
+  <pre id="debugLog" class="debug" hidden></pre>
 
   <script>
 (function() {
   var params = new URLSearchParams(window.location.search);
   var videoId = params.get('video_id') || '';
   var userToken = params.get('ut') || '';
+  var debug = params.get('debug') === '1';
   var baseUrl = window.location.origin;
   var openTime = Date.now();
   var segments = [];
   var currentStart = null;
   var player = null;
+  var currentlyPlaying = false;
+  var trackToggle = document.getElementById('trackToggle');
+  var trackingEnabled = trackToggle ? !!trackToggle.checked : true;
+  var pollTimer = null;
+  var lastPlayerTime = null;
+  var statsSent = false;
+  var debugLog = document.getElementById('debugLog');
+  if (debug && debugLog) debugLog.hidden = false;
+
+  function dlog(msg) {
+    if (!debug) return;
+    var line = new Date().toISOString().slice(11, 19) + " " + msg;
+    try { console.log("[yt-watch]", line); } catch (e) {}
+    if (debugLog) {
+      debugLog.textContent += line + "\n";
+      debugLog.scrollTop = debugLog.scrollHeight;
+    }
+  }
+
+  window.addEventListener("error", function(e) {
+    dlog("window.error: " + (e && e.message ? e.message : "unknown"));
+  });
+  window.addEventListener("unhandledrejection", function(e) {
+    dlog("unhandledrejection: " + (e && e.reason ? String(e.reason) : "unknown"));
+  });
 
   if (!videoId) {
     document.body.innerHTML = '<p>Missing video_id.</p>';
     return;
   }
 
-  document.getElementById('yt').src = 'https://www.youtube.com/embed/' + videoId + '?enablejsapi=1';
+  dlog("init: video_id=" + videoId + " trackingEnabled=" + trackingEnabled + " tg=" + (!!(window.Telegram && window.Telegram.WebApp)));
+
+  document.getElementById('yt').src =
+    'https://www.youtube.com/embed/' + videoId +
+    '?enablejsapi=1&playsinline=1&origin=' + encodeURIComponent(baseUrl);
+
+  function pushSegment(start, end) {
+    if (typeof start !== "number" || typeof end !== "number") return;
+    if (!isFinite(start) || !isFinite(end)) return;
+    if (end <= start) return;
+    var last = segments.length ? segments[segments.length - 1] : null;
+    if (last && typeof last[0] === "number" && typeof last[1] === "number" && start <= (last[1] + 1.5)) {
+      last[0] = Math.min(last[0], start);
+      last[1] = Math.max(last[1], end);
+      return;
+    }
+    segments.push([start, end]);
+  }
+
+  function markPlaying(t) {
+    if (!trackingEnabled) return;
+    if (currentlyPlaying) return;
+    if (typeof t !== "number" || !isFinite(t)) {
+      try { t = player ? player.getCurrentTime() : 0; } catch (e) { t = 0; }
+    }
+    currentlyPlaying = true;
+    currentStart = t;
+    dlog("play @" + t.toFixed(2));
+  }
+
+  function markNotPlaying(t) {
+    if (!currentlyPlaying) return;
+    if (typeof t !== "number" || !isFinite(t)) {
+      try { t = player ? player.getCurrentTime() : 0; } catch (e) { t = 0; }
+    }
+    currentlyPlaying = false;
+    if (currentStart != null) pushSegment(currentStart, t);
+    dlog("stop @" + t.toFixed(2));
+    currentStart = null;
+  }
+
+  function pollTick() {
+    if (!trackingEnabled) return;
+    if (!player || typeof player.getCurrentTime !== "function") return;
+    var t;
+    try {
+      t = player.getCurrentTime();
+    } catch (e) {
+      dlog("poll: getCurrentTime failed: " + e);
+      return;
+    }
+    var state = null;
+    try {
+      state = player.getPlayerState();
+    } catch (e) {}
+
+    var advanced = (lastPlayerTime != null) && (t > (lastPlayerTime + 0.2));
+    var isPlaying = false;
+    if (typeof state === "number" && window.YT && YT.PlayerState) {
+      isPlaying = state === YT.PlayerState.PLAYING;
+    }
+    if (!isPlaying && advanced) isPlaying = true;
+
+    var jumped = (lastPlayerTime != null) && (Math.abs(t - lastPlayerTime) > 2.5);
+    if (currentlyPlaying && jumped && lastPlayerTime != null && currentStart != null) {
+      pushSegment(currentStart, lastPlayerTime);
+      currentStart = t;
+      dlog("jump: " + lastPlayerTime.toFixed(2) + " -> " + t.toFixed(2));
+    }
+
+    if (isPlaying) markPlaying(t);
+    else markNotPlaying(t);
+    lastPlayerTime = t;
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollTick, 1000);
+    pollTick();
+    dlog("poll: started");
+  }
+
+  function stopPolling() {
+    if (!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
+    dlog("poll: stopped");
+  }
+
+  if (trackToggle) {
+    trackToggle.addEventListener("change", function() {
+      trackingEnabled = !!trackToggle.checked;
+      dlog("trackingEnabled=" + trackingEnabled);
+      if (!trackingEnabled) {
+        stopPolling();
+        markNotPlaying();
+      } else {
+        startPolling();
+      }
+    });
+  }
+  if (trackingEnabled) startPolling();
 
   var tag = document.createElement('script');
   tag.src = 'https://www.youtube.com/iframe_api';
   var firstScriptTag = document.getElementsByTagName('script')[0];
   firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+  setTimeout(function() {
+    if (!window.YT || !window.YT.Player) dlog("YT API not loaded (timeout)");
+  }, 5000);
 
   window.onYouTubeIframeAPIReady = function() {
+    dlog("YT iframe API ready");
     player = new YT.Player('yt', {
       events: {
+        onReady: function() {
+          dlog("player ready");
+        },
         onStateChange: function(event) {
+          dlog("state=" + event.data);
+          if (!trackingEnabled) return;
           if (event.data === YT.PlayerState.PLAYING) {
-            currentStart = player.getCurrentTime();
-          } else if ((event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) && currentStart != null) {
-            var end = player.getCurrentTime();
-            if (end > currentStart) segments.push([currentStart, end]);
-            currentStart = null;
+            try { markPlaying(player.getCurrentTime()); } catch (e) { markPlaying(); }
+          } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+            try { markNotPlaying(player.getCurrentTime()); } catch (e) { markNotPlaying(); }
           }
+        },
+        onError: function(event) {
+          dlog("player error=" + (event && event.data != null ? event.data : "unknown"));
         }
       }
     });
   };
 
+  function finalizeSegments() {
+    try {
+      if (player && typeof player.getCurrentTime === "function") {
+        markNotPlaying(player.getCurrentTime());
+      }
+    } catch (e) {
+      markNotPlaying();
+    }
+  }
+
   function getPayload(closedVia) {
+    finalizeSegments();
     return {
       init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : '',
       user_token: userToken,
@@ -71,24 +244,49 @@
     };
   }
 
+  function sendBeaconStats(closedVia) {
+    if (statsSent) return;
+    statsSent = true;
+    var payload = getPayload(closedVia);
+    try {
+      var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      navigator.sendBeacon(baseUrl + '/api/youtube/report_stats', blob);
+      dlog("beacon sent: " + closedVia);
+    } catch (e) {
+      try {
+        navigator.sendBeacon(baseUrl + '/api/youtube/report_stats', JSON.stringify(payload));
+        dlog("beacon sent (string): " + closedVia);
+      } catch (e2) {
+        dlog("beacon failed: " + e2);
+      }
+    }
+  }
+
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
     window.Telegram.WebApp.MainButton.setText('Done').show().onClick(function() {
+      if (statsSent) { window.Telegram.WebApp.close(); return; }
+      var payload = getPayload('done');
       fetch(baseUrl + '/api/youtube/report_stats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(getPayload('done'))
+        body: JSON.stringify(payload)
       }).then(function() {
+        statsSent = true;
+        dlog("fetch sent: done");
         window.Telegram.WebApp.close();
       }).catch(function() {
+        dlog("fetch failed; falling back to beacon");
+        sendBeaconStats('done_beacon');
         window.Telegram.WebApp.close();
       });
     });
   }
 
   window.addEventListener('pagehide', function() {
-    navigator.sendBeacon(baseUrl + '/api/youtube/report_stats', JSON.stringify(getPayload('beacon')));
+    sendBeaconStats('beacon');
+    stopPolling();
   });
 })();
   </script>
