@@ -300,7 +300,6 @@ class PlannerBot:
     def run(self) -> None:
         """
         Start the bot. For Telegram this runs polling; for other platforms, their event loop.
-        The web app is run separately (e.g. via run_server.py or another process).
         """
         try:
             if hasattr(self.platform_adapter, "application"):
