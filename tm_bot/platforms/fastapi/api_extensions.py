@@ -351,9 +351,9 @@ def create_bot_api(
     from tm_bot.planner_bot import PlannerBot  # pylint: disable=import-error
     bot = PlannerBot(bot_adapter, root_dir=root_dir)
     
-    # Create handler wrapper
+    # Create handler wrapper (routes through bot.dispatch())
     if bot.message_handlers and bot.callback_handlers:
-        handler_wrapper = CLIHandlerWrapper(bot.message_handlers, bot.callback_handlers)
+        handler_wrapper = CLIHandlerWrapper(bot=bot)
         
         # Add bot routes
         add_bot_routes(app, bot_adapter, handler_wrapper)

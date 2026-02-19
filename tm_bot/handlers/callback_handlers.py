@@ -165,9 +165,7 @@ class CallbackHandlers:
         user_id = query.from_user.id
         user_lang = get_user_language(query.from_user)
         
-        # Update user info (including last_seen_utc) - user is active
-        self._update_user_info(user_id, query.from_user)
-        
+        # User info updated in PlannerBot.dispatch()
         # Parse callback data
         cb = decode_cb(query.data)
         action = cb.get("a")

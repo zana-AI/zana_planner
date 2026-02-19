@@ -5,6 +5,7 @@ Handles all command and text message processing.
 
 import asyncio
 import os
+import tempfile
 import html
 import json
 import re
@@ -119,6 +120,75 @@ class MessageHandlers:
     def get_user_timezone(self, user_id: int) -> str:
         """Get user timezone using the settings service."""
         return self.plan_keeper.settings_service.get_user_timezone(user_id)
+
+    async def get_voice_text_for_update(
+        self, update: Update, context: CallbackContext
+    ) -> tuple[str, Optional[str]]:
+        """
+        Download voice file, transcribe, and return (transcribed_text, temp_path).
+        Caller is responsible for cleaning up temp_path. Returns ("", path) on failure.
+        """
+        voice = getattr(update.effective_message, "voice", None) if update.effective_message else None
+        if not voice or not context.bot:
+            return "", None
+        file = await context.bot.get_file(voice.file_id)
+        temp_dir = tempfile.gettempdir()
+        path = os.path.join(temp_dir, f"voice_{voice.file_unique_id}.ogg")
+        await file.download_to_drive(path)
+        user_id = update.effective_user.id if update.effective_user else 0
+        user_lang = get_user_language(user_id)
+        user_lang_code = user_lang.value if user_lang else "en"
+        voice_caption = (update.effective_message.caption or "").strip()
+        try:
+            result = self.voice_service.transcribe_voice_multi_language(
+                path, user_language=user_lang_code, fallback_to_english=True
+            )
+            transcribed = (result.text or "").strip()
+            if voice_caption:
+                user_input = f"{voice_caption}\n\n{transcribed}" if transcribed else voice_caption
+            else:
+                user_input = transcribed
+            return user_input, path
+        except Exception as e:
+            logger.warning(f"Voice transcription failed: {e}")
+            return "", path
+
+    async def get_image_text_for_update(
+        self, update: Update, context: CallbackContext
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        Download image, parse with VLM, return (extracted_message, temp_path).
+        Caller is responsible for cleaning up temp_path. Returns (None, path) on failure or no text.
+        """
+        msg = update.effective_message
+        if not msg or not context.bot:
+            return None, None
+        if msg.photo:
+            file_id = msg.photo[-1].file_id
+        elif getattr(msg, "document", None) and getattr(msg.document, "mime_type", None) and (msg.document.mime_type or "").startswith("image/"):
+            file_id = msg.document.file_id
+        else:
+            return None, None
+        file = await context.bot.get_file(file_id)
+        temp_dir = tempfile.gettempdir()
+        path = os.path.join(temp_dir, f"image_{file.file_unique_id}")
+        await file.download_to_drive(path)
+        try:
+            if self.image_service is None:
+                return None, path
+            file_url = getattr(file, "file_path", None)
+            analysis = self.image_service.parse_image(path, image_url=file_url)
+            extracted = self.image_service.extract_text_for_processing(analysis)
+            if not extracted or not getattr(analysis, "text", None) or len((analysis.text or "").strip()) == 0:
+                return None, path
+            user_message = (
+                f"I've extracted the following content from an image:\n\n{extracted}\n\n"
+                "Please help me process this content."
+            )
+            return user_message, path
+        except Exception as e:
+            logger.warning(f"Image parsing failed: {e}")
+            return None, path
 
     @staticmethod
     def _choose_from_options(user_text: str, options: list[dict]) -> Optional[str]:
@@ -477,43 +547,45 @@ class MessageHandlers:
         """Handle voice messages with ASR and optional TTS response."""
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
-        
-        # Extract and update user info
-        self._update_user_info(user_id, update.effective_user)
-        # Fetch avatar in background (non-blocking)
-        await self._update_user_avatar_async(context, user_id)
-        
-        # Get voice file
-        voice = update.effective_message.voice
-        if not voice:
-            return
-        
-        file = await context.bot.get_file(voice.file_id)
-        
-        # Download to temp directory
-        import tempfile
-        import os
-        temp_dir = tempfile.gettempdir()
-        path = os.path.join(temp_dir, f"voice_{voice.file_unique_id}.ogg")
-        await file.download_to_drive(path)
+        path = None
+        # Use pre-normalized text from PlannerBot.dispatch() when set
+        user_input = (getattr(update.effective_message, "text", None) or "").strip()
+        if not user_input:
+            voice = update.effective_message.voice
+            if not voice:
+                return
+            file = await context.bot.get_file(voice.file_id)
+            path = os.path.join(tempfile.gettempdir(), f"voice_{voice.file_unique_id}.ogg")
+            await file.download_to_drive(path)
+            try:
+                voice_caption = update.effective_message.caption or ""
+                user_lang_code = user_lang.value if user_lang else "en"
+                transcription_result = self.voice_service.transcribe_voice_multi_language(
+                    path, user_language=user_lang_code, fallback_to_english=True
+                )
+                transcribed_text = (transcription_result.text or "").strip()
+                if voice_caption.strip():
+                    user_input = f"{voice_caption}\n\n{transcribed_text}".strip() if transcribed_text else voice_caption.strip()
+                else:
+                    user_input = transcribed_text
+            except Exception as e:
+                logger.warning(f"Voice transcription failed: {e}")
+                return
+            finally:
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete temp voice file {path}: {e}")
 
-        
         try:
-            # Check voice mode preference
             settings = self.plan_keeper.settings_service.get_settings(user_id)
-            
-            # Check if there's a text caption with the voice message
-            voice_caption = update.effective_message.caption or ""
-            
-            # Send acknowledgment
             ack_message = get_message("voice_received", user_lang)
             await self.response_service.reply_text(
                 update, ack_message,
                 user_id=user_id,
-                log_conversation=False  # Don't log acknowledgment
+                log_conversation=False
             )
-            
-            # If first time, ask about voice mode preference (but still process the message)
             if settings.voice_mode is None:
                 message = get_message("voice_mode_prompt", user_lang)
                 keyboard = voice_mode_selection_kb()
@@ -522,36 +594,7 @@ class MessageHandlers:
                     user_id=user_id,
                     reply_markup=keyboard
                 )
-                # Continue processing the voice message even if preference not set yet
-            
-            # Transcribe voice with multi-language support
-            user_lang_code = user_lang.value if user_lang else "en"
-            
-            # Use multi-language transcription that tries both user language and English
-            transcription_result = self.voice_service.transcribe_voice_multi_language(
-                path,
-                user_language=user_lang_code,
-                fallback_to_english=True
-            )
-            
-            transcribed_text = transcription_result.text
-            
-            # Log transcription details
-            if transcription_result.confidence > 0:
-                logger.info(
-                    f"Voice transcribed in {transcription_result.language_code} "
-                    f"with confidence {transcription_result.confidence:.2f}"
-                )
-            
-            # Combine transcribed text with caption if present
-            if voice_caption and voice_caption.strip():
-                if transcribed_text:
-                    user_input = f"{voice_caption}\n\n{transcribed_text}".strip()
-                else:
-                    user_input = voice_caption.strip()
-            else:
-                user_input = transcribed_text if transcribed_text else ""
-            
+
             if not user_input:
                 error_msg = get_message("voice_transcription_failed", user_lang)
                 await self.response_service.reply_text(
@@ -631,12 +674,14 @@ class MessageHandlers:
                         update, context, error_msg, settings, user_lang
                     )
         finally:
-            # Clean up temp file
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except Exception as e:
-                logger.warning(f"Failed to delete temp voice file {path}: {e}")
+            cleanup_path = path
+            if cleanup_path is None and context and getattr(context, "user_data", None):
+                cleanup_path = context.user_data.pop("_voice_file_path", None)
+            if cleanup_path and os.path.exists(cleanup_path):
+                try:
+                    os.remove(cleanup_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp voice file {cleanup_path}: {e}")
     
     async def _send_response_with_voice_mode(
         self, update: Update, context: CallbackContext, 
@@ -861,41 +906,19 @@ class MessageHandlers:
         """Handle image messages with VLM parsing and text extraction."""
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
-        
-        # Extract and update user info
-        self._update_user_info(user_id, update.effective_user)
-        # Fetch avatar in background (non-blocking)
-        await self._update_user_avatar_async(context, user_id)
-        
-        msg = update.effective_message
-        
-        # Get image file
-        if msg.photo:
-            # Photo: pick the largest size
-            file_id = msg.photo[-1].file_id
-        else:
-            # Image as document (PNG/JPG)
-            file_id = msg.document.file_id
-        
-        file = await context.bot.get_file(file_id)
-        
-        # Download image
-        import tempfile
-        import os
-        temp_dir = tempfile.gettempdir()
-        path = os.path.join(temp_dir, f"image_{file.file_unique_id}")
-        await file.download_to_drive(path)
-        
-        try:
-            # Send acknowledgment
-            ack_message = get_message("image_received", user_lang)
-            await self.response_service.reply_text(
-                update, ack_message,
-                user_id=user_id,
-                log_conversation=False  # Don't log acknowledgment
-            )
-            
-            # Parse image with VLM
+        path = None
+        user_message = (getattr(update.effective_message, "text", None) or "").strip()
+        if not user_message:
+            msg = update.effective_message
+            if msg.photo:
+                file_id = msg.photo[-1].file_id
+            elif getattr(msg, "document", None) and getattr(msg.document, "mime_type", None) and (msg.document.mime_type or "").startswith("image/"):
+                file_id = msg.document.file_id
+            else:
+                return
+            file = await context.bot.get_file(file_id)
+            path = os.path.join(tempfile.gettempdir(), f"image_{file.file_unique_id}")
+            await file.download_to_drive(path)
             try:
                 if self.image_service is None:
                     error_msg = get_message("image_processing_failed", user_lang)
@@ -904,122 +927,106 @@ class MessageHandlers:
                         user_id=user_id
                     )
                     return
-                
-                # Use Telegram's file_path (URL) if available, otherwise use local file
-                file_url = file.file_path
-                
-                # Parse image
+                file_url = getattr(file, "file_path", None)
                 analysis = self.image_service.parse_image(path, image_url=file_url)
-                
-                # Extract text for processing
                 extracted_text = self.image_service.extract_text_for_processing(analysis)
-                
-                if not extracted_text or not analysis.text or len(analysis.text.strip()) == 0:
-                    # No text found in image
+                if not extracted_text or not getattr(analysis, "text", None) or len((analysis.text or "").strip()) == 0:
                     error_msg = get_message("image_no_text", user_lang)
-                    await self.response_service.reply_text(
-                        update, error_msg,
-                        user_id=user_id
-                    )
+                    await self.response_service.reply_text(update, error_msg, user_id=user_id)
                     return
-                
-                # Log extracted content for debugging
                 logger.info(f"Image analysis - Type: {analysis.type}, Text length: {len(analysis.text)}, Language: {analysis.meta.language}")
-                
-                # Use extracted text as user message input with context
-                # This helps the LLM understand it's processing extracted image content
                 user_message = f"I've extracted the following content from an image:\n\n{extracted_text}\n\nPlease help me process this content."
-                
-                # Process through LLM
-                user_lang_code = user_lang.value if user_lang else "en"
-                
-                # Send quick processing message
-                processing_msg = await self.response_service.send_processing_message(
-                    update, user_id=user_id, user_lang=user_lang
-                )
-                
-                # Create progress callback to show plan to user
-                plan_message_to_send = None
-                
-                def progress_callback(event: str, payload: dict):
-                    nonlocal plan_message_to_send
-                    if event == "plan":
-                        steps = payload.get("steps", [])
-                        plan_message_to_send = self._format_plan_for_user(steps)
-                
-                llm_response = self.llm_handler.get_response_api(
-                    user_message, str(user_id), 
-                    user_language=user_lang_code,
-                    progress_callback=progress_callback
-                )
-                
-                # Check for errors
-                if "error" in llm_response:
-                    error_msg = llm_response["response_to_user"]
-                    if user_lang and user_lang != Language.EN:
-                        error_msg = translate_text(error_msg, user_lang.value, "en")
-                    
-                    # Edit processing message with error
-                    if processing_msg:
-                        await self.response_service.edit_processing_message(
-                            context, processing_msg, error_msg,
-                            user_id=user_id, user_lang=user_lang,
-                            parse_mode='Markdown'
-                        )
-                    else:
-                        await self.response_service.reply_text(
-                            update, error_msg,
-                            user_id=user_id,
-                            parse_mode='Markdown'
-                        )
-                    return
-                
-                # Process LLM response
-                try:
-                    func_call_response = self.call_planner_api(user_id, llm_response)
-                    # LLM should already respond in target language - trust it, translation happens in ResponseService as fallback
-                    response_text = llm_response['response_to_user']
-                    
-                    formatted_response = self._format_response(response_text, func_call_response)
-                    
-                    # Edit processing message with final response
-                    if processing_msg:
-                        await self.response_service.edit_processing_message(
-                            context, processing_msg, formatted_response,
-                            user_id=user_id, user_lang=user_lang
-                        )
-                    else:
-                        # Get settings for voice mode
-                        settings = self.plan_keeper.settings_service.get_settings(user_id)
-                        
-                        # Send response (with voice mode if enabled)
-                        await self._send_response_with_voice_mode(
-                            update, context, formatted_response, settings, user_lang
-                        )
-                except Exception as e:
-                    error_msg = get_message("error_general", user_lang, error=str(e))
-                    logger.error(f"Error processing image for user {user_id}: {str(e)}")
-                    await self.response_service.reply_text(
-                        update, error_msg,
-                        user_id=user_id
-                    )
-                    
             except Exception as e:
                 error_msg = get_message("image_processing_failed", user_lang)
-                logger.error(f"Image processing error: {str(e)}", exc_info=True)
-                # Provide more context in error message
-                detailed_error = f"{error_msg}\n\nError details: {str(e)}"
                 await self.response_service.reply_text(
-                    update, detailed_error,
+                    update, f"{error_msg}\n\nError: {e}",
                     user_id=user_id
                 )
-        finally:
-            # Clean up temp file
+                return
+            finally:
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete temp image file {path}: {e}")
+
+        try:
+            ack_message = get_message("image_received", user_lang)
+            await self.response_service.reply_text(
+                update, ack_message,
+                user_id=user_id,
+                log_conversation=False
+            )
+            user_lang_code = user_lang.value if user_lang else "en"
+            processing_msg = await self.response_service.send_processing_message(
+                update, user_id=user_id, user_lang=user_lang
+            )
+            plan_message_to_send = None
+
+            def progress_callback(event: str, payload: dict):
+                nonlocal plan_message_to_send
+                if event == "plan":
+                    steps = payload.get("steps", [])
+                    plan_message_to_send = self._format_plan_for_user(steps)
+
+            llm_response = self.llm_handler.get_response_api(
+                user_message, str(user_id),
+                user_language=user_lang_code,
+                progress_callback=progress_callback
+            )
+            if "error" in llm_response:
+                error_msg = llm_response["response_to_user"]
+                if user_lang and user_lang != Language.EN:
+                    error_msg = translate_text(error_msg, user_lang.value, "en")
+                if processing_msg:
+                    await self.response_service.edit_processing_message(
+                        context, processing_msg, error_msg,
+                        user_id=user_id, user_lang=user_lang,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await self.response_service.reply_text(
+                        update, error_msg,
+                        user_id=user_id,
+                        parse_mode='Markdown'
+                    )
+                return
             try:
-                if os.path.exists(path):
-                    os.remove(path)
+                func_call_response = self.call_planner_api(user_id, llm_response)
+                response_text = llm_response['response_to_user']
+                formatted_response = self._format_response(response_text, func_call_response)
+                if processing_msg:
+                    await self.response_service.edit_processing_message(
+                        context, processing_msg, formatted_response,
+                        user_id=user_id, user_lang=user_lang
+                    )
+                else:
+                    settings = self.plan_keeper.settings_service.get_settings(user_id)
+                    await self._send_response_with_voice_mode(
+                        update, context, formatted_response, settings, user_lang
+                    )
             except Exception as e:
-                logger.warning(f"Failed to delete temp image file {path}: {e}")
+                error_msg = get_message("error_general", user_lang, error=str(e))
+                logger.error(f"Error processing image for user {user_id}: {str(e)}")
+                await self.response_service.reply_text(
+                    update, error_msg,
+                    user_id=user_id
+                )
+        except Exception as e:
+            error_msg = get_message("image_processing_failed", user_lang)
+            logger.error(f"Image processing error: {str(e)}", exc_info=True)
+            detailed_error = f"{error_msg}\n\nError details: {str(e)}"
+            await self.response_service.reply_text(
+                update, detailed_error,
+                user_id=user_id
+            )
+        finally:
+            cleanup_path = path if path else (getattr(context, "user_data", None) or {}).pop("_image_file_path", None)
+            if cleanup_path and os.path.exists(cleanup_path):
+                try:
+                    os.remove(cleanup_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp image file {cleanup_path}: {e}")
 
     async def on_poll_created(self, update: Update, context: CallbackContext):
         poll = update.effective_message.poll
@@ -1134,20 +1141,7 @@ class MessageHandlers:
                 )
                 return
             
-            # Extract and update user info (first_name, username, last_seen)
-            self._update_user_info(user_id, update.effective_user)
-            # Fetch avatar in background (non-blocking)
-            await self._update_user_avatar_async(context, user_id)
-            
-            # Log user message
-            self.response_service.log_user_message(
-                user_id=user_id,
-                # Keep logs faithful to what user actually typed, even when queue
-                # builds a synthetic coalesced prompt for the model.
-                content=update.message.text or user_message,
-                message_id=update.message.message_id,
-                chat_id=update.effective_chat.id if update.effective_chat else None,
-            )
+            # User info, avatar, and inbound log done in PlannerBot.dispatch()
 
             # Check for broadcast state
             broadcast_state = context.user_data.get('broadcast_state') if context.user_data else None
