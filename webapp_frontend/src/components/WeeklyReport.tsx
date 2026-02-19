@@ -64,11 +64,10 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
   
   const promiseEntries = Object.entries(promises);
   const hasPromises = promiseEntries.length > 0;
-  
-  // Sort promises alphabetically by ID for consistent ordering
+
   const sortedPromises = useMemo(
-    () => promiseEntries.sort((a, b) => a[0].localeCompare(b[0])),
-    [promiseEntries]
+    () => [...Object.entries(promises)].sort((a, b) => a[0].localeCompare(b[0])),
+    [promises]
   );
   
   return (

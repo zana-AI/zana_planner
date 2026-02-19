@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
@@ -19,14 +19,13 @@ export function DashboardPage() {
   const [communityUsers, setCommunityUsers] = useState<PublicUser[]>([]);
   const [communityLoading, setCommunityLoading] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
-  const [currentRefTime, setCurrentRefTime] = useState<string | undefined>(() => {
-    // Get ref_time from URL params if present
-    return searchParams.get('ref_time') || undefined;
-  });
+  // Single source of truth: derive ref_time from URL
+  const currentRefTime = searchParams.get('ref_time') || undefined;
   const [showSuggestModal, setShowSuggestModal] = useState(false);
   const [suggestToUserId, setSuggestToUserId] = useState<string>('');
   const [suggestToUserName, setSuggestToUserName] = useState<string>('');
   const [showSuggestionsInbox, setShowSuggestionsInbox] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Get current week's Monday for comparison
   const getCurrentWeekMonday = useCallback(() => {
@@ -56,24 +55,26 @@ export function DashboardPage() {
     return `${startStr} - ${endStr}`;
   }, [reportData]);
 
-  const fetchReport = useCallback(async (authData: string, refTime?: string) => {
+  const fetchReport = useCallback(async (
+    authData: string,
+    refTime?: string,
+    signal?: AbortSignal
+  ) => {
     setLoading(true);
     setError('');
 
     try {
-      // Set auth data for API client (only if we have initData)
       if (authData) {
         apiClient.setInitData(authData);
       }
-      // Otherwise, API client will use token from localStorage
-
-      // Fetch weekly report with optional ref_time
-      const data = await apiClient.getWeeklyReport(refTime);
+      const data = await apiClient.getWeeklyReport(refTime, signal);
+      if (signal?.aborted) return;
       setReportData(data);
       hapticFeedback('success');
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       console.error('Failed to fetch report:', err);
-      
+
       if (err instanceof ApiError) {
         if (err.status === 401) {
           setError('Authentication failed. Please log in again.');
@@ -88,35 +89,34 @@ export function DashboardPage() {
       }
       hapticFeedback('error');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [hapticFeedback, navigate]);
-
-  // Handle URL params on mount and when they change
-  useEffect(() => {
-    const refTimeParam = searchParams.get('ref_time');
-    if (refTimeParam !== currentRefTime) {
-      setCurrentRefTime(refTimeParam || undefined);
-    }
-  }, [searchParams, currentRefTime]);
 
   useEffect(() => {
     if (!isReady) return;
 
-    // Check for auth
     const authData = initData || getDevInitData();
     const token = localStorage.getItem('telegram_auth_token');
-    
+
     if (!authData && !token) {
       navigate('/', { replace: true });
       return;
     }
 
-    // Set auth for API client
     if (authData) {
       apiClient.setInitData(authData);
     }
-    fetchReport(authData || '', currentRefTime);
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    fetchReport(authData || '', currentRefTime, controller.signal);
+
+    return () => {
+      controller.abort();
+    };
   }, [isReady, initData, navigate, fetchReport, currentRefTime]);
 
   // Fetch userInfo for browser login users
@@ -239,51 +239,28 @@ export function DashboardPage() {
 
   const handlePreviousWeek = useCallback(() => {
     if (!reportData) return;
-    
     const currentStart = new Date(reportData.week_start);
     const previousMonday = new Date(currentStart);
     previousMonday.setDate(previousMonday.getDate() - 7);
-    
-    const refTime = previousMonday.toISOString();
-    setCurrentRefTime(refTime);
-    
-    // Update URL
     const newParams = new URLSearchParams(searchParams);
-    newParams.set('ref_time', refTime);
+    newParams.set('ref_time', previousMonday.toISOString());
     setSearchParams(newParams, { replace: true });
-    
-    // Fetch new report
-    const authData = initData || getDevInitData();
-    fetchReport(authData || '', refTime);
-  }, [reportData, initData, fetchReport, searchParams, setSearchParams]);
+  }, [reportData, searchParams, setSearchParams]);
 
   const handleNextWeek = useCallback(() => {
     if (!reportData || isCurrentWeek) return;
-    
     const currentStart = new Date(reportData.week_start);
     const nextMonday = new Date(currentStart);
     nextMonday.setDate(nextMonday.getDate() + 7);
-    
-    // Check if next week would be current week
     const currentWeekMonday = new Date(getCurrentWeekMonday());
+    const newParams = new URLSearchParams(searchParams);
     if (nextMonday >= currentWeekMonday) {
-      // Go to current week
-      setCurrentRefTime(undefined);
-      const newParams = new URLSearchParams(searchParams);
       newParams.delete('ref_time');
-      setSearchParams(newParams, { replace: true });
-      const authData = initData || getDevInitData();
-      fetchReport(authData || '');
     } else {
-      const refTime = nextMonday.toISOString();
-      setCurrentRefTime(refTime);
-      const newParams = new URLSearchParams(searchParams);
-      newParams.set('ref_time', refTime);
-      setSearchParams(newParams, { replace: true });
-      const authData = initData || getDevInitData();
-      fetchReport(authData || '', refTime);
+      newParams.set('ref_time', nextMonday.toISOString());
     }
-  }, [reportData, isCurrentWeek, initData, fetchReport, searchParams, setSearchParams, getCurrentWeekMonday]);
+    setSearchParams(newParams, { replace: true });
+  }, [reportData, isCurrentWeek, searchParams, setSearchParams, getCurrentWeekMonday]);
 
   // Loading state - must come after all hooks
   if (!isReady || loading) {

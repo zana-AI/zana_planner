@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections import deque
@@ -23,6 +24,18 @@ from llms.llm_env_utils import load_llm_env
 from llms.schema import LLMResponse, UserAction
 from llms.planning_schema import Plan, RouteDecision
 from llms.tool_wrappers import _current_user_id, _current_user_language, _sanitize_user_id, _wrap_tool
+from memory import (
+    is_flush_enabled,
+    memory_get as memory_get_impl,
+    memory_search as memory_search_impl,
+    run_memory_flush,
+    should_run_memory_flush,
+)
+from memory.flush import (
+    DEFAULT_CONTEXT_WINDOW_TOKENS,
+    DEFAULT_MEMORY_FLUSH_SOFT_TOKENS,
+    DEFAULT_RESERVE_TOKENS_FLOOR,
+)
 from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
 
@@ -905,6 +918,20 @@ class LLMHandler:
 
             prior_history = self.chat_history.get(safe_user_id, [])
 
+            if is_flush_enabled():
+                entry = {"message_count": len(prior_history)}
+                if should_run_memory_flush(
+                    entry=entry,
+                    context_window_tokens=DEFAULT_CONTEXT_WINDOW_TOKENS,
+                    reserve_tokens_floor=DEFAULT_RESERVE_TOKENS_FLOOR,
+                    soft_threshold_tokens=DEFAULT_MEMORY_FLUSH_SOFT_TOKENS,
+                ):
+                    run_memory_flush(
+                        self.plan_adapter.root_dir,
+                        safe_user_id,
+                        run_flush_llm=self._run_flush_turn,
+                    )
+
             # For routed graph, system message will be injected per-node (router/planner/executor)
             # Start with minimal messages - router will add its system message
             messages: List[BaseMessage] = [
@@ -1211,7 +1238,58 @@ class LLMHandler:
                 tools.append(tool)
             except Exception as e:
                 logger.warning(f"Skipping tool {attr_name}: {e}")
+
+        root_dir = adapter.root_dir
+
+        def _memory_search_tool(query: str, max_results: Optional[int] = None, min_score: Optional[float] = None) -> str:
+            user_id = _current_user_id.get()
+            if not user_id:
+                return json.dumps({"results": [], "disabled": True, "error": "No active user"})
+            out = memory_search_impl(query, root_dir, user_id, max_results=max_results, min_score=min_score)
+            return json.dumps(out)
+
+        def _memory_get_tool(path: str, from_line: Optional[int] = None, lines: Optional[int] = None) -> str:
+            user_id = _current_user_id.get()
+            if not user_id:
+                return json.dumps({"path": path or "", "text": "", "error": "No active user"})
+            out = memory_get_impl(path, root_dir, user_id, from_line=from_line, lines=lines)
+            return json.dumps(out)
+
+        tools.append(
+            StructuredTool.from_function(
+                func=_memory_search_tool,
+                name="memory_search",
+                description=(
+                    "Mandatory recall step: semantically search MEMORY.md and memory/*.md "
+                    "before answering about prior work, decisions, dates, people, preferences, or todos; "
+                    "returns top snippets with path and lines."
+                ),
+            )
+        )
+        tools.append(
+            StructuredTool.from_function(
+                func=_memory_get_tool,
+                name="memory_get",
+                description=(
+                    "Safe snippet read from MEMORY.md or memory/*.md with optional from/lines; "
+                    "use after memory_search to keep context small."
+                ),
+            )
+        )
         return tools
+
+    def _run_flush_turn(self, system_prompt: str, user_prompt: str) -> str:
+        """Run one LLM turn (no tools) for pre-compaction memory flush; returns model reply content."""
+        try:
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
+            response = self.chat_model.invoke(messages)
+            return getattr(response, "content", "") or ""
+        except Exception as e:
+            logger.warning("Memory flush LLM turn failed: %s", e)
+            return ""
 
     def _condense_history(self, messages: List[BaseMessage]) -> List[BaseMessage]:
         """Keep a lightweight history of human/AI turns (no system/tool chatter)."""

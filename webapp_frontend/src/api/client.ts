@@ -128,9 +128,9 @@ class ApiClient {
   /**
    * Get weekly report for the authenticated user.
    */
-  async getWeeklyReport(refTime?: string): Promise<WeeklyReportData> {
+  async getWeeklyReport(refTime?: string, signal?: AbortSignal): Promise<WeeklyReportData> {
     const params = refTime ? `?ref_time=${encodeURIComponent(refTime)}` : '';
-    return this.request<WeeklyReportData>(`/weekly${params}`);
+    return this.request<WeeklyReportData>(`/weekly${params}`, { signal });
   }
 
   /**

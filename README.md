@@ -52,6 +52,12 @@ Required environment variables:
 - `ROOT_DIR` - Root directory for user data
 - `ADMIN_IDS` - Comma-separated list of Telegram user IDs with admin access (e.g., `123456789,987654321`)
 
+Optional (memory and pre-compaction flush):
+
+- `MEMORY_VECTOR_DB_URL` – Leave unset until a vector DB is set up; when set, `memory_search` uses it for semantic search. Until then, memory search returns a disabled payload.
+- `MEMORY_FLUSH_ENABLED` – Set to `1` to enable pre-compaction flush (writes durable memories to `memory/YYYY-MM-DD.md` per user when the session is near context limit). Can be used even before a vector DB.
+- Memory files live **per user** at `ROOT_DIR/users/<user_id>/MEMORY.md` and `ROOT_DIR/users/<user_id>/memory/` (e.g. `memory/2025-02-19.md`).
+
 ### 📂 Directory Structure
 
 The codebase has been refactored into a clean, layered architecture:
