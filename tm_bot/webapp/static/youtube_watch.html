@@ -21,7 +21,9 @@
 
   <script>
 (function() {
-  var videoId = new URLSearchParams(window.location.search).get('video_id') || '';
+  var params = new URLSearchParams(window.location.search);
+  var videoId = params.get('video_id') || '';
+  var userToken = params.get('ut') || '';
   var baseUrl = window.location.origin;
   var openTime = Date.now();
   var segments = [];
@@ -59,6 +61,7 @@
   function getPayload(closedVia) {
     return {
       init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : '',
+      user_token: userToken,
       stats: {
         video_id: videoId,
         time_spent_seconds: (Date.now() - openTime) / 1000,

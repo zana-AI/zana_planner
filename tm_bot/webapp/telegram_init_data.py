@@ -9,6 +9,13 @@ from urllib.parse import parse_qs
 from typing import Optional, Tuple
 import json
 
+try:
+    from utils.logger import get_logger
+except ImportError:
+    get_logger = lambda n: __import__("logging").getLogger(n)
+
+logger = get_logger(__name__)
+
 
 def validate_init_data(init_data: str, bot_token: str, max_age_seconds: Optional[int] = 86400) -> Tuple[bool, Optional[int]]:
     """
@@ -16,14 +23,14 @@ def validate_init_data(init_data: str, bot_token: str, max_age_seconds: Optional
     Returns (valid, user_id). user_id is None if validation fails or user not present.
     """
     if not init_data or not bot_token:
+        logger.info("validate_init_data: missing init_data or bot_token (init_data_len=%s). Inline web_app may send empty init_data.", len(init_data or ""))
         return False, None
     try:
-        # Parse query string; values are lists, we want first value
         parsed = parse_qs(init_data, keep_blank_values=False)
         received_hash = (parsed.get("hash") or [None])[0]
         if not received_hash:
+            logger.debug("validate_init_data: no hash in init_data")
             return False, None
-        # Build data-check-string: all keys except hash, sorted, "key=value" per line
         data_pairs = []
         for k, v in parsed.items():
             if k == "hash":
@@ -32,40 +39,41 @@ def validate_init_data(init_data: str, bot_token: str, max_age_seconds: Optional
             data_pairs.append((k, val))
         data_pairs.sort(key=lambda x: x[0])
         data_check_string = "\n".join(f"{k}={v}" for k, v in data_pairs)
-        # secret_key = HMAC_SHA256(bot_token, "WebAppData")
         secret_key = hmac.new(
             b"WebAppData",
             bot_token.encode() if isinstance(bot_token, str) else bot_token,
             hashlib.sha256,
         ).digest()
-        # computed_hash = HMAC_SHA256(secret_key, data_check_string)
         computed_hash = hmac.new(
             secret_key,
             data_check_string.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
         if computed_hash != received_hash:
+            logger.debug("validate_init_data: hash mismatch")
             return False, None
-        # Optional: reject old data
         if max_age_seconds is not None:
             auth_date_str = (parsed.get("auth_date") or [None])[0]
             if auth_date_str:
                 try:
-                    auth_date = int(auth_date_str)
                     import time
+                    auth_date = int(auth_date_str)
                     if int(time.time()) - auth_date > max_age_seconds:
+                        logger.debug("validate_init_data: auth_date too old")
                         return False, None
                 except (ValueError, TypeError):
                     return False, None
-        # Parse user.id from "user" JSON
         user_json = (parsed.get("user") or [None])[0]
         if not user_json:
+            logger.info("validate_init_data: no user in init_data (valid hash but no user)")
             return True, None
         try:
             user_obj = json.loads(user_json)
             user_id = user_obj.get("id")
             return True, int(user_id) if user_id is not None else None
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.debug("validate_init_data: user parse error: %s", e)
             return True, None
-    except Exception:
+    except Exception as e:
+        logger.debug("validate_init_data: exception %s", e)
         return False, None

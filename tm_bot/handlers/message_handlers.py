@@ -1406,6 +1406,16 @@ class MessageHandlers:
             if video_id and self.miniapp_url:
                 from ui.keyboards import mini_app_kb
                 web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
+                # Signed user token so backend can identify user when init_data is empty (e.g. inline web_app)
+                bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+                if bot_token:
+                    try:
+                        from webapp.youtube_watch_stats import create_user_token
+                        ut = create_user_token(user_id, bot_token)
+                        if ut:
+                            web_app_url += f"&ut={ut}"
+                    except Exception as e:
+                        logger.debug("youtube ut token: %s", e)
                 keyboard = mini_app_kb(web_app_url, button_text="Watch in Mini App")
                 await self.response_service.send_message(
                     context,
