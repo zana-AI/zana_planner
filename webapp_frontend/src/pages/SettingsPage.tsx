@@ -15,8 +15,10 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  const [nameSaving, setNameSaving] = useState(false);
   const [languageSaving, setLanguageSaving] = useState(false);
   const [voiceModeSaving, setVoiceModeSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
@@ -31,6 +33,7 @@ export function SettingsPage() {
         }
         const info = await apiClient.getUserInfo();
         setUserInfo(info);
+        setDisplayNameDraft((info.first_name || '').trim());
       } catch (err) {
         console.error('Failed to fetch user info:', err);
         if (err instanceof ApiError && err.status === 401) {
@@ -51,6 +54,32 @@ export function SettingsPage() {
     setSuccessMessage(message);
     hapticFeedback('success');
     setTimeout(() => setSuccessMessage(''), 2500);
+  };
+
+  const handleDisplayNameSave = async () => {
+    if (!userInfo) return;
+
+    const nextName = displayNameDraft.trim();
+    const currentName = (userInfo.first_name || '').trim();
+
+    if (nextName === currentName) return;
+
+    setNameSaving(true);
+    setError('');
+    try {
+      const updated = await apiClient.updateUserSettings({
+        first_name: nextName || null,
+      });
+      setUserInfo(updated);
+      setDisplayNameDraft((updated.first_name || '').trim());
+      showSuccess('Display name updated.');
+    } catch (err) {
+      console.error('Failed to update display name:', err);
+      setError(err instanceof ApiError ? err.message : 'Failed to update display name.');
+      hapticFeedback('error');
+    } finally {
+      setNameSaving(false);
+    }
   };
 
   const handleLanguageChange = async (language: string) => {
@@ -103,12 +132,45 @@ export function SettingsPage() {
       ? userInfo.timezone
       : 'Not set';
   const voiceEnabled = userInfo?.voice_mode === 'enabled';
+  const currentName = (userInfo?.first_name || '').trim();
+  const canSaveName = !nameSaving && !!userInfo && displayNameDraft.trim() !== currentName;
 
   return (
     <div className="page-container">
       <PageHeader title="Settings" showBack />
 
       <div className="settings-sections">
+        {/* Display name */}
+        <section className="settings-section">
+          <h3>Display name</h3>
+          <p className="settings-value">{currentName || 'Not set'}</p>
+          <div className="settings-name-row">
+            <input
+              type="text"
+              className="settings-name-input"
+              value={displayNameDraft}
+              onChange={(e) => setDisplayNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleDisplayNameSave();
+                }
+              }}
+              placeholder="Enter your display name"
+              maxLength={64}
+              disabled={nameSaving}
+            />
+            <button
+              type="button"
+              className="button button-primary settings-name-save"
+              onClick={handleDisplayNameSave}
+              disabled={!canSaveName}
+            >
+              {nameSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </section>
+
         {/* Timezone */}
         <section className="settings-section">
           <h3>Timezone</h3>

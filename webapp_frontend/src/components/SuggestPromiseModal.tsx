@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Library, PenSquare, X } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { useModalBodyLock } from '../hooks/useModalBodyLock';
-import type { PromiseTemplate, CreateSuggestionRequest } from '../types';
+import type { CreateSuggestionRequest, PromiseTemplate } from '../types';
 
 interface SuggestPromiseModalProps {
   toUserId: string;
@@ -33,16 +34,23 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
         setLoadingTemplates(false);
       }
     };
+
     loadTemplates();
   }, []);
 
+  const isSubmitDisabled =
+    loading ||
+    (mode === 'template' && !selectedTemplateId) ||
+    (mode === 'freeform' && !freeformText.trim());
+
   const handleSubmit = async () => {
     if (mode === 'template' && !selectedTemplateId) {
-      setError('Please select a template');
+      setError('Please select a template.');
       return;
     }
+
     if (mode === 'freeform' && !freeformText.trim()) {
-      setError('Please enter a promise description');
+      setError('Please enter a promise description.');
       return;
     }
 
@@ -69,7 +77,7 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to send suggestion');
+        setError('Failed to send suggestion.');
       }
     } finally {
       setLoading(false);
@@ -78,130 +86,119 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content suggest-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="modal-header">
-          <h2>Suggest Promise to {toUserName}</h2>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <h2 className="modal-title">Suggest Promise</h2>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="Close suggest promise dialog">
+            <X size={18} />
+          </button>
         </div>
 
-        <div className="modal-body">
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)' }}>
-              Suggest from:
-            </label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <form
+          className="modal-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+        >
+          <div className="modal-form-group">
+            <label className="modal-label">Send to</label>
+            <div className="modal-promise-text">{toUserName}</div>
+          </div>
+
+          <div className="modal-form-group">
+            <label className="modal-label">Suggestion source</label>
+            <div className="suggest-mode-toggle">
               <button
-                className={mode === 'template' ? 'button-primary' : 'button-secondary'}
+                type="button"
+                className={`suggest-mode-button ${mode === 'template' ? 'active' : ''}`}
                 onClick={() => setMode('template')}
-                style={{ flex: 1 }}
+                disabled={loading}
               >
-                Marketplace Template
+                <Library size={14} />
+                Template Library
               </button>
               <button
-                className={mode === 'freeform' ? 'button-primary' : 'button-secondary'}
+                type="button"
+                className={`suggest-mode-button ${mode === 'freeform' ? 'active' : ''}`}
                 onClick={() => setMode('freeform')}
-                style={{ flex: 1 }}
+                disabled={loading}
               >
-                Freeform Text
+                <PenSquare size={14} />
+                Custom Text
               </button>
             </div>
           </div>
 
           {mode === 'template' ? (
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)' }}>
-                Select Template:
+            <div className="modal-form-group">
+              <label className="modal-label" htmlFor="suggest-template-id">
+                Select template
               </label>
               {loadingTemplates ? (
-                <div>Loading templates...</div>
+                <div className="suggest-modal-loading">Loading templates...</div>
               ) : (
                 <select
+                  id="suggest-template-id"
                   value={selectedTemplateId}
                   onChange={(e) => setSelectedTemplateId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(232, 238, 252, 0.2)',
-                    background: 'rgba(11, 16, 32, 0.6)',
-                    color: '#fff',
-                    fontSize: '1rem'
-                  }}
+                  className="modal-input"
+                  disabled={loading}
                 >
-                  <option value="">-- Select a template --</option>
-                  {templates.map((t) => (
-                    <option key={t.template_id} value={t.template_id}>
-                      {t.title}
+                  <option value="">Select a template</option>
+                  {templates.map((template) => (
+                    <option key={template.template_id} value={template.template_id}>
+                      {template.title}
                     </option>
                   ))}
                 </select>
               )}
             </div>
           ) : (
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)' }}>
-                Promise Description:
+            <div className="modal-form-group">
+              <label className="modal-label" htmlFor="suggest-freeform-text">
+                Promise description
               </label>
               <textarea
+                id="suggest-freeform-text"
                 value={freeformText}
                 onChange={(e) => setFreeformText(e.target.value)}
                 placeholder="e.g., Take medicine every morning at 8 AM"
                 rows={3}
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(232, 238, 252, 0.2)',
-                  background: 'rgba(11, 16, 32, 0.6)',
-                  color: '#fff',
-                  fontSize: '1rem',
-                  fontFamily: 'inherit'
-                }}
+                className="modal-input"
+                disabled={loading}
               />
             </div>
           )}
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)' }}>
-              Optional Message:
+          <div className="modal-form-group">
+            <label className="modal-label" htmlFor="suggest-message">
+              Personal message (optional)
             </label>
             <textarea
+              id="suggest-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Add a personal message (optional)"
+              placeholder="Add a personal message"
               rows={2}
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                borderRadius: '6px',
-                border: '1px solid rgba(232, 238, 252, 0.2)',
-                background: 'rgba(11, 16, 32, 0.6)',
-                color: '#fff',
-                fontSize: '1rem',
-                fontFamily: 'inherit'
-              }}
+              className="modal-input"
+              disabled={loading}
             />
           </div>
 
-          {error && (
-            <div style={{ color: '#ff6b6b', marginBottom: '1rem', fontSize: '0.9rem' }}>
-              {error}
-            </div>
-          )}
-        </div>
+          {error ? <div className="modal-error">{error}</div> : null}
 
-        <div className="modal-footer">
-          <button className="button-secondary" onClick={onClose} disabled={loading}>
-            Cancel
-          </button>
-          <button
-            className="button-primary"
-            onClick={handleSubmit}
-            disabled={loading || (mode === 'template' && !selectedTemplateId) || (mode === 'freeform' && !freeformText.trim())}
-          >
-            {loading ? 'Sending...' : 'Send Suggestion'}
-          </button>
-        </div>
+          <div className="modal-actions">
+            <button className="modal-button modal-button-secondary" type="button" onClick={onClose} disabled={loading}>
+              Cancel
+            </button>
+            <button className="modal-button modal-button-primary" type="submit" disabled={isSubmitDisabled}>
+              {loading ? 'Sending...' : 'Send Suggestion'}
+            </button>
+          </div>
+
+          <p className="suggest-modal-note">Suggestions appear in the recipient's inbox for review.</p>
+        </form>
       </div>
     </div>
   );

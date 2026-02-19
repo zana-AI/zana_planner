@@ -1847,6 +1847,63 @@ textarea.modal-input {
   transform: none;
 }
 
+.suggest-modal {
+  max-width: 460px;
+}
+
+.suggest-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.suggest-mode-button {
+  min-height: 40px;
+  border-radius: var(--radius-8);
+  border: 1px solid var(--border);
+  background: rgba(237, 243, 255, 0.06);
+  color: var(--text-muted);
+  font-family: var(--font-family-app);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.suggest-mode-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: rgba(237, 243, 255, 0.1);
+}
+
+.suggest-mode-button.active {
+  color: var(--accent);
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft);
+}
+
+.suggest-mode-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.suggest-modal-loading {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 10px 0;
+}
+
+.suggest-modal-note {
+  margin: 12px 0 0 0;
+  font-size: 12px;
+  color: var(--text-subtle);
+  text-align: center;
+}
+
 .modal-message {
   color: var(--text);
   font-size: 15px;
@@ -2766,6 +2823,39 @@ textarea.modal-input {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.settings-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-name-input {
+  flex: 1 1 240px;
+  min-height: var(--button-height-md);
+  border-radius: var(--radius-8);
+  border: 1px solid var(--border);
+  background: rgba(237, 243, 255, 0.06);
+  color: var(--text);
+  font-family: var(--font-family-app);
+  font-size: var(--font-size-md);
+  padding: 0 12px;
+}
+
+.settings-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 167, 247, 0.18);
+}
+
+.settings-name-input:disabled {
+  opacity: 0.6;
+}
+
+.settings-name-save {
+  min-width: 92px;
 }
 
 .settings-language-buttons .button,
