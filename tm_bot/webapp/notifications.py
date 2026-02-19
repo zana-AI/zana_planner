@@ -301,8 +301,23 @@ async def send_focus_finished_notification(
         lang = lang_map.get(user_lang, Language.EN)
         
         # Create encouraging message
-        message = get_message("focus_session_complete", lang, promise_text=promise_text.replace('_', ' '))
-        if not message or message == "focus_session_complete":  # Fallback if message not found
+        promise_label = (promise_text or "").replace("_", " ").strip()
+        if not promise_label:
+            promise_label = "your promise"
+        duration_label = beautify_time(proposed_hours)
+        message = get_message(
+            "focus_session_complete",
+            lang,
+            promise_text=promise_label,
+            duration=duration_label,
+        )
+        if not message or message == "focus_session_complete":
+            message = (
+                f"🎉 Great work! You completed {duration_label} for:\n\n"
+                f"{promise_label}\n\n"
+                "Log this time?"
+            )
+        if False:
             message = f"🎉 Great work! You completed a {beautify_time(proposed_hours)} focus session for:\n\n*{promise_text}*\n\nLog this time?"
         
         # Create inline keyboard with Confirm, Adjust, Discard buttons
@@ -340,7 +355,7 @@ async def send_focus_finished_notification(
             chat_id=user_id,
             text=message,
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode=None
         )
         
         logger.info(f"✓ Successfully sent focus completion notification to user {user_id} for session {session_id}, message_id: {result.message_id}")

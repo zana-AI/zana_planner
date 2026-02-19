@@ -112,6 +112,12 @@ class MessageTemplateStore:
             "session_snoozed": "#{promise_id} snoozed for {minutes}m. ⏰",
             "session_ready": "*{promise_text}* — ready to start?",
 
+            "focus_session_complete": (
+                "🎉 Great work! You completed {duration} for:\n\n"
+                "{promise_text}\n\n"
+                "Log this time?"
+            ),
+
             # Time tracking
             "time_selected": "{time} selected",
             "time_spent": "[{date}] spent *{time}* on #{promise_id}:\n{promise_text}",

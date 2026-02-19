@@ -7,7 +7,7 @@ export function AppLogo({ size = 28, title = 'Xaana' }: AppLogoProps) {
   return (
     <img
       className="ui-app-logo"
-      src="/assets/xaana_icon_192.png"
+      src="/assets/xaana_icon_dark.png"
       width={size}
       height={size}
       alt={title}

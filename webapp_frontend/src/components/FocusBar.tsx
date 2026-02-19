@@ -89,7 +89,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
           if (Notification.permission === 'granted') {
             new Notification('Focus session complete', {
               body: 'Check Telegram to confirm your session.',
-              icon: '/assets/zana_icon.png',
+              icon: '/assets/xaana_icon_dark.png',
               tag: `focus-complete-${sessionId}`,
             });
           } else if (Notification.permission === 'default') {
@@ -97,7 +97,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
             if (permission === 'granted') {
               new Notification('Focus session complete', {
                 body: 'Check Telegram to confirm your session.',
-                icon: '/assets/zana_icon.png',
+                icon: '/assets/xaana_icon_dark.png',
                 tag: `focus-complete-${sessionId}`,
               });
             }
@@ -218,6 +218,25 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     return promise?.text || currentSession.promise_text || `Promise #${currentSession.promise_id}`;
   };
 
+  const handleDismissFinished = () => {
+    setCurrentSession(null);
+    setCompletedSessionId(null);
+    completedSessionIdRef.current = null;
+  };
+
+  const handleBackToChat = () => {
+    try {
+      const tg = window.Telegram?.WebApp;
+      if (tg && typeof tg.close === 'function') {
+        tg.close();
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to close Telegram WebApp:', err);
+    }
+    handleDismissFinished();
+  };
+
   if (!currentSession) {
     return null;
   }
@@ -226,6 +245,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const isRunning = currentSession.status === 'running';
   const isPaused = currentSession.status === 'paused';
   const isFinished = currentSession.status === 'finished';
+  const isTelegramMiniApp = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
 
   return (
     <div className={`focus-bar focus-bar-active ${isRunning ? 'running' : isPaused ? 'paused' : 'finished'}`}>
@@ -252,7 +272,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
           </div>
         </div>
 
-        <div className="focus-controls">
+        <div className={`focus-controls ${isFinished ? 'finished' : ''}`}>
           {isRunning ? (
             <>
               <button className="focus-control-btn pause" onClick={handlePause} disabled={loading}>
@@ -277,18 +297,21 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
           {isFinished ? (
             <>
-              <div className="focus-complete-message">Session complete. Check Telegram to confirm.</div>
-              <button
-                className="focus-control-btn dismiss"
-                onClick={() => {
-                  setCurrentSession(null);
-                  setCompletedSessionId(null);
-                  completedSessionIdRef.current = null;
-                }}
-                disabled={loading}
-              >
-                Dismiss
-              </button>
+              <div className="focus-complete-message">Session complete. Confirmation is sent to your Telegram chat.</div>
+              <div className="focus-finished-actions">
+                {isTelegramMiniApp ? (
+                  <button className="focus-control-btn back-chat" onClick={handleBackToChat} disabled={loading}>
+                    Back to Chat
+                  </button>
+                ) : null}
+                <button
+                  className="focus-control-btn dismiss"
+                  onClick={handleDismissFinished}
+                  disabled={loading}
+                >
+                  Dismiss
+                </button>
+              </div>
             </>
           ) : null}
         </div>

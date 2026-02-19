@@ -173,9 +173,6 @@ def create_webapp_api(
                                       f"expected_end: {session.expected_end_utc}, "
                                       f"planned_duration: {session.planned_duration_minutes} minutes")
                             
-                            # Mark as notified first to avoid duplicate sends
-                            sessions_repo.mark_session_notified(session.session_id)
-                            
                             # Get promise text
                             from repositories.promises_repo import PromisesRepository
                             promises_repo = PromisesRepository()
@@ -196,12 +193,12 @@ def create_webapp_api(
                                 proposed_hours=proposed_hours,
                                 miniapp_url=miniapp_url,
                             )
+                            sessions_repo.mark_session_notified(session.session_id)
                             
                             logger.info(f"✓ Successfully sent focus completion notification for session {session.session_id} to user {session.user_id}")
                         except Exception as e:
                             logger.error(f"❌ FAILED to send focus notification for session {session.session_id} to user {session.user_id}: {e}", exc_info=True)
-                            # Note: Session is already marked as notified, so it won't retry
-                            # This is intentional to avoid spam, but means failed notifications won't retry
+                            # Keep session unnotified on failure so the sweeper can retry.
                             
                 except Exception as e:
                     logger.error(f"Error in focus timer sweeper: {e}", exc_info=True)
@@ -249,8 +246,8 @@ def create_webapp_api(
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Xaana - Your Personal Planning Assistant</title>
-            <link rel="icon" type="image/png" href="/assets/zana_icon.png" />
-            <link rel="apple-touch-icon" href="/assets/zana_icon.png" />
+            <link rel="icon" type="image/png" href="/assets/xaana_icon_dark.png" />
+            <link rel="apple-touch-icon" href="/assets/xaana_icon_dark.png" />
             <style>
                 * {
                     margin: 0;
