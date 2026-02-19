@@ -327,3 +327,32 @@ class ResumeFocusRequest(BaseModel):
 class StopFocusRequest(BaseModel):
     """Request model for stopping/aborting a focus session."""
     session_id: str
+
+
+# Content consumption manager
+class ResolveContentRequest(BaseModel):
+    """Request model for resolving a content URL."""
+    url: str
+
+
+class AddUserContentRequest(BaseModel):
+    """Request model for adding content to user library."""
+    content_id: str
+
+
+class ConsumeEventRequest(BaseModel):
+    """Request model for recording a consumption segment."""
+    content_id: str
+    start_position: float
+    end_position: float
+    position_unit: str  # 'seconds' | 'ratio'
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+    client: Optional[str] = None
+
+
+class UpdateUserContentRequest(BaseModel):
+    """Request model for updating user_content meta."""
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    rating: Optional[int] = None

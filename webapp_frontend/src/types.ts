@@ -342,6 +342,69 @@ export interface PromiseData {
   end_date?: string; // ISO date string (YYYY-MM-DD)
 }
 
+// Content consumption manager
+export interface Content {
+  id: string;
+  content_id?: string;
+  canonical_url: string;
+  original_url: string;
+  provider: string;
+  content_type: 'video' | 'audio' | 'text' | 'other';
+  title?: string;
+  description?: string;
+  author_channel?: string;
+  language?: string;
+  published_at?: string;
+  duration_seconds?: number;
+  estimated_read_seconds?: number;
+  thumbnail_url?: string;
+  metadata_json?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserContent {
+  id: string;
+  user_id: string;
+  content_id: string;
+  status: 'saved' | 'in_progress' | 'completed' | 'archived';
+  added_at: string;
+  last_interaction_at?: string;
+  completed_at?: string;
+  last_position?: number;
+  position_unit?: 'seconds' | 'ratio';
+  progress_ratio?: number;
+  total_consumed_seconds?: number;
+  notes?: string;
+  rating?: number;
+}
+
+export interface UserContentWithDetails extends Content, UserContent {
+  user_content_id?: string;
+  bucket_count?: number;
+  buckets?: number[];
+}
+
+export interface HeatmapData {
+  bucket_count: number;
+  buckets: number[];
+}
+
+export interface ConsumeEventRequest {
+  content_id: string;
+  start_position: number;
+  end_position: number;
+  position_unit: 'seconds' | 'ratio';
+  started_at?: string;
+  ended_at?: string;
+  client?: string;
+}
+
+export interface MyContentsResponse {
+  items: UserContentWithDetails[];
+  count: number;
+}
+
 // Focus Timer / Pomodoro types
 export interface FocusSession {
   session_id: string;

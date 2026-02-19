@@ -136,6 +136,9 @@ export function Navigation() {
     if (path === '/templates') {
       return location.pathname.startsWith('/templates');
     }
+    if (path === '/my-contents') {
+      return location.pathname === '/my-contents';
+    }
     return false;
   };
 
@@ -317,6 +320,33 @@ export function Navigation() {
                   >
                     📋 Explore
                   </button>
+                  <button
+                    onClick={() => {
+                      navigate('/my-contents');
+                      setShowProfileMenu(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      background: 'none',
+                      border: 'none',
+                      color: '#fff',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      borderRadius: '4px',
+                      transition: 'background 0.2s',
+                      marginTop: '0.25rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'none';
+                    }}
+                  >
+                    📺 My Contents
+                  </button>
                 </>
               )}
               <button
@@ -461,6 +491,13 @@ export function Navigation() {
           >
             <span className="tab-icon">📋</span>
             <span className="tab-label">Explore</span>
+          </button>
+          <button
+            onClick={() => navigate('/my-contents')}
+            className={`tab-button ${isActive('/my-contents') ? 'active' : ''}`}
+          >
+            <span className="tab-icon">📺</span>
+            <span className="tab-label">Contents</span>
           </button>
         </nav>
       )}

@@ -20,7 +20,11 @@ import type {
   BotToken,
   CreatePromiseForUserRequest,
   ConversationResponse,
-  FocusSession
+  FocusSession,
+  Content,
+  MyContentsResponse,
+  HeatmapData,
+  ConsumeEventRequest
 } from '../types';
 
 const API_BASE = '/api';
@@ -164,6 +168,65 @@ class ApiClient {
     return this.request<UserInfo>('/user/settings', {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Resolve content URL and upsert into catalog. Returns content row.
+   */
+  async resolveContent(url: string): Promise<Content & { content_id?: string }> {
+    return this.request<Content & { content_id?: string }>('/content/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+  }
+
+  /**
+   * Add content to user library.
+   */
+  async addUserContent(contentId: string): Promise<{ user_content_id: string; status: string }> {
+    return this.request<{ user_content_id: string; status: string }>('/user-content', {
+      method: 'POST',
+      body: JSON.stringify({ content_id: contentId }),
+    });
+  }
+
+  /**
+   * Get paginated list of user's content (my-contents).
+   */
+  async getMyContents(status?: string, cursor?: string, limit?: number): Promise<MyContentsResponse> {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (cursor) params.set('cursor', cursor);
+    if (limit != null) params.set('limit', String(limit));
+    const q = params.toString() ? `?${params.toString()}` : '';
+    return this.request<MyContentsResponse>(`/my-contents${q}`);
+  }
+
+  /**
+   * Record a consumption segment.
+   */
+  async postConsumeEvent(body: ConsumeEventRequest): Promise<{ progress_ratio: number; status: string }> {
+    return this.request<{ progress_ratio: number; status: string }>('/consume-event', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Get heatmap data for a content item.
+   */
+  async getContentHeatmap(contentId: string): Promise<HeatmapData> {
+    return this.request<HeatmapData>(`/content/${encodeURIComponent(contentId)}/heatmap`);
+  }
+
+  /**
+   * Update user_content (status, notes, rating).
+   */
+  async updateUserContent(contentId: string, body: { status?: string; notes?: string; rating?: number }): Promise<{ content_id: string; updated: boolean }> {
+    return this.request<{ content_id: string; updated: boolean }>(`/user-content/${encodeURIComponent(contentId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     });
   }
 

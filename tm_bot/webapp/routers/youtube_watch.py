@@ -101,6 +101,39 @@ async def report_stats(request: Request):
         segments=segments,
         closed_via=closed_via,
     )
+    # Bridge to content consumption manager: resolve video and record segments
+    try:
+        from services.content_resolve_service import ContentResolveService
+        from services.content_progress_service import ContentProgressService
+        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+        resolve_svc = ContentResolveService()
+        resolved = resolve_svc.resolve(youtube_url)
+        content_id = resolved.get("id") or resolved.get("content_id")
+        if content_id:
+            progress_svc = ContentProgressService()
+            if segments:
+                for seg in segments:
+                    if isinstance(seg, (list, tuple)) and len(seg) >= 2:
+                        start_s, end_s = float(seg[0]), float(seg[1])
+                        progress_svc.record_consumption(
+                            user_id=str(user_id),
+                            content_id=content_id,
+                            start_position=start_s,
+                            end_position=end_s,
+                            position_unit="seconds",
+                            client="telegram_web",
+                        )
+            elif time_spent >= 2:
+                progress_svc.record_consumption(
+                    user_id=str(user_id),
+                    content_id=content_id,
+                    start_position=0,
+                    end_position=time_spent,
+                    position_unit="seconds",
+                    client="telegram_web",
+                )
+    except Exception as e:
+        logger.debug("youtube report_stats: content manager bridge failed (tables may not exist): %s", e)
     summary = format_summary_message(video_id, time_spent, segments)
 
     try:

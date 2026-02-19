@@ -9,6 +9,7 @@ import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { FocusPage } from './pages/FocusPage';
+import { MyContentsPage } from './pages/MyContentsPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
@@ -149,6 +150,18 @@ function App() {
           element={
             isAuthenticated ? (
               <FocusPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
+
+        {/* My Contents - authenticated only */}
+        <Route 
+          path="/my-contents" 
+          element={
+            isAuthenticated ? (
+              <MyContentsPage />
             ) : (
               <Navigate to="/" replace />
             )
