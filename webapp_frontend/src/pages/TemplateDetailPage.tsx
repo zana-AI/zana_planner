@@ -109,7 +109,7 @@ export function TemplateDetailPage() {
         </section>
 
         <section className="template-detail-card">
-          <h3 className="template-detail-section-title">Start this promise</h3>
+          <h3 className="template-detail-section-title">Add this promise</h3>
           <label className="template-detail-input-label">Your weekly target</label>
           <div className="template-detail-input-row">
             <input
@@ -128,7 +128,7 @@ export function TemplateDetailPage() {
           {error ? <div className="error-message">{error}</div> : null}
 
           <Button variant="primary" fullWidth size="lg" onClick={handleSubscribe} disabled={subscribing}>
-            {subscribing ? 'Creating promise...' : 'Start Tracking'}
+            {subscribing ? 'Adding promise...' : 'Add to My Promises'}
           </Button>
         </section>
       </main>

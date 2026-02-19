@@ -313,7 +313,7 @@ export function DashboardPage() {
         minWidth: 0 // Allow flex item to shrink below content size
       }}>
         <PageHeader
-          title="Today"
+          title="My Week"
           subtitle="Your weekly promises and progress"
           rightSlot={
             <Button size="sm" onClick={() => navigate('/focus')}>

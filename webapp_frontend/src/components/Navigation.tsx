@@ -25,7 +25,7 @@ export function Navigation() {
 
   const navItems = useMemo<AppNavItem[]>(
     () => [
-      { key: 'today', label: 'Today', to: '/dashboard' },
+      { key: 'today', label: 'My Week', to: '/dashboard' },
       { key: 'community', label: 'Community', to: '/community' },
       { key: 'explore', label: 'Explore', to: '/templates' },
     ],
@@ -145,7 +145,7 @@ export function Navigation() {
                 }}
               >
                 <User size={16} />
-                <span>Today</span>
+                <span>My Week</span>
               </button>
               <button
                 className="app-shell-menu-item"

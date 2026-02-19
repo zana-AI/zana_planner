@@ -73,7 +73,7 @@ export function AdminHeader({
               }}
             >
               <Shield size={16} />
-              <span>Today</span>
+              <span>My Week</span>
             </button>
             <button
               className="app-shell-menu-item"

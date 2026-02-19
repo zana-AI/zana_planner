@@ -256,6 +256,8 @@ class CallbackHandlers:
                 return
             
             await self._handle_summarize_content(query, url, user_id, user_lang)
+        elif action == "add_content":
+            await self._handle_add_content(query, user_id, cb.get("cid"), cb.get("url_id"), user_lang)
         elif action == "broadcast_schedule":
             await self._handle_broadcast_schedule(query, context, user_lang)
         elif action == "broadcast_cancel":
@@ -982,6 +984,66 @@ class CallbackHandlers:
     async def _handle_add_to_calendar_no(self, query, user_lang: Language):
         """Handle user not wanting calendar links."""
         await query.answer("Got it! Have a productive day! 💪")
+
+    async def _handle_add_content(
+        self,
+        query,
+        user_id: int,
+        content_id: Optional[str],
+        url_id: Optional[str],
+        user_lang: Language,
+    ) -> None:
+        """Add resolved content to user's library from inline callback."""
+        try:
+            from repositories.content_repo import ContentRepository
+            from services.content_resolve_service import ContentResolveService
+
+            content_repo = ContentRepository()
+            resolved_content_id = content_id
+
+            if not resolved_content_id and url_id and "content_urls" in self.application.bot_data:
+                source_url = self.application.bot_data["content_urls"].get(url_id)
+                if source_url:
+                    resolver = ContentResolveService(content_repo=content_repo)
+                    resolved = resolver.resolve(source_url)
+                    resolved_content_id = resolved.get("content_id") or resolved.get("id")
+
+            if not resolved_content_id:
+                await query.answer("Could not resolve this content yet. Please share the link again.", show_alert=True)
+                return
+
+            existing = content_repo.get_user_content(str(user_id), str(resolved_content_id))
+            if existing:
+                confirmation = "ℹ️ This content is already in your library."
+            else:
+                content_repo.add_user_content(str(user_id), str(resolved_content_id))
+                confirmation = "✅ Added to your contents."
+
+            # Remove the add button after action to avoid duplicate taps.
+            if query.message and query.message.reply_markup and query.message.reply_markup.inline_keyboard:
+                new_rows = []
+                for row in query.message.reply_markup.inline_keyboard:
+                    filtered = [
+                        button
+                        for button in row
+                        if not (
+                            getattr(button, "callback_data", None)
+                            and "a=add_content" in str(button.callback_data)
+                        )
+                    ]
+                    if filtered:
+                        new_rows.append(filtered)
+                if new_rows:
+                    await self.response_service.edit_message_reply_markup(
+                        query,
+                        reply_markup=InlineKeyboardMarkup(new_rows),
+                    )
+
+            await query.message.reply_text(confirmation)
+            await query.answer("Done")
+        except Exception as e:
+            logger.error(f"Error adding content from callback for user {user_id}: {e}")
+            await query.answer("Failed to add this content. Please try again.", show_alert=True)
     
     async def _handle_summarize_content(self, query, url: str, user_id: int, user_lang: Language):
         """Handle summarize content request."""

@@ -19,6 +19,7 @@ from handlers.translator import translate_text
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
 from services.content_service import ContentService
+from services.content_resolve_service import ContentResolveService
 from services.inbound_message_queue import InboundBatch, InboundMessageQueue, QueuedInboundMessage
 from services.response_service import ResponseService
 from platforms.interfaces import IResponseService
@@ -39,7 +40,7 @@ from services.bot_stats import get_version_stats_postgres
 from services.avatar_service import AvatarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 logger = get_logger(__name__)
 
@@ -57,6 +58,7 @@ class MessageHandlers:
         self.miniapp_url = miniapp_url
         self.voice_service = VoiceService()
         self.content_service = ContentService()
+        self.content_resolve_service = ContentResolveService()
         try:
             # ImageService has heavier/optional deps; import lazily to avoid import-time failures.
             from services.image_service import ImageService  # noqa: WPS433
@@ -93,6 +95,44 @@ class MessageHandlers:
             if match:
                 return match.group(1)
         return None
+
+    @staticmethod
+    def _build_short_url_id(url: str) -> str:
+        """Build a short stable ID for callback payloads."""
+        import hashlib
+        return hashlib.md5((url or "").encode("utf-8")).hexdigest()[:8]
+
+    @staticmethod
+    def _format_seconds(seconds: Optional[float]) -> str:
+        """Format seconds to readable duration."""
+        if not seconds:
+            return "Unknown"
+        total = int(seconds)
+        hours, remainder = divmod(total, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        if minutes > 0:
+            return f"{minutes}m {secs:02d}s"
+        return f"{secs}s"
+
+    def _build_new_content_message(self, info: dict) -> str:
+        """Build a clear first-response card for newly detected content."""
+        title = (info.get("title") or "YouTube Video").strip()
+        if len(title) > 120:
+            title = title[:117] + "..."
+        channel = (info.get("channel") or "Unknown").strip()
+        duration = self._format_seconds(info.get("duration_seconds"))
+        captions = "Yes" if info.get("captions_available") else "No"
+        return (
+            "🆕 New content detected\n\n"
+            "Source: YouTube\n"
+            f"Title: {title}\n"
+            f"Channel: {channel}\n"
+            f"Duration: {duration}\n"
+            f"Captions: {captions}\n\n"
+            "What do you want to do?"
+        )
     
     def _update_user_info(self, user_id: int, user) -> None:
         """Extract and update user info (first_name, username, last_seen) from Telegram user object."""
@@ -1401,38 +1441,72 @@ class MessageHandlers:
                     )
                 return
             
-            # YouTube link: reply with "Watch in Mini App" and skip generic URL handling
+            # YouTube link: show a clear "new content" card + actions
             video_id = self._extract_youtube_video_id(user_message)
-            if video_id and self.miniapp_url:
-                from ui.keyboards import mini_app_kb
-                from utils.youtube_utils import get_video_info, format_analysis_message
-                web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
-                # Signed user token so backend can identify user when init_data is empty (e.g. inline web_app)
-                bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
-                if bot_token:
-                    try:
-                        from webapp.youtube_watch_stats import create_user_token
-                        ut = create_user_token(user_id, bot_token)
-                        if ut:
-                            web_app_url += f"&ut={ut}"
-                    except Exception as e:
-                        logger.debug("youtube ut token: %s", e)
-                keyboard = mini_app_kb(web_app_url, button_text="Watch in Mini App")
-                # Enrich reply with video analysis when available
-                reply_text = "You can watch this video in the Mini App. Tap the button below:"
+            if video_id:
+                from utils.youtube_utils import get_video_info
+
+                source_url = (user_message or "").strip()
+                content_info = {
+                    "title": "YouTube Video",
+                    "duration_seconds": None,
+                    "captions_available": False,
+                    "channel": None,
+                }
                 try:
-                    info = get_video_info(video_id, url=user_message.strip() if user_message else None)
-                    if info.get("title") and (info.get("duration_seconds") is not None or info.get("title") != "YouTube Video"):
-                        analysis = format_analysis_message(info)
-                        reply_text = f"{analysis}\n\nYou can watch this video in the Mini App. Tap the button below:"
+                    content_info = get_video_info(video_id, url=source_url or None)
                 except Exception as e:
-                    logger.debug("youtube get_video_info failed, using fallback message: %s", e)
+                    logger.debug("youtube get_video_info failed, using fallback info: %s", e)
+
+                resolver = getattr(self, "content_resolve_service", None)
+                if resolver is None:
+                    resolver = ContentResolveService()
+                    self.content_resolve_service = resolver
+
+                resolved_content_id = None
+                if source_url:
+                    try:
+                        resolved = resolver.resolve(source_url)
+                        resolved_content_id = resolved.get("content_id") or resolved.get("id")
+                    except Exception as e:
+                        logger.warning("youtube content resolve failed for url=%s: %s", source_url, e)
+
+                url_id = self._build_short_url_id(source_url or f"https://youtube.com/watch?v={video_id}")
+                if "content_urls" not in self.application.bot_data:
+                    self.application.bot_data["content_urls"] = {}
+                self.application.bot_data["content_urls"][url_id] = source_url or f"https://youtube.com/watch?v={video_id}"
+
+                add_callback_data = (
+                    encode_cb("add_content", cid=resolved_content_id)
+                    if resolved_content_id
+                    else encode_cb("add_content", url_id=url_id)
+                )
+                keyboard_rows = [
+                    [InlineKeyboardButton("➕ Add to My Contents", callback_data=add_callback_data)]
+                ]
+
+                if self.miniapp_url:
+                    web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
+                    bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+                    if bot_token:
+                        try:
+                            from webapp.youtube_watch_stats import create_user_token
+                            ut = create_user_token(user_id, bot_token)
+                            if ut:
+                                web_app_url += f"&ut={ut}"
+                        except Exception as e:
+                            logger.debug("youtube ut token: %s", e)
+                    keyboard_rows.append(
+                        [InlineKeyboardButton("▶️ Watch in Mini App", web_app=WebAppInfo(url=web_app_url))]
+                    )
+
+                reply_text = self._build_new_content_message(content_info)
                 await self.response_service.send_message(
                     context,
                     chat_id=update.effective_chat.id,
                     text=reply_text,
                     user_id=user_id,
-                    reply_markup=keyboard,
+                    reply_markup=InlineKeyboardMarkup(keyboard_rows),
                 )
                 return
 

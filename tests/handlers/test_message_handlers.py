@@ -106,3 +106,82 @@ def test_handle_message_routes_urls_to_handle_link_message(tmp_path, monkeypatch
     asyncio.run(mh.handle_message(update, context))
 
     assert routed["called"] is True
+
+
+@pytest.mark.handler
+def test_handle_message_youtube_builds_new_content_card_with_add_button(tmp_path, monkeypatch):
+    pytest.importorskip("telegram")
+    pytest.importorskip("langgraph.prebuilt")
+
+    import utils.youtube_utils as yt_utils_mod
+    import handlers.message_handlers as mh_mod
+    from handlers.message_handlers import MessageHandlers
+
+    monkeypatch.setattr(mh_mod, "get_user_language", lambda _u: None)
+    monkeypatch.setattr(
+        yt_utils_mod,
+        "get_video_info",
+        lambda _video_id, url=None: {
+            "title": "Deep Work Sprint",
+            "duration_seconds": 600,
+            "captions_available": True,
+            "channel": "Xaana Lab",
+        },
+    )
+
+    user_id = 123
+    root_dir = tmp_path
+    os.makedirs(root_dir / str(user_id), exist_ok=True)
+
+    sent = {}
+
+    class FakeResponseService:
+        def log_user_message(self, **kwargs):
+            return None
+
+        async def send_message(self, context, chat_id, text, user_id=None, reply_markup=None, parse_mode=None):
+            sent["chat_id"] = chat_id
+            sent["text"] = text
+            sent["reply_markup"] = reply_markup
+            return None
+
+    mh = MessageHandlers.__new__(MessageHandlers)
+    mh.root_dir = str(root_dir)
+    mh.plan_keeper = types.SimpleNamespace(
+        settings_repo=types.SimpleNamespace(get_settings=lambda _uid: types.SimpleNamespace(voice_mode=None)),
+        settings_service=types.SimpleNamespace(
+            get_settings=lambda _uid: types.SimpleNamespace(timezone="UTC", first_name="", username=None, last_seen=None),
+            save_settings=lambda s: None,
+        ),
+    )
+    mh.llm_handler = types.SimpleNamespace(get_response_api=lambda *_a, **_k: {"response_to_user": "ok", "function_call": "no_op"})
+    mh.application = types.SimpleNamespace(bot_data={})
+    mh.response_service = FakeResponseService()
+    mh.miniapp_url = "https://xaana.club"
+    mh.content_service = types.SimpleNamespace(detect_urls=lambda text: [text], process_link=lambda url: {})
+    mh.content_resolve_service = types.SimpleNamespace(resolve=lambda _url: {"content_id": "content-123"})
+
+    class FakeMessage:
+        def __init__(self):
+            self.text = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            self.message_id = 1
+
+        async def reply_text(self, *_args, **_kwargs):
+            return None
+
+    update = types.SimpleNamespace(
+        message=FakeMessage(),
+        effective_message=FakeMessage(),
+        effective_user=types.SimpleNamespace(id=user_id),
+        effective_chat=types.SimpleNamespace(id=user_id, type="private"),
+    )
+    context = types.SimpleNamespace(user_data={}, bot=None)
+
+    asyncio.run(mh.handle_message(update, context))
+
+    assert "New content detected" in sent["text"]
+    assert sent["reply_markup"] is not None
+    first_button = sent["reply_markup"].inline_keyboard[0][0]
+    assert first_button.callback_data is not None
+    assert "a=add_content" in first_button.callback_data
+    assert "cid=content-123" in first_button.callback_data
