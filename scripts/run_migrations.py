@@ -21,28 +21,63 @@ from alembic import command
 # Import get_database_url directly to avoid triggering bot initialization
 import os as os_module
 
+def _load_env_file(path: Path) -> None:
+    """Load KEY=VALUE lines into os.environ. Skips empty lines and # comments."""
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key:
+                os_module.environ[key] = value
+
 def get_database_url() -> str:
     """
     Get database connection URL from environment.
-    Simplified version that doesn't trigger bot initialization.
+    If not set, tries loading ZANA_ENV_FILE or /opt/zana-config/.env.prod.
+    ENVIRONMENT on the command line (e.g. ENVIRONMENT=staging) is preserved over file contents.
     """
     env = os_module.getenv("ENVIRONMENT", "").lower()
-    
+
     if env in ("production", "prod"):
         url = os_module.getenv("DATABASE_URL_PROD")
         if url:
             return url
-    
+
     if env in ("staging", "stage") or not env:
         url = os_module.getenv("DATABASE_URL_STAGING")
         if url:
             return url
-    
+
     # Fallback to generic DATABASE_URL
     url = os_module.getenv("DATABASE_URL")
     if url:
         return url
-    
+
+    # Try loading env file so ENVIRONMENT=staging python run_migrations.py works
+    env_file = os_module.getenv("ZANA_ENV_FILE")
+    if env_file:
+        _load_env_file(Path(env_file))
+    else:
+        _load_env_file(Path("/opt/zana-config/.env.prod"))
+    # Retry using original env (command-line ENVIRONMENT=staging wins over file)
+    if env in ("production", "prod"):
+        url = os_module.getenv("DATABASE_URL_PROD")
+        if url:
+            return url
+    if env in ("staging", "stage") or not env:
+        url = os_module.getenv("DATABASE_URL_STAGING")
+        if url:
+            return url
+    url = os_module.getenv("DATABASE_URL")
+    if url:
+        return url
+
     raise ValueError(
         "No database URL found. Set DATABASE_URL_PROD, DATABASE_URL_STAGING, or DATABASE_URL"
     )
