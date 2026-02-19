@@ -1405,6 +1405,7 @@ class MessageHandlers:
             video_id = self._extract_youtube_video_id(user_message)
             if video_id and self.miniapp_url:
                 from ui.keyboards import mini_app_kb
+                from utils.youtube_utils import get_video_info, format_analysis_message
                 web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
                 # Signed user token so backend can identify user when init_data is empty (e.g. inline web_app)
                 bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
@@ -1417,10 +1418,19 @@ class MessageHandlers:
                     except Exception as e:
                         logger.debug("youtube ut token: %s", e)
                 keyboard = mini_app_kb(web_app_url, button_text="Watch in Mini App")
+                # Enrich reply with video analysis when available
+                reply_text = "You can watch this video in the Mini App. Tap the button below:"
+                try:
+                    info = get_video_info(video_id, url=user_message.strip() if user_message else None)
+                    if info.get("title") and (info.get("duration_seconds") is not None or info.get("title") != "YouTube Video"):
+                        analysis = format_analysis_message(info)
+                        reply_text = f"{analysis}\n\nYou can watch this video in the Mini App. Tap the button below:"
+                except Exception as e:
+                    logger.debug("youtube get_video_info failed, using fallback message: %s", e)
                 await self.response_service.send_message(
                     context,
                     chat_id=update.effective_chat.id,
-                    text="You can watch this video in the Mini App. Tap the button below:",
+                    text=reply_text,
                     user_id=user_id,
                     reply_markup=keyboard,
                 )

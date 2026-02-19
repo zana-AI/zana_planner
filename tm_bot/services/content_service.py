@@ -106,66 +106,31 @@ class ContentService:
             }
     
     def _process_youtube(self, url: str) -> Dict[str, any]:
-        """Extract metadata from YouTube video."""
-        if not YT_DLP_AVAILABLE:
-            logger.warning("yt-dlp not available, falling back to basic extraction")
-            return self._process_youtube_basic(url)
-        
+        """Extract metadata from YouTube video via youtube_utils (single source of truth)."""
         try:
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'extract_flat': False,
+            from utils.youtube_utils import get_video_info, extract_video_id
+            video_id = extract_video_id(url)
+            if not video_id:
+                return self._process_youtube_basic(url)
+            info = get_video_info(video_id, url=url)
+            duration_seconds = info.get("duration_seconds")
+            duration_hours = duration_seconds / 3600.0 if duration_seconds else None
+            description = (info.get("description_snippet") or "")[:500] or "No description available"
+            return {
+                "title": info.get("title") or "YouTube Video",
+                "description": description,
+                "duration": duration_hours,
+                "url": url,
+                "type": "youtube",
+                "metadata": {
+                    "duration_seconds": duration_seconds or 0,
+                    "channel": info.get("channel") or "",
+                    "view_count": info.get("view_count") or 0,
+                    "has_subtitles": info.get("captions_available", False),
+                },
             }
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                
-                title = info.get('title', 'YouTube Video')
-                description = info.get('description', '')[:500]  # Limit description length
-                duration_seconds = info.get('duration', 0)
-                duration_hours = duration_seconds / 3600.0 if duration_seconds else None
-                
-                # Try to get subtitles
-                subtitles = {}
-                if 'subtitles' in info:
-                    subtitles = info['subtitles']
-                elif 'automatic_captions' in info:
-                    subtitles = info['automatic_captions']
-                
-                # Extract subtitle text if available
-                subtitle_text = None
-                if subtitles:
-                    # Try to get English subtitles first
-                    for lang in ['en', 'en-US', 'en-GB']:
-                        if lang in subtitles:
-                            subtitle_url = subtitles[lang][0].get('url', '')
-                            if subtitle_url:
-                                try:
-                                    sub_response = self.session.get(subtitle_url, timeout=5)
-                                    if sub_response.status_code == 200:
-                                        # Parse WebVTT or similar format
-                                        subtitle_text = sub_response.text[:1000]  # Limit length
-                                        break
-                                except Exception:
-                                    pass
-                
-                return {
-                    'title': title,
-                    'description': description or subtitle_text or 'No description available',
-                    'duration': duration_hours,
-                    'url': url,
-                    'type': 'youtube',
-                    'metadata': {
-                        'duration_seconds': duration_seconds,
-                        'channel': info.get('uploader', ''),
-                        'view_count': info.get('view_count', 0),
-                        'has_subtitles': bool(subtitles)
-                    }
-                }
-        
         except Exception as e:
-            logger.error(f"Error extracting YouTube metadata with yt-dlp: {str(e)}")
+            logger.error(f"Error extracting YouTube metadata: {str(e)}")
             return self._process_youtube_basic(url)
     
     def _process_youtube_basic(self, url: str) -> Dict[str, any]:
