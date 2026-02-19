@@ -6,6 +6,7 @@ The web app runs as a separate process; this module runs the Telegram (or other 
 import asyncio
 import os
 import subprocess
+import sys
 from unittest.mock import Mock
 
 # Platform abstraction imports
@@ -301,10 +302,14 @@ class PlannerBot:
         Start the bot. For Telegram this runs polling; for other platforms, their event loop.
         The web app is run separately (e.g. via run_server.py or another process).
         """
-        if hasattr(self.platform_adapter, "application"):
-            self.application.run_polling()
-        else:
-            asyncio.run(self.platform_adapter.start())
+        try:
+            if hasattr(self.platform_adapter, "application"):
+                self.application.run_polling()
+            else:
+                asyncio.run(self.platform_adapter.start())
+        except BaseException as e:
+            logger.exception("Bot run loop failed: %s", e)
+            raise
 
 
 def main():
@@ -394,9 +399,24 @@ def main():
     # Create and run bot
     bot = PlannerBot(platform_adapter, ROOT_DIR, MINIAPP_URL)
     
-    bot.bootstrap_schedule_existing_users()
-    bot.run()
+    try:
+        bot.bootstrap_schedule_existing_users()
+        bot.run()
+    except BaseException as e:
+        logger.exception("Planner bot failed: %s", e)
+        raise
+
+    logger.info("Planner bot stopped normally")
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise  # allow sys.exit() to pass through
+    except KeyboardInterrupt:
+        logger.info("Planner bot interrupted by user")
+        sys.exit(0)
+    except BaseException as e:
+        logger.exception("Unhandled exception in planner bot: %s", e)
+        sys.exit(1)
