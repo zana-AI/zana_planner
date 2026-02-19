@@ -345,7 +345,6 @@ export interface PromiseData {
 // Content consumption manager
 export interface Content {
   id: string;
-  content_id?: string;
   canonical_url: string;
   original_url: string;
   provider: string;
