@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
 
 // Common timezones grouped by region
 const TIMEZONES = [
@@ -148,8 +149,9 @@ export function TimezoneSelectorPage() {
         {detectedTimezone && (
           <div className="timezone-suggestion">
             <p>Detected timezone: <strong>{detectedTimezone}</strong></p>
-            <button
-              className="button button-secondary"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 setSelectedTimezone(detectedTimezone);
                 setCustomTimezone('');
@@ -157,7 +159,7 @@ export function TimezoneSelectorPage() {
               disabled={saving}
             >
               Use Detected
-            </button>
+            </Button>
           </div>
         )}
 
@@ -216,20 +218,22 @@ export function TimezoneSelectorPage() {
         )}
 
         <div className="timezone-actions">
-          <button
-            className="button button-secondary"
+          <Button
+            variant="secondary"
+            size="md"
             onClick={() => navigate('/settings', { replace: true })}
             disabled={saving}
           >
             Cancel
-          </button>
-          <button
-            className="button button-primary"
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
             onClick={handleSave}
             disabled={saving || (!selectedTimezone && !customTimezone.trim())}
           >
             {saving ? 'Saving...' : 'Save Timezone'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -2740,7 +2740,7 @@ textarea.modal-input {
   font-size: 14px;
 }
 
-.timezone-suggestion button {
+.timezone-suggestion .ui-button {
   margin-top: 8px;
 }
 
@@ -2855,15 +2855,8 @@ textarea.modal-input {
   margin-top: 8px;
 }
 
-.timezone-actions .button {
+.timezone-actions .ui-button {
   flex: 1;
-  padding: 14px 24px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: none;
 }
 
 .button-primary {
@@ -2925,8 +2918,15 @@ textarea.modal-input {
 .settings-sections {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
   margin-bottom: 24px;
+}
+
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: rgba(15, 23, 48, 0.62);
+  padding: 16px;
 }
 
 .settings-section h3 {
@@ -2990,15 +2990,9 @@ textarea.modal-input {
   min-width: 92px;
 }
 
-.settings-language-buttons .button,
-.settings-voice-toggle .button {
-  padding: 10px 18px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
+.settings-language-buttons .ui-button,
+.settings-voice-toggle .ui-button {
+  min-width: 94px;
 }
 
 .settings-actions {
@@ -3010,6 +3004,16 @@ textarea.modal-input {
   border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .settings-name-row {
+    align-items: stretch;
+  }
+
+  .settings-name-save {
+    width: 100%;
+  }
 }
 
 /* ========================================

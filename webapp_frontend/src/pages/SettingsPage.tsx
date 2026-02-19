@@ -4,6 +4,7 @@ import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import type { UserInfo } from '../types';
 import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -160,14 +161,16 @@ export function SettingsPage() {
               maxLength={64}
               disabled={nameSaving}
             />
-            <button
+            <Button
               type="button"
-              className="button button-primary settings-name-save"
+              variant="primary"
+              size="md"
+              className="settings-name-save"
               onClick={handleDisplayNameSave}
               disabled={!canSaveName}
             >
               {nameSaving ? 'Saving...' : 'Save'}
-            </button>
+            </Button>
           </div>
         </section>
 
@@ -175,13 +178,14 @@ export function SettingsPage() {
         <section className="settings-section">
           <h3>Timezone</h3>
           <p className="settings-value">{displayTimezone.replace(/_/g, ' ')}</p>
-          <button
+          <Button
             type="button"
-            className="button button-secondary"
+            variant="secondary"
+            size="sm"
             onClick={() => navigate('/timezone', { replace: false })}
           >
             Change timezone
-          </button>
+          </Button>
         </section>
 
         {/* Language */}
@@ -189,15 +193,16 @@ export function SettingsPage() {
           <h3>Language</h3>
           <div className="settings-language-buttons">
             {LANGUAGES.map(({ value, label }) => (
-              <button
+              <Button
                 key={value}
                 type="button"
-                className={`button ${userInfo?.language === value ? 'button-primary' : 'button-secondary'}`}
+                variant={userInfo?.language === value ? 'primary' : 'secondary'}
+                size="sm"
                 onClick={() => handleLanguageChange(value)}
                 disabled={languageSaving}
               >
                 {label}
-              </button>
+              </Button>
             ))}
           </div>
         </section>
@@ -209,22 +214,24 @@ export function SettingsPage() {
             When enabled, the bot can send voice messages in the chat.
           </p>
           <div className="settings-voice-toggle">
-            <button
+            <Button
               type="button"
-              className={`button ${!voiceEnabled ? 'button-primary' : 'button-secondary'}`}
+              variant={!voiceEnabled ? 'primary' : 'secondary'}
+              size="sm"
               onClick={() => handleVoiceModeChange(false)}
               disabled={voiceModeSaving}
             >
               Disabled
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={`button ${voiceEnabled ? 'button-primary' : 'button-secondary'}`}
+              variant={voiceEnabled ? 'primary' : 'secondary'}
+              size="sm"
               onClick={() => handleVoiceModeChange(true)}
               disabled={voiceModeSaving}
             >
               Enabled
-            </button>
+            </Button>
           </div>
         </section>
       </div>
