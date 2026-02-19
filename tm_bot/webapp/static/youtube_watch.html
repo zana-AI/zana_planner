@@ -28,6 +28,18 @@
       max-height: 160px;
       overflow: auto;
     }
+    body.landscape { padding: 0; background: #000; overflow: hidden; }
+    body.landscape .video-wrap {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      padding-bottom: 0;
+      z-index: 10;
+    }
+    body.landscape .hint,
+    body.landscape .controls,
+    body.landscape .debug { display: none; }
   </style>
 </head>
 <body>
@@ -61,6 +73,7 @@
   var pollTimer = null;
   var lastPlayerTime = null;
   var statsSent = false;
+  var immersiveLandscape = false;
   var debugLog = document.getElementById('debugLog');
   if (debug && debugLog) debugLog.hidden = false;
 
@@ -80,6 +93,94 @@
   window.addEventListener("unhandledrejection", function(e) {
     dlog("unhandledrejection: " + (e && e.reason ? String(e.reason) : "unknown"));
   });
+
+  function requestTelegramFullscreen() {
+    try {
+      if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.requestFullscreen === "function") {
+        window.Telegram.WebApp.requestFullscreen();
+        dlog("fullscreen: requested via Telegram");
+        return true;
+      }
+    } catch (e) {
+      dlog("fullscreen: telegram request failed: " + e);
+    }
+    return false;
+  }
+
+  function exitTelegramFullscreen() {
+    try {
+      if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.exitFullscreen === "function") {
+        window.Telegram.WebApp.exitFullscreen();
+        dlog("fullscreen: exited via Telegram");
+        return true;
+      }
+    } catch (e) {
+      dlog("fullscreen: telegram exit failed: " + e);
+    }
+    return false;
+  }
+
+  function requestBrowserFullscreen() {
+    var root = document.documentElement;
+    var fn = root.requestFullscreen || root.webkitRequestFullscreen || root.msRequestFullscreen;
+    if (!fn) return false;
+    try {
+      fn.call(root);
+      dlog("fullscreen: requested via browser api");
+      return true;
+    } catch (e) {
+      dlog("fullscreen: browser request failed: " + e);
+      return false;
+    }
+  }
+
+  function exitBrowserFullscreen() {
+    var fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (!fn) return false;
+    if (!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement)) {
+      return false;
+    }
+    try {
+      fn.call(document);
+      dlog("fullscreen: exited via browser api");
+      return true;
+    } catch (e) {
+      dlog("fullscreen: browser exit failed: " + e);
+      return false;
+    }
+  }
+
+  function isLandscape() {
+    try {
+      if (window.matchMedia && window.matchMedia("(orientation: landscape)").matches) return true;
+    } catch (e) {}
+    return window.innerWidth > window.innerHeight;
+  }
+
+  function updateOrientationMode() {
+    var landscape = isLandscape();
+    if (landscape === immersiveLandscape) return;
+    immersiveLandscape = landscape;
+    if (landscape) {
+      document.body.classList.add("landscape");
+      if (!requestTelegramFullscreen()) {
+        requestBrowserFullscreen();
+      }
+      dlog("orientation: landscape immersive=on");
+    } else {
+      document.body.classList.remove("landscape");
+      if (!exitTelegramFullscreen()) {
+        exitBrowserFullscreen();
+      }
+      dlog("orientation: portrait immersive=off");
+    }
+  }
+
+  window.addEventListener("orientationchange", function() {
+    setTimeout(updateOrientationMode, 120);
+  });
+  window.addEventListener("resize", updateOrientationMode);
+  updateOrientationMode();
 
   if (!videoId) {
     document.body.innerHTML = '<p>Missing video_id.</p>';
@@ -265,6 +366,7 @@
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
+    setTimeout(updateOrientationMode, 60);
     window.Telegram.WebApp.MainButton.setText('Done').show().onClick(function() {
       if (statsSent) { window.Telegram.WebApp.close(); return; }
       var payload = getPayload('done');

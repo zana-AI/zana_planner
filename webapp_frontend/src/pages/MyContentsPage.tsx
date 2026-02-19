@@ -12,6 +12,48 @@ const SECTION_STATUSES: { key: StatusFilter; label: string }[] = [
   { key: 'completed', label: 'Completed' },
 ];
 
+function extractYouTubeVideoId(rawUrl: string | null | undefined): string | null {
+  const urlText = (rawUrl || '').trim();
+  if (!urlText) return null;
+
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/i,
+    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/i,
+    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/i,
+    /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i,
+  ];
+  for (const pattern of patterns) {
+    const match = urlText.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+
+  try {
+    const parsed = new URL(urlText);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname.includes('youtube.com')) {
+      const v = parsed.searchParams.get('v');
+      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getInternalYouTubeWatchUrl(item: UserContentWithDetails): string | null {
+  const provider = (item.provider || '').toLowerCase();
+  const metadataVideoId = typeof item.metadata_json?.['video_id'] === 'string'
+    ? item.metadata_json['video_id']
+    : null;
+  const parsedVideoId = extractYouTubeVideoId(item.original_url || item.canonical_url);
+  const videoId = metadataVideoId || parsedVideoId;
+
+  if (provider !== 'youtube' && !videoId) return null;
+  if (!videoId) return null;
+  return `/youtube-watch?video_id=${encodeURIComponent(videoId)}`;
+}
+
 export function MyContentsPage() {
   const [addUrl, setAddUrl] = useState('');
   const [adding, setAdding] = useState(false);
@@ -148,6 +190,12 @@ export function MyContentsPage() {
                       key={item.user_content_id || item.content_id || item.id}
                       item={item}
                       onClick={() => {
+                        const youtubeWatchUrl = getInternalYouTubeWatchUrl(item);
+                        if (youtubeWatchUrl) {
+                          window.location.assign(youtubeWatchUrl);
+                          return;
+                        }
+
                         const url = item.original_url || item.canonical_url;
                         if (url) window.open(url, '_blank');
                       }}
