@@ -22,7 +22,8 @@ from alembic import command
 import os as os_module
 
 def _load_env_file(path: Path) -> None:
-    """Load KEY=VALUE lines into os.environ. Skips empty lines and # comments."""
+    """Load KEY=VALUE lines into os.environ. Skips empty lines and # comments.
+    Does NOT overwrite variables already set in the environment."""
     if not path.exists():
         return
     for line in path.read_text().splitlines():
@@ -33,7 +34,7 @@ def _load_env_file(path: Path) -> None:
             key, _, value = line.partition("=")
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key:
+            if key and key not in os_module.environ:
                 os_module.environ[key] = value
 
 def get_database_url() -> str:
