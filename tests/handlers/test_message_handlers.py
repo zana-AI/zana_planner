@@ -185,3 +185,67 @@ def test_handle_message_youtube_builds_new_content_card_with_add_button(tmp_path
     assert first_button.callback_data is not None
     assert "a=add_content" in first_button.callback_data
     assert "cid=content-123" in first_button.callback_data
+
+
+@pytest.mark.handler
+def test_resolve_tts_language_code_uses_settings_language():
+    pytest.importorskip("telegram")
+    pytest.importorskip("langgraph.prebuilt")
+
+    from handlers.message_handlers import MessageHandlers
+
+    settings = types.SimpleNamespace(language="fa", voice_mode="enabled")
+    assert MessageHandlers._resolve_tts_language_code(settings, None) == "fa-IR"
+
+
+@pytest.mark.handler
+def test_send_response_with_voice_mode_sends_voice_when_enabled():
+    pytest.importorskip("telegram")
+    pytest.importorskip("langgraph.prebuilt")
+
+    from handlers.message_handlers import MessageHandlers
+
+    captured = {"voice_calls": 0, "text_calls": 0, "lang": None}
+
+    class FakeVoiceService:
+        def synthesize_speech(self, text, language_code="en-US"):
+            captured["lang"] = language_code
+            return b"fake-ogg-opus"
+
+    class FakeResponseService:
+        async def reply_voice(self, update, voice, user_id=None):
+            captured["voice_calls"] += 1
+            assert user_id == 321
+            payload = voice.read()
+            assert payload == b"fake-ogg-opus"
+            return None
+
+        async def reply_text(self, *args, **kwargs):
+            captured["text_calls"] += 1
+            return None
+
+    mh = MessageHandlers.__new__(MessageHandlers)
+    mh.voice_service = FakeVoiceService()
+    mh.response_service = FakeResponseService()
+
+    update = types.SimpleNamespace(
+        effective_user=types.SimpleNamespace(id=321),
+        effective_message=types.SimpleNamespace(message_id=999),
+        message=types.SimpleNamespace(),
+    )
+    context = types.SimpleNamespace()
+    settings = types.SimpleNamespace(voice_mode="enabled", language="fa")
+
+    asyncio.run(
+        mh._send_response_with_voice_mode(
+            update,
+            context,
+            "Hello",
+            settings,
+            None,
+        )
+    )
+
+    assert captured["voice_calls"] == 1
+    assert captured["text_calls"] == 0
+    assert captured["lang"] == "fa-IR"

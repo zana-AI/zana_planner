@@ -558,17 +558,19 @@ class MessageHandlers:
         try:
             # Check voice mode preference
             settings = self.plan_keeper.settings_service.get_settings(user_id)
+            voice_mode_enabled = self._is_voice_mode_enabled(settings)
             
             # Check if there's a text caption with the voice message
             voice_caption = update.effective_message.caption or ""
             
-            # Send acknowledgment
-            ack_message = get_message("voice_received", user_lang)
-            await self.response_service.reply_text(
-                update, ack_message,
-                user_id=user_id,
-                log_conversation=False  # Don't log acknowledgment
-            )
+            # Send acknowledgment only in text mode.
+            if not voice_mode_enabled:
+                ack_message = get_message("voice_received", user_lang)
+                await self.response_service.reply_text(
+                    update, ack_message,
+                    user_id=user_id,
+                    log_conversation=False  # Don't log acknowledgment
+                )
             
             # If first time, ask about voice mode preference (but still process the message)
             if settings.voice_mode is None:
@@ -611,16 +613,23 @@ class MessageHandlers:
             
             if not user_input:
                 error_msg = get_message("voice_transcription_failed", user_lang)
-                await self.response_service.reply_text(
-                    update, error_msg,
-                    user_id=user_id
-                )
+                if voice_mode_enabled:
+                    await self._send_response_with_voice_mode(
+                        update, context, error_msg, settings, user_lang
+                    )
+                else:
+                    await self.response_service.reply_text(
+                        update, error_msg,
+                        user_id=user_id
+                    )
                 return
             
             # Send quick processing message
-            processing_msg = await self.response_service.send_processing_message(
-                update, user_id=user_id, user_lang=user_lang
-            )
+            processing_msg = None
+            if not voice_mode_enabled:
+                processing_msg = await self.response_service.send_processing_message(
+                    update, user_id=user_id, user_lang=user_lang
+                )
             
             # Create progress callback to show plan to user
             plan_message_to_send = None
@@ -702,17 +711,10 @@ class MessageHandlers:
         """Send response as voice if voice mode enabled, otherwise as text."""
         user_id = update.effective_user.id if update.effective_user else None
         
-        if settings and settings.voice_mode == "enabled":
+        if self._is_voice_mode_enabled(settings):
             try:
                 # Synthesize speech (text will be cleaned inside synthesize_speech)
-                user_lang_code = user_lang.value if user_lang else "en"
-                speech_lang_map = {
-                    "en": "en-US",
-                    "fa": "fa-IR",
-                    "fr": "fr-FR"
-                }
-                speech_lang = speech_lang_map.get(user_lang_code, "en-US")
-                
+                speech_lang = self._resolve_tts_language_code(settings, user_lang)
                 audio_bytes = self.voice_service.synthesize_speech(text_response, speech_lang)
                 
                 if audio_bytes:
@@ -751,6 +753,23 @@ class MessageHandlers:
             update, text_response,
             user_id=user_id
         )
+
+    @staticmethod
+    def _is_voice_mode_enabled(settings) -> bool:
+        return bool(settings and getattr(settings, "voice_mode", None) == "enabled")
+
+    @staticmethod
+    def _resolve_tts_language_code(settings, user_lang) -> str:
+        lang_value = getattr(settings, "language", None)
+        if not lang_value and user_lang:
+            lang_value = getattr(user_lang, "value", None) or str(user_lang)
+        lang_value = getattr(lang_value, "value", lang_value)
+        lang_value = str(lang_value or "en").lower()
+        if lang_value.startswith("fa"):
+            return "fa-IR"
+        if lang_value.startswith("fr"):
+            return "fr-FR"
+        return "en-US"
 
     async def _reply_text_smart(self, message, text: str, user_id: Optional[int] = None) -> None:
         """
@@ -918,6 +937,8 @@ class MessageHandlers:
         """Handle image messages with VLM parsing and text extraction."""
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
+        settings = self.plan_keeper.settings_service.get_settings(user_id)
+        voice_mode_enabled = self._is_voice_mode_enabled(settings)
         
         # Extract and update user info
         self._update_user_info(user_id, update.effective_user)
@@ -944,22 +965,29 @@ class MessageHandlers:
         await file.download_to_drive(path)
         
         try:
-            # Send acknowledgment
-            ack_message = get_message("image_received", user_lang)
-            await self.response_service.reply_text(
-                update, ack_message,
-                user_id=user_id,
-                log_conversation=False  # Don't log acknowledgment
-            )
+            # Send acknowledgment only in text mode.
+            if not voice_mode_enabled:
+                ack_message = get_message("image_received", user_lang)
+                await self.response_service.reply_text(
+                    update, ack_message,
+                    user_id=user_id,
+                    log_conversation=False  # Don't log acknowledgment
+                )
             
             # Parse image with VLM
             try:
                 if self.image_service is None:
                     error_msg = get_message("image_processing_failed", user_lang)
-                    await self.response_service.reply_text(
-                        update, f"{error_msg}\n\nImage processing service is not available.",
-                        user_id=user_id
-                    )
+                    detailed_error = f"{error_msg}\n\nImage processing service is not available."
+                    if voice_mode_enabled:
+                        await self._send_response_with_voice_mode(
+                            update, context, detailed_error, settings, user_lang
+                        )
+                    else:
+                        await self.response_service.reply_text(
+                            update, detailed_error,
+                            user_id=user_id
+                        )
                     return
                 
                 # Use Telegram's file_path (URL) if available, otherwise use local file
@@ -974,10 +1002,15 @@ class MessageHandlers:
                 if not extracted_text or not analysis.text or len(analysis.text.strip()) == 0:
                     # No text found in image
                     error_msg = get_message("image_no_text", user_lang)
-                    await self.response_service.reply_text(
-                        update, error_msg,
-                        user_id=user_id
-                    )
+                    if voice_mode_enabled:
+                        await self._send_response_with_voice_mode(
+                            update, context, error_msg, settings, user_lang
+                        )
+                    else:
+                        await self.response_service.reply_text(
+                            update, error_msg,
+                            user_id=user_id
+                        )
                     return
                 
                 # Log extracted content for debugging
@@ -991,9 +1024,11 @@ class MessageHandlers:
                 user_lang_code = user_lang.value if user_lang else "en"
                 
                 # Send quick processing message
-                processing_msg = await self.response_service.send_processing_message(
-                    update, user_id=user_id, user_lang=user_lang
-                )
+                processing_msg = None
+                if not voice_mode_enabled:
+                    processing_msg = await self.response_service.send_processing_message(
+                        update, user_id=user_id, user_lang=user_lang
+                    )
                 
                 # Create progress callback to show plan to user
                 plan_message_to_send = None
@@ -1024,10 +1059,8 @@ class MessageHandlers:
                             parse_mode='Markdown'
                         )
                     else:
-                        await self.response_service.reply_text(
-                            update, error_msg,
-                            user_id=user_id,
-                            parse_mode='Markdown'
+                        await self._send_response_with_voice_mode(
+                            update, context, error_msg, settings, user_lang
                         )
                     return
                 
@@ -1046,9 +1079,6 @@ class MessageHandlers:
                             user_id=user_id, user_lang=user_lang
                         )
                     else:
-                        # Get settings for voice mode
-                        settings = self.plan_keeper.settings_service.get_settings(user_id)
-                        
                         # Send response (with voice mode if enabled)
                         await self._send_response_with_voice_mode(
                             update, context, formatted_response, settings, user_lang
@@ -1056,9 +1086,8 @@ class MessageHandlers:
                 except Exception as e:
                     error_msg = get_message("error_general", user_lang, error=str(e))
                     logger.error(f"Error processing image for user {user_id}: {str(e)}")
-                    await self.response_service.reply_text(
-                        update, error_msg,
-                        user_id=user_id
+                    await self._send_response_with_voice_mode(
+                        update, context, error_msg, settings, user_lang
                     )
                     
             except Exception as e:
@@ -1066,9 +1095,8 @@ class MessageHandlers:
                 logger.error(f"Image processing error: {str(e)}", exc_info=True)
                 # Provide more context in error message
                 detailed_error = f"{error_msg}\n\nError details: {str(e)}"
-                await self.response_service.reply_text(
-                    update, detailed_error,
-                    user_id=user_id
+                await self._send_response_with_voice_mode(
+                    update, context, detailed_error, settings, user_lang
                 )
         finally:
             # Clean up temp file
@@ -1165,6 +1193,8 @@ class MessageHandlers:
             user_id = update.effective_user.id
             user_group_id = update.effective_chat.id if update.effective_chat.type in ['group', 'supergroup'] else None
             user_lang = get_user_language(update.effective_user)
+            settings = self.plan_keeper.settings_service.get_settings(user_id)
+            voice_mode_enabled = self._is_voice_mode_enabled(settings)
             
             # Handle persistent navigation keyboard buttons
             if user_message in ["📅 Weekly", "👥 Community", "🔍 Explore"]:
@@ -1263,33 +1293,53 @@ class MessageHandlers:
                                 else:
                                     success_msg = get_message("action_confirmed", user_lang)
                                 
-                                await self.response_service.reply_text(
-                                    update, success_msg,
-                                    user_id=user_id,
-                                    parse_mode='Markdown'
-                                )
+                                if voice_mode_enabled:
+                                    await self._send_response_with_voice_mode(
+                                        update, context, success_msg, settings, user_lang
+                                    )
+                                else:
+                                    await self.response_service.reply_text(
+                                        update, success_msg,
+                                        user_id=user_id,
+                                        parse_mode='Markdown'
+                                    )
                             else:
                                 error_msg = get_message("error_tool_not_found", user_lang, tool_name=tool_name)
+                                if voice_mode_enabled:
+                                    await self._send_response_with_voice_mode(
+                                        update, context, error_msg, settings, user_lang
+                                    )
+                                else:
+                                    await self.response_service.reply_text(
+                                        update, error_msg,
+                                        user_id=user_id
+                                    )
+                        except Exception as e:
+                            logger.error(f"Error executing confirmed tool {tool_name}: {e}")
+                            error_msg = get_message("error_executing_action", user_lang, error=str(e))
+                            if voice_mode_enabled:
+                                await self._send_response_with_voice_mode(
+                                    update, context, error_msg, settings, user_lang
+                                )
+                            else:
                                 await self.response_service.reply_text(
                                     update, error_msg,
                                     user_id=user_id
                                 )
-                        except Exception as e:
-                            logger.error(f"Error executing confirmed tool {tool_name}: {e}")
-                            error_msg = get_message("error_executing_action", user_lang, error=str(e))
-                            await self.response_service.reply_text(
-                                update, error_msg,
-                                user_id=user_id
-                            )
                         return
                     elif is_cancel:
                         # User canceled - send cancellation message
                         cancel_msg = get_message("action_canceled", user_lang)
-                        await self.response_service.reply_text(
-                            update, cancel_msg,
-                            user_id=user_id,
-                            parse_mode='Markdown'
-                        )
+                        if voice_mode_enabled:
+                            await self._send_response_with_voice_mode(
+                                update, context, cancel_msg, settings, user_lang
+                            )
+                        else:
+                            await self.response_service.reply_text(
+                                update, cancel_msg,
+                                user_id=user_id,
+                                parse_mode='Markdown'
+                            )
                         return
                     else:
                         # User neither confirmed nor canceled - treat as new request
@@ -1330,6 +1380,15 @@ class MessageHandlers:
                         except Exception:
                             pass
                         fields = ", ".join(still_missing)
+                        if voice_mode_enabled:
+                            still_missing_msg = (
+                                f"Thanks - I'm still missing: {fields}.\n"
+                                f"Please reply with `field: value` for: {fields}."
+                            )
+                            await self._send_response_with_voice_mode(
+                                update, context, still_missing_msg, settings, user_lang
+                            )
+                            return
                         await self.response_service.reply_text(
                             update,
                             f"Thanks — I'm still missing: {fields}.\n"
@@ -1353,9 +1412,11 @@ class MessageHandlers:
                     user_lang_code = user_lang.value if user_lang else "en"
                 
                 # Send quick processing message
-                processing_msg = await self.response_service.send_processing_message(
-                    update, user_id=user_id, user_lang=user_lang
-                )
+                processing_msg = None
+                if not voice_mode_enabled:
+                    processing_msg = await self.response_service.send_processing_message(
+                        update, user_id=user_id, user_lang=user_lang
+                    )
                 
                 # Create progress callback to show plan to user
                 plan_message_to_send = None
@@ -1386,10 +1447,8 @@ class MessageHandlers:
                             parse_mode="Markdown"
                         )
                     else:
-                        await self.response_service.reply_text(
-                            update, error_msg,
-                            user_id=user_id,
-                            parse_mode="Markdown"
+                        await self._send_response_with_voice_mode(
+                            update, context, error_msg, settings, user_lang
                         )
                     return
 
@@ -1435,9 +1494,8 @@ class MessageHandlers:
                         user_id=user_id, user_lang=user_lang
                     )
                 else:
-                    await self.response_service.reply_text(
-                        update, formatted_response,
-                        user_id=user_id
+                    await self._send_response_with_voice_mode(
+                        update, context, formatted_response, settings, user_lang
                     )
                 return
             
@@ -1522,9 +1580,11 @@ class MessageHandlers:
             user_lang_code = user_lang.value if user_lang else "en"
             
             # Send quick processing message
-            processing_msg = await self.response_service.send_processing_message(
-                update, user_id=user_id, user_lang=user_lang
-            )
+            processing_msg = None
+            if not voice_mode_enabled:
+                processing_msg = await self.response_service.send_processing_message(
+                    update, user_id=user_id, user_lang=user_lang
+                )
             
             # Create progress callback to show plan to user
             plan_message_to_send = None
@@ -1554,10 +1614,8 @@ class MessageHandlers:
                         parse_mode='Markdown'
                     )
                 else:
-                    await self.response_service.reply_text(
-                        update, error_msg,
-                        user_id=user_id,
-                        parse_mode='Markdown'
+                    await self._send_response_with_voice_mode(
+                        update, context, error_msg, settings, user_lang
                     )
                 return
             
@@ -1612,28 +1670,36 @@ class MessageHandlers:
                     user_id=user_id, user_lang=user_lang
                 )
             else:
-                # Fallback if processing message wasn't sent
-                try:
-                    await self.response_service.reply_text(
-                        update, formatted_response,
-                        user_id=user_id
-                    )
-                except Exception:
-                    await self.response_service.reply_text(
-                        update, formatted_response,
-                        user_id=user_id,
-                        auto_translate=False  # Already translated
-                    )
+                await self._send_response_with_voice_mode(
+                    update, context, formatted_response, settings, user_lang
+                )
         
         except Exception as e:
             user_lang = get_user_language(update.effective_user)
             message = get_message("error_unexpected", user_lang, error=str(e))
+            fallback_user_id = update.effective_user.id if update.effective_user else None
+            fallback_settings = None
+            if fallback_user_id is not None:
+                try:
+                    fallback_settings = self.plan_keeper.settings_service.get_settings(fallback_user_id)
+                except Exception:
+                    fallback_settings = None
+
+            if self._is_voice_mode_enabled(fallback_settings):
+                try:
+                    await self._send_response_with_voice_mode(
+                        update, context, message, fallback_settings, user_lang
+                    )
+                    return
+                except Exception:
+                    pass
+
             # Never use Markdown here: `error` may contain underscores/backticks/etc and Telegram will reject it.
             try:
                 await self.response_service.reply_text(
                     update,
                     message,
-                    user_id=update.effective_user.id if update.effective_user else None,
+                    user_id=fallback_user_id,
                     user_lang=user_lang,
                     parse_mode=None,
                     auto_translate=False,
