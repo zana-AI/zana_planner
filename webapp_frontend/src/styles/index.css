@@ -622,7 +622,7 @@ body.modal-open {
 
 /* Promise card transitions */
 .promise-card {
-  transition: transform 0.3s ease, box-shadow 0.2s ease;
+  transition: transform 0.3s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
 .promise-card:active {
@@ -746,6 +746,66 @@ body.modal-open {
   font-size: 13px;
 }
 
+/* Promise status tones */
+.promise-card-strong {
+  border-color: rgba(34, 197, 94, 0.26);
+  background: linear-gradient(180deg, rgba(12, 36, 44, 0.96), rgba(11, 30, 41, 0.98));
+}
+
+.promise-card-on-track {
+  border-color: rgba(99, 167, 247, 0.28);
+}
+
+.promise-card-attention {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: linear-gradient(180deg, rgba(40, 31, 20, 0.95), rgba(28, 22, 16, 0.98));
+}
+
+.promise-card-risk {
+  border-color: rgba(239, 68, 68, 0.32);
+  background: linear-gradient(180deg, rgba(44, 20, 26, 0.95), rgba(30, 16, 20, 0.98));
+}
+
+.promise-card-strong .card-status-label {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.promise-card-on-track .card-status-label {
+  color: var(--accent-hover);
+  border-color: rgba(99, 167, 247, 0.4);
+  background: rgba(99, 167, 247, 0.16);
+}
+
+.promise-card-attention .card-status-label {
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.promise-card-risk .card-status-label {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.44);
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.promise-card-strong .card-pct {
+  color: #86efac;
+}
+
+.promise-card-on-track .card-pct {
+  color: var(--accent-hover);
+}
+
+.promise-card-attention .card-pct {
+  color: #fcd34d;
+}
+
+.promise-card-risk .card-pct {
+  color: #fca5a5;
+}
+
 /* Progress bar */
 .progress-row {
   margin-top: 10px;
@@ -764,6 +824,18 @@ body.modal-open {
   background: linear-gradient(90deg, var(--accent), var(--accent2));
   border-radius: 999px;
   transition: width 0.3s ease;
+}
+
+.promise-card-strong .progress-fill {
+  background: linear-gradient(90deg, #34d399, #22c55e);
+}
+
+.promise-card-attention .progress-fill {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.promise-card-risk .progress-fill {
+  background: linear-gradient(90deg, #ef4444, #fb7185);
 }
 
 /* Days chart */
@@ -792,6 +864,18 @@ body.modal-open {
   background: rgba(91, 163, 245, 0.70);
   border-top: 1px solid rgba(232, 238, 252, 0.20);
   transition: height 0.3s ease;
+}
+
+.promise-card-strong .day-bar {
+  background: rgba(34, 197, 94, 0.68);
+}
+
+.promise-card-attention .day-bar {
+  background: rgba(245, 158, 11, 0.72);
+}
+
+.promise-card-risk .day-bar {
+  background: rgba(239, 68, 68, 0.72);
 }
 
 .day-label {

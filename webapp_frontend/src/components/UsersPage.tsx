@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { UserCard } from './UserCard';
 import type { PublicUser, UserInfo } from '../types';
-import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
+import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { PageHeader } from './ui/PageHeader';
 
 export function UsersPage() {
-  const { user, initData } = useTelegramWebApp();
+  const navigate = useNavigate();
+  const { user, initData, isReady } = useTelegramWebApp();
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [followers, setFollowers] = useState<PublicUser[]>([]);
   const [following, setFollowing] = useState<PublicUser[]>([]);
@@ -16,23 +18,32 @@ export function UsersPage() {
   const [error, setError] = useState('');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
+  const authData = initData || getDevInitData();
   const hasToken = !!localStorage.getItem('telegram_auth_token');
-  const isAuthenticated = !!initData || hasToken;
-  if (!isAuthenticated) {
-    return null;
-  }
+  const isAuthenticated = !!authData || hasToken;
 
   useEffect(() => {
-    if (initData) {
-      apiClient.setInitData(initData);
+    if (authData) {
+      apiClient.setInitData(authData);
     }
-  }, [initData]);
+  }, [authData]);
 
   useEffect(() => {
-    if (hasToken && !initData) {
-      apiClient.getUserInfo().then(setUserInfo).catch(() => console.error('Failed to fetch user info'));
+    if (!isReady || !isAuthenticated) return;
+    // Always fetch user info when Telegram user id is not available.
+    if (user?.id) return;
+
+    if (authData) {
+      apiClient.setInitData(authData);
     }
-  }, [initData, hasToken]);
+
+    apiClient
+      .getUserInfo()
+      .then(setUserInfo)
+      .catch((err) => {
+        console.error('Failed to fetch user info', err);
+      });
+  }, [isReady, isAuthenticated, user?.id, authData]);
 
   const currentUserId = user?.id?.toString() || userInfo?.user_id?.toString();
 
@@ -41,6 +52,9 @@ export function UsersPage() {
     setFollowersLoading(true);
     setFollowingLoading(true);
     try {
+      if (authData) {
+        apiClient.setInitData(authData);
+      }
       const [followersRes, followingRes] = await Promise.all([
         apiClient.getFollowers(currentUserId).catch(() => ({ users: [], total: 0 })),
         apiClient.getFollowing(currentUserId).catch(() => ({ users: [], total: 0 })),
@@ -53,23 +67,34 @@ export function UsersPage() {
       setFollowersLoading(false);
       setFollowingLoading(false);
     }
-  }, [currentUserId]);
+  }, [currentUserId, authData]);
 
   useEffect(() => {
     fetchSocialData();
   }, [fetchSocialData]);
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return;
+
     const fetchUsers = async () => {
       setLoading(true);
       setError('');
       try {
+        if (authData) {
+          apiClient.setInitData(authData);
+        }
         const response = await apiClient.getPublicUsers(20);
         const filteredUsers = response.users.filter((publicUser) => publicUser.user_id !== currentUserId);
         setUsers(filteredUsers);
       } catch (err) {
         console.error('Failed to fetch users:', err);
         if (err instanceof ApiError) {
+          if (err.status === 401) {
+            apiClient.clearAuth();
+            window.dispatchEvent(new Event('logout'));
+            navigate('/', { replace: true });
+            return;
+          }
           setError(err.message);
         } else {
           setError('Failed to load users. Please try again.');
@@ -79,7 +104,29 @@ export function UsersPage() {
       }
     };
     fetchUsers();
-  }, [currentUserId, isAuthenticated]);
+  }, [currentUserId, isAuthenticated, isReady, authData, navigate]);
+
+  if (!isReady) {
+    return (
+      <div className="users-page">
+        <div className="users-page-loading">
+          <div className="loading-spinner" />
+          <div className="loading-text">Loading community...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="users-page">
+        <div className="users-page-error">
+          <div className="error-icon">!</div>
+          <p className="error-message">Authentication required.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="users-page">

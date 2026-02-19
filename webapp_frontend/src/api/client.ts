@@ -89,16 +89,21 @@ class ApiClient {
       ...(options.headers as Record<string, string> || {}),
     };
 
-    // Check for session token first (browser login)
     const token = this.authToken || localStorage.getItem('telegram_auth_token');
-    if (token) {
+    const isTelegramMiniApp = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
+
+    // In Telegram Mini App mode, initData is the source of truth and should not be
+    // shadowed by any stale browser session token present in localStorage.
+    if (isTelegramMiniApp && this.initData) {
+      headers['X-Telegram-Init-Data'] = this.initData;
+    } else if (token) {
       headers['Authorization'] = `Bearer ${token}`;
       // Update internal state if loaded from localStorage
       if (!this.authToken) {
         this.authToken = token;
       }
     } else if (this.initData) {
-      // Fall back to Telegram Mini App initData
+      // Fall back to Telegram Mini App initData (e.g. development mode with dev_init_data)
       headers['X-Telegram-Init-Data'] = this.initData;
     }
 

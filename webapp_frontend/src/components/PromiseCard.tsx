@@ -15,6 +15,7 @@ interface PromiseCardProps {
 }
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+type PromiseProgressTone = 'strong' | 'on-track' | 'attention' | 'risk';
 
 /**
  * Get status label based on progress percentage
@@ -24,6 +25,13 @@ function getStatusLabel(progress: number): string {
   if (progress >= 60) return 'On track';
   if (progress >= 30) return 'Needs attention';
   return 'At risk';
+}
+
+function getStatusTone(progress: number): PromiseProgressTone {
+  if (progress >= 90) return 'strong';
+  if (progress >= 60) return 'on-track';
+  if (progress >= 30) return 'attention';
+  return 'risk';
 }
 
 /**
@@ -119,6 +127,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   }
   
   const statusLabel = getStatusLabel(progress);
+  const statusTone = getStatusTone(progress);
   
   const handleVisibilityToggle = () => {
     if (isUpdatingVisibility) return;
@@ -425,7 +434,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   return (
     <>
       <article 
-        className="promise-card"
+        className={`promise-card promise-card-${statusTone}`}
         style={{
           transform: swipeOffset < 0 ? `translateX(${swipeOffset}px)` : undefined,
           transition: swipeStart ? 'none' : 'transform 0.3s ease',
