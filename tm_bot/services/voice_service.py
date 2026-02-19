@@ -251,71 +251,38 @@ class VoiceService:
         if not text:
             return ""
 
-        # If text is HTML-formatted (e.g. <blockquote expandable>...</blockquote>), strip tags first.
-        # We replace tags with newlines to keep some structure for the TTS output.
+        text = html.unescape(str(text).replace("\r\n", "\n").replace("\r", "\n"))
+
+        text = re.sub(r'(?is)<(?:b|strong)>\s*log\s*:?\s*</(?:b|strong)>\s*.*$', '', text)
+        text = re.sub(r'(?is)(?:^|\n)\s*(?:\*{1,2})?\s*log\s*:?\s*(?:\*{1,2})?\s*(?:\n|$).*$', '', text)
+        text = re.sub(r'(?is)^\s*<(?:b|strong)>\s*(?:zana|xaana)\s*:?\s*</(?:b|strong)>\s*', '', text)
+        text = re.sub(r'(?is)^\s*(?:\*{1,2})?\s*(?:zana|xaana)\s*:?\s*(?:\*{1,2})?\s*\n?', '', text, count=1)
+
         if "<" in text and ">" in text:
-            text = re.sub(r"<[^>]+>", "\n", text)
-            text = html.unescape(text)
-        
-        # Remove markdown formatting
-        # Remove bold/italic: **text**, *text*, __text__, _text_
+            text = re.sub(r'<blockquote[^>]*>.*?</blockquote>', ' ', text, flags=re.IGNORECASE | re.DOTALL)
+            text = re.sub(r'<[^>]+>', '\n', text)
+
+        text = re.sub(r'```[^`]*```', ' ', text)
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
         text = re.sub(r'\*\*([^\*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^\*]+)\*', r'\1', text)
         text = re.sub(r'__([^_]+)__', r'\1', text)
         text = re.sub(r'_([^_]+)_', r'\1', text)
-        
-        # Remove code blocks: `code`, ```code```
-        text = re.sub(r'```[^`]*```', '', text)
-        text = re.sub(r'`([^`]+)`', r'\1', text)
-        
-        # Remove markdown links: [text](url)
-        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-        
-        # Remove headers: # Header, ## Header, etc.
         text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
-        
-        # Remove bullet points and list markers
         text = re.sub(r'^[\*\-\+]\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
-        
-        # Remove special characters that TTS might pronounce
-        # Keep basic punctuation but remove symbols
-        text = re.sub(r'[^\w\s\.\,\!\?\:\;\'\"\-\n]', ' ', text)
-        
-        # Clean up multiple spaces
+
+        text = re.sub(r'(?im)^\s*(?:log|debug|trace|tool output|function call)\s*:.*$', '', text)
+        text = re.sub(r'(?im)^\s*(?:zana|xaana)\s*:\s*', '', text)
+
+        text = text.replace("_", " ")
+        text = re.sub(r"[^\w\s\.\,\!\?\:\;\'\"\-\n]", " ", text)
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n+', ' ', text)
         text = re.sub(r'\s+', ' ', text)
-        
-        # Handle the specific format from MessageHandlers._format_response:
-        # - Older Markdown: "*Xaana:*\n`text`\n\n*Log:*\n..."
-        # - New HTML: "<b>Xaana:</b>\n<pre>text</pre>\n\n<b>Log:</b>\n<blockquote expandable><pre>...</pre></blockquote>"
-        # Extract just the main content, removing the structured format
-        lines = text.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            line_stripped = line.strip()
-            
-            # Skip formatting markers
-            if re.match(r'^\*?(Zana|Log)\*?:\s*$', line_stripped, re.IGNORECASE):
-                continue
-            
-            # Extract content from backtick-wrapped text
-            if line_stripped.startswith('`') and line_stripped.endswith('`'):
-                content = line_stripped.strip('`').strip()
-                if content:  # Only add non-empty content
-                    cleaned_lines.append(content)
-            elif line_stripped:  # Add non-empty lines
-                cleaned_lines.append(line)
-        
-        text = '\n'.join(cleaned_lines)
-        
-        # Remove "Log:" or "Zana:" prefixes that might remain
-        text = re.sub(r'^(Log|Zana):\s*', '', text, flags=re.IGNORECASE | re.MULTILINE)
-        
-        # Clean up leading/trailing whitespace
-        text = text.strip()
-        
-        return text
+
+        return text.strip()
     
     def synthesize_speech(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
         """
