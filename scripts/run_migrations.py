@@ -82,6 +82,44 @@ def get_database_url() -> str:
         "No database URL found. Set DATABASE_URL_PROD, DATABASE_URL_STAGING, or DATABASE_URL"
     )
 
+
+def _print_table_counts(database_url: str) -> None:
+    """Print name and row count for all tables in the public schema."""
+    try:
+        import psycopg2
+        from psycopg2 import sql
+    except ImportError:
+        print("(Install psycopg2 to see table counts)")
+        return
+    try:
+        conn = psycopg2.connect(database_url)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+            """
+        )
+        tables = [row[0] for row in cur.fetchall()]
+        if not tables:
+            print("No tables in public schema.")
+            cur.close()
+            conn.close()
+            return
+        print("\nTable row counts:")
+        max_name = max(len(t) for t in tables)
+        for name in tables:
+            cur.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(name)))
+            count = cur.fetchone()[0]
+            print(f"  {name:<{max_name}}  {count:>10,} rows")
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"(Could not list table counts: {e})")
+
+
 def main():
     """Run Alembic migrations."""
     # Get the alembic directory
@@ -110,6 +148,7 @@ def main():
     try:
         command.upgrade(alembic_cfg, "head")
         print("✓ Migrations completed successfully!")
+        _print_table_counts(database_url)
         return 0
     except Exception as e:
         print(f"✗ Migration failed: {e}")
