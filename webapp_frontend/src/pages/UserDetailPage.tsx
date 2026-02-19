@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { PublicUser, UserInfo } from '../types';
 import { PromiseBadge } from '../components/PromiseBadge';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
 
 export function UserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
@@ -12,7 +14,7 @@ export function UserDetailPage() {
   const { user, initData, hapticFeedback } = useTelegramWebApp();
   const [userData, setUserData] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState('');
   const [showSuggestModal, setShowSuggestModal] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoadingFollow, setIsLoadingFollow] = useState(false);
@@ -21,24 +23,17 @@ export function UserDetailPage() {
   const [dicebearError, setDicebearError] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
-  // Support both Telegram Mini App (initData + initDataUnsafe.user) and browser login token.
   const hasToken = !!localStorage.getItem('telegram_auth_token');
 
-  // Set initData for API client if available (Telegram Mini App)
   useEffect(() => {
     if (initData) {
       apiClient.setInitData(initData);
     }
   }, [initData]);
 
-  // Fetch userInfo for browser login users (to get user_id)
   useEffect(() => {
     if (hasToken && !initData) {
-      apiClient.getUserInfo()
-        .then(setUserInfo)
-        .catch(() => {
-          console.error('Failed to fetch user info');
-        });
+      apiClient.getUserInfo().then(setUserInfo).catch(() => console.error('Failed to fetch user info'));
     }
   }, [hasToken, initData]);
 
@@ -68,35 +63,32 @@ export function UserDetailPage() {
         setLoading(false);
       }
     };
-
     fetchUser();
   }, [userId]);
 
-  // Reset follow status when navigating between profiles
   useEffect(() => {
     setFollowStatusChecked(false);
     setIsFollowing(false);
   }, [userId]);
 
-  // Check follow status if authenticated and not own profile
   useEffect(() => {
-    if (currentUserId && userId && currentUserId !== userId && !followStatusChecked) {
-      const checkFollowStatus = async () => {
-        try {
-          const status = await apiClient.getFollowStatus(userId);
-          setIsFollowing(status.is_following);
-          setFollowStatusChecked(true);
-        } catch (err) {
-          console.error('Failed to check follow status:', err);
-        }
-      };
-      checkFollowStatus();
-    }
+    if (!currentUserId || !userId || currentUserId === userId || followStatusChecked) return;
+
+    const checkFollowStatus = async () => {
+      try {
+        const status = await apiClient.getFollowStatus(userId);
+        setIsFollowing(status.is_following);
+        setFollowStatusChecked(true);
+      } catch (err) {
+        console.error('Failed to check follow status:', err);
+      }
+    };
+    checkFollowStatus();
   }, [currentUserId, userId, followStatusChecked]);
 
   const handleFollowToggle = async () => {
     if (!currentUserId || !userId || currentUserId === userId || isLoadingFollow) return;
-    
+
     setIsLoadingFollow(true);
     try {
       if (isFollowing) {
@@ -115,12 +107,12 @@ export function UserDetailPage() {
     }
   };
 
-  const getDisplayName = (user: PublicUser): string => {
-    if (user.display_name) return user.display_name;
-    if (user.first_name && user.last_name) return `${user.first_name} ${user.last_name}`;
-    if (user.first_name) return user.first_name;
-    if (user.username) return `@${user.username}`;
-    return `User ${user.user_id}`;
+  const getDisplayName = (publicUser: PublicUser): string => {
+    if (publicUser.display_name) return publicUser.display_name;
+    if (publicUser.first_name && publicUser.last_name) return `${publicUser.first_name} ${publicUser.last_name}`;
+    if (publicUser.first_name) return publicUser.first_name;
+    if (publicUser.username) return `@${publicUser.username}`;
+    return `User ${publicUser.user_id}`;
   };
 
   if (loading) {
@@ -138,12 +130,12 @@ export function UserDetailPage() {
     return (
       <div className="app">
         <div className="error">
-          <div className="error-icon">😕</div>
+          <div className="error-icon">!</div>
           <h1 className="error-title">User not found</h1>
           <p className="error-message">{error || 'The user you are looking for does not exist.'}</p>
-          <button className="retry-button" onClick={() => navigate('/community')}>
+          <Button variant="secondary" onClick={() => navigate('/community')}>
             Back to Community
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -153,169 +145,89 @@ export function UserDetailPage() {
   const displayName = getDisplayName(userData);
 
   const dicebearUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userData.user_id)}`;
-  const avatarUrl = !avatarError && userData.avatar_path
-    ? (userData.avatar_path.startsWith('http') ? userData.avatar_path : `/api/media/avatars/${userData.user_id}`)
-    : null;
+  const avatarUrl =
+    !avatarError && userData.avatar_path
+      ? userData.avatar_path.startsWith('http')
+        ? userData.avatar_path
+        : `/api/media/avatars/${userData.user_id}`
+      : null;
 
   return (
     <div className="app">
-      <header className="page-header">
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            position: 'absolute',
-            left: '1rem',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            background: 'rgba(232, 238, 252, 0.1)',
-            border: '1px solid rgba(232, 238, 252, 0.2)',
-            borderRadius: '8px',
-            padding: '0.5rem 1rem',
-            color: '#fff',
-            cursor: 'pointer',
-            fontSize: '0.9rem'
-          }}
-        >
-          ← Back
-        </button>
-        <h1 className="page-title">{getDisplayName(userData)}</h1>
-      </header>
+      <PageHeader title={displayName} showBack fallbackRoute="/community" />
 
-      <div style={{ padding: '1rem', maxWidth: '800px', margin: '0 auto' }}>
-        {/* User Info Card */}
-        <div
-          style={{
-            border: '1px solid rgba(232, 238, 252, 0.15)',
-            borderRadius: '12px',
-            padding: '1.5rem',
-            background: 'linear-gradient(180deg, rgba(15,26,56,0.98), rgba(15,23,48,0.98))',
-            marginBottom: '1.5rem'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="user-detail-container">
+        <div className="user-detail-card">
+          <div className="user-detail-head">
             {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={displayName}
-                onError={() => setAvatarError(true)}
-                style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '50%',
-                  objectFit: 'cover'
-                }}
-              />
+              <img src={avatarUrl} alt={displayName} onError={() => setAvatarError(true)} className="user-detail-avatar" />
             ) : !dicebearError ? (
-              <img
-                src={dicebearUrl}
-                alt={displayName}
-                onError={() => setDicebearError(true)}
-                style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '50%',
-                  objectFit: 'cover'
-                }}
-              />
+              <img src={dicebearUrl} alt={displayName} onError={() => setDicebearError(true)} className="user-detail-avatar" />
             ) : (
-              <div
-                style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '50%',
-                  background: 'rgba(232, 238, 252, 0.1)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '24px',
-                  color: '#fff',
-                  fontWeight: '600'
-                }}
-              >
-                {displayName.charAt(0).toUpperCase()}
-              </div>
+              <div className="user-detail-avatar user-detail-avatar-fallback">{displayName.charAt(0).toUpperCase()}</div>
             )}
-            <div style={{ flex: 1 }}>
-              <h2 style={{ color: '#fff', margin: 0, marginBottom: '0.25rem' }}>
-                {displayName}
-              </h2>
-              {userData.username && (
-                <div style={{ color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.9rem' }}>
-                  @{userData.username}
-                </div>
-              )}
+
+            <div className="user-detail-main">
+              <h2>{displayName}</h2>
+              {userData.username ? <div className="user-detail-username">@{userData.username}</div> : null}
             </div>
-            {!isOwnProfile && currentUserId && (
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  className={`user-card-follow-btn ${isFollowing ? 'following' : ''}`}
+
+            {!isOwnProfile && currentUserId ? (
+              <div className="user-detail-actions">
+                <Button
+                  variant={isFollowing ? 'secondary' : 'primary'}
+                  size="sm"
                   onClick={handleFollowToggle}
                   disabled={isLoadingFollow || !followStatusChecked}
-                  title={isFollowing ? 'Click to unfollow' : 'Click to follow'}
                 >
                   {isLoadingFollow ? '...' : isFollowing ? 'Unfollow' : 'Follow'}
-                </button>
-                <button
-                  className="button-primary"
-                  onClick={() => setShowSuggestModal(true)}
-                  style={{ fontSize: '0.9rem', padding: '0.5rem 1rem' }}
-                >
+                </Button>
+                <Button size="sm" onClick={() => setShowSuggestModal(true)}>
                   Suggest Promise
-                </button>
+                </Button>
               </div>
-            )}
+            ) : null}
           </div>
 
-          <div style={{ display: 'flex', gap: '2rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>
-            {userData.activity_count > 0 && (
+          <div className="user-detail-metrics">
+            {userData.activity_count > 0 ? (
               <div>
                 <strong>{userData.activity_count}</strong> {userData.activity_count === 1 ? 'activity' : 'activities'}
               </div>
-            )}
-            {userData.promise_count > 0 && (
+            ) : null}
+            {userData.promise_count > 0 ? (
               <div>
                 <strong>{userData.promise_count}</strong> {userData.promise_count === 1 ? 'promise' : 'promises'}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 
-        {/* Public Promises */}
         {userData.public_promises && userData.public_promises.length > 0 ? (
           <div>
-            <h2 style={{ color: '#fff', marginBottom: '1rem', fontSize: '1.2rem' }}>Public Promises</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h3 className="user-detail-section-title">Public Promises</h3>
+            <div className="user-detail-promises">
               {userData.public_promises.map((badge) => (
                 <PromiseBadge key={badge.promise_id} badge={badge} compact={false} />
               ))}
             </div>
           </div>
         ) : (
-          <div
-            style={{
-              border: '1px solid rgba(232, 238, 252, 0.15)',
-              borderRadius: '12px',
-              padding: '2rem',
-              textAlign: 'center',
-              color: 'rgba(232, 238, 252, 0.6)'
-            }}
-          >
-            No public promises yet
-          </div>
+          <div className="user-detail-empty">No public promises yet</div>
         )}
       </div>
 
-      {showSuggestModal && userData && (
+      {showSuggestModal ? (
         <SuggestPromiseModal
           toUserId={userData.user_id}
-          toUserName={getDisplayName(userData)}
+          toUserName={displayName}
           onClose={() => setShowSuggestModal(false)}
           onSuccess={() => {
             hapticFeedback('success');
             setShowSuggestModal(false);
           }}
         />
-      )}
+      ) : null}
     </div>
   );
 }

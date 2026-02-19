@@ -41,8 +41,7 @@ export function ScheduledTab({ broadcasts, loadingBroadcasts, onRefresh }: Sched
     return (
       <div className="admin-panel-scheduled">
         <div className="admin-no-broadcasts">
-          <div className="empty-icon">📭</div>
-          <p>No scheduled broadcasts</p>
+          <p>No queued broadcasts</p>
         </div>
       </div>
     );
@@ -55,22 +54,15 @@ export function ScheduledTab({ broadcasts, loadingBroadcasts, onRefresh }: Sched
           <div key={broadcast.broadcast_id} className="admin-broadcast-item">
             <div className="admin-broadcast-header">
               <span className="admin-broadcast-status">{broadcast.status}</span>
-              <span className="admin-broadcast-time">
-                {new Date(broadcast.scheduled_time_utc).toLocaleString()}
-              </span>
+              <span className="admin-broadcast-time">{new Date(broadcast.scheduled_time_utc).toLocaleString()}</span>
             </div>
             <div className="admin-broadcast-message">{broadcast.message}</div>
-            <div className="admin-broadcast-meta">
-              To {broadcast.target_user_ids.length} user(s)
-            </div>
-            {broadcast.status === 'pending' && (
-              <button
-                className="admin-cancel-btn"
-                onClick={() => cancelBroadcast(broadcast.broadcast_id)}
-              >
+            <div className="admin-broadcast-meta">To {broadcast.target_user_ids.length} user(s)</div>
+            {broadcast.status === 'pending' ? (
+              <button className="admin-cancel-btn" onClick={() => cancelBroadcast(broadcast.broadcast_id)}>
                 Cancel
               </button>
-            )}
+            ) : null}
           </div>
         ))}
       </div>

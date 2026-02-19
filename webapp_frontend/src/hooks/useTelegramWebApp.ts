@@ -10,6 +10,8 @@ interface UseTelegramWebAppResult {
   expand: () => void;
   close: () => void;
   hapticFeedback: (type: 'success' | 'error' | 'warning' | 'light' | 'medium' | 'heavy') => void;
+  isTelegramMiniApp: boolean;
+  canUseBackButton: boolean;
 }
 
 /**
@@ -94,6 +96,8 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
     expand,
     close,
     hapticFeedback,
+    isTelegramMiniApp: !!webApp,
+    canUseBackButton: !!webApp?.BackButton,
   };
 }
 

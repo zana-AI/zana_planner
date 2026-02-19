@@ -107,7 +107,7 @@ export function ConversationsTab({
                       border: `1px solid ${isUser ? 'rgba(91, 163, 245, 0.3)' : 'rgba(232, 238, 252, 0.15)'}`
                     }}>
                       <div style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.5)', marginBottom: '0.25rem' }}>
-                        {isUser ? 'User' : 'Bot'} • {new Date(msg.created_at_utc).toLocaleString()}
+                        {isUser ? 'User' : 'Bot'} | {new Date(msg.created_at_utc).toLocaleString()}
                       </div>
                       {revealed ? (
                         <div style={{ color: '#fff', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>

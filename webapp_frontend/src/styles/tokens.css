@@ -1,0 +1,62 @@
+:root {
+  /* Typography */
+  --font-family-app: "Manrope", "Inter", "Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+
+  /* Color system - refined dark blue */
+  --bg: #090f1f;
+  --panel: #0f1832;
+  --card: #121f3f;
+  --card-elevated: #15264b;
+  --text: #edf3ff;
+  --text-muted: rgba(237, 243, 255, 0.68);
+  --text-subtle: rgba(237, 243, 255, 0.52);
+  --border: rgba(237, 243, 255, 0.12);
+  --border-strong: rgba(237, 243, 255, 0.2);
+  --accent: #63a7f7;
+  --accent-hover: #80bcff;
+  --accent-soft: rgba(99, 167, 247, 0.18);
+  --accent-soft-border: rgba(99, 167, 247, 0.34);
+  --good: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+
+  /* Shape */
+  --radius-8: 8px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-20: 20px;
+  --radius-pill: 999px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Elevation */
+  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.22);
+  --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-strong: 0 12px 32px rgba(0, 0, 0, 0.36);
+
+  /* Component sizing */
+  --button-height-sm: 32px;
+  --button-height-md: 40px;
+  --button-height-lg: 48px;
+  --bottom-nav-height: 64px;
+  --app-max-width: 1200px;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --app-max-width: 100%;
+  }
+}

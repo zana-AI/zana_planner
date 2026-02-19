@@ -15,35 +15,10 @@
   padding-top: 2rem;
 }
 
-.focus-page-header {
-  margin-bottom: 2rem;
-  position: relative;
-}
-
-.focus-back-button {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 1rem;
-  font-weight: 500;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 1rem;
-}
-
-.focus-back-button:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.focus-page-header h1 {
-  color: #fff;
-  font-size: 1.75rem;
-  font-weight: 600;
-  margin: 0;
+.focus-loading-message {
   text-align: center;
+  padding: 2rem;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .focus-page-content {
@@ -157,10 +132,6 @@
     padding-top: 4rem;
   }
 
-  .focus-page-header h1 {
-    font-size: 2rem;
-  }
-
   .focus-page-content {
     padding: 2.5rem;
   }
@@ -183,20 +154,6 @@
 
   .focus-page-content {
     background: rgba(255, 255, 255, 0.98);
-  }
-
-  .focus-page-header h1 {
-    color: #333;
-  }
-
-  .focus-back-button {
-    background: rgba(0, 0, 0, 0.05);
-    border-color: rgba(0, 0, 0, 0.1);
-    color: rgba(0, 0, 0, 0.8);
-  }
-
-  .focus-back-button:hover {
-    background: rgba(0, 0, 0, 0.1);
   }
 
   .focus-page-section label {

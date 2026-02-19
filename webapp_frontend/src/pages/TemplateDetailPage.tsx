@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type { TemplateDetail } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
+import { AppLogo } from '../components/ui/AppLogo';
 
 export function TemplateDetailPage() {
   const { templateId } = useParams<{ templateId: string }>();
@@ -10,46 +13,42 @@ export function TemplateDetailPage() {
   const { hapticFeedback } = useTelegramWebApp();
   const [template, setTemplate] = useState<TemplateDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState('');
   const [subscribing, setSubscribing] = useState(false);
   const [targetValue, setTargetValue] = useState<number | null>(null);
 
   useEffect(() => {
-    if (templateId) {
-      loadTemplate();
-    }
-  }, [templateId]);
-
-  const loadTemplate = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await apiClient.getTemplate(templateId!);
-      setTemplate(data);
-      hapticFeedback('success');
-    } catch (err) {
-      console.error('Failed to load template:', err);
-      setError('Failed to load template');
-      hapticFeedback('error');
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (!templateId) return;
+    const loadTemplate = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await apiClient.getTemplate(templateId);
+        setTemplate(data);
+        setTargetValue(data.target_value);
+        hapticFeedback('success');
+      } catch (err) {
+        console.error('Failed to load template:', err);
+        setError('Failed to load template');
+        hapticFeedback('error');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadTemplate();
+  }, [templateId, hapticFeedback]);
 
   const handleSubscribe = async () => {
-    if (!template) {
-      hapticFeedback('warning');
-      return;
-    }
+    if (!template || !templateId) return;
 
     setSubscribing(true);
+    setError('');
     try {
-      await apiClient.subscribeTemplate(templateId!, {
-        target_value: targetValue !== null ? targetValue : undefined
+      await apiClient.subscribeTemplate(templateId, {
+        target_value: targetValue !== null ? targetValue : undefined,
       });
       hapticFeedback('success');
-      // Navigate to weekly report or show success message
-      navigate('/weekly');
+      navigate('/dashboard');
     } catch (err: any) {
       console.error('Failed to subscribe:', err);
       setError(err.message || 'Failed to subscribe to template');
@@ -58,12 +57,6 @@ export function TemplateDetailPage() {
       setSubscribing(false);
     }
   };
-
-  useEffect(() => {
-    if (template) {
-      setTargetValue(template.target_value);
-    }
-  }, [template]);
 
   if (loading) {
     return (
@@ -76,27 +69,16 @@ export function TemplateDetailPage() {
     );
   }
 
-  if (error && !template) {
-    return (
-      <div className="app">
-        <div className="error">
-          <div className="error-icon">😕</div>
-          <h1 className="error-title">Something went wrong</h1>
-          <p className="error-message">{error}</p>
-          <button className="retry-button" onClick={loadTemplate}>
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (!template) {
     return (
       <div className="app">
         <div className="error">
-          <div className="error-icon">😕</div>
+          <div className="error-icon">!</div>
           <h1 className="error-title">Template not found</h1>
+          <p className="error-message">{error || 'The selected template does not exist.'}</p>
+          <Button variant="secondary" onClick={() => navigate('/templates')}>
+            Back to Explore
+          </Button>
         </div>
       </div>
     );
@@ -104,148 +86,52 @@ export function TemplateDetailPage() {
 
   return (
     <div className="app">
-      <header className="page-header">
-        <button className="back-button" onClick={() => navigate('/templates')}>
-          ← Back
-        </button>
-      </header>
+      <PageHeader title="Template Details" showBack fallbackRoute="/templates" />
 
-      <main className="template-detail" style={{ paddingTop: '1rem' }}>
-        {/* Template Header Card */}
-        <div style={{
-          background: 'rgba(15, 23, 48, 0.8)',
-          borderRadius: '16px',
-          padding: '1.5rem',
-          marginBottom: '1.5rem',
-          border: '1px solid rgba(232, 238, 252, 0.1)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-            <span style={{ fontSize: '3rem' }}>{template.emoji || '🎯'}</span>
+      <main className="template-detail-page">
+        <section className="template-detail-card">
+          <div className="template-detail-title-row">
+            <span className="template-detail-icon">
+              <AppLogo size={24} title={template.title} />
+            </span>
             <div>
-              <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#fff' }}>{template.title}</h1>
-              <span style={{
-                display: 'inline-block',
-                marginTop: '0.5rem',
-                padding: '0.25rem 0.75rem',
-                background: 'rgba(102, 126, 234, 0.2)',
-                borderRadius: '12px',
-                fontSize: '0.8rem',
-                color: 'rgba(232, 238, 252, 0.8)'
-              }}>
-                {template.category.replace('_', ' ')}
-              </span>
+              <h2 className="template-detail-title">{template.title}</h2>
+              <span className="template-detail-chip">{template.category.replace('_', ' ')}</span>
             </div>
           </div>
 
-          {template.description && (
-            <p style={{
-              margin: 0,
-              color: 'rgba(232, 238, 252, 0.7)',
-              fontSize: '0.95rem',
-              lineHeight: 1.5
-            }}>
-              {template.description}
-            </p>
-          )}
+          {template.description ? <p className="template-detail-description">{template.description}</p> : null}
 
-          <div style={{
-            marginTop: '1rem',
-            padding: '1rem',
-            background: 'rgba(0, 0, 0, 0.2)',
-            borderRadius: '10px',
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '2rem'
-          }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#5ba3f5' }}>
-                {template.target_value}
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'rgba(232, 238, 252, 0.5)' }}>
-                {template.metric_type === 'hours' ? 'hours/week' : 'times/week'}
-              </div>
-            </div>
+          <div className="template-detail-metric">
+            <strong>{template.target_value}</strong>
+            <span>{template.metric_type === 'hours' ? 'hours/week' : 'times/week'}</span>
           </div>
-        </div>
+        </section>
 
-        {/* Subscribe Section */}
-        <div style={{
-          background: 'rgba(15, 23, 48, 0.8)',
-          borderRadius: '16px',
-          padding: '1.5rem',
-          border: '1px solid rgba(232, 238, 252, 0.1)'
-        }}>
-          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#fff' }}>
-            Start this habit
-          </h2>
-
-          <div style={{ marginBottom: '1.25rem' }}>
-            <label style={{
-              display: 'block',
-              marginBottom: '0.5rem',
-              color: 'rgba(232, 238, 252, 0.7)',
-              fontSize: '0.9rem'
-            }}>
-              Your weekly target
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <input
-                type="number"
-                step="1"
-                min="1"
-                value={targetValue !== null ? targetValue : template.target_value}
-                onChange={(e) => setTargetValue(parseFloat(e.target.value) || template.target_value)}
-                style={{
-                  flex: 1,
-                  padding: '0.75rem',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(232, 238, 252, 0.15)',
-                  background: 'rgba(11, 16, 32, 0.6)',
-                  color: '#fff',
-                  fontSize: '1.1rem',
-                  textAlign: 'center'
-                }}
-              />
-              <span style={{ color: 'rgba(232, 238, 252, 0.6)', fontSize: '0.9rem' }}>
-                {template.metric_type === 'hours' ? 'hours/week' : 'times/week'}
-              </span>
-            </div>
+        <section className="template-detail-card">
+          <h3 className="template-detail-section-title">Start this promise</h3>
+          <label className="template-detail-input-label">Your weekly target</label>
+          <div className="template-detail-input-row">
+            <input
+              type="number"
+              step="1"
+              min="1"
+              value={targetValue !== null ? targetValue : template.target_value}
+              onChange={(e) => setTargetValue(parseFloat(e.target.value) || template.target_value)}
+              className="template-detail-input"
+            />
+            <span className="template-detail-input-unit">
+              {template.metric_type === 'hours' ? 'hours/week' : 'times/week'}
+            </span>
           </div>
 
-          <button
-            className="subscribe-button"
-            onClick={handleSubscribe}
-            disabled={subscribing}
-            style={{
-              width: '100%',
-              padding: '1rem',
-              background: subscribing ? 'rgba(102, 126, 234, 0.3)' : 'linear-gradient(135deg, #667eea, #764ba2)',
-              border: 'none',
-              borderRadius: '10px',
-              color: '#fff',
-              fontSize: '1rem',
-              fontWeight: '600',
-              cursor: subscribing ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {subscribing ? 'Creating promise...' : '✨ Start Tracking'}
-          </button>
+          {error ? <div className="error-message">{error}</div> : null}
 
-          {error && (
-            <div style={{
-              marginTop: '1rem',
-              padding: '0.75rem',
-              background: 'rgba(255, 107, 107, 0.1)',
-              borderRadius: '8px',
-              color: '#ff6b6b',
-              fontSize: '0.9rem'
-            }}>
-              {error}
-            </div>
-          )}
-        </div>
+          <Button variant="primary" fullWidth size="lg" onClick={handleSubscribe} disabled={subscribing}>
+            {subscribing ? 'Creating promise...' : 'Start Tracking'}
+          </Button>
+        </section>
       </main>
     </div>
   );
 }
-

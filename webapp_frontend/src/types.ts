@@ -77,6 +77,16 @@ export interface TelegramUser {
   photo_url?: string;
 }
 
+// Session and navigation UI contracts
+export type SessionMode = 'telegram_mini_app' | 'browser_token' | 'unauthenticated';
+export type AppNavKey = 'today' | 'community' | 'explore';
+
+export interface AppNavItem {
+  key: AppNavKey;
+  label: string;
+  to: string;
+}
+
 // API Response types
 export interface SessionData {
   date: string;

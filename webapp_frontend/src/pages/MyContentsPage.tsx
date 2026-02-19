@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
 import type { UserContentWithDetails, MyContentsResponse } from '../types';
+import { PageHeader } from '../components/ui/PageHeader';
 
 type StatusFilter = 'in_progress' | 'saved' | 'completed' | '';
 
@@ -79,7 +80,7 @@ export function MyContentsPage() {
 
   return (
     <div style={{ padding: '1rem', maxWidth: 1200, margin: '0 auto' }}>
-      <h1 style={{ margin: '0 0 1rem', fontSize: '1.5rem', color: '#fff' }}>My Contents</h1>
+      <PageHeader title="My Contents" showBack fallbackRoute="/templates" />
 
       <div style={{ marginBottom: '1.5rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
@@ -112,7 +113,7 @@ export function MyContentsPage() {
             cursor: adding ? 'wait' : 'pointer',
           }}
         >
-          {adding ? 'Adding…' : 'Add'}
+          {adding ? 'Adding...' : 'Add'}
         </button>
       </div>
       {addError && (
@@ -120,7 +121,7 @@ export function MyContentsPage() {
       )}
 
       {loading && (
-        <p style={{ color: 'rgba(255,255,255,0.7)' }}>Loading…</p>
+        <p style={{ color: 'rgba(255,255,255,0.7)' }}>Loading...</p>
       )}
       {error && !loading && (
         <p style={{ color: '#ff6b6b' }}>{error}</p>

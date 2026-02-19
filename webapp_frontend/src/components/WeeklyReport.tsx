@@ -76,7 +76,7 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
       {!hideHeader && (
         <header className="report-header">
           <div className="header-left">
-            <h1 className="header-title" dir="auto">Weekly Report</h1>
+            <h1 className="header-title" dir="auto">Promises</h1>
             <div className="header-subtitle" dir="ltr">{dateRange}</div>
           </div>
           <div className="header-right">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
+import { PageHeader } from '../components/ui/PageHeader';
 
 // Common timezones grouped by region
 const TIMEZONES = [
@@ -107,7 +108,7 @@ export function TimezoneSelectorPage() {
       
       // Close after a short delay
       setTimeout(() => {
-        navigate('/dashboard', { replace: true });
+        navigate('/settings', { replace: true });
       }, 1500);
     } catch (err) {
       console.error('Failed to update timezone:', err);
@@ -135,9 +136,7 @@ export function TimezoneSelectorPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <h1>Select Timezone</h1>
-      </div>
+      <PageHeader title="Timezone" subtitle="Select your timezone" showBack fallbackRoute="/settings" />
 
       <div className="timezone-selector">
         {currentTimezone && currentTimezone !== 'DEFAULT' && (
@@ -212,14 +211,14 @@ export function TimezoneSelectorPage() {
 
         {success && (
           <div className="success-message">
-            ✓ Timezone updated successfully! Redirecting...
+            Timezone updated successfully. Redirecting...
           </div>
         )}
 
         <div className="timezone-actions">
           <button
             className="button button-secondary"
-            onClick={() => navigate('/dashboard', { replace: true })}
+            onClick={() => navigate('/settings', { replace: true })}
             disabled={saving}
           >
             Cancel

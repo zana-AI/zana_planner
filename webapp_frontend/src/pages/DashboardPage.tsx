@@ -7,6 +7,8 @@ import { UserCard } from '../components/UserCard';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
+import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
 import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
 
 export function DashboardPage() {
@@ -279,7 +281,7 @@ export function DashboardPage() {
     return (
       <div className="app">
         <div className="error">
-          <div className="error-icon">😕</div>
+          <div className="error-icon">!</div>
           <h1 className="error-title">Something went wrong</h1>
           <p className="error-message">{error}</p>
           <button className="retry-button" onClick={handleRefresh}>
@@ -310,6 +312,16 @@ export function DashboardPage() {
         flex: '1 1 0',
         minWidth: 0 // Allow flex item to shrink below content size
       }}>
+        <PageHeader
+          title="Today"
+          subtitle="Your weekly promises and progress"
+          rightSlot={
+            <Button size="sm" onClick={() => navigate('/focus')}>
+              Start Focus
+            </Button>
+          }
+        />
+
         {/* Week Navigation Header */}
         <div style={{
           display: 'flex',
@@ -350,7 +362,7 @@ export function DashboardPage() {
               }
             }}
           >
-            ← Previous
+            Previous
           </button>
           
           <div style={{
@@ -391,7 +403,7 @@ export function DashboardPage() {
               }
             }}
           >
-            Next →
+            Next
           </button>
         </div>
         
@@ -440,7 +452,7 @@ export function DashboardPage() {
                 fontWeight: '500'
               }}
             >
-              📋 Browse Promise Marketplace
+              Explore Promise Library
             </button>
           </div>
         )}
@@ -469,7 +481,7 @@ export function DashboardPage() {
             color: '#fff', 
             marginBottom: '0.5rem' 
           }}>
-            👥 Community
+            Community
           </h3>
           <p style={{ 
             fontSize: '0.8rem', 
@@ -525,7 +537,7 @@ export function DashboardPage() {
                       e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
                     }}
                   >
-                    📬 View Suggestions
+                    View Suggestions
                   </button>
                   <button
                     onClick={() => navigate('/community')}
@@ -548,7 +560,7 @@ export function DashboardPage() {
                       e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
                     }}
                   >
-                    Explore Community →
+                    Explore Community
                   </button>
                 </div>
               </>

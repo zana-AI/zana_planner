@@ -1,7 +1,9 @@
-import { useRef, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Bot, LogOut, Settings, Shield } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import type { UserInfo } from '../../types';
+import type { SessionMode, UserInfo } from '../../types';
+import { AppLogo } from '../ui/AppLogo';
 
 interface AdminHeaderProps {
   telegramUser: any;
@@ -9,6 +11,7 @@ interface AdminHeaderProps {
   botUsername: string | null;
   showProfileMenu: boolean;
   setShowProfileMenu: (show: boolean) => void;
+  sessionMode: SessionMode;
 }
 
 export function AdminHeader({
@@ -17,11 +20,11 @@ export function AdminHeader({
   botUsername,
   showProfileMenu,
   setShowProfileMenu,
+  sessionMode,
 }: AdminHeaderProps) {
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -31,11 +34,9 @@ export function AdminHeader({
 
     if (showProfileMenu) {
       document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return undefined;
   }, [showProfileMenu, setShowProfileMenu]);
 
   const handleLogout = () => {
@@ -45,249 +46,63 @@ export function AdminHeader({
     navigate('/', { replace: true });
   };
 
-  const displayName = userInfo?.first_name || telegramUser?.first_name || telegramUser?.username || userInfo?.user_id?.toString() || 'User';
-  const displayInitial = (userInfo?.first_name || telegramUser?.first_name || telegramUser?.username || 'U').charAt(0).toUpperCase();
+  const displayName =
+    userInfo?.first_name || telegramUser?.first_name || telegramUser?.username || userInfo?.user_id?.toString() || 'User';
+  const displayInitial = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="admin-panel-header" style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '1rem'
-    }}>
-      <h1 className="admin-panel-title" style={{ margin: 0 }}>Admin Panel</h1>
-      <div style={{ position: 'relative' }} ref={menuRef}>
-        <button
-          onClick={() => setShowProfileMenu(!showProfileMenu)}
-          style={{
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '50%',
-            width: '40px',
-            height: '40px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontSize: '1rem',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            padding: 0
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-          }}
-        >
-          {telegramUser?.photo_url ? (
-            <img
-              src={telegramUser.photo_url}
-              alt={displayName}
-              style={{
-                width: '100%',
-                height: '100%',
-                borderRadius: '50%',
-                objectFit: 'cover'
-              }}
-            />
-          ) : (
-            displayInitial
-          )}
+    <div className="admin-panel-header admin-panel-header-new">
+      <div className="admin-header-brand">
+        <AppLogo size={22} />
+        <h1 className="admin-panel-title">Admin</h1>
+      </div>
+
+      <div className="app-shell-profile-wrap" ref={menuRef}>
+        <button className="app-shell-avatar" onClick={() => setShowProfileMenu(!showProfileMenu)}>
+          {telegramUser?.photo_url ? <img src={telegramUser.photo_url} alt={displayName} /> : <span>{displayInitial}</span>}
         </button>
 
-        {/* Dropdown Menu */}
-        {showProfileMenu && (
-          <div style={{
-            position: 'absolute',
-            top: 'calc(100% + 0.5rem)',
-            right: 0,
-            background: 'rgba(11, 16, 32, 0.98)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '0.5rem',
-            minWidth: '180px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            zIndex: 1000
-          }}>
-            <div style={{
-              padding: '0.75rem 1rem',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              fontSize: '0.9rem',
-              fontWeight: '500'
-            }}>
-              {displayName}
-            </div>
+        {showProfileMenu ? (
+          <div className="app-shell-menu">
+            <div className="app-shell-menu-user">{displayName}</div>
             <button
+              className="app-shell-menu-item"
               onClick={() => {
                 navigate('/dashboard');
                 setShowProfileMenu(false);
               }}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem',
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                borderRadius: '4px',
-                transition: 'background 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'none';
+            >
+              <Shield size={16} />
+              <span>Today</span>
+            </button>
+            <button
+              className="app-shell-menu-item"
+              onClick={() => {
+                navigate('/settings');
+                setShowProfileMenu(false);
               }}
             >
-              👤 Profile / Dashboard
+              <Settings size={16} />
+              <span>Settings</span>
             </button>
             <a
+              className="app-shell-menu-item"
               href={botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot'}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => setShowProfileMenu(false)}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem',
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                borderRadius: '4px',
-                transition: 'background 0.2s',
-                textDecoration: 'none',
-                display: 'block',
-                marginTop: '0.25rem'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'none';
-              }}
             >
-              🤖 Open Bot
+              <Bot size={16} />
+              <span>Open Bot</span>
             </a>
-            <button
-              onClick={() => {
-                navigate('/community');
-                setShowProfileMenu(false);
-              }}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem',
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                borderRadius: '4px',
-                transition: 'background 0.2s',
-                marginTop: '0.25rem'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'none';
-              }}
-            >
-              👥 Community
-            </button>
-            <button
-              onClick={() => {
-                navigate('/templates');
-                setShowProfileMenu(false);
-              }}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem',
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                borderRadius: '4px',
-                transition: 'background 0.2s',
-                marginTop: '0.25rem'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'none';
-              }}
-            >
-              📋 Promise Marketplace
-            </button>
-            <button
-              onClick={() => {
-                navigate('/admin');
-                setShowProfileMenu(false);
-              }}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem',
-                background: 'none',
-                border: 'none',
-                color: '#5ba3f5',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                borderRadius: '4px',
-                transition: 'background 0.2s',
-                marginTop: '0.25rem'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'none';
-              }}
-            >
-              🔐 Admin Panel
-            </button>
-            <div style={{
-              marginTop: '0.5rem',
-              paddingTop: '0.5rem',
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)'
-            }}>
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'none',
-                  border: 'none',
-                  color: '#ff6b6b',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  borderRadius: '4px',
-                  transition: 'background 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 107, 107, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'none';
-                }}
-              >
-                🚪 Logout
+            {sessionMode === 'browser_token' ? (
+              <button className="app-shell-menu-item app-shell-menu-item-danger" onClick={handleLogout}>
+                <LogOut size={16} />
+                <span>Logout</span>
               </button>
-            </div>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

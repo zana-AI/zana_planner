@@ -148,7 +148,7 @@ export function WeeklyReportPage() {
     return (
       <div className="app">
         <div className="error">
-          <div className="error-icon">😕</div>
+          <div className="error-icon">!</div>
           <h1 className="error-title">Something went wrong</h1>
           <p className="error-message">{error}</p>
           {initData && (
@@ -179,14 +179,14 @@ export function WeeklyReportPage() {
       {/* User greeting if available */}
       {user && (
         <div className="user-greeting">
-          Hi, <span className="user-name">{user.first_name}</span>! 👋
+          Hi, <span className="user-name">{user.first_name}</span>.
         </div>
       )}
 
       {/* Navigation header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0 1rem' }}>
         <h1 style={{ margin: 0, fontSize: '1.5rem' }}>
-          {isTasksView ? 'One-time Tasks' : 'Weekly Report'}
+          {isTasksView ? 'One-time Tasks' : 'Promises'}
         </h1>
         <button
           onClick={() => navigate('/templates')}
@@ -201,7 +201,7 @@ export function WeeklyReportPage() {
             fontWeight: '500'
           }}
         >
-          📋 Browse Promise Marketplace
+          Explore Promise Library
         </button>
       </div>
 

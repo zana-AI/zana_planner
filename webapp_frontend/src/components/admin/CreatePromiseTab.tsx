@@ -100,7 +100,7 @@ export function CreatePromiseTab({
       };
 
       const result = await apiClient.createPromiseForUser(request);
-      alert(`✅ Promise created successfully!\n\nPromise ID: ${result.promise_id}\n${result.message}`);
+      alert(`Promise created successfully.\n\nPromise ID: ${result.promise_id}\n${result.message}`);
       
       // Reset form
       setSelectedUserId(null);
@@ -342,7 +342,7 @@ export function CreatePromiseTab({
       {error && (
         <div className="admin-panel-error-banner">
           <p>{error}</p>
-          <button onClick={() => setError('')}>×</button>
+          <button onClick={() => setError('')}>x</button>
         </div>
       )}
 

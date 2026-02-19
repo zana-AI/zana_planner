@@ -17,13 +17,13 @@ interface PromiseCardProps {
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /**
- * Get status emoji based on progress percentage
+ * Get status label based on progress percentage
  */
-function getStatusEmoji(progress: number): string {
-  if (progress >= 90) return '✅';
-  if (progress >= 60) return '🟡';
-  if (progress >= 30) return '🟠';
-  return '🔴';
+function getStatusLabel(progress: number): string {
+  if (progress >= 90) return 'Strong progress';
+  if (progress >= 60) return 'On track';
+  if (progress >= 30) return 'Needs attention';
+  return 'At risk';
 }
 
 /**
@@ -118,7 +118,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     progress = calculateProgress(achieved_value, target_value);
   }
   
-  const emoji = getStatusEmoji(progress);
+  const statusLabel = getStatusLabel(progress);
   
   const handleVisibilityToggle = () => {
     if (isUpdatingVisibility) return;
@@ -456,7 +456,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               onClick={handleSnoozeButtonClick}
               disabled={!isSnoozeActive}
             >
-              {isSnoozeActive ? '⏸️ Snooze until next week' : '← Swipe to snooze'}
+              {isSnoozeActive ? 'Snoozed until next week' : 'Swipe left to snooze'}
             </button>
           </div>
         )}
@@ -467,7 +467,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           style={{ cursor: 'pointer' }}
         >
           <div className="card-title" dir="auto">
-            <span className="card-emoji">{emoji}</span>
+            <span className="card-status-label">{statusLabel}</span>
             <span className="card-title-text">{text}</span>
             {isBudget && (
               <span className="card-budget-badge">
@@ -479,7 +479,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               onClick={handleEditClick}
               title="Edit promise"
             >
-              ✏️
               <span>Edit</span>
             </button>
             <button
@@ -491,10 +490,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               disabled={isUpdatingVisibility}
               title={currentVisibility === 'private' ? 'Make public' : 'Make private'}
             >
-              {currentVisibility === 'private' ? '🔒' : '🌐'}
-              <span>
-                {currentVisibility === 'private' ? 'Private' : 'Public'}
-              </span>
+              <span>{currentVisibility === 'private' ? 'Private' : 'Public'}</span>
             </button>
           </div>
           <div className="card-meta">
@@ -576,7 +572,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 <div className="card-recurring-section">
                   <div className="card-recurring-info">
                     <span className="card-recurring-title">
-                      {currentRecurring ? '🔄 Recurring Promise' : '📌 One-time Task'}
+                      {currentRecurring ? 'Recurring Promise' : 'One-time Task'}
                     </span>
                     <span className="card-recurring-subtitle">
                       {currentRecurring 
@@ -596,7 +592,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 {/* Reminders section */}
                 <div className="card-section card-reminders-section">
                   <div className="card-section-header">
-                    <span>⏰ Reminders</span>
+                    <span>Reminders</span>
                     <button
                       className="card-reminders-add-button"
                       onClick={handleAddReminder}
@@ -639,14 +635,14 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                           onClick={() => handleUpdateReminder(index, 'enabled', !reminder.enabled)}
                           title={reminder.enabled ? 'Disable' : 'Enable'}
                         >
-                          {reminder.enabled ? '✓' : '○'}
+                          {reminder.enabled ? 'On' : 'Off'}
                         </button>
                         <button
                           className="card-reminder-remove"
                           onClick={() => handleRemoveReminder(index)}
                           title="Remove"
                         >
-                          ×
+                          Remove
                         </button>
                       </div>
                     ))
@@ -687,7 +683,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 {Object.keys(notesByDate).length > 0 && (
                   <div className="card-section card-notes-section">
                     <div className="card-section-header">
-                      📝 Notes for This Week
+                      Notes for This Week
                     </div>
                     {weekDays.map((dateKey) => {
                       const dayNotes = notesByDate[dateKey] || [];
@@ -722,7 +718,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 
                 {Object.keys(notesByDate).length === 0 && (
                   <div className="card-empty-state">
-                    No notes for this week. Click the ✏️ Edit button to modify this promise.
+                    No notes for this week. Open Edit to modify this promise.
                   </div>
                 )}
               </div>

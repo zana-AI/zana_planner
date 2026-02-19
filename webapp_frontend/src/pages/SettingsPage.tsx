@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import type { UserInfo } from '../types';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -105,9 +106,7 @@ export function SettingsPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <h1>Settings</h1>
-      </div>
+      <PageHeader title="Settings" showBack />
 
       <div className="settings-sections">
         {/* Timezone */}
@@ -141,9 +140,9 @@ export function SettingsPage() {
           </div>
         </section>
 
-        {/* Voice mode (Xaana) */}
+        {/* Voice mode */}
         <section className="settings-section">
-          <h3>Voice mode (Xaana)</h3>
+          <h3>Voice mode</h3>
           <p className="settings-hint">
             When enabled, the bot can send voice messages in the chat.
           </p>
@@ -172,16 +171,6 @@ export function SettingsPage() {
       {successMessage && (
         <div className="success-message">{successMessage}</div>
       )}
-
-      <div className="settings-actions">
-        <button
-          type="button"
-          className="button button-secondary"
-          onClick={() => navigate('/dashboard', { replace: true })}
-        >
-          Back to Dashboard
-        </button>
-      </div>
     </div>
   );
 }

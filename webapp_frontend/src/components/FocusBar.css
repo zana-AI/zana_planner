@@ -2,7 +2,7 @@
 
 .focus-bar {
   position: fixed;
-  bottom: 0;
+  bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
   left: 0;
   right: 0;
   z-index: 1000;
@@ -13,10 +13,6 @@
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
   padding: 1rem;
   transition: all 0.3s ease;
-}
-
-.focus-bar-idle {
-  padding: 0.75rem 1rem;
 }
 
 .focus-bar-active {
@@ -45,173 +41,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-}
-
-/* Idle State */
-.focus-start-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 12px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.focus-start-button:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
-}
-
-.focus-start-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Promise Picker Modal */
-.focus-picker-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  z-index: 2000;
-  padding: 2rem 1rem;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  /* Ensure modal is always accessible */
-  min-height: 100vh;
-  min-height: 100dvh; /* Dynamic viewport height for mobile */
-}
-
-.focus-picker-content {
-  background: rgba(26, 26, 46, 0.98);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 20px;
-  padding: 1.5rem;
-  width: 100%;
-  max-width: 500px;
-  max-height: calc(100vh - 4rem);
-  max-height: calc(100dvh - 4rem); /* Dynamic viewport height for mobile */
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  margin: 0 auto;
-  position: relative;
-  /* Ensure it's scrollable */
-  display: flex;
-  flex-direction: column;
-}
-
-.focus-picker-content h3 {
-  color: #fff;
-  margin: 0 0 1.25rem 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.focus-picker-section {
-  margin-bottom: 1.25rem;
-  flex-shrink: 0;
-}
-
-.focus-picker-section label {
-  display: block;
-  color: rgba(255, 255, 255, 0.8);
-  margin-bottom: 0.5rem;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.focus-picker-select {
-  width: 100%;
-  padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.focus-picker-select:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.focus-picker-select:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-}
-
-/* Duration picker styles removed - using DurationWheelPicker component */
-
-.focus-picker-actions {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1.5rem;
-  flex-shrink: 0;
-  padding-top: 0.5rem;
-}
-
-.focus-confirm-button,
-.focus-cancel-button {
-  flex: 1;
-  padding: 0.75rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.focus-confirm-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.focus-confirm-button:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
-}
-
-.focus-confirm-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.focus-cancel-button {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.focus-cancel-button:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.focus-error {
-  color: #ff5252;
-  font-size: 0.9rem;
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: rgba(255, 82, 82, 0.1);
-  border-radius: 6px;
 }
 
 /* Active Session State */
@@ -375,44 +204,6 @@
   .focus-controls {
     width: 100%;
     justify-content: center;
-  }
-
-  .focus-picker-modal {
-    padding: 1rem 0.75rem;
-    align-items: flex-start;
-    /* Ensure it works in mini-app viewport */
-    padding-top: max(1rem, env(safe-area-inset-top));
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-  }
-
-  .focus-picker-content {
-    padding: 1.25rem;
-    max-width: calc(100% - 1.5rem);
-    /* Conservative max-height to account for padding and safe-area-insets */
-    max-height: calc(100vh - 4rem);
-    max-height: calc(100dvh - 4rem);
-    border-radius: 16px;
-    /* Ensure it's at the top and scrollable */
-    margin: 0 auto;
-  }
-
-  .focus-picker-content h3 {
-    font-size: 1.1rem;
-    margin-bottom: 1rem;
-  }
-
-  .focus-picker-section {
-    margin-bottom: 1rem;
-  }
-
-  .focus-picker-actions {
-    margin-top: 1rem;
-    flex-direction: column;
-  }
-
-  .focus-confirm-button,
-  .focus-cancel-button {
-    width: 100%;
   }
 }
 

@@ -14,14 +14,14 @@ export function PromoteTab({ onError }: PromoteTabProps) {
       onError('Please type "PROMOTE TO PROD" to confirm');
       return;
     }
-    if (!confirm('Are you absolutely sure you want to promote staging to production? This will overwrite all production data!')) {
+    if (!confirm('Promote staging to production and overwrite production data?')) {
       return;
     }
     setPromoting(true);
     onError('');
     try {
       await apiClient.promoteStagingToProd();
-      alert('Promotion started successfully! This may take several minutes.');
+      alert('Promotion started successfully. This can take several minutes.');
       setPromoteConfirmText('');
     } catch (err) {
       console.error('Failed to promote:', err);
@@ -37,27 +37,25 @@ export function PromoteTab({ onError }: PromoteTabProps) {
 
   return (
     <div className="admin-panel-promote">
-      <div style={{
-        background: 'rgba(15, 23, 48, 0.8)',
-        border: '1px solid rgba(255, 193, 7, 0.3)',
-        borderRadius: '12px',
-        padding: '1.5rem',
-        marginBottom: '1.5rem'
-      }}>
-        <h2 style={{ marginTop: 0, marginBottom: '1rem', color: '#ffc107' }}>
-          ⚠️ Promote Staging to Production
-        </h2>
+      <div
+        style={{
+          background: 'rgba(15, 23, 48, 0.8)',
+          border: '1px solid rgba(255, 193, 7, 0.3)',
+          borderRadius: '12px',
+          padding: '1.5rem',
+          marginBottom: '1.5rem',
+        }}
+      >
+        <h2 style={{ marginTop: 0, marginBottom: '1rem', color: '#ffc107' }}>Promote Staging to Production</h2>
         <div style={{ marginBottom: '1rem', color: 'rgba(232, 238, 252, 0.8)' }}>
           <p style={{ marginBottom: '0.5rem' }}>
-            <strong>Warning:</strong> This operation will copy all data from the staging database to the production database.
+            <strong>Warning:</strong> This operation copies all staging data to production.
           </p>
-          <p style={{ marginBottom: '0.5rem' }}>
-            This will <strong>overwrite</strong> all production data with staging data. This action cannot be undone.
-          </p>
+          <p style={{ marginBottom: '0.5rem' }}>Production data will be overwritten. This action cannot be undone.</p>
           <ul style={{ marginLeft: '1.5rem', marginTop: '0.5rem' }}>
-            <li>All production users, promises, and data will be replaced</li>
-            <li>This operation may take several minutes</li>
-            <li>Production services may experience brief downtime</li>
+            <li>All production users, promises, and data will be replaced.</li>
+            <li>The operation may take several minutes.</li>
+            <li>Production services may experience brief downtime.</li>
           </ul>
         </div>
         <div style={{ marginBottom: '1rem' }}>
@@ -76,7 +74,7 @@ export function PromoteTab({ onError }: PromoteTabProps) {
               border: '1px solid rgba(232, 238, 252, 0.2)',
               background: 'rgba(11, 16, 32, 0.6)',
               color: '#fff',
-              fontSize: '1rem'
+              fontSize: '1rem',
             }}
           />
         </div>
@@ -89,14 +87,14 @@ export function PromoteTab({ onError }: PromoteTabProps) {
             border: 'none',
             borderRadius: '6px',
             color: '#fff',
-            cursor: (promoting || promoteConfirmText !== 'PROMOTE TO PROD') ? 'not-allowed' : 'pointer',
+            cursor: promoting || promoteConfirmText !== 'PROMOTE TO PROD' ? 'not-allowed' : 'pointer',
             fontSize: '1rem',
             fontWeight: '600',
-            opacity: (promoting || promoteConfirmText !== 'PROMOTE TO PROD') ? 0.5 : 1,
-            width: '100%'
+            opacity: promoting || promoteConfirmText !== 'PROMOTE TO PROD' ? 0.5 : 1,
+            width: '100%',
           }}
         >
-          {promoting ? 'Promoting...' : '🚀 Promote Staging to Production'}
+          {promoting ? 'Promoting...' : 'Promote to Production'}
         </button>
       </div>
     </div>

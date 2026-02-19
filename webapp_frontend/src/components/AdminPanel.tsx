@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
+import { useSessionMode } from '../hooks/useSessionMode';
 import { UserAvatar } from './UserAvatar';
 import type { AdminUser, Broadcast, PromiseTemplate, UserInfo } from '../types';
 import {
@@ -22,6 +23,7 @@ import {
 export function AdminPanel() {
   const navigate = useNavigate();
   const { initData, user: telegramUser } = useTelegramWebApp();
+  const sessionMode = useSessionMode();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -241,7 +243,7 @@ export function AdminPanel() {
           <UserAvatar size={40} showMenu={false} />
         </div>
         <div className="admin-panel-error">
-          <div className="error-icon">🔒</div>
+          <div className="error-icon">!</div>
           <p className="error-message">{error}</p>
         </div>
       </div>
@@ -256,6 +258,7 @@ export function AdminPanel() {
         botUsername={botUsername}
         showProfileMenu={showProfileMenu}
         setShowProfileMenu={setShowProfileMenu}
+        sessionMode={sessionMode}
       />
       <AdminTabs
         activeTab={activeTab}
@@ -266,7 +269,7 @@ export function AdminPanel() {
       {error && !error.includes('Access denied') && (
         <div className="admin-panel-error-banner">
           <p>{error}</p>
-          <button onClick={() => setError('')}>×</button>
+          <button onClick={() => setError('')}>x</button>
         </div>
       )}
 

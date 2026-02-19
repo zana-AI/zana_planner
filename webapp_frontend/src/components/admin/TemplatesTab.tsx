@@ -2,6 +2,7 @@ import { apiClient, ApiError } from '../../api/client';
 import type { PromiseTemplate } from '../../types';
 import { TemplateForm } from './TemplateForm';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
+import { AppLogo } from '../ui/AppLogo';
 
 interface TemplatesTabProps {
   templates: PromiseTemplate[];
@@ -42,7 +43,7 @@ export function TemplatesTab({
   return (
     <div className="admin-panel-templates">
       <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0, color: '#fff' }}>Promise Marketplace Templates</h2>
+        <h2 style={{ margin: 0, color: '#fff' }}>Template Library</h2>
         <button
           onClick={() => onSetEditingTemplate({} as PromiseTemplate)}
           style={{
@@ -53,14 +54,14 @@ export function TemplatesTab({
             color: '#fff',
             cursor: 'pointer',
             fontSize: '0.9rem',
-            fontWeight: '500'
+            fontWeight: '500',
           }}
         >
           + Create Template
         </button>
       </div>
 
-      {editingTemplate !== null && (
+      {editingTemplate ? (
         <TemplateForm
           template={editingTemplate}
           onSave={async (data) => {
@@ -71,7 +72,6 @@ export function TemplatesTab({
                 await apiClient.createTemplate(data);
               }
               onSetEditingTemplate(null);
-              // Refresh templates
               const response = await apiClient.getAdminTemplates();
               onSetTemplates(response.templates);
             } catch (err) {
@@ -83,34 +83,31 @@ export function TemplatesTab({
           }}
           onCancel={() => onSetEditingTemplate(null)}
         />
-      )}
+      ) : null}
 
-      {showDeleteConfirm && (
+      {showDeleteConfirm ? (
         <DeleteConfirmModal
           templateId={showDeleteConfirm}
-          templateTitle={templates.find(t => t.template_id === showDeleteConfirm)?.title || ''}
+          templateTitle={templates.find((template) => template.template_id === showDeleteConfirm)?.title || ''}
           onConfirm={async () => {
             try {
               await apiClient.deleteTemplate(showDeleteConfirm);
               onSetShowDeleteConfirm(null);
               onSetDeleteConfirmText('');
-              // Refresh templates
               const response = await apiClient.getAdminTemplates();
               onSetTemplates(response.templates);
             } catch (err) {
               console.error('Failed to delete template:', err);
               if (err instanceof ApiError) {
                 if (err.status === 409) {
-                  // Try to parse error message for structured error details
                   try {
                     const errorData = JSON.parse(err.message);
                     if (errorData.message || errorData.reasons) {
-                      onError(errorData.message || 'Template cannot be deleted: ' + (Array.isArray(errorData.reasons) ? errorData.reasons.join(', ') : 'Template is in use'));
+                      onError(errorData.message || `Template cannot be deleted: ${(errorData.reasons || []).join(', ')}`);
                     } else {
                       onError(err.message);
                     }
                   } catch {
-                    // If parsing fails, use the message as-is
                     onError(err.message || 'Template cannot be deleted because it is in use');
                   }
                 } else {
@@ -130,7 +127,7 @@ export function TemplatesTab({
           confirmText={deleteConfirmText}
           onConfirmTextChange={onSetDeleteConfirmText}
         />
-      )}
+      ) : null}
 
       <div style={{ display: 'grid', gap: '1rem' }}>
         {templates.map((template) => (
@@ -143,17 +140,17 @@ export function TemplatesTab({
               padding: '1rem',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center'
+              alignItems: 'center',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
-              <span style={{ fontSize: '1.5rem' }}>{template.emoji || '🎯'}</span>
+              <span className="admin-template-logo">
+                <AppLogo size={18} title={template.title} />
+              </span>
               <div>
-                <div style={{ fontSize: '1.05rem', fontWeight: '600', color: '#fff', marginBottom: '0.15rem' }}>
-                  {template.title}
-                </div>
+                <div style={{ fontSize: '1.05rem', fontWeight: '600', color: '#fff', marginBottom: '0.15rem' }}>{template.title}</div>
                 <div style={{ fontSize: '0.8rem', color: 'rgba(232, 238, 252, 0.5)' }}>
-                  {template.target_value} {template.metric_type === 'hours' ? 'hrs' : '×'}/week • {template.category} • {template.is_active ? '✓ Active' : '○ Inactive'}
+                  {template.target_value} {template.metric_type === 'hours' ? 'hrs' : 'times'}/week | {template.category} | {template.is_active ? 'Active' : 'Inactive'}
                 </div>
               </div>
             </div>
@@ -167,7 +164,7 @@ export function TemplatesTab({
                   borderRadius: '6px',
                   color: '#5ba3f5',
                   cursor: 'pointer',
-                  fontSize: '0.85rem'
+                  fontSize: '0.85rem',
                 }}
               >
                 Edit
@@ -181,7 +178,7 @@ export function TemplatesTab({
                   borderRadius: '6px',
                   color: '#ff6b6b',
                   cursor: 'pointer',
-                  fontSize: '0.85rem'
+                  fontSize: '0.85rem',
                 }}
               >
                 Delete
@@ -189,11 +186,8 @@ export function TemplatesTab({
             </div>
           </div>
         ))}
-        {templates.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>
-            No templates found
-          </div>
-        )}
+
+        {templates.length === 0 ? <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(232, 238, 252, 0.6)' }}>No templates found</div> : null}
       </div>
     </div>
   );

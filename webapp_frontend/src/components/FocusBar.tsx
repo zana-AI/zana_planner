@@ -1,13 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { apiClient, ApiError } from '../api/client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiClient } from '../api/client';
 import type { FocusSession, WeeklyReportData } from '../types';
-import { DurationWheelPicker } from './DurationWheelPicker';
-import { useModalBodyLock } from '../hooks/useModalBodyLock';
 import './FocusBar.css';
-
-// Mobile breakpoint constant - matches CSS media query
-const MOBILE_BREAKPOINT = 768;
 
 interface FocusBarProps {
   promisesData: WeeklyReportData | null;
@@ -15,18 +9,11 @@ interface FocusBarProps {
 }
 
 export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
-  const navigate = useNavigate();
   const [currentSession, setCurrentSession] = useState<FocusSession | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>('');
-  const [selectedPromiseId, setSelectedPromiseId] = useState<string>('');
-  const [selectedDuration, setSelectedDuration] = useState<number>(25);
-  const [showPromisePicker, setShowPromisePicker] = useState(false);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
-  // Track which session ID was completed to prevent re-triggering
-  // Use sessionStorage to persist across component remounts
+
   const getCompletedSessionId = (): string | null => {
     try {
       return sessionStorage.getItem('focus_completed_session_id');
@@ -34,6 +21,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
       return null;
     }
   };
+
   const setCompletedSessionId = (sessionId: string | null) => {
     try {
       if (sessionId) {
@@ -42,76 +30,11 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
         sessionStorage.removeItem('focus_completed_session_id');
       }
     } catch {
-      // Ignore storage errors
+      // Ignore storage errors.
     }
   };
+
   const completedSessionIdRef = useRef<string | null>(getCompletedSessionId());
-
-  // Detect mobile viewport
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-    };
-  }, []);
-
-  useModalBodyLock(showPromisePicker && !isMobile);
-
-  // Close modal when switching from desktop to mobile
-  useEffect(() => {
-    if (isMobile && showPromisePicker) {
-      setShowPromisePicker(false);
-    }
-  }, [isMobile, showPromisePicker]);
-
-  // Load current session on mount
-  useEffect(() => {
-    loadCurrentSession();
-  }, []);
-
-  // Reset completion flag only when switching to a genuinely new session
-  useEffect(() => {
-    const completedId = getCompletedSessionId();
-    if (currentSession?.session_id && 
-        completedId && 
-        currentSession.session_id !== completedId) {
-      // Only reset if we have a different session
-      setCompletedSessionId(null);
-      completedSessionIdRef.current = null;
-    }
-  }, [currentSession?.session_id]);
-
-  const loadCurrentSession = async () => {
-    try {
-      const session = await apiClient.getCurrentFocus();
-      if (session) {
-        // Check if this session was already completed locally
-        const completedId = getCompletedSessionId();
-        if (completedId === session.session_id) {
-          // Session was completed but backend still shows running
-          // Keep showing as finished locally
-          setCurrentSession({ ...session, status: 'finished' });
-        } else {
-          setCurrentSession(session);
-        }
-        if (session.promise_id && !selectedPromiseId) {
-          setSelectedPromiseId(session.promise_id);
-        }
-      } else {
-        // No active session - clear any completed session tracking
-        setCompletedSessionId(null);
-        completedSessionIdRef.current = null;
-      }
-    } catch (err) {
-      console.error('Failed to load current session:', err);
-    }
-  };
 
   const stopTimer = () => {
     if (intervalRef.current) {
@@ -120,62 +43,78 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     }
   };
 
-  const handleTimerComplete = useCallback(async (sessionId: string) => {
-    // Prevent multiple calls for the same session
-    if (completedSessionIdRef.current === sessionId || getCompletedSessionId() === sessionId) {
-      return;
-    }
-    
-    // Mark this session as completed FIRST, before any async operations
-    // Store in both ref AND sessionStorage to persist across remounts
-    completedSessionIdRef.current = sessionId;
-    setCompletedSessionId(sessionId);
-    
-    // Stop the timer immediately
-    stopTimer();
-    
-    // Show completion state - backend will send Telegram notification
-    setCurrentSession((prev) => {
-      if (prev && prev.session_id === sessionId) {
-        return { ...prev, status: 'finished' };
-      }
-      return prev;
-    });
-    
-    // Request browser notification if available (do this first, before any refresh)
+  const loadCurrentSession = useCallback(async () => {
     try {
-      if ('Notification' in window) {
-        if (Notification.permission === 'granted') {
-          new Notification('🎉 Focus session complete!', {
-            body: 'Check Telegram for confirmation options.',
-            icon: '/assets/zana_icon.png',
-            tag: `focus-complete-${sessionId}`, // Prevent duplicate notifications
-          });
-        } else if (Notification.permission === 'default') {
-          // Request permission if not yet asked
-          const permission = await Notification.requestPermission();
-          if (permission === 'granted') {
-            new Notification('🎉 Focus session complete!', {
-              body: 'Check Telegram for confirmation options.',
+      const session = await apiClient.getCurrentFocus();
+      if (session) {
+        const completedId = getCompletedSessionId();
+        if (completedId === session.session_id) {
+          setCurrentSession({ ...session, status: 'finished' });
+        } else {
+          setCurrentSession(session);
+        }
+      } else {
+        setCompletedSessionId(null);
+        completedSessionIdRef.current = null;
+        setCurrentSession(null);
+      }
+    } catch (err) {
+      console.error('Failed to load current session:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCurrentSession();
+  }, [loadCurrentSession]);
+
+  const handleTimerComplete = useCallback(
+    async (sessionId: string) => {
+      if (completedSessionIdRef.current === sessionId || getCompletedSessionId() === sessionId) {
+        return;
+      }
+
+      completedSessionIdRef.current = sessionId;
+      setCompletedSessionId(sessionId);
+      stopTimer();
+
+      setCurrentSession((prev) => {
+        if (prev && prev.session_id === sessionId) {
+          return { ...prev, status: 'finished' };
+        }
+        return prev;
+      });
+
+      try {
+        if ('Notification' in window) {
+          if (Notification.permission === 'granted') {
+            new Notification('Focus session complete', {
+              body: 'Check Telegram to confirm your session.',
               icon: '/assets/zana_icon.png',
               tag: `focus-complete-${sessionId}`,
             });
+          } else if (Notification.permission === 'default') {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+              new Notification('Focus session complete', {
+                body: 'Check Telegram to confirm your session.',
+                icon: '/assets/zana_icon.png',
+                tag: `focus-complete-${sessionId}`,
+              });
+            }
           }
         }
+      } catch (err) {
+        console.warn('Failed to show browser notification:', err);
       }
-    } catch (err) {
-      console.warn('Failed to show browser notification:', err);
-      // Don't fail the completion flow if notification fails
-    }
-    
-    // Call onSessionComplete callback (which may trigger refresh) after notification
-    // Use setTimeout to ensure notification is shown before any potential page refresh
-    setTimeout(() => {
-      if (onSessionComplete) {
-        onSessionComplete();
-      }
-    }, 100);
-  }, [onSessionComplete]);
+
+      setTimeout(() => {
+        if (onSessionComplete) {
+          onSessionComplete();
+        }
+      }, 100);
+    },
+    [onSessionComplete]
+  );
 
   const updateRemainingTime = useCallback(() => {
     if (!currentSession || !currentSession.expected_end_utc) {
@@ -186,14 +125,9 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     const now = new Date().getTime();
     const endTime = new Date(currentSession.expected_end_utc).getTime();
     const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
-
     setRemainingSeconds(remaining);
 
-    // If timer completed, handle it (only once per session)
-    if (remaining === 0 && 
-        currentSession.status === 'running' && 
-        completedSessionIdRef.current !== currentSession.session_id) {
-      // Stop timer immediately to prevent further calls
+    if (remaining === 0 && currentSession.status === 'running' && completedSessionIdRef.current !== currentSession.session_id) {
       stopTimer();
       handleTimerComplete(currentSession.session_id);
     }
@@ -201,15 +135,9 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
   const startTimer = useCallback(() => {
     stopTimer();
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    intervalRef.current = setInterval(() => {
-      updateRemainingTime();
-    }, 1000);
+    intervalRef.current = setInterval(updateRemainingTime, 1000);
   }, [updateRemainingTime]);
 
-  // Update remaining time when session changes
   useEffect(() => {
     if (currentSession && currentSession.status === 'running') {
       updateRemainingTime();
@@ -226,7 +154,6 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     };
   }, [currentSession?.session_id, currentSession?.status, currentSession?.expected_end_utc, updateRemainingTime, startTimer]);
 
-
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -240,46 +167,14 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     return Math.min(100, Math.max(0, (elapsed / totalSeconds) * 100));
   };
 
-  const handleStart = async () => {
-    if (!selectedPromiseId) {
-      setError('Please select a promise');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const session = await apiClient.startFocus(selectedPromiseId, selectedDuration);
-      setCurrentSession(session);
-      setShowPromisePicker(false);
-      
-      // Request notification permission
-      if ('Notification' in window && Notification.permission === 'default') {
-        await Notification.requestPermission();
-      }
-    } catch (err) {
-      console.error('Failed to start focus:', err);
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Failed to start focus session');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handlePause = async () => {
     if (!currentSession) return;
-
     setLoading(true);
     try {
       const session = await apiClient.pauseFocus(currentSession.session_id);
       setCurrentSession(session);
     } catch (err) {
       console.error('Failed to pause focus:', err);
-      setError('Failed to pause session');
     } finally {
       setLoading(false);
     }
@@ -287,14 +182,12 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
   const handleResume = async () => {
     if (!currentSession) return;
-
     setLoading(true);
     try {
       const session = await apiClient.resumeFocus(currentSession.session_id);
       setCurrentSession(session);
     } catch (err) {
       console.error('Failed to resume focus:', err);
-      setError('Failed to resume session');
     } finally {
       setLoading(false);
     }
@@ -302,7 +195,6 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
 
   const handleStop = async () => {
     if (!currentSession) return;
-
     if (!confirm('Stop this focus session? It will not be logged.')) {
       return;
     }
@@ -310,129 +202,26 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     setLoading(true);
     try {
       await apiClient.stopFocus(currentSession.session_id);
-      // Clear completed session tracking
       setCompletedSessionId(null);
       completedSessionIdRef.current = null;
       setCurrentSession(null);
-      setSelectedPromiseId('');
     } catch (err) {
       console.error('Failed to stop focus:', err);
-      setError('Failed to stop session');
     } finally {
       setLoading(false);
     }
   };
 
-  // Get promise text for display
   const getPromiseText = (): string => {
     if (!currentSession || !promisesData) return '';
     const promise = promisesData.promises[currentSession.promise_id];
     return promise?.text || currentSession.promise_text || `Promise #${currentSession.promise_id}`;
   };
 
-  // Get available promises for picker
-  const getAvailablePromises = (): Array<{ id: string; text: string }> => {
-    if (!promisesData) return [];
-    return Object.entries(promisesData.promises)
-      .filter(([_, data]) => data.hours_promised > 0) // Only time-based promises
-      .map(([id, data]) => ({ id, text: data.text }));
-  };
-
-  // Render idle state (no active session)
   if (!currentSession) {
-    const handleStartClick = () => {
-      if (isMobile) {
-        // On mobile, navigate to dedicated focus page
-        navigate('/focus');
-      } else {
-        // On desktop, show modal
-        setShowPromisePicker(true);
-      }
-    };
-
-    return (
-      <div className="focus-bar focus-bar-idle">
-        <div className="focus-bar-content">
-          <button
-            className="focus-start-button"
-            onClick={handleStartClick}
-            disabled={loading}
-          >
-            🎯 Start Focus
-          </button>
-          
-          {showPromisePicker && !isMobile && (
-            <div 
-              className="focus-picker-modal"
-              onClick={(e) => {
-                // Close modal when clicking backdrop
-                if (e.target === e.currentTarget) {
-                  setShowPromisePicker(false);
-                  setError('');
-                }
-              }}
-            >
-              <div 
-                className="focus-picker-content"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h3>Start Focus Session</h3>
-                
-                <div className="focus-picker-section">
-                  <label>Select Promise:</label>
-                  <select
-                    value={selectedPromiseId}
-                    onChange={(e) => setSelectedPromiseId(e.target.value)}
-                    className="focus-picker-select"
-                  >
-                    <option value="">-- Choose a promise --</option>
-                    {getAvailablePromises().map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.text}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="focus-picker-section">
-                  <label>Duration:</label>
-                  <DurationWheelPicker
-                    value={selectedDuration}
-                    onChange={setSelectedDuration}
-                    min={1}
-                    max={120}
-                  />
-                </div>
-
-                {error && <div className="focus-error">{error}</div>}
-
-                <div className="focus-picker-actions">
-                  <button
-                    className="focus-confirm-button"
-                    onClick={handleStart}
-                    disabled={loading || !selectedPromiseId}
-                  >
-                    {loading ? 'Starting...' : 'Start'}
-                  </button>
-                  <button
-                    className="focus-cancel-button"
-                    onClick={() => {
-                      setShowPromisePicker(false);
-                      setError('');
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+    return null;
   }
 
-  // Render active session state
   const progress = getProgress();
   const isRunning = currentSession.status === 'running';
   const isPaused = currentSession.status === 'paused';
@@ -447,12 +236,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
             <div className="focus-time">{formatTime(remainingSeconds)}</div>
             <div className="focus-progress-ring">
               <svg viewBox="0 0 100 100" className="focus-progress-svg">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  className="focus-progress-bg"
-                />
+                <circle cx="50" cy="50" r="45" className="focus-progress-bg" />
                 <circle
                   cx="50"
                   cy="50"
@@ -469,62 +253,44 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
         </div>
 
         <div className="focus-controls">
-          {isRunning && (
+          {isRunning ? (
             <>
-              <button
-                className="focus-control-btn pause"
-                onClick={handlePause}
-                disabled={loading}
-              >
-                ⏸️ Pause
+              <button className="focus-control-btn pause" onClick={handlePause} disabled={loading}>
+                Pause
               </button>
-              <button
-                className="focus-control-btn stop"
-                onClick={handleStop}
-                disabled={loading}
-              >
-                ⏹️ Stop
+              <button className="focus-control-btn stop" onClick={handleStop} disabled={loading}>
+                Stop
               </button>
             </>
-          )}
-          {isPaused && (
+          ) : null}
+
+          {isPaused ? (
             <>
-              <button
-                className="focus-control-btn resume"
-                onClick={handleResume}
-                disabled={loading}
-              >
-                ▶️ Resume
+              <button className="focus-control-btn resume" onClick={handleResume} disabled={loading}>
+                Resume
               </button>
-              <button
-                className="focus-control-btn stop"
-                onClick={handleStop}
-                disabled={loading}
-              >
-                ⏹️ Stop
+              <button className="focus-control-btn stop" onClick={handleStop} disabled={loading}>
+                Stop
               </button>
             </>
-          )}
-          {isFinished && (
+          ) : null}
+
+          {isFinished ? (
             <>
-              <div className="focus-complete-message">
-                🎉 Session complete! Check Telegram to confirm.
-              </div>
+              <div className="focus-complete-message">Session complete. Check Telegram to confirm.</div>
               <button
                 className="focus-control-btn dismiss"
                 onClick={() => {
-                  // Clear the session from local state to return to idle
-                  // The backend will still send the Telegram notification
                   setCurrentSession(null);
                   setCompletedSessionId(null);
                   completedSessionIdRef.current = null;
                 }}
                 disabled={loading}
               >
-                ✕ Dismiss
+                Dismiss
               </button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

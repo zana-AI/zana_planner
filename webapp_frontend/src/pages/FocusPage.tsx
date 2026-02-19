@@ -1,21 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import type { WeeklyReportData } from '../types';
 import { DurationWheelPicker } from '../components/DurationWheelPicker';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
 import './FocusPage.css';
 
 export function FocusPage() {
   const navigate = useNavigate();
   const [promisesData, setPromisesData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState('');
   const [loadingPromises, setLoadingPromises] = useState(true);
-  const [selectedPromiseId, setSelectedPromiseId] = useState<string>('');
-  const [selectedDuration, setSelectedDuration] = useState<number>(25);
+  const [selectedPromiseId, setSelectedPromiseId] = useState('');
+  const [selectedDuration, setSelectedDuration] = useState(25);
 
   useEffect(() => {
-    // Load promises data
     const loadPromises = async () => {
       setLoadingPromises(true);
       try {
@@ -34,7 +35,7 @@ export function FocusPage() {
   const getAvailablePromises = (): Array<{ id: string; text: string }> => {
     if (!promisesData) return [];
     return Object.entries(promisesData.promises)
-      .filter(([_, data]) => data.hours_promised > 0) // Only time-based promises
+      .filter(([_, data]) => data.hours_promised > 0)
       .map(([id, data]) => ({ id, text: data.text }));
   };
 
@@ -46,16 +47,11 @@ export function FocusPage() {
 
     setLoading(true);
     setError('');
-
     try {
       await apiClient.startFocus(selectedPromiseId, selectedDuration);
-      
-      // Request notification permission
       if ('Notification' in window && Notification.permission === 'default') {
         await Notification.requestPermission();
       }
-
-      // Navigate back to dashboard
       navigate('/dashboard');
     } catch (err) {
       console.error('Failed to start focus:', err);
@@ -69,29 +65,16 @@ export function FocusPage() {
     }
   };
 
-  const handleCancel = () => {
-    navigate('/dashboard');
-  };
+  const handleCancel = () => navigate('/dashboard');
 
   return (
     <div className="focus-page">
       <div className="focus-page-container">
-        <div className="focus-page-header">
-          <button 
-            className="focus-back-button"
-            onClick={handleCancel}
-            aria-label="Go back to dashboard"
-          >
-            ← Back
-          </button>
-          <h1>Start Focus Session</h1>
-        </div>
+        <PageHeader title="Start Focus Session" showBack fallbackRoute="/dashboard" onBack={handleCancel} />
 
         {loadingPromises ? (
           <div className="focus-page-content">
-            <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-              Loading promises...
-            </div>
+            <div className="focus-loading-message">Loading promises...</div>
           </div>
         ) : (
           <div className="focus-page-content">
@@ -105,9 +88,9 @@ export function FocusPage() {
                 disabled={loadingPromises}
               >
                 <option value="">-- Choose a promise --</option>
-                {getAvailablePromises().map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.text}
+                {getAvailablePromises().map((promise) => (
+                  <option key={promise.id} value={promise.id}>
+                    {promise.text}
                   </option>
                 ))}
               </select>
@@ -115,30 +98,18 @@ export function FocusPage() {
 
             <div className="focus-page-section">
               <label>Duration:</label>
-              <DurationWheelPicker
-                value={selectedDuration}
-                onChange={setSelectedDuration}
-                min={1}
-                max={120}
-              />
+              <DurationWheelPicker value={selectedDuration} onChange={setSelectedDuration} min={1} max={120} />
             </div>
 
-            {error && <div className="focus-page-error" role="alert">{error}</div>}
+            {error ? <div className="focus-page-error">{error}</div> : null}
 
             <div className="focus-page-actions">
-              <button
-                className="focus-confirm-button"
-                onClick={handleStart}
-                disabled={loading || !selectedPromiseId || loadingPromises}
-              >
+              <Button variant="primary" fullWidth onClick={handleStart} disabled={loading || !selectedPromiseId || loadingPromises}>
                 {loading ? 'Starting...' : 'Start Focus Session'}
-              </button>
-              <button
-                className="focus-cancel-button"
-                onClick={handleCancel}
-              >
+              </Button>
+              <Button variant="secondary" fullWidth onClick={handleCancel}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}
