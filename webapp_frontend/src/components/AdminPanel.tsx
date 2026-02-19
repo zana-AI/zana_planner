@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { UserAvatar } from './UserAvatar';
@@ -19,6 +20,7 @@ import {
 } from './admin';
 
 export function AdminPanel() {
+  const navigate = useNavigate();
   const { initData, user: telegramUser } = useTelegramWebApp();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,6 +96,12 @@ export function AdminPanel() {
           setStats(statsData);
         } catch (err) {
           console.error('Failed to fetch stats:', err);
+          if (err instanceof ApiError && err.status === 401) {
+            apiClient.clearAuth();
+            window.dispatchEvent(new Event('logout'));
+            navigate('/', { replace: true });
+            return;
+          }
           if (err instanceof ApiError) {
             if (err.status === 403) {
               setStatsError('Access denied. Admin privileges required.');
@@ -132,7 +140,10 @@ export function AdminPanel() {
           if (err.status === 403) {
             setError('Access denied. Admin privileges required.');
           } else if (err.status === 401) {
-            setError('Authentication failed. Please reopen the app from Telegram.');
+            apiClient.clearAuth();
+            window.dispatchEvent(new Event('logout'));
+            navigate('/', { replace: true });
+            return;
           } else {
             setError(err.message);
           }
