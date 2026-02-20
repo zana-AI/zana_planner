@@ -200,7 +200,7 @@ class LearningPipelineRepository:
                 text(
                     """
                     INSERT INTO content_artifact (id, content_id, artifact_type, artifact_format, payload_json, model_name, created_at)
-                    VALUES (:id, :content_id, :artifact_type, :artifact_format, :payload_json::jsonb, :model_name, :created_at)
+                    VALUES (:id, :content_id, :artifact_type, :artifact_format, CAST(:payload_json AS jsonb), :model_name, :created_at)
                     """
                 ),
                 {
@@ -262,7 +262,7 @@ class LearningPipelineRepository:
                             id, content_id, label, concept_type, definition, examples_json,
                             importance_weight, support_count, created_at, updated_at
                         ) VALUES (
-                            :id, :content_id, :label, :concept_type, :definition, :examples_json::jsonb,
+                            :id, :content_id, :label, :concept_type, :definition, CAST(:examples_json AS jsonb),
                             :importance_weight, :support_count, :created_at, :updated_at
                         )
                         """
@@ -391,7 +391,7 @@ class LearningPipelineRepository:
                             options_json, answer_key_json, rationale, source_segment_ids_json, position
                         ) VALUES (
                             :id, :quiz_set_id, :concept_id, :question_type, :difficulty, :prompt,
-                            :options_json::jsonb, :answer_key_json::jsonb, :rationale, :source_segment_ids_json::jsonb, :position
+                            CAST(:options_json AS jsonb), CAST(:answer_key_json AS jsonb), :rationale, CAST(:source_segment_ids_json AS jsonb), :position
                         )
                         """
                     ),
@@ -564,7 +564,7 @@ class LearningPipelineRepository:
                             id, attempt_id, question_id, user_answer_json, is_correct,
                             score_awarded, feedback, graded_by_model, created_at
                         ) VALUES (
-                            :id, :attempt_id, :question_id, :user_answer_json::jsonb, :is_correct,
+                            :id, :attempt_id, :question_id, CAST(:user_answer_json AS jsonb), :is_correct,
                             :score_awarded, :feedback, :graded_by_model, :created_at
                         )
                         """
