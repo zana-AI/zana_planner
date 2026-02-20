@@ -27,11 +27,9 @@ jobs:
             set -e
 
             echo '[STAGING] Preparing staging data...'
-            mkdir -p /srv/zana-users-staging
-            mkdir -p /srv/zana-logs-staging
-            # Use sudo for rm if needed, fallback to regular rm
-            sudo rm -rf /srv/zana-users-staging/* 2>/dev/null || rm -rf /srv/zana-users-staging/* 2>/dev/null || true
-            cp -r /srv/zana-users/* /srv/zana-users-staging/ 2>/dev/null || true
+            sudo mkdir -p /srv/zana-users-staging /srv/zana-logs-staging
+            sudo rm -rf /srv/zana-users-staging/* 2>/dev/null || true
+            sudo cp -r /srv/zana-users/* /srv/zana-users-staging/ 2>/dev/null || true
 
             echo '[STAGING] Fixing permissions for container user (UID 1002)...'
             for dir in /srv/zana-users-staging /srv/zana-logs-staging; do
