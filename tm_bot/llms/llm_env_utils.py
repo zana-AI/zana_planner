@@ -19,6 +19,14 @@ def load_llm_env():
     project_id = os.getenv("GCP_PROJECT_ID")
     location   = os.getenv("GCP_LOCATION", "us-central1")
     model_name = os.getenv("GCP_GEMINI_MODEL", "gemini-2.5-flash")
+
+    # Some models (e.g. gemini-3-*) are only available in the "global" region.
+    # Allow explicit override via GCP_LLM_LOCATION, otherwise auto-detect.
+    _GLOBAL_ONLY_PREFIXES = ("gemini-3-",)
+    llm_location = os.getenv("GCP_LLM_LOCATION") or (
+        "global" if any(model_name.startswith(p) for p in _GLOBAL_ONLY_PREFIXES)
+        else location
+    )
     fallback_enabled = os.getenv("LLM_FALLBACK_ENABLED", "false").strip().lower() in ("1", "true", "yes")
     fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").strip().lower() or "openai"
 
@@ -58,6 +66,7 @@ def load_llm_env():
     return {
         "GCP_PROJECT_ID": project_id,
         "GCP_LOCATION": location,
+        "GCP_LLM_LOCATION": llm_location,
         "GCP_GEMINI_MODEL": model_name,
         "OPENAI_API_KEY": openai_key,
         "LLM_FALLBACK_ENABLED": fallback_enabled,

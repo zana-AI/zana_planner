@@ -75,7 +75,7 @@ class ImageService:
             base = ChatVertexAI(
                 model=env["GCP_GEMINI_MODEL"],
                 project=env["GCP_PROJECT_ID"],
-                location=env["GCP_LOCATION"],
+                location=env.get("GCP_LLM_LOCATION", env["GCP_LOCATION"]),
                 temperature=0.1,
             )
             self.llm_struct = base.with_structured_output(ImageAnalysisOutput)

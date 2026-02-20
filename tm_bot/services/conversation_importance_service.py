@@ -121,9 +121,9 @@ class ConversationImportanceService:
             # Use a lightweight model for scoring (cost-efficient)
             if cfg.get("GCP_PROJECT_ID", ""):
                 self._llm_model = ChatVertexAI(
-                    model=cfg.get("GCP_GEMINI_MODEL", "gemini-1.5-flash"),  # Use flash for cost efficiency
+                    model=cfg.get("GCP_GEMINI_MODEL", "gemini-1.5-flash"),
                     project=cfg["GCP_PROJECT_ID"],
-                    location=cfg.get("GCP_LOCATION", "us-central1"),
+                    location=cfg.get("GCP_LLM_LOCATION", cfg.get("GCP_LOCATION", "us-central1")),
                     temperature=0.3,  # Lower temperature for more consistent scoring
                 )
             elif cfg.get("OPENAI_API_KEY", ""):

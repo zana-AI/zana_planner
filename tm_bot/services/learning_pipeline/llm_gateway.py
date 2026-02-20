@@ -36,7 +36,7 @@ class LearningLLMGateway:
         )
 
         gcp_project = cfg.get("GCP_PROJECT_ID") or os.getenv("GCP_PROJECT_ID")
-        gcp_location = cfg.get("GCP_LOCATION") or os.getenv("GCP_LOCATION", "us-central1")
+        gcp_location = cfg.get("GCP_LLM_LOCATION") or cfg.get("GCP_LOCATION") or os.getenv("GCP_LOCATION", "us-central1")
         gcp_model = cfg.get("GCP_GEMINI_MODEL") or os.getenv("GCP_GEMINI_MODEL", "gemini-2.5-flash")
         openai_api_key = cfg.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 

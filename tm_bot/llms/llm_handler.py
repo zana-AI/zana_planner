@@ -164,7 +164,7 @@ class LLMHandler:
                 vertex_kwargs = dict(
                     model=cfg["GCP_GEMINI_MODEL"],
                     project=cfg["GCP_PROJECT_ID"],
-                    location=cfg["GCP_LOCATION"],
+                    location=cfg["GCP_LLM_LOCATION"],
                 )
                 self.router_model = ChatVertexAI(**vertex_kwargs, temperature=router_temp)
                 self.planner_model = ChatVertexAI(

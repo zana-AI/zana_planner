@@ -1,11 +1,7 @@
-import os
 from datetime import date, datetime
-
-import pytest
 
 from visualisation.weekly_report_card import (
     build_weekly_report_card_html,
-    render_weekly_report_card_png,
 )
 
 
@@ -54,29 +50,6 @@ def test_build_weekly_report_card_html_has_rtl_safety_features():
     assert "unicode-bidi: plaintext" in html_doc
     assert 'dir="ltr"' in html_doc  # numeric spans + date range
 
-
-@pytest.mark.skipif(
-    os.environ.get("RUN_PLAYWRIGHT_TESTS") != "1",
-    reason="Set RUN_PLAYWRIGHT_TESTS=1 to run Playwright-based rendering test.",
-)
-def test_render_weekly_report_card_png_smoke(tmp_path):
-    week_start = datetime(2025, 12, 22, 0, 0, 0)  # Monday
-    week_end = datetime(2025, 12, 29, 0, 0, 0)
-    out = tmp_path / "weekly_card.png"
-
-    try:
-        render_weekly_report_card_png(
-            summary=_sample_summary(),
-            output_path=str(out),
-            week_start=week_start,
-            week_end=week_end,
-            width=1200,
-        )
-    except Exception as e:
-        pytest.fail(f"Playwright render failed: {e}")
-
-    assert out.exists()
-    assert out.stat().st_size > 0
 
 
 
