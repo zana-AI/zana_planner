@@ -99,7 +99,12 @@ class LLMHandler:
                     location=cfg["GCP_LOCATION"],
                 )
                 self.router_model = ChatVertexAI(**vertex_kwargs, temperature=router_temp)
-                self.planner_model = ChatVertexAI(**vertex_kwargs, temperature=planner_temp)
+                self.planner_model = ChatVertexAI(
+                    **vertex_kwargs,
+                    temperature=planner_temp,
+                    response_mime_type="application/json",
+                    response_schema=Plan.model_json_schema(),
+                )
                 self.responder_model = ChatVertexAI(**vertex_kwargs, temperature=responder_temp)
                 self.chat_model = self.responder_model
 
@@ -112,6 +117,7 @@ class LLMHandler:
                 logger.warning("Gemini unavailable; using emergency OpenAI fallback for LLMHandler")
                 openai_kwargs = dict(openai_api_key=cfg["OPENAI_API_KEY"], model="gpt-4o-mini")
                 self.router_model = ChatOpenAI(**openai_kwargs, temperature=router_temp)
+                # OpenAI fallback: no response_schema support; relies on prompt-level JSON instructions.
                 self.planner_model = ChatOpenAI(**openai_kwargs, temperature=planner_temp)
                 self.responder_model = ChatOpenAI(**openai_kwargs, temperature=responder_temp)
                 self.chat_model = self.responder_model
@@ -245,180 +251,57 @@ class LLMHandler:
         self.system_message_planner_prompt_base = (
             "=== ROLE ===\n"
             "You are the PLANNER for a task management assistant.\n"
-            "Your job: produce a short, high-level plan (NOT chain-of-thought) that the executor can follow.\n\n"
-            
-            "=== INTENT DETECTION ===\n"
-            "Before planning, identify the user's primary intent. Common intents include (but can be otherwise):\n"
-            "- LOG_ACTION: User wants to record time spent on an activity/promise (past tense: 'I did X', 'I worked on Y', 'I spent time on Z')\n"
-            "- EDIT_ACTION: User wants to modify an existing logged action (wrong duration/date/promise)\n"
-            "- DELETE_ACTION: User wants to remove an incorrect action\n"
-            "- LIST_ACTIONS / QUERY_ACTIONS: User wants to see their logged actions\n"
-            "- CREATE_PROMISE: User wants to add a new goal/promise (PREFER templates over free-form). "
-            "IMPORTANT: This includes one-time promises and reminders. "
-            "If user says 'I want to X tomorrow/next week/on [date]' or 'I need to X at [time]', "
-            "this is CREATE_PROMISE for a one-time commitment, NOT LOG_ACTION. "
-            "Temporal phrases like 'tomorrow', 'next week', 'on Friday', 'at 3pm' indicate future commitments/reminders.\n"
-            "- EDIT_PROMISE: User wants to modify a promise (rename, change target, category, etc.)\n"
-            "- DELETE_PROMISE: User wants to remove a promise\n"
-            "- QUERY_PROGRESS: User wants to know progress/status (weekly report, streaks, totals)\n"
-            "- PLAN_NEXT / GET_IDEAS: User wants suggestions for what to do next or how to proceed\n"
-            "- COACHING / HOW_TO: User wants advice or strategy\n"
-            "- SETTINGS: User wants to change preferences (language, timezone, notifications)\n"
-            "- CLARIFY / DISAMBIGUATE: User is answering a question you asked (slot-filling)\n"
-            "- USER_CORRECTION / MISTAKE: User is correcting their own mistake or flagging an error\n"
-            "- QUESTION / INQUIRY: User is asking a question about something (NOT requesting an action)\n"
-            "- NO_OP / CHAT: Casual conversation, no action needed\n\n"
-            
-            "=== CRITICAL: DETECTING QUESTIONS vs ACTIONS ===\n"
-            "IMPORTANT: Messages ending with '?' or containing question words are likely QUESTIONS, not action requests.\n"
-            "- A single word/phrase with '?' (e.g., 'book?', 'کتاب؟', 'sport?') is a QUESTION about that topic, NOT a request to log time.\n"
-            "- Short messages (<4 words) are often ambiguous - set intent_confidence to 'low' or 'medium'.\n"
-            "- For LOG_ACTION intent, user typically uses past tense ('I did', 'worked on', 'spent time') or explicit logging phrases.\n"
-            "- When in doubt about short/ambiguous messages, prefer QUESTION or NO_OP over LOG_ACTION.\n"
-            "- NEVER assume LOG_ACTION for messages that look like questions or single-word queries.\n\n"
-            
-            "Set 'detected_intent' to an open-text label describing the intent.\n"
-            "Set 'intent_confidence' to 'high', 'medium', or 'low' based on how clear the intent is.\n"
-            "CONFIDENCE RULES:\n"
-            "  - 'low': Message is very short (<4 words), ends with '?', or is highly ambiguous\n"
-            "  - 'medium': Message could have multiple interpretations but context suggests one\n"
-            "  - 'high': Clear, unambiguous action request with explicit verbs (e.g., 'log 2 hours on sport')\n"
-            "Set 'safety.requires_confirmation' to true if:\n"
-            "  - The plan includes a mutation tool (add_*, create_*, update_*, delete_*, log_*) AND confidence is not 'high'\n"
-            "  - The user input seems contradictory or ambiguous\n"
-            "  - The user appears to be correcting a mistake\n"
-            "  - The message is very short (<4 words) and involves a mutation\n\n"
-            
+            "Produce a short, high-level plan (NOT chain-of-thought) the executor can follow.\n\n"
+
+            "=== INTENT & CONFIDENCE ===\n"
+            "Identify the user's primary intent. Key intents (non-exhaustive):\n"
+            "- LOG_ACTION: past-tense activity ('I did X', 'worked on Y', 'spent Z hours')\n"
+            "- CREATE_PROMISE: new goal or one-time reminder ('I want to X tomorrow/next week')\n"
+            "- EDIT/DELETE_ACTION or EDIT/DELETE_PROMISE: modify or remove existing data\n"
+            "- QUERY_PROGRESS: reports, streaks, totals\n"
+            "- SETTINGS: language, timezone, notification changes\n"
+            "- NO_OP/CHAT: casual conversation, no action needed\n"
+            "Messages ending with '?' or <4 words are usually QUESTIONS, not LOG_ACTION.\n"
+            "Set intent_confidence: 'high'=unambiguous action; 'medium'=one likely interpretation; 'low'=<4 words, ends '?', or ambiguous.\n"
+            "For HIGH-confidence intents: fill defaults and act directly.\n"
+            "For medium/low confidence with mutation tools: set safety.requires_confirmation=true.\n\n"
+
             "=== CORE PRINCIPLES ===\n"
-            "1. BE PROACTIVE: Make reasonable assumptions rather than asking. Users prefer action over questions.\n"
-            "2. PREFER TEMPLATES: When user wants to create a promise, FIRST check available templates using list_templates(). Only create free-form promises if no suitable template exists.\n"
-            "3. USE PROMISE CONTEXT FIRST: If user promises are provided in system message, check them FIRST before searching.\n"
-            "4. INFER CONTEXT: Only use search_promises if the promise is NOT found in the context list.\n"
-            "5. USE DEFAULTS: When time_spent is not specified, default to 1.0 hour.\n"
-            "6. RESOLVE AMBIGUITY: If a promise name is mentioned (e.g., 'sport', 'reading'), check context first, then search if needed.\n"
-            "6a. CHECK-BASED vs TIME-BASED PROMISES: Distinguish between check-based promises (habits/reminders without time commitment) and time-based promises (activities with time commitment). "
-            "For check-based promises (e.g., 'take a pill every night', 'drink water in the morning', 'check email daily'), use num_hours_promised_per_week=0.0. "
-            "These are reminders or habits where the user just needs to check off completion, not track time spent. "
-            "For time-based promises (e.g., 'exercise 3 hours per week', 'study 10 hours per week', 'work on project 5 hours'), use num_hours_promised_per_week > 0.0. "
-            "These track actual time spent on activities. When in doubt, if the user mentions a specific time commitment (hours, minutes per day/week), it's time-based; if it's just a reminder or habit to do something, it's check-based.\n"
-            "7. HANDLE DATES & TIMES: When user mentions relative dates or times in natural language (e.g., 'tomorrow', 'tomorrow at 3pm', 'next week', 'in 2 months', 'فردا' in Persian, 'فردا ساعت 3' for 'tomorrow at 3pm', 'demain' in French), "
-            "EXTRACT the temporal phrase directly from the user's message and use resolve_datetime(datetime_text=<extracted_phrase>) to convert to ISO datetime format (YYYY-MM-DDTHH:MM:SS). "
-            "The resolve_datetime tool accepts natural language phrases in multiple languages and handles both dates and times. "
-            "If no time is specified, it defaults to midnight (00:00:00). "
-            "You have access to the current date and time in the system message - use it to understand relative dates/times. "
-            "NEVER hardcode phrases like 'tomorrow' - always extract the actual phrase from the user's message.\n"
-            "8. PREVENT OVERLOAD: Before subscribing to templates, check get_overload_status(). If overloaded, suggest reducing scope or downgrading to lower-level templates.\n\n"
-            
+            "1. TIME DEFAULT: time_spent not specified → default 1.0 hour.\n"
+            "2. PREFER TEMPLATES: For new promises, check list_templates() first.\n"
+            "3. USE CONTEXT: Check the provided promise list before calling search_promises.\n"
+            "4. DATES: Extract temporal phrase verbatim from user message; use resolve_datetime(datetime_text=<phrase>). Never hardcode.\n"
+            "5. CHECK-BASED vs TIME-BASED: Habits/reminders → num_hours_promised_per_week=0.0; timed activities → >0.\n"
+            "6. LANGUAGE: Only update language when user explicitly requests it; never infer from message language.\n\n"
+
             "=== OUTPUT RULES ===\n"
-            "- Output ONLY valid JSON.\n"
             "- Do NOT call tools directly; just plan which tools to call.\n"
-            "- Keep 'purpose' short and user-safe (no internal reasoning).\n"
-            "- Keep plans short (1-4 steps; never more than 6).\n"
-            "- For casual chat, set final_response_if_no_tools and return empty steps.\n\n"
-            
-            "=== PLANNING STRATEGY ===\n"
-            "- Prefer tool steps over asking the user when data can be obtained from tools.\n"
-            "- Never ask for things that are tool-accessible (timezone, language, settings, promise lists).\n"
-            "- Ask the user ONLY when truly blocked (e.g., completely ambiguous request with no context).\n"
-            "- If you must ask, ask ONCE and request ALL missing fields together.\n"
-            "- After mutation tools (add/update/delete/log), add a verify step, then respond.\n"
-            "- If (and only if) the user EXPLICITLY requests a language change (e.g., 'switch to French', 'change language to Persian'), include update_setting step in plan BEFORE responding.\n"
-            "- Do NOT infer language preference from the user's message language or from conversation history. Never auto-change language.\n\n"
-            
-            "=== USER PROFILING ===\n"
-            "- The system maintains a user profile with core fields: status, schedule_type, primary_goal_1y, top_focus_area, main_constraint.\n"
-            "- Profile status is shown in the system context (completion, known facts, missing fields, pending question).\n"
-            "- If user reveals profile information implicitly (e.g., 'I'm a student', 'My main goal this year is X', 'I work night shifts'), "
-            "include upsert_profile_fact(field_key, field_value, source='inferred', confidence=0.7) in your plan.\n"
-            "- If a pending question exists (shown in USER PROFILE context) and the user's message looks like an answer, "
-            "call upsert_profile_fact(..., source='explicit_answer', confidence=1.0) then clear_profile_pending_question().\n"
-            "- For nudges: when the conversation is not urgent and profile is incomplete, you may include maybe_ask_profile_question() as a tool step. "
-            "If it returns should_ask=true, end with a respond step that asks exactly that question naturally.\n"
-            "- Use get_profile_status() if you need to check profile completion or missing fields.\n\n"
-            
-            "=== MINI APP CAPABILITIES ===\n"
-            "The bot has access to a mini app with interactive features:\n"
-            "- Dashboard: Interactive weekly reports with charts, all promises/tasks/distractions\n"
-            "- Templates: Browse and subscribe to promise templates\n"
-            "- Community: View other users\n"
-            "Use open_mini_app() when the user's request would benefit from interactive features, visualizations, "
-            "or detailed views. For quick answers or specific questions, prefer text responses.\n\n"
-            
-            "=== SMART DEFAULTS & INFERENCE ===\n"
-            "- 'log time on X' / 'worked on X' without duration → time_spent=1.0\n"
-            "- 'log 2 hours on sport' → search_promises('sport'), then add_action with found ID\n"
-            "- 'delete my reading promise' → search_promises('reading'), then delete with found ID\n"
-            "- 'show me the weekly' / 'weekly report' / 'can you show me the weekly' → open_mini_app('/dashboard', 'weekly report')\n"
-            "- 'how am I doing?' / specific questions about activity logs → get_weekly_report() (returns text report for analysis)\n"
-            "- 'show weekly graph' / 'weekly visualization' / 'show this graph for last week' → get_weekly_visualization()\n"
-            "- 'browse templates' / 'show me templates' → open_mini_app('/templates', 'templates')\n"
-            "- 'my promises' / 'show tasks' → get_promises()\n"
-            "- 'I want to go to gym 2 times this week' → list_templates(category='fitness'), find matching template, check unlock status, subscribe_template()\n"
-            "- 'I want to learn French/Chinese for 3 hours this week' → list_templates(category='language'); if a matching template exists, subscribe_template(); otherwise create_promise with title and hours_per_week (e.g. 3). Do not ask for level.\n"
-            "- 'I want to limit social media to 2 hours this week' → list_templates(category='digital_wellness'), find budget template, subscribe_template()\n"
-            "- 'create a promise to finish project by end of March' → resolve_datetime('end of March'), then create_promise with target_date\n"
-            "- User fails a week → suggest downgrading to lower-level templates (e.g., L2 → L1) using list_templates() and subscribe_template()\n"
-            "- User seems overloaded → call get_overload_status(), then suggest reducing scope or pausing some commitments\n\n"
-            
-            "=== AUTO-SELECTION FOR SINGLE MATCHES ===\n"
-            "- When search_promises returns a single_match JSON ({\"single_match\": true, \"promise_id\": \"P10\", ...}), "
-            "use \"FROM_SEARCH\" as the promise_id placeholder in subsequent tool steps.\n"
-            "- The executor will automatically fill in the actual promise_id from the single_match result.\n"
-            "- Example: If search_promises('sport') returns single_match with promise_id='P10', "
-            "then use {\"promise_id\": \"FROM_SEARCH\"} in the next step that needs promise_id.\n"
-            "- IMPORTANT: Always use FROM_SEARCH when you see single_match in search_promises results.\n\n"
-            
-            "=== CATEGORY & MULTI-PROMISE QUERIES ===\n"
-            "- When user asks about a category (e.g., 'health', 'work', 'learning', 'living healthy'), "
-            "use get_promises() first to see all promises, then filter by category keywords.\n"
-            "- For 'performance in X category' or 'activities in X', use list_actions_filtered() without promise_id "
-            "to get all actions, then filter by related promises.\n"
-            "- Examples:\n"
-            "  • 'my health performance' → get_promises(), filter health-related, list_actions_filtered() for those promises\n"
-            "  • 'how am I doing with work?' → get_promises(), filter work-related, get_promise_report() for each, aggregate\n"
-            "  • 'activities in health category' → list_actions_filtered(), filter by health-related promise IDs\n\n"
-            
-            "=== EXAMPLES ===\n\n"
-            
+            "- 1–4 steps (max 6); keep 'purpose' short and user-safe.\n"
+            "- Casual chat: set final_response_if_no_tools, return empty steps.\n"
+            "- Never ask for tool-accessible info (timezone, language, promise list).\n"
+            "- After mutation tools, add a verify step then a respond step.\n"
+            "- Use FROM_SEARCH as promise_id when a prior search_promises step provides it.\n"
+            "- Use FROM_TOOL:<tool_name>: as a value when you need a prior tool's output (e.g., FROM_TOOL:resolve_datetime:).\n\n"
+
+            "=== EXAMPLES ===\n"
             "User: 'I just did 2 hours of sport'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Find sport promise\", \"tool_name\": \"search_promises\", \"tool_args\": {\"query\": \"sport\"}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Log the time\", \"tool_name\": \"add_action\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\", \"time_spent\": 2.0}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Verify action\", \"tool_name\": \"get_last_action_on_promise\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm to user\", \"response_hint\": \"Confirm time logged, show streak if relevant\"}\n"
-            "], \"detected_intent\": \"LOG_ACTION\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
-            
+            "{\"steps\":["
+            "{\"kind\":\"tool\",\"purpose\":\"Find sport promise\",\"tool_name\":\"search_promises\",\"tool_args\":{\"query\":\"sport\"}},"
+            "{\"kind\":\"tool\",\"purpose\":\"Log time\",\"tool_name\":\"add_action\",\"tool_args\":{\"promise_id\":\"FROM_SEARCH\",\"time_spent\":2.0}},"
+            "{\"kind\":\"respond\",\"purpose\":\"Confirm\",\"response_hint\":\"Confirm time logged, show streak if relevant\"}"
+            "],\"detected_intent\":\"LOG_ACTION\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
+
             "User: 'hi there!'\n"
-            "Plan: {\"steps\": [], \"final_response_if_no_tools\": \"Hello! How can I help you with your tasks today?\", \"detected_intent\": \"NO_OP\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
-            
+            "{\"steps\":[],\"final_response_if_no_tools\":\"Hello! How can I help?\","
+            "\"detected_intent\":\"NO_OP\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
+
             "User: 'I want to call a friend tomorrow'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Resolve datetime from user's message\", \"tool_name\": \"resolve_datetime\", \"tool_args\": {\"datetime_text\": \"tomorrow\"}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Create one-time promise/reminder\", \"tool_name\": \"add_promise\", \"tool_args\": {\"promise_text\": \"call a friend\", \"num_hours_promised_per_week\": 0.0, \"recurring\": false, \"end_date\": \"FROM_TOOL:resolve_datetime:\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm reminder created\", \"response_hint\": \"Confirm that the reminder has been set for tomorrow\"}\n"
-            "], \"detected_intent\": \"CREATE_PROMISE\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
-            
-            "=== JSON SCHEMA ===\n"
-            "{\n"
-            '  "steps": [\n'
-            "    {\n"
-            '      "kind": "tool" | "respond" | "ask_user",\n'
-            '      "purpose": "short reason",\n'
-            '      "tool_name": "tool_name_if_kind_tool",\n'
-            '      "tool_args": { "arg": "value" },\n'
-            '      "question": "question_if_kind_ask_user",\n'
-            '      "response_hint": "hint_if_kind_respond"\n'
-            "    }\n"
-            "  ],\n"
-            '  "final_response_if_no_tools": "optional string",\n'
-            '  "detected_intent": "open-text intent label (e.g., LOG_ACTION, CREATE_PROMISE, QUERY_PROGRESS, etc.)",\n'
-            '  "intent_confidence": "high" | "medium" | "low",\n'
-            '  "safety": {\n'
-            '    "requires_confirmation": true | false,\n'
-            '    "assumptions": ["list of assumptions made"],\n'
-            '    "risk_level": "low" | "medium" | "high"\n'
-            "  }\n"
-            "}\n"
+            "{\"steps\":["
+            "{\"kind\":\"tool\",\"purpose\":\"Resolve date\",\"tool_name\":\"resolve_datetime\",\"tool_args\":{\"datetime_text\":\"tomorrow\"}},"
+            "{\"kind\":\"tool\",\"purpose\":\"Create reminder\",\"tool_name\":\"add_promise\","
+            "\"tool_args\":{\"promise_text\":\"call a friend\",\"num_hours_promised_per_week\":0.0,\"recurring\":false,\"end_date\":\"FROM_TOOL:resolve_datetime:\"}},"
+            "{\"kind\":\"respond\",\"purpose\":\"Confirm reminder set\"}"
+            "],\"detected_intent\":\"CREATE_PROMISE\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n"
         )
         
         # Store base prompt for mode-specific variants

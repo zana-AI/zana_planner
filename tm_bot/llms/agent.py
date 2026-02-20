@@ -41,6 +41,35 @@ except Exception:  # pragma: no cover
 
 from llms.planning_schema import Plan, PlanStep, RouteDecision
 
+# ---------------------------------------------------------------------------
+# Placeholder helpers — tolerant of model variations in case / whitespace
+# ---------------------------------------------------------------------------
+
+_FROM_SEARCH_RE = re.compile(r"^from[_\s]?search", re.IGNORECASE)
+_FROM_TOOL_RE = re.compile(r"^from[_\s]?tool\s*:\s*([^:]*?)\s*:\s*(.*)", re.IGNORECASE)
+
+
+def _is_from_search(val: str) -> bool:
+    """Return True if *val* is a FROM_SEARCH placeholder (case/whitespace-insensitive)."""
+    return bool(_FROM_SEARCH_RE.match(val or ""))
+
+
+def _parse_from_tool(val: str) -> Optional[tuple]:
+    """
+    Parse a FROM_TOOL placeholder into (tool_name, field).
+
+    Accepts variants such as:
+    - ``FROM_TOOL:resolve_datetime:``
+    - ``from_tool: resolve_datetime :``
+    - ``FROM_TOOL:search_promises:promise_id``
+
+    Returns ``None`` if *val* does not match the FROM_TOOL pattern.
+    """
+    m = _FROM_TOOL_RE.match(val or "")
+    if not m:
+        return None
+    return m.group(1).strip(), m.group(2).strip()
+
 
 class AgentState(TypedDict):
     """State passed between LangGraph nodes."""
@@ -886,7 +915,7 @@ def create_plan_execute_graph(
         """
         # Check if there's a query hint embedded (planner might put "FROM_SEARCH" as placeholder)
         promise_id = tool_args.get("promise_id", "")
-        if promise_id and promise_id != "FROM_SEARCH" and not str(promise_id).startswith("FROM"):
+        if promise_id and not _is_from_search(str(promise_id)) and not _parse_from_tool(str(promise_id)):
             return None  # Already has a real promise_id
         
         # Look for any text hint that could be used as search query
@@ -945,7 +974,7 @@ def create_plan_execute_graph(
                 # Otherwise, treat it as missing so we can prepend search or ask the user.
                 if (
                     "promise_id" in required_args
-                    and tool_args.get("promise_id") == "FROM_SEARCH"
+                    and _is_from_search(tool_args.get("promise_id", "") or "")
                     and not any(
                         (s or {}).get("kind") == "tool" and (s or {}).get("tool_name") == "search_promises"
                         for s in repaired
@@ -1310,15 +1339,12 @@ def create_plan_execute_graph(
             for arg_name, arg_val in list((tool_args or {}).items()):
                 if not isinstance(arg_val, str):
                     continue
-                if not arg_val.startswith("FROM_TOOL:"):
+                _from_tool_parts = _parse_from_tool(arg_val)
+                if not _from_tool_parts:
                     continue
 
-                # Format: FROM_TOOL:search_promises:promise_id
-                parts = arg_val.split(":", 2)
-                if len(parts) != 3:
-                    continue
-                src_tool = parts[1].strip()
-                src_field = parts[2].strip()
+                # Parse case-/whitespace-tolerant FROM_TOOL:<tool_name>:<field>
+                src_tool, src_field = _from_tool_parts
 
                 src_text = _last_tool_output_for(state.get("messages", []), src_tool)
                 if not src_text:
@@ -1378,7 +1404,7 @@ def create_plan_execute_graph(
                     }
 
             # Check if previous tool was search_promises with single match, and current step needs promise_id
-            if tool_args.get("promise_id") == "FROM_SEARCH":
+            if _is_from_search(tool_args.get("promise_id", "") or ""):
                 logger.debug(f"Auto-fill: Looking for search_promises result to fill promise_id for {tool_name}")
                 # Look for the last search_promises result in messages
                 # Check messages in reverse to find the most recent search_promises result
@@ -1820,7 +1846,7 @@ def create_routed_plan_execute_graph(
     def _create_search_step_for_promise(tool_args: dict) -> Optional[dict]:
         """If promise_id is marked as FROM_SEARCH or missing, try to create a search step."""
         promise_id = tool_args.get("promise_id", "")
-        if promise_id and promise_id != "FROM_SEARCH" and not str(promise_id).startswith("FROM"):
+        if promise_id and not _is_from_search(str(promise_id)) and not _parse_from_tool(str(promise_id)):
             return None
         query = tool_args.get("_search_query") or tool_args.get("query")
         if not query:
@@ -1858,7 +1884,7 @@ def create_routed_plan_execute_graph(
                 missing = [a for a in required_args if a not in tool_args or tool_args.get(a) in (None, "", [])]
                 if (
                     "promise_id" in required_args
-                    and tool_args.get("promise_id") == "FROM_SEARCH"
+                    and _is_from_search(tool_args.get("promise_id", "") or "")
                     and not any(
                         (s or {}).get("kind") == "tool" and (s or {}).get("tool_name") == "search_promises"
                         for s in repaired
@@ -2364,13 +2390,10 @@ def create_routed_plan_execute_graph(
             for arg_name, arg_val in list((tool_args or {}).items()):
                 if not isinstance(arg_val, str):
                     continue
-                if not arg_val.startswith("FROM_TOOL:"):
+                _from_tool_parts = _parse_from_tool(arg_val)
+                if not _from_tool_parts:
                     continue
-                parts = arg_val.split(":", 2)
-                if len(parts) != 3:
-                    continue
-                src_tool = parts[1].strip()
-                src_field = parts[2].strip()
+                src_tool, src_field = _from_tool_parts
                 src_text = _last_tool_output_for(state.get("messages", []), src_tool)
                 if not src_text:
                     continue
@@ -2383,7 +2406,7 @@ def create_routed_plan_execute_graph(
                         tool_args[arg_name] = src_text.strip()
             
             # FROM_SEARCH handling
-            if tool_args.get("promise_id") == "FROM_SEARCH":
+            if _is_from_search(tool_args.get("promise_id", "") or ""):
                 last_search_output_text = _last_tool_output_for(state.get("messages", []), "search_promises")
                 parsed = _parse_json_obj(last_search_output_text)
                 if parsed and parsed.get("single_match"):
