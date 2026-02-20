@@ -1,7 +1,7 @@
 name: Promote staging to prod
 
 on:
-  workflow_dispatch:   # manual run in GitHub UI
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -25,23 +25,32 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no $USER@$HOST "
-            set -e
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH'" <<'REMOTE_SCRIPT'
+            set -euo pipefail
+            PROJECT_PATH="$1"
 
             echo '[PROD] Preparing log dir and fixing permissions for container user (UID 1002)...'
-            mkdir -p /srv/zana-logs-prod
+            if mkdir -p /srv/zana-logs-prod 2>/dev/null; then
+              :
+            elif sudo -n mkdir -p /srv/zana-logs-prod 2>/dev/null; then
+              :
+            else
+              echo '[PROD] ERROR: Could not create /srv/zana-logs-prod (need permissions or passwordless sudo)'
+              exit 1
+            fi
+
             for dir in /srv/zana-users /srv/zana-logs-prod; do
-              if chown -R 1002:1002 $dir 2>/dev/null || chmod -R 777 $dir 2>/dev/null; then
-                echo '[PROD] Permissions fixed for '"$dir"' without sudo'
-              elif sudo -n chown -R 1002:1002 $dir 2>/dev/null || sudo -n chmod -R 777 $dir 2>/dev/null; then
-                echo '[PROD] Permissions fixed for '"$dir"' with sudo'
+              if chown -R 1002:1002 "$dir" 2>/dev/null || chmod -R 777 "$dir" 2>/dev/null; then
+                echo "[PROD] Permissions fixed for $dir without sudo"
+              elif sudo -n chown -R 1002:1002 "$dir" 2>/dev/null || sudo -n chmod -R 777 "$dir" 2>/dev/null; then
+                echo "[PROD] Permissions fixed for $dir with sudo"
               else
-                echo '[PROD] WARNING: Could not fix permissions for '"$dir"
+                echo "[PROD] WARNING: Could not fix permissions for $dir"
               fi
             done
 
             echo '[PROD] Changing to project directory...'
-            cd $PROJECT_PATH
+            cd "$PROJECT_PATH"
 
             echo '[PROD] Checking if staging image exists...'
             if ! docker images | grep -q 'zana-ai-bot.*staging'; then
@@ -62,13 +71,13 @@ jobs:
             echo '[PROD] Verifying webapp is running...'
             sleep 5
             if curl -f -s http://localhost:8080/api/health > /dev/null; then
-              echo '[PROD] ✓ Webapp health check passed'
+              echo '[PROD] OK: Webapp health check passed'
             else
-              echo '[PROD] ⚠️  Webapp health check failed - check logs: docker compose logs zana-prod'
+              echo '[PROD] WARNING: Webapp health check failed - check logs: docker compose logs zana-prod'
             fi
 
             echo '[PROD] Done.'
-          "
+          REMOTE_SCRIPT
 
       - name: Tag production deployment
         if: success()
@@ -77,12 +86,14 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no $USER@$HOST "
-            cd $PROJECT_PATH
-            COMMIT_SHA=\$(git rev-parse --short HEAD)
-            TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
-            TAG=\"prod-\${TIMESTAMP}-\${COMMIT_SHA}\"
-            git tag -a \"\$TAG\" -m \"Production deployment: \$(date)\" || true
-            git push origin \"\$TAG\" || true
-            echo \"Tagged as: \$TAG\"
-          "
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH'" <<'REMOTE_SCRIPT'
+            set -euo pipefail
+            PROJECT_PATH="$1"
+            cd "$PROJECT_PATH"
+            COMMIT_SHA="$(git rev-parse --short HEAD)"
+            TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+            TAG="prod-${TIMESTAMP}-${COMMIT_SHA}"
+            git tag -a "$TAG" -m "Production deployment: $(date)" || true
+            git push origin "$TAG" || true
+            echo "Tagged as: $TAG"
+          REMOTE_SCRIPT

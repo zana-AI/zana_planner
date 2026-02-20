@@ -23,100 +23,105 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no $USER@$HOST "
-            set -e
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH'" <<'REMOTE_SCRIPT'
+            set -euo pipefail
+            PROJECT_PATH="$1"
 
             echo '[STAGING] Preparing staging data...'
-            sudo mkdir -p /srv/zana-users-staging /srv/zana-logs-staging
-            sudo rm -rf /srv/zana-users-staging/* 2>/dev/null || true
-            sudo cp -r /srv/zana-users/* /srv/zana-users-staging/ 2>/dev/null || true
+            if mkdir -p /srv/zana-users-staging /srv/zana-logs-staging 2>/dev/null; then
+              echo '[STAGING] Created staging directories without sudo'
+            elif sudo -n mkdir -p /srv/zana-users-staging /srv/zana-logs-staging 2>/dev/null; then
+              echo '[STAGING] Created staging directories with sudo'
+            else
+              echo '[STAGING] ERROR: Could not create staging directories (need permissions or passwordless sudo)'
+              exit 1
+            fi
+
+            rm -rf /srv/zana-users-staging/* 2>/dev/null || sudo -n rm -rf /srv/zana-users-staging/* 2>/dev/null || true
+            cp -r /srv/zana-users/* /srv/zana-users-staging/ 2>/dev/null || sudo -n cp -r /srv/zana-users/* /srv/zana-users-staging/ 2>/dev/null || true
 
             echo '[STAGING] Fixing permissions for container user (UID 1002)...'
             for dir in /srv/zana-users-staging /srv/zana-logs-staging; do
-              if chown -R 1002:1002 $dir 2>/dev/null || chmod -R 777 $dir 2>/dev/null; then
-                echo '[STAGING] Permissions fixed for '"$dir"' without sudo'
-              elif sudo -n chown -R 1002:1002 $dir 2>/dev/null || sudo -n chmod -R 777 $dir 2>/dev/null; then
-                echo '[STAGING] Permissions fixed for '"$dir"' with sudo'
+              if chown -R 1002:1002 "$dir" 2>/dev/null || chmod -R 777 "$dir" 2>/dev/null; then
+                echo "[STAGING] Permissions fixed for $dir without sudo"
+              elif sudo -n chown -R 1002:1002 "$dir" 2>/dev/null || sudo -n chmod -R 777 "$dir" 2>/dev/null; then
+                echo "[STAGING] Permissions fixed for $dir with sudo"
               else
-                echo '[STAGING] WARNING: Could not fix permissions for '"$dir"
+                echo "[STAGING] WARNING: Could not fix permissions for $dir"
               fi
             done
 
             echo '[STAGING] Updating code...'
-            if [ ! -d \"$PROJECT_PATH\" ]; then
-              echo \"[STAGING] ERROR: Project path does not exist: $PROJECT_PATH\"
+            if [ ! -d "$PROJECT_PATH" ]; then
+              echo "[STAGING] ERROR: Project path does not exist: $PROJECT_PATH"
               exit 1
             fi
-            cd \"$PROJECT_PATH\"
+            cd "$PROJECT_PATH"
             if [ ! -d .git ]; then
-              echo \"[STAGING] ERROR: Not a git repository at $PROJECT_PATH\"
+              echo "[STAGING] ERROR: Not a git repository at $PROJECT_PATH"
               exit 1
             fi
-            
-            # Handle git lock file if it exists (stale lock from interrupted operations)
+
+            # Handle stale git lock from interrupted operations.
             if [ -f .git/index.lock ]; then
               echo '[STAGING] Removing stale git lock file...'
-              rm -f .git/index.lock 2>/dev/null || sudo rm -f .git/index.lock 2>/dev/null || true
+              rm -f .git/index.lock 2>/dev/null || sudo -n rm -f .git/index.lock 2>/dev/null || true
             fi
-            
-            # Check if we're in detached HEAD state (e.g., from git checkout <commit>)
-            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"HEAD\")
-            if [ \"$CURRENT_BRANCH\" = \"HEAD\" ]; then
+
+            # Check if we're in detached HEAD state (e.g. git checkout <commit>).
+            CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+            if [ "$CURRENT_BRANCH" = "HEAD" ]; then
               echo '[STAGING] Detected detached HEAD state, switching to master...'
               git fetch origin master 2>/dev/null || git fetch origin
               git checkout master 2>/dev/null || git checkout -b master origin/master
             fi
-            
-            # Fetch latest changes and reset to origin/master (ensures clean state)
+
+            # Fetch latest changes and reset to origin/master (ensures clean state).
             echo '[STAGING] Fetching and updating to latest master...'
             git fetch origin master || git fetch origin
             git reset --hard origin/master
 
             echo '[STAGING] Rebuilding containers with BuildKit (cached layers)...'
-            # Enable BuildKit for better caching and performance
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
 
-            # Get git info for version tracking
-            COMMIT_SHA=$(git rev-parse --short HEAD)
-            BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-            GIT_COMMIT_MESSAGE=$(git log -1 --pretty=format:"%s" | head -c 100)
-            GIT_COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an <%ae>")
-            GIT_COMMIT_DATE=$(git log -1 --pretty=format:"%ci")
+            # Get git info for version tracking.
+            COMMIT_SHA="$(git rev-parse --short HEAD)"
+            BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            GIT_COMMIT_MESSAGE="$(git log -1 --pretty=format:'%s' | head -c 100)"
+            GIT_COMMIT_AUTHOR="$(git log -1 --pretty=format:'%an <%ae>')"
+            GIT_COMMIT_DATE="$(git log -1 --pretty=format:'%ci')"
 
-            # Build bot container (zana-staging) with commit info
+            # Build bot container (zana-staging) with commit info.
             docker compose build \
-              --build-arg GIT_COMMIT=${COMMIT_SHA} \
-              --build-arg BUILD_DATE=${BUILD_DATE} \
-              --build-arg GIT_COMMIT_MESSAGE="${GIT_COMMIT_MESSAGE}" \
-              --build-arg GIT_COMMIT_AUTHOR="${GIT_COMMIT_AUTHOR}" \
-              --build-arg GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
+              --build-arg GIT_COMMIT="$COMMIT_SHA" \
+              --build-arg BUILD_DATE="$BUILD_DATE" \
+              --build-arg GIT_COMMIT_MESSAGE="$GIT_COMMIT_MESSAGE" \
+              --build-arg GIT_COMMIT_AUTHOR="$GIT_COMMIT_AUTHOR" \
+              --build-arg GIT_COMMIT_DATE="$GIT_COMMIT_DATE" \
               --progress=plain zana-staging
 
-            # Build webapp container (includes frontend build in Dockerfile.webapp)
+            # Build webapp container (includes frontend build in Dockerfile.webapp).
             docker compose build --progress=plain zana-webapp
-            
-            # Start both containers
+
+            # Start both containers.
             docker compose up -d --force-recreate zana-staging zana-webapp
 
             echo '[STAGING] Verifying containers are running...'
-            sleep 10  # Increased wait time for webapp to be ready
-            
-            # Check if containers are up
-            if docker compose ps zana-staging | grep -q "Up"; then
-              echo '[STAGING] ✓ Bot container (zana-staging) is running'
+            sleep 10
+
+            if docker compose ps zana-staging | grep -q 'Up'; then
+              echo '[STAGING] OK: Bot container (zana-staging) is running'
             else
-              echo '[STAGING] ⚠️  Bot container (zana-staging) is not running - check logs: docker compose logs zana-staging'
+              echo '[STAGING] WARNING: Bot container (zana-staging) is not running - check logs: docker compose logs zana-staging'
             fi
-            
-            if docker compose ps zana-webapp | grep -q "Up"; then
-              echo '[STAGING] ✓ Webapp container (zana-webapp) is running'
-              # Check webapp health - don't fail deployment if health check fails
-              # Try multiple times with delays
+
+            if docker compose ps zana-webapp | grep -q 'Up'; then
+              echo '[STAGING] OK: Webapp container (zana-webapp) is running'
               HEALTH_CHECK_PASSED=false
               for i in 1 2 3; do
                 if echo 'import urllib.request; urllib.request.urlopen("http://localhost:8080/api/health")' | docker compose exec -T zana-webapp python > /dev/null 2>&1; then
-                  echo '[STAGING] ✓ Webapp health check passed'
+                  echo '[STAGING] OK: Webapp health check passed'
                   HEALTH_CHECK_PASSED=true
                   break
                 else
@@ -124,16 +129,16 @@ jobs:
                   sleep 3
                 fi
               done
-              if [ "$HEALTH_CHECK_PASSED" = "false" ]; then
-                echo '[STAGING] ⚠️  Webapp health endpoint not responding after retries - check logs: docker compose logs zana-webapp'
+              if [ "$HEALTH_CHECK_PASSED" = 'false' ]; then
+                echo '[STAGING] WARNING: Webapp health endpoint not responding after retries - check logs: docker compose logs zana-webapp'
                 echo '[STAGING] Container is running but health check failed - this may be a timing issue'
               fi
             else
-              echo '[STAGING] ⚠️  Webapp container (zana-webapp) is not running - check logs: docker compose logs zana-webapp'
+              echo '[STAGING] WARNING: Webapp container (zana-webapp) is not running - check logs: docker compose logs zana-webapp'
             fi
 
             echo '[STAGING] Done.'
-          "
+          REMOTE_SCRIPT
 
       - name: Tag staging deployment
         if: success()
@@ -142,12 +147,14 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no $USER@$HOST "
-            cd $PROJECT_PATH
-            COMMIT_SHA=\$(git rev-parse --short HEAD)
-            TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
-            TAG=\"staging-\${TIMESTAMP}-\${COMMIT_SHA}\"
-            git tag -a \"\$TAG\" -m \"Staging deployment: \$(date)\" || true
-            git push origin \"\$TAG\" || true
-            echo \"Tagged as: \$TAG\"
-          "
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH'" <<'REMOTE_SCRIPT'
+            set -euo pipefail
+            PROJECT_PATH="$1"
+            cd "$PROJECT_PATH"
+            COMMIT_SHA="$(git rev-parse --short HEAD)"
+            TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+            TAG="staging-${TIMESTAMP}-${COMMIT_SHA}"
+            git tag -a "$TAG" -m "Staging deployment: $(date)" || true
+            git push origin "$TAG" || true
+            echo "Tagged as: $TAG"
+          REMOTE_SCRIPT
