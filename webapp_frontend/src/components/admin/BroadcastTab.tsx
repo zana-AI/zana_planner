@@ -4,6 +4,44 @@ import type { AdminUser, BotToken, CreateBroadcastRequest } from '../../types';
 import { UserSelector } from './UserSelector';
 import type { TabType } from './AdminTabs';
 
+const SCHEDULE_DEFAULT_DELAY_MINUTES = 120;
+const SCHEDULE_ROUNDING_MINUTES = 5;
+
+function toDateTimeLocalInputValue(date: Date): string {
+  const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localTime.toISOString().slice(0, 16);
+}
+
+function getRoundedFutureLocalDateTime(
+  delayMinutes: number = SCHEDULE_DEFAULT_DELAY_MINUTES,
+  roundingMinutes: number = SCHEDULE_ROUNDING_MINUTES,
+): string {
+  const dt = new Date(Date.now() + delayMinutes * 60 * 1000);
+  dt.setSeconds(0, 0);
+
+  if (roundingMinutes > 1) {
+    const remainder = dt.getMinutes() % roundingMinutes;
+    if (remainder !== 0) {
+      dt.setMinutes(dt.getMinutes() + (roundingMinutes - remainder));
+    }
+  }
+
+  return toDateTimeLocalInputValue(dt);
+}
+
+function toUtcIsoFromLocalInput(localDateTime: string): string | undefined {
+  if (!localDateTime) {
+    return undefined;
+  }
+
+  const parsed = new Date(localDateTime);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString();
+}
+
 interface BroadcastTabProps {
   users: AdminUser[];
   searchQuery: string;
@@ -23,7 +61,7 @@ export function BroadcastTab({
 }: BroadcastTabProps) {
   const [message, setMessage] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
-  const [scheduledTime, setScheduledTime] = useState('');
+  const [scheduledTime, setScheduledTime] = useState<string>(() => getRoundedFutureLocalDateTime());
   const [sending, setSending] = useState(false);
   const [botTokens, setBotTokens] = useState<BotToken[]>([]);
   const [selectedBotTokenId, setSelectedBotTokenId] = useState<string>('');
@@ -88,10 +126,16 @@ export function BroadcastTab({
     setError('');
 
     try {
+      const scheduledTimeUtc = toUtcIsoFromLocalInput(scheduledTime);
+      if (!immediate && !scheduledTimeUtc) {
+        setError('Please choose a valid future date/time, or use Send Now.');
+        return;
+      }
+
       const request: CreateBroadcastRequest = {
         message: message.trim(),
         target_user_ids: Array.from(selectedUserIds),
-        scheduled_time_utc: immediate ? undefined : scheduledTime || undefined,
+        scheduled_time_utc: immediate ? undefined : scheduledTimeUtc,
         bot_token_id: selectedBotTokenId || undefined,
       };
 
@@ -99,7 +143,7 @@ export function BroadcastTab({
       
       // Reset form
       setMessage('');
-      setScheduledTime('');
+      setScheduledTime(getRoundedFutureLocalDateTime());
       setSelectedUserIds(new Set());
       
       // Refresh broadcasts
@@ -120,9 +164,7 @@ export function BroadcastTab({
   };
 
   const getCurrentDateTime = () => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    return now.toISOString().slice(0, 16);
+    return toDateTimeLocalInputValue(new Date());
   };
 
   return (
@@ -191,9 +233,10 @@ export function BroadcastTab({
           value={scheduledTime}
           onChange={(e) => setScheduledTime(e.target.value)}
           min={getCurrentDateTime()}
+          step={SCHEDULE_ROUNDING_MINUTES * 60}
         />
         <p className="admin-hint">
-          Leave empty to send immediately, or select a future date/time
+          Defaults to ~2 hours from now (rounded up). Use Send Now to bypass scheduling.
         </p>
       </div>
 
@@ -210,7 +253,7 @@ export function BroadcastTab({
           onClick={() => sendBroadcast(false)}
           disabled={sending || !message.trim() || selectedUserIds.size === 0}
         >
-          {sending ? 'Scheduling...' : scheduledTime ? 'Schedule' : 'Schedule for Later'}
+          {sending ? 'Scheduling...' : 'Schedule'}
         </button>
       </div>
     </div>
