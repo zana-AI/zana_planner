@@ -367,7 +367,7 @@ class ContentRepository:
             session.execute(
                 text("""
                     INSERT INTO user_content_rollup (user_id, content_id, bucket_count, buckets, updated_at)
-                    VALUES (:user_id, :content_id, :bucket_count, :buckets::jsonb, :updated_at)
+                    VALUES (:user_id, :content_id, :bucket_count, CAST(:buckets AS jsonb), :updated_at)
                     ON CONFLICT (user_id, content_id) DO NOTHING
                 """),
                 {"user_id": user_id, "content_id": content_id, "bucket_count": bucket_count, "buckets": empty_buckets, "updated_at": now},
@@ -387,7 +387,7 @@ class ContentRepository:
         with get_db_session() as session:
             session.execute(
                 text("""
-                    UPDATE user_content_rollup SET buckets = :buckets::jsonb, updated_at = :updated_at
+                    UPDATE user_content_rollup SET buckets = CAST(:buckets AS jsonb), updated_at = :updated_at
                     WHERE user_id = :user_id AND content_id = :content_id
                 """),
                 {"user_id": user_id, "content_id": content_id, "buckets": buckets_json, "updated_at": updated_at},

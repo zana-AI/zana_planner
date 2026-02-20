@@ -25,12 +25,17 @@ class QAService:
         self.learning_repo = learning_repo or LearningPipelineRepository()
         self.llm = LearningLLMGateway()
 
-    def answer_question(self, content_id: str, question: str, limit: int = 8) -> Tuple[Dict[str, Any], bool]:
+    def answer_question(self, content_id: str, user_id: str, question: str, limit: int = 8) -> Tuple[Dict[str, Any], bool]:
         question = (question or "").strip()
         if not question:
             return {"answer": "", "citations": [], "confidence": 0.0, "model_name": "none"}, False
         try:
-            hits = self.embedding_service.search_chunks(content_id=content_id, query=question, limit=limit)
+            hits = self.embedding_service.search_chunks(
+                content_id=content_id,
+                query=question,
+                limit=limit,
+                user_id=str(user_id),
+            )
         except VectorStoreUnavailableError:
             raise
         if not hits:

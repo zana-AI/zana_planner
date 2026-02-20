@@ -124,6 +124,7 @@ def test_qdrant_payload_mapping_contains_expected_fields():
             }
         ],
         language="en",
+        user_id="user-1",
     )
     assert ok is True
     assert captured["collection_name"] == "content_chunks_v1"
@@ -131,6 +132,7 @@ def test_qdrant_payload_mapping_contains_expected_fields():
     assert captured["upsert_collection"] == "content_chunks_v1"
     point = captured["points"][0]
     assert point.payload["content_id"] == "content-1"
+    assert point.payload["user_id"] == "user-1"
     assert point.payload["segment_id"] == "seg-1"
     assert point.payload["concept_ids"] == ["c1"]
 
@@ -202,12 +204,21 @@ def _make_fake_qdrant(stored_points=None):
             stored_points.extend(points)
 
         def search(self, collection_name, query_vector, limit, query_filter=None):
-            content_id_filter = None
+            filter_values = {}
             if query_filter and query_filter.must:
-                content_id_filter = query_filter.must[0].match.value
+                for condition in query_filter.must:
+                    key = getattr(condition, "key", None)
+                    match = getattr(condition, "match", None)
+                    value = getattr(match, "value", None)
+                    if key is not None:
+                        filter_values[str(key)] = value
             hits = []
             for pt in stored_points:
+                content_id_filter = filter_values.get("content_id")
                 if content_id_filter and pt.payload.get("content_id") != content_id_filter:
+                    continue
+                user_id_filter = filter_values.get("user_id")
+                if user_id_filter and pt.payload.get("user_id") != user_id_filter:
                     continue
                 dot = sum(a * b for a, b in zip(query_vector, pt.vector))
                 hits.append(FakeHit(score=dot, payload=pt.payload))
@@ -240,29 +251,35 @@ def test_search_chunks_returns_scored_hits():
             {"chunk_id": "k2", "segment_id": "s2", "segment_index": 1,
              "chunk_index": 0, "text": "xyz", "start_ms": 1000, "end_ms": 2000},
         ],
+        user_id="u1",
     )
     assert len(stored) == 2
 
-    results = service.search_chunks(content_id="c1", query="abc", limit=5)
+    results = service.search_chunks(content_id="c1", query="abc", limit=5, user_id="u1")
     assert len(results) >= 1
     assert results[0]["payload"]["content_id"] == "c1"
+    assert results[0]["payload"]["user_id"] == "u1"
     assert "score" in results[0]
 
 
-def test_search_chunks_filters_by_content_id():
+def test_search_chunks_filters_by_content_id_and_user_id():
     stored = []
     FakeClient, FakeModels, _ = _make_fake_qdrant(stored)
     service = _make_test_service(FakeClient, FakeModels)
 
-    service.index_chunks(content_id="c1", chunks=[
+    service.index_chunks(content_id="c1", user_id="u1", chunks=[
         {"chunk_id": "k1", "text": "aaa", "segment_id": "s1"},
     ])
-    service.index_chunks(content_id="c2", chunks=[
+    service.index_chunks(content_id="c1", user_id="u2", chunks=[
+        {"chunk_id": "k2", "text": "aaa", "segment_id": "s2"},
+    ])
+    service.index_chunks(content_id="c2", user_id="u1", chunks=[
         {"chunk_id": "k2", "text": "bbb", "segment_id": "s2"},
     ])
 
-    results = service.search_chunks(content_id="c1", query="aaa", limit=10)
+    results = service.search_chunks(content_id="c1", query="aaa", limit=10, user_id="u1")
     assert all(r["payload"]["content_id"] == "c1" for r in results)
+    assert all(r["payload"]["user_id"] == "u1" for r in results)
 
 
 def test_index_chunks_skips_when_not_configured():
@@ -275,15 +292,15 @@ def test_index_chunks_skips_when_not_configured():
 def test_search_chunks_returns_empty_when_not_configured():
     service = EmbeddingService()
     service.qdrant_url = ""
-    result = service.search_chunks(content_id="c1", query="hello")
+    result = service.search_chunks(content_id="c1", query="hello", user_id="u1")
     assert result == []
 
 
 def test_search_chunks_returns_empty_for_blank_query():
     service = EmbeddingService()
     service.qdrant_url = "http://fake:6333"
-    assert service.search_chunks(content_id="c1", query="") == []
-    assert service.search_chunks(content_id="c1", query="   ") == []
+    assert service.search_chunks(content_id="c1", query="", user_id="u1") == []
+    assert service.search_chunks(content_id="c1", query="   ", user_id="u1") == []
 
 
 def test_index_chunks_skips_empty_text_chunks():
@@ -335,12 +352,13 @@ def test_index_then_search_round_trip():
          "chunk_index": 0, "text": "abc", "start_ms": 0, "end_ms": 5000,
          "section_path": "intro", "source_type": "blog", "concept_ids": ["c1", "c2"]},
     ]
-    assert service.index_chunks(content_id="doc-42", chunks=chunks, language="en") is True
+    assert service.index_chunks(content_id="doc-42", chunks=chunks, language="en", user_id="user-42") is True
 
-    hits = service.search_chunks(content_id="doc-42", query="abc", limit=3)
+    hits = service.search_chunks(content_id="doc-42", query="abc", limit=3, user_id="user-42")
     assert len(hits) == 1
     payload = hits[0]["payload"]
     assert payload["content_id"] == "doc-42"
+    assert payload["user_id"] == "user-42"
     assert payload["segment_id"] == "s1"
     assert payload["text"] == "abc"
     assert payload["concept_ids"] == ["c1", "c2"]

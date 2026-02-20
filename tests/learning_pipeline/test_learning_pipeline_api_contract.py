@@ -1,9 +1,42 @@
+import asyncio
+
+import httpx
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from services.learning_pipeline.embedding_service import VectorStoreUnavailableError
 from webapp.dependencies import get_current_user
 from webapp.routers import content as content_router
+
+
+class _ASGITestClient:
+    """Sync wrapper around httpx.AsyncClient + ASGITransport (works with httpx 0.28+)."""
+
+    def __init__(self, app, base_url: str = "http://testserver"):
+        self._app = app
+        self._base_url = base_url
+
+    def _request(self, method: str, url: str, **kwargs):
+        async def _run():
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=self._app),
+                base_url=self._base_url,
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        return asyncio.run(_run())
+
+    def get(self, url: str, **kwargs):
+        return self._request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self._request("POST", url, **kwargs)
+
+    def patch(self, url: str, **kwargs):
+        return self._request("PATCH", url, **kwargs)
+
+
+def TestClient(app, base_url: str = "http://testserver"):
+    return _ASGITestClient(app, base_url)
 
 
 class FakeLearningService:
@@ -13,16 +46,16 @@ class FakeLearningService:
     def enqueue_analysis(self, user_id, content_id, force_rebuild=False):
         return {"job_id": "job-1", "status": "pending", "stage": "queued", "progress_pct": 0}
 
-    def get_job_status(self, job_id, user_id=None):
+    def get_job_status(self, job_id, user_id):
         return {"job_id": job_id, "status": "running", "stage": "fetch", "progress_pct": 20}
 
-    def get_summary(self, content_id, level):
+    def get_summary(self, content_id, user_id, level):
         return {"level": level, "summary": {"summary": "ok"}, "model_name": "heuristic", "created_at": "now"}
 
-    def ask(self, content_id, question):
+    def ask(self, content_id, user_id, question):
         return {"answer": "answer", "citations": [], "confidence": 0.5, "model_name": "heuristic"}
 
-    def create_quiz(self, content_id, difficulty="medium", question_count=8):
+    def create_quiz(self, content_id, user_id, difficulty="medium", question_count=8):
         return {
             "quiz_set_id": "quiz-1",
             "questions": [{"question_id": "q1", "prompt": "p", "options": ["a"]}],
@@ -44,7 +77,7 @@ class FakeLearningService:
             "mastery_updates": [],
         }
 
-    def get_concepts(self, content_id):
+    def get_concepts(self, content_id, user_id):
         return {"nodes": [], "edges": []}
 
 
@@ -126,7 +159,7 @@ def test_analyze_returns_503_when_pipeline_disabled():
 
 def test_ask_returns_503_when_vector_store_unavailable():
     class VectorDownService(FakeLearningService):
-        def ask(self, content_id, question):
+        def ask(self, content_id, user_id, question):
             raise VectorStoreUnavailableError("Qdrant unavailable")
 
     app = _build_app(VectorDownService())
@@ -136,6 +169,37 @@ def test_ask_returns_503_when_vector_store_unavailable():
     assert response.status_code == 503
     body = response.json()
     assert body["detail"]["retryable"] is True
+
+
+def test_ask_endpoint_passes_user_id():
+    class CapturingService(FakeLearningService):
+        def __init__(self):
+            super().__init__()
+            self.last_user_id = None
+
+        def ask(self, content_id, user_id, question):
+            self.last_user_id = user_id
+            return super().ask(content_id, user_id, question)
+
+    service = CapturingService()
+    app = _build_app(service)
+    client = TestClient(app)
+
+    response = client.post("/api/content/content-1/ask", json={"question": "What is this about?"})
+    assert response.status_code == 200
+    assert service.last_user_id == 12345
+
+
+def test_ask_returns_404_when_user_content_missing():
+    class MissingContentService(FakeLearningService):
+        def ask(self, content_id, user_id, question):
+            raise ValueError("User content not found")
+
+    app = _build_app(MissingContentService())
+    client = TestClient(app)
+
+    response = client.post("/api/content/content-1/ask", json={"question": "What is this about?"})
+    assert response.status_code == 404
 
 
 def test_auth_required_when_not_overridden():

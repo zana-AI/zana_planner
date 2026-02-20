@@ -183,7 +183,7 @@ async def get_content_job(
 ) -> Dict[str, Any]:
     service = get_learning_service()
     try:
-        return service.get_job_status(job_id)
+        return service.get_job_status(job_id, user_id=user_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
@@ -201,7 +201,7 @@ async def get_content_summary(
 ) -> Dict[str, Any]:
     service = get_learning_service()
     try:
-        return service.get_summary(content_id=content_id, level=level)
+        return service.get_summary(content_id=content_id, user_id=user_id, level=level)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
@@ -222,13 +222,16 @@ async def ask_content_question(
 ) -> Dict[str, Any]:
     service = get_learning_service()
     try:
-        return service.ask(content_id=content_id, question=body.question)
+        return service.ask(content_id=content_id, user_id=user_id, question=body.question)
     except VectorStoreUnavailableError:
         raise HTTPException(status_code=503, detail={"message": "Vector search is temporarily unavailable", "retryable": True})
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
     except Exception as exc:
         logger.exception("content ask failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to answer content question")
@@ -244,13 +247,17 @@ async def create_content_quiz(
     try:
         return service.create_quiz(
             content_id=content_id,
+            user_id=user_id,
             difficulty=body.difficulty or "medium",
             question_count=int(body.question_count or 8),
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
     except Exception as exc:
         logger.exception("content quiz creation failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to create content quiz")
@@ -291,11 +298,14 @@ async def get_content_concepts(
 ) -> Dict[str, Any]:
     service = get_learning_service()
     try:
-        return service.get_concepts(content_id=content_id)
+        return service.get_concepts(content_id=content_id, user_id=user_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
     except Exception as exc:
         logger.exception("get content concepts failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to fetch content concepts")

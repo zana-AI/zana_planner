@@ -101,11 +101,12 @@ class LearningPipelineWorker:
     async def _process_job(self, job: Dict[str, Any]) -> None:
         job_id = str(job.get("id"))
         content_id = str(job.get("content_id"))
+        user_id = str(job.get("user_id"))
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 self.job_repo.set_attempt_count(job_id, attempt)
                 self.job_repo.mark_running(job_id)
-                await self._run_pipeline(job_id=job_id, content_id=content_id)
+                await self._run_pipeline(job_id=job_id, content_id=content_id, user_id=user_id)
                 self.job_repo.mark_completed(job_id)
                 return
             except asyncio.CancelledError:
@@ -125,7 +126,7 @@ class LearningPipelineWorker:
                     return
                 await asyncio.sleep(RETRY_BACKOFF_SECONDS[min(attempt - 1, len(RETRY_BACKOFF_SECONDS) - 1)])
 
-    async def _run_pipeline(self, job_id: str, content_id: str) -> None:
+    async def _run_pipeline(self, job_id: str, content_id: str, user_id: str) -> None:
         self.job_repo.set_stage(job_id, "resolve")
         content = self.content_repo.get_content_by_id(content_id)
         if not content:
@@ -185,6 +186,7 @@ class LearningPipelineWorker:
                 content_id,
                 chunks,
                 ingested.language,
+                user_id,
             )
 
         self.job_repo.set_stage(job_id, "summarize")

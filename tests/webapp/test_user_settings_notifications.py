@@ -1,5 +1,7 @@
+import asyncio
+
+import httpx
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from models.models import UserSettings
 from webapp.dependencies import get_current_user
@@ -33,6 +35,37 @@ def _build_app(monkeypatch, fake_repo: FakeSettingsRepo, notifications: list) ->
 
     monkeypatch.setattr(users_router, "_notify_settings_change", _capture_notification)
     return app
+
+
+class _ASGITestClient:
+    """Sync wrapper around httpx.AsyncClient + ASGITransport (works with httpx 0.28+)."""
+
+    def __init__(self, app, base_url: str = "http://testserver"):
+        self._app = app
+        self._base_url = base_url
+
+    def _request(self, method: str, url: str, **kwargs):
+        async def _run():
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=self._app),
+                base_url=self._base_url,
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        return asyncio.run(_run())
+
+    def get(self, url: str, **kwargs):
+        return self._request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self._request("POST", url, **kwargs)
+
+    def patch(self, url: str, **kwargs):
+        return self._request("PATCH", url, **kwargs)
+
+
+def TestClient(app, base_url: str = "http://testserver"):
+    return _ASGITestClient(app, base_url)
 
 
 def test_update_user_settings_language_change_triggers_notification(monkeypatch):
@@ -84,8 +117,8 @@ def test_update_user_timezone_force_change_triggers_notification(monkeypatch):
     assert notifications[0]["user_id"] == 123
     assert notifications[0]["timezone"] == "Europe/Paris"
     assert notifications[0]["user_language"] == "fa"
-    assert notifications[0]["language"] is None
-    assert notifications[0]["voice_mode"] is None
+    assert notifications[0].get("language") is None
+    assert notifications[0].get("voice_mode") is None
 
 
 def test_update_user_timezone_force_same_value_skips_notification(monkeypatch):

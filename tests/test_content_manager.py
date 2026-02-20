@@ -68,9 +68,9 @@ def test_map_to_bucket_indices_seconds():
 
 @pytest.mark.unit
 def test_map_to_bucket_indices_ratio():
-    # ratio 0..1, bucket_count 10: 0.2-0.5 -> indices 2,3,4
+    # ratio 0..1, bucket_count 10: [0.2, 0.5] intersects buckets 2,3,4,5 (0.5 is start of bucket 5)
     indices = map_to_bucket_indices(0.2, 0.5, 1.0, 10)
-    assert set(indices) == {2, 3, 4}
+    assert set(indices) == {2, 3, 4, 5}
 
 
 @pytest.mark.unit

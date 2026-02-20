@@ -52,6 +52,7 @@ class EmbeddingService:
         content_id: str,
         chunks: Iterable[Dict[str, Any]],
         language: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> bool:
         chunk_list = [dict(chunk) for chunk in chunks if (chunk.get("text") or "").strip()]
         if not chunk_list:
@@ -84,6 +85,8 @@ class EmbeddingService:
                 "source_type": chunk.get("source_type"),
                 "concept_ids": chunk.get("concept_ids") or [],
             }
+            if user_id is not None:
+                payload["user_id"] = str(user_id)
             points.append(
                 models.PointStruct(
                     id=str(chunk.get("chunk_id")),
@@ -94,7 +97,13 @@ class EmbeddingService:
         self.upsert_points(client, points=points, collection_name=self.collection_name, wait=True)
         return True
 
-    def search_chunks(self, content_id: str, query: str, limit: int = 8) -> List[Dict[str, Any]]:
+    def search_chunks(
+        self,
+        content_id: str,
+        query: str,
+        limit: int = 8,
+        user_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         if not self.is_configured():
             return []
         query = (query or "").strip()
@@ -108,14 +117,20 @@ class EmbeddingService:
         if client is None or models is None:
             raise VectorStoreUnavailableError("Qdrant client is unavailable")
 
-        query_filter = models.Filter(
-            must=[
+        filter_must = [
+            models.FieldCondition(
+                key="content_id",
+                match=models.MatchValue(value=str(content_id)),
+            )
+        ]
+        if user_id is not None:
+            filter_must.append(
                 models.FieldCondition(
-                    key="content_id",
-                    match=models.MatchValue(value=str(content_id)),
+                    key="user_id",
+                    match=models.MatchValue(value=str(user_id)),
                 )
-            ]
-        )
+            )
+        query_filter = models.Filter(must=filter_must)
         hits = self.search_points(
             client=client,
             query_vector=query_vector,

@@ -32,6 +32,7 @@ class LearningPipelineService:
         content = self.content_repo.get_content_by_id(content_id)
         if not content:
             raise ValueError("Content not found")
+        self._assert_user_has_content(user_id=user_id, content_id=content_id)
         if force_rebuild:
             self.learning_repo.clear_content_learning_data(content_id)
         job = self.job_repo.create_or_reuse_job(
@@ -41,11 +42,12 @@ class LearningPipelineService:
         )
         return {"job_id": job["id"], "status": job["status"], "stage": job["stage"], "progress_pct": job["progress_pct"]}
 
-    def get_job_status(self, job_id: str) -> Dict[str, Any]:
+    def get_job_status(self, job_id: str, user_id: int) -> Dict[str, Any]:
         self._ensure_enabled()
         job = self.job_repo.get_job(job_id)
         if not job:
             raise ValueError("Job not found")
+        self._assert_user_has_content(user_id=user_id, content_id=str(job.get("content_id") or ""))
         return {
             "job_id": job["id"],
             "status": job["status"],
@@ -57,8 +59,10 @@ class LearningPipelineService:
             "finished_at": job.get("finished_at"),
         }
 
-    def get_summary(self, content_id: str, level: str = "global") -> Dict[str, Any]:
+    def get_summary(self, content_id: str, user_id: int, level: str = "global") -> Dict[str, Any]:
         self._ensure_enabled()
+        content_id = str(content_id)
+        self._assert_user_has_content(user_id=user_id, content_id=content_id)
         level = (level or "global").strip().lower()
         if level not in ("global", "section"):
             raise ValueError("level must be 'global' or 'section'")
@@ -69,14 +73,29 @@ class LearningPipelineService:
         payload = artifact.get("payload_json") or {}
         return {"level": level, "summary": payload, "model_name": artifact.get("model_name"), "created_at": artifact.get("created_at")}
 
-    def ask(self, content_id: str, question: str) -> Dict[str, Any]:
+    def ask(self, content_id: str, user_id: int, question: str) -> Dict[str, Any]:
         self._ensure_enabled()
-        response, used_fallback = self.qa_service.answer_question(content_id=content_id, question=question, limit=8)
+        content_id = str(content_id)
+        self._assert_user_has_content(user_id=user_id, content_id=content_id)
+        response, used_fallback = self.qa_service.answer_question(
+            content_id=content_id,
+            user_id=str(user_id),
+            question=question,
+            limit=8,
+        )
         response["used_fallback"] = used_fallback
         return response
 
-    def create_quiz(self, content_id: str, difficulty: str = "medium", question_count: int = 8) -> Dict[str, Any]:
+    def create_quiz(
+        self,
+        content_id: str,
+        user_id: int,
+        difficulty: str = "medium",
+        question_count: int = 8,
+    ) -> Dict[str, Any]:
         self._ensure_enabled()
+        content_id = str(content_id)
+        self._assert_user_has_content(user_id=user_id, content_id=content_id)
         payload, used_fallback = self.quiz_service.create_quiz(
             content_id=content_id,
             difficulty=difficulty,
@@ -93,6 +112,10 @@ class LearningPipelineService:
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         self._ensure_enabled()
+        quiz_set = self.learning_repo.get_quiz_set(quiz_set_id)
+        if not quiz_set:
+            raise ValueError("Quiz not found")
+        self._assert_user_has_content(user_id=user_id, content_id=str(quiz_set.get("content_id") or ""))
         payload, used_fallback = self.quiz_service.submit_answers(
             user_id=str(user_id),
             quiz_set_id=quiz_set_id,
@@ -102,11 +125,20 @@ class LearningPipelineService:
         payload["used_fallback"] = used_fallback
         return payload
 
-    def get_concepts(self, content_id: str) -> Dict[str, Any]:
+    def get_concepts(self, content_id: str, user_id: int) -> Dict[str, Any]:
         self._ensure_enabled()
+        content_id = str(content_id)
+        self._assert_user_has_content(user_id=user_id, content_id=content_id)
         graph = self.learning_repo.get_concepts_graph(content_id)
         return graph
 
     def _ensure_enabled(self) -> None:
         if not self.enabled:
             raise RuntimeError("Content learning pipeline is disabled")
+
+    def _assert_user_has_content(self, user_id: int, content_id: str) -> None:
+        if not content_id:
+            raise ValueError("Content not found")
+        user_content = self.content_repo.get_user_content(str(user_id), str(content_id))
+        if not user_content:
+            raise ValueError("User content not found")

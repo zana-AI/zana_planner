@@ -254,14 +254,15 @@ async def update_user_settings(
 
     settings_repo.save_settings(settings)
     update_user_activity(request, user_id)
-    _notify_settings_change(
-        request,
-        user_id,
-        timezone=timezone_changed_to,
-        language=language_changed_to,
-        voice_mode=voice_mode_changed_to,
-        user_language=settings.language or "en",
-    )
+    if timezone_changed_to is not None or language_changed_to is not None or voice_mode_changed_to is not None:
+        _notify_settings_change(
+            request,
+            user_id,
+            timezone=timezone_changed_to,
+            language=language_changed_to,
+            voice_mode=voice_mode_changed_to,
+            user_language=settings.language or "en",
+        )
 
     return UserInfoResponse(
         user_id=user_id,
