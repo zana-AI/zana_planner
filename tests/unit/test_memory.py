@@ -24,16 +24,28 @@ from memory.search import memory_search
 @pytest.mark.unit
 def test_is_memory_configured_unset(monkeypatch):
     monkeypatch.delenv("MEMORY_VECTOR_DB_URL", raising=False)
+    monkeypatch.delenv("QDRANT_URL", raising=False)
     assert is_memory_configured() is False
 
 
 @pytest.mark.unit
 def test_is_memory_configured_set(monkeypatch):
+    monkeypatch.delenv("QDRANT_URL", raising=False)
     monkeypatch.setenv("MEMORY_VECTOR_DB_URL", "http://localhost:8000")
     try:
         assert is_memory_configured() is True
     finally:
         monkeypatch.delenv("MEMORY_VECTOR_DB_URL", raising=False)
+
+
+@pytest.mark.unit
+def test_is_memory_configured_uses_qdrant_fallback(monkeypatch):
+    monkeypatch.delenv("MEMORY_VECTOR_DB_URL", raising=False)
+    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+    try:
+        assert is_memory_configured() is True
+    finally:
+        monkeypatch.delenv("QDRANT_URL", raising=False)
 
 
 @pytest.mark.unit
@@ -58,12 +70,30 @@ def test_get_memory_root_rejects_invalid_user_id():
 
 
 @pytest.mark.unit
-def test_memory_search_returns_disabled_when_not_configured(monkeypatch):
+def test_memory_search_uses_keyword_fallback_when_vector_not_configured(monkeypatch, tmp_path):
     monkeypatch.delenv("MEMORY_VECTOR_DB_URL", raising=False)
-    out = memory_search("test query", "/tmp", "123")
-    assert out.get("disabled") is True
-    assert out.get("results") == []
-    assert "error" in out
+    monkeypatch.delenv("QDRANT_URL", raising=False)
+
+    user_root = tmp_path / "users" / "123"
+    user_root.mkdir(parents=True)
+    (user_root / "MEMORY.md").write_text(
+        "User prefers morning standups and deep-work blocks.\n",
+        encoding="utf-8",
+    )
+    (user_root / "memory").mkdir()
+    (user_root / "memory" / "2025-02-19.md").write_text(
+        "Decision: Tuesdays are for roadmap planning.\n",
+        encoding="utf-8",
+    )
+
+    out = memory_search("morning standups", str(tmp_path), "123")
+    assert out.get("disabled") is False
+    assert out.get("backend") == "filesystem"
+    assert out.get("fallback_used") is True
+    assert out.get("results")
+    first = out["results"][0]
+    assert first.get("path")
+    assert "snippet" in first
 
 
 @pytest.mark.unit

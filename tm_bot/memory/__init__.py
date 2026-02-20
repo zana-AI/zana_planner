@@ -6,7 +6,11 @@ memory_get reads from per-user files; flush can be gated by MEMORY_FLUSH_ENABLED
 """
 
 from memory.config import (
+    get_memory_collection_name,
+    get_memory_embedding_model,
     get_memory_root,
+    get_memory_vector_db_api_key,
+    get_memory_vector_db_url,
     is_flush_enabled,
     is_memory_configured,
 )
@@ -20,6 +24,10 @@ from memory.flush import (
 
 __all__ = [
     "get_memory_root",
+    "get_memory_vector_db_url",
+    "get_memory_vector_db_api_key",
+    "get_memory_collection_name",
+    "get_memory_embedding_model",
     "is_flush_enabled",
     "is_memory_configured",
     "memory_get",

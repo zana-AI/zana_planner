@@ -555,7 +555,7 @@ class ConversationRepository:
                 params = {"user_id": str(user_id), "limit": limit}
                 
                 if min_importance is not None:
-                    query_parts.append("AND (importance_score IS NULL OR importance_score >= :min_importance)")
+                    query_parts.append("AND importance_score IS NOT NULL AND importance_score >= :min_importance")
                     params["min_importance"] = min_importance
                 
                 if session_id:
@@ -564,8 +564,8 @@ class ConversationRepository:
                     query_parts.append("AND conversation_session_id = :session_id")
                     params["session_id"] = session_id
                 
-                # Order by: current session first, then by importance score, then by time
-                query_parts.append("ORDER BY created_at_utc DESC")
+                # Prioritize high-importance memories first, then recency.
+                query_parts.append("ORDER BY COALESCE(importance_score, -1) DESC, created_at_utc DESC")
                 query_parts.append("LIMIT :limit")
                 
                 query = text(" ".join(query_parts))

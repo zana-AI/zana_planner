@@ -17,11 +17,32 @@ class VectorStoreUnavailableError(RuntimeError):
 
 
 class EmbeddingService:
-    def __init__(self) -> None:
-        self.qdrant_url = os.getenv("QDRANT_URL", "").strip()
-        self.qdrant_api_key = os.getenv("QDRANT_API_KEY", "").strip() or None
-        self.collection_name = os.getenv("QDRANT_COLLECTION", "content_chunks_v1").strip() or "content_chunks_v1"
-        self.embedding_model = os.getenv("VERTEX_EMBEDDING_MODEL", "gemini-embedding-001").strip() or "gemini-embedding-001"
+    def __init__(
+        self,
+        qdrant_url: Optional[str] = None,
+        qdrant_api_key: Optional[str] = None,
+        collection_name: Optional[str] = None,
+        embedding_model: Optional[str] = None,
+        qdrant_timeout_seconds: float = 10.0,
+    ) -> None:
+        env_qdrant_url = os.getenv("QDRANT_URL", "").strip()
+        env_qdrant_api_key = os.getenv("QDRANT_API_KEY", "").strip() or None
+        env_collection = os.getenv("QDRANT_COLLECTION", "content_chunks_v1").strip() or "content_chunks_v1"
+        env_embedding_model = (
+            os.getenv("VERTEX_EMBEDDING_MODEL", "gemini-embedding-001").strip() or "gemini-embedding-001"
+        )
+
+        self.qdrant_url = (qdrant_url if qdrant_url is not None else env_qdrant_url).strip()
+        resolved_api_key = qdrant_api_key if qdrant_api_key is not None else env_qdrant_api_key
+        if resolved_api_key is None:
+            self.qdrant_api_key = None
+        else:
+            self.qdrant_api_key = str(resolved_api_key).strip() or None
+        self.collection_name = (collection_name if collection_name is not None else env_collection).strip() or env_collection
+        self.embedding_model = (
+            embedding_model if embedding_model is not None else env_embedding_model
+        ).strip() or env_embedding_model
+        self.qdrant_timeout_seconds = max(1.0, float(qdrant_timeout_seconds))
 
     def is_configured(self) -> bool:
         return bool(self.qdrant_url)
@@ -39,15 +60,15 @@ class EmbeddingService:
             logger.warning("Qdrant is not configured (QDRANT_URL missing); skipping vector index")
             return False
 
-        vectors = self._embed_texts([chunk["text"] for chunk in chunk_list])
+        vectors = self.embed_texts([chunk["text"] for chunk in chunk_list])
         if not vectors:
             logger.warning("No embeddings generated; skipping vector index")
             return False
-        client, models = self._get_qdrant_client()
+        client, models = self.get_qdrant_client()
         if client is None or models is None:
             raise VectorStoreUnavailableError("Qdrant client is unavailable")
 
-        self._ensure_collection(client, models, vector_size=len(vectors[0]))
+        self.ensure_collection(client, models, vector_size=len(vectors[0]), collection_name=self.collection_name)
         points = []
         for chunk, vector in zip(chunk_list, vectors):
             payload = {
@@ -70,10 +91,7 @@ class EmbeddingService:
                     payload=payload,
                 )
             )
-        try:
-            client.upsert(collection_name=self.collection_name, points=points, wait=True)
-        except Exception as exc:
-            raise VectorStoreUnavailableError("Qdrant upsert failed") from exc
+        self.upsert_points(client, points=points, collection_name=self.collection_name, wait=True)
         return True
 
     def search_chunks(self, content_id: str, query: str, limit: int = 8) -> List[Dict[str, Any]]:
@@ -82,11 +100,11 @@ class EmbeddingService:
         query = (query or "").strip()
         if not query:
             return []
-        query_vectors = self._embed_texts([query])
+        query_vectors = self.embed_texts([query])
         if not query_vectors:
             return []
         query_vector = query_vectors[0]
-        client, models = self._get_qdrant_client()
+        client, models = self.get_qdrant_client()
         if client is None or models is None:
             raise VectorStoreUnavailableError("Qdrant client is unavailable")
 
@@ -98,26 +116,13 @@ class EmbeddingService:
                 )
             ]
         )
-        hits: List[Any] = []
-        try:
-            hits = client.search(
-                collection_name=self.collection_name,
-                query_vector=query_vector,
-                limit=max(1, int(limit)),
-                query_filter=query_filter,
-            )
-        except Exception:
-            try:
-                response = client.query_points(
-                    collection_name=self.collection_name,
-                    query=query_vector,
-                    limit=max(1, int(limit)),
-                    query_filter=query_filter,
-                )
-                hits = getattr(response, "points", []) or []
-            except Exception as exc:
-                logger.warning("Qdrant search failed: %s", exc)
-                raise VectorStoreUnavailableError("Qdrant search failed") from exc
+        hits = self.search_points(
+            client=client,
+            query_vector=query_vector,
+            limit=max(1, int(limit)),
+            query_filter=query_filter,
+            collection_name=self.collection_name,
+        )
 
         result: List[Dict[str, Any]] = []
         for hit in hits:
@@ -125,6 +130,76 @@ class EmbeddingService:
             score = float(getattr(hit, "score", 0.0) or 0.0)
             result.append({"score": score, "payload": payload})
         return result
+
+    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        return self._embed_texts(texts)
+
+    def get_qdrant_client(self):
+        return self._get_qdrant_client()
+
+    def ensure_collection(
+        self,
+        client,
+        models,
+        vector_size: int,
+        collection_name: Optional[str] = None,
+    ) -> None:
+        self._ensure_collection(
+            client=client,
+            models=models,
+            vector_size=vector_size,
+            collection_name=collection_name or self.collection_name,
+        )
+
+    def upsert_points(
+        self,
+        client,
+        points: List[Any],
+        collection_name: Optional[str] = None,
+        wait: bool = True,
+    ) -> None:
+        try:
+            client.upsert(
+                collection_name=collection_name or self.collection_name,
+                points=points,
+                wait=wait,
+            )
+        except Exception as exc:
+            raise VectorStoreUnavailableError("Qdrant upsert failed") from exc
+
+    def search_points(
+        self,
+        client,
+        query_vector: List[float],
+        limit: int = 8,
+        query_filter: Any = None,
+        collection_name: Optional[str] = None,
+    ) -> List[Any]:
+        if not query_vector:
+            return []
+        collection = collection_name or self.collection_name
+        max_limit = max(1, int(limit))
+        hits: List[Any] = []
+        try:
+            hits = client.search(
+                collection_name=collection,
+                query_vector=query_vector,
+                limit=max_limit,
+                query_filter=query_filter,
+            )
+        except Exception:
+            try:
+                response = client.query_points(
+                    collection_name=collection,
+                    query=query_vector,
+                    limit=max_limit,
+                    query_filter=query_filter,
+                )
+                hits = getattr(response, "points", []) or []
+            except Exception as exc:
+                logger.warning("Qdrant search failed: %s", exc)
+                raise VectorStoreUnavailableError("Qdrant search failed") from exc
+        return list(hits or [])
 
     def _embed_texts(self, texts: List[str]) -> List[List[float]]:
         if not texts:
@@ -143,21 +218,25 @@ class EmbeddingService:
         except Exception:
             return None, None
         try:
-            client = QdrantClient(url=self.qdrant_url, api_key=self.qdrant_api_key, timeout=10.0)
+            client = QdrantClient(
+                url=self.qdrant_url,
+                api_key=self.qdrant_api_key,
+                timeout=self.qdrant_timeout_seconds,
+            )
             return client, models
         except Exception as exc:
             logger.warning("Qdrant client init failed: %s", exc)
             return None, None
 
-    def _ensure_collection(self, client, models, vector_size: int) -> None:
+    def _ensure_collection(self, client, models, vector_size: int, collection_name: str) -> None:
         try:
-            existing = client.get_collection(self.collection_name)
+            existing = client.get_collection(collection_name)
             if existing:
                 return
         except Exception:
             pass
         client.recreate_collection(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             vectors_config=models.VectorParams(size=vector_size, distance=models.Distance.COSINE),
         )
 
