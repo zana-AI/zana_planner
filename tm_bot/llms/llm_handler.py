@@ -84,15 +84,24 @@ class LLMHandler:
             cfg = load_llm_env()  # returns dict with project, location, model
 
             self.chat_model = None
+            self.router_model = None
+            self.planner_model = None
+            self.responder_model = None
             fallback_enabled = bool(cfg.get("LLM_FALLBACK_ENABLED"))
             fallback_provider = str(cfg.get("LLM_FALLBACK_PROVIDER") or "openai").lower()
+            router_temp = float(cfg.get("LLM_ROUTER_TEMPERATURE", 0.2))
+            planner_temp = float(cfg.get("LLM_PLANNER_TEMPERATURE", 0.2))
+            responder_temp = float(cfg.get("LLM_RESPONDER_TEMPERATURE", 0.7))
             if cfg.get("GCP_PROJECT_ID", ""):
-                self.chat_model = ChatVertexAI(
+                vertex_kwargs = dict(
                     model=cfg["GCP_GEMINI_MODEL"],
                     project=cfg["GCP_PROJECT_ID"],
                     location=cfg["GCP_LOCATION"],
-                    temperature=0.7,
                 )
+                self.router_model = ChatVertexAI(**vertex_kwargs, temperature=router_temp)
+                self.planner_model = ChatVertexAI(**vertex_kwargs, temperature=planner_temp)
+                self.responder_model = ChatVertexAI(**vertex_kwargs, temperature=responder_temp)
+                self.chat_model = self.responder_model
 
             if (
                 not self.chat_model
@@ -101,11 +110,11 @@ class LLMHandler:
                 and cfg.get("OPENAI_API_KEY", "")
             ):
                 logger.warning("Gemini unavailable; using emergency OpenAI fallback for LLMHandler")
-                self.chat_model = ChatOpenAI(
-                    openai_api_key=cfg["OPENAI_API_KEY"],
-                    temperature=0.7,
-                    model="gpt-4o-mini",
-                )
+                openai_kwargs = dict(openai_api_key=cfg["OPENAI_API_KEY"], model="gpt-4o-mini")
+                self.router_model = ChatOpenAI(**openai_kwargs, temperature=router_temp)
+                self.planner_model = ChatOpenAI(**openai_kwargs, temperature=planner_temp)
+                self.responder_model = ChatOpenAI(**openai_kwargs, temperature=responder_temp)
+                self.chat_model = self.responder_model
 
             if not self.chat_model:
                 raise ValueError(
@@ -132,9 +141,9 @@ class LLMHandler:
 
             self.agent_app = create_routed_plan_execute_graph(
                 tools=self.tools,
-                router_model=self.chat_model,  # Router uses same model (lightweight classification)
-                planner_model=self.chat_model,   # no tools bound (planner must not call tools)
-                responder_model=self.chat_model, # no tools bound (responder must not call tools)
+                router_model=self.router_model,
+                planner_model=self.planner_model,
+                responder_model=self.responder_model,
                 router_prompt=self.system_message_router_prompt,
                 get_planner_prompt_for_mode=self._get_planner_prompt_for_mode,
                 get_system_message_for_mode=lambda user_id, mode, user_lang: self._get_system_message_main(user_lang, user_id, mode),
@@ -151,6 +160,9 @@ class LLMHandler:
                 {
                     "event": "llm_handler_init",
                     "model": getattr(self.chat_model, "model_name", None) or getattr(self.chat_model, "model", None),
+                    "router_temperature": router_temp,
+                    "planner_temperature": planner_temp,
+                    "responder_temperature": responder_temp,
                     "adapter_root": adapter_root,
                     "max_iterations": self.max_iterations,
                     "debug": _DEBUG_ENABLED,
@@ -376,70 +388,15 @@ class LLMHandler:
             "  {\"kind\": \"respond\", \"purpose\": \"Confirm to user\", \"response_hint\": \"Confirm time logged, show streak if relevant\"}\n"
             "], \"detected_intent\": \"LOG_ACTION\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
             
-            "User: 'worked on reading'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Find reading promise\", \"tool_name\": \"search_promises\", \"tool_args\": {\"query\": \"reading\"}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Log 1 hour (default)\", \"tool_name\": \"add_action\", \"tool_args\": {\"promise_id\": \"FROM_SEARCH\", \"time_spent\": 1.0}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm\", \"response_hint\": \"Confirm 1 hour logged\"}\n"
-            "]}\n\n"
-            
-            "User: 'can you show me the weekly'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Open weekly report in mini app\", \"tool_name\": \"open_mini_app\", \"tool_args\": {\"path\": \"/dashboard\", \"context\": \"weekly report\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Direct user to mini app\", \"response_hint\": \"Tell user their weekly report is available in the mini app\"}\n"
-            "]}\n\n"
-            "User: 'how is my progress this week with my reading promise?'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Get weekly summary for analysis\", \"tool_name\": \"get_weekly_report\", \"tool_args\": {}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Present progress\", \"response_hint\": \"Summarize progress encouragingly\"}\n"
-            "]}\n\n"
-            
             "User: 'hi there!'\n"
             "Plan: {\"steps\": [], \"final_response_if_no_tools\": \"Hello! How can I help you with your tasks today?\", \"detected_intent\": \"NO_OP\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
             
-            "User: 'I want to go to gym 2 times this week'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"List fitness templates\", \"tool_name\": \"list_templates\", \"tool_args\": {\"category\": \"fitness\"}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Get template details\", \"tool_name\": \"get_template\", \"tool_args\": {\"template_id\": \"FROM_SEARCH\"}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Subscribe to template\", \"tool_name\": \"subscribe_template\", \"tool_args\": {\"template_id\": \"FROM_SEARCH\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm subscription\", \"response_hint\": \"Confirm template subscription and explain what to do next\"}\n"
-            "], \"detected_intent\": \"CREATE_PROMISE\", \"intent_confidence\": \"high\"}\n\n"
             "User: 'I want to call a friend tomorrow'\n"
             "Plan: {\"steps\": [\n"
             "  {\"kind\": \"tool\", \"purpose\": \"Resolve datetime from user's message\", \"tool_name\": \"resolve_datetime\", \"tool_args\": {\"datetime_text\": \"tomorrow\"}},\n"
             "  {\"kind\": \"tool\", \"purpose\": \"Create one-time promise/reminder\", \"tool_name\": \"add_promise\", \"tool_args\": {\"promise_text\": \"call a friend\", \"num_hours_promised_per_week\": 0.0, \"recurring\": false, \"end_date\": \"FROM_TOOL:resolve_datetime:\"}},\n"
             "  {\"kind\": \"respond\", \"purpose\": \"Confirm reminder created\", \"response_hint\": \"Confirm that the reminder has been set for tomorrow\"}\n"
             "], \"detected_intent\": \"CREATE_PROMISE\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
-            "User: 'I want to call a friend tomorrow at 3pm'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Resolve datetime with time from user's message\", \"tool_name\": \"resolve_datetime\", \"tool_args\": {\"datetime_text\": \"tomorrow at 3pm\"}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Create one-time promise/reminder\", \"tool_name\": \"add_promise\", \"tool_args\": {\"promise_text\": \"call a friend\", \"num_hours_promised_per_week\": 0.0, \"recurring\": false, \"end_date\": \"FROM_TOOL:resolve_datetime:\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm reminder created\", \"response_hint\": \"Confirm that the reminder has been set for tomorrow at 3pm\"}\n"
-            "], \"detected_intent\": \"CREATE_PROMISE\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
-            "User: 'من میخام فردا یه بیست دقیقه پیاده روی کنم' (Persian: 'I want to walk for twenty minutes tomorrow')\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Extract and resolve datetime phrase from Persian message\", \"tool_name\": \"resolve_datetime\", \"tool_args\": {\"datetime_text\": \"فردا\"}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Create one-time promise for walking\", \"tool_name\": \"add_promise\", \"tool_args\": {\"promise_text\": \"walk for twenty minutes\", \"num_hours_promised_per_week\": 0.0, \"recurring\": false, \"end_date\": \"FROM_TOOL:resolve_datetime:\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm reminder created\", \"response_hint\": \"Confirm that the walking reminder has been set for tomorrow\"}\n"
-            "], \"detected_intent\": \"CREATE_PROMISE\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
-            "User: 'I need to take a Forkapil pill every night' / 'من باید هر شب یه قرص فورکاپیل بخورم' (Persian: 'I need to take a Forkapil pill every night')\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Create check-based promise for pill reminder (no time commitment, just a reminder)\", \"tool_name\": \"add_promise\", \"tool_args\": {\"promise_text\": \"take Forkapil pill\", \"num_hours_promised_per_week\": 0.0, \"recurring\": true}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm check-based reminder created\", \"response_hint\": \"Confirm that the pill reminder has been set as a check-based promise (user can check it off each night, no time tracking)\"}\n"
-            "], \"detected_intent\": \"CREATE_PROMISE\", \"intent_confidence\": \"high\", \"safety\": {\"requires_confirmation\": false}}\n\n"
-            
-            "User: 'I failed my gym goal this week'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Check overload status\", \"tool_name\": \"get_overload_status\", \"tool_args\": {}},\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"List lower-level templates\", \"tool_name\": \"list_templates\", \"tool_args\": {\"category\": \"fitness\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Suggest downgrade\", \"response_hint\": \"Empathize, suggest trying a lower-level template (L1 instead of L2), encourage without judgment\"}\n"
-            "], \"detected_intent\": \"PLAN_NEXT\", \"intent_confidence\": \"high\"}\n\n"
-            
-            "User: 'switch to French'\n"
-            "Plan: {\"steps\": [\n"
-            "  {\"kind\": \"tool\", \"purpose\": \"Update language setting\", \"tool_name\": \"update_setting\", \"tool_args\": {\"setting_key\": \"language\", \"setting_value\": \"fr\"}},\n"
-            "  {\"kind\": \"respond\", \"purpose\": \"Confirm language change\", \"response_hint\": \"Confirm in French that language has been changed\"}\n"
-            "]}\n\n"
             
             "=== JSON SCHEMA ===\n"
             "{\n"

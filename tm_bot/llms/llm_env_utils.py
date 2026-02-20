@@ -49,6 +49,12 @@ def load_llm_env():
         os.environ["LANGCHAIN_API_KEY"] = langsmith_api_key
         langsmith_enabled = True
 
+    def _float_env(name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)))
+        except (TypeError, ValueError):
+            return default
+
     return {
         "GCP_PROJECT_ID": project_id,
         "GCP_LOCATION": location,
@@ -58,4 +64,9 @@ def load_llm_env():
         "LLM_FALLBACK_PROVIDER": fallback_provider,
         "LANGSMITH_ENABLED": langsmith_enabled,
         "LANGSMITH_PROJECT": langsmith_project if langsmith_enabled else None,
+        # Per-role temperatures: router/planner use low temp for structured output;
+        # responder uses higher temp for natural-language variety.
+        "LLM_ROUTER_TEMPERATURE": _float_env("LLM_ROUTER_TEMPERATURE", 0.2),
+        "LLM_PLANNER_TEMPERATURE": _float_env("LLM_PLANNER_TEMPERATURE", 0.2),
+        "LLM_RESPONDER_TEMPERATURE": _float_env("LLM_RESPONDER_TEMPERATURE", 0.7),
     }
