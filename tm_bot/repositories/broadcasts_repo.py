@@ -213,6 +213,58 @@ class BroadcastsRepository:
         
         return broadcasts
 
+    def list_due_broadcasts(
+        self,
+        now_utc: datetime,
+        limit: int = 100,
+    ) -> List[Broadcast]:
+        """
+        List pending broadcasts that are due for execution.
+
+        Args:
+            now_utc: Current UTC datetime
+            limit: Maximum number of due broadcasts to return
+        """
+        broadcasts = []
+
+        with get_db_session() as session:
+            has_bot_token_column = self._has_bot_token_column(session)
+            now_utc_iso = dt_to_utc_iso(now_utc)
+            rows = session.execute(
+                text(
+                    f"""
+                    SELECT broadcast_id, admin_id, message, target_user_ids,
+                           scheduled_time_utc, status,
+                           {'bot_token_id' if has_bot_token_column else 'NULL AS bot_token_id'},
+                           created_at_utc, updated_at_utc
+                    FROM broadcasts
+                    WHERE status = 'pending'
+                      AND scheduled_time_utc <= :now_utc
+                    ORDER BY scheduled_time_utc ASC
+                    LIMIT :limit;
+                    """
+                ),
+                {"now_utc": now_utc_iso, "limit": limit},
+            ).mappings().fetchall()
+
+            for row in rows:
+                target_ids = json.loads(row["target_user_ids"])
+                broadcasts.append(
+                    Broadcast(
+                        broadcast_id=row["broadcast_id"],
+                        admin_id=row["admin_id"],
+                        message=row["message"],
+                        target_user_ids=[int(uid) for uid in target_ids],
+                        scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
+                        status=row["status"],
+                        bot_token_id=row.get("bot_token_id"),
+                        created_at=dt_from_utc_iso(row["created_at_utc"]),
+                        updated_at=dt_from_utc_iso(row["updated_at_utc"]),
+                    )
+                )
+
+        return broadcasts
+
     def update_broadcast(
         self,
         broadcast_id: str,
