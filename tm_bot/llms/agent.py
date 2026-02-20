@@ -1934,6 +1934,59 @@ def create_routed_plan_execute_graph(
         user_language = _current_user_language.get()
         return get_system_message_for_mode(user_id, mode, user_language)
 
+    def _last_user_text(messages: List[BaseMessage]) -> str:
+        """Return the latest human message text (best effort)."""
+        for msg in reversed(messages or []):
+            if isinstance(msg, HumanMessage):
+                content = getattr(msg, "content", "")
+                return "" if content is None else str(content)
+        return ""
+
+    def _strategy_read_only_recovery_step_for_mismatch(user_text: str) -> Optional[dict]:
+        """
+        Recover when strategist mode receives a mutation step for a query-style message.
+        This avoids mode-switch prompts for questions like "how many promises do I have?".
+        """
+        text = (user_text or "").strip().lower()
+        if not text:
+            return None
+
+        asks_count = bool(
+            re.search(r"\bhow many\b.*\bpromises?\b", text)
+            or re.search(r"\bnumber of\b.*\bpromises?\b", text)
+            or re.search(r"\bcount\b.*\bpromises?\b", text)
+            or re.search(r"\bpromises?\b.*\bdo i have\b", text)
+        )
+        if asks_count:
+            if "count_promises" in tool_by_name:
+                return {
+                    "kind": "tool",
+                    "purpose": "Count current promises for the user.",
+                    "tool_name": "count_promises",
+                    "tool_args": {},
+                }
+            if "get_promises" in tool_by_name:
+                return {
+                    "kind": "tool",
+                    "purpose": "Get current promises for counting.",
+                    "tool_name": "get_promises",
+                    "tool_args": {},
+                }
+
+        asks_list = bool(
+            re.search(r"\b(my|show|list|what are)\b.*\bpromises?\b", text)
+            or re.search(r"\bpromises?\b.*\b(list|show)\b", text)
+        )
+        if asks_list and "get_promises" in tool_by_name:
+            return {
+                "kind": "tool",
+                "purpose": "Fetch current promises for the user.",
+                "tool_name": "get_promises",
+                "tool_args": {},
+            }
+
+        return None
+
     def planner(state: AgentState) -> AgentState:
         mode = state.get("mode") or "operator"
         mode_prompt = get_planner_prompt_for_mode(mode)
@@ -2230,6 +2283,31 @@ def create_routed_plan_execute_graph(
                     tool_allowed = any(allowed in tool_name for allowed in allowed_mutations)
                 
                 if not tool_allowed:
+                    user_text = _last_user_text(state.get("messages") or [])
+                    recovery_step = _strategy_read_only_recovery_step_for_mismatch(user_text)
+                    if recovery_step:
+                        repaired_plan = [dict(s or {}) for s in plan]
+                        repaired_plan[idx] = recovery_step
+                        respond_step = {
+                            "kind": "respond",
+                            "purpose": "Answer the user's query with read-only data.",
+                            "response_hint": "Answer the question directly using the latest read-only tool output. Do not suggest creating or updating anything unless the user asks.",
+                        }
+                        if idx + 1 < len(repaired_plan):
+                            next_step = dict(repaired_plan[idx + 1] or {})
+                            if next_step.get("kind") == "respond":
+                                next_step["response_hint"] = respond_step["response_hint"]
+                                repaired_plan[idx + 1] = next_step
+                            else:
+                                repaired_plan.insert(idx + 1, respond_step)
+                        else:
+                            repaired_plan.append(respond_step)
+                        return {
+                            **state,
+                            "plan": repaired_plan,
+                            "iteration": new_iteration,
+                            "step_idx": idx,
+                        }
                     # Block mutation and suggest switching to operator
                     blocked_msg = (
                         f"I'm in {mode} mode, which focuses on {mode}-related tasks. "

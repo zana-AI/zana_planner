@@ -5,8 +5,18 @@ import uuid
 
 from sqlalchemy import text
 
-from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
+from db.postgres_db import (
+    get_db_session,
+    utc_now_iso,
+    dt_from_utc_iso,
+    dt_to_utc_iso,
+    get_table_columns,
+)
 from models.models import Broadcast
+from utils.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class BroadcastsRepository:
@@ -14,6 +24,11 @@ class BroadcastsRepository:
 
     def __init__(self) -> None:
         pass
+
+    @staticmethod
+    def _has_bot_token_column(session) -> bool:
+        """Return True when broadcasts.bot_token_id exists."""
+        return "bot_token_id" in set(get_table_columns(session, "broadcasts"))
 
     def create_broadcast(
         self,
@@ -45,39 +60,70 @@ class BroadcastsRepository:
         scheduled_time_str = dt_to_utc_iso(scheduled_time_utc)
         
         with get_db_session() as session:
-            session.execute(
-                text("""
-                    INSERT INTO broadcasts(
-                        broadcast_id, admin_id, message, target_user_ids,
-                        scheduled_time_utc, status, bot_token_id,
-                        created_at_utc, updated_at_utc
-                    ) VALUES (
-                        :broadcast_id, :admin_id, :message, :target_user_ids,
-                        :scheduled_time_utc, 'pending', :bot_token_id,
-                        :created_at_utc, :updated_at_utc
-                    );
-                """),
-                {
-                    "broadcast_id": broadcast_id,
-                    "admin_id": admin,
-                    "message": message,
-                    "target_user_ids": target_ids_json,
-                    "scheduled_time_utc": scheduled_time_str,
-                    "bot_token_id": bot_token_id,
-                    "created_at_utc": now,
-                    "updated_at_utc": now,
-                },
-            )
+            if self._has_bot_token_column(session):
+                session.execute(
+                    text("""
+                        INSERT INTO broadcasts(
+                            broadcast_id, admin_id, message, target_user_ids,
+                            scheduled_time_utc, status, bot_token_id,
+                            created_at_utc, updated_at_utc
+                        ) VALUES (
+                            :broadcast_id, :admin_id, :message, :target_user_ids,
+                            :scheduled_time_utc, 'pending', :bot_token_id,
+                            :created_at_utc, :updated_at_utc
+                        );
+                    """),
+                    {
+                        "broadcast_id": broadcast_id,
+                        "admin_id": admin,
+                        "message": message,
+                        "target_user_ids": target_ids_json,
+                        "scheduled_time_utc": scheduled_time_str,
+                        "bot_token_id": bot_token_id,
+                        "created_at_utc": now,
+                        "updated_at_utc": now,
+                    },
+                )
+            else:
+                if bot_token_id:
+                    logger.warning(
+                        "broadcasts.bot_token_id column is missing; creating broadcast without custom bot token"
+                    )
+                session.execute(
+                    text("""
+                        INSERT INTO broadcasts(
+                            broadcast_id, admin_id, message, target_user_ids,
+                            scheduled_time_utc, status,
+                            created_at_utc, updated_at_utc
+                        ) VALUES (
+                            :broadcast_id, :admin_id, :message, :target_user_ids,
+                            :scheduled_time_utc, 'pending',
+                            :created_at_utc, :updated_at_utc
+                        );
+                    """),
+                    {
+                        "broadcast_id": broadcast_id,
+                        "admin_id": admin,
+                        "message": message,
+                        "target_user_ids": target_ids_json,
+                        "scheduled_time_utc": scheduled_time_str,
+                        "created_at_utc": now,
+                        "updated_at_utc": now,
+                    },
+                )
         
         return broadcast_id
 
     def get_broadcast(self, broadcast_id: str) -> Optional[Broadcast]:
         """Get a broadcast by ID."""
         with get_db_session() as session:
+            bot_token_select = (
+                "bot_token_id" if self._has_bot_token_column(session) else "NULL AS bot_token_id"
+            )
             row = session.execute(
-                text("""
+                text(f"""
                     SELECT broadcast_id, admin_id, message, target_user_ids,
-                           scheduled_time_utc, status, bot_token_id,
+                           scheduled_time_utc, status, {bot_token_select},
                            created_at_utc, updated_at_utc
                     FROM broadcasts
                     WHERE broadcast_id = :broadcast_id
@@ -121,6 +167,7 @@ class BroadcastsRepository:
         broadcasts = []
         
         with get_db_session() as session:
+            has_bot_token_column = self._has_bot_token_column(session)
             conditions = ["1=1"]
             params = {}
             
@@ -136,7 +183,8 @@ class BroadcastsRepository:
             
             query = f"""
                 SELECT broadcast_id, admin_id, message, target_user_ids,
-                       scheduled_time_utc, status, bot_token_id,
+                       scheduled_time_utc, status,
+                       {'bot_token_id' if has_bot_token_column else 'NULL AS bot_token_id'},
                        created_at_utc, updated_at_utc
                 FROM broadcasts
                 WHERE {' AND '.join(conditions)}
@@ -163,6 +211,58 @@ class BroadcastsRepository:
                     )
                 )
         
+        return broadcasts
+
+    def list_due_broadcasts(
+        self,
+        now_utc: datetime,
+        limit: int = 100,
+    ) -> List[Broadcast]:
+        """
+        List pending broadcasts that are due for execution.
+
+        Args:
+            now_utc: Current UTC datetime
+            limit: Maximum number of due broadcasts to return
+        """
+        broadcasts = []
+
+        with get_db_session() as session:
+            has_bot_token_column = self._has_bot_token_column(session)
+            now_utc_iso = dt_to_utc_iso(now_utc)
+            rows = session.execute(
+                text(
+                    f"""
+                    SELECT broadcast_id, admin_id, message, target_user_ids,
+                           scheduled_time_utc, status,
+                           {'bot_token_id' if has_bot_token_column else 'NULL AS bot_token_id'},
+                           created_at_utc, updated_at_utc
+                    FROM broadcasts
+                    WHERE status = 'pending'
+                      AND scheduled_time_utc <= :now_utc
+                    ORDER BY scheduled_time_utc ASC
+                    LIMIT :limit;
+                    """
+                ),
+                {"now_utc": now_utc_iso, "limit": limit},
+            ).mappings().fetchall()
+
+            for row in rows:
+                target_ids = json.loads(row["target_user_ids"])
+                broadcasts.append(
+                    Broadcast(
+                        broadcast_id=row["broadcast_id"],
+                        admin_id=row["admin_id"],
+                        message=row["message"],
+                        target_user_ids=[int(uid) for uid in target_ids],
+                        scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
+                        status=row["status"],
+                        bot_token_id=row.get("bot_token_id"),
+                        created_at=dt_from_utc_iso(row["created_at_utc"]),
+                        updated_at=dt_from_utc_iso(row["updated_at_utc"]),
+                    )
+                )
+
         return broadcasts
 
     def update_broadcast(
@@ -210,6 +310,16 @@ class BroadcastsRepository:
         params["updated_at_utc"] = utc_now_iso()
         
         with get_db_session() as session:
+            if bot_token_id is not None and not self._has_bot_token_column(session):
+                logger.warning(
+                    "broadcasts.bot_token_id column is missing; skipping bot_token_id update"
+                )
+                updates = [u for u in updates if u != "bot_token_id = :bot_token_id"]
+                params.pop("bot_token_id", None)
+
+            if not updates or updates == ["updated_at_utc = :updated_at_utc"]:
+                return False
+
             result = session.execute(
                 text(f"""
                     UPDATE broadcasts
@@ -227,4 +337,3 @@ class BroadcastsRepository:
     def mark_broadcast_completed(self, broadcast_id: str) -> bool:
         """Mark a broadcast as completed."""
         return self.update_broadcast(broadcast_id, status="completed")
-

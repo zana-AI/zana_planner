@@ -331,7 +331,7 @@ async def create_broadcast(
     """
     try:
         from zoneinfo import ZoneInfo
-        from services.broadcast_service import get_all_users_from_db
+        from services.broadcast_service import get_all_users_from_db, execute_broadcast_from_db
 
         # Validate message
         if not broadcast_request.message or not broadcast_request.message.strip():
@@ -349,6 +349,7 @@ async def create_broadcast(
             raise HTTPException(status_code=400, detail="No valid target users found")
         
         # Determine scheduled time
+        is_immediate = not bool(broadcast_request.scheduled_time_utc)
         if broadcast_request.scheduled_time_utc:
             # Parse scheduled time
             try:
@@ -376,6 +377,28 @@ async def create_broadcast(
             scheduled_time_utc=scheduled_dt,
             bot_token_id=broadcast_request.bot_token_id,
         )
+
+        # Fire-and-forget immediate dispatch.
+        # Scheduled broadcasts are handled by the background dispatcher.
+        if is_immediate:
+            default_bot_token = getattr(request.app.state, "bot_token", None)
+
+            async def _dispatch_immediate() -> None:
+                try:
+                    await execute_broadcast_from_db(
+                        response_service=None,
+                        broadcast_id=broadcast_id,
+                        default_bot_token=default_bot_token,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Immediate dispatch failed for broadcast %s: %s",
+                        broadcast_id,
+                        e,
+                        exc_info=True,
+                    )
+
+            asyncio.create_task(_dispatch_immediate())
         
         # Get created broadcast
         broadcast = broadcasts_repo.get_broadcast(broadcast_id)

@@ -62,9 +62,9 @@ class ReviewsRepository:
                 return dict(existing._mapping)
 
         # Compute achieved value based on metric_type
-        metric_type = instance["metric_type"]
-        target_value = instance["target_value"]
-        target_direction = instance["target_direction"]
+        metric_type = instance.get("metric_type", "hours")
+        target_value = instance.get("target_value", 0)
+        target_direction = instance.get("target_direction", "at_least")
 
         from repositories.actions_repo import ActionsRepository
         actions_repo = ActionsRepository()

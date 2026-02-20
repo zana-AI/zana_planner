@@ -6,7 +6,11 @@ import uuid
 
 from sqlalchemy import text
 
-from db.postgres_db import get_db_session, utc_now_iso
+from db.postgres_db import get_db_session, utc_now_iso, check_table_exists
+from utils.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class BotTokensRepository:
@@ -14,6 +18,11 @@ class BotTokensRepository:
 
     def __init__(self) -> None:
         pass
+
+    @staticmethod
+    def _has_bot_tokens_table(session) -> bool:
+        """Return True when the optional bot_tokens table exists."""
+        return check_table_exists(session, "bot_tokens")
 
     def create_bot_token(
         self,
@@ -38,6 +47,12 @@ class BotTokensRepository:
         now = utc_now_iso()
         
         with get_db_session() as session:
+            if not self._has_bot_tokens_table(session):
+                raise RuntimeError(
+                    "Database schema is missing table 'bot_tokens'. "
+                    "Run migrations (python scripts/run_migrations.py)."
+                )
+
             session.execute(
                 text("""
                     INSERT INTO bot_tokens(
@@ -69,6 +84,10 @@ class BotTokensRepository:
             Dictionary with bot token details, or None if not found
         """
         with get_db_session() as session:
+            if not self._has_bot_tokens_table(session):
+                logger.warning("bot_tokens table is missing; returning no bot token")
+                return None
+
             row = session.execute(
                 text("""
                     SELECT bot_token_id, bot_token, bot_username, is_active, description,
@@ -106,6 +125,10 @@ class BotTokensRepository:
         tokens = []
         
         with get_db_session() as session:
+            if not self._has_bot_tokens_table(session):
+                logger.warning("bot_tokens table is missing; returning empty bot token list")
+                return []
+
             conditions = ["1=1"]
             params = {}
             
@@ -176,6 +199,10 @@ class BotTokensRepository:
         params["updated_at_utc"] = utc_now_iso()
         
         with get_db_session() as session:
+            if not self._has_bot_tokens_table(session):
+                logger.warning("bot_tokens table is missing; skipping bot token update")
+                return False
+
             result = session.execute(
                 text(f"""
                     UPDATE bot_tokens

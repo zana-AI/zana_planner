@@ -25,6 +25,30 @@ class InstancesRepository:
     def __init__(self) -> None:
         self.promises_repo = PromisesRepository()
 
+    @staticmethod
+    def _template_join_fields(session) -> str:
+        """Return SQL fragment for template fields, adapting to schema version.
+
+        Migration 004 drops template_kind and target_direction from
+        promise_templates.  When those columns are absent we fall back to
+        sensible defaults so callers always get the expected keys.
+        """
+        try:
+            has_legacy = session.execute(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'promise_templates'
+                      AND column_name = 'template_kind'
+                    LIMIT 1
+                """)
+            ).fetchone()
+            if has_legacy:
+                return "t.title, t.category, t.template_kind, t.target_direction"
+        except Exception:
+            pass
+        return "t.title, t.category, 'commitment' as template_kind, 'at_least' as target_direction"
+
     def subscribe_template(
         self,
         user_id: int,
@@ -142,12 +166,13 @@ class InstancesRepository:
         """List all active instances for a user."""
         user = str(user_id)
         with get_db_session() as session:
+            t_fields = self._template_join_fields(session)
             rows = session.execute(
-                text("""
+                text(f"""
                     SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
                            i.metric_type, i.target_value, i.estimated_hours_per_unit,
                            i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
-                           t.title, t.category, t.template_kind, t.target_direction
+                           {t_fields}
                     FROM promise_instances i
                     JOIN promise_templates t ON i.template_id = t.template_id
                     WHERE i.user_id = :user_id AND i.status = 'active'
@@ -162,12 +187,13 @@ class InstancesRepository:
         """Get a single instance by ID."""
         user = str(user_id)
         with get_db_session() as session:
+            t_fields = self._template_join_fields(session)
             row = session.execute(
-                text("""
+                text(f"""
                     SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
                            i.metric_type, i.target_value, i.estimated_hours_per_unit,
                            i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
-                           t.title, t.category, t.template_kind, t.target_direction
+                           {t_fields}
                     FROM promise_instances i
                     JOIN promise_templates t ON i.template_id = t.template_id
                     WHERE i.user_id = :user_id AND i.instance_id = :instance_id
@@ -184,12 +210,13 @@ class InstancesRepository:
         """Get instance by promise_uuid."""
         user = str(user_id)
         with get_db_session() as session:
+            t_fields = self._template_join_fields(session)
             row = session.execute(
-                text("""
+                text(f"""
                     SELECT i.instance_id, i.user_id, i.template_id, i.promise_uuid, i.status,
                            i.metric_type, i.target_value, i.estimated_hours_per_unit,
                            i.start_date, i.end_date, i.created_at_utc, i.updated_at_utc,
-                           t.title, t.category, t.template_kind, t.target_direction
+                           {t_fields}
                     FROM promise_instances i
                     JOIN promise_templates t ON i.template_id = t.template_id
                     WHERE i.user_id = :user_id AND i.promise_uuid = :promise_uuid

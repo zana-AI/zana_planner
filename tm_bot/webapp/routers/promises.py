@@ -60,48 +60,49 @@ async def update_promise_visibility(
             if not promise_uuid:
                 logger.warning(f"Could not resolve promise_uuid for promise {promise_id}, skipping template creation")
             else:
-                # Build canonical key: normalized text + metric type + target
                 normalized_text = promise.text.lower().strip().replace("_", " ").replace("  ", " ")
-                # Determine metric type from promise (hours_per_week > 0 = hours, else count)
                 metric_type = "hours" if promise.hours_per_week > 0 else "count"
                 target_value = promise.hours_per_week if metric_type == "hours" else 0.0
-                canonical_key = f"{normalized_text}|{metric_type}|{target_value}"
+                title = promise.text.replace("_", " ")
                 
-                # Check if template with this canonical_key exists
+                # Deduplicate: look for an existing template by title + category + metric
                 with get_db_session() as session:
-                    existing_template = session.execute(
-                        text("""
-                            SELECT template_id FROM promise_templates
-                            WHERE canonical_key = :canonical_key
-                            LIMIT 1
-                        """),
-                        {"canonical_key": canonical_key}
-                    ).fetchone()
+                    has_canonical = templates_repo._has_column(session, "promise_templates", "canonical_key")
+                    if has_canonical:
+                        canonical_key = f"{normalized_text}|{metric_type}|{target_value}"
+                        existing_template = session.execute(
+                            text("""
+                                SELECT template_id FROM promise_templates
+                                WHERE canonical_key = :canonical_key
+                                LIMIT 1
+                            """),
+                            {"canonical_key": canonical_key}
+                        ).fetchone()
+                    else:
+                        existing_template = session.execute(
+                            text("""
+                                SELECT template_id FROM promise_templates
+                                WHERE LOWER(title) = :title
+                                  AND category = 'general'
+                                  AND metric_type = :metric_type
+                                  AND target_value = :target_value
+                                LIMIT 1
+                            """),
+                            {"title": normalized_text, "metric_type": metric_type, "target_value": target_value}
+                        ).fetchone()
                 
                 template_id = None
                 if existing_template:
                     template_id = existing_template[0]
                 else:
-                    # Create new template from promise
                     template_data = {
-                        "title": promise.text.replace("_", " "),
+                        "title": title,
+                        "description": f"Track progress on {title}",
                         "category": "general",
-                        "level": "beginner",
-                        "why": f"Track progress on {promise.text.replace('_', ' ')}",
-                        "done": f"Complete {promise.text.replace('_', ' ')}",
-                        "effort": "medium",
-                        "template_kind": "commitment",
                         "metric_type": metric_type,
                         "target_value": target_value,
-                        "target_direction": "at_least",
-                        "estimated_hours_per_unit": 1.0,
-                        "duration_type": "week" if promise.recurring else "one_time",
-                        "duration_weeks": 1 if promise.recurring else None,
                         "is_active": True,
-                        "canonical_key": canonical_key,
                         "created_by_user_id": str(user_id),
-                        "source_promise_uuid": promise_uuid,
-                        "origin": "user_public"
                     }
                     template_id = templates_repo.create_template(template_data)
                 
