@@ -534,12 +534,8 @@ class MessageHandlers:
         """Handle voice messages with ASR and optional TTS response."""
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
-        
-        # Extract and update user info
-        self._update_user_info(user_id, update.effective_user)
-        # Fetch avatar in background (non-blocking)
-        await self._update_user_avatar_async(context, user_id)
-        
+        # User info and avatar updated in PlannerBot.dispatch()
+
         # Get voice file
         voice = update.effective_message.voice
         if not voice:
@@ -562,16 +558,16 @@ class MessageHandlers:
             
             # Check if there's a text caption with the voice message
             voice_caption = update.effective_message.caption or ""
-            
-            # Send acknowledgment only in text mode.
-            if not voice_mode_enabled:
+            # Avoid duplicate ack: if dispatch already sent "Thinking...", skip voice_received
+            pre_sent_processing = (context.user_data or {}).get("_processing_msg") if context else None
+            if not voice_mode_enabled and not pre_sent_processing:
                 ack_message = get_message("voice_received", user_lang)
                 await self.response_service.reply_text(
                     update, ack_message,
                     user_id=user_id,
-                    log_conversation=False  # Don't log acknowledgment
+                    log_conversation=False
                 )
-            
+
             # If first time, ask about voice mode preference (but still process the message)
             if settings.voice_mode is None:
                 message = get_message("voice_mode_prompt", user_lang)
@@ -624,22 +620,22 @@ class MessageHandlers:
                     )
                 return
             
-            # Send quick processing message
-            processing_msg = None
-            if not voice_mode_enabled:
+            # Use pre-sent "Thinking..." from dispatch when present; else send one (e.g. CLI)
+            processing_msg = (context.user_data or {}).pop("_processing_msg", None) if context else None
+            if not voice_mode_enabled and processing_msg is None:
                 processing_msg = await self.response_service.send_processing_message(
                     update, user_id=user_id, user_lang=user_lang
                 )
-            
+
             # Create progress callback to show plan to user
             plan_message_to_send = None
-            
+
             def progress_callback(event: str, payload: dict):
                 nonlocal plan_message_to_send
                 if event == "plan":
                     steps = payload.get("steps", [])
                     plan_message_to_send = self._format_plan_for_user(steps)
-            
+
             # Process transcribed text as a regular message
             llm_response = self.llm_handler.get_response_api(
                 user_input, str(user_id), 
@@ -939,12 +935,8 @@ class MessageHandlers:
         user_lang = get_user_language(update.effective_user)
         settings = self.plan_keeper.settings_service.get_settings(user_id)
         voice_mode_enabled = self._is_voice_mode_enabled(settings)
-        
-        # Extract and update user info
-        self._update_user_info(user_id, update.effective_user)
-        # Fetch avatar in background (non-blocking)
-        await self._update_user_avatar_async(context, user_id)
-        
+        # User info and avatar updated in PlannerBot.dispatch()
+
         msg = update.effective_message
         
         # Get image file
@@ -965,15 +957,16 @@ class MessageHandlers:
         await file.download_to_drive(path)
         
         try:
-            # Send acknowledgment only in text mode.
-            if not voice_mode_enabled:
+            # Avoid duplicate ack: if dispatch already sent "Thinking...", skip image_received
+            pre_sent_processing = (context.user_data or {}).get("_processing_msg") if context else None
+            if not voice_mode_enabled and not pre_sent_processing:
                 ack_message = get_message("image_received", user_lang)
                 await self.response_service.reply_text(
                     update, ack_message,
                     user_id=user_id,
-                    log_conversation=False  # Don't log acknowledgment
+                    log_conversation=False
                 )
-            
+
             # Parse image with VLM
             try:
                 if self.image_service is None:
@@ -1019,17 +1012,14 @@ class MessageHandlers:
                 # Use extracted text as user message input with context
                 # This helps the LLM understand it's processing extracted image content
                 user_message = f"I've extracted the following content from an image:\n\n{extracted_text}\n\nPlease help me process this content."
-                
-                # Process through LLM
-                user_lang_code = user_lang.value if user_lang else "en"
-                
-                # Send quick processing message
-                processing_msg = None
-                if not voice_mode_enabled:
+
+                # Use pre-sent "Thinking..." from dispatch when present; else send one (e.g. CLI)
+                processing_msg = (context.user_data or {}).pop("_processing_msg", None) if context else None
+                if not voice_mode_enabled and processing_msg is None:
                     processing_msg = await self.response_service.send_processing_message(
                         update, user_id=user_id, user_lang=user_lang
                     )
-                
+
                 # Create progress callback to show plan to user
                 plan_message_to_send = None
                 
@@ -1221,20 +1211,7 @@ class MessageHandlers:
                 )
                 return
             
-            # Extract and update user info (first_name, username, last_seen)
-            self._update_user_info(user_id, update.effective_user)
-            # Fetch avatar in background (non-blocking)
-            await self._update_user_avatar_async(context, user_id)
-            
-            # Log user message
-            self.response_service.log_user_message(
-                user_id=user_id,
-                # Keep logs faithful to what user actually typed, even when queue
-                # builds a synthetic coalesced prompt for the model.
-                content=update.message.text or user_message,
-                message_id=update.message.message_id,
-                chat_id=update.effective_chat.id if update.effective_chat else None,
-            )
+            # User info, avatar, and inbound log done in PlannerBot.dispatch()
 
             # Check for broadcast state
             broadcast_state = context.user_data.get('broadcast_state') if context.user_data else None
@@ -1410,23 +1387,23 @@ class MessageHandlers:
                         f"Clarifications provided:\n{fields_block}\n"
                     ).strip()
                     user_lang_code = user_lang.value if user_lang else "en"
-                
-                # Send quick processing message
-                processing_msg = None
-                if not voice_mode_enabled:
+
+                # Use pre-sent "Thinking..." from dispatch when present; else send one (e.g. CLI)
+                processing_msg = (context.user_data or {}).pop("_processing_msg", None) if hasattr(context, "user_data") else None
+                if not voice_mode_enabled and processing_msg is None:
                     processing_msg = await self.response_service.send_processing_message(
                         update, user_id=user_id, user_lang=user_lang
                     )
-                
+
                 # Create progress callback to show plan to user
                 plan_message_to_send = None
-                
+
                 def progress_callback(event: str, payload: dict):
                     nonlocal plan_message_to_send
                     if event == "plan":
                         steps = payload.get("steps", [])
                         plan_message_to_send = self._format_plan_for_user(steps)
-                
+
                 llm_response = self.llm_handler.get_response_api(
                     augmented_message, user_id, 
                     user_language=user_lang_code,
@@ -1578,23 +1555,23 @@ class MessageHandlers:
             
             # Get user language code for LLM
             user_lang_code = user_lang.value if user_lang else "en"
-            
-            # Send quick processing message
-            processing_msg = None
-            if not voice_mode_enabled:
+
+            # Use pre-sent "Thinking..." from dispatch when present; else send one (e.g. CLI)
+            processing_msg = (context.user_data or {}).pop("_processing_msg", None) if hasattr(context, "user_data") else None
+            if not voice_mode_enabled and processing_msg is None:
                 processing_msg = await self.response_service.send_processing_message(
                     update, user_id=user_id, user_lang=user_lang
                 )
-            
+
             # Create progress callback to show plan to user
             plan_message_to_send = None
-            
+
             def progress_callback(event: str, payload: dict):
                 nonlocal plan_message_to_send
                 if event == "plan":
                     steps = payload.get("steps", [])
                     plan_message_to_send = self._format_plan_for_user(steps)
-            
+
             llm_response = self.llm_handler.get_response_api(
                 user_message, user_id, 
                 user_language=user_lang_code,

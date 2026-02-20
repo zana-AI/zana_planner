@@ -56,12 +56,9 @@ class ScenarioTestRunner:
         self.adapter = MockPlatformAdapter()
         self.bot = PlannerBot(self.adapter, root_dir=self.root_dir)
         
-        # Create handler wrapper
+        # Create handler wrapper (routes through bot.dispatch())
         if self.bot.message_handlers and self.bot.callback_handlers:
-            self.handler_wrapper = CLIHandlerWrapper(
-                self.bot.message_handlers,
-                self.bot.callback_handlers
-            )
+            self.handler_wrapper = CLIHandlerWrapper(bot=self.bot)
     
     async def teardown(self):
         """Clean up after tests."""

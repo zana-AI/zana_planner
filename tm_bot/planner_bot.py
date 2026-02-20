@@ -7,6 +7,7 @@ import asyncio
 import os
 import subprocess
 import sys
+from typing import Optional
 from unittest.mock import Mock
 
 # Platform abstraction imports
@@ -30,11 +31,30 @@ from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
 from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
-from handlers.messages_store import initialize_message_store
+from handlers.messages_store import initialize_message_store, get_user_language
+from router_types import InputContext
 from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Command name -> MessageHandlers method for central routing
+COMMAND_ROUTE_MAP = {
+    "start": "start",
+    "me": "cmd_me",
+    "promises": "list_promises",
+    "nightly": "nightly_reminders",
+    "morning": "morning_reminders",
+    "weekly": "weekly_report",
+    "zana": "plan_by_zana",
+    "pomodoro": "pomodoro",
+    "settimezone": "cmd_settimezone",
+    "language": "cmd_language",
+    "version": "cmd_version",
+    "broadcast": "cmd_broadcast",
+    "club": "cmd_club",
+    "admin": "cmd_admin",
+}
 
 class PlannerBot:
     """
@@ -156,49 +176,385 @@ class PlannerBot:
         if self.application:
             self._register_handlers()
         
-        # For CLI adapter, set handlers so it can process input
+        # For CLI adapter, set bot so input is routed through dispatch()
         if hasattr(platform_adapter, 'set_handlers') and self.message_handlers:
-            platform_adapter.set_handlers(self.message_handlers, self.callback_handlers)
+            platform_adapter.set_handlers(self)
+
+    def _build_input_context(self, update, context) -> InputContext:
+        """
+        Build a platform-agnostic InputContext from a Telegram Update.
+        Used by dispatch() to classify and route all incoming inputs.
+        """
+        from telegram import MessageEntity
+        user_id = 0
+        chat_id = 0
+        input_type = "unknown"
+        raw_text = None
+        command = None
+        command_args = []
+        callback_data = None
+        message_id = None
+        metadata = {}
+
+        if getattr(update, "callback_query", None):
+            cq = update.callback_query
+            user_id = cq.from_user.id if cq.from_user else 0
+            chat_id = cq.message.chat_id if cq.message else user_id
+            input_type = "callback"
+            callback_data = cq.data
+            message_id = cq.message.message_id if cq.message else None
+        elif getattr(update, "poll_answer", None):
+            pa = update.poll_answer
+            user_id = pa.user.id if pa.user else 0
+            chat_id = user_id
+            if getattr(pa, "voter_chat", None) and hasattr(pa.voter_chat, "id"):
+                chat_id = pa.voter_chat.id
+            input_type = "poll_answer"
+            metadata["poll_id"] = getattr(pa, "poll_id", None)
+            metadata["option_ids"] = getattr(pa, "option_ids", [])
+        elif getattr(update, "message_reaction", None):
+            mr = update.message_reaction
+            user_id = mr.user.id if getattr(mr, "user", None) and mr.user else 0
+            chat_id = getattr(mr, "chat", None)
+            if chat_id and hasattr(chat_id, "id"):
+                chat_id = chat_id.id
+            chat_id = chat_id or user_id
+            input_type = "reaction"
+            metadata["message_id"] = getattr(mr, "message_id", None)
+            metadata["old_reaction"] = getattr(mr, "old_reaction", None)
+            metadata["new_reaction"] = getattr(mr, "new_reaction", None)
+        elif getattr(update, "message_reaction_count", None):
+            mrc = update.message_reaction_count
+            chat_id = getattr(mrc, "chat", None)
+            if chat_id and hasattr(chat_id, "id"):
+                chat_id = chat_id.id
+            else:
+                chat_id = 0
+            input_type = "reaction"
+            metadata["message_id"] = getattr(mrc, "message_id", None)
+            metadata["reactions"] = getattr(mrc, "reactions", None)
+        elif getattr(update, "my_chat_member", None) or getattr(update, "chat_member", None):
+            cm = update.my_chat_member or update.chat_member
+            user_id = cm.from_user.id if cm.from_user else 0
+            chat_id = cm.chat.id if cm.chat else user_id
+            input_type = "chat_member"
+            metadata["old_chat_member"] = getattr(cm, "old_chat_member", None)
+            metadata["new_chat_member"] = getattr(cm, "new_chat_member", None)
+        elif getattr(update, "edited_message", None):
+            msg = update.edited_message
+            user_id = msg.from_user.id if msg.from_user else 0
+            chat_id = msg.chat.id if msg.chat else user_id
+            message_id = msg.message_id
+            input_type = "edited_message"
+            raw_text = (msg.text or msg.caption or "").strip() or None
+        elif getattr(update, "effective_message", None):
+            msg = update.effective_message
+            user_id = update.effective_user.id if update.effective_user else 0
+            chat_id = update.effective_chat.id if update.effective_chat else user_id
+            message_id = msg.message_id if msg else None
+
+            if getattr(msg, "pinned_message", None):
+                input_type = "pinned_message"
+                metadata["pinned_message"] = msg.pinned_message
+            elif getattr(msg, "voice", None):
+                input_type = "voice"
+            elif getattr(msg, "photo", None) or (
+                getattr(msg, "document", None)
+                and getattr(msg.document, "mime_type", None)
+                and (msg.document.mime_type or "").startswith("image/")
+            ):
+                input_type = "image"
+            elif getattr(msg, "location", None):
+                input_type = "location"
+                metadata["latitude"] = msg.location.latitude
+                metadata["longitude"] = msg.location.longitude
+            elif getattr(msg, "poll", None):
+                input_type = "poll"
+            elif getattr(msg, "text", None):
+                text = msg.text or ""
+                entities = getattr(msg, "entities", None) or []
+                is_command = any(
+                    getattr(e, "type", None) == MessageEntity.BOT_COMMAND
+                    for e in entities
+                )
+                if is_command and text.startswith("/"):
+                    parts = text.lstrip("/").split(maxsplit=1)
+                    command = parts[0].lower() if parts else None
+                    command_args = parts[1].split() if len(parts) > 1 and parts[1] else []
+                    input_type = "command"
+                    raw_text = text
+                else:
+                    input_type = "text"
+                    raw_text = text
+            else:
+                input_type = "unknown"
+                raw_text = getattr(msg, "caption", None) or ""
+
+        language = get_user_language(user_id) if user_id else None
+        return InputContext(
+            user_id=user_id,
+            chat_id=chat_id,
+            input_type=input_type,
+            raw_text=raw_text,
+            command=command,
+            command_args=command_args,
+            language=language,
+            platform_update=update,
+            platform_context=context,
+            callback_data=callback_data,
+            metadata=metadata,
+            message_id=message_id,
+        )
+
+    def _get_effective_user(self, update):
+        """Extract Telegram User from any update type (message, callback, poll_answer)."""
+        if getattr(update, "callback_query", None) and update.callback_query.from_user:
+            return update.callback_query.from_user
+        if getattr(update, "poll_answer", None) and update.poll_answer.user:
+            return update.poll_answer.user
+        if getattr(update, "my_chat_member", None) and update.my_chat_member.from_user:
+            return update.my_chat_member.from_user
+        if getattr(update, "chat_member", None) and update.chat_member.from_user:
+            return update.chat_member.from_user
+        return getattr(update, "effective_user", None)
+
+    async def dispatch(self, update, context) -> None:
+        """
+        Single entry point for all incoming inputs (commands, text, voice, image, callback, etc.).
+        Builds InputContext, applies cross-cutting concerns, then routes.
+        """
+        ctx = self._build_input_context(update, context)
+        if context and hasattr(context, "user_data") and context.user_data is not None:
+            context.user_data["_input_context"] = ctx
+
+        # Cross-cutting: update user info and avatar (for any input with a user)
+        effective_user = self._get_effective_user(update)
+        if ctx.user_id and effective_user:
+            self.message_handlers._update_user_info(ctx.user_id, effective_user)
+        if ctx.user_id and context:
+            await self.message_handlers._update_user_avatar_async(context, ctx.user_id)
+
+        # Cross-cutting: log inbound message (command, text, or placeholder for voice/image)
+        content_to_log = None
+        if ctx.input_type == "command" and ctx.command:
+            content_to_log = "/" + ctx.command
+            if ctx.command_args:
+                content_to_log += " " + " ".join(ctx.command_args)
+        elif ctx.raw_text and ctx.input_type == "text":
+            content_to_log = ctx.raw_text
+        elif ctx.input_type == "voice":
+            content_to_log = "[voice]"
+        elif ctx.input_type == "image":
+            content_to_log = "[image]"
+        if content_to_log is not None and ctx.user_id:
+            self._original_response_service.log_user_message(
+                user_id=ctx.user_id,
+                content=content_to_log,
+                message_id=ctx.message_id,
+                chat_id=ctx.chat_id,
+            )
+
+        # Ack policy: send "Thinking..." only for LLM-bound types when response will be editable text
+        processing_msg = None
+        llm_bound = ctx.input_type in ("text", "voice", "image")
+        if llm_bound and ctx.user_id:
+            settings = self.plan_keeper.settings_service.get_settings(ctx.user_id)
+            voice_mode_enabled = bool(settings and getattr(settings, "voice_mode", None) == "enabled")
+            if ctx.input_type == "text" or not voice_mode_enabled:
+                processing_msg = await self._original_response_service.send_processing_message(
+                    update, user_id=ctx.user_id, user_lang=ctx.language
+                )
+                if processing_msg and context and hasattr(context, "user_data") and context.user_data is not None:
+                    context.user_data["_processing_msg"] = processing_msg
+        ctx.processing_msg = processing_msg
+
+        # Route by input_type
+        if ctx.input_type == "callback":
+            await self._route_callback(ctx)
+            return
+        if ctx.input_type == "command" and ctx.command:
+            await self._route_command(ctx)
+            return
+        if ctx.input_type == "text":
+            await self._route_to_agent(ctx)
+            return
+        if ctx.input_type == "voice":
+            await self.message_handlers.on_voice(update, context)
+            return
+        if ctx.input_type == "image":
+            await self.message_handlers.on_image(update, context)
+            return
+        if ctx.input_type == "location":
+            await self.message_handlers.on_location_shared(update, context)
+            return
+        if ctx.input_type == "poll":
+            await self.message_handlers.on_poll_created(update, context)
+            return
+        if ctx.input_type == "poll_answer":
+            await self.message_handlers.on_poll_answer(update, context)
+            return
+        if ctx.input_type == "edited_message":
+            await self._on_message_edited(ctx)
+            return
+        if ctx.input_type == "reaction":
+            await self._on_reaction(ctx)
+            return
+        if ctx.input_type == "pinned_message":
+            await self._on_message_pinned(ctx)
+            return
+        if ctx.input_type == "chat_member":
+            await self._on_chat_member(ctx)
+            return
+
+        logger.warning("dispatch: unhandled input_type=%s", ctx.input_type)
+        await self._route_to_agent(ctx)
+
+    async def _route_command(self, ctx: InputContext) -> None:
+        """Route command to the corresponding MessageHandlers method."""
+        handler_name = COMMAND_ROUTE_MAP.get(ctx.command)
+        if not handler_name:
+            logger.warning("Unknown command: %s", ctx.command)
+            return
+        handler = getattr(self.message_handlers, handler_name, None)
+        if not handler:
+            logger.warning("Handler not found for command %s: %s", ctx.command, handler_name)
+            return
+        await handler(ctx.platform_update, ctx.platform_context)
+
+    async def _route_callback(self, ctx: InputContext) -> None:
+        """Delegate callback to CallbackHandlers."""
+        await self.callback_handlers.handle_promise_callback(
+            ctx.platform_update, ctx.platform_context
+        )
+
+    async def _route_to_agent(self, ctx: InputContext) -> None:
+        """Route text to the LLM agent pipeline."""
+        await self.message_handlers.handle_message(
+            ctx.platform_update, ctx.platform_context
+        )
+
+    async def _on_message_edited(self, ctx: InputContext) -> None:
+        """Log edited message; update last_seen. No reply."""
+        if ctx.user_id:
+            self._log_structured_event(
+                event_type="edited_message",
+                user_id=ctx.user_id,
+                chat_id=ctx.chat_id,
+                source_message_id=ctx.message_id,
+                content_preview=(ctx.raw_text or "")[:200] if ctx.raw_text else None,
+                payload={"raw_text_length": len(ctx.raw_text or "")},
+            )
+
+    async def _on_reaction(self, ctx: InputContext) -> None:
+        """Log message reaction; update last_seen. No reply (or optional lightweight response later)."""
+        if ctx.user_id:
+            self._log_structured_event(
+                event_type="message_reaction",
+                user_id=ctx.user_id,
+                chat_id=ctx.chat_id,
+                source_message_id=ctx.metadata.get("message_id"),
+                content_preview=None,
+                payload=dict(ctx.metadata),
+            )
+
+    async def _on_message_pinned(self, ctx: InputContext) -> None:
+        """Log pinned message; update last_seen. No reply."""
+        if ctx.user_id:
+            self._log_structured_event(
+                event_type="pinned_message",
+                user_id=ctx.user_id,
+                chat_id=ctx.chat_id,
+                source_message_id=ctx.message_id,
+                content_preview=None,
+                payload=dict(ctx.metadata),
+            )
+
+    async def _on_chat_member(self, ctx: InputContext) -> None:
+        """Log chat member update; update last_seen. No reply."""
+        if ctx.user_id:
+            self._log_structured_event(
+                event_type="chat_member",
+                user_id=ctx.user_id,
+                chat_id=ctx.chat_id,
+                source_message_id=None,
+                content_preview=None,
+                payload=dict(ctx.metadata),
+            )
+
+    def _log_structured_event(
+        self,
+        event_type: str,
+        user_id: int,
+        chat_id: int,
+        source_message_id: Optional[int],
+        content_preview: Optional[str],
+        payload: dict,
+    ) -> None:
+        """Log a structured event for non-text interactions (edits, reactions, pins, chat_member)."""
+        from datetime import datetime
+        try:
+            settings = self.plan_keeper.settings_service.get_settings(user_id)
+            if hasattr(settings, "last_seen"):
+                settings.last_seen = datetime.now()
+                self.plan_keeper.settings_service.save_settings(settings)
+        except Exception as e:
+            logger.debug("Could not update last_seen for event %s: %s", event_type, e)
+        event_content = f"[{event_type}]"
+        if content_preview:
+            event_content += " " + content_preview[:100]
+        try:
+            self._original_response_service.log_user_message(
+                user_id=user_id,
+                content=event_content,
+                message_id=source_message_id,
+                chat_id=chat_id,
+            )
+        except Exception as e:
+            logger.warning("Could not log structured event %s: %s", event_type, e)
 
     def _register_handlers(self) -> None:
-        """Register all command and message handlers."""
-        # Command handlers
-        self.application.add_handler(CommandHandler("start", self.message_handlers.start))
-        self.application.add_handler(CommandHandler("me", self.message_handlers.cmd_me))
-        self.application.add_handler(CommandHandler("promises", self.message_handlers.list_promises))
-        self.application.add_handler(CommandHandler("nightly", self.message_handlers.nightly_reminders))
-        self.application.add_handler(CommandHandler("morning", self.message_handlers.morning_reminders))
-        self.application.add_handler(CommandHandler("weekly", self.message_handlers.weekly_report))
-        self.application.add_handler(CommandHandler("zana", self.message_handlers.plan_by_zana))
-        self.application.add_handler(CommandHandler("pomodoro", self.message_handlers.pomodoro))
-        self.application.add_handler(CommandHandler("settimezone", self.message_handlers.cmd_settimezone))
-        self.application.add_handler(CommandHandler("language", self.message_handlers.cmd_language))
-        self.application.add_handler(CommandHandler("version", self.message_handlers.cmd_version))
-        self.application.add_handler(CommandHandler("broadcast", self.message_handlers.cmd_broadcast))
-        self.application.add_handler(CommandHandler("club", self.message_handlers.cmd_club))
-        self.application.add_handler(CommandHandler("admin", self.message_handlers.cmd_admin))
+        """Register all command and message handlers. All inputs land on dispatch()."""
+        # All commands go through central dispatch
+        for cmd in COMMAND_ROUTE_MAP:
+            self.application.add_handler(CommandHandler(cmd, self.dispatch))
 
-        # Message handlers
+        # Message handlers (text, location, voice, image, poll) -> dispatch
         self.application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.message_handlers.handle_message))
-        self.application.add_handler(MessageHandler(filters.LOCATION, self.message_handlers.on_location_shared))
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.dispatch)
+        )
+        self.application.add_handler(MessageHandler(filters.LOCATION, self.dispatch))
+        self.application.add_handler(MessageHandler(filters.VOICE, self.dispatch))
+        self.application.add_handler(
+            MessageHandler(
+                filters.PHOTO | (filters.Document.MimeType("image/")),
+                self.dispatch,
+            )
+        )
+        self.application.add_handler(MessageHandler(filters.POLL, self.dispatch))
 
-        # Callback query handler
-        self.application.add_handler(CallbackQueryHandler(self.callback_handlers.handle_promise_callback))
+        # Edited messages -> dispatch
+        self.application.add_handler(
+            MessageHandler(filters.UpdateType.EDITED_MESSAGE, self.dispatch)
+        )
+        # Pinned message (service message) -> dispatch
+        self.application.add_handler(
+            MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, self.dispatch)
+        )
 
-        # Voice messages (PTT / voice notes)
-        self.application.add_handler(MessageHandler(filters.VOICE, self.message_handlers.on_voice))
+        # Callback query handler -> dispatch
+        self.application.add_handler(CallbackQueryHandler(self.dispatch))
 
-        # Images (photos + image docs like PNG/JPG sent as files)
-        self.application.add_handler(MessageHandler(filters.PHOTO | (filters.Document.MimeType("image/")),
-                self.message_handlers.on_image))
-
-        # Polls (receive poll messages in chats)
-        self.application.add_handler(MessageHandler(filters.POLL, self.message_handlers.on_poll_created))
-
-        # Poll answers (when users vote)
+        # Poll answers (when users vote) -> dispatch
         from telegram.ext import PollAnswerHandler
-        self.application.add_handler(PollAnswerHandler(self.message_handlers.on_poll_answer))
+        self.application.add_handler(PollAnswerHandler(self.dispatch))
+
+        # Message reactions -> dispatch
+        from telegram.ext import MessageReactionHandler
+        self.application.add_handler(MessageReactionHandler(self.dispatch))
+
+        # Chat member updates -> dispatch
+        from telegram.ext import ChatMemberHandler
+        self.application.add_handler(ChatMemberHandler(self.dispatch, ChatMemberHandler.CHAT_MEMBER))
 
         # “Todo list” style texts (checkboxes / markdown lists)
         # Option A: keep your general TEXT handler and route inside it
@@ -303,7 +659,15 @@ class PlannerBot:
         """
         try:
             if hasattr(self.platform_adapter, "application"):
-                self.application.run_polling()
+                # Request update types needed for dispatch (messages, edits, reactions, pins, chat_member)
+                allowed = [
+                    "message", "edited_message", "channel_post", "edited_channel_post",
+                    "callback_query", "poll", "poll_answer",
+                    "my_chat_member", "chat_member",
+                    "message_reaction", "message_reaction_count",
+                ]
+                logger.info("run_polling with allowed_updates: %s", allowed)
+                self.application.run_polling(allowed_updates=allowed)
             else:
                 asyncio.run(self.platform_adapter.start())
         except BaseException as e:

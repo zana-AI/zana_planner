@@ -97,14 +97,10 @@ class CLIPlatformAdapter(IPlatformAdapter):
             "platform": "cli"
         }
     
-    def set_handlers(self, message_handlers, callback_handlers):
-        """Set the bot's handlers (called by PlannerBot after initialization)."""
-        self._message_handlers_obj = message_handlers
-        self._callback_handlers_obj = callback_handlers
-        
-        # Create CLI handler wrapper
+    def set_handlers(self, bot):
+        """Set the bot so CLI routes all input through bot.dispatch() (called by PlannerBot)."""
         from .cli_handler_wrapper import CLIHandlerWrapper
-        self._handler_wrapper = CLIHandlerWrapper(message_handlers, callback_handlers)
+        self._handler_wrapper = CLIHandlerWrapper(bot=bot)
     
     async def process_input(self, text: str, user_id: Optional[int] = None) -> Optional[BotResponse]:
         """
