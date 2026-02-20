@@ -19,6 +19,8 @@ from langchain_openai import ChatOpenAI
 _llm_call_tracker: deque = deque(maxlen=100)
 _current_memory_recall_context: ContextVar[str] = ContextVar("_current_memory_recall_context", default="")
 
+import copy
+
 from llms.agent import AgentState, create_plan_execute_graph, create_routed_plan_execute_graph
 import llms.agent as agent_module  # For accessing _llm_call_count
 from llms.func_utils import get_function_args_info
@@ -59,6 +61,33 @@ _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lowe
 
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
+
+
+def _resolve_schema_refs(schema: dict) -> dict:
+    """Resolve $ref pointers and strip $defs from a Pydantic v2 JSON schema.
+
+    Vertex AI / Gemini's protobuf Schema does not support the JSON Schema
+    ``$defs`` / ``$ref`` mechanism.  This helper inlines every ``$ref`` so the
+    resulting dict is self-contained and compatible with the API.
+    """
+    schema = copy.deepcopy(schema)
+    defs = schema.pop("$defs", None) or schema.pop("definitions", None) or {}
+
+    def _resolve(node):
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if ref and isinstance(ref, str):
+                # e.g. "#/$defs/PlanStep" -> "PlanStep"
+                ref_name = ref.rsplit("/", 1)[-1]
+                if ref_name in defs:
+                    return _resolve(copy.deepcopy(defs[ref_name]))
+                return node
+            return {k: _resolve(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [_resolve(item) for item in node]
+        return node
+
+    return _resolve(schema)
 
 # Define the schemas list
 schemas = [LLMResponse]  # , UserPromise, UserAction]
@@ -103,7 +132,7 @@ class LLMHandler:
                     **vertex_kwargs,
                     temperature=planner_temp,
                     response_mime_type="application/json",
-                    response_schema=Plan.model_json_schema(),
+                    response_schema=_resolve_schema_refs(Plan.model_json_schema()),
                 )
                 self.responder_model = ChatVertexAI(**vertex_kwargs, temperature=responder_temp)
                 self.chat_model = self.responder_model
