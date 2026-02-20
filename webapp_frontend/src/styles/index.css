@@ -2162,6 +2162,31 @@ textarea.modal-input {
   margin: 0 0 12px 0;
 }
 
+.admin-conversation-rich-content blockquote {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid rgba(91, 163, 245, 0.7);
+  background: rgba(91, 163, 245, 0.12);
+  border-radius: 6px;
+}
+
+.admin-conversation-rich-content pre {
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid rgba(232, 238, 252, 0.15);
+  background: rgba(11, 16, 32, 0.75);
+}
+
+.admin-conversation-rich-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.admin-conversation-rich-content a {
+  color: #7dc6ff;
+}
+
 .admin-message-input {
   width: 100%;
   padding: 12px;

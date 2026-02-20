@@ -443,6 +443,64 @@ class ApiClient {
   }
 
   /**
+   * Export conversation history for a user (admin only).
+   * Returns a downloadable file as Blob (HTML or JSON).
+   */
+  async exportUserConversations(
+    userId: string,
+    options: {
+      limit?: number;
+      messageType?: 'user' | 'bot';
+      format?: 'html' | 'json';
+    } = {}
+  ): Promise<Blob> {
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) params.append('limit', options.limit.toString());
+    if (options.messageType) params.append('message_type', options.messageType);
+    params.append('format', options.format || 'html');
+    const query = params.toString();
+
+    const headers: Record<string, string> = {};
+    const token = this.authToken || localStorage.getItem('telegram_auth_token');
+    const isTelegramMiniApp = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
+
+    if (isTelegramMiniApp && this.initData) {
+      headers['X-Telegram-Init-Data'] = this.initData;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      if (!this.authToken) {
+        this.authToken = token;
+      }
+    } else if (this.initData) {
+      headers['X-Telegram-Init-Data'] = this.initData;
+    }
+
+    const response = await fetch(`${API_BASE}/admin/users/${userId}/conversations/export?${query}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      let errorMessage: string;
+      if (errorData.detail) {
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (typeof errorData.detail === 'object') {
+          errorMessage = JSON.stringify(errorData.detail);
+        } else {
+          errorMessage = String(errorData.detail);
+        }
+      } else {
+        errorMessage = `HTTP error ${response.status}`;
+      }
+      throw new ApiError(response.status, errorMessage);
+    }
+
+    return response.blob();
+  }
+
+  /**
    * Get available bot tokens (admin only).
    */
   async getBotTokens(isActive?: boolean): Promise<BotToken[]> {

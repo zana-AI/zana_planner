@@ -10,10 +10,11 @@ import uuid
 import tempfile
 import threading
 import asyncio
+import html
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from ..dependencies import get_current_user, get_admin_user
 from ..schemas import (
     AdminUsersResponse, CreateBroadcastRequest, UpdateBroadcastRequest,
@@ -49,6 +50,219 @@ ADMIN_STATS_CACHE_TTL = timedelta(minutes=5)
 _test_runs: Dict[str, Dict[str, Any]] = {}
 _test_run_lock = threading.Lock()
 _test_run_active = False  # Guard to prevent concurrent runs
+
+
+_ALLOWED_EXPORT_HTML_TAGS = {
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "code", "pre", "blockquote", "a", "br"
+}
+_VOID_EXPORT_HTML_TAGS = {"br"}
+_ALLOWED_EXPORT_HTML_ATTRS = {
+    "a": {"href"},
+    "blockquote": {"expandable"},
+}
+_SAFE_EXPORT_LINK_RE = re.compile(r"^(https?://|mailto:|tg://|tg:)", re.IGNORECASE)
+_UNSAFE_EXPORT_TAG_RE = re.compile(r"<\s*/?\s*(script|style)[^>]*>", re.IGNORECASE)
+_UNSAFE_EXPORT_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL)
+_UNSAFE_EXPORT_JS_URL_RE = re.compile(r"javascript\s*:", re.IGNORECASE)
+
+
+class _ConversationExportSanitizer:
+    """Conservative sanitizer for bot HTML content in conversation exports."""
+
+    @staticmethod
+    def _sanitize_attr_value(attr_name: str, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = str(value).strip()
+        if not value:
+            return None
+        if attr_name == "href":
+            if not _SAFE_EXPORT_LINK_RE.match(value):
+                return None
+            if _UNSAFE_EXPORT_JS_URL_RE.search(value):
+                return None
+        return value
+
+    @classmethod
+    def sanitize(cls, raw_html: str) -> str:
+        source = "" if raw_html is None else str(raw_html)
+        source = _UNSAFE_EXPORT_TAG_RE.sub("", source)
+        source = _UNSAFE_EXPORT_HANDLER_RE.sub("", source)
+
+        parts: List[str] = []
+        tag_stack: List[str] = []
+        token_re = re.compile(r"(<[^>]+>)")
+        for token in token_re.split(source):
+            if not token:
+                continue
+            if not token.startswith("<"):
+                parts.append(html.escape(html.unescape(token)))
+                continue
+
+            is_end_tag = token.startswith("</")
+            tag_match = re.match(r"<\s*/?\s*([a-zA-Z0-9]+)", token)
+            if not tag_match:
+                continue
+            tag = tag_match.group(1).lower()
+            if tag not in _ALLOWED_EXPORT_HTML_TAGS:
+                continue
+
+            if is_end_tag:
+                if tag in _VOID_EXPORT_HTML_TAGS:
+                    continue
+                if tag in tag_stack:
+                    while tag_stack:
+                        open_tag = tag_stack.pop()
+                        parts.append(f"</{open_tag}>")
+                        if open_tag == tag:
+                            break
+                continue
+
+            attrs = ""
+            allowed_attrs = _ALLOWED_EXPORT_HTML_ATTRS.get(tag, set())
+            for attr_name, attr_value in re.findall(
+                r'([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(".*?"|\'.*?\'|[^\s>]+)',
+                token
+            ):
+                attr_name = attr_name.lower()
+                if attr_name not in allowed_attrs:
+                    continue
+                raw_value = attr_value.strip().strip('"').strip("'")
+                safe_value = cls._sanitize_attr_value(attr_name, raw_value)
+                if safe_value is None:
+                    continue
+                attrs += f' {attr_name}="{html.escape(safe_value, quote=True)}"'
+
+            if tag == "a":
+                attrs += ' rel="noopener noreferrer" target="_blank"'
+
+            if tag in _VOID_EXPORT_HTML_TAGS:
+                parts.append(f"<{tag}{attrs}>")
+            else:
+                parts.append(f"<{tag}{attrs}>")
+                tag_stack.append(tag)
+
+        while tag_stack:
+            parts.append(f"</{tag_stack.pop()}>")
+        return "".join(parts)
+
+
+def _build_conversation_export_html(
+    user_id: int,
+    messages: List[Dict[str, Any]],
+    generated_at_utc: str,
+) -> str:
+    rows: List[str] = []
+    for msg in messages:
+        is_user = msg.get("message_type") == "user"
+        message_type = "User" if is_user else "Bot"
+        created_at = html.escape(str(msg.get("created_at_utc") or ""))
+        if is_user:
+            plain_text = html.escape(html.unescape(str(msg.get("content") or "")))
+            body = f"<div class=\"message-text plain\">{plain_text}</div>"
+        else:
+            body = (
+                "<div class=\"message-text rich\">"
+                f"{_ConversationExportSanitizer.sanitize(str(msg.get('content') or ''))}"
+                "</div>"
+            )
+        bubble_class = "message-user" if is_user else "message-bot"
+        rows.append(
+            "<article class=\"message-row\">"
+            f"<header class=\"message-meta\">{message_type} | {created_at}</header>"
+            f"<section class=\"message-bubble {bubble_class}\">{body}</section>"
+            "</article>"
+        )
+
+    rendered_rows = "\n".join(rows) if rows else "<p class=\"empty\">No messages found.</p>"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conversation Export - User {user_id}</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: rgba(15, 23, 48, 0.65);
+      --text: #e8eefc;
+      --muted: rgba(232, 238, 252, 0.6);
+      --border: rgba(232, 238, 252, 0.15);
+      --user-bg: rgba(91, 163, 245, 0.2);
+      --bot-bg: rgba(232, 238, 252, 0.1);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at 20% 10%, #17264f, var(--bg));
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.5;
+    }}
+    .container {{ max-width: 920px; margin: 0 auto; }}
+    .title {{ margin: 0 0 6px; font-size: 1.4rem; }}
+    .subtitle {{ margin: 0 0 20px; color: var(--muted); font-size: 0.95rem; }}
+    .message-row {{ margin-bottom: 14px; }}
+    .message-meta {{ font-size: 0.78rem; color: var(--muted); margin-bottom: 6px; }}
+    .message-bubble {{
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: var(--panel);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }}
+    .message-user {{ background: var(--user-bg); }}
+    .message-bot {{ background: var(--bot-bg); }}
+    .message-text blockquote {{
+      border-left: 3px solid rgba(91, 163, 245, 0.7);
+      margin: 10px 0 0;
+      padding: 8px 12px;
+      background: rgba(91, 163, 245, 0.12);
+      border-radius: 6px;
+    }}
+    .message-text pre {{
+      background: rgba(11, 16, 32, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      overflow-x: auto;
+    }}
+    .message-text a {{ color: #7dc6ff; }}
+    .empty {{ color: var(--muted); }}
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1 class="title">Conversation Export</h1>
+    <p class="subtitle">User ID: {user_id} | Generated at UTC: {html.escape(generated_at_utc)}</p>
+    {rendered_rows}
+  </main>
+</body>
+</html>
+"""
+
+
+def _normalize_export_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for msg in messages:
+        normalized.append(
+            {
+                "id": msg.get("id"),
+                "user_id": msg.get("user_id"),
+                "chat_id": msg.get("chat_id"),
+                "message_id": msg.get("message_id"),
+                "message_type": msg.get("message_type"),
+                "content": msg.get("content") or "",
+                "created_at_utc": msg.get("created_at_utc"),
+                "conversation_session_id": msg.get("conversation_session_id"),
+                "conversation_session_time_tag_utc": msg.get("conversation_session_time_tag_utc"),
+            }
+        )
+    return normalized
 
 
 @router.get("/check")
@@ -311,6 +525,71 @@ async def get_user_conversations(
     except Exception as e:
         logger.exception(f"Error getting conversations for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch conversations: {str(e)}")
+
+
+@router.get("/users/{user_id}/conversations/export")
+async def export_user_conversations(
+    request: Request,
+    user_id: int,
+    limit: int = Query(default=1000, ge=1, le=10000),
+    message_type: Optional[str] = Query(None, description="Filter by 'user' or 'bot'"),
+    export_format: Literal["html", "json"] = Query(default="html", alias="format"),
+    admin_id: int = Depends(get_admin_user),
+):
+    """
+    Export conversation history for a user (admin only).
+
+    Supports HTML (human-readable rich document) and JSON (raw data for analysis).
+    """
+    try:
+        from repositories.conversation_repo import ConversationRepository
+
+        if message_type and message_type not in ["user", "bot"]:
+            raise HTTPException(status_code=400, detail="message_type must be 'user' or 'bot'")
+
+        conversation_repo = ConversationRepository()
+        messages_desc = conversation_repo.get_recent_history(
+            user_id=user_id,
+            limit=limit,
+            message_type=message_type,
+        )
+        messages = list(reversed(messages_desc))
+        normalized_messages = _normalize_export_messages(messages)
+
+        generated_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        filename = f"conversation_user_{user_id}_{timestamp}.{export_format}"
+
+        if export_format == "json":
+            payload = {
+                "generated_at_utc": generated_at_utc,
+                "user_id": str(user_id),
+                "limit": limit,
+                "message_type_filter": message_type,
+                "messages": normalized_messages,
+            }
+            content = json.dumps(payload, ensure_ascii=False, indent=2)
+            return Response(
+                content=content.encode("utf-8"),
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+        html_content = _build_conversation_export_html(
+            user_id=user_id,
+            messages=normalized_messages,
+            generated_at_utc=generated_at_utc,
+        )
+        return Response(
+            content=html_content.encode("utf-8"),
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error exporting conversations for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to export conversations: {str(e)}")
 
 
 @router.post("/broadcast", response_model=BroadcastResponse)
