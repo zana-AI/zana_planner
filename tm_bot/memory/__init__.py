@@ -16,6 +16,7 @@ from memory.config import (
 )
 from memory.read import memory_get
 from memory.search import memory_search
+from memory.write import memory_write
 from memory.flush import (
     resolve_memory_flush_prompt,
     run_memory_flush,
@@ -32,6 +33,7 @@ __all__ = [
     "is_memory_configured",
     "memory_get",
     "memory_search",
+    "memory_write",
     "resolve_memory_flush_prompt",
     "run_memory_flush",
     "should_run_memory_flush",

@@ -31,6 +31,7 @@ from memory import (
     is_flush_enabled,
     memory_get as memory_get_impl,
     memory_search as memory_search_impl,
+    memory_write as memory_write_impl,
     run_memory_flush,
     should_run_memory_flush,
 )
@@ -1501,6 +1502,26 @@ class LLMHandler:
                 description=(
                     "Safe snippet read from MEMORY.md or memory/*.md with optional from/lines; "
                     "use after memory_search to keep context small."
+                ),
+            )
+        )
+
+        def _memory_write_tool(text: str) -> str:
+            user_id = _current_user_id.get()
+            if not user_id:
+                return json.dumps({"ok": False, "error": "No active user"})
+            out = memory_write_impl(text, root_dir, user_id)
+            return json.dumps(out)
+
+        tools.append(
+            StructuredTool.from_function(
+                func=_memory_write_tool,
+                name="memory_write",
+                description=(
+                    "Save a durable memory about the user: preferences, decisions, facts, "
+                    "recurring patterns, or anything worth remembering across sessions. "
+                    "Use proactively when the user shares something worth persisting. "
+                    "Text is appended to memory/YYYY-MM-DD.md."
                 ),
             )
         )

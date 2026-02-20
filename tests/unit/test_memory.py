@@ -1,5 +1,5 @@
 """
-Unit tests for memory module: config, read, search, flush.
+Unit tests for memory module: config, read, search, write, flush.
 """
 
 import os
@@ -19,6 +19,7 @@ from memory.flush import (
 )
 from memory.read import memory_get
 from memory.search import memory_search
+from memory.write import memory_write
 
 
 @pytest.mark.unit
@@ -214,3 +215,56 @@ def test_run_memory_flush_appends_to_date_file(monkeypatch, tmp_path):
     target = tmp_path / "42" / "memory" / "2025-02-19.md"
     assert target.exists()
     assert "User prefers morning standups" in target.read_text(encoding="utf-8")
+
+
+# ── memory_write ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_memory_write_creates_date_file(tmp_path):
+    now = datetime(2026, 2, 20, 10, 30, tzinfo=timezone.utc)
+    out = memory_write("User likes Python.", str(tmp_path), "42", now_utc=now)
+    assert out["ok"] is True
+    assert out["path"] == "memory/2026-02-20.md"
+    target = tmp_path / "42" / "memory" / "2026-02-20.md"
+    assert target.exists()
+    assert "User likes Python." in target.read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_memory_write_appends_to_existing(tmp_path):
+    now = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    memory_write("First fact.", str(tmp_path), "42", now_utc=now)
+    memory_write("Second fact.", str(tmp_path), "42", now_utc=now)
+    target = tmp_path / "42" / "memory" / "2026-02-20.md"
+    content = target.read_text(encoding="utf-8")
+    assert "First fact." in content
+    assert "Second fact." in content
+    assert content.count("---") >= 2
+
+
+@pytest.mark.unit
+def test_memory_write_rejects_empty_text(tmp_path):
+    out = memory_write("", str(tmp_path), "42")
+    assert out["ok"] is False
+    assert "empty" in out["error"].lower()
+
+
+@pytest.mark.unit
+def test_memory_write_truncates_long_text(tmp_path):
+    now = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    long_text = "x" * 5000
+    out = memory_write(long_text, str(tmp_path), "42", now_utc=now)
+    assert out["ok"] is True
+    target = tmp_path / "42" / "memory" / "2026-02-20.md"
+    content = target.read_text(encoding="utf-8")
+    assert len(content.strip()) <= 4100
+
+
+@pytest.mark.unit
+def test_memory_write_then_get(tmp_path):
+    """Written memories should be readable via memory_get."""
+    now = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    memory_write("User prefers dark mode.", str(tmp_path), "7", now_utc=now)
+    out = memory_get("memory/2026-02-20.md", str(tmp_path), "7")
+    assert "User prefers dark mode." in out.get("text", "")
