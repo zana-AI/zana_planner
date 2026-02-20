@@ -197,8 +197,8 @@ class LLMHandler:
             "Examples: 'what should I focus on this week?', 'how can I improve my productivity?', 'am I on track with my goals?', 'help me plan my week'.\n"
             "- **social**: Community features (followers, following, feed, public promises, community interactions). "
             "Examples: 'who follows me?', 'show me my feed', 'who else is working on fitness?', 'follow user 123'.\n"
-            "- **engagement**: Casual chat, humor, keeping user engaged, no tools needed. "
-            "Examples: 'tell me a joke', 'how are you?', 'thanks', 'hi', casual banter.\n\n"
+            "- **engagement**: Casual chat, humor, sharing personal facts, keeping user engaged. "
+            "Examples: 'tell me a joke', 'how are you?', 'thanks', 'hi', 'my dog is called Rex', casual banter.\n\n"
             
             "=== ROUTING RULES ===\n"
             "- If the user wants to DO something (create, log, delete, update) → operator\n"
@@ -496,7 +496,9 @@ class LLMHandler:
             mode_directive = (
                 "=== MODE: ENGAGEMENT ===\n"
                 "You are in ENGAGEMENT mode: keep the user engaged with friendly, warm responses.\n"
-                "DO NOT use any tools. Respond directly with humor, encouragement, or casual conversation.\n\n"
+                "Respond directly with humor, encouragement, or casual conversation.\n"
+                "You MAY use memory_write to save noteworthy personal facts the user shares "
+                "(pets, hobbies, preferences, life events) and memory_search to recall them.\n\n"
             )
         
         return mode_directive + base
@@ -708,8 +710,9 @@ class LLMHandler:
 
         def _tools_for_mode(all_tools: list, active_mode: Optional[str]) -> list:
             active_mode = (active_mode or "").lower().strip() or "operator"
+            memory_tools = {"memory_search", "memory_get", "memory_write"}
             if active_mode == "engagement":
-                return []
+                return [t for t in all_tools if getattr(t, "name", "") in memory_tools]
             if active_mode == "social":
                 allow = {
                     "get_my_followers",

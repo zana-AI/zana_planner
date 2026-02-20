@@ -2089,8 +2089,10 @@ def create_routed_plan_execute_graph(
     def executor(state: AgentState) -> AgentState:
         mode = state.get("mode") or "operator"
         
-        # If engagement mode, skip tools and respond directly
+        # Engagement mode: respond conversationally but allow memory tools
         if mode == "engagement":
+            memory_tool_names = {"memory_search", "memory_get", "memory_write"}
+            memory_tools = [t for t in tools if getattr(t, "name", "") in memory_tool_names]
             system_msg = _get_system_message_for_response(mode)
             base_messages = state["messages"]
             if system_msg:
@@ -2099,15 +2101,52 @@ def create_routed_plan_execute_graph(
             engagement_hint = (
                 "You are Xaana, a friendly assistant. The user is just chatting. "
                 "Respond warmly, with humor if appropriate, and keep them engaged. "
-                "Do NOT use any tools. Keep it short (1-3 sentences)."
+                "Keep it short (1-3 sentences). "
+                "If the user shares personal facts worth remembering (pets, hobbies, preferences, "
+                "life events, recurring patterns), call memory_write to save them."
             )
-            _track_llm_call("responder_engagement", "responder_model")
-            result = responder_model.invoke(messages_to_send + [SystemMessage(content=engagement_hint)])
-            return {
-                **state,
-                "messages": state["messages"] + [result],
-                "final_response": getattr(result, "content", None),
-            }
+            if memory_tools:
+                _track_llm_call("responder_engagement", "responder_model")
+                bound_model = responder_model.bind_tools(memory_tools)
+                result = bound_model.invoke(messages_to_send + [SystemMessage(content=engagement_hint)])
+                tool_calls = getattr(result, "tool_calls", None) or []
+                new_messages = list(state["messages"]) + [result]
+                if tool_calls:
+                    from langchain_core.messages import ToolMessage as TM
+                    for tc in tool_calls:
+                        t_name = tc.get("name", "")
+                        t_args = tc.get("args", {})
+                        tool_obj = tool_by_name.get(t_name)
+                        if tool_obj:
+                            try:
+                                t_result = tool_obj.invoke(t_args)
+                            except Exception as e:
+                                t_result = f"Error: {e}"
+                            new_messages.append(TM(content=str(t_result), tool_call_id=tc.get("id", "")))
+                    _track_llm_call("responder_engagement_final", "responder_model")
+                    final = responder_model.invoke(_ensure_messages_have_content(
+                        [system_msg] + new_messages + [SystemMessage(content=engagement_hint)] if system_msg
+                        else new_messages + [SystemMessage(content=engagement_hint)]
+                    ))
+                    new_messages.append(final)
+                    return {
+                        **state,
+                        "messages": new_messages,
+                        "final_response": getattr(final, "content", None),
+                    }
+                return {
+                    **state,
+                    "messages": new_messages,
+                    "final_response": getattr(result, "content", None),
+                }
+            else:
+                _track_llm_call("responder_engagement", "responder_model")
+                result = responder_model.invoke(messages_to_send + [SystemMessage(content=engagement_hint)])
+                return {
+                    **state,
+                    "messages": state["messages"] + [result],
+                    "final_response": getattr(result, "content", None),
+                }
         
         # If planner already provided final response and there are no steps, finish.
         if state.get("final_response") and not (state.get("plan") or []):
