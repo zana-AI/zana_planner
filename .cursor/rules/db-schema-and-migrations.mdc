@@ -1,0 +1,36 @@
+---
+description: Database schema, Alembic migrations, and verification scripts. Use when changing schema, adding migrations, or checking DB state.
+alwaysApply: true
+---
+
+# Database schema & migrations
+
+## Design
+
+- **ORM / design in code:** SQLAlchemy models and repo code define the intended schema. The **single source of truth** for the deployed schema is **Alembic** (migrations in `tm_bot/db/alembic/`).
+- **Current head:** `012_content_learning_pipeline`. The Python code expects the DB to be at this revision (tables and columns as defined by migrations 001 → 012).
+- **Database:** PostgreSQL (Supabase). Staging and prod use different URLs (`DATABASE_URL_STAGING`, `DATABASE_URL_PROD`); env is loaded from `/opt/zana-config/.env.prod` or `.env.staging` on the VM.
+
+## Scripts (in `scripts/`)
+
+| Script | Purpose |
+|--------|--------|
+| **run_migrations.py** | Run Alembic migrations to `head`. Reads `DATABASE_URL`, `DATABASE_URL_STAGING`, or `DATABASE_URL_PROD` from env (or loads `/opt/zana-config/.env.prod`). Use after pulling new code that adds migrations. |
+| **check_schema_drift.py** | Compare live DB to the expected schema at head (012). Exit 0 = match, 1 = drift. Use before/after migrations or to verify a remote DB. `DATABASE_URL=... python scripts/check_schema_drift.py` or `--json` for CI. |
+| **remediate_schema.py** | If `alembic_version` says 012 but earlier migrations (003–006) didn't apply fully, this idempotently applies the missing DDL. Default dry-run; use `--apply` to execute. |
+| **run_migration_in_docker.sh** | Run a migration path inside the webapp container (e.g. `./scripts/run_migration_in_docker.sh staging`). Uses env from the container. |
+| **sync_postgres_schema_once.py** | One-off / legacy sync helper; prefer `run_migrations.py` and Alembic for normal workflow. |
+| **migrate_sqlite_to_postgresql.py** | One-off migration from SQLite to PostgreSQL. |
+| **fix_conversations_sequence.py** | Fix sequences for conversations table if needed. |
+
+## When to use what
+
+- **New migration:** Add a new Alembic revision under `tm_bot/db/alembic/versions/`, then run `python scripts/run_migrations.py` (with the right `DATABASE_URL` or env file). Update `check_schema_drift.py` expected schema if you add/remove tables or columns so drift check stays accurate.
+- **Verify DB matches code:** Run `python scripts/check_schema_drift.py` (point at the DB with env). Fix drift with migrations or `remediate_schema.py --apply` as appropriate.
+- **On the VM:** Load env then run migrations, e.g. `(set -a; source /opt/zana-config/.env.prod; set +a; cd /opt/zana-bot && python scripts/run_migrations.py)` or run inside the webapp container with `sudo docker compose exec zana-webapp python scripts/run_migrations.py` (ensure container has correct env).
+
+## References
+
+- Alembic config: `tm_bot/db/alembic.ini`, `tm_bot/db/alembic/env.py`.
+- Expected schema at head is encoded in `scripts/check_schema_drift.py` (`EXPECTED_SCHEMA`, `EXPECTED_ALEMBIC_HEAD`).
+- Repos (e.g. `bot_tokens_repo`, `templates_repo`) may check for tables/columns and suggest running migrations if schema is missing.

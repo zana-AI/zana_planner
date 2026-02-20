@@ -67,16 +67,26 @@ Poll every ~30s until the run completes (typically 1-2 minutes for staging).
 
 ### Verify on VM
 
-After GH Actions succeeds, wait ~30s for the container to restart, then check Docker logs (and optionally the persistent log file):
+- **Path:** Commands that need `docker-compose` must run from the project directory on the VM (e.g. `/opt/zana-bot`, or `$PROJECT_PATH` from GitHub secrets).
+- **Docker:** On the VM always use **`sudo`** for docker/compose (e.g. `sudo docker compose ...`, `sudo docker logs ...`).
+
+After GH Actions succeeds, wait ~30s for the container to restart, then check:
 
 ```bash
 # gcloud may not be on default PATH in WSL; source the SDK
 source ~/google-cloud-sdk/path.bash.inc 2>/dev/null || true
+
+# List all containers (including qdrant)
+gcloud compute ssh vm-telegram-bots --zone europe-west9-c \
+  --command "cd /opt/zana-bot && sudo docker compose ps -a"
+
+# Bot logs
 gcloud compute ssh vm-telegram-bots --zone europe-west9-c \
   --command "sudo docker logs zana-staging --tail 30"
-# Optional: tail persistent log file on host (same content, survives restarts)
+
+# Verify Qdrant from webapp (container has no curl; use Python one-liner)
 gcloud compute ssh vm-telegram-bots --zone europe-west9-c \
-  --command "tail -30 /srv/zana-logs-staging/zana.log"
+  --command "cd /opt/zana-bot && sudo docker compose exec zana-webapp python -c \"import urllib.request; r=urllib.request.urlopen('http://qdrant:6333/collections',timeout=5); print(r.read().decode())\""
 ```
 
 Healthy startup ends with:

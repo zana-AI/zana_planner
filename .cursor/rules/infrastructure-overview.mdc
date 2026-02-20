@@ -9,15 +9,18 @@ alwaysApply: true
 
 - **VM name:** `vm-telegram-bots`
 - **Zone:** `europe-west9-c`
-- **Project path on VM:** `/opt/zana-bot/zana_planner`
+- **Project path on VM:** `/opt/zana-bot` (directory containing `docker-compose.yml`; matches GitHub secret `PROJECT_PATH`)
 - **Config dir:** `/opt/zana-config/` (contains `.env.prod`, `.env.staging`)
+- **Docker on VM:** always use **`sudo`** (e.g. `sudo docker compose ps -a`, `sudo docker logs ...`)
 
 ## Docker Services (docker-compose.yml)
 
+Compose file omits the obsolete `version` attribute (Compose v2) to avoid warnings.
+
 | Service | Image/Build | Port | Data Volume |
 |---------|------------|------|-------------|
-| `zana-prod` | `zana-ai-bot:prod` | — | `/srv/zana-users`, `/srv/zana-logs-prod` → `/app/logs` |
-| `zana-staging` | `zana-ai-bot:staging` | — | `/srv/zana-users-staging`, `/srv/zana-logs-staging` → `/app/logs` |
+| `zana-prod` | `zana-ai-bot:prod` | — | `/srv/zana-users` |
+| `zana-staging` | `zana-ai-bot:staging` | — | `/srv/zana-users-staging` |
 | `zana-stats` | built from `stats_service/` | 8000 | — |
 | `zana-webapp` | `zana-project-webapp` | 8080 (internal) | — |
 | `qdrant` | `qdrant/qdrant:v1.13.2` | 6333, 6334 | `qdrant-storage` |
@@ -30,12 +33,12 @@ Network: `web` (bridge).
 ```
 push to master
   → GH Actions: deploy-staging.yml
-    → SSH to VM → git pull → docker build → restart zana-staging + zana-webapp
+    → SSH to VM → cd $PROJECT_PATH → git pull → sudo docker compose build → sudo docker compose up -d zana-staging zana-webapp
     → health check → git tag staging-{ts}-{sha}
 
 manual workflow_dispatch
   → GH Actions: deploy-prod.yml
-    → SSH to VM → tag staging image as prod → restart zana-prod + zana-webapp
+    → SSH to VM → cd $PROJECT_PATH → sudo docker compose up -d zana-prod zana-webapp
     → health check → git tag prod-{ts}-{sha}
 ```
 
@@ -51,12 +54,6 @@ manual workflow_dispatch
 - Runs as user `amiryan_j` (UID 1002)
 - Entrypoint: `python -m tm_bot.run_bot`
 - Build args inject git metadata: `GIT_COMMIT`, `GIT_TAG`, `BUILD_DATE`, etc.
-
-## Logging
-
-- **Console** → always (Docker stdout, `docker logs`)
-- **Logtail (Better Stack)** → when `LOGTAIL_SOURCE_TOKEN` is set
-- **File on VM** → when `LOG_FILE_PATH` is set; bot writes to `/app/logs/zana.log` (rotating, 10 MB × 5 backups). On host: prod at `/srv/zana-logs-prod/zana.log`, staging at `/srv/zana-logs-staging/zana.log`. Use for persistent, grep-able debugging.
 
 ## Domain & Web
 
