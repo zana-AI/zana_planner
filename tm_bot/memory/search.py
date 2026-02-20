@@ -4,9 +4,9 @@ Semantic memory search with Qdrant-first retrieval and filesystem fallback.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -353,7 +353,7 @@ def _chunk_file(path: Path, rel_path: str) -> List[_MemoryChunk]:
 
 def _point_id(user_id: str, chunk: _MemoryChunk) -> str:
     payload = f"{user_id}|{chunk.rel_path}|{chunk.start_line}|{chunk.end_line}|{chunk.text}"
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, payload))
 
 
 def _delete_points_for_path(
