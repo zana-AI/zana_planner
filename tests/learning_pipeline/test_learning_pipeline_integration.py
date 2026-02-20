@@ -1,11 +1,13 @@
 import uuid
 
 import pytest
+from sqlalchemy import text
 
 from db.postgres_db import check_table_exists, get_db_session
 from repositories.content_repo import ContentRepository
 from services.learning_pipeline.job_repo import LearningPipelineJobRepository
 from services.learning_pipeline.learning_repo import LearningPipelineRepository
+from services.learning_pipeline.types import SegmentRecord
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -101,3 +103,108 @@ def test_learning_repo_quiz_idempotency_roundtrip():
     found = learning_repo.find_attempt_by_idempotency("1001", quiz["quiz_set_id"], "idem-key-1")
     assert found is not None
     assert found["id"] == attempt_id
+
+    # quiz_question: assert get_quiz_questions returns created questions
+    questions = learning_repo.get_quiz_questions(quiz["quiz_set_id"])
+    assert len(questions) == 1
+    assert questions[0]["prompt"] == "What is python?"
+    assert questions[0].get("options_json") == ["language", "database"]
+    question_id = questions[0]["id"]
+
+    # quiz_attempt_answer: finalize_attempt writes answers; get_attempt_report returns them
+    learning_repo.finalize_attempt(
+        attempt_id=attempt_id,
+        score=1.0,
+        max_score=1.0,
+        answers=[
+            {
+                "question_id": question_id,
+                "user_answer_json": {"selected": "language"},
+                "is_correct": True,
+                "score_awarded": 1.0,
+                "feedback": None,
+                "graded_by_model": None,
+            }
+        ],
+    )
+    report = learning_repo.get_attempt_report(attempt_id)
+    assert report is not None
+    assert report["status"] == "graded"
+    assert len(report["answers"]) == 1
+    assert report["answers"][0]["is_correct"] is True
+    assert report["answers"][0]["score_awarded"] == 1.0
+
+
+def test_learning_repo_segments_and_assets_roundtrip():
+    """content_segment and content_asset: replace_segments and add_asset write; list_segments and DB assert."""
+    _require_learning_tables()
+    content_repo = ContentRepository()
+    learning_repo = LearningPipelineRepository()
+
+    suffix = uuid.uuid4().hex
+    content_id = content_repo.upsert_content(
+        canonical_url=f"https://example.com/segments/{suffix}",
+        original_url=f"https://example.com/segments/{suffix}",
+        provider="blog",
+        content_type="text",
+        title="Segments and assets test",
+    )
+
+    learning_repo.add_asset(
+        content_id=content_id,
+        asset_type="transcript",
+        storage_uri="gs://test-bucket/segments-assets-test.txt",
+        size_bytes=100,
+        checksum="abc123",
+    )
+    segments = [
+        SegmentRecord(text="First segment.", section_path="intro", start_ms=0, end_ms=1000),
+        SegmentRecord(text="Second segment.", section_path="intro", start_ms=1000, end_ms=2000),
+    ]
+    inserted = learning_repo.replace_segments(content_id, segments)
+    assert len(inserted) == 2
+    listed = learning_repo.list_segments(content_id)
+    assert len(listed) == 2
+    assert listed[0]["text"] == "First segment."
+    assert listed[1]["text"] == "Second segment."
+
+    with get_db_session() as session:
+        asset_count = session.execute(
+            text("SELECT COUNT(*) AS n FROM content_asset WHERE content_id = :content_id"),
+            {"content_id": content_id},
+        ).scalar()
+    assert asset_count == 1
+
+
+def test_learning_repo_user_concept_mastery_roundtrip():
+    """user_concept_mastery: apply_mastery_result upserts; subsequent call updates attempt/correct counts."""
+    _require_learning_tables()
+    content_repo = ContentRepository()
+    learning_repo = LearningPipelineRepository()
+
+    suffix = uuid.uuid4().hex
+    content_id = content_repo.upsert_content(
+        canonical_url=f"https://example.com/mastery/{suffix}",
+        original_url=f"https://example.com/mastery/{suffix}",
+        provider="blog",
+        content_type="text",
+        title="Mastery test",
+    )
+    concept_map = learning_repo.replace_concepts_and_edges(
+        content_id=content_id,
+        concepts=[{"label": "math", "concept_type": "topic", "definition": "mathematics", "examples": []}],
+        edges=[],
+    )
+    concept_id = concept_map.get("math")
+    assert concept_id
+
+    user_id = "2002"
+    result1 = learning_repo.apply_mastery_result(user_id, concept_id, "correct")
+    assert result1["mastery_score"] is not None
+    assert result1["attempt_count"] == 1
+    assert result1["correct_count"] == 1
+
+    result2 = learning_repo.apply_mastery_result(user_id, concept_id, "incorrect")
+    assert result2["attempt_count"] == 2
+    assert result2["correct_count"] == 1
+    assert result2["mastery_score"] is not None
