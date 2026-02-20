@@ -4,7 +4,7 @@ while using the new repository and service layers underneath.
 """
 import json
 from datetime import datetime, date
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union
 
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
@@ -1044,7 +1044,7 @@ class PlannerAPIAdapter:
         self,
         user_id,
         field_key: str,
-        field_value: str,
+        field_value: Union[str, List[str]],
         source: str = "inferred",
         confidence: float = 0.7,
     ) -> str:
@@ -1053,7 +1053,7 @@ class PlannerAPIAdapter:
         
         Args:
             field_key: Profile field name (e.g., 'status', 'primary_goal_1y')
-            field_value: The value to store
+            field_value: The value to store (string, or list of strings which will be joined with commas)
             source: 'explicit_answer' (user directly answered), 'inferred' (extracted from conversation), or 'system'
             confidence: Confidence score 0.0-1.0 (1.0 for explicit answers, lower for inferred)
         
@@ -1061,6 +1061,10 @@ class PlannerAPIAdapter:
             Success message
         """
         try:
+            if isinstance(field_value, list):
+                field_value = ", ".join(str(v) for v in field_value)
+            else:
+                field_value = str(field_value)
             self.profile_service.upsert_fact(user_id, field_key, field_value, source, confidence)
             return f"Profile fact '{field_key}' updated to: {field_value}"
         except Exception as e:
