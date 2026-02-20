@@ -28,20 +28,21 @@ jobs:
 
             echo '[STAGING] Preparing staging data...'
             mkdir -p /srv/zana-users-staging
+            mkdir -p /srv/zana-logs-staging
             # Use sudo for rm if needed, fallback to regular rm
             sudo rm -rf /srv/zana-users-staging/* 2>/dev/null || rm -rf /srv/zana-users-staging/* 2>/dev/null || true
             cp -r /srv/zana-users/* /srv/zana-users-staging/ 2>/dev/null || true
 
             echo '[STAGING] Fixing permissions for container user (UID 1002)...'
-            # Try without sudo first (if user owns the directory or it's already writable)
-            if chown -R 1002:1002 /srv/zana-users-staging 2>/dev/null || chmod -R 777 /srv/zana-users-staging 2>/dev/null; then
-              echo '[STAGING] Permissions fixed without sudo'
-            elif sudo -n chown -R 1002:1002 /srv/zana-users-staging 2>/dev/null || sudo -n chmod -R 777 /srv/zana-users-staging 2>/dev/null; then
-              echo '[STAGING] Permissions fixed with passwordless sudo'
-            else
-              echo '[STAGING] WARNING: Could not fix permissions. Directory may already have correct permissions.'
-              echo '[STAGING] If deployment fails, configure passwordless sudo or fix permissions manually.'
-            fi
+            for dir in /srv/zana-users-staging /srv/zana-logs-staging; do
+              if chown -R 1002:1002 $dir 2>/dev/null || chmod -R 777 $dir 2>/dev/null; then
+                echo '[STAGING] Permissions fixed for '"$dir"' without sudo'
+              elif sudo -n chown -R 1002:1002 $dir 2>/dev/null || sudo -n chmod -R 777 $dir 2>/dev/null; then
+                echo '[STAGING] Permissions fixed for '"$dir"' with sudo'
+              else
+                echo '[STAGING] WARNING: Could not fix permissions for '"$dir"
+              fi
+            done
 
             echo '[STAGING] Updating code...'
             if [ ! -d \"$PROJECT_PATH\" ]; then

@@ -1,6 +1,9 @@
 """
 Unified logging module for Xaana AI bot.
-Supports dual output: console (for Docker logs) and Logtail (for centralized logging).
+Supports:
+  - Console (stdout) → always; captured by Docker as `docker logs`
+  - Logtail (Better Stack) → when LOGTAIL_SOURCE_TOKEN is set
+  - File on VM → when LOG_FILE_PATH is set (persistent, grep-able source of truth)
 """
 import logging
 import os
@@ -67,6 +70,37 @@ class ConsoleFormatter(logging.Formatter):
         return dt.isoformat()
 
 
+class FileFormatter(logging.Formatter):
+    """One-line formatter for file output; supports dict messages as JSON."""
+    
+    def __init__(self):
+        super().__init__(
+            fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        self.paris_tz = ZoneInfo("Europe/Paris")
+    
+    def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
+        dt = datetime.fromtimestamp(record.created, tz=self.paris_tz)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
+    
+    def format(self, record: logging.LogRecord) -> str:
+        if isinstance(record.msg, dict):
+            import json
+            log_data = {
+                "message": record.msg.get("message", ""),
+                "level": record.levelname,
+                "module": record.module,
+                "timestamp": self.formatTime(record, self.datefmt),
+            }
+            log_data.update({k: v for k, v in record.msg.items() if k != "message"})
+            # One line per log for easy grep/tail
+            return f"{self.formatTime(record, self.datefmt)} - {record.name} - {record.levelname} - {json.dumps(log_data, default=str)}"
+        return super().format(record)
+
+
 # Global logger cache
 _loggers: Dict[str, logging.Logger] = {}
 
@@ -97,6 +131,26 @@ def get_logger(name: str) -> logging.Logger:
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(ConsoleFormatter())
     logger.addHandler(console_handler)
+    
+    # File handler (if configured) — persistent on VM for debugging
+    log_file_path = os.getenv("LOG_FILE_PATH")
+    if log_file_path:
+        try:
+            log_dir = os.path.dirname(log_file_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file_path,
+                maxBytes=10 * 1024 * 1024,  # 10 MB
+                backupCount=5,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(FileFormatter())
+            logger.addHandler(file_handler)
+            logger.info({"event": "logger_init", "module": name, "file_logging_enabled": True, "path": log_file_path})
+        except Exception as e:
+            logger.warning(f"Failed to add file handler for {log_file_path}: {e}. Skipping file logging.")
     
     # Logtail handler (if configured)
     logtail_token = os.getenv("LOGTAIL_SOURCE_TOKEN")

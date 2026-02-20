@@ -16,8 +16,8 @@ alwaysApply: true
 
 | Service | Image/Build | Port | Data Volume |
 |---------|------------|------|-------------|
-| `zana-prod` | `zana-ai-bot:prod` | — | `/srv/zana-users` |
-| `zana-staging` | `zana-ai-bot:staging` | — | `/srv/zana-users-staging` |
+| `zana-prod` | `zana-ai-bot:prod` | — | `/srv/zana-users`, `/srv/zana-logs-prod` → `/app/logs` |
+| `zana-staging` | `zana-ai-bot:staging` | — | `/srv/zana-users-staging`, `/srv/zana-logs-staging` → `/app/logs` |
 | `zana-stats` | built from `stats_service/` | 8000 | — |
 | `zana-webapp` | `zana-project-webapp` | 8080 (internal) | — |
 | `qdrant` | `qdrant/qdrant:v1.13.2` | 6333, 6334 | `qdrant-storage` |
@@ -51,6 +51,12 @@ manual workflow_dispatch
 - Runs as user `amiryan_j` (UID 1002)
 - Entrypoint: `python -m tm_bot.run_bot`
 - Build args inject git metadata: `GIT_COMMIT`, `GIT_TAG`, `BUILD_DATE`, etc.
+
+## Logging
+
+- **Console** → always (Docker stdout, `docker logs`)
+- **Logtail (Better Stack)** → when `LOGTAIL_SOURCE_TOKEN` is set
+- **File on VM** → when `LOG_FILE_PATH` is set; bot writes to `/app/logs/zana.log` (rotating, 10 MB × 5 backups). On host: prod at `/srv/zana-logs-prod/zana.log`, staging at `/srv/zana-logs-staging/zana.log`. Use for persistent, grep-able debugging.
 
 ## Domain & Web
 
