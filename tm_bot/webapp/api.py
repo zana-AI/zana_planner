@@ -5,6 +5,7 @@ Provides API endpoints for the React frontend.
 
 import os
 from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -144,6 +145,50 @@ def create_webapp_api(
         
         asyncio.create_task(cleanup_task())
         logger.info("Started auth session cleanup task")
+
+        # Start background task for due broadcast dispatch.
+        async def broadcast_dispatcher():
+            from repositories.broadcasts_repo import BroadcastsRepository
+            from services.broadcast_service import execute_broadcast_from_db
+
+            poll_interval_seconds = 15
+            max_batch_size = 25
+
+            while True:
+                try:
+                    broadcasts_repo = BroadcastsRepository()
+                    due_broadcasts = broadcasts_repo.list_due_broadcasts(
+                        now_utc=datetime.now(timezone.utc),
+                        limit=max_batch_size,
+                    )
+
+                    if due_broadcasts:
+                        logger.info(
+                            "Broadcast dispatcher found %d due pending broadcast(s)",
+                            len(due_broadcasts),
+                        )
+
+                    for broadcast in due_broadcasts:
+                        try:
+                            await execute_broadcast_from_db(
+                                response_service=None,
+                                broadcast_id=broadcast.broadcast_id,
+                                default_bot_token=app.state.bot_token,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "Failed to execute due broadcast %s: %s",
+                                broadcast.broadcast_id,
+                                e,
+                                exc_info=True,
+                            )
+                except Exception as e:
+                    logger.error("Error in broadcast dispatcher loop: %s", e, exc_info=True)
+
+                await asyncio.sleep(poll_interval_seconds)
+
+        asyncio.create_task(broadcast_dispatcher())
+        logger.info("Started broadcast dispatcher sweeper (checks every 15 seconds)")
         
         # Start background task for focus timer completion notifications
         async def focus_timer_sweeper():

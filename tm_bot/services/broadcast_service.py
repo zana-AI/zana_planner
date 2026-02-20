@@ -13,6 +13,9 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_broadcast_execution_lock = asyncio.Lock()
+_broadcasts_in_flight: set[str] = set()
+
 # Try to import dateparser for natural language parsing
 try:
     import dateparser
@@ -78,7 +81,7 @@ def get_all_users_from_db() -> List[int]:
 
 
 async def send_broadcast(
-    response_service: IResponseService,
+    response_service: Optional[IResponseService],
     user_ids: List[int],
     message: str,
     rate_limit_delay: float = 0.05,
@@ -97,8 +100,9 @@ async def send_broadcast(
     Returns:
         Dictionary with 'success' and 'failed' counts
     """
-    from telegram import Bot
-    
+    if response_service is None and not bot_token:
+        raise ValueError("Either response_service or bot_token must be provided to send broadcasts")
+
     success_count = 0
     failed_count = 0
     
@@ -107,6 +111,7 @@ async def send_broadcast(
     # If bot_token is provided, create a Bot instance to use directly
     bot = None
     if bot_token:
+        from telegram import Bot
         try:
             bot = Bot(token=bot_token)
             logger.info(f"Using custom bot token for broadcast")
@@ -153,8 +158,9 @@ async def send_broadcast(
 
 
 async def execute_broadcast_from_db(
-    response_service: IResponseService,
+    response_service: Optional[IResponseService],
     broadcast_id: str,
+    default_bot_token: Optional[str] = None,
 ) -> Dict[str, int]:
     """
     Execute a broadcast from the database by ID.
@@ -169,41 +175,56 @@ async def execute_broadcast_from_db(
     """
     from repositories.bot_tokens_repo import BotTokensRepository
 
-    broadcasts_repo = BroadcastsRepository()
-    broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+    async with _broadcast_execution_lock:
+        if broadcast_id in _broadcasts_in_flight:
+            logger.info(f"Broadcast {broadcast_id} is already in-flight, skipping duplicate execution")
+            return {"success": 0, "failed": 0}
+        _broadcasts_in_flight.add(broadcast_id)
 
-    if not broadcast:
-        logger.error(f"Broadcast {broadcast_id} not found in database")
-        return {"success": 0, "failed": 0}
+    try:
+        broadcasts_repo = BroadcastsRepository()
+        broadcast = broadcasts_repo.get_broadcast(broadcast_id)
 
-    if broadcast.status != "pending":
-        logger.warning(f"Broadcast {broadcast_id} is not pending (status: {broadcast.status})")
-        return {"success": 0, "failed": 0}
+        if not broadcast:
+            logger.error(f"Broadcast {broadcast_id} not found in database")
+            return {"success": 0, "failed": 0}
 
-    # Get bot token if specified
-    bot_token = None
-    if broadcast.bot_token_id:
-        bot_tokens_repo = BotTokensRepository()
-        bot_token_data = bot_tokens_repo.get_bot_token(broadcast.bot_token_id)
-        if bot_token_data:
-            bot_token = bot_token_data["bot_token"]
-            logger.info(f"Using bot token {broadcast.bot_token_id} for broadcast {broadcast_id}")
+        if broadcast.status != "pending":
+            logger.warning(f"Broadcast {broadcast_id} is not pending (status: {broadcast.status})")
+            return {"success": 0, "failed": 0}
+
+        # Resolve bot token preference:
+        # 1) broadcast-specific bot token, 2) explicit default token, 3) environment fallback.
+        bot_token = None
+        if broadcast.bot_token_id:
+            bot_tokens_repo = BotTokensRepository()
+            bot_token_data = bot_tokens_repo.get_bot_token(broadcast.bot_token_id)
+            if bot_token_data:
+                bot_token = bot_token_data["bot_token"]
+                logger.info(f"Using bot token {broadcast.bot_token_id} for broadcast {broadcast_id}")
+            else:
+                logger.warning(f"Bot token {broadcast.bot_token_id} not found, using default response service")
+        elif default_bot_token:
+            bot_token = default_bot_token
         else:
-            logger.warning(f"Bot token {broadcast.bot_token_id} not found, using default response service")
-    
-    # Execute the broadcast
-    results = await send_broadcast(
-        response_service,
-        broadcast.target_user_ids,
-        broadcast.message,
-        bot_token=bot_token,
-    )
-    
-    # Mark as completed
-    broadcasts_repo.mark_broadcast_completed(broadcast_id)
-    logger.info(f"Broadcast {broadcast_id} marked as completed")
-    
-    return results
+            bot_token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+        
+        # Execute the broadcast
+        results = await send_broadcast(
+            response_service,
+            broadcast.target_user_ids,
+            broadcast.message,
+            bot_token=bot_token,
+        )
+        
+        # Mark as completed
+        broadcasts_repo.mark_broadcast_completed(broadcast_id)
+        logger.info(f"Broadcast {broadcast_id} marked as completed")
+        
+        return results
+    finally:
+        async with _broadcast_execution_lock:
+            _broadcasts_in_flight.discard(broadcast_id)
 
 
 def parse_broadcast_time(time_str: str, admin_tz: str) -> Optional[datetime]:
