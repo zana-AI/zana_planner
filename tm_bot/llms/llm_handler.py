@@ -41,6 +41,7 @@ from memory.flush import (
     DEFAULT_RESERVE_TOKENS_FLOOR,
 )
 from services.planner_api_adapter import PlannerAPIAdapter
+from services.web_tools import web_fetch as web_fetch_impl, web_search as web_search_impl
 from utils.logger import get_logger
 
 # LangSmith tracing support
@@ -710,7 +711,7 @@ class LLMHandler:
 
         def _tools_for_mode(all_tools: list, active_mode: Optional[str]) -> list:
             active_mode = (active_mode or "").lower().strip() or "operator"
-            memory_tools = {"memory_search", "memory_get", "memory_write"}
+            memory_tools = {"memory_search", "memory_get", "memory_write", "web_search", "web_fetch"}
             if active_mode == "engagement":
                 return [t for t in all_tools if getattr(t, "name", "") in memory_tools]
             if active_mode == "social":
@@ -1525,6 +1526,35 @@ class LLMHandler:
                     "recurring patterns, or anything worth remembering across sessions. "
                     "Use proactively when the user shares something worth persisting. "
                     "Text is appended to memory/YYYY-MM-DD.md."
+                ),
+            )
+        )
+
+        def _web_search_tool(query: str, count: Optional[int] = None, freshness: Optional[str] = None) -> str:
+            out = web_search_impl(query=query, count=count, freshness=freshness)
+            return json.dumps(out)
+
+        def _web_fetch_tool(url: str, max_chars: Optional[int] = None) -> str:
+            out = web_fetch_impl(url=url, max_chars=max_chars)
+            return json.dumps(out)
+
+        tools.append(
+            StructuredTool.from_function(
+                func=_web_search_tool,
+                name="web_search",
+                description=(
+                    "Search the web for current information. Use when the user asks factual questions, "
+                    "wants recommendations, or needs up-to-date info you don't have. Returns title, url, snippet per result."
+                ),
+            )
+        )
+        tools.append(
+            StructuredTool.from_function(
+                func=_web_fetch_tool,
+                name="web_fetch",
+                description=(
+                    "Fetch and read the content of a webpage URL. Use when the user shares a link "
+                    "or when you need to read a specific page found via web_search. Returns title and extracted text."
                 ),
             )
         )

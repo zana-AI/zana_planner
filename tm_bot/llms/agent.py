@@ -2091,7 +2091,7 @@ def create_routed_plan_execute_graph(
         
         # Engagement mode: respond conversationally but allow memory tools
         if mode == "engagement":
-            memory_tool_names = {"memory_search", "memory_get", "memory_write"}
+            memory_tool_names = {"memory_search", "memory_get", "memory_write", "web_search", "web_fetch"}
             memory_tools = [t for t in tools if getattr(t, "name", "") in memory_tool_names]
             system_msg = _get_system_message_for_response(mode)
             base_messages = state["messages"]
