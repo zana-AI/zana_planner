@@ -64,28 +64,67 @@ _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a mo
 
 
 def _resolve_schema_refs(schema: dict) -> dict:
-    """Resolve $ref pointers and strip $defs from a Pydantic v2 JSON schema.
+    """Convert a Pydantic v2 JSON schema into a Vertex AI compatible schema.
 
-    Vertex AI / Gemini's protobuf Schema does not support the JSON Schema
-    ``$defs`` / ``$ref`` mechanism.  This helper inlines every ``$ref`` so the
-    resulting dict is self-contained and compatible with the API.
+    Vertex AI's protobuf ``Schema`` only supports a small subset of OpenAPI 3.0:
+    type, format, description, nullable, enum, items, properties, required.
+
+    This helper:
+    1. Resolves ``$ref`` pointers by inlining from ``$defs``.
+    2. Converts Pydantic's ``anyOf: [{type: X}, {type: null}]`` → ``nullable: true``.
+    3. Strips every key not in the Vertex AI allowlist.
     """
     schema = copy.deepcopy(schema)
     defs = schema.pop("$defs", None) or schema.pop("definitions", None) or {}
 
+    ALLOWED_KEYS = {
+        "type", "format", "description", "nullable", "enum",
+        "items", "properties", "required",
+    }
+
     def _resolve(node):
-        if isinstance(node, dict):
-            ref = node.get("$ref")
-            if ref and isinstance(ref, str):
-                # e.g. "#/$defs/PlanStep" -> "PlanStep"
-                ref_name = ref.rsplit("/", 1)[-1]
-                if ref_name in defs:
-                    return _resolve(copy.deepcopy(defs[ref_name]))
-                return node
-            return {k: _resolve(v) for k, v in node.items()}
         if isinstance(node, list):
             return [_resolve(item) for item in node]
-        return node
+        if not isinstance(node, dict):
+            return node
+
+        # 1) Resolve $ref
+        ref = node.get("$ref")
+        if ref and isinstance(ref, str):
+            ref_name = ref.rsplit("/", 1)[-1]
+            if ref_name in defs:
+                return _resolve(copy.deepcopy(defs[ref_name]))
+            return {}
+
+        # 2) Convert anyOf with null (Pydantic Optional pattern) → nullable + inner type
+        if "anyOf" in node:
+            variants = node["anyOf"]
+            non_null = [v for v in variants if v.get("type") != "null"]
+            has_null = any(v.get("type") == "null" for v in variants)
+            if has_null and len(non_null) == 1:
+                resolved = _resolve(non_null[0])
+                resolved["nullable"] = True
+                # Carry over description from the outer node if present
+                if "description" in node and "description" not in resolved:
+                    resolved["description"] = node["description"]
+                return resolved
+            # Multi-type anyOf without null: pick the first non-null variant
+            if non_null:
+                return _resolve(non_null[0])
+            return {}
+
+        # 3) Recurse into known nested structures, strip unsupported keys
+        out = {}
+        for k, v in node.items():
+            if k not in ALLOWED_KEYS:
+                continue
+            if k == "properties" and isinstance(v, dict):
+                out[k] = {pk: _resolve(pv) for pk, pv in v.items()}
+            elif k == "items" and isinstance(v, dict):
+                out[k] = _resolve(v)
+            else:
+                out[k] = v
+        return out
 
     return _resolve(schema)
 
