@@ -54,8 +54,8 @@ def test_get_memory_root_per_user():
     root.mkdir(exist_ok=True)
     try:
         user_root = get_memory_root(str(root), "12345")
-        assert user_root == root / "users" / "12345"
-        assert get_memory_root(root, "999") == root / "users" / "999"
+        assert user_root == root / "12345"
+        assert get_memory_root(root, "999") == root / "999"
     finally:
         if root.exists():
             root.rmdir()
@@ -74,7 +74,7 @@ def test_memory_search_uses_keyword_fallback_when_vector_not_configured(monkeypa
     monkeypatch.delenv("MEMORY_VECTOR_DB_URL", raising=False)
     monkeypatch.delenv("QDRANT_URL", raising=False)
 
-    user_root = tmp_path / "users" / "123"
+    user_root = tmp_path / "123"
     user_root.mkdir(parents=True)
     (user_root / "MEMORY.md").write_text(
         "User prefers morning standups and deep-work blocks.\n",
@@ -98,7 +98,7 @@ def test_memory_search_uses_keyword_fallback_when_vector_not_configured(monkeypa
 
 @pytest.mark.unit
 def test_memory_get_reads_file(tmp_path):
-    user_root = tmp_path / "users" / "42"
+    user_root = tmp_path / "42"
     user_root.mkdir(parents=True)
     (user_root / "MEMORY.md").write_text("Hello from MEMORY", encoding="utf-8")
     (user_root / "memory").mkdir()
@@ -129,7 +129,7 @@ def test_memory_get_rejects_path_traversal(tmp_path):
 
 @pytest.mark.unit
 def test_memory_get_slice_by_lines(tmp_path):
-    user_root = tmp_path / "users" / "1"
+    user_root = tmp_path / "1"
     user_root.mkdir(parents=True)
     (user_root / "MEMORY.md").write_text("L1\nL2\nL3\nL4\nL5", encoding="utf-8")
     out = memory_get("MEMORY.md", str(tmp_path), "1", from_line=2, lines=2)
@@ -211,6 +211,6 @@ def test_run_memory_flush_appends_to_date_file(monkeypatch, tmp_path):
     )
     assert len(calls) == 1
     assert "2025-02-19" in calls[0][1]
-    target = tmp_path / "users" / "42" / "memory" / "2025-02-19.md"
+    target = tmp_path / "42" / "memory" / "2025-02-19.md"
     assert target.exists()
     assert "User prefers morning standups" in target.read_text(encoding="utf-8")

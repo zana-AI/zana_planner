@@ -66,12 +66,12 @@ def get_memory_root(root_dir: Union[str, Path], user_id: str) -> Path:
     """
     Per-user memory root. Each user has isolated MEMORY.md and memory/ directory.
 
-    Convention: root_dir/users/<user_id>/ so paths are e.g.:
-      root_dir/users/12345/MEMORY.md
-      root_dir/users/12345/memory/2025-02-19.md
+    Convention: root_dir/<user_id>/ so paths are e.g.:
+      root_dir/12345/MEMORY.md
+      root_dir/12345/memory/2025-02-19.md
     """
     root = Path(root_dir).resolve()
     user_str = str(user_id).strip()
     if not user_str or ".." in user_str or "/" in user_str or "\\" in user_str:
         raise ValueError("Invalid user_id for memory path")
-    return root / "users" / user_str
+    return root / user_str
