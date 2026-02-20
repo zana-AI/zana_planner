@@ -5,6 +5,7 @@ Embedding + vector index integration (Vertex embeddings + Qdrant).
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Any, Dict, Iterable, List, Optional
 
 from utils.logger import get_logger
@@ -87,9 +88,14 @@ class EmbeddingService:
             }
             if user_id is not None:
                 payload["user_id"] = str(user_id)
+            raw_id = str(chunk.get("chunk_id") or "")
+            try:
+                point_id = str(uuid.UUID(raw_id))
+            except ValueError:
+                point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, raw_id))
             points.append(
                 models.PointStruct(
-                    id=str(chunk.get("chunk_id")),
+                    id=point_id,
                     vector=vector,
                     payload=payload,
                 )
