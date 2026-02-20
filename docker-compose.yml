@@ -8,11 +8,17 @@ services:
       dockerfile: Dockerfile
     image: zana-ai-bot:prod
     container_name: zana-prod
+    depends_on:
+      - qdrant
     env_file:
       - /opt/zana-config/.env.prod
     environment:
       - ENVIRONMENT=production
       - LOG_FILE_PATH=/app/logs/zana.log
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-content_chunks_v1}
+      - VERTEX_EMBEDDING_MODEL=${VERTEX_EMBEDDING_MODEL:-gemini-embedding-001}
       # DATABASE_URL_PROD should be set in .env.prod
     volumes:
       - /srv/zana-users:/app/USERS_DATA_DIR
@@ -30,11 +36,17 @@ services:
       dockerfile: Dockerfile
     image: zana-ai-bot:staging
     container_name: zana-staging
+    depends_on:
+      - qdrant
     env_file:
       - /opt/zana-config/.env.staging
     environment:
       - ENVIRONMENT=staging
       - LOG_FILE_PATH=/app/logs/zana.log
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-content_chunks_v1}
+      - VERTEX_EMBEDDING_MODEL=${VERTEX_EMBEDDING_MODEL:-gemini-embedding-001}
       # DATABASE_URL_STAGING should be set in .env.staging
     volumes:
       - /srv/zana-users-staging:/app/USERS_DATA_DIR
