@@ -1,0 +1,97 @@
+---
+description: Ops workflow for committing, pushing, deploying, and monitoring the Zana bot via GitHub Actions and GCP VM
+alwaysApply: true
+---
+
+# Ops: Deploy & Monitor Workflow
+
+## Shell Environment
+
+The workspace is on Windows. Use **WSL** for all git, gh, and gcloud commands:
+
+```
+wsl bash -c "<command>"
+```
+
+- PowerShell does NOT support `&&` chaining or `$VAR` expansion in wsl strings.
+- For multi-line or complex commands, write a `.sh` file, strip CRLF, then execute:
+
+```
+# Write script via the Write tool, then:
+wsl bash -c "tr -d '\r' < /mnt/c/workspace/.../script.sh > /tmp/script.sh && bash /tmp/script.sh"
+```
+
+- Clean up temp scripts after use.
+
+## Git Identity
+
+WSL may not have git user configured globally. Set identity via env vars in scripts:
+
+```bash
+export GIT_AUTHOR_NAME="Javad Amirian"
+export GIT_AUTHOR_EMAIL="amiryan.j@gmail.com"
+export GIT_COMMITTER_NAME="Javad Amirian"
+export GIT_COMMITTER_EMAIL="amiryan.j@gmail.com"
+```
+
+## Git Push (SSH workaround)
+
+The remote uses SSH (`git@github.com:zana-AI/zana_planner.git`), but the WSL SSH agent often fails to start. Use gh's HTTPS override:
+
+```bash
+gh auth setup-git
+git -c url.https://github.com/.insteadOf=git@github.com: push origin master
+```
+
+This leverages the already-authenticated `gh` CLI token.
+
+## Deployment Pipeline
+
+1. **Push to `master`** triggers the `Deploy to Staging on GCP` workflow (`.github/workflows/deploy-staging.yml`).
+2. **Production** is promoted manually via `deploy-prod.yml` (workflow_dispatch).
+
+### Monitoring a Run
+
+```bash
+# List recent runs
+gh run list --limit 5
+
+# Watch a specific run (get ID from list)
+gh run view <run-id>
+
+# Get job logs on failure
+gh run view --job=<job-id> --log-failed
+```
+
+Poll every ~30s until the run completes (typically 1-2 minutes for staging).
+
+### Verify on VM
+
+After GH Actions succeeds, wait ~30s for the container to restart, then check Docker logs:
+
+```bash
+# gcloud may not be on default PATH in WSL; source the SDK
+source ~/google-cloud-sdk/path.bash.inc 2>/dev/null || true
+gcloud compute ssh vm-telegram-bots --zone europe-west9-c \
+  --command "sudo docker logs zana-staging --tail 30"
+```
+
+Healthy startup ends with:
+```
+bootstrap_schedule_existing_users: successfully scheduled reminders for N/N users
+run_polling with allowed_updates: [...]
+Application started
+```
+
+## Failure Recovery
+
+If GH Actions fails:
+1. Read the failed job logs: `gh run view --job=<job-id> --log-failed`
+2. Fix the code locally
+3. Commit and push again (new commit, do NOT amend if already pushed)
+4. Re-monitor the new run
+
+If the container crashes after deploy:
+1. Check logs: `sudo docker logs zana-staging --tail 100`
+2. Look for ImportError, SyntaxError, or missing env vars
+3. Fix, commit, push, re-deploy

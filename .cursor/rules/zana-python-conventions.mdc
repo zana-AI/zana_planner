@@ -1,0 +1,39 @@
+---
+description: Python coding conventions for the Zana planner bot codebase
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Zana Python Conventions
+
+## Project Structure
+
+- Bot entrypoint: `tm_bot/run_bot.py` → `tm_bot/planner_bot.py`
+- Central router: `PlannerBot.dispatch()` handles ALL incoming updates
+- Input classification: `router_types.InputContext` dataclass
+- Command routing: `COMMAND_ROUTE_MAP` dict in `planner_bot.py`
+- Handlers: `handlers/message_handlers.py`, `handlers/callback_handlers.py`
+- Platform adapters: `platforms/` (telegram, fastapi, testing/cli)
+
+## Dispatch Pattern
+
+All inputs (commands, text, voice, image, callbacks, reactions, edits, polls) flow through `PlannerBot.dispatch()`. Cross-cutting concerns (user info, avatar, logging, ack messages) are handled there — do NOT duplicate them in individual handlers.
+
+## Adding a New Command
+
+1. Add handler method to `MessageHandlers`
+2. Add entry to `COMMAND_ROUTE_MAP` in `planner_bot.py`
+3. That's it — `dispatch()` and `_register_handlers()` pick it up automatically
+
+## Logging
+
+Use `utils.logger.get_logger(__name__)` — not `print()` or bare `logging`.
+
+## Imports
+
+Handlers use relative imports from `tm_bot/` root (the Docker WORKDIR). Example:
+```python
+from handlers.message_handlers import MessageHandlers
+from services.response_service import ResponseService
+from utils.logger import get_logger
+```

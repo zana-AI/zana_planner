@@ -1,0 +1,62 @@
+---
+description: Zana project infrastructure, services, and architecture reference
+alwaysApply: true
+---
+
+# Infrastructure Overview
+
+## GCP VM
+
+- **VM name:** `vm-telegram-bots`
+- **Zone:** `europe-west9-c`
+- **Project path on VM:** `/opt/zana-bot/zana_planner`
+- **Config dir:** `/opt/zana-config/` (contains `.env.prod`, `.env.staging`)
+
+## Docker Services (docker-compose.yml)
+
+| Service | Image/Build | Port | Data Volume |
+|---------|------------|------|-------------|
+| `zana-prod` | `zana-ai-bot:prod` | — | `/srv/zana-users` |
+| `zana-staging` | `zana-ai-bot:staging` | — | `/srv/zana-users-staging` |
+| `zana-stats` | built from `stats_service/` | 8000 | — |
+| `zana-webapp` | `zana-project-webapp` | 8080 (internal) | — |
+| `qdrant` | `qdrant/qdrant:v1.13.2` | 6333, 6334 | `qdrant-storage` |
+| `nginx` | `nginx:alpine` | 80, 443 | SSL certs from `/etc/letsencrypt` |
+
+Network: `web` (bridge).
+
+## Deployment Flow
+
+```
+push to master
+  → GH Actions: deploy-staging.yml
+    → SSH to VM → git pull → docker build → restart zana-staging + zana-webapp
+    → health check → git tag staging-{ts}-{sha}
+
+manual workflow_dispatch
+  → GH Actions: deploy-prod.yml
+    → SSH to VM → tag staging image as prod → restart zana-prod + zana-webapp
+    → health check → git tag prod-{ts}-{sha}
+```
+
+## Key Secrets (in GitHub repo settings)
+
+`DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `PROJECT_PATH`,
+`DATABASE_URL_STAGING`, `GCP_PROJECT_ID`, `GCP_LOCATION`, `GCP_GEMINI_MODEL`, `GCP_CREDENTIALS_B64`
+
+## Container Build
+
+- Base: `python:3.11-slim`
+- Frontend: `node:20-slim` (multi-stage)
+- Runs as user `amiryan_j` (UID 1002)
+- Entrypoint: `python -m tm_bot.run_bot`
+- Build args inject git metadata: `GIT_COMMIT`, `GIT_TAG`, `BUILD_DATE`, etc.
+
+## Domain & Web
+
+- Domain: `xaana.club`
+- SSL: Let's Encrypt via certbot
+- Reverse proxy: nginx on host (ports 80/443)
+- Backend webapp: port 8080 (internal)
+- Database: Supabase (PostgreSQL)
+- Vector DB: Qdrant
