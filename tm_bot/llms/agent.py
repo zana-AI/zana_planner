@@ -753,6 +753,40 @@ def _ensure_messages_have_content(messages: List[BaseMessage]) -> List[BaseMessa
     return validated
 
 
+def _is_google_genai_runnable(runnable: object) -> bool:
+    """
+    Best-effort detection for ChatGoogleGenerativeAI and wrapped/bound variants.
+    """
+    current = runnable
+    for _ in range(6):
+        module_name = getattr(getattr(current, "__class__", object), "__module__", "")
+        if "langchain_google_genai" in module_name:
+            return True
+        bound = getattr(current, "bound", None)
+        if bound is None:
+            break
+        current = bound
+    return False
+
+
+def _invoke_model(model: Runnable, messages: List[BaseMessage]):
+    """
+    Invoke model with provider-specific safeguards.
+
+    For Gemini/Google GenAI, disable SDK Automatic Function Calling (AFC) because
+    this agent already manages tool loops itself.
+    """
+    kwargs: Dict[str, Any] = {}
+    if _is_google_genai_runnable(model) and _env_enabled("GEMINI_DISABLE_AFC", True):
+        kwargs["automatic_function_calling"] = {"disable": True}
+        kwargs["include_thoughts"] = False
+    try:
+        return model.invoke(messages, **kwargs)
+    except TypeError:
+        # If a backend rejects extra kwargs, fall back to plain invoke.
+        return model.invoke(messages)
+
+
 def create_agent_graph(
     tools: Sequence,
     model: Runnable,
@@ -780,7 +814,7 @@ def create_agent_graph(
     def call_agent(state: AgentState) -> AgentState:
         validated_messages = _ensure_messages_have_content(state["messages"])
         _track_llm_call("agent", "model_with_tools")
-        result = model_with_tools.invoke(validated_messages)
+        result = _invoke_model(model_with_tools, validated_messages)
         new_iteration = state["iteration"] + 1
         _emit(
             progress_getter,
@@ -1169,7 +1203,7 @@ def create_plan_execute_graph(
         validated_messages = _ensure_messages_have_content(messages)
 
         _track_llm_call("planner", "planner_model")
-        result = planner_model.invoke(validated_messages)
+        result = _invoke_model(planner_model, validated_messages)
         content = getattr(result, "content", "") or ""
 
         plan: Optional[Plan] = None
@@ -1250,7 +1284,7 @@ def create_plan_execute_graph(
                 )
                 messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
                 _track_llm_call("responder_error", "responder_model")
-                result = responder_model.invoke(messages_to_send)
+                result = _invoke_model(responder_model, messages_to_send)
             else:
                 # Default responder hint for good UX
                 default_hint = (
@@ -1261,7 +1295,8 @@ def create_plan_execute_graph(
                     "- If showing progress, highlight achievements and encourage continued effort\n"
                     "- End with a subtle prompt for next action if relevant (e.g., 'Keep up the great work!')\n"
                     "- Format lists with bullet points (•) for readability\n"
-                    "- Do NOT include raw tool outputs or JSON - summarize in human terms"
+                    "- Do NOT include raw tool outputs or JSON - summarize in human terms\n"
+                    "- Output only the final answer. Never include internal analysis, step-by-step thinking, or a 'thinking process'."
                 )
                 # Add intent validation if intent was detected
                 detected_intent = state.get("detected_intent")
@@ -1273,7 +1308,7 @@ def create_plan_execute_graph(
                     )
                 messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=default_hint)])
                 _track_llm_call("responder_default", "responder_model")
-                result = responder_model.invoke(messages_to_send)
+                result = _invoke_model(responder_model, messages_to_send)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -1287,7 +1322,7 @@ def create_plan_execute_graph(
             # hard stop: respond with best effort
             validated_messages = _ensure_messages_have_content(state["messages"])
             _track_llm_call("responder_max_iter", "responder_model")
-            result = responder_model.invoke(validated_messages)
+            result = _invoke_model(responder_model, validated_messages)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -1319,6 +1354,7 @@ def create_plan_execute_graph(
                 "- Format lists with bullet points (•) for readability\n"
                 "- Highlight achievements and progress positively\n"
                 "- Do NOT output raw JSON or tool responses - summarize them\n"
+                "- Output only the final answer. Never include internal analysis, step-by-step thinking, or a 'thinking process'.\n"
                 "- Do NOT call any tools in your response\n"
                 "- Do NOT include headers like 'Zana:' or 'Xaana:' in your response - the system will add the header automatically"
             )
@@ -1373,7 +1409,7 @@ def create_plan_execute_graph(
                 hint = hint + failure_hint
             messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
             _track_llm_call("responder_respond_step", "responder_model")
-            result = responder_model.invoke(messages_to_send)
+            result = _invoke_model(responder_model, messages_to_send)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -1768,7 +1804,7 @@ def create_routed_plan_execute_graph(
         
         validated_messages = _ensure_messages_have_content(router_messages)
         _track_llm_call("router", "router_model")
-        result = router_model.invoke(validated_messages)
+        result = _invoke_model(router_model, validated_messages)
         content = message_content_to_str(getattr(result, "content", "") or "")
         
         route_decision: Optional[RouteDecision] = None
@@ -2113,8 +2149,8 @@ def create_routed_plan_execute_graph(
         messages = [SystemMessage(content=combined_system_content)] + messages
         
         validated_messages = _ensure_messages_have_content(messages)
-
-        result = planner_model.invoke(validated_messages)
+        _track_llm_call("routed_planner", "planner_model")
+        result = _invoke_model(planner_model, validated_messages)
         content = getattr(result, "content", "") or ""
 
         plan: Optional[Plan] = None
@@ -2185,13 +2221,14 @@ def create_routed_plan_execute_graph(
                 "You are Xaana, a friendly assistant. The user is just chatting. "
                 "Respond warmly, with humor if appropriate, and keep them engaged. "
                 "Keep it short (1-3 sentences). "
+                "Never reveal internal analysis or thinking steps; give only the final user-facing text. "
                 "If the user shares personal facts worth remembering (pets, hobbies, preferences, "
                 "life events, recurring patterns), call memory_write to save them."
             )
             if memory_tools:
                 _track_llm_call("responder_engagement", "responder_model")
                 bound_model = responder_model.bind_tools(memory_tools)
-                result = bound_model.invoke(messages_to_send + [SystemMessage(content=engagement_hint)])
+                result = _invoke_model(bound_model, messages_to_send + [SystemMessage(content=engagement_hint)])
                 tool_calls = getattr(result, "tool_calls", None) or []
                 new_messages = list(state["messages"]) + [result]
                 if tool_calls:
@@ -2207,7 +2244,7 @@ def create_routed_plan_execute_graph(
                                 t_result = f"Error: {e}"
                             new_messages.append(TM(content=str(t_result), tool_call_id=tc.get("id", "")))
                     _track_llm_call("responder_engagement_final", "responder_model")
-                    final = responder_model.invoke(_ensure_messages_have_content(
+                    final = _invoke_model(responder_model, _ensure_messages_have_content(
                         [system_msg] + new_messages + [SystemMessage(content=engagement_hint)] if system_msg
                         else new_messages + [SystemMessage(content=engagement_hint)]
                     ))
@@ -2224,7 +2261,7 @@ def create_routed_plan_execute_graph(
                 }
             else:
                 _track_llm_call("responder_engagement", "responder_model")
-                result = responder_model.invoke(messages_to_send + [SystemMessage(content=engagement_hint)])
+                result = _invoke_model(responder_model, messages_to_send + [SystemMessage(content=engagement_hint)])
                 return {
                     **state,
                     "messages": state["messages"] + [result],
@@ -2260,7 +2297,7 @@ def create_routed_plan_execute_graph(
                     base_messages = [system_msg] + base_messages
                 messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=hint)])
                 _track_llm_call("routed_responder_error", "responder_model")
-                result = responder_model.invoke(messages_to_send)
+                result = _invoke_model(responder_model, messages_to_send)
             else:
                 default_hint = (
                     "RESPONSE GUIDELINES:\n"
@@ -2270,7 +2307,8 @@ def create_routed_plan_execute_graph(
                     "- If showing progress, highlight achievements and encourage continued effort\n"
                     "- End with a subtle prompt for next action if relevant (e.g., 'Keep up the great work!')\n"
                     "- Format lists with bullet points (•) for readability\n"
-                    "- Do NOT include raw tool outputs or JSON - summarize in human terms"
+                    "- Do NOT include raw tool outputs or JSON - summarize in human terms\n"
+                    "- Output only the final answer. Never include internal analysis, step-by-step thinking, or a 'thinking process'."
                 )
                 detected_intent = state.get("detected_intent")
                 if detected_intent:
@@ -2285,7 +2323,7 @@ def create_routed_plan_execute_graph(
                     base_messages = [system_msg] + base_messages
                 messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=default_hint)])
                 _track_llm_call("routed_responder_default", "responder_model")
-                result = responder_model.invoke(messages_to_send)
+                result = _invoke_model(responder_model, messages_to_send)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -2298,7 +2336,7 @@ def create_routed_plan_execute_graph(
         if new_iteration > max_iterations:
             validated_messages = _ensure_messages_have_content(state["messages"])
             _track_llm_call("routed_responder_max_iter", "responder_model")
-            result = responder_model.invoke(validated_messages)
+            result = _invoke_model(responder_model, validated_messages)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -2327,6 +2365,7 @@ def create_routed_plan_execute_graph(
                 "- Format lists with bullet points (•) for readability\n"
                 "- Highlight achievements and progress positively\n"
                 "- Do NOT output raw JSON or tool responses - summarize them\n"
+                "- Output only the final answer. Never include internal analysis, step-by-step thinking, or a 'thinking process'.\n"
                 "- Do NOT call any tools in your response\n"
                 "- Do NOT include headers like 'Zana:' or 'Xaana:' in your response - the system will add the header automatically"
             )
@@ -2380,7 +2419,7 @@ def create_routed_plan_execute_graph(
                 base_messages = [system_msg] + base_messages
             messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=hint)])
             _track_llm_call("routed_responder_respond_step", "responder_model")
-            result = responder_model.invoke(messages_to_send)
+            result = _invoke_model(responder_model, messages_to_send)
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -2644,3 +2683,4 @@ def create_routed_plan_execute_graph(
     graph.add_edge("tools", "executor")
     
     return graph.compile()
+

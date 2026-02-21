@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from collections import deque
 from contextlib import nullcontext
@@ -169,12 +170,35 @@ class LLMHandler:
             router_temp = float(cfg.get("LLM_ROUTER_TEMPERATURE", 0.2))
             planner_temp = float(cfg.get("LLM_PLANNER_TEMPERATURE", 0.2))
             responder_temp = float(cfg.get("LLM_RESPONDER_TEMPERATURE", 0.7))
+            request_timeout = float(cfg.get("LLM_REQUEST_TIMEOUT_SECONDS", 45.0))
+            max_retries = int(cfg.get("LLM_MAX_RETRIES", 1))
+            gemini_include_thoughts = bool(cfg.get("GEMINI_INCLUDE_THOUGHTS", False))
+            gemini_disable_afc = bool(cfg.get("GEMINI_DISABLE_AFC", True))
+            gemini_model_name = str(cfg.get("GCP_GEMINI_MODEL") or "")
+            is_gemini3 = gemini_model_name.startswith("gemini-3-")
+            if is_gemini3:
+                if responder_temp < 1.0:
+                    logger.warning(
+                        "Gemini 3 with responder temperature %.2f can cause latency/loop issues; using 1.0",
+                        responder_temp,
+                    )
+                    responder_temp = 1.0
+                if planner_temp < 1.0:
+                    planner_temp = 1.0
+                if router_temp < 1.0:
+                    router_temp = 1.0
             if cfg.get("GCP_PROJECT_ID", ""):
                 vertex_kwargs = dict(
                     model=cfg["GCP_GEMINI_MODEL"],
                     project=cfg["GCP_PROJECT_ID"],
                     location=cfg["GCP_LLM_LOCATION"],
+                    request_timeout=request_timeout,
+                    retries=max_retries,
+                    include_thoughts=gemini_include_thoughts,
                 )
+                gemini_thinking_level = cfg.get("GEMINI_THINKING_LEVEL")
+                if is_gemini3 and gemini_thinking_level:
+                    vertex_kwargs["thinking_level"] = gemini_thinking_level
                 self.router_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=router_temp)
                 self.planner_model = ChatGoogleGenerativeAI(
                     **vertex_kwargs,
@@ -184,6 +208,8 @@ class LLMHandler:
                 )
                 self.responder_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=responder_temp)
                 self.chat_model = self.responder_model
+                # read by llms.agent._invoke_model to disable SDK AFC on every invoke.
+                os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
 
             if (
                 not self.chat_model
@@ -246,6 +272,11 @@ class LLMHandler:
                     "router_temperature": router_temp,
                     "planner_temperature": planner_temp,
                     "responder_temperature": responder_temp,
+                    "request_timeout_seconds": request_timeout,
+                    "max_retries": max_retries,
+                    "gemini_disable_afc": gemini_disable_afc,
+                    "gemini_include_thoughts": gemini_include_thoughts,
+                    "gemini_thinking_level": cfg.get("GEMINI_THINKING_LEVEL"),
                     "adapter_root": adapter_root,
                     "max_iterations": self.max_iterations,
                     "debug": _DEBUG_ENABLED,
@@ -275,6 +306,7 @@ class LLMHandler:
             "You are Xaana, a friendly and proactive task management assistant. "
             "Help users track their promises (goals) and log time spent on them. "
             "Be encouraging, concise, and action-oriented. "
+            "Never reveal internal reasoning or thinking steps; provide only the final user-facing answer. "
             "When users mention activities, assume they want to log time unless they clearly ask something else. "
             "Use emojis sparingly (✅ for success, 🔥 for streaks, 📊 for reports). "
             "If the user is just chatting, respond warmly without using tools."
@@ -1219,6 +1251,7 @@ class LLMHandler:
                 or message_content_to_str(raw_content)
                 or "I'm having trouble responding right now."
             )
+            response_text = self._strip_internal_reasoning(response_text)
             
             # Append debug footer if debug mode is enabled
             if _DEBUG_ENABLED:
@@ -1552,6 +1585,51 @@ class LLMHandler:
             except Exception:
                 # Never let progress callbacks break the agent
                 pass
+
+    @staticmethod
+    def _strip_internal_reasoning(text: str) -> str:
+        """
+        Remove accidental chain-of-thought style preambles from model output.
+        """
+        value = "" if text is None else str(text)
+        if not value.strip():
+            return value
+        lowered = value.lower()
+        markers = (
+            "thinking process",
+            "analyze user input",
+            "check language setting",
+        )
+        if not any(m in lowered for m in markers):
+            return value
+
+        # Prefer explicit final-answer markers when present.
+        for marker in ("final answer:", "final response:", "response:"):
+            idx = lowered.find(marker)
+            if idx >= 0:
+                candidate = value[idx + len(marker):].strip()
+                if candidate:
+                    return candidate
+
+        # Fallback: drop known reasoning-like lines from the start.
+        cleaned_lines: List[str] = []
+        skipping = True
+        for line in value.splitlines():
+            stripped = line.strip()
+            sl = stripped.lower()
+            if skipping and (
+                not stripped
+                or "thinking process" in sl
+                or "analyze user input" in sl
+                or "check language setting" in sl
+                or re.match(r"^\d+\.\s", stripped) is not None
+                or sl.startswith("step ")
+            ):
+                continue
+            skipping = False
+            cleaned_lines.append(line)
+        candidate = "\n".join(cleaned_lines).strip()
+        return candidate or value
     
     @staticmethod
     def _format_debug_footer(

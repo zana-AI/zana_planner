@@ -20,6 +20,8 @@ logger = get_logger(__name__)
 
 # Promise count threshold for context injection
 PROMISE_COUNT_THRESHOLD = 50
+# Telegram hard limit is 4096 chars for text; keep margin for formatting/safety.
+MAX_TELEGRAM_TEXT_CHARS = 3900
 
 
 class ResponseService:
@@ -179,6 +181,23 @@ class ResponseService:
             return "Markdown"
         
         return None
+
+    def _fit_for_telegram(self, text: str, parse_mode: Optional[str]) -> tuple[str, Optional[str]]:
+        """
+        Ensure text is safe for Telegram edit/send limits.
+
+        If truncated, disable parse mode to avoid broken HTML/Markdown tags at cut point.
+        """
+        safe_text = "" if text is None else str(text)
+        if len(safe_text) <= MAX_TELEGRAM_TEXT_CHARS:
+            return safe_text, parse_mode
+        clipped = safe_text[: MAX_TELEGRAM_TEXT_CHARS - 1] + "…"
+        logger.warning(
+            "Truncated outgoing Telegram text from %s to %s chars",
+            len(safe_text),
+            len(clipped),
+        )
+        return clipped, None
     
     def log_user_message(
         self,
@@ -241,6 +260,7 @@ class ResponseService:
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(text)
+        text, parse_mode = self._fit_for_telegram(text, parse_mode)
         
         # Log conversation
         if log_conversation:
@@ -310,6 +330,7 @@ class ResponseService:
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(text)
+        text, parse_mode = self._fit_for_telegram(text, parse_mode)
         
         # Log conversation
         if log_conversation:
@@ -481,6 +502,7 @@ class ResponseService:
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(text)
+        text, parse_mode = self._fit_for_telegram(text, parse_mode)
         
         # Log conversation (edits are logged as new bot messages)
         if log_conversation:
@@ -595,6 +617,7 @@ class ResponseService:
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(final_text)
+        final_text, parse_mode = self._fit_for_telegram(final_text, parse_mode)
         
         # Log conversation
         if log_conversation:
@@ -629,4 +652,3 @@ class ResponseService:
             except Exception as e2:
                 logger.error(f"Fallback edit also failed: {e2}")
                 return None
-

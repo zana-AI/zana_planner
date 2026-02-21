@@ -63,6 +63,23 @@ def load_llm_env():
         except (TypeError, ValueError):
             return default
 
+    def _int_env(name: str, default: int, minimum: int = 0) -> int:
+        try:
+            value = int(os.getenv(name, str(default)))
+        except (TypeError, ValueError):
+            return default
+        return max(minimum, value)
+
+    def _bool_env(name: str, default: bool) -> bool:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+    gemini_thinking_level = (os.getenv("GEMINI_THINKING_LEVEL", "minimal") or "").strip().lower() or None
+    if gemini_thinking_level not in {None, "minimal", "low", "medium", "high"}:
+        gemini_thinking_level = "minimal"
+
     return {
         "GCP_PROJECT_ID": project_id,
         "GCP_LOCATION": location,
@@ -78,4 +95,11 @@ def load_llm_env():
         "LLM_ROUTER_TEMPERATURE": _float_env("LLM_ROUTER_TEMPERATURE", 0.2),
         "LLM_PLANNER_TEMPERATURE": _float_env("LLM_PLANNER_TEMPERATURE", 0.2),
         "LLM_RESPONDER_TEMPERATURE": _float_env("LLM_RESPONDER_TEMPERATURE", 0.7),
+        # Gemini reliability/latency controls
+        "LLM_REQUEST_TIMEOUT_SECONDS": _float_env("LLM_REQUEST_TIMEOUT_SECONDS", 45.0),
+        # For google-genai retries, 1 means "single attempt, no retries".
+        "LLM_MAX_RETRIES": _int_env("LLM_MAX_RETRIES", 1, minimum=1),
+        "GEMINI_DISABLE_AFC": _bool_env("GEMINI_DISABLE_AFC", True),
+        "GEMINI_INCLUDE_THOUGHTS": _bool_env("GEMINI_INCLUDE_THOUGHTS", False),
+        "GEMINI_THINKING_LEVEL": gemini_thinking_level,
     }
