@@ -270,6 +270,31 @@ async def update_promise(
         raise HTTPException(status_code=500, detail=f"Failed to update promise: {str(e)}")
 
 
+@router.delete("/promises/{promise_id}")
+async def delete_promise(
+    request: Request,
+    promise_id: str,
+    user_id: int = Depends(get_current_user)
+):
+    """Soft-delete a promise for the authenticated user."""
+    try:
+        promises_repo = PromisesRepository()
+        promise = promises_repo.get_promise(user_id, promise_id)
+        if not promise:
+            raise HTTPException(status_code=404, detail="Promise not found")
+
+        deleted = promises_repo.delete_promise(user_id, promise.id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Promise not found")
+
+        return {"status": "success", "message": f"Promise #{promise.id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting promise: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete promise: {str(e)}")
+
+
 @router.post("/actions")
 async def log_action(
     request: Request,

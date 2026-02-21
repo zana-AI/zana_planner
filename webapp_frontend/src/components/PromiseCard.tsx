@@ -5,6 +5,7 @@ import { LogActionModal } from './LogActionModal';
 import { CheckinModal } from './CheckinModal';
 import { WeeklyNoteModal } from './WeeklyNoteModal';
 import { VisibilityConfirmModal } from './VisibilityConfirmModal';
+import { PromiseDeleteConfirmModal } from './PromiseDeleteConfirmModal';
 import { InlineCalendar } from './InlineCalendar';
 
 interface PromiseCardProps {
@@ -67,6 +68,8 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [isEditing, setIsEditing] = useState(false);
   const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
   const [isUpdatingRecurring, setIsUpdatingRecurring] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingPromise, setIsDeletingPromise] = useState(false);
 
   // Sync recurring state when data changes
   useEffect(() => {
@@ -95,11 +98,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [isUpdatingPromise, setIsUpdatingPromise] = useState(false);
   
   // Swipe gesture state
-  const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
+  const [swipeStart, setSwipeStart] = useState<{ x: number; y: number; initialOffset: number } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
-  const [thresholdReached, setThresholdReached] = useState(false);
+  const [isSnoozing, setIsSnoozing] = useState(false);
   
-  const SWIPE_THRESHOLD = 100; // pixels
+  const SWIPE_ACTION_WIDTH = 132; // pixels
+  const SWIPE_OPEN_THRESHOLD = SWIPE_ACTION_WIDTH / 2;
+  const isSwipeRevealed = swipeOffset <= -SWIPE_ACTION_WIDTH + 1;
   
   // Calculate progress based on metric type
   const isCountBased = metric_type === 'count';
@@ -128,9 +133,15 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   
   const statusLabel = getStatusLabel(progress);
   const statusTone = getStatusTone(progress);
+
+  const closeSwipeActions = () => {
+    setSwipeStart(null);
+    setSwipeOffset(0);
+  };
   
   const handleVisibilityToggle = () => {
     if (isUpdatingVisibility) return;
+    closeSwipeActions();
     
     const newVisibility = currentVisibility === 'private' ? 'public' : 'private';
     setPendingVisibility(newVisibility);
@@ -218,6 +229,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         }
         // Exit edit mode after successful save
         setIsEditing(false);
+        closeSwipeActions();
       } else {
         // No changes, just exit edit mode
         setIsEditing(false);
@@ -237,10 +249,44 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     setEditingEndDate(data.end_date || '');
     setShowCalendar(false);
     setIsEditing(false);
+    closeSwipeActions();
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    closeSwipeActions();
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteCancel = () => {
+    if (isDeletingPromise) return;
+    setShowDeleteConfirm(false);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (isDeletingPromise) return;
+    setIsDeletingPromise(true);
+
+    try {
+      await apiClient.deletePromise(id);
+      setShowDeleteConfirm(false);
+      setIsEditing(false);
+      setIsExpanded(false);
+      closeSwipeActions();
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to delete promise:', err);
+      alert(err instanceof Error ? err.message : 'Failed to delete promise');
+    } finally {
+      setIsDeletingPromise(false);
+    }
   };
   
   const handleEditClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    closeSwipeActions();
     setIsEditing(true);
     if (!isExpanded) {
       setIsExpanded(true);
@@ -320,18 +366,31 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   };
   
   const handleCardHeaderClick = (e: React.MouseEvent) => {
+    if (isSwipeRevealed) {
+      closeSwipeActions();
+      return;
+    }
+
     // Don't expand if clicking on visibility toggle or other interactive elements
     const target = e.target as HTMLElement;
-    if (target.closest('.card-visibility-toggle') || target.closest('button')) {
+    if (target.closest('.card-visibility-toggle') || target.closest('button') || target.closest('.card-swipe-action')) {
       return;
     }
     setIsExpanded(!isExpanded);
   };
   
   const handleSwipeStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, textarea')) {
+      return;
+    }
+
+    if (isDeletingPromise || isUpdatingPromise) {
+      return;
+    }
+
     const touch = e.touches[0];
-    setSwipeStart({ x: touch.clientX, y: touch.clientY });
-    setSwipeOffset(0);
+    setSwipeStart({ x: touch.clientX, y: touch.clientY, initialOffset: swipeOffset });
   };
   
   const handleSwipeMove = (e: React.TouchEvent) => {
@@ -341,66 +400,52 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     const deltaX = touch.clientX - swipeStart.x;
     const deltaY = Math.abs(touch.clientY - swipeStart.y);
     
-    // Only allow horizontal swipe (left)
-    if (deltaX < 0 && deltaY < 50) {
-      setSwipeOffset(Math.max(deltaX, -200)); // Limit to -200px
+    // Only allow mostly horizontal swipes
+    if (deltaY > 50) {
+      return;
     }
+
+    const nextOffset = swipeStart.initialOffset + deltaX;
+    const clampedOffset = Math.min(0, Math.max(nextOffset, -SWIPE_ACTION_WIDTH));
+    setSwipeOffset(clampedOffset);
   };
   
-  const handleSwipeEnd = async () => {
+  const handleSwipeEnd = (e: React.TouchEvent) => {
     if (!swipeStart) return;
-    
-    if (swipeOffset <= -SWIPE_THRESHOLD) {
-      // Trigger snooze
-      try {
-        await apiClient.snoozePromise(id);
-        if (onRefresh) {
-          onRefresh();
-        }
-      } catch (err) {
-        console.error('Failed to snooze promise:', err);
+
+    const changedTouch = e.changedTouches[0];
+    if (changedTouch) {
+      const totalDeltaX = changedTouch.clientX - swipeStart.x;
+      const totalDeltaY = Math.abs(changedTouch.clientY - swipeStart.y);
+      const isTap = Math.abs(totalDeltaX) < 8 && totalDeltaY < 8;
+      if (isSwipeRevealed && isTap) {
+        closeSwipeActions();
+        return;
       }
     }
-    
-    // Reset swipe state
+
+    const shouldReveal = Math.abs(swipeOffset) >= SWIPE_OPEN_THRESHOLD;
+    setSwipeOffset(shouldReveal ? -SWIPE_ACTION_WIDTH : 0);
     setSwipeStart(null);
-    setSwipeOffset(0);
   };
   
   const handleSnoozeButtonClick = async () => {
-    if (swipeOffset <= -SWIPE_THRESHOLD) {
-      try {
-        await apiClient.snoozePromise(id);
-        if (onRefresh) {
-          onRefresh();
-        }
-        // Reset swipe state
-        setSwipeStart(null);
-        setSwipeOffset(0);
-      } catch (err) {
-        console.error('Failed to snooze promise:', err);
+    if (isSnoozing) return;
+    setIsSnoozing(true);
+
+    try {
+      await apiClient.snoozePromise(id);
+      closeSwipeActions();
+      if (onRefresh) {
+        onRefresh();
       }
+    } catch (err) {
+      console.error('Failed to snooze promise:', err);
+      alert(err instanceof Error ? err.message : 'Failed to snooze promise');
+    } finally {
+      setIsSnoozing(false);
     }
   };
-  
-  // Calculate button visibility and scale based on swipe offset
-  const snoozeButtonOpacity = swipeOffset < -50 
-    ? Math.min(Math.abs(swipeOffset) / SWIPE_THRESHOLD, 1) 
-    : 0;
-  const snoozeButtonScale = swipeOffset < -50
-    ? Math.min(0.5 + (Math.abs(swipeOffset) / SWIPE_THRESHOLD) * 0.5, 1)
-    : 0.5;
-  const isSnoozeActive = swipeOffset <= -SWIPE_THRESHOLD;
-  
-  // Haptic feedback when threshold is reached
-  useEffect(() => {
-    if (isSnoozeActive && !thresholdReached && swipeStart) {
-      setThresholdReached(true);
-      // Haptic feedback would go here if available
-    } else if (!isSnoozeActive && thresholdReached) {
-      setThresholdReached(false);
-    }
-  }, [isSnoozeActive, thresholdReached, swipeStart]);
   
   // Create a map of date -> value for quick lookup
   const sessionsByDate: Record<string, number> = {};
@@ -442,96 +487,81 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   
   return (
     <>
-      <article 
-        className={`promise-card promise-card-${statusTone}`}
-        style={{
-          transform: swipeOffset < 0 ? `translateX(${swipeOffset}px)` : undefined,
-          transition: swipeStart ? 'none' : 'transform 0.3s ease',
-        }}
-        onTouchStart={handleSwipeStart}
-        onTouchMove={handleSwipeMove}
-        onTouchEnd={handleSwipeEnd}
-      >
-        {/* Swipe overlay */}
-        {swipeOffset < -50 && (
-          <div 
-            className="card-swipe-overlay"
-            style={{
-              opacity: Math.min(Math.abs(swipeOffset) / SWIPE_THRESHOLD, 0.3),
-            }}
-          />
-        )}
-        
-        {/* Snooze button that appears during swipe */}
-        {swipeOffset < -50 && (
-          <div className="card-snooze-container">
-            <button
-              className={`card-snooze-button ${isSnoozeActive ? 'active' : ''}`}
-              style={{
-                opacity: snoozeButtonOpacity,
-                transform: `scale(${snoozeButtonScale})`,
-              }}
-              onClick={handleSnoozeButtonClick}
-              disabled={!isSnoozeActive}
-            >
-              {isSnoozeActive ? 'Snoozed until next week' : 'Swipe left to snooze'}
-            </button>
-          </div>
-        )}
-        
-        <div 
-          className="card-top" 
-          onClick={handleCardHeaderClick}
-          style={{ cursor: 'pointer' }}
+      <div className="promise-card-swipe-shell">
+        <div className="card-swipe-rail" aria-hidden={!isSwipeRevealed}>
+          <button
+            className="card-swipe-action card-swipe-action-snooze"
+            onClick={handleSnoozeButtonClick}
+            disabled={isSnoozing}
+          >
+            {isSnoozing ? 'Snoozing...' : 'Snooze'}
+          </button>
+        </div>
+
+        <article 
+          className={`promise-card promise-card-${statusTone}`}
+          style={{
+            transform: `translateX(${swipeOffset}px)`,
+            transition: swipeStart ? 'none' : 'transform 0.22s ease',
+          }}
+          onTouchStart={handleSwipeStart}
+          onTouchMove={handleSwipeMove}
+          onTouchEnd={handleSwipeEnd}
+          onTouchCancel={handleSwipeEnd}
         >
-          <div className="card-title" dir="auto">
-            <span className="card-status-label">{statusLabel}</span>
-            <span className="card-title-text">{text}</span>
-            {isBudget && (
-              <span className="card-budget-badge">
-                Budget
-              </span>
-            )}
-            <button
-              className="card-edit-button"
-              onClick={handleEditClick}
-              title="Edit promise"
-            >
-              <span>Edit</span>
-            </button>
-            <button
-              className="card-visibility-toggle"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleVisibilityToggle();
-              }}
-              disabled={isUpdatingVisibility}
-              title={currentVisibility === 'private' ? 'Make public' : 'Make private'}
-            >
-              <span>{currentVisibility === 'private' ? 'Private' : 'Public'}</span>
-            </button>
-          </div>
-          <div className="card-meta">
-            <span className="card-id" dir="ltr">#{id}</span>
-            <div className="card-meta-ratio">
-              <span className="card-ratio" dir="ltr">
-                {isCountBased ? (
-                  <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
-                ) : (
-                  <>{achieved_value.toFixed(1)}/{target_value.toFixed(1)} h</>
-                )}
-              </span>
-              <span className="card-pct" dir="ltr">{Math.round(progress)}%</span>
+          <div 
+            className="card-top" 
+            onClick={handleCardHeaderClick}
+            style={{ cursor: 'pointer' }}
+          >
+            <div className="card-title" dir="auto">
+              <span className="card-status-label">{statusLabel}</span>
+              <span className="card-title-text">{text}</span>
+              {isBudget && (
+                <span className="card-budget-badge">
+                  Budget
+                </span>
+              )}
+              <button
+                className="card-edit-button"
+                onClick={handleEditClick}
+                title="Edit promise"
+              >
+                <span>Edit</span>
+              </button>
+              <button
+                className="card-visibility-toggle"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleVisibilityToggle();
+                }}
+                disabled={isUpdatingVisibility}
+                title={currentVisibility === 'private' ? 'Make public' : 'Make private'}
+              >
+                <span>{currentVisibility === 'private' ? 'Private' : 'Public'}</span>
+              </button>
+            </div>
+            <div className="card-meta">
+              <span className="card-id" dir="ltr">#{id}</span>
+              <div className="card-meta-ratio">
+                <span className="card-ratio" dir="ltr">
+                  {isCountBased ? (
+                    <>{Math.round(achieved_value)}/{Math.round(target_value)}</>
+                  ) : (
+                    <>{achieved_value.toFixed(1)}/{target_value.toFixed(1)} h</>
+                  )}
+                </span>
+                <span className="card-pct" dir="ltr">{Math.round(progress)}%</span>
+              </div>
             </div>
           </div>
-        </div>
-        
-        {/* Expanded section - shows notes when expanded, editable fields when editing */}
-        {isExpanded && (
-          <div 
-            className="card-expanded-section"
-            onClick={(e) => e.stopPropagation()}
-          >
+          
+          {/* Expanded section - shows notes when expanded, editable fields when editing */}
+          {isExpanded && (
+            <div 
+              className="card-expanded-section"
+              onClick={(e) => e.stopPropagation()}
+            >
             {isEditing ? (
               /* Edit mode - show editable fields */
               <div className="card-edit-form">
@@ -681,18 +711,25 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   <button
                     className="card-form-button-primary"
                     onClick={handleSavePromise}
-                    disabled={isUpdatingPromise}
+                    disabled={isUpdatingPromise || isDeletingPromise}
                   >
                     {isUpdatingPromise ? 'Saving...' : 'Save Changes'}
                   </button>
                   <button
                     className="card-form-button-secondary"
                     onClick={handleCancelEdit}
-                    disabled={isUpdatingPromise}
+                    disabled={isUpdatingPromise || isDeletingPromise}
                   >
                     Cancel
                   </button>
                 </div>
+                <button
+                  className="card-form-button-danger"
+                  onClick={handleDeleteClick}
+                  disabled={isUpdatingPromise || isDeletingPromise}
+                >
+                  {isDeletingPromise ? 'Deleting...' : 'Delete Promise'}
+                </button>
               </div>
             ) : (
               /* View mode - show notes and other info */
@@ -830,7 +867,8 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           </div>
         )}
       </div>
-      </article>
+        </article>
+      </div>
       
       <LogActionModal
         promiseId={id}
@@ -876,6 +914,14 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           onCancel={handleVisibilityCancel}
         />
       )}
+      <PromiseDeleteConfirmModal
+        isOpen={showDeleteConfirm}
+        promiseId={id}
+        promiseText={text}
+        isDeleting={isDeletingPromise}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </>
   );
 }

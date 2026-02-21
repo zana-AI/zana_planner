@@ -5,6 +5,7 @@ from typing import List, Optional
 from sqlalchemy import text
 
 from db.postgres_db import (
+    check_table_exists,
     date_from_iso,
     date_to_iso,
     json_compat,
@@ -281,6 +282,20 @@ class PromisesRepository:
                 text("UPDATE promises SET is_deleted = 1, updated_at_utc = :now WHERE user_id = :user_id AND promise_uuid = :p_uuid;"),
                 {"now": now, "user_id": user, "p_uuid": p_uuid},
             )
+
+            # Best-effort cleanup of reminder/schedule rows tied to this promise.
+            # Guard with table checks for backward-compatible deployments.
+            if check_table_exists(session, "promise_reminders"):
+                session.execute(
+                    text("DELETE FROM promise_reminders WHERE promise_uuid = :p_uuid"),
+                    {"p_uuid": p_uuid},
+                )
+
+            if check_table_exists(session, "promise_schedule_weekly_slots"):
+                session.execute(
+                    text("DELETE FROM promise_schedule_weekly_slots WHERE promise_uuid = :p_uuid"),
+                    {"p_uuid": p_uuid},
+                )
 
             snapshot = json.dumps(
                 {

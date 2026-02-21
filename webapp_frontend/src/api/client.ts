@@ -337,6 +337,15 @@ class ApiClient {
   }
 
   /**
+   * Delete a promise.
+   */
+  async deletePromise(promiseId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/promises/${promiseId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
    * Log an action (time spent) for a promise.
    */
   async logAction(promiseId: string, timeSpent: number, actionDatetime?: string, notes?: string): Promise<{ status: string; message: string }> {

@@ -623,10 +623,17 @@ body.modal-open {
 /* Promise card transitions */
 .promise-card {
   transition: transform 0.3s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  touch-action: pan-y;
 }
 
 .promise-card:active {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.promise-card-swipe-shell {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 .promise-card {
@@ -634,60 +641,45 @@ body.modal-open {
   overflow: hidden;
 }
 
-.card-swipe-overlay {
+.card-swipe-rail {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
   pointer-events: none;
-  z-index: 1;
-  border-radius: 16px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.05), rgba(245, 158, 11, 0.22));
 }
 
-.card-snooze-button {
-  position: absolute;
-  right: 20px;
-  top: 50%;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: white;
+.card-swipe-action {
+  width: 132px;
   border: none;
-  border-radius: 12px;
-  padding: 12px 20px;
+  cursor: pointer;
   font-size: 13px;
   font-weight: 700;
-  cursor: pointer;
+  letter-spacing: 0.2px;
+  color: white;
   pointer-events: auto;
-  z-index: 2;
-  opacity: 0;
-  transition: opacity 0.15s ease, transform 0.15s ease, background 0.2s ease;
+  transition: filter 0.2s ease, opacity 0.2s ease;
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
-  white-space: nowrap;
   user-select: none;
 }
 
-.card-snooze-button:hover:not(:disabled) {
+.card-swipe-action:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.card-swipe-action-snooze {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.card-swipe-action-snooze:hover:not(:disabled) {
   background: linear-gradient(135deg, #d97706, #b45309);
-  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.5);
-}
-
-.card-snooze-button:active:not(:disabled) {
-  transform: translateY(-50%) scale(0.95) !important;
-}
-
-.card-snooze-button.active {
-  background: linear-gradient(135deg, #10b981, #059669);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-}
-
-.card-snooze-button.active:hover:not(:disabled) {
-  background: linear-gradient(135deg, #059669, #047857);
-  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5);
-}
-
-.card-snooze-button:disabled {
-  cursor: default;
+  filter: brightness(1.05);
 }
 
 .card-meta {
@@ -1974,6 +1966,16 @@ textarea.modal-input {
 
 .modal-button-secondary:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.15);
+}
+
+.modal-button-danger {
+  background: #ef4444;
+  color: #fff;
+}
+
+.modal-button-danger:hover:not(:disabled) {
+  background: #dc2626;
+  transform: translateY(-1px);
 }
 
 .modal-button:disabled {
@@ -3268,6 +3270,30 @@ textarea.modal-input {
   transform: none;
 }
 
+.card-form-button-danger {
+  width: 100%;
+  padding: 10px var(--spacing-xl);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.card-form-button-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.28);
+  color: #fecaca;
+}
+
+.card-form-button-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Section Container (for notes, reminders, etc.) */
 .card-section {
   display: flex;
@@ -3462,15 +3488,6 @@ textarea.modal-input {
 /* Day Column */
 .day-col {
   position: relative;
-}
-
-/* Snooze Button Container */
-.card-snooze-container {
-  position: absolute;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
 }
 
 /* Meta Ratio Container */
