@@ -21,7 +21,12 @@ _current_memory_recall_context: ContextVar[str] = ContextVar("_current_memory_re
 
 import copy
 
-from llms.agent import AgentState, create_plan_execute_graph, create_routed_plan_execute_graph
+from llms.agent import (
+    AgentState,
+    create_plan_execute_graph,
+    create_routed_plan_execute_graph,
+    message_content_to_str,
+)
 import llms.agent as agent_module  # For accessing _llm_call_count
 from llms.func_utils import get_function_args_info
 from llms.llm_env_utils import load_llm_env
@@ -1199,14 +1204,15 @@ class LLMHandler:
                         "last_tool": last_tool_call.get("name") if last_tool_call else None,
                         "tool_calls_count": len(getattr(final_ai, "tool_calls", []) or []),
                         "tool_msgs": len(tool_messages),
-                        "final_ai_preview": (final_ai.content[:200] if final_ai else None),
+                        "final_ai_preview": (message_content_to_str(final_ai.content)[:200] if final_ai else None),
                     }
                 )
 
-            # Build the response to user
+            # Build the response to user (normalize content: GenAI may return list of parts)
+            raw_content = (final_ai.content if final_ai else None) or ""
             response_text = (
                 final_response
-                or (final_ai.content if final_ai else None)
+                or message_content_to_str(raw_content)
                 or "I'm having trouble responding right now."
             )
             
@@ -1323,9 +1329,9 @@ class LLMHandler:
                 return "I'm having trouble understanding that. Could you rephrase?"
 
             if isinstance(response, AIMessage):
-                content = response.content
+                content = message_content_to_str(response.content)
             else:
-                content = getattr(response, "content", str(response))
+                content = message_content_to_str(getattr(response, "content", str(response)))
 
             history.extend([messages[-1], AIMessage(content=content)])
 

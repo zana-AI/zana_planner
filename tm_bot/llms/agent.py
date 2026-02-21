@@ -71,6 +71,27 @@ def _parse_from_tool(val: str) -> Optional[tuple]:
     return m.group(1).strip(), m.group(2).strip()
 
 
+def message_content_to_str(content: Any) -> str:
+    """
+    Normalize message content to a string.
+    ChatGoogleGenerativeAI (and some other backends) may return content as a list
+    of parts (e.g. [{"type": "text", "text": "..."}]) instead of a plain string.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text" and "text" in block:
+                parts.append(str(block["text"]))
+        return "\n".join(parts) if parts else ""
+    return str(content)
+
+
 class AgentState(TypedDict):
     """State passed between LangGraph nodes."""
 
@@ -1712,7 +1733,7 @@ def create_routed_plan_execute_graph(
         validated_messages = _ensure_messages_have_content(router_messages)
         _track_llm_call("router", "router_model")
         result = router_model.invoke(validated_messages)
-        content = getattr(result, "content", "") or ""
+        content = message_content_to_str(getattr(result, "content", "") or "")
         
         route_decision: Optional[RouteDecision] = None
         try:
