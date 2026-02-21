@@ -96,7 +96,7 @@ def load_llm_env():
         "LLM_PLANNER_TEMPERATURE": _float_env("LLM_PLANNER_TEMPERATURE", 0.2),
         "LLM_RESPONDER_TEMPERATURE": _float_env("LLM_RESPONDER_TEMPERATURE", 0.7),
         # Gemini reliability/latency controls
-        "LLM_REQUEST_TIMEOUT_SECONDS": _float_env("LLM_REQUEST_TIMEOUT_SECONDS", 45.0),
+        "LLM_REQUEST_TIMEOUT_SECONDS": _float_env("LLM_REQUEST_TIMEOUT_SECONDS", 30.0),
         # For google-genai retries, 1 means "single attempt, no retries".
         "LLM_MAX_RETRIES": _int_env("LLM_MAX_RETRIES", 1, minimum=1),
         "GEMINI_DISABLE_AFC": _bool_env("GEMINI_DISABLE_AFC", True),

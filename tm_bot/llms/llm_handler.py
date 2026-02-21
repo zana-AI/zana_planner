@@ -211,6 +211,24 @@ class LLMHandler:
                 # read by llms.agent._invoke_model to disable SDK AFC on every invoke.
                 os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
 
+                # Fallback models: always gemini-2.5-flash regardless of primary model.
+                # Used when the primary model times out or is cancelled (e.g. Gemini 3 under load).
+                if gemini_model_name != "gemini-2.5-flash":
+                    fallback_kwargs = {**vertex_kwargs, "model": "gemini-2.5-flash", "location": cfg["GCP_LOCATION"]}
+                    fallback_kwargs.pop("thinking_level", None)
+                    self._fallback_router_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=router_temp)
+                    self._fallback_planner_model = ChatGoogleGenerativeAI(
+                        **fallback_kwargs,
+                        temperature=planner_temp,
+                        response_mime_type="application/json",
+                        response_schema=_resolve_schema_refs(Plan.model_json_schema()),
+                    )
+                    self._fallback_responder_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=responder_temp)
+                else:
+                    self._fallback_router_model = None
+                    self._fallback_planner_model = None
+                    self._fallback_responder_model = None
+
             if (
                 not self.chat_model
                 and fallback_enabled
@@ -260,6 +278,22 @@ class LLMHandler:
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
             )
+            # Build a fallback agent graph using gemini-2.5-flash when available.
+            if self._fallback_router_model is not None:
+                self._fallback_agent_app = create_routed_plan_execute_graph(
+                    tools=self.tools,
+                    router_model=self._fallback_router_model,
+                    planner_model=self._fallback_planner_model,
+                    responder_model=self._fallback_responder_model,
+                    router_prompt=self.system_message_router_prompt,
+                    get_planner_prompt_for_mode=self._get_planner_prompt_for_mode,
+                    get_system_message_for_mode=lambda user_id, mode, user_lang: self._get_system_message_main(user_lang, user_id, mode),
+                    emit_plan=True,
+                    max_iterations=self.max_iterations,
+                    progress_getter=lambda: self._progress_callback,
+                )
+            else:
+                self._fallback_agent_app = None
             
             # Store LangSmith config for tracing
             self._langsmith_enabled = cfg.get("LANGSMITH_ENABLED", False)
@@ -1170,21 +1204,44 @@ class LLMHandler:
                 })
             
             try:
-                # Wrap with LangSmith tracing if enabled
-                if self._langsmith_enabled and LANGSMITH_AVAILABLE:
-                    with tracing_v2_enabled(
-                        project_name=self._langsmith_project,
-                        tags=[f"user:{safe_user_id}", f"lang:{user_language or 'en'}"],
-                        metadata={
+                def _invoke_app(app, current_state):
+                    if self._langsmith_enabled and LANGSMITH_AVAILABLE:
+                        with tracing_v2_enabled(
+                            project_name=self._langsmith_project,
+                            tags=[f"user:{safe_user_id}", f"lang:{user_language or 'en'}"],
+                            metadata={
+                                "user_id": safe_user_id,
+                                "user_language": user_language or "en",
+                                "message_preview": user_message[:100],
+                                "history_turns": len(prior_history),
+                            },
+                        ):
+                            return app.invoke(current_state)
+                    return app.invoke(current_state)
+
+                try:
+                    result_state = _invoke_app(self.agent_app, state)
+                except Exception as primary_exc:
+                    primary_err = str(primary_exc)
+                    is_transient = (
+                        "499" in primary_err
+                        or "cancelled" in primary_err.lower()
+                        or "deadline" in primary_err.lower()
+                        or "timeout" in primary_err.lower()
+                        or "timed out" in primary_err.lower()
+                    )
+                    if is_transient and self._fallback_agent_app is not None:
+                        logger.warning({
+                            "event": "primary_model_fallback",
                             "user_id": safe_user_id,
-                            "user_language": user_language or "en",
-                            "message_preview": user_message[:100],
-                            "history_turns": len(prior_history),
-                        },
-                    ):
-                        result_state = self.agent_app.invoke(state)
-                else:
-                    result_state = self.agent_app.invoke(state)
+                            "reason": primary_err[:200],
+                            "fallback_model": "gemini-2.5-flash",
+                        })
+                        # Reset call counter for the fallback attempt
+                        agent_module._llm_call_count = 0
+                        result_state = _invoke_app(self._fallback_agent_app, state)
+                    else:
+                        raise
                 
                 # Track successful completion
                 call_end = time.time()
