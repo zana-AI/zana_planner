@@ -226,8 +226,12 @@ class EmbeddingService:
         if not texts:
             return []
         try:
-            from langchain_google_vertexai import VertexAIEmbeddings
-            embeddings = VertexAIEmbeddings(model_name=self.embedding_model)
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            project = os.getenv("GCP_PROJECT_ID", "").strip() or None
+            embeddings = GoogleGenerativeAIEmbeddings(
+                model=self.embedding_model,
+                project=project,
+            )
             return embeddings.embed_documents(texts)
         except Exception as exc:
             logger.warning("Vertex embedding failed (%s), falling back to deterministic embedding", exc)

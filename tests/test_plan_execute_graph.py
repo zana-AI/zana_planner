@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from langchain.tools import StructuredTool
+from langchain_core.tools import StructuredTool
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 TM_BOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tm_bot"))

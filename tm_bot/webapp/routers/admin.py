@@ -34,7 +34,7 @@ from sqlalchemy import text
 from utils.admin_utils import is_admin
 from utils.logger import get_logger
 from llms.llm_env_utils import load_llm_env
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -1058,7 +1058,7 @@ async def generate_template_draft(
         # Initialize chat model (same as LLMHandler)
         chat_model = None
         if cfg.get("GCP_PROJECT_ID", ""):
-            chat_model = ChatVertexAI(
+            chat_model = ChatGoogleGenerativeAI(
                 model=cfg["GCP_GEMINI_MODEL"],
                 project=cfg["GCP_PROJECT_ID"],
                 location=cfg["GCP_LOCATION"],

@@ -39,7 +39,7 @@ except ImportError:
     pass
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from llms.llm_env_utils import load_llm_env
@@ -67,10 +67,10 @@ def _build_partner_model():
     """Build partner LLM from env (same as Zana: Vertex or OpenAI)."""
     cfg = load_llm_env()
     if cfg.get("GCP_PROJECT_ID"):
-        return ChatVertexAI(
+        return ChatGoogleGenerativeAI(
             model=cfg.get("GCP_GEMINI_MODEL", "gemini-2.5-flash"),
             project=cfg["GCP_PROJECT_ID"],
-            location=cfg.get("GCP_LOCATION", "us-central1"),
+            location=cfg.get("GCP_LLM_LOCATION", cfg.get("GCP_LOCATION", "us-central1")),
             temperature=0.7,
         )
     if cfg.get("OPENAI_API_KEY"):

@@ -8,7 +8,7 @@ import os
 from typing import Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from llms.llm_env_utils import load_llm_env
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 class LearningLLMGateway:
     def __init__(self) -> None:
-        self._vertex_model = None
+        self._gemini_model = None
         self._fallback_model = None
         cfg = {}
         try:
@@ -42,7 +42,7 @@ class LearningLLMGateway:
 
         if gcp_project:
             try:
-                self._vertex_model = ChatVertexAI(
+                self._gemini_model = ChatGoogleGenerativeAI(
                     model=gcp_model,
                     project=gcp_project,
                     location=gcp_location,
@@ -50,7 +50,7 @@ class LearningLLMGateway:
                 )
             except Exception as exc:
                 logger.warning("Gemini model init failed: %s", exc)
-                self._vertex_model = None
+                self._gemini_model = None
 
         if self._fallback_enabled and self._fallback_provider == "openai" and openai_api_key:
             try:
@@ -64,7 +64,7 @@ class LearningLLMGateway:
                 self._fallback_model = None
 
     def available(self) -> bool:
-        return self._vertex_model is not None or self._fallback_model is not None
+        return self._gemini_model is not None or self._fallback_model is not None
 
     def invoke(
         self,
@@ -75,12 +75,12 @@ class LearningLLMGateway:
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
         messages.append(HumanMessage(content=prompt))
-        if self._vertex_model is not None:
+        if self._gemini_model is not None:
             try:
-                output = self._vertex_model.invoke(messages)
+                output = self._gemini_model.invoke(messages)
                 text = _to_text(output)
                 if text:
-                    return text, _model_name(self._vertex_model), False
+                    return text, _model_name(self._gemini_model), False
             except Exception as exc:
                 logger.warning("Gemini invoke failed: %s", exc)
         if self._fallback_enabled and self._fallback_model is not None:

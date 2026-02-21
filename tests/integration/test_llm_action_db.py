@@ -10,7 +10,7 @@ import os
 import sys
 
 import pytest
-from langchain.tools import StructuredTool
+from langchain_core.tools import StructuredTool
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 # Ensure tm_bot is on path (conftest does this for tests/; integration may run separately)

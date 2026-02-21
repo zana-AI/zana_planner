@@ -9,10 +9,10 @@ from contextvars import ContextVar
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
-from langchain.tools import StructuredTool
+from langchain_core.tools import StructuredTool
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 # Global rate limit tracker: deque of (timestamp, user_id, event_type) for recent LLM calls
@@ -166,14 +166,14 @@ class LLMHandler:
                     project=cfg["GCP_PROJECT_ID"],
                     location=cfg["GCP_LLM_LOCATION"],
                 )
-                self.router_model = ChatVertexAI(**vertex_kwargs, temperature=router_temp)
-                self.planner_model = ChatVertexAI(
+                self.router_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=router_temp)
+                self.planner_model = ChatGoogleGenerativeAI(
                     **vertex_kwargs,
                     temperature=planner_temp,
                     response_mime_type="application/json",
                     response_schema=_resolve_schema_refs(Plan.model_json_schema()),
                 )
-                self.responder_model = ChatVertexAI(**vertex_kwargs, temperature=responder_temp)
+                self.responder_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=responder_temp)
                 self.chat_model = self.responder_model
 
             if (

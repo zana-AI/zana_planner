@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso
 from llms.llm_env_utils import load_llm_env
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from utils.logger import get_logger
 
@@ -120,7 +120,7 @@ class ConversationImportanceService:
             
             # Use a lightweight model for scoring (cost-efficient)
             if cfg.get("GCP_PROJECT_ID", ""):
-                self._llm_model = ChatVertexAI(
+                self._llm_model = ChatGoogleGenerativeAI(
                     model=cfg.get("GCP_GEMINI_MODEL", "gemini-1.5-flash"),
                     project=cfg["GCP_PROJECT_ID"],
                     location=cfg.get("GCP_LLM_LOCATION", cfg.get("GCP_LOCATION", "us-central1")),

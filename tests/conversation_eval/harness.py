@@ -22,7 +22,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from llms.agent import create_plan_execute_graph
 from llms.tool_wrappers import _current_user_id, _wrap_tool
 from services.planner_api_adapter import PlannerAPIAdapter
-from langchain.tools import StructuredTool
+from langchain_core.tools import StructuredTool
 
 EXCLUDED_TOOLS = {"query_database", "get_db_schema"}
 

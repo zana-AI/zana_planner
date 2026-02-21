@@ -7,8 +7,8 @@ from typing import Literal, Optional
 from pathlib import Path
 from pydantic import BaseModel
 
-from langchain_google_vertexai import ChatVertexAI
-from langchain.schema import HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
 from llms.llm_env_utils import load_llm_env
 from utils.logger import get_logger
 
@@ -72,7 +72,7 @@ class ImageService:
     def __init__(self):
         try:
             env = load_llm_env()
-            base = ChatVertexAI(
+            base = ChatGoogleGenerativeAI(
                 model=env["GCP_GEMINI_MODEL"],
                 project=env["GCP_PROJECT_ID"],
                 location=env.get("GCP_LLM_LOCATION", env["GCP_LOCATION"]),
