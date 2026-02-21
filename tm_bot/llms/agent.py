@@ -1306,6 +1306,25 @@ def create_plan_execute_graph(
                         "Verify that your response aligns with this intent. If the actions taken don't match the intent, "
                         "acknowledge the mismatch and ask one clarifying question instead of asserting success."
                     )
+                executed_actions = state.get("executed_actions") or []
+                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
+                if mutation_actions:
+                    actions_summary = "; ".join([
+                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
+                        for a in mutation_actions
+                    ])
+                    default_hint += (
+                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
+                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
+                        "Do NOT claim actions were performed if they are not in this list. "
+                        "If an action failed, explain what went wrong instead of claiming success."
+                    )
+                else:
+                    default_hint += (
+                        "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
+                        "Do NOT claim any actions were performed. If the user expected an action, "
+                        "ask for clarification about what they want to do."
+                    )
                 messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=default_hint)])
                 _track_llm_call("responder_default", "responder_model")
                 result = _invoke_model(responder_model, messages_to_send)
@@ -1373,27 +1392,26 @@ def create_plan_execute_graph(
             # CRITICAL: Add executed actions validation
             # This ensures the response reflects ONLY what was actually executed
             executed_actions = state.get("executed_actions") or []
-            if executed_actions:
-                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
-                if mutation_actions:
-                    actions_summary = "; ".join([
-                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) → {'success' if a.get('success') else 'failed'}"
-                        for a in mutation_actions
-                    ])
-                    hint += (
-                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
-                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
-                        "Do NOT claim actions were performed if they are not in this list. "
-                        "If an action failed, explain what went wrong instead of claiming success."
-                    )
+            mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
+            if mutation_actions:
+                actions_summary = "; ".join([
+                    f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
+                    for a in mutation_actions
+                ])
+                hint += (
+                    f"\n\nACTIONS EXECUTED: {actions_summary}\n"
+                    "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
+                    "Do NOT claim actions were performed if they are not in this list. "
+                    "If an action failed, explain what went wrong instead of claiming success."
+                )
             else:
-                # No actions were executed - make this explicit
+                # No mutation actions were executed (even if read-only tools were called)
                 hint += (
                     "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
                     "Do NOT claim any actions were performed. If the user expected an action, "
                     "ask for clarification about what they want to do."
                 )
-            
+
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
                 err_type = tool_err.get("error_type", "unknown")
@@ -2317,6 +2335,25 @@ def create_routed_plan_execute_graph(
                         "Verify that your response aligns with this intent. If the actions taken don't match the intent, "
                         "acknowledge the mismatch and ask one clarifying question instead of asserting success."
                     )
+                executed_actions = state.get("executed_actions") or []
+                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
+                if mutation_actions:
+                    actions_summary = "; ".join([
+                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
+                        for a in mutation_actions
+                    ])
+                    default_hint += (
+                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
+                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
+                        "Do NOT claim actions were performed if they are not in this list. "
+                        "If an action failed, explain what went wrong instead of claiming success."
+                    )
+                else:
+                    default_hint += (
+                        "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
+                        "Do NOT claim any actions were performed. If the user expected an action, "
+                        "ask for clarification about what they want to do."
+                    )
                 base_messages = state["messages"]
                 system_msg = _get_system_message_for_response(mode)
                 if system_msg:
@@ -2380,26 +2417,25 @@ def create_routed_plan_execute_graph(
             
             # CRITICAL: Add executed actions validation for routed graph
             executed_actions = state.get("executed_actions") or []
-            if executed_actions:
-                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
-                if mutation_actions:
-                    actions_summary = "; ".join([
-                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) → {'success' if a.get('success') else 'failed'}"
-                        for a in mutation_actions
-                    ])
-                    hint += (
-                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
-                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
-                        "Do NOT claim actions were performed if they are not in this list. "
-                        "If an action failed, explain what went wrong instead of claiming success."
-                    )
+            mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
+            if mutation_actions:
+                actions_summary = "; ".join([
+                    f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
+                    for a in mutation_actions
+                ])
+                hint += (
+                    f"\n\nACTIONS EXECUTED: {actions_summary}\n"
+                    "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
+                    "Do NOT claim actions were performed if they are not in this list. "
+                    "If an action failed, explain what went wrong instead of claiming success."
+                )
             else:
                 hint += (
                     "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
                     "Do NOT claim any actions were performed. If the user expected an action, "
                     "ask for clarification about what they want to do."
                 )
-            
+
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
                 err_type = tool_err.get("error_type", "unknown")
@@ -2681,6 +2717,5 @@ def create_routed_plan_execute_graph(
     graph.add_edge("planner", "executor")
     graph.add_conditional_edges("executor", should_continue, {"tools": "tools", "executor": "executor", END: END})
     graph.add_edge("tools", "executor")
-    
     return graph.compile()
 
