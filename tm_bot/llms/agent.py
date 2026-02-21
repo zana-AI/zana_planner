@@ -681,38 +681,74 @@ def _parse_plan(text: str) -> Plan:
     return Plan.model_validate_json(cleaned)
 
 
+def _strip_thought_signatures(content: Any) -> Any:
+    """
+    Remove thought-signature metadata from AIMessage content before sending to the API.
+
+    Gemini 3 models embed a cryptographic `thought_signature` in the response parts
+    (stored by langchain-google-genai as `extras: {signature: ...}`).  When those
+    parts are passed back in a subsequent turn, the signature may be rejected as
+    invalid by the API ("Thought signature is not valid").  Stripping `extras` from
+    all content parts avoids this while keeping the visible text intact.
+
+    For content parts that contain ONLY a signature and no text (pure thought blocks),
+    the entire part is dropped so the messages list stays API-compatible.
+    """
+    if not isinstance(content, list):
+        return content
+    cleaned = []
+    for part in content:
+        if not isinstance(part, dict):
+            cleaned.append(part)
+            continue
+        part_copy = {k: v for k, v in part.items() if k != "extras"}
+        # Drop parts that had ONLY extras and no meaningful text/data
+        if not part_copy or (len(part_copy) == 1 and part_copy.get("type") == "text" and not part_copy.get("text", "").strip()):
+            continue
+        cleaned.append(part_copy)
+    return cleaned if cleaned else content
+
+
 def _ensure_messages_have_content(messages: List[BaseMessage]) -> List[BaseMessage]:
     """
     Ensure all messages have non-empty content to prevent Gemini API errors.
-    
+
+    Also strips Gemini 3 thought-signature metadata (`extras`) from AIMessage
+    content parts to prevent "Thought signature is not valid" errors on multi-turn
+    calls where prior thinking blocks are passed back to the model.
+
     Gemini API requires each message to have at least one "parts" field (non-empty content).
     This function ensures SystemMessage and AIMessage have at least minimal content.
-    
-    Args:
-        messages: List of messages to validate
-        
-    Returns:
-        List of messages with guaranteed non-empty content for SystemMessage and AIMessage
     """
     validated = []
     for msg in messages:
         content = getattr(msg, "content", None)
+
+        # Strip thought signatures from AIMessage list content before API submission.
+        if isinstance(msg, AIMessage) and isinstance(content, list):
+            clean_content = _strip_thought_signatures(content)
+            tool_calls = getattr(msg, "tool_calls", None)
+            if not clean_content or (isinstance(clean_content, list) and not clean_content):
+                # All parts were stripped — keep a placeholder
+                if tool_calls:
+                    validated.append(AIMessage(content="(calling tool)", tool_calls=tool_calls))
+                else:
+                    validated.append(AIMessage(content=" "))
+            else:
+                validated.append(AIMessage(content=clean_content, tool_calls=tool_calls or []))
+            continue
+
         # Check if content is empty or None (only for SystemMessage and AIMessage)
         if isinstance(msg, (SystemMessage, AIMessage)) and (not content or (isinstance(content, str) and not content.strip())):
-            # For SystemMessage, provide a minimal placeholder
             if isinstance(msg, SystemMessage):
                 validated.append(SystemMessage(content=" "))
-            # For AIMessage, ensure content exists
             elif isinstance(msg, AIMessage):
-                # If it has tool_calls, ensure minimal content
                 tool_calls = getattr(msg, "tool_calls", None)
                 if tool_calls:
                     validated.append(AIMessage(content="(calling tool)", tool_calls=tool_calls))
                 else:
-                    # Empty AIMessage without tool_calls - provide minimal content
                     validated.append(AIMessage(content=" "))
         else:
-            # Keep message as-is (HumanMessage, ToolMessage, etc. should already have content)
             validated.append(msg)
     return validated
 

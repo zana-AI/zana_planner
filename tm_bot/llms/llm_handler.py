@@ -15,6 +15,9 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
+from llms.genai_patches import apply_genai_patches
+apply_genai_patches()
+
 # Global rate limit tracker: deque of (timestamp, user_id, event_type) for recent LLM calls
 _llm_call_tracker: deque = deque(maxlen=100)
 _current_memory_recall_context: ContextVar[str] = ContextVar("_current_memory_recall_context", default="")
@@ -26,6 +29,7 @@ from llms.agent import (
     create_plan_execute_graph,
     create_routed_plan_execute_graph,
     message_content_to_str,
+    _strip_thought_signatures,
 )
 import llms.agent as agent_module  # For accessing _llm_call_count
 from llms.func_utils import get_function_args_info
@@ -1497,7 +1501,8 @@ class LLMHandler:
             if isinstance(m, HumanMessage):
                 condensed.append(m)
             elif isinstance(m, AIMessage):
-                condensed.append(AIMessage(content=m.content))
+                clean = _strip_thought_signatures(m.content) if isinstance(m.content, list) else m.content
+                condensed.append(AIMessage(content=message_content_to_str(clean)))
 
         # Two-level cap: max turns and max total chars.
         try:

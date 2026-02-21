@@ -62,7 +62,7 @@ jusText==3.0.2
 kiwisolver==1.4.9
 langchain==1.2.10
 langchain-core==1.2.14
-langchain-google-genai==4.2.1
+langchain-google-genai==4.2.0
 langchain-openai==1.1.9
 langchain-text-splitters==1.1.1
 langgraph==1.0.9
