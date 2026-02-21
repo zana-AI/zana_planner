@@ -85,27 +85,22 @@ jobs:
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
 
-            # Get git info for version tracking.
+            # Compute runtime metadata used by /version in staging.
             COMMIT_SHA="$(git rev-parse --short HEAD)"
-            BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            GIT_COMMIT_MESSAGE="$(git log -1 --pretty=format:'%s' | head -c 100)"
-            GIT_COMMIT_AUTHOR="$(git log -1 --pretty=format:'%an <%ae>')"
-            GIT_COMMIT_DATE="$(git log -1 --pretty=format:'%ci')"
+            BUILD_DATE_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            export BOT_VERSION="$COMMIT_SHA"
+            export BUILD_DATE="$BUILD_DATE_UTC"
 
-            # Build bot container (zana-staging) with commit info.
-            docker compose build \
+            # Build bot container (zana-staging) with commit fallback in /app/VERSION.
+            docker compose --progress plain build \
               --build-arg GIT_COMMIT="$COMMIT_SHA" \
-              --build-arg BUILD_DATE="$BUILD_DATE" \
-              --build-arg GIT_COMMIT_MESSAGE="$GIT_COMMIT_MESSAGE" \
-              --build-arg GIT_COMMIT_AUTHOR="$GIT_COMMIT_AUTHOR" \
-              --build-arg GIT_COMMIT_DATE="$GIT_COMMIT_DATE" \
-              --progress=plain zana-staging
+              zana-staging
 
             # Build webapp container (includes frontend build in Dockerfile.webapp).
-            docker compose build --progress=plain zana-webapp
+            docker compose --progress plain build zana-webapp
 
             # Start both containers.
-            docker compose up -d --force-recreate zana-staging zana-webapp
+            docker compose up -d zana-staging zana-webapp
 
             echo '[STAGING] Verifying containers are running...'
             sleep 10

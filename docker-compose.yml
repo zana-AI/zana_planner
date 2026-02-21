@@ -44,6 +44,8 @@ services:
     environment:
       - ENVIRONMENT=staging
       - LOG_FILE_PATH=/app/logs/zana.log
+      - BOT_VERSION=${BOT_VERSION:-}
+      - BUILD_DATE=${BUILD_DATE:-}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-content_chunks_v1}

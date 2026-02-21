@@ -1,5 +1,5 @@
 # Stage 1: Build React frontend
-FROM node:20-slim as frontend-builder
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/webapp_frontend
 
@@ -7,7 +7,8 @@ WORKDIR /app/webapp_frontend
 COPY webapp_frontend/package.json webapp_frontend/package-lock.json* ./
 
 # Install dependencies
-RUN npm install --frozen-lockfile || npm install
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 # Copy frontend source
 COPY webapp_frontend/ ./
@@ -27,7 +28,8 @@ RUN apt-get update && \
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 # Copy backend source + entrypoint (so we don't rely on bind-mounts in production)
 COPY tm_bot/ ./tm_bot/

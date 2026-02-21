@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Build React frontend
 # =============================================================================
-FROM node:20-slim as frontend-builder
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/webapp_frontend
 
@@ -12,7 +12,8 @@ WORKDIR /app/webapp_frontend
 COPY webapp_frontend/package.json webapp_frontend/package-lock.json* ./
 
 # Install dependencies
-RUN npm install --frozen-lockfile || npm install
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 # Copy frontend source
 COPY webapp_frontend/ ./
@@ -23,7 +24,7 @@ RUN npm run build
 # =============================================================================
 # Stage 2: Build Python dependencies
 # =============================================================================
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,16 +44,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Final stage
 FROM python:3.11-slim
-
-# Build arguments for version info
-ARG GIT_COMMIT="unknown"
-ARG GIT_TAG=""
-ARG BUILD_DATE=""
-ARG GIT_COMMIT_MESSAGE=""
-ARG GIT_COMMIT_AUTHOR=""
-ARG GIT_COMMIT_DATE=""
-ENV BOT_VERSION=${GIT_TAG:-${GIT_COMMIT}}
-ENV BUILD_DATE=${BUILD_DATE}
 
 # Create non-root user and directory structure
 RUN useradd -m -u 1002 amiryan_j && \
@@ -86,30 +77,18 @@ RUN PYTHONPATH=/home/amiryan_j/.local/lib/python3.11/site-packages \
 # Create a shared browser cache directory and grant runtime user access.
 RUN mkdir -p /ms-playwright && chown -R amiryan_j:amiryan_j /ms-playwright
 
+# Download Chromium browser binaries in a cache-stable layer.
+RUN PYTHONPATH=/home/amiryan_j/.local/lib/python3.11/site-packages \
+    python -m playwright install chromium
+
 # Set working directory
 WORKDIR /app
 
-# Create VERSION file and ensure it's readable by the user
-RUN echo "${GIT_TAG:-${GIT_COMMIT}}" > /app/VERSION && \
+# Build-time fallback for local VERSION file.
+ARG GIT_COMMIT="unknown"
+RUN echo "${GIT_COMMIT}" > /app/VERSION && \
     chown amiryan_j:amiryan_j /app/VERSION && \
     chmod 644 /app/VERSION
-
-# Create COMMIT_INFO.json file with commit metadata
-# Write Python script to handle JSON escaping properly
-RUN printf 'import json\n\
-import sys\n\
-commit = sys.argv[1] if len(sys.argv) > 1 else "unknown"\n\
-message = sys.argv[2] if len(sys.argv) > 2 else ""\n\
-author = sys.argv[3] if len(sys.argv) > 3 else ""\n\
-date = sys.argv[4] if len(sys.argv) > 4 else ""\n\
-commit_info = {"commit": commit, "message": message, "author": author, "date": date}\n\
-with open("/app/COMMIT_INFO.json", "w") as f:\n\
-    json.dump(commit_info, f)\n\
-' > /tmp/create_commit_info.py && \
-    python3 /tmp/create_commit_info.py "${GIT_COMMIT}" "${GIT_COMMIT_MESSAGE}" "${GIT_COMMIT_AUTHOR}" "${GIT_COMMIT_DATE}" && \
-    rm /tmp/create_commit_info.py && \
-    chown amiryan_j:amiryan_j /app/COMMIT_INFO.json && \
-    chmod 644 /app/COMMIT_INFO.json
 
 # Copy application code
 COPY tm_bot/ ./tm_bot/
@@ -127,9 +106,6 @@ EXPOSE 8080
 
 # Switch to non-root user
 USER amiryan_j
-
-# Download Chromium browser binaries to PLAYWRIGHT_BROWSERS_PATH.
-RUN python -m playwright install chromium
 
 # Set entrypoint
 ENTRYPOINT ["python", "-m", "tm_bot.run_bot"]
