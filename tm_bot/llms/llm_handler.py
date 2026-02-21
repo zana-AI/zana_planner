@@ -1166,7 +1166,7 @@ class LLMHandler:
                 _current_user_language.reset(lang_token)
                 _current_memory_recall_context.reset(memory_ctx_token)
             final_messages = result_state.get("messages", messages)
-            final_response = result_state.get("final_response")
+            final_response = message_content_to_str(result_state.get("final_response") or "")
             pending_clarification = result_state.get("pending_clarification")
 
             final_ai = self._get_last_ai(final_messages)
