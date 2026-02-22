@@ -25,12 +25,16 @@ class EmbeddingService:
         collection_name: Optional[str] = None,
         embedding_model: Optional[str] = None,
         qdrant_timeout_seconds: float = 10.0,
+        qdrant_check_compatibility: Optional[bool] = None,
     ) -> None:
         env_qdrant_url = os.getenv("QDRANT_URL", "").strip()
         env_qdrant_api_key = os.getenv("QDRANT_API_KEY", "").strip() or None
         env_collection = os.getenv("QDRANT_COLLECTION", "content_chunks_v1").strip() or "content_chunks_v1"
         env_embedding_model = (
             os.getenv("VERTEX_EMBEDDING_MODEL", "gemini-embedding-001").strip() or "gemini-embedding-001"
+        )
+        env_qdrant_check_compat = (
+            os.getenv("QDRANT_CHECK_COMPATIBILITY", "false").strip().lower() in ("1", "true", "yes", "on")
         )
 
         self.qdrant_url = (qdrant_url if qdrant_url is not None else env_qdrant_url).strip()
@@ -44,6 +48,9 @@ class EmbeddingService:
             embedding_model if embedding_model is not None else env_embedding_model
         ).strip() or env_embedding_model
         self.qdrant_timeout_seconds = max(1.0, float(qdrant_timeout_seconds))
+        self.qdrant_check_compatibility = (
+            env_qdrant_check_compat if qdrant_check_compatibility is None else bool(qdrant_check_compatibility)
+        )
 
     def is_configured(self) -> bool:
         return bool(self.qdrant_url)
@@ -243,11 +250,18 @@ class EmbeddingService:
         except Exception:
             return None, None
         try:
-            client = QdrantClient(
-                url=self.qdrant_url,
-                api_key=self.qdrant_api_key,
-                timeout=self.qdrant_timeout_seconds,
-            )
+            kwargs = {
+                "url": self.qdrant_url,
+                "api_key": self.qdrant_api_key,
+                "timeout": self.qdrant_timeout_seconds,
+                "check_compatibility": self.qdrant_check_compatibility,
+            }
+            try:
+                client = QdrantClient(**kwargs)
+            except TypeError:
+                # Older client versions may not support check_compatibility.
+                kwargs.pop("check_compatibility", None)
+                client = QdrantClient(**kwargs)
             return client, models
         except Exception as exc:
             logger.warning("Qdrant client init failed: %s", exc)

@@ -11,6 +11,7 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
+from logging.handlers import RotatingFileHandler
 
 # Try to import Logtail handler
 try:
@@ -120,6 +121,8 @@ def get_logger(name: str) -> logging.Logger:
     
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
+    # Prevent duplicate logs when root logger is configured elsewhere.
+    logger.propagate = False
     
     # Prevent duplicate handlers if logger already exists
     if logger.handlers:
@@ -139,7 +142,7 @@ def get_logger(name: str) -> logging.Logger:
             log_dir = os.path.dirname(log_file_path)
             if log_dir:
                 os.makedirs(log_dir, exist_ok=True)
-            file_handler = logging.handlers.RotatingFileHandler(
+            file_handler = RotatingFileHandler(
                 log_file_path,
                 maxBytes=10 * 1024 * 1024,  # 10 MB
                 backupCount=5,

@@ -202,6 +202,7 @@ class LLMHandler:
             self._fallback_planner_model = None
             self._fallback_responder_model = None
             self._fallback_agent_app = None
+            self._fallback_label = None
             self._provider_adapter = None
             self._provider_layer_enabled = bool(cfg.get("LLM_PROVIDER_LAYER_ENABLED"))
             fallback_enabled = bool(cfg.get("LLM_FALLBACK_ENABLED"))
@@ -267,6 +268,62 @@ class LLMHandler:
                 self._fallback_planner_model = None
                 self._fallback_responder_model = None
                 self._fallback_agent_app = None
+                self._fallback_label = None
+                if fallback_enabled:
+                    requested_fallback = fallback_provider
+                    if requested_fallback == "openai":
+                        if cfg.get("OPENAI_API_KEY", ""):
+                            fallback_cfg = dict(cfg)
+                            fallback_cfg["LLM_PROVIDER"] = "openai"
+                            fallback_adapter = create_provider_adapter(fallback_cfg)
+                            self._fallback_router_model = fallback_adapter.build_role_model(
+                                "router",
+                                {**base_cfg, "feature_policy": role_policies["router"]},
+                            )
+                            self._fallback_planner_model = fallback_adapter.build_role_model(
+                                "planner",
+                                {**base_cfg, "feature_policy": role_policies["planner"]},
+                            )
+                            self._fallback_responder_model = fallback_adapter.build_role_model(
+                                "responder",
+                                {**base_cfg, "feature_policy": role_policies["responder"]},
+                            )
+                            self._fallback_label = f"openai:{cfg.get('OPENAI_MODEL', 'gpt-4o-mini')}"
+                        else:
+                            logger.warning(
+                                "LLM fallback requested (openai) but OPENAI_API_KEY is missing; fallback disabled."
+                            )
+                    elif requested_fallback in {"gemini", "google"}:
+                        if cfg.get("GCP_PROJECT_ID", ""):
+                            fallback_cfg = dict(cfg)
+                            fallback_cfg["LLM_PROVIDER"] = "gemini"
+                            fallback_model_name = str(
+                                cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash")
+                            ).strip() or "gemini-2.5-flash"
+                            fallback_base_cfg = {**base_cfg, "model_name": fallback_model_name}
+                            fallback_adapter = create_provider_adapter(fallback_cfg)
+                            self._fallback_router_model = fallback_adapter.build_role_model(
+                                "router",
+                                {**fallback_base_cfg, "feature_policy": role_policies["router"]},
+                            )
+                            self._fallback_planner_model = fallback_adapter.build_role_model(
+                                "planner",
+                                {**fallback_base_cfg, "feature_policy": role_policies["planner"]},
+                            )
+                            self._fallback_responder_model = fallback_adapter.build_role_model(
+                                "responder",
+                                {**fallback_base_cfg, "feature_policy": role_policies["responder"]},
+                            )
+                            self._fallback_label = f"gemini:{fallback_model_name}"
+                        else:
+                            logger.warning(
+                                "LLM fallback requested (gemini) but Gemini credentials are missing; fallback disabled."
+                            )
+                    else:
+                        logger.warning(
+                            "Unsupported LLM_FALLBACK_PROVIDER '%s'; fallback disabled.",
+                            requested_fallback,
+                        )
                 os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
             else:
                 if cfg.get("GCP_PROJECT_ID", ""):
@@ -307,10 +364,12 @@ class LLMHandler:
                             response_schema=_resolve_schema_refs(Plan.model_json_schema()),
                         )
                         self._fallback_responder_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=responder_temp)
+                        self._fallback_label = "gemini:gemini-2.5-flash"
                     else:
                         self._fallback_router_model = None
                         self._fallback_planner_model = None
                         self._fallback_responder_model = None
+                        self._fallback_label = None
 
                 if (
                     not self.chat_model
@@ -403,6 +462,9 @@ class LLMHandler:
                     "feature_policy_planner": cfg.get("LLM_FEATURE_POLICY_PLANNER"),
                     "feature_policy_responder": cfg.get("LLM_FEATURE_POLICY_RESPONDER"),
                     "strict_mutation_execution": self._strict_mutation_execution,
+                    "fallback_enabled": fallback_enabled,
+                    "fallback_provider": fallback_provider,
+                    "fallback_model": self._fallback_label,
                     "adapter_root": adapter_root,
                     "max_iterations": self.max_iterations,
                     "debug": _DEBUG_ENABLED,
@@ -1371,7 +1433,7 @@ class LLMHandler:
                             "event": "primary_model_fallback",
                             "user_id": safe_user_id,
                             "reason": primary_err[:200],
-                            "fallback_model": "gemini-2.5-flash",
+                            "fallback_model": self._fallback_label or "configured_fallback",
                         })
                         # Reset call counter for the fallback attempt
                         agent_module._llm_call_count = 0

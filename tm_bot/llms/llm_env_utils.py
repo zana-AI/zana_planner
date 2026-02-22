@@ -29,8 +29,15 @@ def load_llm_env():
         "global" if any(model_name.startswith(p) for p in _GLOBAL_ONLY_PREFIXES)
         else location
     )
-    fallback_enabled = os.getenv("LLM_FALLBACK_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+    fallback_raw = os.getenv("LLM_FALLBACK_ENABLED")
+    if fallback_raw is None:
+        fallback_enabled = env_name in {"staging", "stage", "test", "testing"}
+    else:
+        fallback_enabled = str(fallback_raw).strip().lower() in ("1", "true", "yes")
     fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").strip().lower() or "openai"
+    fallback_gemini_model = (
+        os.getenv("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    )
 
     has_gemini_creds = bool(project_id and creds_b64 and location)
     if llm_provider_requested == "auto":
@@ -122,6 +129,7 @@ def load_llm_env():
         "OPENAI_MODEL": openai_model,
         "LLM_FALLBACK_ENABLED": fallback_enabled,
         "LLM_FALLBACK_PROVIDER": fallback_provider,
+        "LLM_FALLBACK_GEMINI_MODEL": fallback_gemini_model,
         "LANGSMITH_ENABLED": langsmith_enabled,
         "LANGSMITH_PROJECT": langsmith_project if langsmith_enabled else None,
         # Per-role temperatures: router/planner use low temp for structured output;

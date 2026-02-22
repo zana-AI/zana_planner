@@ -1103,6 +1103,27 @@ def _invoke_model(model: Runnable, messages: List[BaseMessage]):
                 stats["tool_chars"] += char_count
         return stats
 
+    def _effective_afc_disabled(runnable: object, invoke_kwargs: Dict[str, Any]) -> bool:
+        # Direct invoke kwargs path (legacy/non-provider-wrapped Gemini runnable).
+        if bool(invoke_kwargs.get("automatic_function_calling")):
+            return True
+
+        # Provider-wrapped path: read adapter config for effective AFC policy.
+        current = runnable
+        for _ in range(6):
+            if bool(getattr(current, "_zana_provider_wrapped", False)):
+                adapter = getattr(current, "_adapter", None)
+                provider_name = str(getattr(adapter, "name", "")).lower()
+                if provider_name in {"gemini", "google"}:
+                    cfg = getattr(adapter, "_cfg", {}) or {}
+                    return bool(cfg.get("GEMINI_DISABLE_AFC", True))
+                return False
+            bound = getattr(current, "bound", None)
+            if bound is None:
+                break
+            current = bound
+        return False
+
     kwargs: Dict[str, Any] = {}
     call_type = _current_llm_call_type.get()
     tracked_model_name = _current_llm_model_name.get()
@@ -1114,6 +1135,7 @@ def _invoke_model(model: Runnable, messages: List[BaseMessage]):
         kwargs["include_thoughts"] = False
     try:
         result = model.invoke(messages, **kwargs)
+        afc_disabled = _effective_afc_disabled(model, kwargs)
         if _DEBUG_ENABLED:
             logger.info(
                 {
@@ -1121,7 +1143,7 @@ def _invoke_model(model: Runnable, messages: List[BaseMessage]):
                     "call_type": call_type,
                     "model": resolved_model_name,
                     "duration_ms": round((time.perf_counter() - start) * 1000.0, 2),
-                    "afc_disabled": bool(kwargs.get("automatic_function_calling")),
+                    "afc_disabled": afc_disabled,
                     **payload_stats,
                 }
             )
@@ -1129,6 +1151,7 @@ def _invoke_model(model: Runnable, messages: List[BaseMessage]):
     except TypeError:
         # If a backend rejects extra kwargs, fall back to plain invoke.
         result = model.invoke(messages)
+        afc_disabled = _effective_afc_disabled(model, {})
         if _DEBUG_ENABLED:
             logger.info(
                 {
@@ -1136,7 +1159,7 @@ def _invoke_model(model: Runnable, messages: List[BaseMessage]):
                     "call_type": call_type,
                     "model": resolved_model_name,
                     "duration_ms": round((time.perf_counter() - start) * 1000.0, 2),
-                    "afc_disabled": False,
+                    "afc_disabled": afc_disabled,
                     "invoke_fallback": "typeerror_retry_without_kwargs",
                     **payload_stats,
                 }
