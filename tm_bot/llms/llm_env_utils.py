@@ -2,6 +2,11 @@ import os
 import base64
 import tempfile
 from dotenv import load_dotenv
+from llms.llm_model_config import (
+    get_fallback_model,
+    get_role_models,
+    needs_global_location,
+)
 
 
 def load_llm_env():
@@ -13,31 +18,20 @@ def load_llm_env():
     load_dotenv()  # ensure .env is loaded
 
     openai_key = os.getenv("OPENAI_API_KEY", "")
-    openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     env_name = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).strip().lower()
     llm_provider_requested = (os.getenv("LLM_PROVIDER", "auto") or "auto").strip().lower()
 
     project_id = os.getenv("GCP_PROJECT_ID")
     location = os.getenv("GCP_LOCATION", "us-central1")
-    model_name = os.getenv("GCP_GEMINI_MODEL", "gemini-2.5-flash")
     creds_b64 = os.getenv("GCP_CREDENTIALS_B64")
-
-    # Some models (e.g. gemini-3-*) are only available in the "global" region.
-    # Allow explicit override via GCP_LLM_LOCATION, otherwise auto-detect.
-    _GLOBAL_ONLY_PREFIXES = ("gemini-3-",)
-    llm_location = os.getenv("GCP_LLM_LOCATION") or (
-        "global" if any(model_name.startswith(p) for p in _GLOBAL_ONLY_PREFIXES)
-        else location
-    )
     fallback_raw = os.getenv("LLM_FALLBACK_ENABLED")
     if fallback_raw is None:
         fallback_enabled = env_name in {"staging", "stage", "test", "testing"}
     else:
         fallback_enabled = str(fallback_raw).strip().lower() in ("1", "true", "yes")
     fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").strip().lower() or "openai"
-    fallback_gemini_model = (
-        os.getenv("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
-    )
+    fallback_gemini_model = get_fallback_model("gemini")
+    fallback_openai_model = get_fallback_model("openai")
 
     has_gemini_creds = bool(project_id and creds_b64 and location)
     if llm_provider_requested == "auto":
@@ -65,6 +59,25 @@ def load_llm_env():
         tmp.write(base64.b64decode(creds_b64))
         tmp.close()
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+
+    role_models = get_role_models(llm_provider).as_dict()
+    openai_role_models = get_role_models("openai").as_dict()
+    gemini_role_models = get_role_models("gemini").as_dict()
+
+    # Some models (e.g. gemini-3-*) are only available in the "global" region.
+    # Allow explicit override via GCP_LLM_LOCATION, otherwise auto-detect.
+    if llm_provider == "gemini":
+        llm_location = os.getenv("GCP_LLM_LOCATION") or (
+            "global"
+            if needs_global_location(
+                role_models.get("router", ""),
+                role_models.get("planner", ""),
+                role_models.get("responder", ""),
+            )
+            else location
+        )
+    else:
+        llm_location = os.getenv("GCP_LLM_LOCATION") or location
 
     # Configure LangSmith tracing if API key is present
     langsmith_api_key = os.getenv("LANGCHAIN_API_KEY", "")
@@ -124,12 +137,21 @@ def load_llm_env():
         "GCP_PROJECT_ID": project_id,
         "GCP_LOCATION": location,
         "GCP_LLM_LOCATION": llm_location,
-        "GCP_GEMINI_MODEL": model_name,
+        # Backward-compatibility key used by some helper modules.
+        "GCP_GEMINI_MODEL": gemini_role_models["planner"],
+        "LLM_ROUTER_MODEL": role_models["router"],
+        "LLM_PLANNER_MODEL": role_models["planner"],
+        "LLM_RESPONDER_MODEL": role_models["responder"],
+        "LLM_OPENAI_ROUTER_MODEL": openai_role_models["router"],
+        "LLM_OPENAI_PLANNER_MODEL": openai_role_models["planner"],
+        "LLM_OPENAI_RESPONDER_MODEL": openai_role_models["responder"],
         "OPENAI_API_KEY": openai_key,
-        "OPENAI_MODEL": openai_model,
+        # Backward-compatibility key used by some helper modules.
+        "OPENAI_MODEL": openai_role_models["responder"],
         "LLM_FALLBACK_ENABLED": fallback_enabled,
         "LLM_FALLBACK_PROVIDER": fallback_provider,
         "LLM_FALLBACK_GEMINI_MODEL": fallback_gemini_model,
+        "LLM_FALLBACK_OPENAI_MODEL": fallback_openai_model,
         "LANGSMITH_ENABLED": langsmith_enabled,
         "LANGSMITH_PROJECT": langsmith_project if langsmith_enabled else None,
         # Per-role temperatures: router/planner use low temp for structured output;

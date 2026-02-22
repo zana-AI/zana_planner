@@ -241,8 +241,18 @@ class LLMHandler:
             max_retries = int(cfg.get("LLM_MAX_RETRIES", 1))
             gemini_include_thoughts = bool(cfg.get("GEMINI_INCLUDE_THOUGHTS", False))
             gemini_disable_afc = bool(cfg.get("GEMINI_DISABLE_AFC", True))
-            gemini_model_name = str(cfg.get("GCP_GEMINI_MODEL") or "")
-            is_gemini3 = gemini_model_name.startswith("gemini-3-")
+            role_model_names = {
+                "router": str(cfg.get("LLM_ROUTER_MODEL") or cfg.get("GCP_GEMINI_MODEL") or ""),
+                "planner": str(cfg.get("LLM_PLANNER_MODEL") or cfg.get("GCP_GEMINI_MODEL") or ""),
+                "responder": str(cfg.get("LLM_RESPONDER_MODEL") or cfg.get("GCP_GEMINI_MODEL") or ""),
+            }
+            openai_role_model_names = {
+                "router": str(cfg.get("LLM_OPENAI_ROUTER_MODEL") or cfg.get("OPENAI_MODEL", "gpt-4o-mini")),
+                "planner": str(cfg.get("LLM_OPENAI_PLANNER_MODEL") or cfg.get("OPENAI_MODEL", "gpt-4o-mini")),
+                "responder": str(cfg.get("LLM_OPENAI_RESPONDER_MODEL") or cfg.get("OPENAI_MODEL", "gpt-4o-mini")),
+            }
+            gemini_model_name = role_model_names["planner"]
+            is_gemini3 = any((name or "").startswith("gemini-3-") for name in role_model_names.values())
             auto_gemini3_default_fallback = False
             if is_gemini3:
                 if responder_temp < 1.0:
@@ -268,7 +278,6 @@ class LLMHandler:
                     "responder": cfg.get("LLM_FEATURE_POLICY_RESPONDER", cfg.get("LLM_FEATURE_POLICY", "safe")),
                 }
                 base_cfg = {
-                    "model_name": cfg.get("GCP_GEMINI_MODEL"),
                     "project_id": cfg.get("GCP_PROJECT_ID"),
                     "llm_location": cfg.get("GCP_LLM_LOCATION"),
                     "request_timeout_seconds": request_timeout,
@@ -278,19 +287,36 @@ class LLMHandler:
                     "planner_response_schema": planner_schema,
                     "temperatures": role_temps,
                     "openai_api_key": cfg.get("OPENAI_API_KEY", ""),
-                    "openai_model": cfg.get("OPENAI_MODEL", "gpt-4o-mini"),
                 }
-                self.router_model = self._provider_adapter.build_role_model(
+
+                def _build_role_model(adapter, role: str, role_model_name: str, role_openai_model: str):
+                    return adapter.build_role_model(
+                        role,
+                        {
+                            **base_cfg,
+                            "feature_policy": role_policies[role],
+                            "model_name": role_model_name,
+                            "openai_model": role_openai_model,
+                        },
+                    )
+
+                self.router_model = _build_role_model(
+                    self._provider_adapter,
                     "router",
-                    {**base_cfg, "feature_policy": role_policies["router"]},
+                    role_model_names["router"],
+                    openai_role_model_names["router"],
                 )
-                self.planner_model = self._provider_adapter.build_role_model(
+                self.planner_model = _build_role_model(
+                    self._provider_adapter,
                     "planner",
-                    {**base_cfg, "feature_policy": role_policies["planner"]},
+                    role_model_names["planner"],
+                    openai_role_model_names["planner"],
                 )
-                self.responder_model = self._provider_adapter.build_role_model(
+                self.responder_model = _build_role_model(
+                    self._provider_adapter,
                     "responder",
-                    {**base_cfg, "feature_policy": role_policies["responder"]},
+                    role_model_names["responder"],
+                    openai_role_model_names["responder"],
                 )
                 self.chat_model = self.responder_model
                 self._fallback_router_model = None
@@ -320,19 +346,25 @@ class LLMHandler:
                             fallback_cfg = dict(cfg)
                             fallback_cfg["LLM_PROVIDER"] = "openai"
                             fallback_adapter = create_provider_adapter(fallback_cfg)
-                            self._fallback_router_model = fallback_adapter.build_role_model(
+                            self._fallback_router_model = _build_role_model(
+                                fallback_adapter,
                                 "router",
-                                {**base_cfg, "feature_policy": role_policies["router"]},
+                                role_model_names["router"],
+                                openai_role_model_names["router"],
                             )
-                            self._fallback_planner_model = fallback_adapter.build_role_model(
+                            self._fallback_planner_model = _build_role_model(
+                                fallback_adapter,
                                 "planner",
-                                {**base_cfg, "feature_policy": role_policies["planner"]},
+                                role_model_names["planner"],
+                                openai_role_model_names["planner"],
                             )
-                            self._fallback_responder_model = fallback_adapter.build_role_model(
+                            self._fallback_responder_model = _build_role_model(
+                                fallback_adapter,
                                 "responder",
-                                {**base_cfg, "feature_policy": role_policies["responder"]},
+                                role_model_names["responder"],
+                                openai_role_model_names["responder"],
                             )
-                            self._fallback_label = f"openai:{cfg.get('OPENAI_MODEL', 'gpt-4o-mini')}"
+                            self._fallback_label = f"openai:{openai_role_model_names['responder']}"
                         else:
                             logger.warning(
                                 "LLM fallback requested (openai) but OPENAI_API_KEY is missing; fallback disabled."
@@ -346,19 +378,24 @@ class LLMHandler:
                                 if force_gemini25_fallback
                                 else (str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash")).strip() or "gemini-2.5-flash")
                             )
-                            fallback_base_cfg = {**base_cfg, "model_name": fallback_model_name}
                             fallback_adapter = create_provider_adapter(fallback_cfg)
-                            self._fallback_router_model = fallback_adapter.build_role_model(
+                            self._fallback_router_model = _build_role_model(
+                                fallback_adapter,
                                 "router",
-                                {**fallback_base_cfg, "feature_policy": role_policies["router"]},
+                                fallback_model_name,
+                                openai_role_model_names["router"],
                             )
-                            self._fallback_planner_model = fallback_adapter.build_role_model(
+                            self._fallback_planner_model = _build_role_model(
+                                fallback_adapter,
                                 "planner",
-                                {**fallback_base_cfg, "feature_policy": role_policies["planner"]},
+                                fallback_model_name,
+                                openai_role_model_names["planner"],
                             )
-                            self._fallback_responder_model = fallback_adapter.build_role_model(
+                            self._fallback_responder_model = _build_role_model(
+                                fallback_adapter,
                                 "responder",
-                                {**fallback_base_cfg, "feature_policy": role_policies["responder"]},
+                                fallback_model_name,
+                                openai_role_model_names["responder"],
                             )
                             self._fallback_label = f"gemini:{fallback_model_name}"
                         else:
@@ -374,43 +411,61 @@ class LLMHandler:
             else:
                 if cfg.get("GCP_PROJECT_ID", ""):
                     apply_genai_patches()
-                    vertex_kwargs = dict(
-                        model=cfg["GCP_GEMINI_MODEL"],
-                        project=cfg["GCP_PROJECT_ID"],
-                        location=cfg["GCP_LLM_LOCATION"],
-                        request_timeout=request_timeout,
-                        retries=max_retries,
-                        include_thoughts=gemini_include_thoughts,
-                    )
                     gemini_thinking_level = cfg.get("GEMINI_THINKING_LEVEL")
-                    if is_gemini3 and gemini_thinking_level:
-                        vertex_kwargs["thinking_level"] = gemini_thinking_level
-                    self.router_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=router_temp)
+
+                    def _gemini_kwargs_for_model(model_name: str, location_override: Optional[str] = None):
+                        kwargs = dict(
+                            model=model_name,
+                            project=cfg["GCP_PROJECT_ID"],
+                            location=location_override or cfg["GCP_LLM_LOCATION"],
+                            request_timeout=request_timeout,
+                            retries=max_retries,
+                            include_thoughts=gemini_include_thoughts,
+                        )
+                        if model_name.startswith("gemini-3-") and gemini_thinking_level:
+                            kwargs["thinking_level"] = gemini_thinking_level
+                        return kwargs
+
+                    router_kwargs = _gemini_kwargs_for_model(role_model_names["router"])
+                    planner_kwargs = _gemini_kwargs_for_model(role_model_names["planner"])
+                    responder_kwargs = _gemini_kwargs_for_model(role_model_names["responder"])
+
+                    self.router_model = ChatGoogleGenerativeAI(**router_kwargs, temperature=router_temp)
                     self.planner_model = ChatGoogleGenerativeAI(
-                        **vertex_kwargs,
+                        **planner_kwargs,
                         temperature=planner_temp,
                         response_mime_type="application/json",
                         response_schema=_resolve_schema_refs(Plan.model_json_schema()),
                     )
-                    self.responder_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=responder_temp)
+                    self.responder_model = ChatGoogleGenerativeAI(**responder_kwargs, temperature=responder_temp)
                     self.chat_model = self.responder_model
                     # read by llms.agent._invoke_model to disable SDK AFC on every invoke.
                     os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
 
-                    # Fallback models: always gemini-2.5-flash regardless of primary model.
+                    # Fallback models: use configured Gemini fallback model for all roles.
                     # Used when the primary model times out or is cancelled (e.g. Gemini 3 under load).
-                    if gemini_model_name != "gemini-2.5-flash":
-                        fallback_kwargs = {**vertex_kwargs, "model": "gemini-2.5-flash", "location": cfg["GCP_LOCATION"]}
+                    fallback_model_name = str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash")).strip() or "gemini-2.5-flash"
+                    if any((m or "").strip() != fallback_model_name for m in role_model_names.values()):
+                        fallback_kwargs = _gemini_kwargs_for_model(
+                            fallback_model_name,
+                            location_override=cfg["GCP_LOCATION"],
+                        )
                         fallback_kwargs.pop("thinking_level", None)
-                        self._fallback_router_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=router_temp)
+                        self._fallback_router_model = ChatGoogleGenerativeAI(
+                            **fallback_kwargs,
+                            temperature=router_temp,
+                        )
                         self._fallback_planner_model = ChatGoogleGenerativeAI(
                             **fallback_kwargs,
                             temperature=planner_temp,
                             response_mime_type="application/json",
                             response_schema=_resolve_schema_refs(Plan.model_json_schema()),
                         )
-                        self._fallback_responder_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=responder_temp)
-                        self._fallback_label = "gemini:gemini-2.5-flash"
+                        self._fallback_responder_model = ChatGoogleGenerativeAI(
+                            **fallback_kwargs,
+                            temperature=responder_temp,
+                        )
+                        self._fallback_label = f"gemini:{fallback_model_name}"
                         if is_gemini3:
                             auto_gemini3_default_fallback = True
                     else:
@@ -426,14 +481,22 @@ class LLMHandler:
                     and cfg.get("OPENAI_API_KEY", "")
                 ):
                     logger.warning("Gemini unavailable; using emergency OpenAI fallback for LLMHandler")
-                    openai_kwargs = dict(
+                    self.router_model = ChatOpenAI(
                         openai_api_key=cfg["OPENAI_API_KEY"],
-                        model=cfg.get("OPENAI_MODEL", "gpt-4o-mini"),
+                        model=openai_role_model_names["router"],
+                        temperature=router_temp,
                     )
-                    self.router_model = ChatOpenAI(**openai_kwargs, temperature=router_temp)
                     # OpenAI fallback: no response_schema support; relies on prompt-level JSON instructions.
-                    self.planner_model = ChatOpenAI(**openai_kwargs, temperature=planner_temp)
-                    self.responder_model = ChatOpenAI(**openai_kwargs, temperature=responder_temp)
+                    self.planner_model = ChatOpenAI(
+                        openai_api_key=cfg["OPENAI_API_KEY"],
+                        model=openai_role_model_names["planner"],
+                        temperature=planner_temp,
+                    )
+                    self.responder_model = ChatOpenAI(
+                        openai_api_key=cfg["OPENAI_API_KEY"],
+                        model=openai_role_model_names["responder"],
+                        temperature=responder_temp,
+                    )
                     self.chat_model = self.responder_model
 
             if not self.chat_model:
@@ -471,7 +534,7 @@ class LLMHandler:
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
             )
-            # Build a fallback agent graph using gemini-2.5-flash when available.
+            # Build a fallback agent graph when fallback models are available.
             if self._fallback_router_model is not None:
                 self._fallback_agent_app = create_routed_plan_execute_graph(
                     tools=self.tools,
@@ -506,6 +569,9 @@ class LLMHandler:
                     "gemini_thinking_level": cfg.get("GEMINI_THINKING_LEVEL"),
                     "provider_layer_enabled": self._provider_layer_enabled,
                     "provider": getattr(self._provider_adapter, "name", cfg.get("LLM_PROVIDER")),
+                    "router_model": role_model_names.get("router"),
+                    "planner_model": role_model_names.get("planner"),
+                    "responder_model": role_model_names.get("responder"),
                     "feature_policy_router": cfg.get("LLM_FEATURE_POLICY_ROUTER"),
                     "feature_policy_planner": cfg.get("LLM_FEATURE_POLICY_PLANNER"),
                     "feature_policy_responder": cfg.get("LLM_FEATURE_POLICY_RESPONDER"),
