@@ -9,6 +9,7 @@ from contextlib import nullcontext
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -849,24 +850,45 @@ class LLMHandler:
         sections.append("- Prefer action over asking: make reasonable assumptions from context.")
         sections.append("- For detailed tool documentation, call get_tool_help(tool_name) when needed.")
         
-        # Date and time context
-        now = datetime.now()
+        # Resolve user timezone once and inject current datetime in that timezone.
+        user_settings = None
+        user_tz = "UTC"
+        if user_id:
+            try:
+                user_settings = self.plan_adapter.settings_repo.get_settings(int(user_id))
+                tz_raw = getattr(user_settings, "timezone", None)
+                if tz_raw and tz_raw != "DEFAULT":
+                    user_tz = str(tz_raw)
+            except Exception as e:
+                logger.debug(f"Could not get user settings for timezone context: {e}")
+
+        try:
+            now = datetime.now(ZoneInfo(user_tz))
+        except Exception:
+            user_tz = "UTC"
+            now = datetime.now(ZoneInfo("UTC"))
+
         current_date_str = now.strftime("%A, %B %d, %Y")
         current_time_str = now.strftime("%H:%M")
         sections.append(f"\n=== DATE & TIME ===")
-        sections.append(f"Current date and time: {current_date_str} at {current_time_str}.")
-        sections.append("You have access to the current date and should use it when answering questions about dates, weeks, or time periods. Do not ask the user for the current date - use the date provided above.")
+        sections.append(
+            f"Current date and time: {current_date_str} at {current_time_str} ({user_tz})."
+        )
+        sections.append(
+            f"Current datetime ISO: {now.isoformat()} (timezone: {user_tz})."
+        )
+        sections.append(
+            "You have access to the current date/time and should use it for dates, weeks, or time periods. "
+            "Do not ask the user for the current date."
+        )
         
         # User personalization
-        if user_id:
-            try:
-                settings = self.plan_adapter.settings_repo.get_settings(int(user_id))
-                if settings.first_name:
-                    sections.append(f"\n=== USER INFO ===")
-                    sections.append(f"User's name: {settings.first_name}")
-                    sections.append("Use their name contextually when appropriate for warmth and personalization, but let the conversation flow naturally.")
-            except Exception as e:
-                logger.debug(f"Could not get user settings for personalization: {e}")
+        if user_settings and getattr(user_settings, "first_name", None):
+            sections.append(f"\n=== USER INFO ===")
+            sections.append(f"User's name: {user_settings.first_name}")
+            sections.append(
+                "Use their name contextually when appropriate for warmth and personalization, but let the conversation flow naturally."
+            )
         
         # User profile context
         if user_id:

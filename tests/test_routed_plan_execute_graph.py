@@ -253,3 +253,67 @@ def test_routed_operator_add_promise_missing_args_infers_from_user_text():
     assert tool_args.get("promise_text") == "drink water"
     assert abs(float(tool_args.get("num_hours_promised_per_week")) - 1.1667) < 0.01
     assert calls == []
+
+
+def test_routed_strategist_infers_datetime_text_for_resolve_datetime():
+    def _resolve_datetime(datetime_text: str):
+        return f"resolved:{datetime_text}"
+
+    tools = [
+        StructuredTool.from_function(
+            func=_resolve_datetime,
+            name="resolve_datetime",
+            description="Resolve natural language datetime.",
+        ),
+    ]
+
+    router = FakeModel(
+        [
+            AIMessage(
+                content=json.dumps(
+                    {"mode": "strategist", "confidence": "high", "reason": "coaching_intent"}
+                )
+            )
+        ]
+    )
+
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Resolve requested period.",
+                "tool_name": "resolve_datetime",
+                "tool_args": {},
+            },
+            {"kind": "respond", "purpose": "Answer.", "response_hint": "Answer with resolved period."},
+        ],
+        "detected_intent": "QUERY_PROGRESS",
+        "intent_confidence": "high",
+        "safety": {"requires_confirmation": False},
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+
+    def responder_fn(messages):
+        for msg in reversed(messages):
+            if isinstance(msg, ToolMessage):
+                return AIMessage(content=f"Window: {msg.content}")
+        return AIMessage(content="No window.")
+
+    responder = FakeModel(responder_fn=responder_fn)
+
+    app = create_routed_plan_execute_graph(
+        tools=tools,
+        router_model=router,
+        planner_model=planner,
+        responder_model=responder,
+        router_prompt="Output route JSON.",
+        get_planner_prompt_for_mode=lambda _mode: "Output plan JSON.",
+        get_system_message_for_mode=None,
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(_initial_state("what are my main tasks next week"))
+
+    assert "resolved:what are my main tasks next week" in (result.get("final_response") or "").lower()
+    assert result.get("pending_clarification") is None

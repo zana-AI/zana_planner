@@ -471,6 +471,17 @@ def _normalize_add_promise_tool_args(tool_args: dict, user_text: str) -> dict:
     return normalized
 
 
+def _fallback_datetime_text_from_user_text(text: str) -> Optional[str]:
+    """
+    Non-opinionated fallback for resolve_datetime(datetime_text=...).
+
+    If planner omits datetime_text, pass the user's full utterance instead of
+    hardcoding phrase patterns. The resolve_datetime tool can then parse directly.
+    """
+    source = (text or "").strip()
+    return source or None
+
+
 def _env_int(name: str, default: int, minimum: int = 0) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -1339,7 +1350,9 @@ def create_plan_execute_graph(
     # Args that can be resolved via search (prepend a search step instead of asking)
     SEARCHABLE_ARGS = {"promise_id"}
     
-    def _can_infer_missing_args(tool_name: str, missing: List[str], tool_args: dict) -> tuple[bool, dict]:
+    def _can_infer_missing_args(
+        tool_name: str, missing: List[str], tool_args: dict, user_text: str
+    ) -> tuple[bool, dict, List[str]]:
         """
         Check if missing args can be inferred via defaults or search.
         Returns (can_infer, updated_args_or_prepend_steps).
@@ -1351,6 +1364,12 @@ def create_plan_execute_graph(
             if arg in INFERABLE_ARGS:
                 # Apply default value
                 updated_args[arg] = INFERABLE_ARGS[arg]
+            elif tool_name == "resolve_datetime" and arg == "datetime_text":
+                inferred_datetime_text = _fallback_datetime_text_from_user_text(user_text)
+                if inferred_datetime_text:
+                    updated_args[arg] = inferred_datetime_text
+                else:
+                    still_missing.append(arg)
             elif arg in SEARCHABLE_ARGS:
                 # This needs a search step prepended - handled separately
                 still_missing.append(arg)
@@ -1439,7 +1458,7 @@ def create_plan_execute_graph(
                 if missing:
                     # Try to infer missing args using defaults
                     can_infer, updated_args, still_missing = _can_infer_missing_args(
-                        tool_name, missing, tool_args
+                        tool_name, missing, tool_args, user_text
                     )
                     
                     if can_infer:
@@ -2283,13 +2302,21 @@ def create_routed_plan_execute_graph(
     INFERABLE_ARGS = {"time_spent": 1.0}
     SEARCHABLE_ARGS = {"promise_id"}
     
-    def _can_infer_missing_args(tool_name: str, missing: List[str], tool_args: dict) -> tuple[bool, dict, List[str]]:
+    def _can_infer_missing_args(
+        tool_name: str, missing: List[str], tool_args: dict, user_text: str
+    ) -> tuple[bool, dict, List[str]]:
         """Check if missing args can be inferred via defaults or search."""
         updated_args = dict(tool_args)
         still_missing = []
         for arg in missing:
             if arg in INFERABLE_ARGS:
                 updated_args[arg] = INFERABLE_ARGS[arg]
+            elif tool_name == "resolve_datetime" and arg == "datetime_text":
+                inferred_datetime_text = _fallback_datetime_text_from_user_text(user_text)
+                if inferred_datetime_text:
+                    updated_args[arg] = inferred_datetime_text
+                else:
+                    still_missing.append(arg)
             elif arg in SEARCHABLE_ARGS:
                 still_missing.append(arg)
             else:
@@ -2348,7 +2375,9 @@ def create_routed_plan_execute_graph(
                 ):
                     missing.append("promise_id")
                 if missing:
-                    can_infer, updated_args, still_missing = _can_infer_missing_args(tool_name, missing, tool_args)
+                    can_infer, updated_args, still_missing = _can_infer_missing_args(
+                        tool_name, missing, tool_args, user_text
+                    )
                     if can_infer:
                         step["tool_args"] = updated_args
                         repaired.append(step)

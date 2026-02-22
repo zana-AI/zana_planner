@@ -218,6 +218,66 @@ def test_plan_validation_missing_required_args_converts_to_ask_user_and_sets_pen
     assert "setting_key" in (pending.get("missing_fields") or [])
 
 
+def test_plan_validation_infers_datetime_text_for_resolve_datetime():
+    def _resolve_datetime(datetime_text: str):
+        return f"resolved:{datetime_text}"
+
+    tools = [
+        StructuredTool.from_function(
+            func=_resolve_datetime,
+            name="resolve_datetime",
+            description="Resolve natural language datetime.",
+        )
+    ]
+
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Resolve requested period.",
+                "tool_name": "resolve_datetime",
+                "tool_args": {},
+            },
+            {"kind": "respond", "purpose": "Answer.", "response_hint": "Answer with resolved period."},
+        ]
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+
+    def responder_fn(messages):
+        for msg in reversed(messages):
+            if isinstance(msg, ToolMessage):
+                return AIMessage(content=f"Window: {msg.content}")
+        return AIMessage(content="No window.")
+
+    responder = FakeModel(responder_fn=responder_fn)
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="what are my main tasks next week")],
+            "iteration": 0,
+            "plan": None,
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
+        }
+    )
+
+    assert "resolved:what are my main tasks next week" in (result.get("final_response") or "").lower()
+    assert result.get("pending_clarification") is None
+
+
 def test_verify_by_reading_appends_verification_tool_after_mutation():
     calls = []
 
@@ -729,5 +789,3 @@ def test_safety_requires_confirmation_triggers_ask():
     assert pending.get("reason") == "pre_mutation_confirmation"
     # Tool should NOT have been called yet
     assert len(calls) == 0
-
-

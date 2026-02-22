@@ -5,6 +5,7 @@ while using the new repository and service layers underneath.
 import json
 from datetime import datetime, date
 from typing import List, Dict, Optional, Any, Union
+from zoneinfo import ZoneInfo
 
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
@@ -948,24 +949,40 @@ class PlannerAPIAdapter:
         """Resolve a relative date/time phrase (e.g., 'tomorrow at 3pm', 'end of March', 'in 2 months', 'فردا ساعت 3') to an absolute datetime (ISO format: YYYY-MM-DDTHH:MM:SS)."""
         try:
             import dateparser
-            from datetime import datetime
             
-            # Parse the datetime text (handles both date and time)
-            parsed = dateparser.parse(datetime_text, settings={'RELATIVE_BASE': datetime.now()})
+            settings = self.settings_repo.get_settings(int(user_id))
+            tz_raw = getattr(settings, "timezone", None)
+            user_tz = tz_raw if tz_raw and tz_raw != "DEFAULT" else "UTC"
+            try:
+                now_local = datetime.now(ZoneInfo(user_tz))
+            except Exception:
+                user_tz = "UTC"
+                now_local = datetime.now(ZoneInfo("UTC"))
+
+            # Parse with user-local relative base/timezone.
+            parsed = dateparser.parse(
+                datetime_text,
+                settings={
+                    "RELATIVE_BASE": now_local,
+                    "TIMEZONE": user_tz,
+                    "RETURN_AS_TIMEZONE_AWARE": True,
+                },
+            )
             if not parsed:
                 return f"Could not parse datetime: '{datetime_text}'. Please use a clearer date/time description."
-            
-            # Return ISO format datetime (YYYY-MM-DDTHH:MM:SS)
-            # If no time specified, default to 00:00:00 (midnight)
+
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=ZoneInfo(user_tz))
+
+            # Return ISO format datetime (timezone-aware when available).
             return parsed.isoformat()
         except ImportError:
             # Fallback if dateparser not available
             try:
-                from datetime import datetime
                 # Try basic ISO format
                 parsed = datetime.fromisoformat(datetime_text.replace('Z', '+00:00'))
                 return parsed.isoformat()
-            except:
+            except Exception:
                 return f"Could not parse datetime: '{datetime_text}'. Please use ISO format (YYYY-MM-DDTHH:MM:SS)."
         except Exception as e:
             logger.error(f"Error resolving datetime: {str(e)}")
