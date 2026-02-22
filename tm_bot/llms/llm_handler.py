@@ -216,6 +216,7 @@ class LLMHandler:
             gemini_disable_afc = bool(cfg.get("GEMINI_DISABLE_AFC", True))
             gemini_model_name = str(cfg.get("GCP_GEMINI_MODEL") or "")
             is_gemini3 = gemini_model_name.startswith("gemini-3-")
+            auto_gemini3_default_fallback = False
             if is_gemini3:
                 if responder_temp < 1.0:
                     logger.warning(
@@ -227,6 +228,7 @@ class LLMHandler:
                     router_temp = 1.0
             if self._provider_layer_enabled:
                 self._provider_adapter = create_provider_adapter(cfg)
+                provider_name = str(getattr(self._provider_adapter, "name", cfg.get("LLM_PROVIDER") or "")).lower()
                 role_temps = {
                     "router": router_temp,
                     "planner": planner_temp,
@@ -269,8 +271,23 @@ class LLMHandler:
                 self._fallback_responder_model = None
                 self._fallback_agent_app = None
                 self._fallback_label = None
+                auto_gemini3_fallback = bool(is_gemini3 and provider_name in {"gemini", "google"})
+                requested_fallback: Optional[str] = None
+                force_gemini25_fallback = False
+
                 if fallback_enabled:
                     requested_fallback = fallback_provider
+                if auto_gemini3_fallback:
+                    # For Gemini 3 primaries, always ensure a Gemini 2.5 fallback exists
+                    # without requiring .env fallback settings.
+                    if (not requested_fallback) or (
+                        requested_fallback == "openai" and not cfg.get("OPENAI_API_KEY", "")
+                    ):
+                        requested_fallback = "gemini"
+                        force_gemini25_fallback = True
+                        auto_gemini3_default_fallback = True
+
+                if requested_fallback:
                     if requested_fallback == "openai":
                         if cfg.get("OPENAI_API_KEY", ""):
                             fallback_cfg = dict(cfg)
@@ -297,9 +314,11 @@ class LLMHandler:
                         if cfg.get("GCP_PROJECT_ID", ""):
                             fallback_cfg = dict(cfg)
                             fallback_cfg["LLM_PROVIDER"] = "gemini"
-                            fallback_model_name = str(
-                                cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash")
-                            ).strip() or "gemini-2.5-flash"
+                            fallback_model_name = (
+                                "gemini-2.5-flash"
+                                if force_gemini25_fallback
+                                else (str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash")).strip() or "gemini-2.5-flash")
+                            )
                             fallback_base_cfg = {**base_cfg, "model_name": fallback_model_name}
                             fallback_adapter = create_provider_adapter(fallback_cfg)
                             self._fallback_router_model = fallback_adapter.build_role_model(
@@ -365,6 +384,8 @@ class LLMHandler:
                         )
                         self._fallback_responder_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=responder_temp)
                         self._fallback_label = "gemini:gemini-2.5-flash"
+                        if is_gemini3:
+                            auto_gemini3_default_fallback = True
                     else:
                         self._fallback_router_model = None
                         self._fallback_planner_model = None
@@ -465,6 +486,7 @@ class LLMHandler:
                     "fallback_enabled": fallback_enabled,
                     "fallback_provider": fallback_provider,
                     "fallback_model": self._fallback_label,
+                    "auto_gemini3_default_fallback": auto_gemini3_default_fallback,
                     "adapter_root": adapter_root,
                     "max_iterations": self.max_iterations,
                     "debug": _DEBUG_ENABLED,
