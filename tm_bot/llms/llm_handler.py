@@ -105,6 +105,33 @@ _MUTATION_SUCCESS_CLAIM_RE = re.compile(
 )
 
 
+def _is_fallback_eligible_error(err: Exception) -> bool:
+    """Return True when primary-model failure should trigger fallback execution."""
+    if isinstance(err, (TimeoutError, ConnectionError, OSError)):
+        return True
+
+    text = str(err or "").lower()
+    hints = (
+        "499",
+        "cancelled",
+        "deadline",
+        "timeout",
+        "timed out",
+        "429",
+        "rate limit",
+        "resource exhausted",
+        "500",
+        "internal",
+        "503",
+        "service unavailable",
+        "temporarily unavailable",
+        "try again later",
+        "connection reset",
+        "connection aborted",
+    )
+    return any(hint in text for hint in hints)
+
+
 def _resolve_schema_refs(schema: dict) -> dict:
     """Convert a Pydantic v2 JSON schema into a Vertex AI compatible schema.
 
@@ -1443,13 +1470,7 @@ class LLMHandler:
                     result_state = _invoke_app(self.agent_app, state, phase="primary")
                 except Exception as primary_exc:
                     primary_err = str(primary_exc)
-                    is_transient = (
-                        "499" in primary_err
-                        or "cancelled" in primary_err.lower()
-                        or "deadline" in primary_err.lower()
-                        or "timeout" in primary_err.lower()
-                        or "timed out" in primary_err.lower()
-                    )
+                    is_transient = _is_fallback_eligible_error(primary_exc)
                     if is_transient and self._fallback_agent_app is not None:
                         logger.warning({
                             "event": "primary_model_fallback",
