@@ -1,8 +1,8 @@
-# llm_env_utils.py
 import os
 import base64
 import tempfile
 from dotenv import load_dotenv
+
 
 def load_llm_env():
     """
@@ -13,12 +13,14 @@ def load_llm_env():
     load_dotenv()  # ensure .env is loaded
 
     openai_key = os.getenv("OPENAI_API_KEY", "")
-    # if not self.openai_key:
-    #     raise ValueError("OpenAI API key is not set in environment variables.")
+    openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    env_name = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).strip().lower()
+    llm_provider_requested = (os.getenv("LLM_PROVIDER", "auto") or "auto").strip().lower()
 
     project_id = os.getenv("GCP_PROJECT_ID")
-    location   = os.getenv("GCP_LOCATION", "us-central1")
+    location = os.getenv("GCP_LOCATION", "us-central1")
     model_name = os.getenv("GCP_GEMINI_MODEL", "gemini-2.5-flash")
+    creds_b64 = os.getenv("GCP_CREDENTIALS_B64")
 
     # Some models (e.g. gemini-3-*) are only available in the "global" region.
     # Allow explicit override via GCP_LLM_LOCATION, otherwise auto-detect.
@@ -30,21 +32,32 @@ def load_llm_env():
     fallback_enabled = os.getenv("LLM_FALLBACK_ENABLED", "false").strip().lower() in ("1", "true", "yes")
     fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").strip().lower() or "openai"
 
-    if not project_id:
-        raise ValueError("GCP_PROJECT_ID is missing in .env")
-    if not location:
-        raise ValueError("GCP_LOCATION is missing in .env")
+    has_gemini_creds = bool(project_id and creds_b64 and location)
+    if llm_provider_requested == "auto":
+        if has_gemini_creds:
+            llm_provider = "gemini"
+        elif openai_key:
+            llm_provider = "openai"
+        else:
+            raise ValueError(
+                "No LLM provider credentials found. Set Gemini (GCP_*) or OpenAI (OPENAI_API_KEY)."
+            )
+    elif llm_provider_requested in {"gemini", "google"}:
+        llm_provider = "gemini"
+        if not has_gemini_creds:
+            raise ValueError("LLM_PROVIDER=gemini but Gemini credentials are incomplete.")
+    elif llm_provider_requested == "openai":
+        llm_provider = "openai"
+        if not openai_key:
+            raise ValueError("LLM_PROVIDER=openai but OPENAI_API_KEY is missing.")
+    else:
+        raise ValueError(f"Unsupported LLM_PROVIDER='{llm_provider_requested}'")
 
-    # Handle base64 JSON credentials
-    creds_b64 = os.getenv("GCP_CREDENTIALS_B64")
-    if not creds_b64:
-        raise ValueError("GCP_CREDENTIALS_B64 is missing in .env")
-
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    tmp.write(base64.b64decode(creds_b64))
-    tmp.close()
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-    # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"E:\workspace\ZanaAI\zana_planner\demo_features\vertex-access.json"
+    if llm_provider == "gemini":
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        tmp.write(base64.b64decode(creds_b64))
+        tmp.close()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
 
     # Configure LangSmith tracing if API key is present
     langsmith_api_key = os.getenv("LANGCHAIN_API_KEY", "")
@@ -80,12 +93,33 @@ def load_llm_env():
     if gemini_thinking_level not in {None, "minimal", "low", "medium", "high"}:
         gemini_thinking_level = "minimal"
 
+    default_provider_layer_enabled = env_name in {"staging", "stage", "test", "testing"}
+    default_strict_mutation = env_name in {"staging", "stage", "test", "testing"}
+    feature_policy = (os.getenv("LLM_FEATURE_POLICY", "safe") or "safe").strip().lower()
+    if feature_policy not in {"safe", "balanced", "full"}:
+        feature_policy = "safe"
+
+    def _feature_policy_for_role(role: str) -> str:
+        role_raw = (os.getenv(f"LLM_FEATURE_POLICY_{role.upper()}", "") or "").strip().lower()
+        if role_raw in {"safe", "balanced", "full"}:
+            return role_raw
+        return feature_policy
+
     return {
+        "LLM_PROVIDER": llm_provider,
+        "LLM_PROVIDER_REQUESTED": llm_provider_requested,
+        "LLM_PROVIDER_LAYER_ENABLED": _bool_env("LLM_PROVIDER_LAYER_ENABLED", default_provider_layer_enabled),
+        "LLM_FEATURE_POLICY": feature_policy,
+        "LLM_FEATURE_POLICY_ROUTER": _feature_policy_for_role("router"),
+        "LLM_FEATURE_POLICY_PLANNER": _feature_policy_for_role("planner"),
+        "LLM_FEATURE_POLICY_RESPONDER": _feature_policy_for_role("responder"),
+        "STRICT_MUTATION_EXECUTION": _bool_env("STRICT_MUTATION_EXECUTION", default_strict_mutation),
         "GCP_PROJECT_ID": project_id,
         "GCP_LOCATION": location,
         "GCP_LLM_LOCATION": llm_location,
         "GCP_GEMINI_MODEL": model_name,
         "OPENAI_API_KEY": openai_key,
+        "OPENAI_MODEL": openai_model,
         "LLM_FALLBACK_ENABLED": fallback_enabled,
         "LLM_FALLBACK_PROVIDER": fallback_provider,
         "LANGSMITH_ENABLED": langsmith_enabled,

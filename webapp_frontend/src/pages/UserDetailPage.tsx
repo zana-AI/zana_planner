@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { PublicUser, UserInfo } from '../types';
+import type { PublicUser, PublicPromiseBadge, UserInfo } from '../types';
 import { PromiseBadge } from '../components/PromiseBadge';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -23,6 +23,7 @@ export function UserDetailPage() {
   const [avatarError, setAvatarError] = useState(false);
   const [dicebearError, setDicebearError] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [publicPromises, setPublicPromises] = useState<PublicPromiseBadge[]>([]);
 
   const hasToken = !!localStorage.getItem('telegram_auth_token');
 
@@ -51,8 +52,15 @@ export function UserDetailPage() {
       setLoading(true);
       setError('');
       try {
-        const data = await apiClient.getUser(userId);
+        const [data, promises] = await Promise.all([
+          apiClient.getUser(userId),
+          apiClient.getPublicPromises(userId).catch((err) => {
+            console.error('Failed to fetch public promises:', err);
+            return [] as PublicPromiseBadge[];
+          }),
+        ]);
         setUserData(data);
+        setPublicPromises(promises);
       } catch (err) {
         console.error('Failed to fetch user:', err);
         if (err instanceof ApiError) {
@@ -60,6 +68,7 @@ export function UserDetailPage() {
         } else {
           setError('Failed to load user');
         }
+        setPublicPromises([]);
       } finally {
         setLoading(false);
       }
@@ -201,11 +210,11 @@ export function UserDetailPage() {
           </div>
         </div>
 
-        {userData.public_promises && userData.public_promises.length > 0 ? (
+        {publicPromises.length > 0 ? (
           <div>
             <h3 className="user-detail-section-title">Public Promises</h3>
             <div className="user-detail-promises">
-              {userData.public_promises.map((badge) => (
+              {publicPromises.map((badge) => (
                 <PromiseBadge key={badge.promise_id} badge={badge} compact={false} />
               ))}
             </div>

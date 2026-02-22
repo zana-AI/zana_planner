@@ -7,6 +7,7 @@ import asyncio
 import os
 import subprocess
 import sys
+import threading
 from typing import Optional
 from unittest.mock import Mock
 
@@ -37,6 +38,14 @@ from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_staging_or_test_mode() -> bool:
+    env = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).lower()
+    if env in {"staging", "stage", "test", "testing"}:
+        return True
+    return os.getenv("PYTEST_CURRENT_TEST") is not None
+
 
 # Command name -> MessageHandlers method for central routing
 COMMAND_ROUTE_MAP = {
@@ -610,6 +619,11 @@ class PlannerBot:
 
         # Schedule per-user jobs. If one user fails, continue.
         scheduled_count = 0
+        is_quiet_mode = _is_staging_or_test_mode()
+        if is_quiet_mode:
+            logger.info(
+                "bootstrap_schedule_existing_users: quiet mode enabled (staging/test); per-user scheduler logs suppressed"
+            )
         for user_id in user_ids:
             try:
                 tzname = self.get_user_timezone(user_id) or "UTC"
@@ -646,7 +660,15 @@ class PlannerBot:
                         name_prefix="nightly",
                     )
                     scheduled_count += 1
-                    logger.info(f"bootstrap: ✓ scheduled all reminders for user {user_id} (tz: {tzname})")
+                    if is_quiet_mode:
+                        if scheduled_count % 100 == 0:
+                            logger.info(
+                                "bootstrap_schedule_existing_users: progress %s/%s users scheduled",
+                                scheduled_count,
+                                len(user_ids),
+                            )
+                    else:
+                        logger.info(f"bootstrap: scheduled all reminders for user {user_id} (tz: {tzname})")
             except Exception as e:
                 logger.exception(f"bootstrap_schedule_existing_users: failed scheduling for user {user_id}: {e}")
                 continue
@@ -763,7 +785,25 @@ def main():
     bot = PlannerBot(platform_adapter, ROOT_DIR, MINIAPP_URL)
     
     try:
-        bot.bootstrap_schedule_existing_users()
+        # Bootstrap can take a while for large user bases; run it in the background so
+        # polling starts immediately. Set BOOTSTRAP_SCHEDULER_SYNC=1 to keep old behavior.
+        if os.getenv("BOOTSTRAP_SCHEDULER_SYNC", "0") == "1":
+            bot.bootstrap_schedule_existing_users()
+        else:
+            def _bootstrap_wrapper() -> None:
+                try:
+                    bot.bootstrap_schedule_existing_users()
+                except Exception as exc:
+                    logger.exception("bootstrap background thread failed: %s", exc)
+
+            bootstrap_thread = threading.Thread(
+                target=_bootstrap_wrapper,
+                name="bootstrap-scheduler",
+                daemon=True,
+            )
+            bootstrap_thread.start()
+            logger.info("bootstrap_schedule_existing_users: started background bootstrap thread")
+
         bot.run()
     except BaseException as e:
         logger.exception("Planner bot failed: %s", e)

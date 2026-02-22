@@ -17,7 +17,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from llms.genai_patches import apply_genai_patches
-apply_genai_patches()
+from llms.providers.factory import create_provider_adapter
 
 # Global rate limit tracker: deque of (timestamp, user_id, event_type) for recent LLM calls
 _llm_call_tracker: deque = deque(maxlen=100)
@@ -71,6 +71,37 @@ _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lowe
 
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
+_MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
+_MUTATION_INTENT_HINTS = (
+    "create",
+    "add",
+    "update",
+    "delete",
+    "remove",
+    "edit",
+    "log",
+    "record",
+    "set",
+    "subscribe",
+    "follow",
+    "unfollow",
+    "change",
+)
+_READ_ONLY_INTENT_HINTS = (
+    "query",
+    "read",
+    "list",
+    "show",
+    "count",
+    "view",
+    "get",
+    "chat",
+    "engagement",
+)
+_MUTATION_SUCCESS_CLAIM_RE = re.compile(
+    r"\b(done|added|created|updated|deleted|logged|saved|subscribed|completed|successfully)\b",
+    re.IGNORECASE,
+)
 
 
 def _resolve_schema_refs(schema: dict) -> dict:
@@ -160,11 +191,18 @@ class LLMHandler:
         try:
             # Sanitize environment-provided ROOT_DIR early (adapter will still handle paths)
             cfg = load_llm_env()  # returns dict with project, location, model
+            self._strict_mutation_execution = bool(cfg.get("STRICT_MUTATION_EXECUTION", False))
 
             self.chat_model = None
             self.router_model = None
             self.planner_model = None
             self.responder_model = None
+            self._fallback_router_model = None
+            self._fallback_planner_model = None
+            self._fallback_responder_model = None
+            self._fallback_agent_app = None
+            self._provider_adapter = None
+            self._provider_layer_enabled = bool(cfg.get("LLM_PROVIDER_LAYER_ENABLED"))
             fallback_enabled = bool(cfg.get("LLM_FALLBACK_ENABLED"))
             fallback_provider = str(cfg.get("LLM_FALLBACK_PROVIDER") or "openai").lower()
             router_temp = float(cfg.get("LLM_ROUTER_TEMPERATURE", 0.2))
@@ -183,65 +221,112 @@ class LLMHandler:
                         responder_temp,
                     )
                     responder_temp = 1.0
-                if planner_temp < 1.0:
-                    planner_temp = 1.0
                 if router_temp < 1.0:
                     router_temp = 1.0
-            if cfg.get("GCP_PROJECT_ID", ""):
-                vertex_kwargs = dict(
-                    model=cfg["GCP_GEMINI_MODEL"],
-                    project=cfg["GCP_PROJECT_ID"],
-                    location=cfg["GCP_LLM_LOCATION"],
-                    request_timeout=request_timeout,
-                    retries=max_retries,
-                    include_thoughts=gemini_include_thoughts,
+            if self._provider_layer_enabled:
+                self._provider_adapter = create_provider_adapter(cfg)
+                role_temps = {
+                    "router": router_temp,
+                    "planner": planner_temp,
+                    "responder": responder_temp,
+                }
+                planner_schema = _resolve_schema_refs(Plan.model_json_schema())
+                role_policies = {
+                    "router": cfg.get("LLM_FEATURE_POLICY_ROUTER", cfg.get("LLM_FEATURE_POLICY", "safe")),
+                    "planner": cfg.get("LLM_FEATURE_POLICY_PLANNER", cfg.get("LLM_FEATURE_POLICY", "safe")),
+                    "responder": cfg.get("LLM_FEATURE_POLICY_RESPONDER", cfg.get("LLM_FEATURE_POLICY", "safe")),
+                }
+                base_cfg = {
+                    "model_name": cfg.get("GCP_GEMINI_MODEL"),
+                    "project_id": cfg.get("GCP_PROJECT_ID"),
+                    "llm_location": cfg.get("GCP_LLM_LOCATION"),
+                    "request_timeout_seconds": request_timeout,
+                    "max_retries": max_retries,
+                    "include_thoughts": gemini_include_thoughts,
+                    "thinking_level": cfg.get("GEMINI_THINKING_LEVEL"),
+                    "planner_response_schema": planner_schema,
+                    "temperatures": role_temps,
+                    "openai_api_key": cfg.get("OPENAI_API_KEY", ""),
+                    "openai_model": cfg.get("OPENAI_MODEL", "gpt-4o-mini"),
+                }
+                self.router_model = self._provider_adapter.build_role_model(
+                    "router",
+                    {**base_cfg, "feature_policy": role_policies["router"]},
                 )
-                gemini_thinking_level = cfg.get("GEMINI_THINKING_LEVEL")
-                if is_gemini3 and gemini_thinking_level:
-                    vertex_kwargs["thinking_level"] = gemini_thinking_level
-                self.router_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=router_temp)
-                self.planner_model = ChatGoogleGenerativeAI(
-                    **vertex_kwargs,
-                    temperature=planner_temp,
-                    response_mime_type="application/json",
-                    response_schema=_resolve_schema_refs(Plan.model_json_schema()),
+                self.planner_model = self._provider_adapter.build_role_model(
+                    "planner",
+                    {**base_cfg, "feature_policy": role_policies["planner"]},
                 )
-                self.responder_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=responder_temp)
+                self.responder_model = self._provider_adapter.build_role_model(
+                    "responder",
+                    {**base_cfg, "feature_policy": role_policies["responder"]},
+                )
                 self.chat_model = self.responder_model
-                # read by llms.agent._invoke_model to disable SDK AFC on every invoke.
+                self._fallback_router_model = None
+                self._fallback_planner_model = None
+                self._fallback_responder_model = None
+                self._fallback_agent_app = None
                 os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
-
-                # Fallback models: always gemini-2.5-flash regardless of primary model.
-                # Used when the primary model times out or is cancelled (e.g. Gemini 3 under load).
-                if gemini_model_name != "gemini-2.5-flash":
-                    fallback_kwargs = {**vertex_kwargs, "model": "gemini-2.5-flash", "location": cfg["GCP_LOCATION"]}
-                    fallback_kwargs.pop("thinking_level", None)
-                    self._fallback_router_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=router_temp)
-                    self._fallback_planner_model = ChatGoogleGenerativeAI(
-                        **fallback_kwargs,
+            else:
+                if cfg.get("GCP_PROJECT_ID", ""):
+                    apply_genai_patches()
+                    vertex_kwargs = dict(
+                        model=cfg["GCP_GEMINI_MODEL"],
+                        project=cfg["GCP_PROJECT_ID"],
+                        location=cfg["GCP_LLM_LOCATION"],
+                        request_timeout=request_timeout,
+                        retries=max_retries,
+                        include_thoughts=gemini_include_thoughts,
+                    )
+                    gemini_thinking_level = cfg.get("GEMINI_THINKING_LEVEL")
+                    if is_gemini3 and gemini_thinking_level:
+                        vertex_kwargs["thinking_level"] = gemini_thinking_level
+                    self.router_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=router_temp)
+                    self.planner_model = ChatGoogleGenerativeAI(
+                        **vertex_kwargs,
                         temperature=planner_temp,
                         response_mime_type="application/json",
                         response_schema=_resolve_schema_refs(Plan.model_json_schema()),
                     )
-                    self._fallback_responder_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=responder_temp)
-                else:
-                    self._fallback_router_model = None
-                    self._fallback_planner_model = None
-                    self._fallback_responder_model = None
+                    self.responder_model = ChatGoogleGenerativeAI(**vertex_kwargs, temperature=responder_temp)
+                    self.chat_model = self.responder_model
+                    # read by llms.agent._invoke_model to disable SDK AFC on every invoke.
+                    os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
 
-            if (
-                not self.chat_model
-                and fallback_enabled
-                and fallback_provider == "openai"
-                and cfg.get("OPENAI_API_KEY", "")
-            ):
-                logger.warning("Gemini unavailable; using emergency OpenAI fallback for LLMHandler")
-                openai_kwargs = dict(openai_api_key=cfg["OPENAI_API_KEY"], model="gpt-4o-mini")
-                self.router_model = ChatOpenAI(**openai_kwargs, temperature=router_temp)
-                # OpenAI fallback: no response_schema support; relies on prompt-level JSON instructions.
-                self.planner_model = ChatOpenAI(**openai_kwargs, temperature=planner_temp)
-                self.responder_model = ChatOpenAI(**openai_kwargs, temperature=responder_temp)
-                self.chat_model = self.responder_model
+                    # Fallback models: always gemini-2.5-flash regardless of primary model.
+                    # Used when the primary model times out or is cancelled (e.g. Gemini 3 under load).
+                    if gemini_model_name != "gemini-2.5-flash":
+                        fallback_kwargs = {**vertex_kwargs, "model": "gemini-2.5-flash", "location": cfg["GCP_LOCATION"]}
+                        fallback_kwargs.pop("thinking_level", None)
+                        self._fallback_router_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=router_temp)
+                        self._fallback_planner_model = ChatGoogleGenerativeAI(
+                            **fallback_kwargs,
+                            temperature=planner_temp,
+                            response_mime_type="application/json",
+                            response_schema=_resolve_schema_refs(Plan.model_json_schema()),
+                        )
+                        self._fallback_responder_model = ChatGoogleGenerativeAI(**fallback_kwargs, temperature=responder_temp)
+                    else:
+                        self._fallback_router_model = None
+                        self._fallback_planner_model = None
+                        self._fallback_responder_model = None
+
+                if (
+                    not self.chat_model
+                    and fallback_enabled
+                    and fallback_provider == "openai"
+                    and cfg.get("OPENAI_API_KEY", "")
+                ):
+                    logger.warning("Gemini unavailable; using emergency OpenAI fallback for LLMHandler")
+                    openai_kwargs = dict(
+                        openai_api_key=cfg["OPENAI_API_KEY"],
+                        model=cfg.get("OPENAI_MODEL", "gpt-4o-mini"),
+                    )
+                    self.router_model = ChatOpenAI(**openai_kwargs, temperature=router_temp)
+                    # OpenAI fallback: no response_schema support; relies on prompt-level JSON instructions.
+                    self.planner_model = ChatOpenAI(**openai_kwargs, temperature=planner_temp)
+                    self.responder_model = ChatOpenAI(**openai_kwargs, temperature=responder_temp)
+                    self.chat_model = self.responder_model
 
             if not self.chat_model:
                 raise ValueError(
@@ -311,6 +396,12 @@ class LLMHandler:
                     "gemini_disable_afc": gemini_disable_afc,
                     "gemini_include_thoughts": gemini_include_thoughts,
                     "gemini_thinking_level": cfg.get("GEMINI_THINKING_LEVEL"),
+                    "provider_layer_enabled": self._provider_layer_enabled,
+                    "provider": getattr(self._provider_adapter, "name", cfg.get("LLM_PROVIDER")),
+                    "feature_policy_router": cfg.get("LLM_FEATURE_POLICY_ROUTER"),
+                    "feature_policy_planner": cfg.get("LLM_FEATURE_POLICY_PLANNER"),
+                    "feature_policy_responder": cfg.get("LLM_FEATURE_POLICY_RESPONDER"),
+                    "strict_mutation_execution": self._strict_mutation_execution,
                     "adapter_root": adapter_root,
                     "max_iterations": self.max_iterations,
                     "debug": _DEBUG_ENABLED,
@@ -420,11 +511,13 @@ class LLMHandler:
             "=== OUTPUT RULES ===\n"
             "- Do NOT call tools directly; just plan which tools to call.\n"
             "- 1–4 steps (max 6); keep 'purpose' short and user-safe.\n"
+            "- CRITICAL: For mutation intents (CREATE_PROMISE, LOG_ACTION, ADD_ACTION, UPDATE_*, DELETE_*), you MUST include at least one tool step with kind='tool'. Do not skip tool steps for mutations.\n"
             "- Casual chat: set final_response_if_no_tools, return empty steps.\n"
             "- Never ask for tool-accessible info (timezone, language, promise list).\n"
             "- After mutation tools, add a verify step then a respond step.\n"
             "- Use FROM_SEARCH as promise_id when a prior search_promises step provides it.\n"
-            "- Use FROM_TOOL:<tool_name>: as a value when you need a prior tool's output (e.g., FROM_TOOL:resolve_datetime:).\n\n"
+            "- Use FROM_TOOL:<tool_name>: as a value when you need a prior tool's output (e.g., FROM_TOOL:resolve_datetime:).\n"
+            "- If the user wants to create/add/update/delete something, you MUST generate tool steps - never respond directly without tools.\n\n"
 
             "=== EXAMPLES ===\n"
             "User: 'I just did 2 hours of sport'\n"
@@ -444,6 +537,12 @@ class LLMHandler:
             "{\"kind\":\"tool\",\"purpose\":\"Create reminder\",\"tool_name\":\"add_promise\","
             "\"tool_args\":{\"promise_text\":\"call a friend\",\"num_hours_promised_per_week\":0.0,\"recurring\":false,\"end_date\":\"FROM_TOOL:resolve_datetime:\"}},"
             "{\"kind\":\"respond\",\"purpose\":\"Confirm reminder set\"}"
+            "],\"detected_intent\":\"CREATE_PROMISE\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
+            "User: 'add a promise to drink water 10 minutes a day'\n"
+            "{\"steps\":["
+            "{\"kind\":\"tool\",\"purpose\":\"Create water drinking promise\",\"tool_name\":\"add_promise\","
+            "\"tool_args\":{\"promise_text\":\"drink water\",\"num_hours_promised_per_week\":1.17,\"recurring\":true}},"
+            "{\"kind\":\"respond\",\"purpose\":\"Confirm promise created\"}"
             "],\"detected_intent\":\"CREATE_PROMISE\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n"
         )
         
@@ -1204,7 +1303,9 @@ class LLMHandler:
                 })
             
             try:
-                def _invoke_app(app, current_state):
+                def _invoke_app(app, current_state, phase: str = "primary"):
+                    attempt_start = time.perf_counter()
+                    result = None
                     if self._langsmith_enabled and LANGSMITH_AVAILABLE:
                         with tracing_v2_enabled(
                             project_name=self._langsmith_project,
@@ -1216,11 +1317,24 @@ class LLMHandler:
                                 "history_turns": len(prior_history),
                             },
                         ):
-                            return app.invoke(current_state)
-                    return app.invoke(current_state)
+                            result = app.invoke(current_state)
+                    else:
+                        result = app.invoke(current_state)
+                    if _DEBUG_ENABLED:
+                        logger.info(
+                            {
+                                "event": "agent_app_invoke_timing",
+                                "user_id": safe_user_id,
+                                "phase": phase,
+                                "duration_seconds": round(time.perf_counter() - attempt_start, 3),
+                                "history_turns": len(prior_history),
+                                "input_message_count": len(current_state.get("messages") or []),
+                            }
+                        )
+                    return result
 
                 try:
-                    result_state = _invoke_app(self.agent_app, state)
+                    result_state = _invoke_app(self.agent_app, state, phase="primary")
                 except Exception as primary_exc:
                     primary_err = str(primary_exc)
                     is_transient = (
@@ -1239,7 +1353,7 @@ class LLMHandler:
                         })
                         # Reset call counter for the fallback attempt
                         agent_module._llm_call_count = 0
-                        result_state = _invoke_app(self._fallback_agent_app, state)
+                        result_state = _invoke_app(self._fallback_agent_app, state, phase="fallback")
                     else:
                         raise
                 
@@ -1309,6 +1423,33 @@ class LLMHandler:
                 or "I'm having trouble responding right now."
             )
             response_text = self._strip_internal_reasoning(response_text)
+
+            # Execution truth object used by strict mutation-safety guards.
+            executed_actions = result_state.get("executed_actions") or []
+            execution_truth = {
+                "executed_actions_count": len(executed_actions),
+                "mutation_actions_count": len(
+                    [
+                        a for a in executed_actions
+                        if str((a or {}).get("tool_name", "")).startswith(_MUTATION_TOOL_PREFIXES)
+                    ]
+                ),
+                "successful_mutation_actions_count": len(
+                    [
+                        a for a in executed_actions
+                        if str((a or {}).get("tool_name", "")).startswith(_MUTATION_TOOL_PREFIXES)
+                        and bool((a or {}).get("success"))
+                    ]
+                ),
+            }
+            response_text = self._enforce_mutation_execution_contract(
+                user_id=safe_user_id,
+                user_message=user_message,
+                detected_intent=result_state.get("detected_intent"),
+                executed_actions=executed_actions,
+                response_text=response_text,
+                pending_clarification=pending_clarification,
+            )
             
             # Append debug footer if debug mode is enabled
             if _DEBUG_ENABLED:
@@ -1320,9 +1461,6 @@ class LLMHandler:
                 )
                 response_text = response_text + debug_footer
             
-            # Get executed actions for transparency
-            executed_actions = result_state.get("executed_actions") or []
-            
             return {
                 "function_call": last_tool_call.get("name") if last_tool_call else "no_op",
                 "function_args": last_tool_call.get("args", {}) if last_tool_call else {},
@@ -1333,6 +1471,7 @@ class LLMHandler:
                 "stop_reason": stop_reason,
                 "pending_clarification": pending_clarification,
                 "executed_actions": executed_actions,  # Explicit tracking of what was actually executed
+                "execution_truth": execution_truth,
                 "detected_intent": result_state.get("detected_intent"),
                 "intent_confidence": result_state.get("intent_confidence"),
             }
@@ -1417,7 +1556,7 @@ class LLMHandler:
                 messages = [system_msg] + history + messages
 
             try:
-                response = self.chat_model(messages)
+                response = self.chat_model.invoke(messages)
             except Exception as e:
                 logger.exception("Error getting LLM response")
                 return "I'm having trouble understanding that. Could you rephrase?"
@@ -1687,6 +1826,100 @@ class LLMHandler:
             cleaned_lines.append(line)
         candidate = "\n".join(cleaned_lines).strip()
         return candidate or value
+
+    @staticmethod
+    def _is_mutation_like_intent(detected_intent: Optional[str], user_message: str) -> bool:
+        intent_text = (detected_intent or "").strip().lower()
+        msg_text = (user_message or "").strip().lower()
+        if intent_text:
+            if any(token in intent_text for token in _READ_ONLY_INTENT_HINTS):
+                return False
+            if any(token in intent_text for token in _MUTATION_INTENT_HINTS):
+                return True
+        mutation_msg_re = re.compile(
+            r"\b(add|create|update|delete|remove|edit|log|record|set|change|subscribe|follow|unfollow)\b",
+            re.IGNORECASE,
+        )
+        return bool(mutation_msg_re.search(msg_text))
+
+    @staticmethod
+    def _looks_like_mutation_success_claim(text: str) -> bool:
+        value = (text or "").strip()
+        if not value:
+            return False
+        return bool(_MUTATION_SUCCESS_CLAIM_RE.search(value))
+
+    def _enforce_mutation_execution_contract(
+        self,
+        *,
+        user_id: str,
+        user_message: str,
+        detected_intent: Optional[str],
+        executed_actions: List[Dict[str, object]],
+        response_text: str,
+        pending_clarification: Optional[dict] = None,
+    ) -> str:
+        if not self._strict_mutation_execution:
+            return response_text
+
+        mutation_actions = [
+            a for a in (executed_actions or [])
+            if str((a or {}).get("tool_name", "")).startswith(_MUTATION_TOOL_PREFIXES)
+        ]
+        successful_mutations = [a for a in mutation_actions if bool((a or {}).get("success"))]
+        mutation_like_intent = self._is_mutation_like_intent(detected_intent, user_message)
+
+        if mutation_like_intent and not mutation_actions:
+            # Valid clarification flow: do not override safe/non-committal responses.
+            if pending_clarification:
+                return response_text
+            lowered = (response_text or "").strip().lower()
+            safe_clarification_markers = (
+                "could you",
+                "please provide",
+                "which promise",
+                "i need",
+                "can you",
+                "clarify",
+            )
+            if (not self._looks_like_mutation_success_claim(response_text)) and (
+                "?" in lowered or any(marker in lowered for marker in safe_clarification_markers)
+            ):
+                return response_text
+            logger.warning(
+                {
+                    "event": "mutation_contract_violation",
+                    "user_id": user_id,
+                    "detected_intent": detected_intent,
+                    "reason": "mutation_intent_without_tool_execution",
+                }
+            )
+            return (
+                "I could not confirm any change was executed yet. "
+                "Please tell me exactly what to add/update/delete, and I will do it now."
+            )
+
+        if not successful_mutations and self._looks_like_mutation_success_claim(response_text):
+            logger.warning(
+                {
+                    "event": "mutation_contract_violation",
+                    "user_id": user_id,
+                    "detected_intent": detected_intent,
+                    "reason": "success_claim_without_successful_mutation",
+                    "mutation_actions_count": len(mutation_actions),
+                }
+            )
+            if mutation_actions:
+                return (
+                    "I tried to apply that change, but it did not complete successfully. "
+                    "Please retry, or share more details so I can do it correctly."
+                )
+            return (
+                "I could not confirm any change was executed yet. "
+                "Please tell me exactly what to add/update/delete, and I will do it now."
+            )
+
+        return response_text
     
     @staticmethod
     def _format_debug_footer(

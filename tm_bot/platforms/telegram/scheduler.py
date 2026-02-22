@@ -4,6 +4,7 @@ Telegram job scheduler adapter.
 Wraps Telegram's JobQueue to implement the IJobScheduler interface.
 """
 
+import os
 from typing import Callable, Optional
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
@@ -14,6 +15,13 @@ from ..interfaces import IJobScheduler
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_staging_or_test_mode() -> bool:
+    env = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).lower()
+    if env in {"staging", "stage", "test", "testing"}:
+        return True
+    return os.getenv("PYTEST_CURRENT_TEST") is not None
 
 
 class TelegramJobScheduler(IJobScheduler):
@@ -70,10 +78,16 @@ class TelegramJobScheduler(IJobScheduler):
                 name=job_name,
                 data={"user_id": user_id}
             )
-            if tz_original != tz:
-                logger.info(f"TelegramJobScheduler: ✓ scheduled '{job_name}' at {hh:02d}:{mm:02d} {tz} (normalized from '{tz_original}')")
+            log_line = (
+                f"TelegramJobScheduler: scheduled '{job_name}' at {hh:02d}:{mm:02d} {tz} "
+                f"(normalized from '{tz_original}')"
+                if tz_original != tz
+                else f"TelegramJobScheduler: scheduled '{job_name}' at {hh:02d}:{mm:02d} {tz}"
+            )
+            if _is_staging_or_test_mode():
+                logger.debug(log_line)
             else:
-                logger.info(f"TelegramJobScheduler: ✓ scheduled '{job_name}' at {hh:02d}:{mm:02d} {tz}")
+                logger.info(log_line)
         except Exception as e:
             logger.exception(f"TelegramJobScheduler: ✗ failed to schedule '{job_name}': {e}")
             raise
@@ -125,4 +139,3 @@ class TelegramJobScheduler(IJobScheduler):
         """Cancel a job by name."""
         for job in self._job_queue.get_jobs_by_name(name):
             job.schedule_removal()
-

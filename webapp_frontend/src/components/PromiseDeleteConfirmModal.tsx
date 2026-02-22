@@ -30,10 +30,10 @@ export function PromiseDeleteConfirmModal({
         <div className="modal-form">
           <div className="modal-form-group">
             <p className="modal-message">
-              Are you sure you want to delete <strong>#{promiseId}</strong>?
+              Are you sure you want to delete this promise?
             </p>
             <p className="modal-message" style={{ marginTop: '8px', opacity: 0.85 }}>
-              {promiseText}
+              <strong>#{promiseId}</strong> {promiseText}
             </p>
           </div>
 

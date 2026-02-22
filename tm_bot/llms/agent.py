@@ -6,6 +6,7 @@ import os
 import random
 import re
 import time
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -19,11 +20,15 @@ _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lowe
 
 # LLM call counter for rate limit debugging (per-request tracking)
 _llm_call_count = 0
+_current_llm_call_type: ContextVar[str] = ContextVar("_current_llm_call_type", default="unknown")
+_current_llm_model_name: ContextVar[str] = ContextVar("_current_llm_model_name", default="unknown")
 
 def _track_llm_call(call_type: str, model_name: str = "unknown") -> None:
     """Track an LLM call for debugging rate limits."""
     global _llm_call_count
     _llm_call_count += 1
+    _current_llm_call_type.set(call_type or "unknown")
+    _current_llm_model_name.set(model_name or "unknown")
     if _DEBUG_ENABLED:
         logger.info({
             "event": "llm_call",
@@ -90,6 +95,72 @@ def message_content_to_str(content: Any) -> str:
                 parts.append(str(block["text"]))
         return "\n".join(parts) if parts else ""
     return str(content)
+
+
+def _normalize_model_output_text(content: Any) -> str:
+    """
+    Normalize heterogeneous provider output into canonical text for parser input.
+    Accepts raw strings, content blocks, dict payloads, or nested variants.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, BaseMessage):
+        return _normalize_model_output_text(getattr(content, "content", None))
+    if isinstance(content, list):
+        parts: List[str] = []
+        for block in content:
+            normalized = _normalize_model_output_text(block)
+            if normalized:
+                parts.append(normalized)
+        return "\n".join([p for p in parts if p.strip()])
+    if isinstance(content, dict):
+        direct_text = content.get("text")
+        if isinstance(direct_text, str) and direct_text.strip():
+            return direct_text
+        nested_parts: List[str] = []
+        for key in ("content", "parts", "output_text", "message"):
+            value = content.get(key)
+            if value is None:
+                continue
+            normalized = _normalize_model_output_text(value)
+            if normalized:
+                nested_parts.append(normalized)
+        if nested_parts:
+            return "\n".join([p for p in nested_parts if p.strip()])
+    return str(content)
+
+
+def _json_candidates_from_text(text: str) -> List[str]:
+    candidates: List[str] = []
+    seen: set[str] = set()
+
+    def _add(val: str) -> None:
+        candidate = (val or "").strip()
+        if not candidate or candidate in seen:
+            return
+        seen.add(candidate)
+        candidates.append(candidate)
+
+    cleaned = (text or "").strip()
+    _add(cleaned)
+
+    fence_re = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
+    for match in fence_re.finditer(cleaned):
+        _add(match.group(1))
+
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(cleaned):
+        if char not in "{[":
+            continue
+        try:
+            _, end_idx = decoder.raw_decode(cleaned[idx:])
+        except Exception:
+            continue
+        _add(cleaned[idx: idx + end_idx])
+
+    return candidates
 
 
 class AgentState(TypedDict):
@@ -244,6 +315,160 @@ def _last_tool_error(messages: List[BaseMessage]) -> Optional[dict]:
     except Exception:
         return None
     return None
+
+
+def _execution_truth_hint(
+    executed_actions: Optional[List[Dict[str, Any]]],
+    mutation_prefixes: tuple,
+) -> str:
+    actions = list(executed_actions or [])
+    mutation_actions = [
+        a for a in actions
+        if str((a or {}).get("tool_name", "")).startswith(mutation_prefixes)
+    ]
+    successful_mutations = [a for a in mutation_actions if bool((a or {}).get("success"))]
+    truth = {
+        "executed_actions_count": len(actions),
+        "mutation_actions_count": len(mutation_actions),
+        "successful_mutation_actions_count": len(successful_mutations),
+        "mutations": [
+            {
+                "tool_name": str((a or {}).get("tool_name", "")),
+                "success": bool((a or {}).get("success")),
+            }
+            for a in mutation_actions
+        ],
+    }
+    truth_json = json.dumps(truth, ensure_ascii=False)
+    if mutation_actions:
+        return (
+            f"\n\nEXECUTION_TRUTH: {truth_json}\n"
+            "CRITICAL: confirm only actions listed under successful mutations. "
+            "Never claim success for actions not executed successfully."
+        )
+    return (
+        f"\n\nEXECUTION_TRUTH: {truth_json}\n"
+        "NOTE: no mutation action executed this turn. "
+        "Do not claim any create/update/delete/log success."
+    )
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _extract_weekly_hours_from_text(text: str) -> Optional[float]:
+    source = (text or "").strip().lower()
+    if not source:
+        return None
+
+    patterns = [
+        (r"(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins)\s*(?:a|per)?\s*day", lambda v: v * 7.0 / 60.0),
+        (r"(\d+(?:\.\d+)?)\s*(?:hour|hours|hr|hrs)\s*(?:a|per)?\s*day", lambda v: v * 7.0),
+        (r"(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins)\s*(?:a|per)?\s*week", lambda v: v / 60.0),
+        (r"(\d+(?:\.\d+)?)\s*(?:hour|hours|hr|hrs)\s*(?:a|per)?\s*week", lambda v: v),
+    ]
+    for pattern, transform in patterns:
+        m = re.search(pattern, source, re.IGNORECASE)
+        if not m:
+            continue
+        try:
+            val = float(m.group(1))
+        except Exception:
+            continue
+        weekly = transform(val)
+        if weekly >= 0:
+            return round(weekly, 4)
+    return None
+
+
+def _extract_promise_text_from_user_text(text: str) -> Optional[str]:
+    source = (text or "").strip()
+    if not source:
+        return None
+
+    quote_match = re.search(r"[\"'“”](.+?)[\"'“”]", source)
+    if quote_match:
+        candidate = (quote_match.group(1) or "").strip()
+        if candidate:
+            return candidate
+
+    patterns = [
+        r"\badd\s+(?:a\s+)?(?:promise|goal)\s+to\s+(.+)$",
+        r"\bcreate\s+(?:a\s+)?(?:promise|goal)\s+to\s+(.+)$",
+        r"\bi\s+want\s+to\s+(.+)$",
+    ]
+    candidate = None
+    for pattern in patterns:
+        m = re.search(pattern, source, re.IGNORECASE)
+        if not m:
+            continue
+        candidate = (m.group(1) or "").strip()
+        if candidate:
+            break
+    if not candidate:
+        return None
+
+    # Remove trailing duration/frequency tails from the extracted phrase.
+    candidate = re.sub(
+        r"\b\d+(?:\.\d+)?\s*(?:minute|minutes|min|mins|hour|hours|hr|hrs)\s*(?:a|per)?\s*(?:day|week)\b.*$",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    candidate = re.sub(
+        r"\b(?:daily|weekly|every day|each day|every week|each week)\b.*$",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    candidate = re.sub(r"\s+", " ", candidate).strip(" .,!?:;")
+    return candidate or None
+
+
+def _normalize_add_promise_tool_args(tool_args: dict, user_text: str) -> dict:
+    normalized = dict(tool_args or {})
+
+    # Alias common planner fields to adapter signature.
+    if "promise_text" not in normalized:
+        for alias in ("text", "title", "promise", "name"):
+            alias_val = normalized.get(alias)
+            if isinstance(alias_val, str) and alias_val.strip():
+                normalized["promise_text"] = alias_val.strip()
+                break
+    if "promise_text" not in normalized:
+        inferred_text = _extract_promise_text_from_user_text(user_text)
+        if inferred_text:
+            normalized["promise_text"] = inferred_text
+
+    if "num_hours_promised_per_week" not in normalized:
+        for alias in ("hours_per_week", "weekly_hours", "num_hours", "hours"):
+            val = _coerce_float(normalized.get(alias))
+            if val is not None and val >= 0:
+                normalized["num_hours_promised_per_week"] = round(val, 4)
+                break
+
+    if "num_hours_promised_per_week" not in normalized:
+        minutes_per_day = _coerce_float(normalized.get("minutes_per_day"))
+        if minutes_per_day is not None and minutes_per_day >= 0:
+            normalized["num_hours_promised_per_week"] = round((minutes_per_day * 7.0) / 60.0, 4)
+
+    if "num_hours_promised_per_week" not in normalized:
+        minutes_per_week = _coerce_float(normalized.get("minutes_per_week"))
+        if minutes_per_week is not None and minutes_per_week >= 0:
+            normalized["num_hours_promised_per_week"] = round(minutes_per_week / 60.0, 4)
+
+    if "num_hours_promised_per_week" not in normalized:
+        inferred = _extract_weekly_hours_from_text(user_text)
+        if inferred is not None:
+            normalized["num_hours_promised_per_week"] = inferred
+
+    return normalized
 
 
 def _env_int(name: str, default: int, minimum: int = 0) -> int:
@@ -667,18 +892,64 @@ def _execute_tool_calls_with_policies(
     return results, retry_counts, call_history, warning_buckets
 
 
-def _parse_plan(text: str) -> Plan:
-    # Be forgiving: allow fenced JSON or extra text.
-    cleaned = (text or "").strip()
-    if "```" in cleaned:
-        # take first fenced block
-        parts = cleaned.split("```")
-        if len(parts) >= 2:
-            cleaned = parts[1].strip()
-            # strip possible language tag line
-            if "\n" in cleaned and cleaned.split("\n", 1)[0].lower() in {"json"}:
-                cleaned = cleaned.split("\n", 1)[1].strip()
-    return Plan.model_validate_json(cleaned)
+def _parse_plan(payload: Any) -> Plan:
+    """
+    Parse planner output robustly across provider content shapes.
+
+    Accepted forms:
+    - plain JSON string
+    - fenced JSON blocks
+    - list content blocks (text blocks are extracted and parsed)
+    - direct dict/list payloads
+    """
+    if isinstance(payload, Plan):
+        return payload
+
+    if isinstance(payload, dict):
+        return Plan.model_validate(payload)
+
+    if isinstance(payload, list):
+        if payload and all(isinstance(item, dict) for item in payload):
+            # Direct list of plan steps.
+            if any("kind" in item for item in payload):
+                return Plan.model_validate({"steps": payload})
+
+    normalized_text = _normalize_model_output_text(payload)
+    if not normalized_text.strip():
+        raise ValueError("Planner output is empty")
+
+    for candidate in _json_candidates_from_text(normalized_text):
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(parsed, list):
+            parsed = {"steps": parsed}
+        if isinstance(parsed, dict):
+            try:
+                return Plan.model_validate(parsed)
+            except Exception:
+                continue
+
+    raise ValueError("Could not parse planner output into Plan JSON")
+
+
+def _parse_route_decision(payload: Any) -> RouteDecision:
+    if isinstance(payload, RouteDecision):
+        return payload
+    if isinstance(payload, dict):
+        return RouteDecision.model_validate(payload)
+    normalized_text = _normalize_model_output_text(payload)
+    if not normalized_text.strip():
+        raise ValueError("Router output is empty")
+    for candidate in _json_candidates_from_text(normalized_text):
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return RouteDecision.model_validate(parsed)
+    raise ValueError("Could not parse router output into RouteDecision JSON")
 
 
 def _strip_thought_signatures(content: Any) -> Any:
@@ -776,15 +1047,104 @@ def _invoke_model(model: Runnable, messages: List[BaseMessage]):
     For Gemini/Google GenAI, disable SDK Automatic Function Calling (AFC) because
     this agent already manages tool loops itself.
     """
+    def _model_name_from_runnable(runnable: object) -> str:
+        current = runnable
+        for _ in range(6):
+            for attr in ("model_name", "model"):
+                value = getattr(current, attr, None)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            bound = getattr(current, "bound", None)
+            if bound is None:
+                break
+            current = bound
+        cls_name = getattr(getattr(runnable, "__class__", object), "__name__", "unknown")
+        return cls_name or "unknown"
+
+    def _messages_payload_stats(msgs: List[BaseMessage]) -> Dict[str, int]:
+        stats = {
+            "message_count": len(msgs or []),
+            "chars_total": 0,
+            "system_count": 0,
+            "human_count": 0,
+            "ai_count": 0,
+            "tool_count": 0,
+            "system_chars": 0,
+            "human_chars": 0,
+            "ai_chars": 0,
+            "tool_chars": 0,
+        }
+        for msg in msgs or []:
+            text = message_content_to_str(getattr(msg, "content", None) or "")
+            char_count = len(text)
+            stats["chars_total"] += char_count
+            if isinstance(msg, SystemMessage):
+                stats["system_count"] += 1
+                stats["system_chars"] += char_count
+            elif isinstance(msg, HumanMessage):
+                stats["human_count"] += 1
+                stats["human_chars"] += char_count
+            elif isinstance(msg, AIMessage):
+                stats["ai_count"] += 1
+                stats["ai_chars"] += char_count
+            elif isinstance(msg, ToolMessage):
+                stats["tool_count"] += 1
+                stats["tool_chars"] += char_count
+        return stats
+
     kwargs: Dict[str, Any] = {}
+    call_type = _current_llm_call_type.get()
+    tracked_model_name = _current_llm_model_name.get()
+    resolved_model_name = tracked_model_name if tracked_model_name != "unknown" else _model_name_from_runnable(model)
+    payload_stats = _messages_payload_stats(messages) if _DEBUG_ENABLED else {}
+    start = time.perf_counter()
     if _is_google_genai_runnable(model) and _env_enabled("GEMINI_DISABLE_AFC", True):
         kwargs["automatic_function_calling"] = {"disable": True}
         kwargs["include_thoughts"] = False
     try:
-        return model.invoke(messages, **kwargs)
+        result = model.invoke(messages, **kwargs)
+        if _DEBUG_ENABLED:
+            logger.info(
+                {
+                    "event": "llm_call_timing",
+                    "call_type": call_type,
+                    "model": resolved_model_name,
+                    "duration_ms": round((time.perf_counter() - start) * 1000.0, 2),
+                    "afc_disabled": bool(kwargs.get("automatic_function_calling")),
+                    **payload_stats,
+                }
+            )
+        return result
     except TypeError:
         # If a backend rejects extra kwargs, fall back to plain invoke.
-        return model.invoke(messages)
+        result = model.invoke(messages)
+        if _DEBUG_ENABLED:
+            logger.info(
+                {
+                    "event": "llm_call_timing",
+                    "call_type": call_type,
+                    "model": resolved_model_name,
+                    "duration_ms": round((time.perf_counter() - start) * 1000.0, 2),
+                    "afc_disabled": False,
+                    "invoke_fallback": "typeerror_retry_without_kwargs",
+                    **payload_stats,
+                }
+            )
+        return result
+    except Exception as exc:
+        if _DEBUG_ENABLED:
+            logger.warning(
+                {
+                    "event": "llm_call_timing_error",
+                    "call_type": call_type,
+                    "model": resolved_model_name,
+                    "duration_ms": round((time.perf_counter() - start) * 1000.0, 2),
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:240],
+                    **payload_stats,
+                }
+            )
+        raise
 
 
 def create_agent_graph(
@@ -1022,7 +1382,7 @@ def create_plan_execute_graph(
             "tool_args": {"query": query},
         }
 
-    def _validate_and_repair_plan_steps(plan_steps: List[dict]) -> tuple[List[dict], Dict[int, dict]]:
+    def _validate_and_repair_plan_steps(plan_steps: List[dict], user_text: str = "") -> tuple[List[dict], Dict[int, dict]]:
         """
         Validate planner-provided steps and repair common issues:
         - Unknown tool -> ask_user (only as last resort)
@@ -1041,6 +1401,9 @@ def create_plan_execute_graph(
             if kind == "tool":
                 tool_name = (step.get("tool_name") or "").strip()
                 tool_args = step.get("tool_args") or {}
+                if tool_name in {"add_promise", "create_promise"}:
+                    tool_args = _normalize_add_promise_tool_args(tool_args, user_text)
+                    step["tool_args"] = tool_args
 
                 if not tool_name or tool_name not in tool_by_name:
                     pending_meta_by_idx[i] = {
@@ -1189,7 +1552,12 @@ def create_plan_execute_graph(
                 plan_dicts = [dict(s) for s in existing_plan]
             except Exception:
                 plan_dicts = existing_plan  # best effort
-            plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts)
+            current_user_text = ""
+            for msg in reversed(state.get("messages") or []):
+                if isinstance(msg, HumanMessage):
+                    current_user_text = message_content_to_str(getattr(msg, "content", "") or "")
+                    break
+            plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts, current_user_text)
             return {
                 **state,
                 "plan": plan_dicts,
@@ -1224,7 +1592,12 @@ def create_plan_execute_graph(
             )
 
         plan_dicts = [s.model_dump() for s in plan.steps]
-        plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts)
+        user_text = ""
+        for msg in reversed(state.get("messages") or []):
+            if isinstance(msg, HumanMessage):
+                user_text = message_content_to_str(getattr(msg, "content", "") or "")
+                break
+        plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts, user_text)
 
         if emit_plan:
             _emit(
@@ -1307,24 +1680,7 @@ def create_plan_execute_graph(
                         "acknowledge the mismatch and ask one clarifying question instead of asserting success."
                     )
                 executed_actions = state.get("executed_actions") or []
-                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
-                if mutation_actions:
-                    actions_summary = "; ".join([
-                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
-                        for a in mutation_actions
-                    ])
-                    default_hint += (
-                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
-                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
-                        "Do NOT claim actions were performed if they are not in this list. "
-                        "If an action failed, explain what went wrong instead of claiming success."
-                    )
-                else:
-                    default_hint += (
-                        "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
-                        "Do NOT claim any actions were performed. If the user expected an action, "
-                        "ask for clarification about what they want to do."
-                    )
+                default_hint += _execution_truth_hint(executed_actions, MUTATION_PREFIXES)
                 messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=default_hint)])
                 _track_llm_call("responder_default", "responder_model")
                 result = _invoke_model(responder_model, messages_to_send)
@@ -1392,25 +1748,7 @@ def create_plan_execute_graph(
             # CRITICAL: Add executed actions validation
             # This ensures the response reflects ONLY what was actually executed
             executed_actions = state.get("executed_actions") or []
-            mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
-            if mutation_actions:
-                actions_summary = "; ".join([
-                    f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
-                    for a in mutation_actions
-                ])
-                hint += (
-                    f"\n\nACTIONS EXECUTED: {actions_summary}\n"
-                    "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
-                    "Do NOT claim actions were performed if they are not in this list. "
-                    "If an action failed, explain what went wrong instead of claiming success."
-                )
-            else:
-                # No mutation actions were executed (even if read-only tools were called)
-                hint += (
-                    "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
-                    "Do NOT claim any actions were performed. If the user expected an action, "
-                    "ask for clarification about what they want to do."
-                )
+            hint += _execution_truth_hint(executed_actions, MUTATION_PREFIXES)
 
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
@@ -1823,21 +2161,25 @@ def create_routed_plan_execute_graph(
         validated_messages = _ensure_messages_have_content(router_messages)
         _track_llm_call("router", "router_model")
         result = _invoke_model(router_model, validated_messages)
-        content = message_content_to_str(getattr(result, "content", "") or "")
+        content = getattr(result, "content", "") or ""
+        normalized_content = _normalize_model_output_text(content)
         
         route_decision: Optional[RouteDecision] = None
         try:
-            parsed = router_parser.parse(content)
-            # JsonOutputParser may return a dict, convert to RouteDecision if needed
-            if isinstance(parsed, dict):
-                route_decision = RouteDecision(**parsed)
-            elif isinstance(parsed, RouteDecision):
-                route_decision = parsed
-            else:
-                raise ValueError(f"Unexpected parser output type: {type(parsed)}")
+            route_decision = _parse_route_decision(content)
         except Exception as e:
-            logger.warning(f"Router parsing failed: {e}, defaulting to operator")
-            route_decision = RouteDecision(mode="operator", confidence="low", reason="parsing_failed")
+            # Keep previous parser as a fallback for compatibility.
+            try:
+                parsed = router_parser.parse(normalized_content)
+                if isinstance(parsed, dict):
+                    route_decision = RouteDecision(**parsed)
+                elif isinstance(parsed, RouteDecision):
+                    route_decision = parsed
+                else:
+                    raise ValueError(f"Unexpected parser output type: {type(parsed)}")
+            except Exception:
+                logger.warning(f"Router parsing failed: {e}, defaulting to operator")
+                route_decision = RouteDecision(mode="operator", confidence="low", reason="parsing_failed")
         
         mode = route_decision.mode if route_decision else "operator"
         confidence = route_decision.confidence if route_decision else "low"
@@ -1969,7 +2311,7 @@ def create_routed_plan_execute_graph(
             "tool_args": {"query": query},
         }
     
-    def _validate_and_repair_plan_steps(plan_steps: List[dict]) -> tuple[List[dict], Dict[int, dict]]:
+    def _validate_and_repair_plan_steps(plan_steps: List[dict], user_text: str = "") -> tuple[List[dict], Dict[int, dict]]:
         """Validate planner-provided steps and repair common issues."""
         pending_meta_by_idx: Dict[int, dict] = {}
         repaired: List[dict] = []
@@ -1979,6 +2321,9 @@ def create_routed_plan_execute_graph(
             if kind == "tool":
                 tool_name = (step.get("tool_name") or "").strip()
                 tool_args = step.get("tool_args") or {}
+                if tool_name in {"add_promise", "create_promise"}:
+                    tool_args = _normalize_add_promise_tool_args(tool_args, user_text)
+                    step["tool_args"] = tool_args
                 if not tool_name or tool_name not in tool_by_name:
                     pending_meta_by_idx[i] = {
                         "reason": "unknown_tool",
@@ -2136,7 +2481,8 @@ def create_routed_plan_execute_graph(
                 plan_dicts = [dict(s) for s in existing_plan]
             except Exception:
                 plan_dicts = existing_plan  # best effort
-            plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts)
+            current_user_text = _last_user_text(state.get("messages") or [])
+            plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts, current_user_text)
             return {
                 **state,
                 "plan": plan_dicts,
@@ -2169,14 +2515,82 @@ def create_routed_plan_execute_graph(
         validated_messages = _ensure_messages_have_content(messages)
         _track_llm_call("routed_planner", "planner_model")
         result = _invoke_model(planner_model, validated_messages)
+        
+        # Extract content: handle both provider adapter results and direct AIMessage
         content = getattr(result, "content", "") or ""
+        # If content is a list (Gemini structured output blocks), extract text
+        if isinstance(content, list):
+            text_parts = []
+            for block in content:
+                if isinstance(block, str):
+                    text_parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text") or block.get("content")
+                    if isinstance(text, str):
+                        text_parts.append(text)
+            content = "\n".join(text_parts) if text_parts else str(content)
+        elif not isinstance(content, str):
+            content = str(content) if content else ""
+        
+        # Debug logging for planner output
+        if _DEBUG_ENABLED:
+            logger.debug({
+                "event": "planner_raw_output",
+                "content_preview": content[:500] if content else "(empty)",
+                "content_type": type(content).__name__,
+                "content_length": len(content) if isinstance(content, str) else 0,
+            })
 
         plan: Optional[Plan] = None
         planner_error: Optional[str] = None
         try:
             plan = _parse_plan(content)
+            # Validate that mutation intents have tool steps
+            detected_intent = plan.detected_intent or ""
+            is_mutation_intent = any(
+                hint in detected_intent.lower() 
+                for hint in ["create", "add", "update", "delete", "log", "edit", "remove"]
+            )
+            tool_steps = [s for s in plan.steps if s.kind == "tool"]
+            if is_mutation_intent and not tool_steps and not plan.final_response_if_no_tools:
+                # Mutation intent without tool steps - this is likely an error
+                if _DEBUG_ENABLED:
+                    logger.warning({
+                        "event": "planner_mutation_intent_no_tools",
+                        "detected_intent": detected_intent,
+                        "steps_count": len(plan.steps),
+                        "step_kinds": [s.kind for s in plan.steps],
+                        "content_preview": content[:300],
+                    })
+                # One-shot repair retry: force tool-step planning for mutation intents.
+                repair_hint = (
+                    "REPAIR INSTRUCTION: The previous plan had mutation intent but no tool steps. "
+                    "You MUST output at least one `tool` step for mutation intents. "
+                    "If creating a promise, include `add_promise` with both required args: "
+                    "`promise_text` and `num_hours_promised_per_week` (numeric). "
+                    "Do not use arithmetic expressions in JSON values."
+                )
+                repair_messages = _ensure_messages_have_content(
+                    messages + [SystemMessage(content=repair_hint)]
+                )
+                _track_llm_call("routed_planner_repair", "planner_model")
+                repair_result = _invoke_model(planner_model, repair_messages)
+                repair_content = getattr(repair_result, "content", "") or ""
+                try:
+                    repaired_plan = _parse_plan(repair_content)
+                    repaired_tool_steps = [s for s in repaired_plan.steps if s.kind == "tool"]
+                    if repaired_tool_steps:
+                        plan = repaired_plan
+                except Exception:
+                    pass
         except Exception as e:
             planner_error = str(e)
+            if _DEBUG_ENABLED:
+                logger.warning({
+                    "event": "planner_parse_error",
+                    "error": str(e),
+                    "content_preview": content[:500] if content else "(empty)",
+                })
             plan = Plan(
                 steps=[
                     PlanStep(
@@ -2188,7 +2602,8 @@ def create_routed_plan_execute_graph(
             )
 
         plan_dicts = [s.model_dump() for s in plan.steps]
-        plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts)
+        user_text = _last_user_text(state.get("messages") or [])
+        plan_dicts, pending_meta_by_idx = _validate_and_repair_plan_steps(plan_dicts, user_text)
 
         if emit_plan:
             _emit(
@@ -2336,24 +2751,7 @@ def create_routed_plan_execute_graph(
                         "acknowledge the mismatch and ask one clarifying question instead of asserting success."
                     )
                 executed_actions = state.get("executed_actions") or []
-                mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
-                if mutation_actions:
-                    actions_summary = "; ".join([
-                        f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
-                        for a in mutation_actions
-                    ])
-                    default_hint += (
-                        f"\n\nACTIONS EXECUTED: {actions_summary}\n"
-                        "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
-                        "Do NOT claim actions were performed if they are not in this list. "
-                        "If an action failed, explain what went wrong instead of claiming success."
-                    )
-                else:
-                    default_hint += (
-                        "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
-                        "Do NOT claim any actions were performed. If the user expected an action, "
-                        "ask for clarification about what they want to do."
-                    )
+                default_hint += _execution_truth_hint(executed_actions, MUTATION_PREFIXES)
                 base_messages = state["messages"]
                 system_msg = _get_system_message_for_response(mode)
                 if system_msg:
@@ -2417,24 +2815,7 @@ def create_routed_plan_execute_graph(
             
             # CRITICAL: Add executed actions validation for routed graph
             executed_actions = state.get("executed_actions") or []
-            mutation_actions = [a for a in executed_actions if a.get("tool_name", "").startswith(MUTATION_PREFIXES)]
-            if mutation_actions:
-                actions_summary = "; ".join([
-                    f"{a['tool_name']}({', '.join(f'{k}={v}' for k, v in (a.get('args') or {}).items() if k != 'user_id')}) -> {'success' if a.get('success') else 'failed'}"
-                    for a in mutation_actions
-                ])
-                hint += (
-                    f"\n\nACTIONS EXECUTED: {actions_summary}\n"
-                    "CRITICAL: Your response MUST accurately reflect ONLY what was actually executed above. "
-                    "Do NOT claim actions were performed if they are not in this list. "
-                    "If an action failed, explain what went wrong instead of claiming success."
-                )
-            else:
-                hint += (
-                    "\n\nNOTE: No mutation actions (add/create/update/delete/log) were executed in this turn. "
-                    "Do NOT claim any actions were performed. If the user expected an action, "
-                    "ask for clarification about what they want to do."
-                )
+            hint += _execution_truth_hint(executed_actions, MUTATION_PREFIXES)
 
             tool_err = _last_tool_error(state["messages"])
             if tool_err:
@@ -2718,4 +3099,3 @@ def create_routed_plan_execute_graph(
     graph.add_conditional_edges("executor", should_continue, {"tools": "tools", "executor": "executor", END: END})
     graph.add_edge("tools", "executor")
     return graph.compile()
-

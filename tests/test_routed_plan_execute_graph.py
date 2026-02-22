@@ -185,3 +185,71 @@ def test_routed_strategist_explicit_mutation_still_blocks():
     assert "switch to operator mode" in final_response
     assert len(calls) == 0
 
+
+def test_routed_operator_add_promise_missing_args_infers_from_user_text():
+    calls = []
+
+    def _add_promise(promise_text: str, num_hours_promised_per_week: float):
+        calls.append(("add_promise", promise_text, num_hours_promised_per_week))
+        return "created"
+
+    tools = [
+        StructuredTool.from_function(func=_add_promise, name="add_promise", description="Create a promise."),
+    ]
+
+    router = FakeModel(
+        [
+            AIMessage(
+                content=json.dumps(
+                    {"mode": "operator", "confidence": "high", "reason": "transactional_intent"}
+                )
+            )
+        ]
+    )
+
+    # Missing both required args: promise_text + num_hours_promised_per_week
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Create a promise.",
+                "tool_name": "add_promise",
+                "tool_args": {},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm success."},
+        ],
+        "detected_intent": "CREATE_PROMISE",
+        "intent_confidence": "high",
+        "safety": {"requires_confirmation": False},
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+
+    def responder_fn(messages):
+        return AIMessage(content="Done")
+
+    responder = FakeModel(responder_fn=responder_fn)
+
+    app = create_routed_plan_execute_graph(
+        tools=tools,
+        router_model=router,
+        planner_model=planner,
+        responder_model=responder,
+        router_prompt="Output route JSON.",
+        get_planner_prompt_for_mode=lambda _mode: "Output plan JSON.",
+        get_system_message_for_mode=None,
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(_initial_state("add a promise to drink water 10 minutes a day"))
+    final_response = (result.get("final_response") or "").lower()
+
+    # add_promise requires confirmation in operator mode; ensure inference happened before that gate.
+    assert "just to confirm" in final_response
+    pending = result.get("pending_clarification") or {}
+    assert pending.get("reason") == "pre_mutation_confirmation"
+    assert pending.get("tool_name") == "add_promise"
+    tool_args = pending.get("tool_args") or {}
+    assert tool_args.get("promise_text") == "drink water"
+    assert abs(float(tool_args.get("num_hours_promised_per_week")) - 1.1667) < 0.01
+    assert calls == []
