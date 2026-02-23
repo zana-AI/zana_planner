@@ -132,6 +132,51 @@ def _normalize_model_output_text(content: Any) -> str:
     return str(content)
 
 
+def _looks_like_protocol_artifact_text(text: str) -> bool:
+    value = (text or "").strip().lower()
+    if not value:
+        return False
+    if value == "(calling tool)":
+        return True
+    markers = (
+        "dsml",
+        "function_calls",
+        "output_parsing_failure",
+        "for troubleshooting, visit:",
+        "<|",
+        "</|",
+    )
+    return any(marker in value for marker in markers)
+
+
+def _sanitize_router_history(messages: Sequence[BaseMessage], max_messages: int = 8) -> List[BaseMessage]:
+    """
+    Keep router context conversational and parser-safe.
+    Drops tool/protocol-heavy messages that can poison RouteDecision JSON output.
+    """
+    sanitized: List[BaseMessage] = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage):
+            continue
+        if isinstance(msg, AIMessage):
+            if getattr(msg, "tool_calls", None):
+                continue
+            text = message_content_to_str(getattr(msg, "content", "") or "").strip()
+            if not text or _looks_like_protocol_artifact_text(text):
+                continue
+            sanitized.append(AIMessage(content=text))
+            continue
+        if isinstance(msg, HumanMessage):
+            text = message_content_to_str(getattr(msg, "content", "") or "").strip()
+            if not text:
+                continue
+            sanitized.append(HumanMessage(content=text))
+            continue
+    if max_messages > 0:
+        return sanitized[-max_messages:]
+    return sanitized
+
+
 def _json_candidates_from_text(text: str) -> List[str]:
     candidates: List[str] = []
     seen: set[str] = set()
@@ -2203,8 +2248,9 @@ def create_routed_plan_execute_graph(
                 "route_reason": "no_user_message",
             }
         
-        # Combine system prompt + available prior history + the new user message
-        history = messages[:-1] if messages else []
+        # Combine system prompt + sanitized conversational history + the new user message.
+        # Avoid tool/protocol artifacts in router context to preserve JSON parse reliability.
+        history = _sanitize_router_history(messages[:-1] if messages else [], max_messages=8)
         router_messages = [SystemMessage(content=router_prompt)] + history + [user_msg]
         
         validated_messages = _ensure_messages_have_content(router_messages)

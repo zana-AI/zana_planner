@@ -118,6 +118,16 @@ def test_resolve_fallback_role_providers_gemini_requires_gemini_credentials():
     assert providers is None
 
 
+def test_is_mutation_intent_accepts_update_delete_prefixes():
+    assert LLMHandler._is_mutation_intent("UPDATE_PROMISE") is True
+    assert LLMHandler._is_mutation_intent("DELETE_ACTION") is True
+
+
+def test_is_mutation_intent_accepts_edit_remove_aliases():
+    assert LLMHandler._is_mutation_intent("EDIT_PROMISE") is True
+    assert LLMHandler._is_mutation_intent("REMOVE_ACTION") is True
+
+
 def test_classify_stop_reason_no_final_when_ai_and_final_response_missing():
     reason = LLMHandler._classify_stop_reason(
         iteration=0,

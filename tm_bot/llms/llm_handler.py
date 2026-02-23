@@ -759,10 +759,11 @@ class LLMHandler:
             "Identify the user's primary intent. Key intents (non-exhaustive):\n"
             "- LOG_ACTION: past-tense activity ('I did X', 'worked on Y', 'spent Z hours')\n"
             "- CREATE_PROMISE: new goal or one-time reminder ('I want to X tomorrow/next week')\n"
-            "- EDIT/DELETE_ACTION or EDIT/DELETE_PROMISE: modify or remove existing data\n"
+            "- UPDATE_ACTION / DELETE_ACTION / UPDATE_PROMISE / DELETE_PROMISE: modify or remove existing data\n"
             "- QUERY_PROGRESS: reports, streaks, totals\n"
             "- SETTINGS: language, timezone, notification changes\n"
             "- NO_OP/CHAT: casual conversation, no action needed\n"
+            "Use canonical intent prefixes: LOG_, CREATE_, UPDATE_, DELETE_, QUERY_, SETTINGS_, NO_OP.\n"
             "Messages ending with '?' or <4 words are usually QUESTIONS, not LOG_ACTION.\n"
             "Set intent_confidence: 'high'=unambiguous action; 'medium'=one likely interpretation; 'low'=<4 words, ends '?', or ambiguous.\n"
             "For HIGH-confidence intents: fill defaults and act directly.\n"
@@ -2228,6 +2229,11 @@ class LLMHandler:
         head = re.split(r"[^a-z0-9]+", label, maxsplit=1)[0]
         if not head:
             return False
+        alias_map = {
+            "edit": "update",
+            "remove": "delete",
+        }
+        head = alias_map.get(head, head)
         mutation_heads = {prefix.rstrip("_") for prefix in _MUTATION_TOOL_PREFIXES}
         return head in mutation_heads
 
