@@ -250,8 +250,26 @@ class MessageHandlers:
         text = (user_text or "").strip().lower()
         if not text:
             return False
-        cancel_tokens = ("no", "cancel", "nope", "nah", "stop", "خیر", "نه", "لغو")
+        cancel_tokens = ("no", "cancel", "skip", "nope", "nah", "stop", "خیر", "نه", "لغو")
         return any(text == token or text.startswith(token + " ") for token in cancel_tokens)
+
+    @staticmethod
+    def _is_pre_mutation_confirmation(llm_response: dict) -> bool:
+        """Return True when the LLM response asks for pre-mutation confirmation."""
+        pending = (llm_response or {}).get("pending_clarification") or {}
+        reason = str(pending.get("reason", "")).strip().lower()
+        return reason == "pre_mutation_confirmation"
+
+    def _mutation_confirmation_kb(self, user_lang: Language) -> InlineKeyboardMarkup:
+        """Inline keyboard for mutation confirmation (Yes / Skip)."""
+        yes_text = get_message("btn_yes_confirm", user_lang)
+        skip_text = get_message("btn_skip_action", user_lang)
+        return InlineKeyboardMarkup(
+            [[
+                InlineKeyboardButton(yes_text, callback_data=encode_cb("mut_confirm", d="yes")),
+                InlineKeyboardButton(skip_text, callback_data=encode_cb("mut_confirm", d="skip")),
+            ]]
+        )
 
     def set_user_timezone(self, user_id: int, tzname: str) -> None:
         """Set user timezone using the settings service."""
@@ -688,24 +706,47 @@ class MessageHandlers:
                         update, context, error_msg, settings, user_lang
                     )
                 return
+
+            # Preserve pending confirmation so next user input/click can finalize mutation.
+            if llm_response.get("pending_clarification"):
+                try:
+                    context.user_data["pending_clarification"] = {
+                        **(llm_response.get("pending_clarification") or {}),
+                        "original_user_message": user_input,
+                    }
+                except Exception:
+                    pass
             
             # Process LLM response
             try:
                 func_call_response = self.call_planner_api(user_id, llm_response)
                 response_text = llm_response.get("response_to_user", "")
                 formatted_response = self._format_response(response_text, func_call_response)
+                confirmation_kb = (
+                    self._mutation_confirmation_kb(user_lang)
+                    if self._is_pre_mutation_confirmation(llm_response)
+                    else None
+                )
                 
                 # Edit processing message with final response
                 if processing_msg:
                     await self.response_service.edit_processing_message(
                         context, processing_msg, formatted_response,
-                        user_id=user_id, user_lang=user_lang
+                        user_id=user_id, user_lang=user_lang,
+                        reply_markup=confirmation_kb,
                     )
                 else:
-                    # Send response with voice mode if enabled
-                    await self._send_response_with_voice_mode(
-                        update, context, formatted_response, settings, user_lang
-                    )
+                    if confirmation_kb:
+                        await self.response_service.reply_text(
+                            update, formatted_response,
+                            user_id=user_id, user_lang=user_lang,
+                            reply_markup=confirmation_kb,
+                        )
+                    else:
+                        # Send response with voice mode if enabled
+                        await self._send_response_with_voice_mode(
+                            update, context, formatted_response, settings, user_lang
+                        )
             except Exception as e:
                 error_msg = get_message("error_general", user_lang, error=str(e))
                 logger.error(f"Error processing voice message for user {user_id}: {str(e)}")
@@ -1073,6 +1114,16 @@ class MessageHandlers:
                             update, context, error_msg, settings, user_lang
                         )
                     return
+
+                # Preserve pending confirmation so next user input/click can finalize mutation.
+                if llm_response.get("pending_clarification"):
+                    try:
+                        context.user_data["pending_clarification"] = {
+                            **(llm_response.get("pending_clarification") or {}),
+                            "original_user_message": user_message,
+                        }
+                    except Exception:
+                        pass
                 
                 # Process LLM response
                 try:
@@ -1081,18 +1132,31 @@ class MessageHandlers:
                     response_text = llm_response['response_to_user']
                     
                     formatted_response = self._format_response(response_text, func_call_response)
+                    confirmation_kb = (
+                        self._mutation_confirmation_kb(user_lang)
+                        if self._is_pre_mutation_confirmation(llm_response)
+                        else None
+                    )
                     
                     # Edit processing message with final response
                     if processing_msg:
                         await self.response_service.edit_processing_message(
                             context, processing_msg, formatted_response,
-                            user_id=user_id, user_lang=user_lang
+                            user_id=user_id, user_lang=user_lang,
+                            reply_markup=confirmation_kb,
                         )
                     else:
-                        # Send response (with voice mode if enabled)
-                        await self._send_response_with_voice_mode(
-                            update, context, formatted_response, settings, user_lang
-                        )
+                        if confirmation_kb:
+                            await self.response_service.reply_text(
+                                update, formatted_response,
+                                user_id=user_id, user_lang=user_lang,
+                                reply_markup=confirmation_kb,
+                            )
+                        else:
+                            # Send response (with voice mode if enabled)
+                            await self._send_response_with_voice_mode(
+                                update, context, formatted_response, settings, user_lang
+                            )
                 except Exception as e:
                     error_msg = get_message("error_general", user_lang, error=str(e))
                     logger.error(f"Error processing image for user {user_id}: {str(e)}")
@@ -1485,17 +1549,30 @@ class MessageHandlers:
                 response_text = llm_response.get("response_to_user", "")
                 
                 formatted_response = self._format_response(response_text, func_call_response)
+                confirmation_kb = (
+                    self._mutation_confirmation_kb(user_lang)
+                    if self._is_pre_mutation_confirmation(llm_response)
+                    else None
+                )
                 
                 # Edit processing message with final response
                 if processing_msg:
                     await self.response_service.edit_processing_message(
                         context, processing_msg, formatted_response,
-                        user_id=user_id, user_lang=user_lang
+                        user_id=user_id, user_lang=user_lang,
+                        reply_markup=confirmation_kb,
                     )
                 else:
-                    await self._send_response_with_voice_mode(
-                        update, context, formatted_response, settings, user_lang
-                    )
+                    if confirmation_kb:
+                        await self.response_service.reply_text(
+                            update, formatted_response,
+                            user_id=user_id, user_lang=user_lang,
+                            reply_markup=confirmation_kb,
+                        )
+                    else:
+                        await self._send_response_with_voice_mode(
+                            update, context, formatted_response, settings, user_lang
+                        )
                 return
             
             # YouTube link: show a clear "new content" card + actions
@@ -1661,17 +1738,30 @@ class MessageHandlers:
                         }
                 except Exception:
                     pass
+            confirmation_kb = (
+                self._mutation_confirmation_kb(user_lang)
+                if self._is_pre_mutation_confirmation(llm_response)
+                else None
+            )
 
             # Edit processing message with final response
             if processing_msg:
                 await self.response_service.edit_processing_message(
                     context, processing_msg, formatted_response,
-                    user_id=user_id, user_lang=user_lang
+                    user_id=user_id, user_lang=user_lang,
+                    reply_markup=confirmation_kb,
                 )
             else:
-                await self._send_response_with_voice_mode(
-                    update, context, formatted_response, settings, user_lang
-                )
+                if confirmation_kb:
+                    await self.response_service.reply_text(
+                        update, formatted_response,
+                        user_id=user_id, user_lang=user_lang,
+                        reply_markup=confirmation_kb,
+                    )
+                else:
+                    await self._send_response_with_voice_mode(
+                        update, context, formatted_response, settings, user_lang
+                    )
         
         except Exception as e:
             user_lang = get_user_language(update.effective_user)

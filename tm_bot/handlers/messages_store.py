@@ -165,9 +165,12 @@ class MessageTemplateStore:
             "btn_more": "More…",
             "btn_yes_delete": "Yes (delete)",
             "btn_no_cancel": "No (cancel)",
+            "btn_yes_confirm": "✅ Yes",
+            "btn_skip_action": "⏭️ Skip",
             "btn_looks_right": "Looks right ✅ ({time})",
             "btn_adjust": "Adjust…",
             "btn_share_location": "Share location",
+            "confirmation_expired": "This confirmation has expired. Please send your request again.",
 
             # Time formatting
             "time_none": "None",

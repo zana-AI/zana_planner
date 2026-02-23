@@ -197,6 +197,8 @@ class CallbackHandlers:
             await self._handle_confirm_delete(query, promise_id, user_lang)
         elif action == "cancel_delete":
             await self._handle_cancel_delete(query)
+        elif action == "mut_confirm":
+            await self._handle_mutation_confirmation(query, context, cb, user_lang)
         elif action == "report_promise":
             await self._handle_report_promise(query, promise_id, user_lang)
         elif action == "update_time_spent":
@@ -342,6 +344,70 @@ class CallbackHandlers:
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(query.message.reply_markup.inline_keyboard[:-1])
         )
+
+    async def _handle_mutation_confirmation(self, query, context: CallbackContext, cb: dict, user_lang: Language):
+        """Handle Yes/Skip confirmation buttons for pending mutation actions."""
+        user_id = query.from_user.id
+        decision = str((cb or {}).get("d", "")).strip().lower()
+        is_confirm = decision in {"yes", "confirm", "y", "1", "true"}
+
+        pending = (context.user_data or {}).get("pending_clarification") if hasattr(context, "user_data") else None
+        if not pending or str(pending.get("reason", "")).strip().lower() != "pre_mutation_confirmation":
+            msg = get_message("confirmation_expired", user_lang)
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            try:
+                await query.message.reply_text(msg)
+            except Exception:
+                logger.debug("Could not send expired confirmation message to user %s", user_id)
+            return
+
+        tool_name = str(pending.get("tool_name", "")).strip()
+        tool_args = pending.get("tool_args") or {}
+
+        try:
+            context.user_data.pop("pending_clarification", None)
+        except Exception:
+            pass
+
+        if not is_confirm:
+            cancel_msg = get_message("action_canceled", user_lang)
+            try:
+                await query.edit_message_text(cancel_msg)
+            except Exception:
+                await query.message.reply_text(cancel_msg)
+            return
+
+        try:
+            if hasattr(self.plan_keeper, tool_name):
+                method = getattr(self.plan_keeper, tool_name)
+                tool_args_with_user = {**tool_args, "user_id": user_id}
+                method(**tool_args_with_user)
+
+                if tool_name in ("add_promise", "create_promise"):
+                    promise_text = tool_args.get("promise_text") or tool_args.get("text", "promise")
+                    success_msg = get_message(
+                        "promise_created_confirmed",
+                        user_lang,
+                        promise_text=str(promise_text).replace("_", " "),
+                    )
+                elif tool_name == "subscribe_template":
+                    template_id = tool_args.get("template_id", "template")
+                    success_msg = get_message("template_subscribed_confirmed", user_lang, template_id=template_id)
+                else:
+                    success_msg = get_message("action_confirmed", user_lang)
+            else:
+                success_msg = get_message("error_tool_not_found", user_lang, tool_name=tool_name)
+        except Exception as e:
+            logger.error("Error executing confirmed tool %s for user %s: %s", tool_name, user_id, e)
+            success_msg = get_message("error_executing_action", user_lang, error=str(e))
+
+        try:
+            await query.edit_message_text(success_msg)
+        except Exception:
+            await query.message.reply_text(success_msg)
     
     async def _handle_report_promise(self, query, promise_id: str, user_lang: Language):
         """Handle promise report generation."""

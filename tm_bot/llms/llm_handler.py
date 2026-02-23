@@ -2433,7 +2433,7 @@ class LLMHandler:
 
             return (
                 "Before I make that change, please confirm: "
-                f"{action_description}. Reply 'yes' or 'confirm' to proceed."
+                f"{action_description}. Tap Yes or Skip below, or reply 'yes'/'confirm'."
             )
 
         intent_label = str(detected_intent or "this change").replace("_", " ").strip().lower()
@@ -2441,7 +2441,7 @@ class LLMHandler:
             intent_label = "this change"
         return (
             f"Before I make {intent_label}, please confirm. "
-            "Reply 'yes' or 'confirm' to proceed."
+            "Tap Yes or Skip below, or reply 'yes'/'confirm'."
         )
 
     def _enforce_mutation_execution_contract(

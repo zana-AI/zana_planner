@@ -2023,12 +2023,13 @@ def create_plan_execute_graph(
                 intent_confidence in ("low", "medium")
             )
             
-            # Always confirm for promise creation tools, OR if existing mutation rule applies,
-            # OR if it's a sensitive tool with low/medium confidence
+            # Any mutation must be explicitly confirmed by the user.
+            # Keep existing non-mutation safety checks as well.
             needs_confirmation = (
+                is_mutation_tool or
                 tool_name in ALWAYS_CONFIRM_TOOLS or
                 needs_low_confidence_confirm or
-                (is_mutation_tool and (intent_confidence == "low" or requires_confirmation))
+                requires_confirmation
             )
             
             if needs_confirmation:
@@ -2057,7 +2058,7 @@ def create_plan_execute_graph(
                 
                 question = (
                     f"Just to confirm: you want me to {action_description}, right?\n\n"
-                    f"Reply 'yes' or 'confirm' to proceed, or clarify what you actually want."
+                    "Tap Yes or Skip below. You can also reply 'yes' or 'confirm' to proceed."
                 )
                 
                 pending = {
@@ -3222,9 +3223,10 @@ def create_routed_plan_execute_graph(
             )
             
             needs_confirmation = (
+                is_mutation_tool or
                 tool_name in ALWAYS_CONFIRM_TOOLS or
                 needs_low_confidence_confirm or
-                (is_mutation_tool and (intent_confidence == "low" or requires_confirmation))
+                requires_confirmation
             )
             
             if needs_confirmation:
@@ -3252,7 +3254,7 @@ def create_routed_plan_execute_graph(
                 
                 question = (
                     f"Just to confirm: you want me to {action_description}, right?\n\n"
-                    f"Reply 'yes' or 'confirm' to proceed, or clarify what you actually want."
+                    "Tap Yes or Skip below. You can also reply 'yes' or 'confirm' to proceed."
                 )
                 pending = {
                     "reason": "pre_mutation_confirmation",
