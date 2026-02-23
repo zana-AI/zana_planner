@@ -105,6 +105,33 @@ def test_apply_final_response_failsafe_keeps_existing_text():
     assert text == "Hello there"
 
 
+def test_strip_internal_reasoning_removes_protocol_artifacts_and_keeps_answer():
+    raw = (
+        "(calling tool)\n\n"
+        "<|DSML|function_calls>\n"
+        "<|DSML|invoke name=\"web_fetch\">\n"
+        "<|DSML|parameter name=\"url\">https://api.example.com</|DSML|parameter>\n"
+        "</|DSML|invoke>\n"
+        "</|DSML|function_calls>\n"
+        "The last two entries are November 1 and October 25.\n"
+        "For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE"
+    )
+    output = LLMHandler._strip_internal_reasoning(raw)
+    assert output == "The last two entries are November 1 and October 25."
+
+
+def test_strip_internal_reasoning_returns_blank_when_only_protocol_artifacts():
+    raw = (
+        "(calling tool)\n"
+        "<|DSML|function_calls>\n"
+        "<|DSML|invoke name=\"web_fetch\">\n"
+        "</|DSML|invoke>\n"
+        "</|DSML|function_calls>\n"
+    )
+    output = LLMHandler._strip_internal_reasoning(raw)
+    assert output == ""
+
+
 def _build_strict_handler_for_contract() -> LLMHandler:
     # Build a minimal handler instance without running __init__ heavy setup.
     handler = object.__new__(LLMHandler)

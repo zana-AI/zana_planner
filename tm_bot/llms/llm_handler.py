@@ -2101,11 +2101,55 @@ class LLMHandler:
                 pass
 
     @staticmethod
+    def _strip_protocol_artifacts(text: str) -> str:
+        """
+        Remove tool/protocol artifacts that should never be shown to users.
+        """
+        value = "" if text is None else str(text)
+        if not value.strip():
+            return value
+
+        cleaned_lines: List[str] = []
+        for line in value.splitlines():
+            stripped = line.strip()
+            lower = stripped.lower()
+
+            if not stripped:
+                cleaned_lines.append("")
+                continue
+
+            # Internal tool-call placeholder emitted by executor.
+            if re.fullmatch(r"\(calling\s+tool\)", lower):
+                continue
+
+            # Parser/debug noise that sometimes leaks from fallback providers.
+            if "invalid json output:" in lower:
+                continue
+            if "for troubleshooting, visit:" in lower:
+                continue
+            if "output_parsing_failure" in lower:
+                continue
+
+            # DeepSeek/DSML and XML-like function call wrappers.
+            if "dsml" in lower:
+                continue
+            if stripped.startswith("<") and stripped.endswith(">") and any(
+                token in lower for token in ("invoke", "parameter", "function_calls", "tool_call", "tool_calls")
+            ):
+                continue
+
+            cleaned_lines.append(line)
+
+        candidate = "\n".join(cleaned_lines)
+        candidate = re.sub(r"\n{3,}", "\n\n", candidate).strip()
+        return candidate
+
+    @staticmethod
     def _strip_internal_reasoning(text: str) -> str:
         """
         Remove accidental chain-of-thought style preambles from model output.
         """
-        value = "" if text is None else str(text)
+        value = LLMHandler._strip_protocol_artifacts(text)
         if not value.strip():
             return value
         lowered = value.lower()
