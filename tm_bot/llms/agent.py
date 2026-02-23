@@ -2053,7 +2053,7 @@ def create_plan_execute_graph(
                     setting_value = tool_args.get("setting_value", "")
                     action_description = f"change {setting_key} to {setting_value}"
                 else:
-                    action_description = f"call {tool_name} with {tool_args}"
+                    action_description = "perform the requested action"
                 
                 question = (
                     f"Just to confirm: you want me to {action_description}, right?\n\n"
@@ -3248,7 +3248,7 @@ def create_routed_plan_execute_graph(
                     setting_value = tool_args.get("setting_value", "")
                     action_description = f"change {setting_key} to {setting_value}"
                 else:
-                    action_description = f"call {tool_name} with {tool_args}"
+                    action_description = "perform the requested action"
                 
                 question = (
                     f"Just to confirm: you want me to {action_description}, right?\n\n"

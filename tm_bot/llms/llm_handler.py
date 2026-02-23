@@ -70,6 +70,7 @@ except ImportError:
 
 logger = get_logger(__name__)
 _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lower() == "staging"
+_DEBUG_FOOTER_TO_USER = os.getenv("LLM_DEBUG_USER_FOOTER", "0") == "1"
 
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
@@ -1908,8 +1909,8 @@ class LLMHandler:
                     }
                 )
             
-            # Append debug footer if debug mode is enabled
-            if _DEBUG_ENABLED:
+            # Append debug footer only when explicitly allowed for user-facing responses.
+            if _DEBUG_ENABLED and _DEBUG_FOOTER_TO_USER:
                 debug_footer = self._format_debug_footer(
                     result_state,
                     getattr(final_ai, "tool_calls", None) or [],
@@ -2401,17 +2402,38 @@ class LLMHandler:
         tool_name = str(pending.get("tool_name", "")).strip()
         tool_args = pending.get("tool_args") or pending.get("partial_args") or {}
         if tool_name:
-            args_preview = ", ".join(
-                f"{k}={v}" for k, v in (tool_args or {}).items() if k != "user_id"
-            ).strip()
-            if args_preview:
-                return (
-                    "Before I make that change, please confirm this action: "
-                    f"`{tool_name}({args_preview})`. Reply 'yes' or 'confirm' to proceed."
+            def _safe_text(value: object, fallback: str) -> str:
+                txt = str(value).strip() if value is not None else ""
+                return txt if txt else fallback
+
+            action_description = ""
+            if tool_name in ("create_promise", "add_promise"):
+                promise_text = _safe_text(
+                    (tool_args or {}).get("text", (tool_args or {}).get("promise_text")),
+                    "a new promise",
                 )
+                action_description = f"create this promise: '{promise_text}'"
+            elif tool_name == "add_action":
+                promise_id = _safe_text((tool_args or {}).get("promise_id"), "that promise")
+                time_spent = _safe_text((tool_args or {}).get("time_spent"), "some time")
+                action_description = f"log {time_spent} hour(s) on {promise_id}"
+            elif tool_name == "delete_promise":
+                promise_id = _safe_text((tool_args or {}).get("promise_id"), "that promise")
+                action_description = f"delete promise {promise_id}"
+            elif tool_name == "update_setting":
+                setting_key = _safe_text((tool_args or {}).get("setting_key"), "that setting")
+                setting_value = _safe_text((tool_args or {}).get("setting_value"), "the requested value")
+                action_description = f"change {setting_key} to {setting_value}"
+            elif tool_name == "subscribe_template":
+                template_id = _safe_text((tool_args or {}).get("template_id"), "that template")
+                action_description = f"subscribe to template '{template_id}'"
+            else:
+                intent_label = str(detected_intent or "this change").replace("_", " ").strip().lower()
+                action_description = intent_label if intent_label else "this change"
+
             return (
-                "Before I make that change, please confirm this action: "
-                f"`{tool_name}`. Reply 'yes' or 'confirm' to proceed."
+                "Before I make that change, please confirm: "
+                f"{action_description}. Reply 'yes' or 'confirm' to proceed."
             )
 
         intent_label = str(detected_intent or "this change").replace("_", " ").strip().lower()

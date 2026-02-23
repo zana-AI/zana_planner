@@ -30,6 +30,13 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _is_staging_or_test_mode() -> bool:
+    env = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).lower()
+    if env in {"staging", "stage", "test", "testing"}:
+        return True
+    return os.getenv("PYTEST_CURRENT_TEST") is not None
+
+
 class CallbackHandlers:
     """Handles all callback query processing."""
     
@@ -659,14 +666,24 @@ class CallbackHandlers:
         user_lang = get_user_language(user_id_int)
         user_now, tzname = self._get_user_now(user_id_int)
         current_date = user_now.date()
+        is_quiet_mode = _is_staging_or_test_mode()
         
-        logger.info(f"[REMINDER] send_nightly_reminders: user_id={user_id_int}, now={user_now}, tz={tzname}, date={current_date}")
+        if is_quiet_mode:
+            logger.debug(f"[REMINDER] send_nightly_reminders: user_id={user_id_int}, now={user_now}, tz={tzname}, date={current_date}")
+        else:
+            logger.info(f"[REMINDER] send_nightly_reminders: user_id={user_id_int}, now={user_now}, tz={tzname}, date={current_date}")
         
         # Check if user has any promises
         ranked = self.plan_keeper.reminders_service.select_nightly_top(user_id_int, user_now, n=1000)
-        logger.info(f"[REMINDER] Found {len(ranked)} ranked promises for user {user_id_int}")
+        if is_quiet_mode:
+            logger.debug(f"[REMINDER] Found {len(ranked)} ranked promises for user {user_id_int}")
+        else:
+            logger.info(f"[REMINDER] Found {len(ranked)} ranked promises for user {user_id_int}")
         if not ranked:
-            logger.warning(f"[REMINDER] No promises found for user {user_id_int} - skipping reminder")
+            if is_quiet_mode:
+                logger.debug(f"[REMINDER] No promises found for user {user_id_int} - skipping reminder")
+            else:
+                logger.warning(f"[REMINDER] No promises found for user {user_id_int} - skipping reminder")
             return
         
         # Send single wrap-up message with mini app button
@@ -680,7 +697,10 @@ class CallbackHandlers:
             reply_markup=mini_app_kb(url, button_text=button_text),
             parse_mode="Markdown",
         )
-        logger.info(f"[REMINDER] Sent nightly wrap-up message with mini app button for user {user_id_int}")
+        if is_quiet_mode:
+            logger.debug(f"[REMINDER] Sent nightly wrap-up message with mini app button for user {user_id_int}")
+        else:
+            logger.info(f"[REMINDER] Sent nightly wrap-up message with mini app button for user {user_id_int}")
     
     async def send_morning_reminders(self, context: CallbackContext, user_id: int) -> None:
         """Send morning reminders to users."""

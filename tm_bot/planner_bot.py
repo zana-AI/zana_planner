@@ -332,91 +332,106 @@ class PlannerBot:
         Single entry point for all incoming inputs (commands, text, voice, image, callback, etc.).
         Builds InputContext, applies cross-cutting concerns, then routes.
         """
-        ctx = self._build_input_context(update, context)
-        if context and hasattr(context, "user_data") and context.user_data is not None:
-            context.user_data["_input_context"] = ctx
+        try:
+            ctx = self._build_input_context(update, context)
+            if context and hasattr(context, "user_data") and context.user_data is not None:
+                context.user_data["_input_context"] = ctx
 
-        # Cross-cutting: update user info and avatar (for any input with a user)
-        effective_user = self._get_effective_user(update)
-        if ctx.user_id and effective_user:
-            self.message_handlers._update_user_info(ctx.user_id, effective_user)
-        if ctx.user_id and context:
-            await self.message_handlers._update_user_avatar_async(context, ctx.user_id)
+            # Cross-cutting: update user info and avatar (for any input with a user)
+            effective_user = self._get_effective_user(update)
+            if ctx.user_id and effective_user:
+                self.message_handlers._update_user_info(ctx.user_id, effective_user)
+            if ctx.user_id and context:
+                await self.message_handlers._update_user_avatar_async(context, ctx.user_id)
 
-        # Cross-cutting: log inbound message (command, text, or placeholder for voice/image)
-        content_to_log = None
-        if ctx.input_type == "command" and ctx.command:
-            content_to_log = "/" + ctx.command
-            if ctx.command_args:
-                content_to_log += " " + " ".join(ctx.command_args)
-        elif ctx.raw_text and ctx.input_type == "text":
-            content_to_log = ctx.raw_text
-        elif ctx.input_type == "voice":
-            content_to_log = "[voice]"
-        elif ctx.input_type == "image":
-            content_to_log = "[image]"
-        if content_to_log is not None and ctx.user_id:
-            self._original_response_service.log_user_message(
-                user_id=ctx.user_id,
-                content=content_to_log,
-                message_id=ctx.message_id,
-                chat_id=ctx.chat_id,
-            )
-
-        # Ack policy: send "Thinking..." only for LLM-bound types when response will be editable text
-        processing_msg = None
-        llm_bound = ctx.input_type in ("text", "voice", "image")
-        if llm_bound and ctx.user_id:
-            settings = self.plan_keeper.settings_service.get_settings(ctx.user_id)
-            voice_mode_enabled = bool(settings and getattr(settings, "voice_mode", None) == "enabled")
-            if ctx.input_type == "text" or not voice_mode_enabled:
-                processing_msg = await self._original_response_service.send_processing_message(
-                    update, user_id=ctx.user_id, user_lang=ctx.language
+            # Cross-cutting: log inbound message (command, text, or placeholder for voice/image)
+            content_to_log = None
+            if ctx.input_type == "command" and ctx.command:
+                content_to_log = "/" + ctx.command
+                if ctx.command_args:
+                    content_to_log += " " + " ".join(ctx.command_args)
+            elif ctx.raw_text and ctx.input_type == "text":
+                content_to_log = ctx.raw_text
+            elif ctx.input_type == "voice":
+                content_to_log = "[voice]"
+            elif ctx.input_type == "image":
+                content_to_log = "[image]"
+            if content_to_log is not None and ctx.user_id:
+                self._original_response_service.log_user_message(
+                    user_id=ctx.user_id,
+                    content=content_to_log,
+                    message_id=ctx.message_id,
+                    chat_id=ctx.chat_id,
                 )
-                if processing_msg and context and hasattr(context, "user_data") and context.user_data is not None:
-                    context.user_data["_processing_msg"] = processing_msg
-        ctx.processing_msg = processing_msg
 
-        # Route by input_type
-        if ctx.input_type == "callback":
-            await self._route_callback(ctx)
-            return
-        if ctx.input_type == "command" and ctx.command:
-            await self._route_command(ctx)
-            return
-        if ctx.input_type == "text":
+            # Ack policy: send "Thinking..." only for LLM-bound types when response will be editable text
+            processing_msg = None
+            llm_bound = ctx.input_type in ("text", "voice", "image")
+            if llm_bound and ctx.user_id:
+                settings = self.plan_keeper.settings_service.get_settings(ctx.user_id)
+                voice_mode_enabled = bool(settings and getattr(settings, "voice_mode", None) == "enabled")
+                if ctx.input_type == "text" or not voice_mode_enabled:
+                    processing_msg = await self._original_response_service.send_processing_message(
+                        update, user_id=ctx.user_id, user_lang=ctx.language
+                    )
+                    if processing_msg and context and hasattr(context, "user_data") and context.user_data is not None:
+                        context.user_data["_processing_msg"] = processing_msg
+            ctx.processing_msg = processing_msg
+
+            # Route by input_type
+            if ctx.input_type == "callback":
+                await self._route_callback(ctx)
+                return
+            if ctx.input_type == "command" and ctx.command:
+                await self._route_command(ctx)
+                return
+            if ctx.input_type == "text":
+                await self._route_to_agent(ctx)
+                return
+            if ctx.input_type == "voice":
+                await self.message_handlers.on_voice(update, context)
+                return
+            if ctx.input_type == "image":
+                await self.message_handlers.on_image(update, context)
+                return
+            if ctx.input_type == "location":
+                await self.message_handlers.on_location_shared(update, context)
+                return
+            if ctx.input_type == "poll":
+                await self.message_handlers.on_poll_created(update, context)
+                return
+            if ctx.input_type == "poll_answer":
+                await self.message_handlers.on_poll_answer(update, context)
+                return
+            if ctx.input_type == "edited_message":
+                await self._on_message_edited(ctx)
+                return
+            if ctx.input_type == "reaction":
+                await self._on_reaction(ctx)
+                return
+            if ctx.input_type == "pinned_message":
+                await self._on_message_pinned(ctx)
+                return
+            if ctx.input_type == "chat_member":
+                await self._on_chat_member(ctx)
+                return
+
+            logger.warning("dispatch: unhandled input_type=%s", ctx.input_type)
             await self._route_to_agent(ctx)
-            return
-        if ctx.input_type == "voice":
-            await self.message_handlers.on_voice(update, context)
-            return
-        if ctx.input_type == "image":
-            await self.message_handlers.on_image(update, context)
-            return
-        if ctx.input_type == "location":
-            await self.message_handlers.on_location_shared(update, context)
-            return
-        if ctx.input_type == "poll":
-            await self.message_handlers.on_poll_created(update, context)
-            return
-        if ctx.input_type == "poll_answer":
-            await self.message_handlers.on_poll_answer(update, context)
-            return
-        if ctx.input_type == "edited_message":
-            await self._on_message_edited(ctx)
-            return
-        if ctx.input_type == "reaction":
-            await self._on_reaction(ctx)
-            return
-        if ctx.input_type == "pinned_message":
-            await self._on_message_pinned(ctx)
-            return
-        if ctx.input_type == "chat_member":
-            await self._on_chat_member(ctx)
-            return
+        finally:
+            await self._cleanup_orphan_processing_message(context)
 
-        logger.warning("dispatch: unhandled input_type=%s", ctx.input_type)
-        await self._route_to_agent(ctx)
+    async def _cleanup_orphan_processing_message(self, context) -> None:
+        """Delete a leftover processing message that was not consumed by handlers."""
+        if not context or not hasattr(context, "user_data") or context.user_data is None:
+            return
+        msg = context.user_data.pop("_processing_msg", None)
+        if not msg:
+            return
+        try:
+            await msg.delete()
+        except Exception as e:
+            logger.debug("cleanup orphan processing message failed: %s", e)
 
     async def _route_command(self, ctx: InputContext) -> None:
         """Route command to the corresponding MessageHandlers method."""

@@ -1979,12 +1979,19 @@ class MessageHandlers:
     async def scheduled_nightly_reminders_for_one(self, context: CallbackContext) -> None:
         """Scheduled callback for nightly reminders."""
         user_id = context.job.data["user_id"]
-        logger.info(f"[REMINDER] Running scheduled nightly reminder for user {user_id}")
+        is_quiet_mode = _is_staging_or_test_mode()
+        if is_quiet_mode:
+            logger.debug(f"[REMINDER] Running scheduled nightly reminder for user {user_id}")
+        else:
+            logger.info(f"[REMINDER] Running scheduled nightly reminder for user {user_id}")
         try:
             await self.send_nightly_reminders(context, user_id=user_id)
-            logger.info(f"[REMINDER] ✓ Successfully sent nightly reminders for user {user_id}")
+            if is_quiet_mode:
+                logger.debug(f"[REMINDER] Successfully sent nightly reminders for user {user_id}")
+            else:
+                logger.info(f"[REMINDER] Successfully sent nightly reminders for user {user_id}")
         except Exception as e:
-            logger.exception(f"[REMINDER] ✗ Failed to send nightly reminders for user {user_id}: {e}")
+            logger.exception(f"[REMINDER] Failed to send nightly reminders for user {user_id}: {e}")
             raise
     
     async def scheduled_morning_reminders_for_one(self, context: CallbackContext) -> None:
