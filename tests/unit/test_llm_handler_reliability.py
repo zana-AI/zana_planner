@@ -7,7 +7,11 @@ TM_BOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..",
 if TM_BOT_DIR not in sys.path:
     sys.path.append(TM_BOT_DIR)
 
-from llms.llm_handler import LLMHandler, _resolve_fallback_provider  # noqa: E402
+from llms.llm_handler import (  # noqa: E402
+    LLMHandler,
+    _resolve_fallback_provider,
+    _resolve_fallback_role_providers,
+)
 
 
 def test_resolve_fallback_provider_autoswitches_to_gemini_when_openai_key_missing():
@@ -60,6 +64,58 @@ def test_resolve_fallback_provider_disabled_returns_none():
     )
     assert provider is None
     assert reason is None
+
+
+def test_resolve_fallback_role_providers_deepseek_prefers_gemini_for_structured_roles():
+    providers = _resolve_fallback_role_providers(
+        "deepseek",
+        has_gemini_creds=True,
+        has_openai_key=True,
+        has_deepseek_key=True,
+    )
+    assert providers == {
+        "router": "gemini",
+        "planner": "gemini",
+        "responder": "deepseek",
+    }
+
+
+def test_resolve_fallback_role_providers_deepseek_uses_openai_when_gemini_unavailable():
+    providers = _resolve_fallback_role_providers(
+        "deepseek",
+        has_gemini_creds=False,
+        has_openai_key=True,
+        has_deepseek_key=True,
+    )
+    assert providers == {
+        "router": "openai",
+        "planner": "openai",
+        "responder": "deepseek",
+    }
+
+
+def test_resolve_fallback_role_providers_deepseek_falls_back_to_deepseek_when_only_option():
+    providers = _resolve_fallback_role_providers(
+        "deepseek",
+        has_gemini_creds=False,
+        has_openai_key=False,
+        has_deepseek_key=True,
+    )
+    assert providers == {
+        "router": "deepseek",
+        "planner": "deepseek",
+        "responder": "deepseek",
+    }
+
+
+def test_resolve_fallback_role_providers_gemini_requires_gemini_credentials():
+    providers = _resolve_fallback_role_providers(
+        "gemini",
+        has_gemini_creds=False,
+        has_openai_key=True,
+        has_deepseek_key=True,
+    )
+    assert providers is None
 
 
 def test_classify_stop_reason_no_final_when_ai_and_final_response_missing():
