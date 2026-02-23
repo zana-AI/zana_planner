@@ -292,6 +292,27 @@ class MessageHandlers:
             ]]
         )
 
+    def _sync_llm_external_turn(
+        self,
+        user_id: int,
+        user_text: str,
+        bot_text: str,
+        *,
+        drop_pending_confirmation_tail: bool = False,
+    ) -> None:
+        """Sync non-LLM turns into LLM chat history (e.g., confirmation handled in app code)."""
+        try:
+            llm_handler = (self.application.bot_data or {}).get("llm_handler") if self.application else None
+            if llm_handler and hasattr(llm_handler, "record_external_turn"):
+                llm_handler.record_external_turn(
+                    str(user_id),
+                    user_text,
+                    bot_text,
+                    drop_pending_confirmation_tail=drop_pending_confirmation_tail,
+                )
+        except Exception as e:
+            logger.debug("Could not sync external LLM turn for user %s: %s", user_id, e)
+
     def set_user_timezone(self, user_id: int, tzname: str) -> None:
         """Set user timezone using the settings service."""
         self.plan_keeper.settings_service.set_user_timezone(user_id, tzname)
@@ -1398,6 +1419,12 @@ class MessageHandlers:
                                         user_id=user_id,
                                         parse_mode='Markdown'
                                     )
+                                self._sync_llm_external_turn(
+                                    user_id,
+                                    user_message,
+                                    success_msg,
+                                    drop_pending_confirmation_tail=True,
+                                )
                             else:
                                 error_msg = get_message("error_tool_not_found", user_lang, tool_name=tool_name)
                                 if voice_mode_enabled:
@@ -1409,6 +1436,12 @@ class MessageHandlers:
                                         update, error_msg,
                                         user_id=user_id
                                     )
+                                self._sync_llm_external_turn(
+                                    user_id,
+                                    user_message,
+                                    error_msg,
+                                    drop_pending_confirmation_tail=True,
+                                )
                         except Exception as e:
                             logger.error(f"Error executing confirmed tool {tool_name}: {e}")
                             error_msg = get_message("error_executing_action", user_lang, error=str(e))
@@ -1421,6 +1454,12 @@ class MessageHandlers:
                                     update, error_msg,
                                     user_id=user_id
                                 )
+                            self._sync_llm_external_turn(
+                                user_id,
+                                user_message,
+                                error_msg,
+                                drop_pending_confirmation_tail=True,
+                            )
                         return
                     elif is_cancel:
                         # User canceled - send cancellation message
@@ -1435,6 +1474,12 @@ class MessageHandlers:
                                 user_id=user_id,
                                 parse_mode='Markdown'
                             )
+                        self._sync_llm_external_turn(
+                            user_id,
+                            user_message,
+                            cancel_msg,
+                            drop_pending_confirmation_tail=True,
+                        )
                         return
                     else:
                         # User neither confirmed nor canceled - treat as new request

@@ -163,6 +163,27 @@ class CallbackHandlers:
         """Calculate effective hours for session."""
         # TODO: implement proper session effective hours calculation
         return 0.5  # placeholder
+
+    def _sync_llm_external_turn(
+        self,
+        user_id: int,
+        user_text: str,
+        bot_text: str,
+        *,
+        drop_pending_confirmation_tail: bool = False,
+    ) -> None:
+        """Sync non-LLM callback interactions into LLM in-memory history."""
+        try:
+            llm_handler = (self.application.bot_data or {}).get("llm_handler") if self.application else None
+            if llm_handler and hasattr(llm_handler, "record_external_turn"):
+                llm_handler.record_external_turn(
+                    str(user_id),
+                    user_text,
+                    bot_text,
+                    drop_pending_confirmation_tail=drop_pending_confirmation_tail,
+                )
+        except Exception as e:
+            logger.debug("Could not sync external callback turn for user %s: %s", user_id, e)
     
     async def handle_promise_callback(self, update: Update, context: CallbackContext) -> None:
         """Handle all callback queries from inline keyboards."""
@@ -378,6 +399,12 @@ class CallbackHandlers:
                 await query.edit_message_text(cancel_msg)
             except Exception:
                 await query.message.reply_text(cancel_msg)
+            self._sync_llm_external_turn(
+                user_id,
+                "skip",
+                cancel_msg,
+                drop_pending_confirmation_tail=True,
+            )
             return
 
         try:
@@ -408,6 +435,12 @@ class CallbackHandlers:
             await query.edit_message_text(success_msg)
         except Exception:
             await query.message.reply_text(success_msg)
+        self._sync_llm_external_turn(
+            user_id,
+            "yes",
+            success_msg,
+            drop_pending_confirmation_tail=True,
+        )
     
     async def _handle_report_promise(self, query, promise_id: str, user_lang: Language):
         """Handle promise report generation."""

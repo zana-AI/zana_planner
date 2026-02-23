@@ -2229,6 +2229,46 @@ class LLMHandler:
             running += msg_chars
         return list(reversed(kept_reversed))
 
+    def record_external_turn(
+        self,
+        user_id: str,
+        user_text: str,
+        bot_text: str,
+        *,
+        drop_pending_confirmation_tail: bool = False,
+    ) -> None:
+        """
+        Append a non-LLM interaction (e.g., button confirmation handled in callbacks)
+        into in-memory chat history so next LLM turn has consistent context.
+        """
+        try:
+            safe_user_id = _sanitize_user_id(user_id)
+            history = list(self.chat_history.get(safe_user_id, []))
+
+            if drop_pending_confirmation_tail:
+                markers = (
+                    "before i make that change",
+                    "tap yes or skip below",
+                    "reply 'yes' or 'confirm'",
+                    "just to confirm:",
+                )
+                while history and isinstance(history[-1], AIMessage):
+                    tail_text = message_content_to_str(getattr(history[-1], "content", "")).lower()
+                    if "__placeholder_" in tail_text or any(marker in tail_text for marker in markers):
+                        history.pop()
+                        continue
+                    break
+
+            history.append(HumanMessage(content=str(user_text or "").strip()))
+            history.append(AIMessage(content=str(bot_text or "").strip()))
+            self.chat_history[safe_user_id] = self._condense_history(history)
+
+            if not hasattr(self, "chat_history_timestamps"):
+                self.chat_history_timestamps = {}
+            self.chat_history_timestamps[safe_user_id] = time.time()
+        except Exception as e:
+            logger.debug("record_external_turn failed for user %s: %s", user_id, e)
+
     @staticmethod
     def _get_last_ai(messages: List[BaseMessage]) -> Optional[AIMessage]:
         for msg in reversed(messages):
