@@ -222,7 +222,14 @@ class MessageTemplateStore:
 
     def get_message(self, key: str, language: Optional[Language] = None, **kwargs) -> str:
         """Get translated message with variable substitution."""
-        lang = language or self.default_language
+        lang_input = language or self.default_language
+        if isinstance(lang_input, Language):
+            lang = lang_input
+        else:
+            lang = next(
+                (candidate for candidate in Language if candidate.value == str(lang_input).lower().strip()),
+                self.default_language,
+            )
         message = self._get_english_translations().get(key, key)
 
         # Substitute variables first
