@@ -9,6 +9,7 @@ if TM_BOT_DIR not in sys.path:
 
 from llms.llm_handler import (  # noqa: E402
     LLMHandler,
+    _is_fallback_eligible_error,
     _resolve_fallback_provider,
     _resolve_fallback_role_providers,
 )
@@ -69,6 +70,14 @@ def test_resolve_fallback_provider_disabled_returns_none():
     )
     assert provider is None
     assert reason is None
+
+
+def test_is_fallback_eligible_error_for_tool_choice_mismatch():
+    err = Exception(
+        "Error code: 400 - {'error': {'message': 'Tool choice is none, but model called a tool', "
+        "'type': 'invalid_request_error', 'code': 'tool_use_failed'}}"
+    )
+    assert _is_fallback_eligible_error(err) is True
 
 
 def test_resolve_fallback_role_providers_deepseek_prefers_gemini_for_structured_roles():

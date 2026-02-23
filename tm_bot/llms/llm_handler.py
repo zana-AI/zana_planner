@@ -99,6 +99,9 @@ def _is_fallback_eligible_error(err: Exception) -> bool:
         "try again later",
         "connection reset",
         "connection aborted",
+        # Groq/OpenAI-compatible non-tool request where model emitted a tool call.
+        "tool_use_failed",
+        "tool choice is none, but model called a tool",
     )
     return any(hint in text for hint in hints)
 

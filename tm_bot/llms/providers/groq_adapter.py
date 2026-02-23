@@ -17,6 +17,7 @@ except Exception:  # pragma: no cover
 
 class GroqProviderAdapter(ProviderAdapter):
     name = "groq"
+    _TOOL_MISMATCH_BLOCK_SECONDS = 60.0
     CANDIDATE_MODELS = (
         "openai/gpt-oss-20b",
         "llama-3.3-70b-versatile",
@@ -139,6 +140,13 @@ class GroqProviderAdapter(ProviderAdapter):
         lower = str(exc or "").lower()
         return "429" in lower or "rate limit" in lower or "resource exhausted" in lower
 
+    @staticmethod
+    def _is_tool_choice_mismatch(exc: Exception) -> bool:
+        lower = str(exc or "").lower()
+        return "tool_use_failed" in lower or (
+            "tool choice is none" in lower and "model called a tool" in lower
+        )
+
     def invoke(
         self,
         model: Any,
@@ -158,6 +166,15 @@ class GroqProviderAdapter(ProviderAdapter):
                     model_id=model_name,
                     retry_after_s=retry_after_s,
                     reset_hint=reset_hint,
+                )
+            elif self._is_tool_choice_mismatch(exc):
+                # Temporarily block models that emit tool calls for non-tool invocations.
+                # This steers subsequent requests to the configured fallback model.
+                mark_rate_limited(
+                    provider="groq",
+                    model_id=model_name,
+                    retry_after_s=self._TOOL_MISMATCH_BLOCK_SECONDS,
+                    reset_hint=None,
                 )
             raise
 
