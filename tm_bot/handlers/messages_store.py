@@ -236,7 +236,7 @@ class MessageTemplateStore:
 
         # Translate if not English
         if lang != Language.EN:
-            message = translate_text(message, lang, "en")
+            message = translate_text(message, lang.value, "en")
 
         return message
 

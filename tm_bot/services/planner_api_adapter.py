@@ -259,7 +259,14 @@ class PlannerAPIAdapter:
         return f"Promise #{promise.id} updated successfully."
 
     # Action methods
-    def add_action(self, user_id, promise_id: str, time_spent: float, action_datetime: Optional[datetime] = None, notes: Optional[str] = None) -> str:
+    def add_action(
+        self,
+        user_id,
+        promise_id: str,
+        time_spent: float,
+        action_datetime: Optional[Union[datetime, str]] = None,
+        notes: Optional[str] = None,
+    ) -> str:
         """Add an action.
         
         Args:
@@ -273,10 +280,20 @@ class PlannerAPIAdapter:
         if not self.promises_repo.get_promise(user_id, promise_id):
             return f"Promise with ID '{promise_id}' not found."
 
+        try:
+            time_spent = float(time_spent)
+        except (TypeError, ValueError):
+            return "Time spent must be a positive number."
+
         if time_spent <= 0:
             return "Time spent must be a positive number."
 
-        if not action_datetime:
+        try:
+            action_datetime = self._coerce_datetime_like(action_datetime, "action_datetime")
+        except ValueError as e:
+            return str(e)
+
+        if action_datetime is None:
             action_datetime = datetime.now()
 
         action = Action(
@@ -793,6 +810,31 @@ class PlannerAPIAdapter:
                 except ValueError as e:
                     raise ValueError(f"{field_name} must be an ISO date or datetime string") from e
         raise ValueError(f"{field_name} must be a date, datetime, or ISO date string")
+
+    def _coerce_datetime_like(
+        self,
+        raw_value: Optional[Union[datetime, str]],
+        field_name: str,
+    ) -> Optional[datetime]:
+        """Normalize datetime-like values into a datetime object."""
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, datetime):
+            return raw_value
+        if isinstance(raw_value, str):
+            text = raw_value.strip()
+            if not text:
+                return None
+            normalized = text.replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(normalized)
+            except ValueError:
+                try:
+                    from dateutil.parser import parse as parse_datetime
+                    return parse_datetime(text)
+                except Exception as e:
+                    raise ValueError(f"{field_name} must be an ISO datetime string") from e
+        raise ValueError(f"{field_name} must be a datetime or ISO datetime string")
 
     def _parse_date_arg(self, date_str: str, default: date = None) -> Optional[date]:
         """Parse YYYY-MM-DD string to date, with fallback to default."""
