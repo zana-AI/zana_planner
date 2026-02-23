@@ -963,6 +963,15 @@ def _parse_route_decision(payload: Any) -> RouteDecision:
     raise ValueError("Could not parse router output into RouteDecision JSON")
 
 
+def _heuristic_route_decision_from_text(user_text: str) -> RouteDecision:
+    """
+    Deterministic fallback router used when structured route parsing fails.
+    Keep this intentionally simple and stable: default to engagement.
+    """
+    _ = user_text  # explicit: current fallback does not inspect content
+    return RouteDecision(mode="engagement", confidence="low", reason="parsing_failed_fallback")
+
+
 def _strip_thought_signatures(content: Any) -> Any:
     """
     Remove thought-signature metadata from AIMessage content before sending to the API.
@@ -2217,9 +2226,20 @@ def create_routed_plan_execute_graph(
                     route_decision = parsed
                 else:
                     raise ValueError(f"Unexpected parser output type: {type(parsed)}")
-            except Exception:
-                logger.warning(f"Router parsing failed: {e}, defaulting to operator")
-                route_decision = RouteDecision(mode="operator", confidence="low", reason="parsing_failed")
+            except Exception as parser_exc:
+                user_text = _normalize_model_output_text(getattr(user_msg, "content", "") or "")
+                route_decision = _heuristic_route_decision_from_text(user_text)
+                logger.warning(
+                    {
+                        "event": "router_parse_fallback_heuristic",
+                        "parse_error": str(e),
+                        "parser_error": str(parser_exc),
+                        "selected_mode": route_decision.mode,
+                        "selected_confidence": route_decision.confidence,
+                        "selected_reason": route_decision.reason,
+                        "message_preview": user_text[:200],
+                    }
+                )
         
         mode = route_decision.mode if route_decision else "operator"
         confidence = route_decision.confidence if route_decision else "low"

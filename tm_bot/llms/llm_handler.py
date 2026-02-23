@@ -132,6 +132,36 @@ def _is_fallback_eligible_error(err: Exception) -> bool:
     return any(hint in text for hint in hints)
 
 
+def _resolve_fallback_provider(
+    fallback_enabled: bool,
+    requested_fallback: str,
+    primary_provider: str,
+    has_openai_key: bool,
+    has_gemini_creds: bool,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Decide which fallback provider should be used for this runtime.
+
+    Returns:
+        (resolved_provider, reason)
+        - resolved_provider: "gemini" | "openai" | None
+        - reason: optional reason code when provider was auto-adjusted
+    """
+    if not fallback_enabled:
+        return None, None
+
+    provider = (requested_fallback or "openai").strip().lower()
+    if (
+        provider == "openai"
+        and not has_openai_key
+        and primary_provider in {"gemini", "google"}
+        and has_gemini_creds
+    ):
+        return "gemini", "openai_key_missing"
+
+    return provider, None
+
+
 def _resolve_schema_refs(schema: dict) -> dict:
     """Convert a Pydantic v2 JSON schema into a Vertex AI compatible schema.
 
@@ -323,20 +353,27 @@ class LLMHandler:
                 self._fallback_agent_app = None
                 self._fallback_label = None
                 auto_gemini3_fallback = bool(is_gemini3 and provider_name in {"gemini", "google"})
-                requested_fallback: Optional[str] = None
-                force_gemini25_fallback = False
+                requested_fallback, fallback_autoselect_reason = _resolve_fallback_provider(
+                    fallback_enabled=fallback_enabled,
+                    requested_fallback=fallback_provider,
+                    primary_provider=provider_name,
+                    has_openai_key=bool(cfg.get("OPENAI_API_KEY", "")),
+                    has_gemini_creds=bool(cfg.get("GCP_PROJECT_ID", "")),
+                )
+                if fallback_autoselect_reason:
+                    logger.warning(
+                        {
+                            "event": "fallback_provider_autoselect",
+                            "primary_provider": provider_name,
+                            "requested_fallback_provider": fallback_provider,
+                            "selected_fallback_provider": requested_fallback,
+                            "reason": fallback_autoselect_reason,
+                        }
+                    )
 
-                if fallback_enabled:
-                    requested_fallback = fallback_provider
-                if auto_gemini3_fallback:
-                    # For Gemini 3 primaries, always ensure a Gemini 2.5 fallback exists
-                    # without requiring .env fallback settings.
-                    if (not requested_fallback) or (
-                        requested_fallback == "openai" and not cfg.get("OPENAI_API_KEY", "")
-                    ):
-                        requested_fallback = "gemini"
-                        force_gemini25_fallback = True
-                        auto_gemini3_default_fallback = True
+                if auto_gemini3_fallback and fallback_enabled and requested_fallback is None:
+                    requested_fallback = "gemini"
+                    auto_gemini3_default_fallback = True
 
                 if requested_fallback:
                     if requested_fallback == "openai":
@@ -372,9 +409,8 @@ class LLMHandler:
                             fallback_cfg = dict(cfg)
                             fallback_cfg["LLM_PROVIDER"] = "gemini"
                             fallback_model_name = (
-                                "gemini-2.5-flash"
-                                if force_gemini25_fallback
-                                else (str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash")).strip() or "gemini-2.5-flash")
+                                str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash-lite")).strip()
+                                or "gemini-2.5-flash-lite"
                             )
                             fallback_adapter = create_provider_adapter(fallback_cfg)
                             self._fallback_router_model = _build_role_model(
@@ -1593,15 +1629,12 @@ class LLMHandler:
             # Update chat history with condensed human/AI turns (excluding system/tool chatter)
             self.chat_history[safe_user_id] = self._condense_history(final_messages)
 
-            stop_reason = (
-                "max_iterations"
-                if result_state.get("iteration", 0) >= self.max_iterations
-                else "completed"
+            stop_reason = self._classify_stop_reason(
+                iteration=result_state.get("iteration", 0),
+                max_iterations=self.max_iterations,
+                final_ai=final_ai,
+                final_response_text=final_response,
             )
-            if final_ai and getattr(final_ai, "tool_calls", None) and stop_reason == "completed":
-                stop_reason = "tool_calls_executed"
-            if not final_ai:
-                stop_reason = "no_final_ai_message"
 
             self._emit_progress(
                 "completed",
@@ -1660,6 +1693,17 @@ class LLMHandler:
                 response_text=response_text,
                 pending_clarification=pending_clarification,
             )
+            response_text, used_final_failsafe = self._apply_final_response_failsafe(response_text)
+            if used_final_failsafe:
+                logger.warning(
+                    {
+                        "event": "final_response_failsafe_applied",
+                        "user_id": safe_user_id,
+                        "stop_reason": stop_reason,
+                        "has_final_ai": bool(final_ai),
+                        "has_final_response": bool((final_response or "").strip()),
+                    }
+                )
             
             # Append debug footer if debug mode is enabled
             if _DEBUG_ENABLED:
@@ -1995,6 +2039,30 @@ class LLMHandler:
             if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
                 return msg.tool_calls[-1]
         return None
+
+    @staticmethod
+    def _classify_stop_reason(
+        iteration: int,
+        max_iterations: int,
+        final_ai: Optional[AIMessage],
+        final_response_text: str,
+    ) -> str:
+        stop_reason = "max_iterations" if int(iteration or 0) >= int(max_iterations or 0) else "completed"
+        if final_ai and getattr(final_ai, "tool_calls", None) and stop_reason == "completed":
+            stop_reason = "tool_calls_executed"
+        if (not final_ai) and (not str(final_response_text or "").strip()):
+            stop_reason = "no_final_ai_message"
+        return stop_reason
+
+    @staticmethod
+    def _apply_final_response_failsafe(response_text: str) -> tuple[str, bool]:
+        text = "" if response_text is None else str(response_text)
+        if text.strip():
+            return text, False
+        return (
+            "I couldn't complete that response due to a temporary issue. Please try again in a moment.",
+            True,
+        )
 
     def _emit_progress(self, event: str, payload: dict) -> None:
         """Best-effort progress emission (UI-agnostic)."""

@@ -29,7 +29,7 @@ def load_llm_env():
         fallback_enabled = env_name in {"staging", "stage", "test", "testing"}
     else:
         fallback_enabled = str(fallback_raw).strip().lower() in ("1", "true", "yes")
-    fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").strip().lower() or "openai"
+    fallback_provider_raw = os.getenv("LLM_FALLBACK_PROVIDER")
     fallback_gemini_model = get_fallback_model("gemini")
     fallback_openai_model = get_fallback_model("openai")
 
@@ -53,6 +53,14 @@ def load_llm_env():
             raise ValueError("LLM_PROVIDER=openai but OPENAI_API_KEY is missing.")
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER='{llm_provider_requested}'")
+
+    # Provider fallback choice is code-owned by default, with env override support.
+    if fallback_provider_raw is not None:
+        fallback_provider = fallback_provider_raw.strip().lower() or "openai"
+    elif llm_provider == "gemini" and not openai_key:
+        fallback_provider = "gemini"
+    else:
+        fallback_provider = "openai"
 
     if llm_provider == "gemini":
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")

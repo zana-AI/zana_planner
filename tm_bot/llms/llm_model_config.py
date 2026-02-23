@@ -35,7 +35,7 @@ MODEL_CONFIGS = {
 
 # Cross-provider fallback defaults.
 FALLBACK_MODELS = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-2.5-flash-lite",
     "openai": "gpt-4o-mini",
 }
 
@@ -75,4 +75,3 @@ def needs_global_location(*model_names: str) -> bool:
         if any(model_name.startswith(prefix) for prefix in GLOBAL_ONLY_PREFIXES):
             return True
     return False
-
