@@ -242,7 +242,7 @@ class LLMHandler:
             gemini_include_thoughts = bool(cfg.get("GEMINI_INCLUDE_THOUGHTS", False))
             gemini_disable_afc = bool(cfg.get("GEMINI_DISABLE_AFC", True))
             role_model_names = {
-                "router": str(cfg.get("LLM_ROUTER_MODEL") or cfg.get("GCP_GEMINI_MODEL") or ""),
+                "router": str(cfg.get("LLM_ROUTER_MODEL") or cfg.get("GCP_GEMINI_MODEL") or "gemini-2.5-flash-lite"),
                 "planner": str(cfg.get("LLM_PLANNER_MODEL") or cfg.get("GCP_GEMINI_MODEL") or ""),
                 "responder": str(cfg.get("LLM_RESPONDER_MODEL") or cfg.get("GCP_GEMINI_MODEL") or ""),
             }
@@ -261,8 +261,6 @@ class LLMHandler:
                         responder_temp,
                     )
                     responder_temp = 1.0
-                if router_temp < 1.0:
-                    router_temp = 1.0
             if self._provider_layer_enabled:
                 self._provider_adapter = create_provider_adapter(cfg)
                 provider_name = str(getattr(self._provider_adapter, "name", cfg.get("LLM_PROVIDER") or "")).lower()
@@ -1450,6 +1448,7 @@ class LLMHandler:
                 *prior_history,
                 HumanMessage(content=user_message),
             ]
+            current_turn_start_idx = len(prior_history)
             if _DEBUG_ENABLED:
                 logger.info(
                     {
@@ -1569,9 +1568,17 @@ class LLMHandler:
             final_response = message_content_to_str(result_state.get("final_response") or "")
             pending_clarification = result_state.get("pending_clarification")
 
-            final_ai = self._get_last_ai(final_messages)
-            last_tool_call = self._get_last_tool_call(final_messages)
-            tool_messages = [m for m in final_messages if isinstance(m, ToolMessage)]
+            # Scope "final AI/tool output" to messages produced in the current turn.
+            # This prevents stale responses from prior history when the graph did not
+            # emit a fresh AI message for this request.
+            if 0 <= current_turn_start_idx <= len(final_messages):
+                current_turn_messages = final_messages[current_turn_start_idx:]
+            else:
+                current_turn_messages = final_messages
+
+            final_ai = self._get_last_ai(current_turn_messages)
+            last_tool_call = self._get_last_tool_call(current_turn_messages)
+            tool_messages = [m for m in current_turn_messages if isinstance(m, ToolMessage)]
 
             # Update chat history with condensed human/AI turns (excluding system/tool chatter)
             self.chat_history[safe_user_id] = self._condense_history(final_messages)
@@ -1924,7 +1931,11 @@ class LLMHandler:
                 condensed.append(m)
             elif isinstance(m, AIMessage):
                 clean = _strip_thought_signatures(m.content) if isinstance(m.content, list) else m.content
-                condensed.append(AIMessage(content=message_content_to_str(clean)))
+                content_str = message_content_to_str(clean)
+                # Cap AI message history to prevent massive reports from bloating the router/planner context
+                if len(content_str) > 400:
+                    content_str = content_str[:400] + " ... (omitted for brevity)"
+                condensed.append(AIMessage(content=content_str))
 
         # Two-level cap: max turns and max total chars.
         try:

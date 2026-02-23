@@ -2194,11 +2194,9 @@ def create_routed_plan_execute_graph(
                 "route_reason": "no_user_message",
             }
         
-        # Build router context (minimal: just user message + recent conversation summary if available)
-        router_messages = [
-            SystemMessage(content=router_prompt),
-            user_msg,
-        ]
+        # Combine system prompt + available prior history + the new user message
+        history = messages[:-1] if messages else []
+        router_messages = [SystemMessage(content=router_prompt)] + history + [user_msg]
         
         validated_messages = _ensure_messages_have_content(router_messages)
         _track_llm_call("router", "router_model")

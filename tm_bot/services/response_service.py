@@ -7,7 +7,7 @@ import re
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from telegram import Update, Message, InlineKeyboardMarkup, InputFile
+from telegram import Update, Message, InlineKeyboardMarkup, InputFile, MessageEntity
 from telegram.ext import CallbackContext
 from telegram.error import TelegramError
 
@@ -576,10 +576,21 @@ class ResponseService:
             user_lang = self._get_user_language_cached(user_id)
         
         # Processing message - keep it simple, don't translate
-        processing_text = "🔄 Processing..."
-        
+        # Use custom emoji (hourglass) for "waiting" - entity covers first character (UTF-16)
+        processing_text = "⏳ Processing..."
+        processing_entities = [
+            MessageEntity(
+                type=MessageEntity.CUSTOM_EMOJI,
+                offset=0,
+                length=1,
+                custom_emoji_id="5217697679030637222",
+            )
+        ]
         try:
-            message = await update.message.reply_text(processing_text)
+            message = await update.message.reply_text(
+                processing_text,
+                entities=processing_entities,
+            )
             # Don't log processing messages to conversation history
             return message
         except TelegramError as e:
