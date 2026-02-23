@@ -73,10 +73,6 @@ _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lowe
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
 _MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
-_MUTATION_SUCCESS_CLAIM_RE = re.compile(
-    r"\b(done|added|created|updated|deleted|logged|saved|subscribed|completed|successfully)\b",
-    re.IGNORECASE,
-)
 
 
 def _is_fallback_eligible_error(err: Exception) -> bool:
@@ -2150,33 +2146,55 @@ class LLMHandler:
         return candidate or value
 
     @staticmethod
-    def _intent_kind(detected_intent: Optional[str]) -> str:
-        """
-        Classify planner-detected intent into coarse kinds.
-
-        The contract guard should primarily trust structured planner intent,
-        not free-form user text regexes, to avoid false positives.
-        """
-        text = (detected_intent or "").strip().lower()
-        if not text:
-            return "unknown"
-
-        head = re.split(r"[^a-z0-9]+", text, maxsplit=1)[0]
+    def _is_mutation_intent(detected_intent: Optional[str]) -> bool:
+        """Infer mutation intent from structured planner intent labels only."""
+        label = (detected_intent or "").strip().lower()
+        if not label:
+            return False
+        head = re.split(r"[^a-z0-9]+", label, maxsplit=1)[0]
         if not head:
-            return "unknown"
-
+            return False
         mutation_heads = {prefix.rstrip("_") for prefix in _MUTATION_TOOL_PREFIXES}
-        if head in mutation_heads:
-            return "mutation"
-
-        return "unknown"
+        return head in mutation_heads
 
     @staticmethod
-    def _looks_like_mutation_success_claim(text: str) -> bool:
-        value = (text or "").strip()
-        if not value:
-            return False
-        return bool(_MUTATION_SUCCESS_CLAIM_RE.search(value))
+    def _build_mutation_confirmation_response(
+        *,
+        detected_intent: Optional[str],
+        pending_clarification: Optional[dict],
+    ) -> str:
+        pending = pending_clarification or {}
+        missing_fields = [str(f) for f in (pending.get("missing_fields") or []) if str(f).strip()]
+        if missing_fields:
+            fields = ", ".join(missing_fields)
+            return (
+                "Before I make that change, please confirm and provide the missing details: "
+                f"{fields}. Reply with the values and say 'confirm' to proceed."
+            )
+
+        tool_name = str(pending.get("tool_name", "")).strip()
+        tool_args = pending.get("tool_args") or pending.get("partial_args") or {}
+        if tool_name:
+            args_preview = ", ".join(
+                f"{k}={v}" for k, v in (tool_args or {}).items() if k != "user_id"
+            ).strip()
+            if args_preview:
+                return (
+                    "Before I make that change, please confirm this action: "
+                    f"`{tool_name}({args_preview})`. Reply 'yes' or 'confirm' to proceed."
+                )
+            return (
+                "Before I make that change, please confirm this action: "
+                f"`{tool_name}`. Reply 'yes' or 'confirm' to proceed."
+            )
+
+        intent_label = str(detected_intent or "this change").replace("_", " ").strip().lower()
+        if not intent_label:
+            intent_label = "this change"
+        return (
+            f"Before I make {intent_label}, please confirm. "
+            "Reply 'yes' or 'confirm' to proceed."
+        )
 
     def _enforce_mutation_execution_contract(
         self,
@@ -2196,14 +2214,22 @@ class LLMHandler:
             if str((a or {}).get("tool_name", "")).startswith(_MUTATION_TOOL_PREFIXES)
         ]
         successful_mutations = [a for a in mutation_actions if bool((a or {}).get("success"))]
-        intent_kind = self._intent_kind(detected_intent)
-        pending_tool_name = str((pending_clarification or {}).get("tool_name", "")).strip().lower()
-        pending_mutation_intent = pending_tool_name.startswith(_MUTATION_TOOL_PREFIXES)
-        mutation_intent = bool(intent_kind == "mutation" or pending_mutation_intent)
+        pending = pending_clarification or {}
+        pending_tool_name = str(pending.get("tool_name", "")).strip().lower()
+        pending_reason = str(pending.get("reason", "")).strip().lower()
+        pending_mutation_intent = (
+            pending_tool_name.startswith(_MUTATION_TOOL_PREFIXES)
+            or pending_reason == "pre_mutation_confirmation"
+        )
+        mutation_intent = bool(
+            self._is_mutation_intent(detected_intent)
+            or pending_mutation_intent
+            or bool(mutation_actions)
+        )
         mutation_happened = bool(successful_mutations)
 
         # Contract: when mutation intent exists, a successful mutation must be evidenced
-        # by executed_actions.success. Otherwise return deterministic safe guidance.
+        # by executed_actions.success. Otherwise force confirmation follow-up.
         if mutation_intent and not mutation_happened:
             logger.warning(
                 {
@@ -2216,21 +2242,9 @@ class LLMHandler:
                     "pending_mutation_intent": pending_mutation_intent,
                 }
             )
-            if mutation_actions:
-                return (
-                    "I tried to apply that change, but it did not complete successfully. "
-                    "Please retry, or share more details so I can do it correctly."
-                )
-            missing_fields = list((pending_clarification or {}).get("missing_fields") or [])
-            if missing_fields:
-                fields = ", ".join(str(f) for f in missing_fields)
-                return (
-                    f"I need a bit more information before I can make that change: {fields}. "
-                    "Please provide those details and I will do it now."
-                )
-            return (
-                "I could not confirm any change was executed yet. "
-                "Please tell me exactly what to add/update/delete, and I will do it now."
+            return self._build_mutation_confirmation_response(
+                detected_intent=detected_intent,
+                pending_clarification=pending,
             )
 
         return response_text

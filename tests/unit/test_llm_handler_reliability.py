@@ -148,7 +148,8 @@ def test_mutation_contract_still_blocks_mutation_claim_without_successful_execut
         response_text="Done, created your new promise.",
         pending_clarification=None,
     )
-    assert "could not confirm any change was executed yet" in output.lower()
+    assert "please confirm" in output.lower()
+    assert "create promise" in output.lower()
 
 
 def test_mutation_contract_overrides_even_non_success_text_when_mutation_intent_without_success():
@@ -161,7 +162,8 @@ def test_mutation_contract_overrides_even_non_success_text_when_mutation_intent_
         response_text="Can you clarify the exact target hours?",
         pending_clarification=None,
     )
-    assert "could not confirm any change was executed yet" in output.lower()
+    assert "please confirm" in output.lower()
+    assert "create promise" in output.lower()
 
 
 def test_mutation_contract_uses_missing_fields_for_safe_clarification():
@@ -174,6 +176,7 @@ def test_mutation_contract_uses_missing_fields_for_safe_clarification():
         response_text="Sure, done.",
         pending_clarification={"missing_fields": ["promise_id", "time_spent"]},
     )
+    assert "please confirm" in output.lower()
     assert "promise_id" in output
     assert "time_spent" in output
 
@@ -188,4 +191,4 @@ def test_mutation_contract_reports_failed_mutation_when_action_attempted_but_uns
         response_text="Successfully logged 2 hours.",
         pending_clarification=None,
     )
-    assert "did not complete successfully" in output.lower()
+    assert "please confirm" in output.lower()
