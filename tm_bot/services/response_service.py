@@ -74,7 +74,8 @@ class ResponseService:
         """Translate text if needed, preserving promise IDs and technical terms."""
         if not self._should_translate(text, user_lang):
             return text
-        
+        original_text = text
+
         # Extract and preserve promise IDs and technical terms
         # Pattern: P01, P02, T01, T02, etc. or in brackets [P01: text]
         placeholders = {}
@@ -82,7 +83,8 @@ class ResponseService:
         
         # Find patterns in brackets like [P01: text] first (longer matches)
         bracket_pattern = r'\[([PT]\d+):[^\]]+\]'
-        for match in re.finditer(bracket_pattern, text):
+        bracket_matches = list(re.finditer(bracket_pattern, text))
+        for match in reversed(bracket_matches):
             placeholder = f"__PLACEHOLDER_{placeholder_counter}__"
             placeholders[placeholder] = match.group(0)
             text = text[:match.start()] + placeholder + text[match.end():]
@@ -105,6 +107,14 @@ class ResponseService:
             # Restore preserved patterns
             for placeholder, original in placeholders.items():
                 translated = translated.replace(placeholder, original)
+
+            # Never leak internal placeholders to users; prefer original text if unresolved.
+            if re.search(r"__PLACEHOLDER_\d+__", translated or ""):
+                logger.warning(
+                    "Unresolved translation placeholder for user %s; falling back to original text",
+                    user_id,
+                )
+                return original_text
             
             # Review translation for errors (e.g., proper noun mistranslations)
             if self.llm_handler:
@@ -113,7 +123,7 @@ class ResponseService:
             return translated
         except Exception as e:
             logger.warning(f"Translation failed for user {user_id}: {e}")
-            return text  # Fallback to original
+            return original_text  # Fallback to original (without placeholders)
     
     def _review_translation(self, original_text: str, translated_text: str, user_lang: Language, user_id: Optional[int] = None) -> str:
         """
