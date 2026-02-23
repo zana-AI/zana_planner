@@ -150,6 +150,51 @@ def _resolve_fallback_provider(
     return provider, None
 
 
+def _resolve_fallback_role_providers(
+    requested_fallback: Optional[str],
+    *,
+    has_gemini_creds: bool,
+    has_openai_key: bool,
+    has_deepseek_key: bool,
+) -> Optional[Dict[str, str]]:
+    """
+    Resolve fallback provider per role.
+
+    Policy:
+    - planner/router require JSON-robust providers (prefer gemini/openai).
+    - responder may use deepseek safely.
+    """
+    provider = (requested_fallback or "").strip().lower()
+    if not provider:
+        return None
+
+    if provider in {"gemini", "google"}:
+        if not has_gemini_creds:
+            return None
+        return {"router": "gemini", "planner": "gemini", "responder": "gemini"}
+
+    if provider == "openai":
+        if not has_openai_key:
+            return None
+        return {"router": "openai", "planner": "openai", "responder": "openai"}
+
+    if provider == "deepseek":
+        if not has_deepseek_key:
+            return None
+        structured_provider = "deepseek"
+        if has_gemini_creds:
+            structured_provider = "gemini"
+        elif has_openai_key:
+            structured_provider = "openai"
+        return {
+            "router": structured_provider,
+            "planner": structured_provider,
+            "responder": "deepseek",
+        }
+
+    return None
+
+
 def _resolve_schema_refs(schema: dict) -> dict:
     """Convert a Pydantic v2 JSON schema into a Vertex AI compatible schema.
 
@@ -370,103 +415,85 @@ class LLMHandler:
                     auto_gemini3_default_fallback = True
 
                 if requested_fallback:
-                    if requested_fallback == "openai":
-                        if cfg.get("OPENAI_API_KEY", ""):
-                            fallback_cfg = dict(cfg)
-                            fallback_cfg["LLM_PROVIDER"] = "openai"
-                            fallback_adapter = create_provider_adapter(fallback_cfg)
-                            self._fallback_router_model = _build_role_model(
-                                fallback_adapter,
-                                "router",
-                                role_model_names["router"],
-                                openai_role_model_names["router"],
-                            )
-                            self._fallback_planner_model = _build_role_model(
-                                fallback_adapter,
-                                "planner",
-                                role_model_names["planner"],
-                                openai_role_model_names["planner"],
-                            )
-                            self._fallback_responder_model = _build_role_model(
-                                fallback_adapter,
-                                "responder",
-                                role_model_names["responder"],
-                                openai_role_model_names["responder"],
-                            )
-                            self._fallback_label = f"openai:{openai_role_model_names['responder']}"
-                        else:
-                            logger.warning(
-                                "LLM fallback requested (openai) but OPENAI_API_KEY is missing; fallback disabled."
-                            )
-                    elif requested_fallback in {"gemini", "google"}:
-                        if cfg.get("GCP_PROJECT_ID", ""):
-                            fallback_cfg = dict(cfg)
-                            fallback_cfg["LLM_PROVIDER"] = "gemini"
-                            fallback_model_name = (
-                                str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash-lite")).strip()
-                                or "gemini-2.5-flash-lite"
-                            )
-                            fallback_adapter = create_provider_adapter(fallback_cfg)
-                            self._fallback_router_model = _build_role_model(
-                                fallback_adapter,
-                                "router",
-                                fallback_model_name,
-                                openai_role_model_names["router"],
-                            )
-                            self._fallback_planner_model = _build_role_model(
-                                fallback_adapter,
-                                "planner",
-                                fallback_model_name,
-                                openai_role_model_names["planner"],
-                            )
-                            self._fallback_responder_model = _build_role_model(
-                                fallback_adapter,
-                                "responder",
-                                fallback_model_name,
-                                openai_role_model_names["responder"],
-                            )
-                            self._fallback_label = f"gemini:{fallback_model_name}"
-                        else:
-                            logger.warning(
-                                "LLM fallback requested (gemini) but Gemini credentials are missing; fallback disabled."
-                            )
-                    elif requested_fallback == "deepseek":
-                        if cfg.get("DEEPSEEK_API_KEY", ""):
-                            fallback_cfg = dict(cfg)
-                            fallback_cfg["LLM_PROVIDER"] = "deepseek"
-                            fallback_model_name = (
-                                str(cfg.get("LLM_FALLBACK_DEEPSEEK_MODEL", "deepseek-chat")).strip()
-                                or "deepseek-chat"
-                            )
-                            fallback_adapter = create_provider_adapter(fallback_cfg)
-                            self._fallback_router_model = _build_role_model(
-                                fallback_adapter,
-                                "router",
-                                role_model_names["router"],
-                                fallback_model_name,
-                            )
-                            self._fallback_planner_model = _build_role_model(
-                                fallback_adapter,
-                                "planner",
-                                role_model_names["planner"],
-                                fallback_model_name,
-                            )
-                            self._fallback_responder_model = _build_role_model(
-                                fallback_adapter,
-                                "responder",
-                                role_model_names["responder"],
-                                fallback_model_name,
-                            )
-                            self._fallback_label = f"deepseek:{fallback_model_name}"
-                        else:
-                            logger.warning(
-                                "LLM fallback requested (deepseek) but DEEPSEEK_API_KEY is missing; fallback disabled."
-                            )
-                    else:
+                    has_gemini_creds = bool(cfg.get("GCP_PROJECT_ID", ""))
+                    has_openai_key = bool(cfg.get("OPENAI_API_KEY", ""))
+                    has_deepseek_key = bool(cfg.get("DEEPSEEK_API_KEY", ""))
+                    role_fallback_providers = _resolve_fallback_role_providers(
+                        requested_fallback,
+                        has_gemini_creds=has_gemini_creds,
+                        has_openai_key=has_openai_key,
+                        has_deepseek_key=has_deepseek_key,
+                    )
+                    if role_fallback_providers is None:
                         logger.warning(
-                            "Unsupported LLM_FALLBACK_PROVIDER '%s'; fallback disabled.",
+                            "LLM fallback requested (%s) but required credentials are missing; fallback disabled.",
                             requested_fallback,
                         )
+                    else:
+                        fallback_gemini_model = (
+                            str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash-lite")).strip()
+                            or "gemini-2.5-flash-lite"
+                        )
+                        fallback_openai_model = (
+                            str(cfg.get("LLM_FALLBACK_OPENAI_MODEL", "gpt-4o-mini")).strip()
+                            or "gpt-4o-mini"
+                        )
+                        fallback_deepseek_model = (
+                            str(cfg.get("LLM_FALLBACK_DEEPSEEK_MODEL", "deepseek-chat")).strip()
+                            or "deepseek-chat"
+                        )
+                        provider_to_model = {
+                            "gemini": fallback_gemini_model,
+                            "openai": fallback_openai_model,
+                            "deepseek": fallback_deepseek_model,
+                        }
+                        adapter_cache = {}
+
+                        def _get_fallback_adapter(provider_key: str):
+                            if provider_key in adapter_cache:
+                                return adapter_cache[provider_key]
+                            fallback_cfg = dict(cfg)
+                            fallback_cfg["LLM_PROVIDER"] = provider_key
+                            adapter_cache[provider_key] = create_provider_adapter(fallback_cfg)
+                            return adapter_cache[provider_key]
+
+                        self._fallback_router_model = None
+                        self._fallback_planner_model = None
+                        self._fallback_responder_model = None
+                        role_labels: Dict[str, str] = {}
+                        for role_name in ("router", "planner", "responder"):
+                            provider_key = role_fallback_providers[role_name]
+                            model_name = provider_to_model[provider_key]
+                            role_adapter = _get_fallback_adapter(provider_key)
+                            role_model = _build_role_model(
+                                role_adapter,
+                                role_name,
+                                model_name,
+                                model_name,
+                            )
+                            if role_name == "router":
+                                self._fallback_router_model = role_model
+                            elif role_name == "planner":
+                                self._fallback_planner_model = role_model
+                            else:
+                                self._fallback_responder_model = role_model
+                            role_labels[role_name] = f"{provider_key}:{model_name}"
+
+                        self._fallback_label = (
+                            f"router={role_labels['router']},"
+                            f"planner={role_labels['planner']},"
+                            f"responder={role_labels['responder']}"
+                        )
+                        if len(set(role_fallback_providers.values())) > 1:
+                            logger.info(
+                                {
+                                    "event": "fallback_role_policy_applied",
+                                    "requested_fallback_provider": requested_fallback,
+                                    "router_provider": role_fallback_providers["router"],
+                                    "planner_provider": role_fallback_providers["planner"],
+                                    "responder_provider": role_fallback_providers["responder"],
+                                }
+                            )
                 os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
             else:
                 if cfg.get("GCP_PROJECT_ID", ""):
@@ -504,7 +531,10 @@ class LLMHandler:
 
                     # Fallback models: use configured Gemini fallback model for all roles.
                     # Used when the primary model times out or is cancelled (e.g. Gemini 3 under load).
-                    fallback_model_name = str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash")).strip() or "gemini-2.5-flash"
+                    fallback_model_name = (
+                        str(cfg.get("LLM_FALLBACK_GEMINI_MODEL", "gemini-2.5-flash-lite")).strip()
+                        or "gemini-2.5-flash-lite"
+                    )
                     if any((m or "").strip() != fallback_model_name for m in role_model_names.values()):
                         fallback_kwargs = _gemini_kwargs_for_model(
                             fallback_model_name,
