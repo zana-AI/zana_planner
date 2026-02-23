@@ -224,7 +224,28 @@ class MessageHandlers:
             if val and label and low in str(label).lower():
                 return str(val)
         return None
-    
+
+    @staticmethod
+    def _is_confirmation_reply(user_text: str) -> bool:
+        """Return True when the user message is an explicit confirmation."""
+        text = (user_text or "").strip().lower()
+        if not text:
+            return False
+        confirm_tokens = (
+            "yes", "confirm", "ok", "okay", "y", "yeah", "yep", "sure",
+            "بله", "تایید", "تاييد", "اوکی", "باشه",
+        )
+        return any(text == token or text.startswith(token + " ") for token in confirm_tokens)
+
+    @staticmethod
+    def _is_cancel_reply(user_text: str) -> bool:
+        """Return True when the user message is an explicit cancellation."""
+        text = (user_text or "").strip().lower()
+        if not text:
+            return False
+        cancel_tokens = ("no", "cancel", "nope", "nah", "stop", "خیر", "نه", "لغو")
+        return any(text == token or text.startswith(token + " ") for token in cancel_tokens)
+
     def set_user_timezone(self, user_id: int, tzname: str) -> None:
         """Set user timezone using the settings service."""
         self.plan_keeper.settings_service.set_user_timezone(user_id, tzname)
@@ -856,7 +877,7 @@ class MessageHandlers:
                     )
                 elif field == "promise_id":
                     field_descriptions.append(
-                        f"- promise_id: Promise identifier. Accept formats: 'P01', 'p01', '#P01', 'P-1', 'p-3'. Normalize to standard format (e.g., 'P01', 'P03')"
+                        f"- promise_id: Promise identifier. Extract as-is from user message."
                     )
                 elif field == "setting_value":
                     field_descriptions.append(
@@ -873,7 +894,7 @@ class MessageHandlers:
                 "- User: '4h' with field time_spent → {\"time_spent\": 4.0}\n"
                 "- User: '90 minutes' with field time_spent → {\"time_spent\": 1.5}\n"
                 "- User: 'P01' with field promise_id → {\"promise_id\": \"P01\"}\n"
-                "- User: 'p-3' with field promise_id → {\"promise_id\": \"P03\"}\n"
+                "- User: 'p-3' with field promise_id → {\"promise_id\": \"p-3\"}\n"
                 "- User: 'promise_id: P01, time_spent: 2h' → {\"promise_id\": \"P01\", \"time_spent\": 2.0}\n\n"
                 "If a field is not provided or cannot be extracted, use null for that field.\n"
                 "Always return a JSON object with all requested fields (use null for missing ones)."
@@ -897,14 +918,6 @@ class MessageHandlers:
             
             parsed = json.loads(content)
             if isinstance(parsed, dict):
-                # Normalize promise_id if present
-                if "promise_id" in parsed and parsed["promise_id"]:
-                    from utils.promise_id import normalize_promise_id
-                    try:
-                        parsed["promise_id"] = normalize_promise_id(str(parsed["promise_id"]))
-                    except Exception:
-                        pass  # Keep original if normalization fails
-                
                 return {k: v for k, v in parsed.items() if k in missing_fields and v is not None}
         except Exception as e:
             logger.debug(f"LLM extraction failed for slot filling: {e}, falling back to regex")
@@ -1237,12 +1250,8 @@ class MessageHandlers:
                     tool_args = pending.get("tool_args", {})
                     
                     # Detect confirm/cancel tokens (language-aware)
-                    user_text_lower = user_message.strip().lower()
-                    confirm_tokens = ["yes", "confirm", "ok", "y", "yeah", "yep", "sure", "بله", "تایید", "اوکی", "باشه"]
-                    cancel_tokens = ["no", "cancel", "nope", "nah", "stop", "خیر", "نه", "لغو"]
-                    
-                    is_confirm = any(token in user_text_lower for token in confirm_tokens)
-                    is_cancel = any(token in user_text_lower for token in cancel_tokens)
+                    is_confirm = self._is_confirmation_reply(user_message)
+                    is_cancel = self._is_cancel_reply(user_message)
 
                     
                     # Clear pending regardless of outcome
@@ -1339,13 +1348,19 @@ class MessageHandlers:
                         user_lang_code=user_lang_code,
                     )
                     
-                    # Replace instead of merge: if single field, replace entirely with new input
+                    # Replace instead of merge: if single field, replace entirely with new input.
+                    # Guard: confirmation replies ("yes/confirm") are not field values.
                     if len(missing_fields) == 1:
-                        # Single field: replace entirely with new input
+                        field_name = str(missing_fields[0])
                         chosen = self._choose_from_options(user_message, options) if options else None
-                        partial_args[missing_fields[0]] = (chosen or user_message.strip())
+                        candidate = chosen
+                        if candidate is None and not self._is_confirmation_reply(user_message):
+                            candidate = user_message.strip()
+
+                        if candidate:
+                            partial_args[field_name] = candidate
                     else:
-                        # Multiple fields: only update parsed values
+                        # Multiple fields: only update parsed values.
                         partial_args.update({k: v for k, v in (filled or {}).items() if v})
                     
                     still_missing = [f for f in missing_fields if partial_args.get(f) in (None, "", [])]

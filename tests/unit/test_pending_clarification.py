@@ -41,6 +41,41 @@ def test_parse_slot_fill_values_single_field_uses_whole_message():
     assert out.get("promise_id") == "P01"
 
 
+def test_parse_slot_fill_values_single_field_keeps_promise_id_as_is():
+    mh = MessageHandlers.__new__(MessageHandlers)  # bypass __init__
+    mh.llm_handler = _FakeLLMHandler()
+
+    out = mh._parse_slot_fill_values(
+        user_text="p-3",
+        missing_fields=["promise_id"],
+        user_id=123,
+        user_lang_code="en",
+    )
+    assert out.get("promise_id") == "p-3"
+
+
+def test_parse_slot_fill_values_single_field_accepts_free_form_promise_id():
+    mh = MessageHandlers.__new__(MessageHandlers)  # bypass __init__
+    mh.llm_handler = _FakeLLMHandler()
+
+    out = mh._parse_slot_fill_values(
+        user_text="yes",
+        missing_fields=["promise_id"],
+        user_id=123,
+        user_lang_code="en",
+    )
+    assert out.get("promise_id") == "yes"
+
+
+def test_confirmation_and_cancel_reply_detection():
+    assert MessageHandlers._is_confirmation_reply("yes") is True
+    assert MessageHandlers._is_confirmation_reply("confirm please") is True
+    assert MessageHandlers._is_confirmation_reply("yesterday") is False
+    assert MessageHandlers._is_cancel_reply("cancel") is True
+    assert MessageHandlers._is_cancel_reply("no thanks") is True
+    assert MessageHandlers._is_cancel_reply("knowledge") is False
+
+
 def test_choose_from_options_supports_index_and_fuzzy_title():
     options = [
         {"promise_id": "P10", "title": "Do sport"},
@@ -50,7 +85,5 @@ def test_choose_from_options_supports_index_and_fuzzy_title():
     assert MessageHandlers._choose_from_options("P10", options) == "P10"
     assert MessageHandlers._choose_from_options("1", options) == "P10"
     assert MessageHandlers._choose_from_options("cardio", options) == "P11"
-
-
 
 
