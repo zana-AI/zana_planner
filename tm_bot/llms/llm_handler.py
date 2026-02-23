@@ -137,6 +137,7 @@ def _resolve_fallback_provider(
     requested_fallback: str,
     primary_provider: str,
     has_openai_key: bool,
+    has_deepseek_key: bool,
     has_gemini_creds: bool,
 ) -> tuple[Optional[str], Optional[str]]:
     """
@@ -144,7 +145,7 @@ def _resolve_fallback_provider(
 
     Returns:
         (resolved_provider, reason)
-        - resolved_provider: "gemini" | "openai" | None
+        - resolved_provider: "gemini" | "openai" | "deepseek" | None
         - reason: optional reason code when provider was auto-adjusted
     """
     if not fallback_enabled:
@@ -152,12 +153,29 @@ def _resolve_fallback_provider(
 
     provider = (requested_fallback or "openai").strip().lower()
     if (
-        provider == "openai"
-        and not has_openai_key
+        provider == "deepseek"
+        and not has_deepseek_key
         and primary_provider in {"gemini", "google"}
         and has_gemini_creds
     ):
-        return "gemini", "openai_key_missing"
+        return "gemini", "deepseek_key_missing"
+    if (
+        provider == "openai"
+        and not has_openai_key
+        and primary_provider in {"gemini", "google"}
+    ):
+        if has_deepseek_key:
+            return "deepseek", "openai_key_missing"
+        if has_gemini_creds:
+            return "gemini", "openai_key_missing"
+        return None, "openai_key_missing"
+
+    if provider == "deepseek" and not has_deepseek_key:
+        if has_openai_key:
+            return "openai", "deepseek_key_missing"
+        if has_gemini_creds:
+            return "gemini", "deepseek_key_missing"
+        return None, "deepseek_key_missing"
 
     return provider, None
 
@@ -264,6 +282,7 @@ class LLMHandler:
             self._provider_layer_enabled = bool(cfg.get("LLM_PROVIDER_LAYER_ENABLED"))
             fallback_enabled = bool(cfg.get("LLM_FALLBACK_ENABLED"))
             fallback_provider = str(cfg.get("LLM_FALLBACK_PROVIDER") or "openai").lower()
+            effective_fallback_provider = fallback_provider
             router_temp = float(cfg.get("LLM_ROUTER_TEMPERATURE", 0.2))
             planner_temp = float(cfg.get("LLM_PLANNER_TEMPERATURE", 0.2))
             responder_temp = float(cfg.get("LLM_RESPONDER_TEMPERATURE", 0.7))
@@ -315,6 +334,8 @@ class LLMHandler:
                     "planner_response_schema": planner_schema,
                     "temperatures": role_temps,
                     "openai_api_key": cfg.get("OPENAI_API_KEY", ""),
+                    "deepseek_api_key": cfg.get("DEEPSEEK_API_KEY", ""),
+                    "deepseek_base_url": cfg.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
                 }
 
                 def _build_role_model(adapter, role: str, role_model_name: str, role_openai_model: str):
@@ -325,6 +346,7 @@ class LLMHandler:
                             "feature_policy": role_policies[role],
                             "model_name": role_model_name,
                             "openai_model": role_openai_model,
+                            "deepseek_model": role_openai_model,
                         },
                     )
 
@@ -358,8 +380,10 @@ class LLMHandler:
                     requested_fallback=fallback_provider,
                     primary_provider=provider_name,
                     has_openai_key=bool(cfg.get("OPENAI_API_KEY", "")),
+                    has_deepseek_key=bool(cfg.get("DEEPSEEK_API_KEY", "")),
                     has_gemini_creds=bool(cfg.get("GCP_PROJECT_ID", "")),
                 )
+                effective_fallback_provider = requested_fallback or fallback_provider
                 if fallback_autoselect_reason:
                     logger.warning(
                         {
@@ -435,6 +459,38 @@ class LLMHandler:
                         else:
                             logger.warning(
                                 "LLM fallback requested (gemini) but Gemini credentials are missing; fallback disabled."
+                            )
+                    elif requested_fallback == "deepseek":
+                        if cfg.get("DEEPSEEK_API_KEY", ""):
+                            fallback_cfg = dict(cfg)
+                            fallback_cfg["LLM_PROVIDER"] = "deepseek"
+                            fallback_model_name = (
+                                str(cfg.get("LLM_FALLBACK_DEEPSEEK_MODEL", "deepseek-chat")).strip()
+                                or "deepseek-chat"
+                            )
+                            fallback_adapter = create_provider_adapter(fallback_cfg)
+                            self._fallback_router_model = _build_role_model(
+                                fallback_adapter,
+                                "router",
+                                role_model_names["router"],
+                                fallback_model_name,
+                            )
+                            self._fallback_planner_model = _build_role_model(
+                                fallback_adapter,
+                                "planner",
+                                role_model_names["planner"],
+                                fallback_model_name,
+                            )
+                            self._fallback_responder_model = _build_role_model(
+                                fallback_adapter,
+                                "responder",
+                                role_model_names["responder"],
+                                fallback_model_name,
+                            )
+                            self._fallback_label = f"deepseek:{fallback_model_name}"
+                        else:
+                            logger.warning(
+                                "LLM fallback requested (deepseek) but DEEPSEEK_API_KEY is missing; fallback disabled."
                             )
                     else:
                         logger.warning(
@@ -611,7 +667,7 @@ class LLMHandler:
                     "feature_policy_responder": cfg.get("LLM_FEATURE_POLICY_RESPONDER"),
                     "strict_mutation_execution": self._strict_mutation_execution,
                     "fallback_enabled": fallback_enabled,
-                    "fallback_provider": fallback_provider,
+                    "fallback_provider": effective_fallback_provider,
                     "fallback_model": self._fallback_label,
                     "auto_gemini3_default_fallback": auto_gemini3_default_fallback,
                     "adapter_root": adapter_root,

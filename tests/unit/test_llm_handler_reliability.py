@@ -16,6 +16,7 @@ def test_resolve_fallback_provider_autoswitches_to_gemini_when_openai_key_missin
         requested_fallback="openai",
         primary_provider="gemini",
         has_openai_key=False,
+        has_deepseek_key=False,
         has_gemini_creds=True,
     )
     assert provider == "gemini"
@@ -28,10 +29,24 @@ def test_resolve_fallback_provider_keeps_openai_when_key_present():
         requested_fallback="openai",
         primary_provider="gemini",
         has_openai_key=True,
+        has_deepseek_key=False,
         has_gemini_creds=True,
     )
     assert provider == "openai"
     assert reason is None
+
+
+def test_resolve_fallback_provider_autoselects_deepseek_when_openai_key_missing_and_deepseek_available():
+    provider, reason = _resolve_fallback_provider(
+        fallback_enabled=True,
+        requested_fallback="openai",
+        primary_provider="gemini",
+        has_openai_key=False,
+        has_deepseek_key=True,
+        has_gemini_creds=True,
+    )
+    assert provider == "deepseek"
+    assert reason == "openai_key_missing"
 
 
 def test_resolve_fallback_provider_disabled_returns_none():
@@ -40,6 +55,7 @@ def test_resolve_fallback_provider_disabled_returns_none():
         requested_fallback="openai",
         primary_provider="gemini",
         has_openai_key=False,
+        has_deepseek_key=False,
         has_gemini_creds=True,
     )
     assert provider is None

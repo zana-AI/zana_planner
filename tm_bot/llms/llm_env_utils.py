@@ -18,6 +18,8 @@ def load_llm_env():
     load_dotenv()  # ensure .env is loaded
 
     openai_key = os.getenv("OPENAI_API_KEY", "")
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
+    deepseek_base_url = (os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1") or "").strip() or "https://api.deepseek.com/v1"
     env_name = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).strip().lower()
     llm_provider_requested = (os.getenv("LLM_PROVIDER", "auto") or "auto").strip().lower()
 
@@ -32,6 +34,7 @@ def load_llm_env():
     fallback_provider_raw = os.getenv("LLM_FALLBACK_PROVIDER")
     fallback_gemini_model = get_fallback_model("gemini")
     fallback_openai_model = get_fallback_model("openai")
+    fallback_deepseek_model = get_fallback_model("deepseek")
 
     has_gemini_creds = bool(project_id and creds_b64 and location)
     if llm_provider_requested == "auto":
@@ -39,9 +42,11 @@ def load_llm_env():
             llm_provider = "gemini"
         elif openai_key:
             llm_provider = "openai"
+        elif deepseek_key:
+            llm_provider = "deepseek"
         else:
             raise ValueError(
-                "No LLM provider credentials found. Set Gemini (GCP_*) or OpenAI (OPENAI_API_KEY)."
+                "No LLM provider credentials found. Set Gemini (GCP_*), OpenAI (OPENAI_API_KEY), or DeepSeek (DEEPSEEK_API_KEY)."
             )
     elif llm_provider_requested in {"gemini", "google"}:
         llm_provider = "gemini"
@@ -51,12 +56,18 @@ def load_llm_env():
         llm_provider = "openai"
         if not openai_key:
             raise ValueError("LLM_PROVIDER=openai but OPENAI_API_KEY is missing.")
+    elif llm_provider_requested == "deepseek":
+        llm_provider = "deepseek"
+        if not deepseek_key:
+            raise ValueError("LLM_PROVIDER=deepseek but DEEPSEEK_API_KEY is missing.")
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER='{llm_provider_requested}'")
 
     # Provider fallback choice is code-owned by default, with env override support.
     if fallback_provider_raw is not None:
         fallback_provider = fallback_provider_raw.strip().lower() or "openai"
+    elif llm_provider == "gemini" and deepseek_key:
+        fallback_provider = "deepseek"
     elif llm_provider == "gemini" and not openai_key:
         fallback_provider = "gemini"
     else:
@@ -71,6 +82,7 @@ def load_llm_env():
     role_models = get_role_models(llm_provider).as_dict()
     openai_role_models = get_role_models("openai").as_dict()
     gemini_role_models = get_role_models("gemini").as_dict()
+    deepseek_role_models = get_role_models("deepseek").as_dict()
 
     # Some models (e.g. gemini-3-*) are only available in the "global" region.
     # Allow explicit override via GCP_LLM_LOCATION, otherwise auto-detect.
@@ -154,12 +166,18 @@ def load_llm_env():
         "LLM_OPENAI_PLANNER_MODEL": openai_role_models["planner"],
         "LLM_OPENAI_RESPONDER_MODEL": openai_role_models["responder"],
         "OPENAI_API_KEY": openai_key,
+        "DEEPSEEK_API_KEY": deepseek_key,
+        "DEEPSEEK_BASE_URL": deepseek_base_url,
         # Backward-compatibility key used by some helper modules.
         "OPENAI_MODEL": openai_role_models["responder"],
+        "LLM_DEEPSEEK_ROUTER_MODEL": deepseek_role_models["router"],
+        "LLM_DEEPSEEK_PLANNER_MODEL": deepseek_role_models["planner"],
+        "LLM_DEEPSEEK_RESPONDER_MODEL": deepseek_role_models["responder"],
         "LLM_FALLBACK_ENABLED": fallback_enabled,
         "LLM_FALLBACK_PROVIDER": fallback_provider,
         "LLM_FALLBACK_GEMINI_MODEL": fallback_gemini_model,
         "LLM_FALLBACK_OPENAI_MODEL": fallback_openai_model,
+        "LLM_FALLBACK_DEEPSEEK_MODEL": fallback_deepseek_model,
         "LANGSMITH_ENABLED": langsmith_enabled,
         "LANGSMITH_PROJECT": langsmith_project if langsmith_enabled else None,
         # Per-role temperatures: router/planner use low temp for structured output;

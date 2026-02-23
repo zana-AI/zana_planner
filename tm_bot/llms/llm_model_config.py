@@ -31,12 +31,18 @@ MODEL_CONFIGS = {
         planner="gpt-4o-mini",
         responder="gpt-4o-mini",
     ),
+    "deepseek": RoleModels(
+        router="deepseek-chat",
+        planner="deepseek-chat",
+        responder="deepseek-chat",
+    ),
 }
 
 # Cross-provider fallback defaults.
 FALLBACK_MODELS = {
     "gemini": "gemini-2.5-flash-lite",
     "openai": "gpt-4o-mini",
+    "deepseek": "deepseek-chat",
 }
 
 # Some Gemini models are global-only.
@@ -49,6 +55,8 @@ def normalize_provider_name(provider: str | None) -> str:
         return "gemini"
     if raw == "openai":
         return "openai"
+    if raw == "deepseek":
+        return "deepseek"
     if raw == "auto":
         return "auto"
     return raw
