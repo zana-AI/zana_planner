@@ -81,9 +81,15 @@ class PlannerAPIAdapter:
         self.query_service = QueryService()
 
     # Promise methods
-    def add_promise(self, user_id, promise_text: str, num_hours_promised_per_week: float, 
-                   recurring: bool = True, start_date: Optional[datetime] = None, 
-                   end_date: Optional[datetime] = None):
+    def add_promise(
+        self,
+        user_id,
+        promise_text: str,
+        num_hours_promised_per_week: float,
+        recurring: bool = True,
+        start_date: Optional[Union[date, datetime, str]] = None,
+        end_date: Optional[Union[date, datetime, str]] = None,
+    ):
         """Add a new promise."""
         try:
             if user_id is None:
@@ -95,11 +101,16 @@ class PlannerAPIAdapter:
 
             # Generate promise ID
             promise_id = self._generate_promise_id(user_id, 'P' if recurring else 'T')
+
+            start_date = self._coerce_date_like(start_date, "start_date")
+            end_date = self._coerce_date_like(end_date, "end_date")
             
             if not start_date:
                 start_date = datetime.now().date()
             if not end_date:
                 end_date = datetime(datetime.now().year, 12, 31).date()
+            if start_date > end_date:
+                raise ValueError("start_date must be on or before end_date")
 
             promise = Promise(
                 user_id=str(user_id),
@@ -761,6 +772,28 @@ class PlannerAPIAdapter:
         return self.query_service.format_query_results(results or [])
 
     # Utility methods
+    def _coerce_date_like(self, raw_value: Optional[Union[date, datetime, str]], field_name: str) -> Optional[date]:
+        """Normalize date-like values into a date object."""
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, datetime):
+            return raw_value.date()
+        if isinstance(raw_value, date):
+            return raw_value
+        if isinstance(raw_value, str):
+            text = raw_value.strip()
+            if not text:
+                return None
+            normalized = text.replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(normalized).date()
+            except ValueError:
+                try:
+                    return date.fromisoformat(text)
+                except ValueError as e:
+                    raise ValueError(f"{field_name} must be an ISO date or datetime string") from e
+        raise ValueError(f"{field_name} must be a date, datetime, or ISO date string")
+
     def _parse_date_arg(self, date_str: str, default: date = None) -> Optional[date]:
         """Parse YYYY-MM-DD string to date, with fallback to default."""
         if not date_str:

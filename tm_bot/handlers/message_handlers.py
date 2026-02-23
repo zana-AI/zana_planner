@@ -45,6 +45,13 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 logger = get_logger(__name__)
 
 
+def _is_staging_or_test_mode() -> bool:
+    env = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).lower()
+    if env in {"staging", "stage", "test", "testing"}:
+        return True
+    return os.getenv("PYTEST_CURRENT_TEST") is not None
+
+
 class MessageHandlers:
     """Handles all message and command processing."""
     

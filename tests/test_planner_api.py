@@ -21,6 +21,26 @@ def test_planner_api_adapter_add_promise_persists(tmp_path):
 
 
 @pytest.mark.integration
+def test_planner_api_adapter_add_promise_accepts_iso_datetime_dates(tmp_path):
+    adapter = PlannerAPIAdapter(str(tmp_path))
+    user_id = unique_user_id()
+
+    msg = adapter.add_promise(
+        user_id,
+        promise_text="Date Parse Test",
+        num_hours_promised_per_week=3.0,
+        start_date="2026-02-24T18:30:00Z",
+        end_date="2026-03-01T00:00:00+00:00",
+    )
+    promise_id = msg.split()[0].lstrip("#")
+    promise = adapter.get_promise(user_id, promise_id)
+
+    assert promise is not None
+    assert promise.start_date.isoformat() == "2026-02-24"
+    assert promise.end_date.isoformat() == "2026-03-01"
+
+
+@pytest.mark.integration
 def test_planner_api_adapter_add_action_and_weekly_progress(tmp_path):
     adapter = PlannerAPIAdapter(str(tmp_path))
     user_id = unique_user_id()
