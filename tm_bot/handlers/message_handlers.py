@@ -245,6 +245,18 @@ class MessageHandlers:
         return any(text == token or text.startswith(token + " ") for token in confirm_tokens)
 
     @staticmethod
+    def _is_confirmation_only_reply(user_text: str) -> bool:
+        """Return True only for standalone confirm replies like 'yes'."""
+        text = (user_text or "").strip().lower()
+        if not text:
+            return False
+        tokens = (
+            "yes", "confirm", "ok", "okay", "y", "yeah", "yep", "sure",
+            "بله", "تایید", "تاييد", "اوکی", "باشه",
+        )
+        return text in tokens
+
+    @staticmethod
     def _is_cancel_reply(user_text: str) -> bool:
         """Return True when the user message is an explicit cancellation."""
         text = (user_text or "").strip().lower()
@@ -252,6 +264,15 @@ class MessageHandlers:
             return False
         cancel_tokens = ("no", "cancel", "skip", "nope", "nah", "stop", "خیر", "نه", "لغو")
         return any(text == token or text.startswith(token + " ") for token in cancel_tokens)
+
+    @staticmethod
+    def _is_cancel_only_reply(user_text: str) -> bool:
+        """Return True only for standalone cancel replies like 'no'."""
+        text = (user_text or "").strip().lower()
+        if not text:
+            return False
+        cancel_tokens = ("no", "cancel", "skip", "nope", "nah", "stop", "خیر", "نه", "لغو")
+        return text in cancel_tokens
 
     @staticmethod
     def _is_pre_mutation_confirmation(llm_response: dict) -> bool:
@@ -1308,6 +1329,23 @@ class MessageHandlers:
 
             # Stateful clarification: if we previously asked for missing fields, treat this message as the answer.
             pending = (context.user_data or {}).get("pending_clarification") if hasattr(context, "user_data") else None
+            if not pending and (
+                self._is_confirmation_only_reply(user_message)
+                or self._is_cancel_only_reply(user_message)
+            ):
+                # Prevent "yes/no" loops when no actionable confirmation is pending.
+                msg = get_message("confirmation_expired", user_lang)
+                if voice_mode_enabled:
+                    await self._send_response_with_voice_mode(
+                        update, context, msg, settings, user_lang
+                    )
+                else:
+                    await self.response_service.reply_text(
+                        update, msg,
+                        user_id=user_id,
+                        parse_mode=None,
+                    )
+                return
             if pending:
                 # Default to treating the message as a new request unless a specific
                 # pending-clarification flow overrides it (prevents UnboundLocalError).

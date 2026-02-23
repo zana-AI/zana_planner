@@ -2469,11 +2469,9 @@ class LLMHandler:
             pending_tool_name.startswith(_MUTATION_TOOL_PREFIXES)
             or pending_reason == "pre_mutation_confirmation"
         )
-        mutation_intent = bool(
-            self._is_mutation_intent(detected_intent)
-            or pending_mutation_intent
-            or bool(mutation_actions)
-        )
+        # Require concrete mutation evidence in this turn (planned-pending or executed calls).
+        # Relying on intent label alone can create confirmation loops (e.g., repeated "yes").
+        mutation_intent = bool(pending_mutation_intent or bool(mutation_actions))
         mutation_happened = bool(successful_mutations)
 
         # Contract: when mutation intent exists, a successful mutation must be evidenced
