@@ -20,6 +20,11 @@ def load_llm_env():
     openai_key = os.getenv("OPENAI_API_KEY", "")
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
     deepseek_base_url = (os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1") or "").strip() or "https://api.deepseek.com/v1"
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    groq_base_url = (os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1") or "").strip() or "https://api.groq.com/openai/v1"
+    groq_plan_tier = (os.getenv("GROQ_PLAN_TIER", "free") or "").strip().lower() or "free"
+    if groq_plan_tier not in {"free", "developer"}:
+        groq_plan_tier = "free"
     env_name = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).strip().lower()
     llm_provider_requested = (os.getenv("LLM_PROVIDER", "auto") or "auto").strip().lower()
 
@@ -27,18 +32,19 @@ def load_llm_env():
     location = os.getenv("GCP_LOCATION", "us-central1")
     creds_b64 = os.getenv("GCP_CREDENTIALS_B64")
     fallback_raw = os.getenv("LLM_FALLBACK_ENABLED")
-    if fallback_raw is None:
-        fallback_enabled = env_name in {"staging", "stage", "test", "testing"}
-    else:
-        fallback_enabled = str(fallback_raw).strip().lower() in ("1", "true", "yes")
     fallback_provider_raw = os.getenv("LLM_FALLBACK_PROVIDER")
     fallback_gemini_model = get_fallback_model("gemini")
     fallback_openai_model = get_fallback_model("openai")
     fallback_deepseek_model = get_fallback_model("deepseek")
+    fallback_groq_model = get_fallback_model("groq")
 
     has_gemini_creds = bool(project_id and creds_b64 and location)
     if llm_provider_requested == "auto":
-        if has_gemini_creds:
+        # Code-owned default provider precedence:
+        # prefer Groq when configured, then Gemini/OpenAI/DeepSeek.
+        if groq_key:
+            llm_provider = "groq"
+        elif has_gemini_creds:
             llm_provider = "gemini"
         elif openai_key:
             llm_provider = "openai"
@@ -46,7 +52,7 @@ def load_llm_env():
             llm_provider = "deepseek"
         else:
             raise ValueError(
-                "No LLM provider credentials found. Set Gemini (GCP_*), OpenAI (OPENAI_API_KEY), or DeepSeek (DEEPSEEK_API_KEY)."
+                "No LLM provider credentials found. Set Gemini (GCP_*), OpenAI (OPENAI_API_KEY), DeepSeek (DEEPSEEK_API_KEY), or Groq (GROQ_API_KEY)."
             )
     elif llm_provider_requested in {"gemini", "google"}:
         llm_provider = "gemini"
@@ -60,18 +66,59 @@ def load_llm_env():
         llm_provider = "deepseek"
         if not deepseek_key:
             raise ValueError("LLM_PROVIDER=deepseek but DEEPSEEK_API_KEY is missing.")
+    elif llm_provider_requested == "groq":
+        llm_provider = "groq"
+        if not groq_key:
+            raise ValueError("LLM_PROVIDER=groq but GROQ_API_KEY is missing.")
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER='{llm_provider_requested}'")
 
     # Provider fallback choice is code-owned by default, with env override support.
     if fallback_provider_raw is not None:
         fallback_provider = fallback_provider_raw.strip().lower() or "openai"
-    elif llm_provider == "gemini" and deepseek_key:
-        fallback_provider = "deepseek"
-    elif llm_provider == "gemini" and not openai_key:
-        fallback_provider = "gemini"
+    elif llm_provider == "groq":
+        # Keep Groq fallback in-provider by default:
+        # openai/gpt-oss-20b -> llama-3.3-70b-versatile.
+        fallback_provider = "groq"
+    elif llm_provider == "gemini":
+        # Prefer Groq over DeepSeek/OpenAI when available for lower latency.
+        if groq_key:
+            fallback_provider = "groq"
+        elif deepseek_key:
+            fallback_provider = "deepseek"
+        elif openai_key:
+            fallback_provider = "openai"
+        else:
+            fallback_provider = "gemini"
+    elif llm_provider == "openai":
+        if groq_key:
+            fallback_provider = "groq"
+        elif deepseek_key:
+            fallback_provider = "deepseek"
+        elif has_gemini_creds:
+            fallback_provider = "gemini"
+        else:
+            fallback_provider = "openai"
+    elif llm_provider == "deepseek":
+        if groq_key:
+            fallback_provider = "groq"
+        elif openai_key:
+            fallback_provider = "openai"
+        elif has_gemini_creds:
+            fallback_provider = "gemini"
+        else:
+            fallback_provider = "deepseek"
     else:
         fallback_provider = "openai"
+
+    if fallback_raw is None:
+        # Code-owned fallback defaults:
+        # - always enabled for Groq so preblocked/rate-limited model fallback works
+        #   with only GROQ_API_KEY in env.
+        # - keep existing staged-env default for other providers.
+        fallback_enabled = llm_provider == "groq" or env_name in {"staging", "stage", "test", "testing"}
+    else:
+        fallback_enabled = str(fallback_raw).strip().lower() in ("1", "true", "yes")
 
     if llm_provider == "gemini":
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
@@ -83,6 +130,7 @@ def load_llm_env():
     openai_role_models = get_role_models("openai").as_dict()
     gemini_role_models = get_role_models("gemini").as_dict()
     deepseek_role_models = get_role_models("deepseek").as_dict()
+    groq_role_models = get_role_models("groq").as_dict()
 
     # Some models (e.g. gemini-3-*) are only available in the "global" region.
     # Allow explicit override via GCP_LLM_LOCATION, otherwise auto-detect.
@@ -133,7 +181,12 @@ def load_llm_env():
     if gemini_thinking_level not in {None, "minimal", "low", "medium", "high"}:
         gemini_thinking_level = "minimal"
 
-    default_provider_layer_enabled = env_name in {"staging", "stage", "test", "testing"}
+    # Non-Gemini providers rely on the provider-layer adapters.
+    # Keep this code-owned so GROQ_API_KEY alone is enough to run Groq.
+    default_provider_layer_enabled = (
+        llm_provider in {"openai", "deepseek", "groq"}
+        or env_name in {"staging", "stage", "test", "testing"}
+    )
     default_strict_mutation = env_name in {"staging", "stage", "test", "testing"}
     feature_policy = (os.getenv("LLM_FEATURE_POLICY", "safe") or "safe").strip().lower()
     if feature_policy not in {"safe", "balanced", "full"}:
@@ -168,16 +221,23 @@ def load_llm_env():
         "OPENAI_API_KEY": openai_key,
         "DEEPSEEK_API_KEY": deepseek_key,
         "DEEPSEEK_BASE_URL": deepseek_base_url,
+        "GROQ_API_KEY": groq_key,
+        "GROQ_BASE_URL": groq_base_url,
+        "GROQ_PLAN_TIER": groq_plan_tier,
         # Backward-compatibility key used by some helper modules.
         "OPENAI_MODEL": openai_role_models["responder"],
         "LLM_DEEPSEEK_ROUTER_MODEL": deepseek_role_models["router"],
         "LLM_DEEPSEEK_PLANNER_MODEL": deepseek_role_models["planner"],
         "LLM_DEEPSEEK_RESPONDER_MODEL": deepseek_role_models["responder"],
+        "LLM_GROQ_ROUTER_MODEL": groq_role_models["router"],
+        "LLM_GROQ_PLANNER_MODEL": groq_role_models["planner"],
+        "LLM_GROQ_RESPONDER_MODEL": groq_role_models["responder"],
         "LLM_FALLBACK_ENABLED": fallback_enabled,
         "LLM_FALLBACK_PROVIDER": fallback_provider,
         "LLM_FALLBACK_GEMINI_MODEL": fallback_gemini_model,
         "LLM_FALLBACK_OPENAI_MODEL": fallback_openai_model,
         "LLM_FALLBACK_DEEPSEEK_MODEL": fallback_deepseek_model,
+        "LLM_FALLBACK_GROQ_MODEL": fallback_groq_model,
         "LANGSMITH_ENABLED": langsmith_enabled,
         "LANGSMITH_PROJECT": langsmith_project if langsmith_enabled else None,
         # Per-role temperatures: router/planner use low temp for structured output;

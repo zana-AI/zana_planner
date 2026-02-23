@@ -67,8 +67,9 @@ Optional (content-to-learning pipeline):
 - `QDRANT_API_KEY` - Optional API key for secured Qdrant deployments.
 - `QDRANT_COLLECTION` - Vector collection name (default: `content_chunks_v1`).
 - `VERTEX_EMBEDDING_MODEL` - Embedding model (default: `gemini-embedding-001`).
-- `LLM_FALLBACK_ENABLED` - Emergency fallback toggle (`true`/`false`, default `false`).
-- `LLM_FALLBACK_PROVIDER` - Fallback provider name (default: `openai`).
+- `GROQ_API_KEY` - API key for Groq provider access.
+- Groq provider/model/fallback/base-url defaults are code-owned; only `GROQ_API_KEY` is required in env for normal use.
+- `LLM_FALLBACK_ENABLED` and `LLM_FALLBACK_PROVIDER` are advanced overrides (optional).
 
 The codebase has been refactored into a clean, layered architecture:
 

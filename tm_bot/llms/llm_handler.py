@@ -18,6 +18,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from llms.genai_patches import apply_genai_patches
+from llms.model_policy import is_blocked
 from llms.providers.factory import create_provider_adapter
 
 # Global rate limit tracker: deque of (timestamp, user_id, event_type) for recent LLM calls
@@ -109,13 +110,14 @@ def _resolve_fallback_provider(
     has_openai_key: bool,
     has_deepseek_key: bool,
     has_gemini_creds: bool,
+    has_groq_key: bool,
 ) -> tuple[Optional[str], Optional[str]]:
     """
     Decide which fallback provider should be used for this runtime.
 
     Returns:
         (resolved_provider, reason)
-        - resolved_provider: "gemini" | "openai" | "deepseek" | None
+        - resolved_provider: "gemini" | "openai" | "deepseek" | "groq" | None
         - reason: optional reason code when provider was auto-adjusted
     """
     if not fallback_enabled:
@@ -130,12 +132,21 @@ def _resolve_fallback_provider(
     ):
         return "gemini", "deepseek_key_missing"
     if (
+        provider == "groq"
+        and not has_groq_key
+        and primary_provider in {"gemini", "google"}
+        and has_gemini_creds
+    ):
+        return "gemini", "groq_key_missing"
+    if (
         provider == "openai"
         and not has_openai_key
         and primary_provider in {"gemini", "google"}
     ):
         if has_deepseek_key:
             return "deepseek", "openai_key_missing"
+        if has_groq_key:
+            return "groq", "openai_key_missing"
         if has_gemini_creds:
             return "gemini", "openai_key_missing"
         return None, "openai_key_missing"
@@ -143,9 +154,20 @@ def _resolve_fallback_provider(
     if provider == "deepseek" and not has_deepseek_key:
         if has_openai_key:
             return "openai", "deepseek_key_missing"
+        if has_groq_key:
+            return "groq", "deepseek_key_missing"
         if has_gemini_creds:
             return "gemini", "deepseek_key_missing"
         return None, "deepseek_key_missing"
+
+    if provider == "groq" and not has_groq_key:
+        if has_openai_key:
+            return "openai", "groq_key_missing"
+        if has_deepseek_key:
+            return "deepseek", "groq_key_missing"
+        if has_gemini_creds:
+            return "gemini", "groq_key_missing"
+        return None, "groq_key_missing"
 
     return provider, None
 
@@ -156,6 +178,7 @@ def _resolve_fallback_role_providers(
     has_gemini_creds: bool,
     has_openai_key: bool,
     has_deepseek_key: bool,
+    has_groq_key: bool,
 ) -> Optional[Dict[str, str]]:
     """
     Resolve fallback provider per role.
@@ -178,6 +201,11 @@ def _resolve_fallback_role_providers(
             return None
         return {"router": "openai", "planner": "openai", "responder": "openai"}
 
+    if provider == "groq":
+        if not has_groq_key:
+            return None
+        return {"router": "groq", "planner": "groq", "responder": "groq"}
+
     if provider == "deepseek":
         if not has_deepseek_key:
             return None
@@ -186,6 +214,8 @@ def _resolve_fallback_role_providers(
             structured_provider = "gemini"
         elif has_openai_key:
             structured_provider = "openai"
+        elif has_groq_key:
+            structured_provider = "groq"
         return {
             "router": structured_provider,
             "planner": structured_provider,
@@ -294,6 +324,8 @@ class LLMHandler:
             self._fallback_agent_app = None
             self._fallback_label = None
             self._provider_adapter = None
+            self._primary_role_models: Dict[str, Dict[str, str]] = {}
+            self._fallback_role_models: Dict[str, Dict[str, str]] = {}
             self._provider_layer_enabled = bool(cfg.get("LLM_PROVIDER_LAYER_ENABLED"))
             fallback_enabled = bool(cfg.get("LLM_FALLBACK_ENABLED"))
             fallback_provider = str(cfg.get("LLM_FALLBACK_PROVIDER") or "openai").lower()
@@ -314,6 +346,16 @@ class LLMHandler:
                 "router": str(cfg.get("LLM_OPENAI_ROUTER_MODEL") or cfg.get("OPENAI_MODEL", "gpt-4o-mini")),
                 "planner": str(cfg.get("LLM_OPENAI_PLANNER_MODEL") or cfg.get("OPENAI_MODEL", "gpt-4o-mini")),
                 "responder": str(cfg.get("LLM_OPENAI_RESPONDER_MODEL") or cfg.get("OPENAI_MODEL", "gpt-4o-mini")),
+            }
+            deepseek_role_model_names = {
+                "router": str(cfg.get("LLM_DEEPSEEK_ROUTER_MODEL") or "deepseek-chat"),
+                "planner": str(cfg.get("LLM_DEEPSEEK_PLANNER_MODEL") or "deepseek-chat"),
+                "responder": str(cfg.get("LLM_DEEPSEEK_RESPONDER_MODEL") or "deepseek-chat"),
+            }
+            groq_role_model_names = {
+                "router": str(cfg.get("LLM_GROQ_ROUTER_MODEL") or "openai/gpt-oss-20b"),
+                "planner": str(cfg.get("LLM_GROQ_PLANNER_MODEL") or "openai/gpt-oss-20b"),
+                "responder": str(cfg.get("LLM_GROQ_RESPONDER_MODEL") or "openai/gpt-oss-20b"),
             }
             gemini_model_name = role_model_names["planner"]
             is_gemini3 = any((name or "").startswith("gemini-3-") for name in role_model_names.values())
@@ -351,9 +393,19 @@ class LLMHandler:
                     "openai_api_key": cfg.get("OPENAI_API_KEY", ""),
                     "deepseek_api_key": cfg.get("DEEPSEEK_API_KEY", ""),
                     "deepseek_base_url": cfg.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+                    "groq_api_key": cfg.get("GROQ_API_KEY", ""),
+                    "groq_base_url": cfg.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+                    "groq_plan_tier": cfg.get("GROQ_PLAN_TIER", "free"),
                 }
 
-                def _build_role_model(adapter, role: str, role_model_name: str, role_openai_model: str):
+                def _build_role_model(
+                    adapter,
+                    role: str,
+                    role_model_name: str,
+                    role_openai_model: str,
+                    role_deepseek_model: str,
+                    role_groq_model: str,
+                ):
                     return adapter.build_role_model(
                         role,
                         {
@@ -361,7 +413,8 @@ class LLMHandler:
                             "feature_policy": role_policies[role],
                             "model_name": role_model_name,
                             "openai_model": role_openai_model,
-                            "deepseek_model": role_openai_model,
+                            "deepseek_model": role_deepseek_model,
+                            "groq_model": role_groq_model,
                         },
                     )
 
@@ -370,25 +423,53 @@ class LLMHandler:
                     "router",
                     role_model_names["router"],
                     openai_role_model_names["router"],
+                    deepseek_role_model_names["router"],
+                    groq_role_model_names["router"],
                 )
                 self.planner_model = _build_role_model(
                     self._provider_adapter,
                     "planner",
                     role_model_names["planner"],
                     openai_role_model_names["planner"],
+                    deepseek_role_model_names["planner"],
+                    groq_role_model_names["planner"],
                 )
                 self.responder_model = _build_role_model(
                     self._provider_adapter,
                     "responder",
                     role_model_names["responder"],
                     openai_role_model_names["responder"],
+                    deepseek_role_model_names["responder"],
+                    groq_role_model_names["responder"],
                 )
                 self.chat_model = self.responder_model
+
+                def _resolved_model_name(model_obj, requested: str) -> str:
+                    value = getattr(model_obj, "model_name", None) or getattr(model_obj, "model", None)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+                    return requested
+
+                self._primary_role_models = {
+                    "router": {
+                        "provider": provider_name,
+                        "model": _resolved_model_name(self.router_model, role_model_names["router"]),
+                    },
+                    "planner": {
+                        "provider": provider_name,
+                        "model": _resolved_model_name(self.planner_model, role_model_names["planner"]),
+                    },
+                    "responder": {
+                        "provider": provider_name,
+                        "model": _resolved_model_name(self.responder_model, role_model_names["responder"]),
+                    },
+                }
                 self._fallback_router_model = None
                 self._fallback_planner_model = None
                 self._fallback_responder_model = None
                 self._fallback_agent_app = None
                 self._fallback_label = None
+                self._fallback_role_models = {}
                 auto_gemini3_fallback = bool(is_gemini3 and provider_name in {"gemini", "google"})
                 requested_fallback, fallback_autoselect_reason = _resolve_fallback_provider(
                     fallback_enabled=fallback_enabled,
@@ -397,6 +478,7 @@ class LLMHandler:
                     has_openai_key=bool(cfg.get("OPENAI_API_KEY", "")),
                     has_deepseek_key=bool(cfg.get("DEEPSEEK_API_KEY", "")),
                     has_gemini_creds=bool(cfg.get("GCP_PROJECT_ID", "")),
+                    has_groq_key=bool(cfg.get("GROQ_API_KEY", "")),
                 )
                 effective_fallback_provider = requested_fallback or fallback_provider
                 if fallback_autoselect_reason:
@@ -418,11 +500,13 @@ class LLMHandler:
                     has_gemini_creds = bool(cfg.get("GCP_PROJECT_ID", ""))
                     has_openai_key = bool(cfg.get("OPENAI_API_KEY", ""))
                     has_deepseek_key = bool(cfg.get("DEEPSEEK_API_KEY", ""))
+                    has_groq_key = bool(cfg.get("GROQ_API_KEY", ""))
                     role_fallback_providers = _resolve_fallback_role_providers(
                         requested_fallback,
                         has_gemini_creds=has_gemini_creds,
                         has_openai_key=has_openai_key,
                         has_deepseek_key=has_deepseek_key,
+                        has_groq_key=has_groq_key,
                     )
                     if role_fallback_providers is None:
                         logger.warning(
@@ -442,10 +526,15 @@ class LLMHandler:
                             str(cfg.get("LLM_FALLBACK_DEEPSEEK_MODEL", "deepseek-chat")).strip()
                             or "deepseek-chat"
                         )
+                        fallback_groq_model = (
+                            str(cfg.get("LLM_FALLBACK_GROQ_MODEL", "llama-3.3-70b-versatile")).strip()
+                            or "llama-3.3-70b-versatile"
+                        )
                         provider_to_model = {
                             "gemini": fallback_gemini_model,
                             "openai": fallback_openai_model,
                             "deepseek": fallback_deepseek_model,
+                            "groq": fallback_groq_model,
                         }
                         adapter_cache = {}
 
@@ -460,6 +549,7 @@ class LLMHandler:
                         self._fallback_router_model = None
                         self._fallback_planner_model = None
                         self._fallback_responder_model = None
+                        self._fallback_role_models = {}
                         role_labels: Dict[str, str] = {}
                         for role_name in ("router", "planner", "responder"):
                             provider_key = role_fallback_providers[role_name]
@@ -470,6 +560,8 @@ class LLMHandler:
                                 role_name,
                                 model_name,
                                 model_name,
+                                model_name,
+                                model_name,
                             )
                             if role_name == "router":
                                 self._fallback_router_model = role_model
@@ -478,6 +570,10 @@ class LLMHandler:
                             else:
                                 self._fallback_responder_model = role_model
                             role_labels[role_name] = f"{provider_key}:{model_name}"
+                            self._fallback_role_models[role_name] = {
+                                "provider": provider_key,
+                                "model": model_name,
+                            }
 
                         self._fallback_label = (
                             f"router={role_labels['router']},"
@@ -526,6 +622,11 @@ class LLMHandler:
                     )
                     self.responder_model = ChatGoogleGenerativeAI(**responder_kwargs, temperature=responder_temp)
                     self.chat_model = self.responder_model
+                    self._primary_role_models = {
+                        "router": {"provider": "gemini", "model": role_model_names["router"]},
+                        "planner": {"provider": "gemini", "model": role_model_names["planner"]},
+                        "responder": {"provider": "gemini", "model": role_model_names["responder"]},
+                    }
                     # read by llms.agent._invoke_model to disable SDK AFC on every invoke.
                     os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
 
@@ -556,6 +657,11 @@ class LLMHandler:
                             temperature=responder_temp,
                         )
                         self._fallback_label = f"gemini:{fallback_model_name}"
+                        self._fallback_role_models = {
+                            "router": {"provider": "gemini", "model": fallback_model_name},
+                            "planner": {"provider": "gemini", "model": fallback_model_name},
+                            "responder": {"provider": "gemini", "model": fallback_model_name},
+                        }
                         if is_gemini3:
                             auto_gemini3_default_fallback = True
                     else:
@@ -563,6 +669,7 @@ class LLMHandler:
                         self._fallback_planner_model = None
                         self._fallback_responder_model = None
                         self._fallback_label = None
+                        self._fallback_role_models = {}
 
                 if (
                     not self.chat_model
@@ -588,6 +695,11 @@ class LLMHandler:
                         temperature=responder_temp,
                     )
                     self.chat_model = self.responder_model
+                    self._primary_role_models = {
+                        "router": {"provider": "openai", "model": openai_role_model_names["router"]},
+                        "planner": {"provider": "openai", "model": openai_role_model_names["planner"]},
+                        "responder": {"provider": "openai", "model": openai_role_model_names["responder"]},
+                    }
 
             if not self.chat_model:
                 raise ValueError(
@@ -1465,6 +1577,24 @@ class LLMHandler:
         except Exception as e:
             logger.warning(f"Failed to write rate limit debug file: {e}")
 
+    def _get_preblocked_primary_roles(self) -> List[Dict[str, str]]:
+        blocked: List[Dict[str, str]] = []
+        for role_name in ("router", "planner", "responder"):
+            role_spec = (self._primary_role_models or {}).get(role_name) or {}
+            provider = str(role_spec.get("provider") or "").strip().lower()
+            model_name = str(role_spec.get("model") or "").strip()
+            if not provider or not model_name:
+                continue
+            if is_blocked(provider, model_name):
+                blocked.append(
+                    {
+                        "role": role_name,
+                        "provider": provider,
+                        "model": model_name,
+                    }
+                )
+        return blocked
+
     def get_response_api(
         self,
         user_message: str,
@@ -1634,23 +1764,36 @@ class LLMHandler:
                         )
                     return result
 
-                try:
-                    result_state = _invoke_app(self.agent_app, state, phase="primary")
-                except Exception as primary_exc:
-                    primary_err = str(primary_exc)
-                    is_transient = _is_fallback_eligible_error(primary_exc)
-                    if is_transient and self._fallback_agent_app is not None:
-                        logger.warning({
-                            "event": "primary_model_fallback",
+                preblocked_roles = self._get_preblocked_primary_roles()
+                if preblocked_roles and self._fallback_agent_app is not None:
+                    logger.warning(
+                        {
+                            "event": "primary_model_preblocked_fallback",
                             "user_id": safe_user_id,
-                            "reason": primary_err[:200],
+                            "blocked_roles": preblocked_roles,
                             "fallback_model": self._fallback_label or "configured_fallback",
-                        })
-                        # Reset call counter for the fallback attempt
-                        agent_module._llm_call_count = 0
-                        result_state = _invoke_app(self._fallback_agent_app, state, phase="fallback")
-                    else:
-                        raise
+                        }
+                    )
+                    agent_module._llm_call_count = 0
+                    result_state = _invoke_app(self._fallback_agent_app, state, phase="fallback_preblocked")
+                else:
+                    try:
+                        result_state = _invoke_app(self.agent_app, state, phase="primary")
+                    except Exception as primary_exc:
+                        primary_err = str(primary_exc)
+                        is_transient = _is_fallback_eligible_error(primary_exc)
+                        if is_transient and self._fallback_agent_app is not None:
+                            logger.warning({
+                                "event": "primary_model_fallback",
+                                "user_id": safe_user_id,
+                                "reason": primary_err[:200],
+                                "fallback_model": self._fallback_label or "configured_fallback",
+                            })
+                            # Reset call counter for the fallback attempt
+                            agent_module._llm_call_count = 0
+                            result_state = _invoke_app(self._fallback_agent_app, state, phase="fallback")
+                        else:
+                            raise
                 
                 # Track successful completion
                 call_end = time.time()

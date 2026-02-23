@@ -1,7 +1,7 @@
 import os
 import sys
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 TM_BOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tm_bot"))
 if TM_BOT_DIR not in sys.path:
@@ -12,6 +12,7 @@ from llms.llm_handler import (  # noqa: E402
     _resolve_fallback_provider,
     _resolve_fallback_role_providers,
 )
+from llms.model_policy import mark_rate_limited  # noqa: E402
 
 
 def test_resolve_fallback_provider_autoswitches_to_gemini_when_openai_key_missing():
@@ -22,6 +23,7 @@ def test_resolve_fallback_provider_autoswitches_to_gemini_when_openai_key_missin
         has_openai_key=False,
         has_deepseek_key=False,
         has_gemini_creds=True,
+        has_groq_key=False,
     )
     assert provider == "gemini"
     assert reason == "openai_key_missing"
@@ -35,6 +37,7 @@ def test_resolve_fallback_provider_keeps_openai_when_key_present():
         has_openai_key=True,
         has_deepseek_key=False,
         has_gemini_creds=True,
+        has_groq_key=False,
     )
     assert provider == "openai"
     assert reason is None
@@ -48,6 +51,7 @@ def test_resolve_fallback_provider_autoselects_deepseek_when_openai_key_missing_
         has_openai_key=False,
         has_deepseek_key=True,
         has_gemini_creds=True,
+        has_groq_key=False,
     )
     assert provider == "deepseek"
     assert reason == "openai_key_missing"
@@ -61,6 +65,7 @@ def test_resolve_fallback_provider_disabled_returns_none():
         has_openai_key=False,
         has_deepseek_key=False,
         has_gemini_creds=True,
+        has_groq_key=False,
     )
     assert provider is None
     assert reason is None
@@ -72,6 +77,7 @@ def test_resolve_fallback_role_providers_deepseek_prefers_gemini_for_structured_
         has_gemini_creds=True,
         has_openai_key=True,
         has_deepseek_key=True,
+        has_groq_key=False,
     )
     assert providers == {
         "router": "gemini",
@@ -86,6 +92,7 @@ def test_resolve_fallback_role_providers_deepseek_uses_openai_when_gemini_unavai
         has_gemini_creds=False,
         has_openai_key=True,
         has_deepseek_key=True,
+        has_groq_key=False,
     )
     assert providers == {
         "router": "openai",
@@ -100,6 +107,7 @@ def test_resolve_fallback_role_providers_deepseek_falls_back_to_deepseek_when_on
         has_gemini_creds=False,
         has_openai_key=False,
         has_deepseek_key=True,
+        has_groq_key=False,
     )
     assert providers == {
         "router": "deepseek",
@@ -114,8 +122,134 @@ def test_resolve_fallback_role_providers_gemini_requires_gemini_credentials():
         has_gemini_creds=False,
         has_openai_key=True,
         has_deepseek_key=True,
+        has_groq_key=False,
     )
     assert providers is None
+
+
+def test_resolve_fallback_provider_autoselects_groq_when_openai_missing_and_groq_available():
+    provider, reason = _resolve_fallback_provider(
+        fallback_enabled=True,
+        requested_fallback="openai",
+        primary_provider="gemini",
+        has_openai_key=False,
+        has_deepseek_key=False,
+        has_gemini_creds=True,
+        has_groq_key=True,
+    )
+    assert provider == "groq"
+    assert reason == "openai_key_missing"
+
+
+def test_resolve_fallback_role_providers_groq_requires_key():
+    providers = _resolve_fallback_role_providers(
+        "groq",
+        has_gemini_creds=True,
+        has_openai_key=True,
+        has_deepseek_key=True,
+        has_groq_key=False,
+    )
+    assert providers is None
+
+
+def test_resolve_fallback_role_providers_groq_when_available():
+    providers = _resolve_fallback_role_providers(
+        "groq",
+        has_gemini_creds=False,
+        has_openai_key=False,
+        has_deepseek_key=False,
+        has_groq_key=True,
+    )
+    assert providers == {
+        "router": "groq",
+        "planner": "groq",
+        "responder": "groq",
+    }
+
+
+def test_get_preblocked_primary_roles_returns_blocked_roles():
+    blocked_model = "test-groq-model-blocked"
+    mark_rate_limited("groq", blocked_model, retry_after_s=60)
+
+    handler = object.__new__(LLMHandler)
+    handler._primary_role_models = {
+        "router": {"provider": "groq", "model": blocked_model},
+        "planner": {"provider": "groq", "model": "test-model-open"},
+        "responder": {"provider": "groq", "model": "test-model-open-2"},
+    }
+
+    blocked = handler._get_preblocked_primary_roles()
+    assert len(blocked) == 1
+    assert blocked[0]["role"] == "router"
+    assert blocked[0]["provider"] == "groq"
+    assert blocked[0]["model"] == blocked_model
+
+
+def test_get_response_api_uses_fallback_immediately_when_primary_preblocked(monkeypatch):
+    blocked_model = "test-groq-model-preblocked"
+    mark_rate_limited("groq", blocked_model, retry_after_s=60)
+
+    class DummyApp:
+        def __init__(self, result=None, exc: Exception | None = None):
+            self._result = result
+            self._exc = exc
+            self.called = 0
+
+        def invoke(self, state):
+            self.called += 1
+            if self._exc:
+                raise self._exc
+            return self._result
+
+    handler = object.__new__(LLMHandler)
+    handler._progress_callback_default = None
+    handler._progress_callback = None
+    handler.chat_history = {}
+    handler._langsmith_enabled = False
+    handler._langsmith_project = None
+    handler.max_iterations = 6
+    handler._strict_mutation_execution = False
+    handler._fallback_label = "router=groq:llama-3.3-70b-versatile"
+    handler._primary_role_models = {
+        "router": {"provider": "groq", "model": blocked_model},
+        "planner": {"provider": "groq", "model": blocked_model},
+        "responder": {"provider": "groq", "model": blocked_model},
+    }
+    handler._fallback_role_models = {
+        "router": {"provider": "groq", "model": "llama-3.3-70b-versatile"},
+        "planner": {"provider": "groq", "model": "llama-3.3-70b-versatile"},
+        "responder": {"provider": "groq", "model": "llama-3.3-70b-versatile"},
+    }
+    handler._build_memory_recall_context = lambda _user_id, _msg: ""
+    handler._emit_progress = lambda *_args, **_kwargs: None
+    handler.plan_adapter = type("PlanAdapter", (), {"root_dir": "."})()
+
+    fallback_state = {
+        "messages": [
+            HumanMessage(content="hello"),
+            AIMessage(content="fallback-response"),
+        ],
+        "iteration": 1,
+        "final_response": "fallback-response",
+        "executed_actions": [],
+        "pending_clarification": None,
+        "detected_intent": "NO_OP",
+        "intent_confidence": "high",
+    }
+    handler.agent_app = DummyApp(exc=AssertionError("primary app should not be called"))
+    fallback_app = DummyApp(result=fallback_state)
+    handler._fallback_agent_app = fallback_app
+
+    monkeypatch.setattr("llms.llm_handler.is_flush_enabled", lambda: False)
+
+    result = handler.get_response_api(
+        user_message="hello",
+        user_id="1",
+        user_language="en",
+    )
+
+    assert fallback_app.called == 1
+    assert result["response_to_user"] == "fallback-response"
 
 
 def test_is_mutation_intent_accepts_update_delete_prefixes():
