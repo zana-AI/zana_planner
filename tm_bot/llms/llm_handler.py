@@ -1407,6 +1407,16 @@ class LLMHandler:
 
             safe_user_id = _sanitize_user_id(user_id)
 
+            timeout_seconds = int(os.getenv("LLM_SESSION_TIMEOUT_SECONDS", "7200"))
+            last_active = getattr(self, "chat_history_timestamps", {}).get(safe_user_id, 0)
+            if time.time() - last_active > timeout_seconds:
+                if safe_user_id in getattr(self, "chat_history", {}):
+                    self.chat_history[safe_user_id] = []
+            
+            if not hasattr(self, "chat_history_timestamps"):
+                self.chat_history_timestamps = {}
+            self.chat_history_timestamps[safe_user_id] = time.time()
+
             prior_history = self.chat_history.get(safe_user_id, [])
             prior_history_chars = 0
             for msg in prior_history:
@@ -1735,6 +1745,16 @@ class LLMHandler:
     def get_response_custom(self, user_message: str, user_id: str, user_language: str = None) -> str:
         try:
             safe_user_id = _sanitize_user_id(user_id)
+
+            timeout_seconds = int(os.getenv("LLM_SESSION_TIMEOUT_SECONDS", "7200"))
+            last_active = getattr(self, "chat_history_timestamps", {}).get(safe_user_id, 0)
+            if time.time() - last_active > timeout_seconds:
+                if safe_user_id in getattr(self, "chat_history", {}):
+                    self.chat_history[safe_user_id] = []
+            
+            if not hasattr(self, "chat_history_timestamps"):
+                self.chat_history_timestamps = {}
+            self.chat_history_timestamps[safe_user_id] = time.time()
 
             if safe_user_id not in self.chat_history:
                 self.chat_history[safe_user_id] = []

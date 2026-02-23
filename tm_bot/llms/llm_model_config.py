@@ -23,8 +23,8 @@ class RoleModels:
 MODEL_CONFIGS = {
     "gemini": RoleModels(
         router="gemini-2.5-flash-lite",
-        planner="gemini-3-flash-preview",
-        responder="gemini-3-flash-preview",
+        planner="gemini-2.5-flash",
+        responder="gemini-2.5-flash",
     ),
     "openai": RoleModels(
         router="gpt-4o-mini",

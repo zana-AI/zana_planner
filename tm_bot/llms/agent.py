@@ -2322,6 +2322,7 @@ def create_routed_plan_execute_graph(
     
     INFERABLE_ARGS = {"time_spent": 1.0}
     SEARCHABLE_ARGS = {"promise_id"}
+    PROMISE_SELECTOR_PLACEHOLDER = "FROM_PROMISE_SELECTOR"
     
     def _can_infer_missing_args(
         tool_name: str, missing: List[str], tool_args: dict, user_text: str
@@ -2358,6 +2359,118 @@ def create_routed_plan_execute_graph(
             "tool_name": "search_promises",
             "tool_args": {"query": query},
         }
+
+    def _is_from_promise_selector(value: Any) -> bool:
+        return str(value or "").strip().upper() == PROMISE_SELECTOR_PLACEHOLDER
+
+    def _parse_promises_catalog_from_tool_output(tool_output: Optional[str]) -> List[dict]:
+        if not tool_output or not isinstance(tool_output, str):
+            return []
+
+        payloads: List[Any] = []
+        for candidate in _json_candidates_from_text(tool_output):
+            try:
+                payloads.append(json.loads(candidate))
+            except Exception:
+                continue
+
+        for payload in payloads:
+            rows = None
+            if isinstance(payload, list):
+                rows = payload
+            elif isinstance(payload, dict) and isinstance(payload.get("promises"), list):
+                rows = payload.get("promises")
+            if not isinstance(rows, list):
+                continue
+
+            by_id: Dict[str, dict] = {}
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                pid = str(row.get("id") or "").strip().upper()
+                if not pid:
+                    continue
+                text = str(row.get("text") or "").replace("_", " ").strip()
+                by_id[pid] = {
+                    "id": pid,
+                    "text": text,
+                    "hours_per_week": row.get("hours_per_week"),
+                }
+            if by_id:
+                return list(by_id.values())
+        return []
+
+    def _select_promise_id_from_catalog(user_text: str, promise_catalog: List[dict]) -> Optional[str]:
+        if not promise_catalog:
+            return None
+
+        valid_ids = {
+            str(item.get("id") or "").strip().upper()
+            for item in promise_catalog
+            if str(item.get("id") or "").strip()
+        }
+        if not valid_ids:
+            return None
+
+        explicit_match = re.search(r"\b([PT][A-Z0-9]{1,15})\b", (user_text or "").upper())
+        if explicit_match:
+            explicit_id = explicit_match.group(1).strip().upper()
+            if explicit_id in valid_ids:
+                return explicit_id
+
+        compact_catalog = [
+            {
+                "id": item.get("id"),
+                "text": str(item.get("text") or "")[:120],
+                "hours_per_week": item.get("hours_per_week"),
+            }
+            for item in promise_catalog[:40]
+        ]
+
+        selector_system = (
+            "Select the best matching promise id from the provided catalog for the user request.\n"
+            "Return JSON only: {\"promise_id\": \"P..\"|null, \"confidence\": 0..1}.\n"
+            "If ambiguous or no good match, return promise_id as null."
+        )
+        selector_human = (
+            f"User request:\n{user_text or ''}\n\n"
+            f"Promise catalog:\n{json.dumps(compact_catalog, ensure_ascii=False)}"
+        )
+        selector_messages = _ensure_messages_have_content(
+            [
+                SystemMessage(content=selector_system),
+                HumanMessage(content=selector_human),
+            ]
+        )
+        try:
+            _track_llm_call("promise_selector", "router_model")
+            selector_result = _invoke_model(router_model, selector_messages)
+            selector_text = _normalize_model_output_text(getattr(selector_result, "content", "") or "")
+        except Exception as exc:
+            logger.warning(f"Promise selector call failed: {exc}")
+            return None
+
+        selected_obj: Optional[dict] = None
+        for candidate in _json_candidates_from_text(selector_text):
+            try:
+                parsed = json.loads(candidate)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                selected_obj = parsed
+                break
+        if not selected_obj:
+            return None
+
+        selected_id = str(selected_obj.get("promise_id") or "").strip().upper()
+        if not selected_id or selected_id not in valid_ids:
+            return None
+
+        confidence = _coerce_float(selected_obj.get("confidence"))
+        if confidence is not None and confidence < 0.55:
+            return None
+
+        return selected_id
     
     def _validate_and_repair_plan_steps(plan_steps: List[dict], user_text: str = "") -> tuple[List[dict], Dict[int, dict]]:
         """Validate planner-provided steps and repair common issues."""
@@ -2415,6 +2528,24 @@ def create_routed_plan_execute_graph(
                             step["tool_args"]["promise_id"] = "FROM_SEARCH"
                             repaired.append(step)
                             continue
+                    if still_missing == ["promise_id"] and "get_promises" in tool_by_name:
+                        has_get_promises = any(
+                            (s or {}).get("kind") == "tool" and (s or {}).get("tool_name") == "get_promises"
+                            for s in repaired
+                        )
+                        if not has_get_promises:
+                            repaired.append(
+                                {
+                                    "kind": "tool",
+                                    "purpose": "Load promises so the agent can pick the right one.",
+                                    "tool_name": "get_promises",
+                                    "tool_args": {},
+                                }
+                            )
+                        step["tool_args"] = updated_args
+                        step["tool_args"]["promise_id"] = PROMISE_SELECTOR_PLACEHOLDER
+                        repaired.append(step)
+                        continue
                     pending_meta_by_idx[i] = {
                         "reason": "missing_required_args",
                         "tool_name": tool_name,
@@ -2898,6 +3029,7 @@ def create_routed_plan_execute_graph(
         if step.kind == "tool":
             tool_name = step.tool_name or ""
             tool_args = step.tool_args or {}
+            user_text = _last_user_text(state.get("messages") or [])
             
             # MODE GUARDRAIL: Block mutations in non-operator modes (except allowed ones)
             is_mutation_tool = tool_name.startswith(MUTATION_PREFIXES)
@@ -2911,7 +3043,6 @@ def create_routed_plan_execute_graph(
                     tool_allowed = any(allowed in tool_name for allowed in allowed_mutations)
                 
                 if not tool_allowed:
-                    user_text = _last_user_text(state.get("messages") or [])
                     recovery_step = _strategy_read_only_recovery_step_for_mismatch(user_text)
                     if recovery_step:
                         repaired_plan = [dict(s or {}) for s in plan]
@@ -2976,6 +3107,41 @@ def create_routed_plan_execute_graph(
                     promise_id = parsed.get("promise_id")
                     if promise_id:
                         tool_args["promise_id"] = promise_id
+
+            if _is_from_promise_selector(tool_args.get("promise_id", "")):
+                get_promises_output = _last_tool_output_for(state.get("messages", []), "get_promises")
+                promise_catalog = _parse_promises_catalog_from_tool_output(get_promises_output)
+                selected_promise_id = _select_promise_id_from_catalog(user_text, promise_catalog)
+                if selected_promise_id:
+                    tool_args["promise_id"] = selected_promise_id
+                else:
+                    options = [
+                        f"- {item.get('id')}: {(item.get('text') or '(no title)')}"
+                        for item in promise_catalog[:6]
+                    ]
+                    options_text = "\n".join(options).strip()
+                    question = (
+                        "Which promise/goal should I use for this? "
+                        "You can say the name (like 'sport' or 'reading') or the ID (like 'P01')."
+                    )
+                    if options_text:
+                        question += f"\n\nClosest options:\n{options_text}"
+                    pending = {
+                        "reason": "ambiguous_promise_id",
+                        "tool_name": tool_name,
+                        "missing_fields": ["promise_id"],
+                        "partial_args": {
+                            key: value for key, value in (tool_args or {}).items()
+                            if key != "promise_id"
+                        },
+                    }
+                    return {
+                        **state,
+                        "iteration": new_iteration,
+                        "final_response": question,
+                        "pending_clarification": pending,
+                        "step_idx": idx,
+                    }
             
             # Confirmation check (same as existing executor)
             # Default to "medium" when planner didn't provide confidence (safer approach).

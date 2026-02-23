@@ -86,6 +86,6 @@ class RouteDecision(BaseModel):
     reason: str = Field(
         ...,
         description="Short label explaining why this mode was chosen (e.g., 'transactional_intent', 'coaching_intent', 'community_intent', 'casual_chat').",
-        max_length=100,
+        max_length=500,
     )
 
