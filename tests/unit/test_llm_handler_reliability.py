@@ -103,3 +103,89 @@ def test_apply_final_response_failsafe_keeps_existing_text():
     text, used = LLMHandler._apply_final_response_failsafe("Hello there")
     assert used is False
     assert text == "Hello there"
+
+
+def _build_strict_handler_for_contract() -> LLMHandler:
+    # Build a minimal handler instance without running __init__ heavy setup.
+    handler = object.__new__(LLMHandler)
+    handler._strict_mutation_execution = True
+    return handler
+
+
+def test_mutation_contract_does_not_override_when_intent_unknown_and_no_actions():
+    handler = _build_strict_handler_for_contract()
+    output = handler._enforce_mutation_execution_contract(
+        user_id="u1",
+        user_message="what is my p09 promise",
+        detected_intent=None,
+        executed_actions=[],
+        response_text="Your weekly report is completed and up to date.",
+        pending_clarification=None,
+    )
+    assert output == "Your weekly report is completed and up to date."
+
+
+def test_mutation_contract_does_not_override_read_only_intent_with_success_wording():
+    handler = _build_strict_handler_for_contract()
+    output = handler._enforce_mutation_execution_contract(
+        user_id="u1",
+        user_message="what are my tasks next week",
+        detected_intent="QUERY_PROGRESS",
+        executed_actions=[],
+        response_text="You have not logged any time yet this week.",
+        pending_clarification=None,
+    )
+    assert output == "You have not logged any time yet this week."
+
+
+def test_mutation_contract_still_blocks_mutation_claim_without_successful_execution():
+    handler = _build_strict_handler_for_contract()
+    output = handler._enforce_mutation_execution_contract(
+        user_id="u1",
+        user_message="create a promise to run",
+        detected_intent="CREATE_PROMISE",
+        executed_actions=[],
+        response_text="Done, created your new promise.",
+        pending_clarification=None,
+    )
+    assert "could not confirm any change was executed yet" in output.lower()
+
+
+def test_mutation_contract_overrides_even_non_success_text_when_mutation_intent_without_success():
+    handler = _build_strict_handler_for_contract()
+    output = handler._enforce_mutation_execution_contract(
+        user_id="u1",
+        user_message="create a promise to run",
+        detected_intent="CREATE_PROMISE",
+        executed_actions=[],
+        response_text="Can you clarify the exact target hours?",
+        pending_clarification=None,
+    )
+    assert "could not confirm any change was executed yet" in output.lower()
+
+
+def test_mutation_contract_uses_missing_fields_for_safe_clarification():
+    handler = _build_strict_handler_for_contract()
+    output = handler._enforce_mutation_execution_contract(
+        user_id="u1",
+        user_message="log action",
+        detected_intent="LOG_ACTION",
+        executed_actions=[],
+        response_text="Sure, done.",
+        pending_clarification={"missing_fields": ["promise_id", "time_spent"]},
+    )
+    assert "promise_id" in output
+    assert "time_spent" in output
+
+
+def test_mutation_contract_reports_failed_mutation_when_action_attempted_but_unsuccessful():
+    handler = _build_strict_handler_for_contract()
+    output = handler._enforce_mutation_execution_contract(
+        user_id="u1",
+        user_message="log 2h on p01",
+        detected_intent="LOG_ACTION",
+        executed_actions=[{"tool_name": "add_action", "success": False}],
+        response_text="Successfully logged 2 hours.",
+        pending_clarification=None,
+    )
+    assert "did not complete successfully" in output.lower()

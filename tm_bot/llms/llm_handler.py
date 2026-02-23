@@ -73,32 +73,6 @@ _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lowe
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
 _MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
-_MUTATION_INTENT_HINTS = (
-    "create",
-    "add",
-    "update",
-    "delete",
-    "remove",
-    "edit",
-    "log",
-    "record",
-    "set",
-    "subscribe",
-    "follow",
-    "unfollow",
-    "change",
-)
-_READ_ONLY_INTENT_HINTS = (
-    "query",
-    "read",
-    "list",
-    "show",
-    "count",
-    "view",
-    "get",
-    "chat",
-    "engagement",
-)
 _MUTATION_SUCCESS_CLAIM_RE = re.compile(
     r"\b(done|added|created|updated|deleted|logged|saved|subscribed|completed|successfully)\b",
     re.IGNORECASE,
@@ -2176,19 +2150,26 @@ class LLMHandler:
         return candidate or value
 
     @staticmethod
-    def _is_mutation_like_intent(detected_intent: Optional[str], user_message: str) -> bool:
-        intent_text = (detected_intent or "").strip().lower()
-        msg_text = (user_message or "").strip().lower()
-        if intent_text:
-            if any(token in intent_text for token in _READ_ONLY_INTENT_HINTS):
-                return False
-            if any(token in intent_text for token in _MUTATION_INTENT_HINTS):
-                return True
-        mutation_msg_re = re.compile(
-            r"\b(add|create|update|delete|remove|edit|log|record|set|change|subscribe|follow|unfollow)\b",
-            re.IGNORECASE,
-        )
-        return bool(mutation_msg_re.search(msg_text))
+    def _intent_kind(detected_intent: Optional[str]) -> str:
+        """
+        Classify planner-detected intent into coarse kinds.
+
+        The contract guard should primarily trust structured planner intent,
+        not free-form user text regexes, to avoid false positives.
+        """
+        text = (detected_intent or "").strip().lower()
+        if not text:
+            return "unknown"
+
+        head = re.split(r"[^a-z0-9]+", text, maxsplit=1)[0]
+        if not head:
+            return "unknown"
+
+        mutation_heads = {prefix.rstrip("_") for prefix in _MUTATION_TOOL_PREFIXES}
+        if head in mutation_heads:
+            return "mutation"
+
+        return "unknown"
 
     @staticmethod
     def _looks_like_mutation_success_claim(text: str) -> bool:
@@ -2215,52 +2196,37 @@ class LLMHandler:
             if str((a or {}).get("tool_name", "")).startswith(_MUTATION_TOOL_PREFIXES)
         ]
         successful_mutations = [a for a in mutation_actions if bool((a or {}).get("success"))]
-        mutation_like_intent = self._is_mutation_like_intent(detected_intent, user_message)
+        intent_kind = self._intent_kind(detected_intent)
+        pending_tool_name = str((pending_clarification or {}).get("tool_name", "")).strip().lower()
+        pending_mutation_intent = pending_tool_name.startswith(_MUTATION_TOOL_PREFIXES)
+        mutation_intent = bool(intent_kind == "mutation" or pending_mutation_intent)
+        mutation_happened = bool(successful_mutations)
 
-        if mutation_like_intent and not mutation_actions:
-            # Valid clarification flow: do not override safe/non-committal responses.
-            if pending_clarification:
-                return response_text
-            lowered = (response_text or "").strip().lower()
-            safe_clarification_markers = (
-                "could you",
-                "please provide",
-                "which promise",
-                "i need",
-                "can you",
-                "clarify",
-            )
-            if (not self._looks_like_mutation_success_claim(response_text)) and (
-                "?" in lowered or any(marker in lowered for marker in safe_clarification_markers)
-            ):
-                return response_text
+        # Contract: when mutation intent exists, a successful mutation must be evidenced
+        # by executed_actions.success. Otherwise return deterministic safe guidance.
+        if mutation_intent and not mutation_happened:
             logger.warning(
                 {
                     "event": "mutation_contract_violation",
                     "user_id": user_id,
                     "detected_intent": detected_intent,
-                    "reason": "mutation_intent_without_tool_execution",
-                }
-            )
-            return (
-                "I could not confirm any change was executed yet. "
-                "Please tell me exactly what to add/update/delete, and I will do it now."
-            )
-
-        if not successful_mutations and self._looks_like_mutation_success_claim(response_text):
-            logger.warning(
-                {
-                    "event": "mutation_contract_violation",
-                    "user_id": user_id,
-                    "detected_intent": detected_intent,
-                    "reason": "success_claim_without_successful_mutation",
+                    "reason": "mutation_intent_without_successful_execution",
                     "mutation_actions_count": len(mutation_actions),
+                    "successful_mutation_actions_count": len(successful_mutations),
+                    "pending_mutation_intent": pending_mutation_intent,
                 }
             )
             if mutation_actions:
                 return (
                     "I tried to apply that change, but it did not complete successfully. "
                     "Please retry, or share more details so I can do it correctly."
+                )
+            missing_fields = list((pending_clarification or {}).get("missing_fields") or [])
+            if missing_fields:
+                fields = ", ".join(str(f) for f in missing_fields)
+                return (
+                    f"I need a bit more information before I can make that change: {fields}. "
+                    "Please provide those details and I will do it now."
                 )
             return (
                 "I could not confirm any change was executed yet. "
