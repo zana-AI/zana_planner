@@ -2697,8 +2697,8 @@ class LLMHandler:
         if missing_fields:
             fields = ", ".join(missing_fields)
             return (
-                "Before I make that change, please confirm and provide the missing details: "
-                f"{fields}. Reply with the values and say 'confirm' to proceed."
+                "Before I change anything, please confirm and provide the missing details "
+                f"for: {fields}. Reply with the values and say 'confirm' to proceed."
             )
 
         tool_name = str(pending.get("tool_name", "")).strip()
@@ -2734,16 +2734,32 @@ class LLMHandler:
                 action_description = intent_label if intent_label else "this change"
 
             return (
-                "Before I make that change, please confirm: "
-                f"{action_description}. Tap Yes or Skip below, or reply 'yes'/'confirm'."
+                f"I'm about to {action_description}. "
+                "Please confirm this is correct: tap Yes or Skip below, or reply 'yes'/'confirm'."
             )
 
-        intent_label = str(detected_intent or "this change").replace("_", " ").strip().lower()
+        # Fallback when we don't have a concrete tool name/args, but we do have an intent label.
+        raw_intent = str(detected_intent or "").strip()
+        intent_label = raw_intent.replace("_", " ").strip().lower() if raw_intent else ""
         if not intent_label:
             intent_label = "this change"
+
+        # Make common mutation intents a bit more natural-language.
+        normalized_intent = raw_intent.upper()
+        if normalized_intent == "CREATE_PROMISE":
+            action_description = "create promise"
+        elif normalized_intent == "LOG_ACTION":
+            action_description = "log action on a promise"
+        elif normalized_intent == "DELETE_PROMISE":
+            action_description = "delete a promise"
+        elif normalized_intent == "UPDATE_SETTING":
+            action_description = "change a setting"
+        else:
+            action_description = intent_label
+
         return (
-            f"Before I make {intent_label}, please confirm. "
-            "Tap Yes or Skip below, or reply 'yes'/'confirm'."
+            f"Based on your last message, I interpreted your request as: {action_description}. "
+            "Before I do that, please confirm: tap Yes or Skip below, or reply 'yes'/'confirm'."
         )
 
     def _enforce_mutation_execution_contract(

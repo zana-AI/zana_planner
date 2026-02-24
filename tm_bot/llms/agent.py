@@ -2057,8 +2057,9 @@ def create_plan_execute_graph(
                     action_description = "perform the requested action"
                 
                 question = (
-                    f"Just to confirm: you want me to {action_description}, right?\n\n"
-                    "Tap Yes or Skip below. You can also reply 'yes' or 'confirm' to proceed."
+                    f"I'm about to {action_description}. "
+                    "Please confirm this is correct: tap Yes or Skip below. "
+                    "You can also reply 'yes' or 'confirm' to proceed."
                 )
                 
                 pending = {
