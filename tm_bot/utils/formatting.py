@@ -76,6 +76,6 @@ def prepend_xaana_to_message(message: Any) -> str:
     # Heuristic: if the body already contains HTML markers, use an HTML header;
     # otherwise, use a Markdown-style header.
     looks_like_html = any(tag in stripped for tag in ("<blockquote", "<b>", "<i>", "<pre>", "<code>"))
-    header = "<b>Xaana:</b>\n" if looks_like_html else "Xaana:هس \n"
+    header = "<b>Xaana:</b>\n" if looks_like_html else "Xaana:\n"
     return f"{header}{stripped}"
 
