@@ -620,7 +620,7 @@ class PlannerBot:
 
             with get_db_session() as session:
                 rows = session.execute(
-                    text("SELECT user_id FROM users WHERE COALESCE(chat_not_found, FALSE) = FALSE;")
+                    text("SELECT user_id FROM users WHERE timezone IS DISTINCT FROM 'DISABLED';")
                 ).fetchall()
 
             for r in rows:
