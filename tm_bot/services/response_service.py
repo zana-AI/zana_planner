@@ -15,6 +15,7 @@ from handlers.messages_store import get_user_language, Language
 from handlers.translator import translate_text
 from repositories.conversation_repo import ConversationRepository
 from utils.logger import get_logger
+from utils.formatting import prepend_xaana_to_message
 
 logger = get_logger(__name__)
 
@@ -266,7 +267,10 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             text = self._translate_if_needed(text, user_lang, user_id)
-        
+
+        # Prepend Xaana header after translation so it is never translated.
+        text = prepend_xaana_to_message(text)
+
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(text)
@@ -336,7 +340,10 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             text = self._translate_if_needed(text, user_lang, user_id)
-        
+
+        # Prepend Xaana header after translation so it is never translated.
+        text = prepend_xaana_to_message(text)
+
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(text)
@@ -508,7 +515,10 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             text = self._translate_if_needed(text, user_lang, user_id)
-        
+
+        # Prepend Xaana header after translation so it is never translated.
+        text = prepend_xaana_to_message(text)
+
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(text)
@@ -634,7 +644,10 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             final_text = self._translate_if_needed(final_text, user_lang, user_id)
-        
+
+        # Prepend Xaana header after translation so it is never translated.
+        final_text = prepend_xaana_to_message(final_text)
+
         # Detect parse mode if not provided
         if parse_mode is None:
             parse_mode = self._detect_parse_mode(final_text)

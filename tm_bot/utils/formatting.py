@@ -33,7 +33,7 @@ def format_response_html(llm_response: str, func_call_response: Any) -> str:
     """
     Format a response for Telegram using HTML, escaping content safely.
 
-    - Main response is shown under a bold "Xaana:" header.
+    - Main response text is escaped for safe HTML display.
     - Optional tool output/log is shown inside an expandable blockquote.
     """
     if func_call_response is None:
@@ -53,12 +53,29 @@ def format_response_html(llm_response: str, func_call_response: Any) -> str:
     response_text = re.sub(r'^(<b>)?(Zana|Xaana):\s*(</b>)?\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
     response_text = re.sub(r'^\*\*(Zana|Xaana):\*\*\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
     response_text = re.sub(r'^(Zana|Xaana):\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
-    
+
     zana_text = html.escape(response_text.strip())
     log_text = html.escape("" if formatted_log is None else str(formatted_log))
 
-    full_response = f"<b>Xaana:</b>\n{zana_text}\n"
+    full_response = zana_text
     if formatted_log:
-        full_response += f"\n<b>Log:</b>\n<blockquote expandable>{log_text}</blockquote>"
+        full_response += f"\n\n<b>Log:</b>\n<blockquote expandable>{log_text}</blockquote>"
     return full_response
+
+
+def prepend_xaana_to_message(message: Any) -> str:
+    """
+    Prepend the Xaana header to a message.
+
+    This is intentionally simple and is meant to run at the very end
+    of the response pipeline (after translation, etc.).
+    """
+    base = "" if message is None else str(message)
+    stripped = base.lstrip()
+
+    # Heuristic: if the body already contains HTML markers, use an HTML header;
+    # otherwise, use a Markdown-style header.
+    looks_like_html = any(tag in stripped for tag in ("<blockquote", "<b>", "<i>", "<pre>", "<code>"))
+    header = "<b>Xaana:</b>\n" if looks_like_html else "*Xaana:*\n"
+    return f"{header}{stripped}"
 
