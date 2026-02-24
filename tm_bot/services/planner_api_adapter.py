@@ -807,8 +807,15 @@ class PlannerAPIAdapter:
             except ValueError:
                 try:
                     return date.fromisoformat(text)
-                except ValueError as e:
-                    raise ValueError(f"{field_name} must be an ISO date or datetime string") from e
+                except ValueError:
+                    # As a last resort, try more flexible parsing for common non-ISO formats.
+                    # This mirrors the datetime parsing behavior in _coerce_datetime_like and
+                    # makes the adapter more tolerant of LLM-generated date strings.
+                    try:
+                        from dateutil.parser import parse as parse_date
+                        return parse_date(text).date()
+                    except Exception as e:
+                        raise ValueError(f"{field_name} must be an ISO date or datetime string") from e
         raise ValueError(f"{field_name} must be a date, datetime, or ISO date string")
 
     def _coerce_datetime_like(

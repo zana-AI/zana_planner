@@ -77,6 +77,22 @@ class ResponseService:
             return text
         original_text = text
 
+        # If there is an HTML log block appended (from format_response_html),
+        # keep it out of the translation step so logs stay in the original language.
+        log_suffix = ""
+        try:
+            log_match = re.search(
+                r'(\n\s*<b>Log:</b>\s*\n<blockquote expandable>.*</blockquote>\s*)$',
+                text,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+        except re.error:
+            log_match = None
+
+        if log_match:
+            log_suffix = log_match.group(1)
+            text = text[: log_match.start(1)]
+
         # Extract and preserve promise IDs and technical terms
         # Pattern: P01, P02, T01, T02, etc. or in brackets [P01: text]
         placeholders = {}
@@ -120,7 +136,11 @@ class ResponseService:
             # Review translation for errors (e.g., proper noun mistranslations)
             if self.llm_handler:
                 translated = self._review_translation(text, translated, user_lang, user_id)
-            
+
+            # Re-attach any log suffix without translating it.
+            if log_suffix:
+                # Preserve spacing between main text and log block.
+                return f"{translated.rstrip()}{log_suffix}"
             return translated
         except Exception as e:
             logger.warning(f"Translation failed for user {user_id}: {e}")
