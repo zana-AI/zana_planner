@@ -54,8 +54,8 @@ def format_response_html(llm_response: str, func_call_response: Any) -> str:
     response_text = re.sub(r'^\*\*(Zana|Xaana):\*\*\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
     response_text = re.sub(r'^(Zana|Xaana):\s*\n?', '', response_text, flags=re.IGNORECASE | re.MULTILINE)
 
-    zana_text = html.escape(response_text.strip())
-    log_text = html.escape("" if formatted_log is None else str(formatted_log))
+    zana_text = html.escape(response_text.strip(), quote=False)
+    log_text = html.escape("" if formatted_log is None else str(formatted_log), quote=False)
 
     full_response = zana_text
     if formatted_log:
