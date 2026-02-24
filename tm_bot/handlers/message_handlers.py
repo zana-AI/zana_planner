@@ -13,6 +13,7 @@ from typing import Optional
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.ext import CallbackContext
+from telegram import error as telegram_error
 
 from handlers.messages_store import get_message, get_user_language, Language
 from handlers.translator import translate_text
@@ -2163,6 +2164,18 @@ class MessageHandlers:
                 logger.debug(f"[REMINDER] Successfully sent nightly reminders for user {user_id}")
             else:
                 logger.info(f"[REMINDER] Successfully sent nightly reminders for user {user_id}")
+        except telegram_error.BadRequest as e:
+            if (e.message or "").lower() == "chat not found":
+                logger.warning(f"[REMINDER] Chat not found for user {user_id}, disabling reminders")
+                self.plan_keeper.settings_repo.mark_chat_not_found(user_id)
+                context.job.schedule_removal()
+            else:
+                logger.exception(f"[REMINDER] Failed to send nightly reminders for user {user_id}: {e}")
+                raise
+        except telegram_error.Forbidden as e:
+            logger.warning(f"[REMINDER] Bot blocked by user {user_id}, disabling reminders: {e}")
+            self.plan_keeper.settings_repo.mark_chat_not_found(user_id)
+            context.job.schedule_removal()
         except Exception as e:
             logger.exception(f"[REMINDER] Failed to send nightly reminders for user {user_id}: {e}")
             raise
@@ -2174,6 +2187,18 @@ class MessageHandlers:
         try:
             await self.send_morning_reminders(context, user_id=user_id)
             logger.info(f"[REMINDER] ✓ Successfully sent morning reminders for user {user_id}")
+        except telegram_error.BadRequest as e:
+            if (e.message or "").lower() == "chat not found":
+                logger.warning(f"[REMINDER] Chat not found for user {user_id}, disabling reminders")
+                self.plan_keeper.settings_repo.mark_chat_not_found(user_id)
+                context.job.schedule_removal()
+            else:
+                logger.exception(f"[REMINDER] ✗ Failed to send morning reminders for user {user_id}: {e}")
+                raise
+        except telegram_error.Forbidden as e:
+            logger.warning(f"[REMINDER] Bot blocked by user {user_id}, disabling reminders: {e}")
+            self.plan_keeper.settings_repo.mark_chat_not_found(user_id)
+            context.job.schedule_removal()
         except Exception as e:
             logger.exception(f"[REMINDER] ✗ Failed to send morning reminders for user {user_id}: {e}")
             raise

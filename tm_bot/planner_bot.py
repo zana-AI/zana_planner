@@ -619,7 +619,9 @@ class PlannerBot:
             from db.postgres_db import get_db_session
 
             with get_db_session() as session:
-                rows = session.execute(text("SELECT user_id FROM users;")).fetchall()
+                rows = session.execute(
+                    text("SELECT user_id FROM users WHERE timezone IS DISTINCT FROM 'DISABLED';")
+                ).fetchall()
 
             for r in rows:
                 try:

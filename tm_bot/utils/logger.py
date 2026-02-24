@@ -137,9 +137,6 @@ class TelegramAdminErrorHandler(logging.Handler):
 
         try:
             message = self._build_message(record)
-            # Telegram sendMessage hard-limit is 4096 chars.
-            if len(message) > 4096:
-                message = f"{message[:4093]}..."
             for admin_id in self.admin_ids:
                 self._send_message(admin_id, message)
         except Exception as exc:  # pragma: no cover - best effort logging path
@@ -148,24 +145,41 @@ class TelegramAdminErrorHandler(logging.Handler):
             except Exception:
                 pass
 
+    @staticmethod
+    def _html_escape(text: str) -> str:
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
     def _build_message(self, record: logging.LogRecord) -> str:
+        _OPEN = "<blockquote expandable>"
+        _CLOSE = "</blockquote>"
+        _MAX = 4096
+
         timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         error_text = record.getMessage()
-        parts = [
+
+        header = "\n".join([
             self.tag,
             f"time={timestamp}",
             f"level={record.levelname}",
             f"logger={record.name}",
-            "",
-            error_text,
-        ]
+        ])
+
+        body_parts = [self._html_escape(error_text)]
 
         if record.exc_info and self.formatter:
             traceback_text = self.formatter.formatException(record.exc_info)
             if traceback_text:
-                parts.extend(["", "traceback:", traceback_text])
+                body_parts.extend(["", "traceback:", self._html_escape(traceback_text)])
 
-        return "\n".join(parts)
+        body = "\n".join(body_parts)
+
+        # Truncate only the inner body so tags are never split.
+        # overhead = header + "\n\n" + _OPEN + _CLOSE
+        max_body = _MAX - len(header) - 2 - len(_OPEN) - len(_CLOSE)
+        if len(body) > max_body:
+            body = body[:max_body - 3] + "..."
+
+        return f"{header}\n\n{_OPEN}{body}{_CLOSE}"
 
     def _send_message(self, admin_id: int, text: str) -> None:
         api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
@@ -173,6 +187,7 @@ class TelegramAdminErrorHandler(logging.Handler):
             {
                 "chat_id": str(admin_id),
                 "text": text,
+                "parse_mode": "HTML",
                 "disable_web_page_preview": "true",
             }
         ).encode("utf-8")

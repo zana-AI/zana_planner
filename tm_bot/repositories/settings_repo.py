@@ -40,6 +40,25 @@ class SettingsRepository:
             last_seen=dt_from_utc_iso(row["last_seen_utc"]) if row["last_seen_utc"] else None,
         )
 
+    def mark_chat_not_found(self, user_id: int) -> None:
+        """Mark this user's chat as unreachable by setting timezone to 'DISABLED'.
+
+        The scheduler skips users with this sentinel on startup, and it is
+        overwritten back to a real timezone the next time save_settings is called
+        (e.g. when the user interacts with the bot again).
+        """
+        user = str(user_id)
+        now = utc_now_iso()
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    UPDATE users
+                    SET timezone = 'DISABLED', updated_at_utc = :updated_at_utc
+                    WHERE user_id = :user_id;
+                """),
+                {"user_id": user, "updated_at_utc": now},
+            )
+
     def save_settings(self, settings: UserSettings) -> None:
         user = str(settings.user_id)
         now = utc_now_iso()
