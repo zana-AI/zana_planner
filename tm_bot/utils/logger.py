@@ -148,24 +148,30 @@ class TelegramAdminErrorHandler(logging.Handler):
             except Exception:
                 pass
 
+    @staticmethod
+    def _html_escape(text: str) -> str:
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
     def _build_message(self, record: logging.LogRecord) -> str:
         timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         error_text = record.getMessage()
-        parts = [
+
+        header = "\n".join([
             self.tag,
             f"time={timestamp}",
             f"level={record.levelname}",
             f"logger={record.name}",
-            "",
-            error_text,
-        ]
+        ])
+
+        body_parts = [self._html_escape(error_text)]
 
         if record.exc_info and self.formatter:
             traceback_text = self.formatter.formatException(record.exc_info)
             if traceback_text:
-                parts.extend(["", "traceback:", traceback_text])
+                body_parts.extend(["", "traceback:", self._html_escape(traceback_text)])
 
-        return "\n".join(parts)
+        body = "\n".join(body_parts)
+        return f"{header}\n\n<blockquote expandable>{body}</blockquote>"
 
     def _send_message(self, admin_id: int, text: str) -> None:
         api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
@@ -173,6 +179,7 @@ class TelegramAdminErrorHandler(logging.Handler):
             {
                 "chat_id": str(admin_id),
                 "text": text,
+                "parse_mode": "HTML",
                 "disable_web_page_preview": "true",
             }
         ).encode("utf-8")
