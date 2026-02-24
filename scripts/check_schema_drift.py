@@ -39,7 +39,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "username", "last_seen_utc", "last_name", "display_name",
         "is_private", "default_promise_visibility", "avatar_file_id",
         "avatar_file_unique_id", "avatar_path", "avatar_updated_at_utc",
-        "avatar_checked_at_utc", "avatar_visibility",
+        "avatar_checked_at_utc", "avatar_visibility", "chat_not_found",
     ],
     "promises": [
         # 008 dropped angle_deg, radius
