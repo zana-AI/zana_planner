@@ -35,7 +35,7 @@ from handlers.callback_handlers import CallbackHandlers
 from handlers.messages_store import initialize_message_store, get_user_language
 from router_types import InputContext
 from utils.bot_utils import BotUtils
-from utils.logger import get_logger
+from utils.logger import get_logger, configure_admin_error_notifications
 
 logger = get_logger(__name__)
 
@@ -734,6 +734,7 @@ def main():
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN environment variable is not set")
         raise ValueError("BOT_TOKEN environment variable is required")
+    configure_admin_error_notifications(bot_token=BOT_TOKEN)
 
     MINIAPP_URL = os.getenv("MINIAPP_URL", "https://xaana.club")
 

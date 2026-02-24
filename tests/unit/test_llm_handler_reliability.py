@@ -9,6 +9,7 @@ if TM_BOT_DIR not in sys.path:
 
 from llms.llm_handler import (  # noqa: E402
     LLMHandler,
+    _build_fallback_provider_chain,
     _is_fallback_eligible_error,
     _resolve_fallback_provider,
     _resolve_fallback_role_providers,
@@ -174,6 +175,34 @@ def test_resolve_fallback_role_providers_groq_when_available():
         "planner": "groq",
         "responder": "groq",
     }
+
+
+def test_resolve_fallback_role_providers_deepseek_avoids_groq_when_specified():
+    providers = _resolve_fallback_role_providers(
+        "deepseek",
+        has_gemini_creds=False,
+        has_openai_key=False,
+        has_deepseek_key=True,
+        has_groq_key=True,
+        avoid_providers={"groq"},
+    )
+    assert providers == {
+        "router": "deepseek",
+        "planner": "deepseek",
+        "responder": "deepseek",
+    }
+
+
+def test_build_fallback_provider_chain_keeps_preferred_then_adds_other_available_providers():
+    chain = _build_fallback_provider_chain(
+        primary_provider="groq",
+        preferred_provider="groq",
+        has_gemini_creds=False,
+        has_openai_key=False,
+        has_deepseek_key=True,
+        has_groq_key=True,
+    )
+    assert chain == ["groq", "deepseek"]
 
 
 def test_get_preblocked_primary_roles_returns_blocked_roles():

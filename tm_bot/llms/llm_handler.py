@@ -176,6 +176,62 @@ def _resolve_fallback_provider(
     return provider, None
 
 
+def _provider_has_credentials(
+    provider: str,
+    *,
+    has_gemini_creds: bool,
+    has_openai_key: bool,
+    has_deepseek_key: bool,
+    has_groq_key: bool,
+) -> bool:
+    key = (provider or "").strip().lower()
+    if key in {"gemini", "google"}:
+        return has_gemini_creds
+    if key == "openai":
+        return has_openai_key
+    if key == "deepseek":
+        return has_deepseek_key
+    if key == "groq":
+        return has_groq_key
+    return False
+
+
+def _build_fallback_provider_chain(
+    *,
+    primary_provider: str,
+    preferred_provider: Optional[str],
+    has_gemini_creds: bool,
+    has_openai_key: bool,
+    has_deepseek_key: bool,
+    has_groq_key: bool,
+) -> List[str]:
+    chain: List[str] = []
+    primary = (primary_provider or "").strip().lower()
+
+    def _maybe_add(provider_key: Optional[str], allow_primary: bool = False) -> None:
+        key = (provider_key or "").strip().lower()
+        if not key:
+            return
+        if not allow_primary and key == primary:
+            return
+        if key in chain:
+            return
+        if not _provider_has_credentials(
+            key,
+            has_gemini_creds=has_gemini_creds,
+            has_openai_key=has_openai_key,
+            has_deepseek_key=has_deepseek_key,
+            has_groq_key=has_groq_key,
+        ):
+            return
+        chain.append(key)
+
+    _maybe_add(preferred_provider, allow_primary=True)
+    for candidate in ("groq", "openai", "deepseek", "gemini"):
+        _maybe_add(candidate, allow_primary=False)
+    return chain
+
+
 def _resolve_fallback_role_providers(
     requested_fallback: Optional[str],
     *,
@@ -183,6 +239,7 @@ def _resolve_fallback_role_providers(
     has_openai_key: bool,
     has_deepseek_key: bool,
     has_groq_key: bool,
+    avoid_providers: Optional[set[str]] = None,
 ) -> Optional[Dict[str, str]]:
     """
     Resolve fallback provider per role.
@@ -192,34 +249,33 @@ def _resolve_fallback_role_providers(
     - responder may use deepseek safely.
     """
     provider = (requested_fallback or "").strip().lower()
+    avoided = {(p or "").strip().lower() for p in (avoid_providers or set()) if p}
     if not provider:
         return None
 
     if provider in {"gemini", "google"}:
-        if not has_gemini_creds:
+        if not has_gemini_creds or "gemini" in avoided:
             return None
         return {"router": "gemini", "planner": "gemini", "responder": "gemini"}
 
     if provider == "openai":
-        if not has_openai_key:
+        if not has_openai_key or "openai" in avoided:
             return None
         return {"router": "openai", "planner": "openai", "responder": "openai"}
 
     if provider == "groq":
-        if not has_groq_key:
+        if not has_groq_key or "groq" in avoided:
             return None
         return {"router": "groq", "planner": "groq", "responder": "groq"}
 
     if provider == "deepseek":
-        if not has_deepseek_key:
+        if not has_deepseek_key or "deepseek" in avoided:
             return None
         structured_provider = "deepseek"
-        if has_gemini_creds:
+        if has_gemini_creds and "gemini" not in avoided:
             structured_provider = "gemini"
-        elif has_openai_key:
+        elif has_openai_key and "openai" not in avoided:
             structured_provider = "openai"
-        elif has_groq_key:
-            structured_provider = "groq"
         return {
             "router": structured_provider,
             "planner": structured_provider,
@@ -327,6 +383,8 @@ class LLMHandler:
             self._fallback_responder_model = None
             self._fallback_agent_app = None
             self._fallback_label = None
+            self._fallback_chain_model_specs: List[Dict[str, object]] = []
+            self._fallback_chain_apps: List[Dict[str, object]] = []
             self._provider_adapter = None
             self._primary_role_models: Dict[str, Dict[str, str]] = {}
             self._fallback_role_models: Dict[str, Dict[str, str]] = {}
@@ -473,6 +531,8 @@ class LLMHandler:
                 self._fallback_responder_model = None
                 self._fallback_agent_app = None
                 self._fallback_label = None
+                self._fallback_chain_model_specs = []
+                self._fallback_chain_apps = []
                 self._fallback_role_models = {}
                 auto_gemini3_fallback = bool(is_gemini3 and provider_name in {"gemini", "google"})
                 requested_fallback, fallback_autoselect_reason = _resolve_fallback_provider(
@@ -505,16 +565,17 @@ class LLMHandler:
                     has_openai_key = bool(cfg.get("OPENAI_API_KEY", ""))
                     has_deepseek_key = bool(cfg.get("DEEPSEEK_API_KEY", ""))
                     has_groq_key = bool(cfg.get("GROQ_API_KEY", ""))
-                    role_fallback_providers = _resolve_fallback_role_providers(
-                        requested_fallback,
+                    fallback_provider_chain = _build_fallback_provider_chain(
+                        primary_provider=provider_name,
+                        preferred_provider=requested_fallback,
                         has_gemini_creds=has_gemini_creds,
                         has_openai_key=has_openai_key,
                         has_deepseek_key=has_deepseek_key,
                         has_groq_key=has_groq_key,
                     )
-                    if role_fallback_providers is None:
+                    if not fallback_provider_chain:
                         logger.warning(
-                            "LLM fallback requested (%s) but required credentials are missing; fallback disabled.",
+                            "LLM fallback requested (%s) but no providers are available; fallback disabled.",
                             requested_fallback,
                         )
                     else:
@@ -554,46 +615,105 @@ class LLMHandler:
                         self._fallback_planner_model = None
                         self._fallback_responder_model = None
                         self._fallback_role_models = {}
-                        role_labels: Dict[str, str] = {}
-                        for role_name in ("router", "planner", "responder"):
-                            provider_key = role_fallback_providers[role_name]
-                            model_name = provider_to_model[provider_key]
-                            role_adapter = _get_fallback_adapter(provider_key)
-                            role_model = _build_role_model(
-                                role_adapter,
-                                role_name,
-                                model_name,
-                                model_name,
-                                model_name,
-                                model_name,
-                            )
-                            if role_name == "router":
-                                self._fallback_router_model = role_model
-                            elif role_name == "planner":
-                                self._fallback_planner_model = role_model
-                            else:
-                                self._fallback_responder_model = role_model
-                            role_labels[role_name] = f"{provider_key}:{model_name}"
-                            self._fallback_role_models[role_name] = {
-                                "provider": provider_key,
-                                "model": model_name,
-                            }
+                        self._fallback_chain_model_specs = []
+                        seen_labels: set[str] = set()
+                        exhausted_providers: set[str] = set()
 
-                        self._fallback_label = (
-                            f"router={role_labels['router']},"
-                            f"planner={role_labels['planner']},"
-                            f"responder={role_labels['responder']}"
-                        )
-                        if len(set(role_fallback_providers.values())) > 1:
-                            logger.info(
+                        for idx, fallback_provider_name in enumerate(fallback_provider_chain):
+                            avoid_providers = set(exhausted_providers)
+                            if fallback_provider_name != provider_name:
+                                avoid_providers.add(provider_name)
+                            role_fallback_providers = _resolve_fallback_role_providers(
+                                fallback_provider_name,
+                                has_gemini_creds=has_gemini_creds,
+                                has_openai_key=has_openai_key,
+                                has_deepseek_key=has_deepseek_key,
+                                has_groq_key=has_groq_key,
+                                avoid_providers=avoid_providers,
+                            )
+                            if role_fallback_providers is None:
+                                continue
+
+                            stage_router_model = None
+                            stage_planner_model = None
+                            stage_responder_model = None
+                            stage_role_models: Dict[str, Dict[str, str]] = {}
+                            role_labels: Dict[str, str] = {}
+                            for role_name in ("router", "planner", "responder"):
+                                provider_key = role_fallback_providers[role_name]
+                                model_name = provider_to_model[provider_key]
+                                role_adapter = _get_fallback_adapter(provider_key)
+                                role_model = _build_role_model(
+                                    role_adapter,
+                                    role_name,
+                                    model_name,
+                                    model_name,
+                                    model_name,
+                                    model_name,
+                                )
+                                if role_name == "router":
+                                    stage_router_model = role_model
+                                elif role_name == "planner":
+                                    stage_planner_model = role_model
+                                else:
+                                    stage_responder_model = role_model
+                                role_labels[role_name] = f"{provider_key}:{model_name}"
+                                stage_role_models[role_name] = {
+                                    "provider": provider_key,
+                                    "model": model_name,
+                                }
+
+                            label = (
+                                f"router={role_labels['router']},"
+                                f"planner={role_labels['planner']},"
+                                f"responder={role_labels['responder']}"
+                            )
+                            if label in seen_labels:
+                                continue
+
+                            seen_labels.add(label)
+                            exhausted_providers.update(set(role_fallback_providers.values()))
+                            self._fallback_chain_model_specs.append(
                                 {
-                                    "event": "fallback_role_policy_applied",
-                                    "requested_fallback_provider": requested_fallback,
-                                    "router_provider": role_fallback_providers["router"],
-                                    "planner_provider": role_fallback_providers["planner"],
-                                    "responder_provider": role_fallback_providers["responder"],
+                                    "router_model": stage_router_model,
+                                    "planner_model": stage_planner_model,
+                                    "responder_model": stage_responder_model,
+                                    "label": label,
+                                    "role_models": stage_role_models,
                                 }
                             )
+
+                            if len(set(role_fallback_providers.values())) > 1:
+                                logger.info(
+                                    {
+                                        "event": "fallback_role_policy_applied",
+                                        "requested_fallback_provider": requested_fallback,
+                                        "fallback_chain_index": idx + 1,
+                                        "router_provider": role_fallback_providers["router"],
+                                        "planner_provider": role_fallback_providers["planner"],
+                                        "responder_provider": role_fallback_providers["responder"],
+                                    }
+                                )
+
+                        if not self._fallback_chain_model_specs:
+                            logger.warning(
+                                "Fallback chain produced no usable model combination (requested=%s).",
+                                requested_fallback,
+                            )
+                        else:
+                            first_spec = self._fallback_chain_model_specs[0]
+                            self._fallback_router_model = first_spec.get("router_model")
+                            self._fallback_planner_model = first_spec.get("planner_model")
+                            self._fallback_responder_model = first_spec.get("responder_model")
+                            self._fallback_label = str(first_spec.get("label") or "")
+                            self._fallback_role_models = {
+                                role: dict((first_spec.get("role_models") or {}).get(role) or {})
+                                for role in ("router", "planner", "responder")
+                            }
+                            first_planner_provider = (
+                                self._fallback_role_models.get("planner", {}).get("provider") or requested_fallback
+                            )
+                            effective_fallback_provider = str(first_planner_provider)
                 os.environ["GEMINI_DISABLE_AFC"] = "1" if gemini_disable_afc else "0"
             else:
                 if cfg.get("GCP_PROJECT_ID", ""):
@@ -666,6 +786,15 @@ class LLMHandler:
                             "planner": {"provider": "gemini", "model": fallback_model_name},
                             "responder": {"provider": "gemini", "model": fallback_model_name},
                         }
+                        self._fallback_chain_model_specs = [
+                            {
+                                "router_model": self._fallback_router_model,
+                                "planner_model": self._fallback_planner_model,
+                                "responder_model": self._fallback_responder_model,
+                                "label": self._fallback_label,
+                                "role_models": dict(self._fallback_role_models),
+                            }
+                        ]
                         if is_gemini3:
                             auto_gemini3_default_fallback = True
                     else:
@@ -674,6 +803,7 @@ class LLMHandler:
                         self._fallback_responder_model = None
                         self._fallback_label = None
                         self._fallback_role_models = {}
+                        self._fallback_chain_model_specs = []
 
                 if (
                     not self.chat_model
@@ -740,9 +870,31 @@ class LLMHandler:
                 max_iterations=self.max_iterations,
                 progress_getter=lambda: self._progress_callback,
             )
-            # Build a fallback agent graph when fallback models are available.
-            if self._fallback_router_model is not None:
-                self._fallback_agent_app = create_routed_plan_execute_graph(
+            # Build fallback agent graphs (chain) when fallback models are available.
+            self._fallback_chain_apps = []
+            if self._fallback_chain_model_specs:
+                for spec in self._fallback_chain_model_specs:
+                    chain_app = create_routed_plan_execute_graph(
+                        tools=self.tools,
+                        router_model=spec.get("router_model"),
+                        planner_model=spec.get("planner_model"),
+                        responder_model=spec.get("responder_model"),
+                        router_prompt=self.system_message_router_prompt,
+                        get_planner_prompt_for_mode=self._get_planner_prompt_for_mode,
+                        get_system_message_for_mode=lambda user_id, mode, user_lang: self._get_system_message_main(user_lang, user_id, mode),
+                        emit_plan=True,
+                        max_iterations=self.max_iterations,
+                        progress_getter=lambda: self._progress_callback,
+                    )
+                    self._fallback_chain_apps.append(
+                        {
+                            "app": chain_app,
+                            "label": str(spec.get("label") or "configured_fallback"),
+                            "role_models": dict(spec.get("role_models") or {}),
+                        }
+                    )
+            elif self._fallback_router_model is not None:
+                chain_app = create_routed_plan_execute_graph(
                     tools=self.tools,
                     router_model=self._fallback_router_model,
                     planner_model=self._fallback_planner_model,
@@ -754,6 +906,19 @@ class LLMHandler:
                     max_iterations=self.max_iterations,
                     progress_getter=lambda: self._progress_callback,
                 )
+                self._fallback_chain_apps.append(
+                    {
+                        "app": chain_app,
+                        "label": self._fallback_label or "configured_fallback",
+                        "role_models": dict(self._fallback_role_models or {}),
+                    }
+                )
+
+            if self._fallback_chain_apps:
+                first_fallback = self._fallback_chain_apps[0]
+                self._fallback_agent_app = first_fallback.get("app")
+                self._fallback_label = str(first_fallback.get("label") or self._fallback_label or "configured_fallback")
+                self._fallback_role_models = dict(first_fallback.get("role_models") or self._fallback_role_models or {})
             else:
                 self._fallback_agent_app = None
             
@@ -785,6 +950,8 @@ class LLMHandler:
                     "fallback_enabled": fallback_enabled,
                     "fallback_provider": effective_fallback_provider,
                     "fallback_model": self._fallback_label,
+                    "fallback_chain_length": len(self._fallback_chain_apps or []),
+                    "fallback_chain_models": [str((entry or {}).get("label") or "") for entry in (self._fallback_chain_apps or [])],
                     "auto_gemini3_default_fallback": auto_gemini3_default_fallback,
                     "adapter_root": adapter_root,
                     "max_iterations": self.max_iterations,
@@ -1768,34 +1935,129 @@ class LLMHandler:
                         )
                     return result
 
+                def _get_fallback_entries() -> List[Dict[str, object]]:
+                    entries = list(getattr(self, "_fallback_chain_apps", []) or [])
+                    if entries:
+                        return entries
+                    if self._fallback_agent_app is not None:
+                        return [
+                            {
+                                "app": self._fallback_agent_app,
+                                "label": self._fallback_label or "configured_fallback",
+                                "role_models": dict(self._fallback_role_models or {}),
+                            }
+                        ]
+                    return []
+
+                def _invoke_fallback_chain(
+                    current_state: AgentState,
+                    *,
+                    phase_prefix: str,
+                    trigger: str,
+                    reason: str,
+                ) -> AgentState:
+                    entries = _get_fallback_entries()
+                    if not entries:
+                        raise RuntimeError("Fallback requested but no fallback app is configured.")
+                    last_exc: Optional[Exception] = None
+                    for idx, entry in enumerate(entries):
+                        app = entry.get("app")
+                        if app is None:
+                            continue
+                        label = str(entry.get("label") or self._fallback_label or "configured_fallback")
+                        phase = phase_prefix if idx == 0 else f"{phase_prefix}_{idx + 1}"
+                        if idx > 0:
+                            logger.warning(
+                                {
+                                    "event": "fallback_chain_attempt",
+                                    "user_id": safe_user_id,
+                                    "trigger": trigger,
+                                    "attempt": idx + 1,
+                                    "total": len(entries),
+                                    "fallback_model": label,
+                                    "reason": reason[:200],
+                                }
+                            )
+
+                        agent_module._llm_call_count = 0
+                        attempt_state = copy.deepcopy(current_state)
+                        try:
+                            result = _invoke_app(app, attempt_state, phase=phase)
+                            if idx > 0:
+                                logger.warning(
+                                    {
+                                        "event": "fallback_chain_succeeded",
+                                        "user_id": safe_user_id,
+                                        "trigger": trigger,
+                                        "attempt": idx + 1,
+                                        "fallback_model": label,
+                                    }
+                                )
+                            return result
+                        except Exception as fallback_exc:
+                            last_exc = fallback_exc
+                            if idx < len(entries) - 1 and _is_fallback_eligible_error(fallback_exc):
+                                logger.warning(
+                                    {
+                                        "event": "fallback_chain_retry",
+                                        "user_id": safe_user_id,
+                                        "trigger": trigger,
+                                        "failed_attempt": idx + 1,
+                                        "next_attempt": idx + 2,
+                                        "failed_fallback_model": label,
+                                        "reason": str(fallback_exc)[:200],
+                                    }
+                                )
+                                continue
+                            raise
+
+                    if last_exc is not None:
+                        raise last_exc
+                    raise RuntimeError("Fallback chain exhausted without a usable app.")
+
+                fallback_entries = _get_fallback_entries()
+                fallback_label = (
+                    str((fallback_entries[0] or {}).get("label") or "")
+                    if fallback_entries
+                    else self._fallback_label or "configured_fallback"
+                )
                 preblocked_roles = self._get_preblocked_primary_roles()
-                if preblocked_roles and self._fallback_agent_app is not None:
+                if preblocked_roles and fallback_entries:
                     logger.warning(
                         {
                             "event": "primary_model_preblocked_fallback",
                             "user_id": safe_user_id,
                             "blocked_roles": preblocked_roles,
-                            "fallback_model": self._fallback_label or "configured_fallback",
+                            "fallback_model": fallback_label,
+                            "fallback_chain_length": len(fallback_entries),
                         }
                     )
-                    agent_module._llm_call_count = 0
-                    result_state = _invoke_app(self._fallback_agent_app, state, phase="fallback_preblocked")
+                    result_state = _invoke_fallback_chain(
+                        state,
+                        phase_prefix="fallback_preblocked",
+                        trigger="primary_model_preblocked",
+                        reason="primary_role_blocked",
+                    )
                 else:
                     try:
                         result_state = _invoke_app(self.agent_app, state, phase="primary")
                     except Exception as primary_exc:
                         primary_err = str(primary_exc)
                         is_transient = _is_fallback_eligible_error(primary_exc)
-                        if is_transient and self._fallback_agent_app is not None:
+                        if is_transient and fallback_entries:
                             logger.warning({
                                 "event": "primary_model_fallback",
                                 "user_id": safe_user_id,
                                 "reason": primary_err[:200],
-                                "fallback_model": self._fallback_label or "configured_fallback",
+                                "fallback_model": fallback_label,
+                                "fallback_chain_length": len(fallback_entries),
                             })
-                            # Reset call counter for the fallback attempt
-                            agent_module._llm_call_count = 0
-                            result_state = _invoke_app(self._fallback_agent_app, state, phase="fallback")
+                            result_state = _invoke_fallback_chain(
+                                state,
+                                phase_prefix="fallback",
+                                trigger="primary_model_error",
+                                reason=primary_err,
+                            )
                         else:
                             raise
                 

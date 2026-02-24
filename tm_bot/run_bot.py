@@ -3,7 +3,9 @@
 import logging
 import sys
 
-from utils.logger import get_logger
+from dotenv import load_dotenv
+
+from utils.logger import get_logger, configure_admin_error_notifications
 
 logger = get_logger(__name__)
 
@@ -19,6 +21,8 @@ def _install_excepthook():
 
 
 def main():
+    load_dotenv()
+    configure_admin_error_notifications()
     _install_excepthook()
     try:
         from planner_bot import main as bot_main  # noqa: WPS433
