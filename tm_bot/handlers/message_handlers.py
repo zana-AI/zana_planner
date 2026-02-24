@@ -2165,7 +2165,7 @@ class MessageHandlers:
             else:
                 logger.info(f"[REMINDER] Successfully sent nightly reminders for user {user_id}")
         except telegram_error.BadRequest as e:
-            if e.message.lower() == "chat not found":
+            if (e.message or "").lower() == "chat not found":
                 logger.warning(f"[REMINDER] Chat not found for user {user_id}, disabling reminders")
                 self.plan_keeper.settings_repo.mark_chat_not_found(user_id)
                 context.job.schedule_removal()
@@ -2188,7 +2188,7 @@ class MessageHandlers:
             await self.send_morning_reminders(context, user_id=user_id)
             logger.info(f"[REMINDER] ✓ Successfully sent morning reminders for user {user_id}")
         except telegram_error.BadRequest as e:
-            if e.message.lower() == "chat not found":
+            if (e.message or "").lower() == "chat not found":
                 logger.warning(f"[REMINDER] Chat not found for user {user_id}, disabling reminders")
                 self.plan_keeper.settings_repo.mark_chat_not_found(user_id)
                 context.job.schedule_removal()
