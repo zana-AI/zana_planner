@@ -1011,9 +1011,37 @@ def _parse_route_decision(payload: Any) -> RouteDecision:
 def _heuristic_route_decision_from_text(user_text: str) -> RouteDecision:
     """
     Deterministic fallback router used when structured route parsing fails.
-    Keep this intentionally simple and stable: default to engagement.
+
+    Uses lightweight keyword intent detection so fallback still chooses a useful mode
+    instead of always defaulting to engagement.
     """
-    _ = user_text  # explicit: current fallback does not inspect content
+    text = (user_text or "").strip().lower()
+    if not text:
+        return RouteDecision(mode="engagement", confidence="low", reason="parsing_failed_fallback")
+
+    # Persian + English trigger words for quick intent detection.
+    social_markers = (
+        "follower", "followers", "community", "feed", "timeline", "friend", "friends", "follow",
+        "دنبال", "فالو", "جامعه", "فید",
+    )
+    strategist_markers = (
+        "strategy", "strategic", "plan", "roadmap", "goal", "goals", "focus", "improve", "coach",
+        "advice", "review", "weekly", "monthly", "priorit", "next week",
+        "برنامه", "استراتژی", "هدف", "اهداف", "تمرکز", "بهبود", "پیشنهاد", "مشاوره", "هفت",
+    )
+    operator_markers = (
+        "add", "create", "update", "delete", "edit", "log", "set", "start", "stop", "complete",
+        "promise", "action", "session", "timer", "reminder", "settings", "show my", "list my",
+        "اضافه", "ایجاد", "ویرایش", "حذف", "ثبت", "تنظیم", "جلسه", "یادآور", "تسک", "کار",
+    )
+
+    if any(marker in text for marker in social_markers):
+        return RouteDecision(mode="social", confidence="medium", reason="keyword_social_fallback")
+    if any(marker in text for marker in strategist_markers):
+        return RouteDecision(mode="strategist", confidence="medium", reason="keyword_strategist_fallback")
+    if any(marker in text for marker in operator_markers):
+        return RouteDecision(mode="operator", confidence="medium", reason="keyword_operator_fallback")
+
     return RouteDecision(mode="engagement", confidence="low", reason="parsing_failed_fallback")
 
 
