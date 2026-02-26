@@ -516,7 +516,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             style={{ cursor: 'pointer' }}
           >
             <div className="card-title" dir="auto">
-              <span className="card-status-label">{statusLabel}</span>
               <span className="card-title-text">{formatPromiseText(text)}</span>
               {isBudget && (
                 <span className="card-budget-badge">
@@ -570,6 +569,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             <div className="card-meta">
               <span className="card-id" dir="ltr">#{id}</span>
               <div className="card-meta-ratio">
+                <span className="card-status-label">{statusLabel}</span>
                 <span className="card-ratio" dir="ltr">
                   {isCountBased ? (
                     <>{Math.round(achieved_value)}/{Math.round(target_value)}</>

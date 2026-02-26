@@ -564,15 +564,14 @@ body.modal-open {
   line-height: 1.25;
   display: flex;
   gap: 8px;
-  align-items: flex-start;
+  align-items: center;
   unicode-bidi: plaintext;
   flex-wrap: wrap;
 }
 
 .card-status-label {
   flex: 0 0 auto;
-  margin-top: 1px;
-  min-height: 20px;
+  min-height: 18px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: rgba(237, 243, 255, 0.08);
@@ -582,7 +581,7 @@ body.modal-open {
   letter-spacing: 0.2px;
   display: inline-flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 7px;
 }
 
 .card-title-text {
@@ -779,7 +778,7 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 3px;
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
@@ -789,12 +788,13 @@ body.modal-open {
 @media (max-width: 767px) {
   .card-top {
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
   
   .card-title {
     width: 100%;
     order: 1;
+    align-items: center;
   }
   
   .card-meta {
@@ -803,6 +803,12 @@ body.modal-open {
     justify-content: space-between;
     align-items: center;
     order: 2;
+  }
+
+  .card-meta .card-status-label {
+    font-size: 9.5px;
+    padding: 0 6px;
+    min-height: 18px;
   }
   
   .card-edit-button,
@@ -4029,8 +4035,9 @@ textarea.modal-input {
 /* Meta Ratio Container */
 .card-meta-ratio {
   display: flex;
-  align-items: baseline;
-  gap: var(--spacing-sm);
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 /* (visibility toggle text handled by .card-visibility-label) */
