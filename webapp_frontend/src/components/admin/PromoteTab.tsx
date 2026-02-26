@@ -7,13 +7,8 @@ interface PromoteTabProps {
 
 export function PromoteTab({ onError }: PromoteTabProps) {
   const [promoting, setPromoting] = useState(false);
-  const [promoteConfirmText, setPromoteConfirmText] = useState('');
 
   const handlePromote = async () => {
-    if (promoteConfirmText !== 'PROMOTE TO PROD') {
-      onError('Please type "PROMOTE TO PROD" to confirm');
-      return;
-    }
     if (!confirm('Promote staging to production and overwrite production data?')) {
       return;
     }
@@ -21,8 +16,9 @@ export function PromoteTab({ onError }: PromoteTabProps) {
     onError('');
     try {
       await apiClient.promoteStagingToProd();
-      alert('Promotion started successfully. This can take several minutes.');
-      setPromoteConfirmText('');
+      alert('Promotion started successfully. The backend is restarting — you will be logged out.');
+      apiClient.clearAuth();
+      window.dispatchEvent(new Event('logout'));
     } catch (err) {
       console.error('Failed to promote:', err);
       if (err instanceof ApiError) {
@@ -58,39 +54,19 @@ export function PromoteTab({ onError }: PromoteTabProps) {
             <li>Production services may experience brief downtime.</li>
           </ul>
         </div>
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem' }}>
-            Type <strong>PROMOTE TO PROD</strong> to confirm:
-          </label>
-          <input
-            type="text"
-            value={promoteConfirmText}
-            onChange={(e) => setPromoteConfirmText(e.target.value)}
-            placeholder="PROMOTE TO PROD"
-            style={{
-              width: '100%',
-              padding: '0.5rem',
-              borderRadius: '6px',
-              border: '1px solid rgba(232, 238, 252, 0.2)',
-              background: 'rgba(11, 16, 32, 0.6)',
-              color: '#fff',
-              fontSize: '1rem',
-            }}
-          />
-        </div>
         <button
           onClick={handlePromote}
-          disabled={promoting || promoteConfirmText !== 'PROMOTE TO PROD'}
+          disabled={promoting}
           style={{
             padding: '0.75rem 1.5rem',
             background: promoting ? 'rgba(255, 193, 7, 0.3)' : 'linear-gradient(135deg, #ff6b6b, #ee5a6f)',
             border: 'none',
             borderRadius: '6px',
             color: '#fff',
-            cursor: promoting || promoteConfirmText !== 'PROMOTE TO PROD' ? 'not-allowed' : 'pointer',
+            cursor: promoting ? 'not-allowed' : 'pointer',
             fontSize: '1rem',
             fontWeight: '600',
-            opacity: promoting || promoteConfirmText !== 'PROMOTE TO PROD' ? 0.5 : 1,
+            opacity: promoting ? 0.5 : 1,
             width: '100%',
           }}
         >
