@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { PublicUser } from '../types';
 import { generateUsername, getInitialsFromUsername } from '../utils/usernameGenerator';
 import { buildActivitySummaryText } from '../utils/activitySummary';
+import { getDicebearUrl } from '../utils/dicebearAvatar';
 import { apiClient } from '../api/client';
 
 interface UserCardProps {
@@ -95,7 +96,7 @@ export function UserCard({ user, currentUserId, showFollowButton = false, onFoll
   const activitySummary = buildActivitySummaryText(user.weekly_activity_count, user.last_activity_at_utc);
   
   // Generate DiceBear avatar URL (deterministic based on user_id)
-  const dicebearUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.user_id)}`;
+  const dicebearUrl = getDicebearUrl(user.user_id);
   
   // Check if this is the current user's own card
   const isOwnCard = currentUserId && currentUserId === user.user_id;
