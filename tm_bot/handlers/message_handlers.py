@@ -40,7 +40,7 @@ from services.broadcast_service import get_all_users_from_db, send_broadcast, pa
 from services.bot_stats import get_version_stats_postgres
 from services.avatar_service import AvatarService
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 logger = get_logger(__name__)
@@ -2658,7 +2658,11 @@ class MessageHandlers:
             return
         
         # Check if time is in the past
-        now = datetime.now(ZoneInfo(admin_tz))
+        try:
+            now = datetime.now(ZoneInfo(admin_tz))
+        except ZoneInfoNotFoundError:
+            logger.warning(f"Invalid timezone '{admin_tz}' for user {user_id}, using UTC")
+            now = datetime.now(ZoneInfo("UTC"))
         if scheduled_time < now:
             error_msg = f"❌ The specified time is in the past: {scheduled_time.strftime('%Y-%m-%d %H:%M')}"
             await update.message.reply_text(error_msg)

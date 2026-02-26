@@ -337,6 +337,10 @@ class PlannerBot:
             if context and hasattr(context, "user_data") and context.user_data is not None:
                 context.user_data["_input_context"] = ctx
 
+            # Cross-cutting: heal invalid persisted timezone values (e.g., DISABLED)
+            if ctx.user_id:
+                BotUtils.heal_invalid_timezone(self.plan_keeper, ctx.user_id)
+
             # Cross-cutting: update user info and avatar (for any input with a user)
             effective_user = self._get_effective_user(update)
             if ctx.user_id and effective_user:

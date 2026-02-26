@@ -41,14 +41,42 @@ class BotUtils:
         settings = plan_keeper.settings_repo.get_settings(user_id)
         settings.timezone = tzname
         plan_keeper.settings_repo.save_settings(settings)
+
+    @staticmethod
+    def heal_invalid_timezone(plan_keeper: PlannerAPIAdapter, user_id: int, fallback_tz: str = "UTC") -> bool:
+        """Heal invalid persisted timezone values (e.g., 'DISABLED') by resetting to a safe fallback."""
+        try:
+            settings = plan_keeper.settings_repo.get_settings(user_id)
+            tz = getattr(settings, "timezone", None)
+            if not tz or tz == "DEFAULT":
+                return False
+            if BotUtils.validate_timezone(tz):
+                return False
+            safe_fallback_tz = fallback_tz if BotUtils.validate_timezone(fallback_tz) else "UTC"
+            logger.warning(
+                f"Detected invalid timezone '{tz}' for user {user_id}. Resetting to {safe_fallback_tz}."
+            )
+            settings.timezone = safe_fallback_tz
+            plan_keeper.settings_repo.save_settings(settings)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to heal timezone for user {user_id}: {e}")
+            return False
     
     @staticmethod
     def get_user_now(plan_keeper: PlannerAPIAdapter, user_id: int) -> Tuple[datetime, str]:
-        """Return (now_in_user_tz, tzname)."""
+        """Return (now_in_user_tz, tzname).
+        
+        Falls back to UTC if timezone is invalid (e.g., 'DISABLED').
+        """
         try:
-            from zoneinfo import ZoneInfo
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
             tzname = BotUtils.get_user_timezone(plan_keeper, user_id) or "UTC"
             return datetime.now(ZoneInfo(tzname)), tzname
+        except ZoneInfoNotFoundError:
+            tzname = BotUtils.get_user_timezone(plan_keeper, user_id) or "UTC"
+            logger.warning(f"Invalid timezone '{tzname}' for user {user_id}, falling back to UTC")
+            return datetime.now(ZoneInfo("UTC")), "UTC"
         except ImportError:
             logger.error("zoneinfo not available")
             return datetime.now(), "UTC"

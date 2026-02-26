@@ -243,23 +243,30 @@ def parse_broadcast_time(time_str: str, admin_tz: str) -> Optional[datetime]:
     
     if not time_str:
         return None
+
+    try:
+        tz = ZoneInfo(admin_tz)
+        tz_name = admin_tz
+    except Exception:
+        logger.warning(f"Invalid timezone '{admin_tz}', using UTC for parsing")
+        tz = ZoneInfo("UTC")
+        tz_name = "UTC"
     
     # Try natural language parsing first (if dateparser is available)
     if DATEPARSER_AVAILABLE:
         try:
-            # Parse in admin's timezone
             parsed = dateparser.parse(
                 time_str,
                 settings={
-                    'TIMEZONE': admin_tz,
+                    'TIMEZONE': tz_name,
                     'RETURN_AS_TIMEZONE_AWARE': True,
-                    'RELATIVE_BASE': datetime.now(ZoneInfo(admin_tz))
+                    'RELATIVE_BASE': datetime.now(tz)
                 }
             )
             if parsed:
                 # Ensure timezone is set
                 if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=ZoneInfo(admin_tz))
+                    parsed = parsed.replace(tzinfo=tz)
                 return parsed
         except Exception as e:
             logger.debug(f"dateparser failed for '{time_str}': {str(e)}")
@@ -269,14 +276,13 @@ def parse_broadcast_time(time_str: str, admin_tz: str) -> Optional[datetime]:
         # Try with date and time
         if len(time_str) >= 16:
             dt = datetime.strptime(time_str[:16], "%Y-%m-%d %H:%M")
-            # Set timezone
-            dt = dt.replace(tzinfo=ZoneInfo(admin_tz))
+            dt = dt.replace(tzinfo=tz)
             return dt
     except ValueError:
         pass
     
     # Try simple natural language patterns (fallback)
-    now = datetime.now(ZoneInfo(admin_tz))
+    now = datetime.now(tz)
     time_str_lower = time_str.lower()
     
     # "now" or "immediately"

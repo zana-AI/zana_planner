@@ -26,6 +26,7 @@ from ui.keyboards import (
 )
 from ui.messages import weekly_report_text
 from cbdata import encode_cb, decode_cb
+from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -80,9 +81,7 @@ class CallbackHandlers:
     
     def _get_user_now(self, user_id: int):
         """Return (now_in_user_tz, tzname)."""
-        from zoneinfo import ZoneInfo
-        tzname = self.get_user_timezone(user_id) or "UTC"
-        return datetime.now(ZoneInfo(tzname)), tzname
+        return BotUtils.get_user_now(self.plan_keeper, user_id)
     
     @staticmethod
     def _hours_per_week_of(promise) -> float:
