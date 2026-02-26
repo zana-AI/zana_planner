@@ -155,7 +155,26 @@ export function UserDetailPage() {
   const displayName = getDisplayName(userData);
   const activitySummary = buildActivitySummaryText(userData.weekly_activity_count, userData.last_activity_at_utc);
 
-  const dicebearUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userData.user_id)}`;
+  const dicebearParams = new URLSearchParams({
+    seed: userData.user_id,
+    size: '64',
+    scale: '95',
+    radius: '50',
+    backgroundType: 'solid',
+    backgroundColor: '1e3a5f,2a4365,314e7e',
+    hair: 'sideComed,spiky,undercut',
+    hairProbability: '100',
+    rearHairProbability: '0',
+    beardProbability: '0',
+    eyes: 'happy,humble,wide',
+    eyebrows: 'happy,neutral,raised',
+    mouth: 'smile,laugh',
+    clothes: 'shirt,tShirt,openJacket,turtleNeck',
+    clothesColor: '0b3286,147f3c,545454,e8e9e6',
+    hairColor: '2c1b18,724133,a55728,b58143',
+    skinColor: '5c3829,a36b4f,b98e6a,f1c3a5',
+  });
+  const dicebearUrl = `https://api.dicebear.com/9.x/toon-head/svg?${dicebearParams.toString()}`;
   const avatarUrl =
     !avatarError && userData.avatar_path
       ? userData.avatar_path.startsWith('http')
