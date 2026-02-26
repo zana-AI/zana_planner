@@ -438,14 +438,14 @@ body.modal-open {
 
 .template-list-logo,
 .admin-template-logo {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-8);
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
-  background: rgba(237, 243, 255, 0.06);
+  padding: 3px;
+  border-radius: var(--radius-8);
+  min-width: 26px;
+  min-height: 26px;
 }
 
 .template-title {
@@ -506,7 +506,41 @@ body.modal-open {
   font-style: italic;
 }
 
-/* Promise Card */
+.template-card-users {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-subtle);
+  font-weight: 500;
+}
+
+/* Avatar Stack */
+.avatar-stack {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.avatar-stack-circle {
+  position: absolute;
+  top: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--card);
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.avatar-stack-overflow {
+  background: rgba(237, 243, 255, 0.12);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Template grid */
 .promise-card {
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -2008,9 +2042,12 @@ body.modal-open {
 }
 
 .home-feature-icon {
-  font-size: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
   margin-bottom: 16px;
-  display: block;
+  color: var(--accent);
 }
 
 .home-feature-title {
@@ -2066,7 +2103,10 @@ body.modal-open {
 }
 
 .home-additional-icon {
-  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
 }
 
 .home-additional-text {
@@ -2092,9 +2132,11 @@ body.modal-open {
 }
 
 .home-community-icon {
-  font-size: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: 16px;
-  display: block;
+  color: var(--accent);
 }
 
 .home-community-title {

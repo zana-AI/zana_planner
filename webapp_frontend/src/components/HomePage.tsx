@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Target, Brain, BarChart2, Unlock, TrendingDown, Mic, Globe, Timer, Bell, Users } from 'lucide-react';
 import { NewYearBanner } from './NewYearBanner';
 import { TelegramLogin } from './TelegramLogin';
 import { apiClient } from '../api/client';
@@ -181,7 +182,7 @@ export function HomePage() {
         <h2 className="home-section-title">Why Choose Xaana?</h2>
         <div className="home-features-grid">
           <div className="home-feature-card">
-            <div className="home-feature-icon">🎯</div>
+            <div className="home-feature-icon"><Target size={44} strokeWidth={1.5} /></div>
             <h3 className="home-feature-title">Goal Tracking</h3>
             <p className="home-feature-description">
               Track your promises (goals) and log time spent on them. Stay organized and focused on what matters most.
@@ -189,7 +190,7 @@ export function HomePage() {
           </div>
           
           <div className="home-feature-card">
-            <div className="home-feature-icon">🧠</div>
+            <div className="home-feature-icon"><Brain size={44} strokeWidth={1.5} /></div>
             <h3 className="home-feature-title">AI Insights</h3>
             <p className="home-feature-description">
               Get personalized recommendations and daily focus areas powered by advanced AI. Know exactly what to work on today.
@@ -197,7 +198,7 @@ export function HomePage() {
           </div>
           
           <div className="home-feature-card">
-            <div className="home-feature-icon">📊</div>
+            <div className="home-feature-icon"><BarChart2 size={44} strokeWidth={1.5} /></div>
             <h3 className="home-feature-title">Progress Visualization</h3>
             <p className="home-feature-description">
               Visualize your progress with weekly reports and detailed analytics. See how you're advancing toward your goals.
@@ -211,7 +212,7 @@ export function HomePage() {
         <h2 className="home-section-title">Promise Marketplace</h2>
         <div className="home-features-grid">
           <div className="home-feature-card">
-            <div className="home-feature-icon">🎯</div>
+            <div className="home-feature-icon"><Target size={44} strokeWidth={1.5} /></div>
             <h3 className="home-feature-title">Curated Promises</h3>
             <p className="home-feature-description">
               Start with proven promise templates. From fitness goals to language learning, choose promises designed for success.
@@ -219,7 +220,7 @@ export function HomePage() {
           </div>
           
           <div className="home-feature-card">
-            <div className="home-feature-icon">🔓</div>
+            <div className="home-feature-icon"><Unlock size={44} strokeWidth={1.5} /></div>
             <h3 className="home-feature-title">Progressive Unlocks</h3>
             <p className="home-feature-description">
               Unlock advanced promises as you complete easier ones. Build momentum with a structured progression system.
@@ -227,7 +228,7 @@ export function HomePage() {
           </div>
           
           <div className="home-feature-card">
-            <div className="home-feature-icon">📉</div>
+            <div className="home-feature-icon"><TrendingDown size={44} strokeWidth={1.5} /></div>
             <h3 className="home-feature-title">Distraction Budgets</h3>
             <p className="home-feature-description">
               Set limits on distractions like social media. Track and stay within your weekly time budgets.
@@ -241,19 +242,19 @@ export function HomePage() {
         <h2 className="home-section-title">More Features</h2>
         <div className="home-additional-grid">
           <div className="home-additional-item">
-            <span className="home-additional-icon">🎤</span>
-            <span className="home-additional-text">Voice & Image Input</span>
+            <span className="home-additional-icon"><Mic size={26} strokeWidth={1.6} /></span>
+            <span className="home-additional-text">Voice &amp; Image Input</span>
           </div>
           <div className="home-additional-item">
-            <span className="home-additional-icon">🌍</span>
+            <span className="home-additional-icon"><Globe size={26} strokeWidth={1.6} /></span>
             <span className="home-additional-text">Multi-language Support</span>
           </div>
           <div className="home-additional-item">
-            <span className="home-additional-icon">⏱️</span>
+            <span className="home-additional-icon"><Timer size={26} strokeWidth={1.6} /></span>
             <span className="home-additional-text">Pomodoro Sessions</span>
           </div>
           <div className="home-additional-item">
-            <span className="home-additional-icon">🔔</span>
+            <span className="home-additional-icon"><Bell size={26} strokeWidth={1.6} /></span>
             <span className="home-additional-text">Smart Reminders</span>
           </div>
         </div>
@@ -262,7 +263,7 @@ export function HomePage() {
       {/* Community Preview Section */}
       <section className="home-community">
         <div className="home-community-card">
-          <div className="home-community-icon">👥</div>
+          <div className="home-community-icon"><Users size={44} strokeWidth={1.5} /></div>
           <h3 className="home-community-title">Join the Community</h3>
           <p className="home-community-description">
             Connect with other goal-achievers, share your progress, and stay motivated together.
