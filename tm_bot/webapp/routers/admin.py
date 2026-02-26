@@ -30,7 +30,7 @@ from repositories.bot_tokens_repo import BotTokensRepository
 from repositories.reminders_repo import RemindersRepository
 from services.reminder_dispatch import ReminderDispatchService
 from db.postgres_db import get_db_session, dt_to_utc_iso, utc_now_iso, resolve_promise_uuid
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from utils.admin_utils import is_admin
 from utils.logger import get_logger
 from llms.llm_env_utils import load_llm_env
@@ -263,6 +263,47 @@ def _normalize_export_messages(messages: List[Dict[str, Any]]) -> List[Dict[str,
             }
         )
     return normalized
+
+
+def _normalize_language_code(value: Optional[str], fallback: str = "en") -> str:
+    lang = str(value or fallback).strip().lower()
+    return lang if lang else fallback
+
+
+def _get_user_language_map(user_ids: List[int]) -> Dict[int, str]:
+    """
+    Fetch user language preferences in one query.
+    Returns a map of user_id -> normalized language code.
+    """
+    if not user_ids:
+        return {}
+
+    unique_ids = sorted({int(uid) for uid in user_ids})
+    if not unique_ids:
+        return {}
+
+    lang_map: Dict[int, str] = {}
+    with get_db_session() as session:
+        stmt = text(
+            """
+            SELECT user_id, language
+            FROM users
+            WHERE user_id IN :user_ids;
+            """
+        ).bindparams(bindparam("user_ids", expanding=True))
+        rows = session.execute(
+            stmt,
+            {"user_ids": [str(uid) for uid in unique_ids]},
+        ).mappings().fetchall()
+
+    for row in rows:
+        try:
+            uid = int(row["user_id"])
+        except Exception:
+            continue
+        lang_map[uid] = _normalize_language_code(row.get("language"), fallback="en")
+
+    return lang_map
 
 
 @router.get("/check")
@@ -611,6 +652,7 @@ async def create_broadcast(
     try:
         from zoneinfo import ZoneInfo
         from services.broadcast_service import get_all_users_from_db, execute_broadcast_from_db
+        from handlers.translator import translate_text
 
         # Validate message
         if not broadcast_request.message or not broadcast_request.message.strip():
@@ -647,22 +689,64 @@ async def create_broadcast(
             # Immediate broadcast - schedule for now
             scheduled_dt = datetime.now(ZoneInfo("UTC"))
         
-        # Create broadcast in database
-        broadcasts_repo = BroadcastsRepository()
-        broadcast_id = broadcasts_repo.create_broadcast(
-            admin_id=admin_id,
-            message=broadcast_request.message,
-            target_user_ids=valid_user_ids,
-            scheduled_time_utc=scheduled_dt,
-            bot_token_id=broadcast_request.bot_token_id,
+        source_language = _normalize_language_code(
+            getattr(broadcast_request, "source_language", None),
+            fallback="en",
         )
+        translate_to_user_language = bool(
+            getattr(broadcast_request, "translate_to_user_language", False)
+        )
+
+        user_groups: Dict[str, List[int]] = {source_language: list(valid_user_ids)}
+        if translate_to_user_language:
+            language_map = _get_user_language_map(valid_user_ids)
+            user_groups = {}
+            for uid in valid_user_ids:
+                target_lang = _normalize_language_code(
+                    language_map.get(int(uid)),
+                    fallback=source_language,
+                )
+                user_groups.setdefault(target_lang, []).append(uid)
+
+        # Create broadcast(s) in database (one per language group if translating).
+        broadcasts_repo = BroadcastsRepository()
+        broadcast_ids: List[str] = []
+        broadcast_ids_by_language: Dict[str, str] = {}
+        translated_cache: Dict[str, str] = {}
+
+        for target_lang, group_ids in user_groups.items():
+            if not group_ids:
+                continue
+
+            message = broadcast_request.message
+            if translate_to_user_language and target_lang != source_language:
+                if target_lang not in translated_cache:
+                    translated_cache[target_lang] = translate_text(
+                        message,
+                        target_lang,
+                        source_language,
+                    )
+                message = translated_cache[target_lang]
+
+            broadcast_id = broadcasts_repo.create_broadcast(
+                admin_id=admin_id,
+                message=message,
+                target_user_ids=group_ids,
+                scheduled_time_utc=scheduled_dt,
+                bot_token_id=broadcast_request.bot_token_id,
+            )
+            broadcast_ids.append(broadcast_id)
+            broadcast_ids_by_language[target_lang] = broadcast_id
+
+        if not broadcast_ids:
+            raise HTTPException(status_code=500, detail="Failed to create broadcast")
 
         # Fire-and-forget immediate dispatch.
         # Scheduled broadcasts are handled by the background dispatcher.
         if is_immediate:
             default_bot_token = getattr(request.app.state, "bot_token", None)
 
-            async def _dispatch_immediate() -> None:
+            async def _dispatch_immediate(broadcast_id: str) -> None:
                 try:
                     await execute_broadcast_from_db(
                         response_service=None,
@@ -677,10 +761,12 @@ async def create_broadcast(
                         exc_info=True,
                     )
 
-            asyncio.create_task(_dispatch_immediate())
+            for broadcast_id in broadcast_ids:
+                asyncio.create_task(_dispatch_immediate(broadcast_id))
         
-        # Get created broadcast
-        broadcast = broadcasts_repo.get_broadcast(broadcast_id)
+        # Get created broadcast (primary group in source language if available)
+        primary_id = broadcast_ids_by_language.get(source_language, broadcast_ids[0])
+        broadcast = broadcasts_repo.get_broadcast(primary_id)
         if not broadcast:
             raise HTTPException(status_code=500, detail="Failed to retrieve created broadcast")
         
@@ -1085,7 +1171,7 @@ Output ONLY valid JSON with these fields:
   "category": "string (one of: 'health', 'fitness', 'learning', 'productivity', 'mindfulness', 'creativity', 'finance', 'social', 'self-care', 'other')",
   "target_value": number (how many per week, e.g., 7 for daily, 3 for 3x/week),
   "metric_type": "string ('count' for times/week or 'hours' for hours/week)",
-  "emoji": "string (single emoji that represents this activity, e.g., '🏃', '📚', '💪')"
+  "emoji": "string (single emoji that represents this activity, e.g., '??', '??', '??')"
 }
 
 Rules:
@@ -1093,7 +1179,7 @@ Rules:
 - If user mentions hours/week, use metric_type='hours'
 - If user mentions times/week, days/week, or daily, use metric_type='count'
 - For daily habits, target_value=7; for 3x/week, target_value=3; etc.
-- Pick a relevant emoji from: 🏃📚💪🧘🎯✍️🎨🎵💻🌱💧😴🍎💰🧠❤️
+- Pick a relevant emoji from: ????????????????????????????????
 - Output ONLY the JSON object, no markdown, no explanation"""
         
         user_prompt = f"Generate a promise template for: {generate_request.prompt}"
@@ -1129,7 +1215,7 @@ Rules:
         draft.setdefault("description", "")
         draft.setdefault("category", "other")
         draft.setdefault("metric_type", "count")
-        draft.setdefault("emoji", "🎯")
+        draft.setdefault("emoji", "??")
         
         # Validate enums
         valid_categories = ['health', 'fitness', 'learning', 'productivity', 'mindfulness', 'creativity', 'finance', 'social', 'self-care', 'other']

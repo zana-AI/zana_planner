@@ -66,6 +66,8 @@ export function BroadcastTab({
   const [botTokens, setBotTokens] = useState<BotToken[]>([]);
   const [selectedBotTokenId, setSelectedBotTokenId] = useState<string>('');
   const [loadingBotTokens, setLoadingBotTokens] = useState(false);
+  const [translateToUserLanguage, setTranslateToUserLanguage] = useState(false);
+  const [sourceLanguage, setSourceLanguage] = useState<'en' | 'fr' | 'fa'>('en');
 
   // Fetch bot tokens
   useEffect(() => {
@@ -137,6 +139,8 @@ export function BroadcastTab({
         target_user_ids: Array.from(selectedUserIds),
         scheduled_time_utc: immediate ? undefined : scheduledTimeUtc,
         bot_token_id: selectedBotTokenId || undefined,
+        translate_to_user_language: translateToUserLanguage,
+        source_language: sourceLanguage,
       };
 
       await apiClient.createBroadcast(request);
@@ -145,6 +149,8 @@ export function BroadcastTab({
       setMessage('');
       setScheduledTime(getRoundedFutureLocalDateTime());
       setSelectedUserIds(new Set());
+      setTranslateToUserLanguage(false);
+      setSourceLanguage('en');
       
       // Refresh broadcasts
       await onRefreshBroadcasts();
@@ -223,6 +229,34 @@ export function BroadcastTab({
             </p>
           </>
         )}
+      </div>
+
+      <div className="admin-section">
+        <h2 className="admin-section-title">Localization</h2>
+        <label className="admin-checkbox-label">
+          <input
+            type="checkbox"
+            checked={translateToUserLanguage}
+            onChange={(e) => setTranslateToUserLanguage(e.target.checked)}
+          />
+          <span>Translate to each user's language</span>
+        </label>
+
+        <label className="admin-option-label">
+          Source Language
+          <select
+            className="admin-select-input"
+            value={sourceLanguage}
+            onChange={(e) => setSourceLanguage(e.target.value as 'en' | 'fr' | 'fa')}
+          >
+            <option value="en">English</option>
+            <option value="fr">French</option>
+            <option value="fa">Persian</option>
+          </select>
+        </label>
+        <p className="admin-hint">
+          Broadcasts are split per language group and translated once per language.
+        </p>
       </div>
 
       <div className="admin-section">

@@ -228,6 +228,8 @@ class CreateBroadcastRequest(BaseModel):
     target_user_ids: List[int]
     scheduled_time_utc: Optional[str] = None  # ISO format datetime string, None for immediate
     bot_token_id: Optional[str] = None  # Optional bot token ID to use for this broadcast
+    translate_to_user_language: bool = False
+    source_language: str = "en"
 
 
 class UpdateBroadcastRequest(BaseModel):

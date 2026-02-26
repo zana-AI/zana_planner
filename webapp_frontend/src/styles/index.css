@@ -2807,6 +2807,31 @@ textarea.modal-input {
   font-size: 12px;
 }
 
+.admin-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.admin-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.admin-option-label {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.admin-option-label .admin-select-input {
+  margin-top: 6px;
+}
+
 .admin-actions {
   display: flex;
   gap: 12px;

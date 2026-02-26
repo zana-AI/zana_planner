@@ -32,6 +32,41 @@ class _FakeBroadcastsRepo:
             return True
         return False
 
+
+class _MultiBroadcastRepo:
+    def __init__(self):
+        self.created = []
+        self._broadcasts = {}
+        self._counter = 0
+
+    def create_broadcast(self, **kwargs):
+        self._counter += 1
+        broadcast_id = f"b-{self._counter}"
+        now = kwargs.get("scheduled_time_utc")
+        self._broadcasts[broadcast_id] = Broadcast(
+            broadcast_id=broadcast_id,
+            admin_id=str(kwargs.get("admin_id")),
+            message=kwargs.get("message"),
+            target_user_ids=kwargs.get("target_user_ids") or [],
+            scheduled_time_utc=now,
+            status="pending",
+            bot_token_id=kwargs.get("bot_token_id"),
+            created_at=now,
+            updated_at=now,
+        )
+        self.created.append(kwargs)
+        return broadcast_id
+
+    def get_broadcast(self, broadcast_id: str):
+        return self._broadcasts.get(broadcast_id)
+
+    def mark_broadcast_completed(self, broadcast_id: str):
+        broadcast = self._broadcasts.get(broadcast_id)
+        if broadcast:
+            broadcast.status = "completed"
+            return True
+        return False
+
 @pytest.mark.asyncio
 async def test_create_broadcast_send_now_schedules_immediate_dispatch_task(monkeypatch):
     now = datetime.now(timezone.utc)
@@ -154,3 +189,60 @@ async def test_create_broadcast_scheduled_does_not_trigger_immediate_dispatch(mo
     assert response.broadcast_id == "b-3"
     assert response.status == "pending"
     assert scheduled_coroutines == []
+
+
+@pytest.mark.asyncio
+async def test_create_broadcast_translation_groups_by_language(monkeypatch):
+    now = datetime.now(timezone.utc)
+    repo = _MultiBroadcastRepo()
+    monkeypatch.setattr(admin_router, "BroadcastsRepository", lambda: repo)
+
+    monkeypatch.setattr(
+        broadcast_service,
+        "get_all_users_from_db",
+        lambda: [1, 2, 3],
+    )
+    monkeypatch.setattr(
+        admin_router,
+        "_get_user_language_map",
+        lambda _user_ids: {1: "en", 2: "fr", 3: "fr"},
+    )
+
+    translation_calls = []
+
+    def _fake_translate(text: str, target_lang: str, source_lang: str = "en") -> str:
+        translation_calls.append((source_lang, target_lang, text))
+        return f"[{target_lang}] {text}"
+
+    import handlers.translator as translator_module
+    monkeypatch.setattr(translator_module, "translate_text", _fake_translate)
+
+    scheduled_coroutines = []
+
+    def _fake_create_task(coro):
+        scheduled_coroutines.append(coro)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(admin_router.asyncio, "create_task", _fake_create_task)
+
+    fake_request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(bot_token="app-bot-token")))
+    request = CreateBroadcastRequest(
+        message="hello",
+        target_user_ids=[1, 2, 3],
+        scheduled_time_utc=None,
+        bot_token_id=None,
+        translate_to_user_language=True,
+        source_language="en",
+    )
+
+    response = await admin_router.create_broadcast(
+        request=fake_request,
+        broadcast_request=request,
+        admin_id=7,
+    )
+
+    assert response.broadcast_id == "b-1"
+    assert response.status == "pending"
+    assert len(repo.created) == 2
+    assert translation_calls == [("en", "fr", "hello")]
+    assert len(scheduled_coroutines) == 2

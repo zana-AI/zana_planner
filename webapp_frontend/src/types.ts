@@ -232,6 +232,8 @@ export interface CreateBroadcastRequest {
   target_user_ids: number[];
   scheduled_time_utc?: string;
   bot_token_id?: string;
+  translate_to_user_language?: boolean;
+  source_language?: string;
 }
 
 export interface BotToken {
@@ -457,7 +459,7 @@ export interface FocusSession {
   elapsed_seconds?: number; // Current elapsed time if running/paused
 }
 
-// ── Follow Graph (admin) ─────────────────────────────────────
+// -- Follow Graph (admin) -------------------------------------
 export interface FollowGraphNode {
   id: string;
   username: string | null;
