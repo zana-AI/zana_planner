@@ -1703,6 +1703,12 @@ class MessageHandlers:
                     [InlineKeyboardButton("➕ Add to My Contents", callback_data=add_callback_data)]
                 ]
 
+                if content_info.get("captions_available"):
+                    transcript_cb = encode_cb("youtube_transcript", url_id=url_id, vid=video_id)
+                    keyboard_rows.append(
+                        [InlineKeyboardButton("Get Transcript", callback_data=transcript_cb)]
+                    )
+
                 if self.miniapp_url:
                     web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
                     bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")

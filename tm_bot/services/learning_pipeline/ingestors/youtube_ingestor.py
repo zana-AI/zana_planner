@@ -80,7 +80,7 @@ class YouTubeIngestor:
                 metadata={"captions_used": True},
             )
 
-        description = str(content_metadata.get("description") or "").strip()
+        description = str(content_metadata.get("description") or video_info.get("description") or "").strip()
         audio_stream_url = _pick_audio_stream_url(video_info)
         if audio_stream_url:
             try:
