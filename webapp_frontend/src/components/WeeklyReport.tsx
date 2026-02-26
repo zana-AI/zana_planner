@@ -81,7 +81,6 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
     }, 0);
   }, [promises]);
 
-  const overflowHours = Math.max(0, total_spent - cappedTotal);
   const cappedPct   = total_promised > 0 ? Math.min((cappedTotal  / total_promised) * 100, 100) : 0;
   const spentPct    = total_promised > 0 ? Math.min((total_spent   / total_promised) * 100, 100) : 0;
   
@@ -119,15 +118,8 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
             marginBottom: '8px'
           }}>
             <span style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.72)' }}>Overall Progress</span>
-            <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-              <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text)' }}>
-                {Math.round(cappedPct)}% ({cappedTotal.toFixed(1)}h / {total_promised.toFixed(1)}h)
-              </span>
-              {overflowHours > 0.05 && (
-                <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.42)', fontWeight: '500' }}>
-                  +{overflowHours.toFixed(1)}h extra
-                </span>
-              )}
+            <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text)' }}>
+              {Math.round(cappedPct)}% ({cappedTotal.toFixed(1)}h / {total_promised.toFixed(1)}h)
             </span>
           </div>
           {/* Two-layer progress bar:
