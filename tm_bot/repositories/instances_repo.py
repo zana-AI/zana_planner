@@ -49,6 +49,23 @@ class InstancesRepository:
             pass
         return "t.title, t.category, 'commitment' as template_kind, 'at_least' as target_direction"
 
+    def _generate_promise_id(self, user_id: int, prefix: str = "P") -> str:
+        """Generate a sequential promise ID like P01, P02, etc."""
+        try:
+            promises = self.promises_repo.list_promises(user_id)
+            numeric_ids = []
+            for p in promises:
+                if p.id and p.id.upper().startswith(prefix.upper()):
+                    try:
+                        numeric_ids.append(int(p.id[len(prefix):]))
+                    except ValueError:
+                        pass
+            last_id = max(numeric_ids) if numeric_ids else 0
+            return f"{prefix}{(last_id + 1):02d}"
+        except Exception:
+            import random
+            return f"{prefix}{random.randint(1, 99):02d}"
+
     def subscribe_template(
         self,
         user_id: int,
@@ -56,6 +73,7 @@ class InstancesRepository:
         start_date: Optional[date] = None,
         target_date: Optional[date] = None,
         target_value_override: Optional[float] = None,
+        visibility: str = "public",
     ) -> Dict[str, Any]:
         """
         Subscribe to a template: creates a promise and an instance.
@@ -77,17 +95,22 @@ class InstancesRepository:
         if not start_date:
             start_date = datetime.now().date()
         if not target_date:
-            duration_type = template.get("duration_type") or "week"
-            duration_weeks = template.get("duration_weeks")
-            if duration_type == "week":
-                weeks = duration_weeks or 1
-                target_date = start_date + timedelta(weeks=weeks)
-            elif duration_type == "one_time":
-                target_date = start_date + timedelta(days=7)  # Default 1 week
-            else:  # date
-                # For date-based, target_date should be provided or we use duration_weeks
-                weeks = duration_weeks or 4
-                target_date = start_date + timedelta(weeks=weeks)
+            today = start_date
+            six_months_out = date(today.year + (today.month + 5) // 12,
+                                  (today.month + 5) % 12 + 1, 1) - timedelta(days=1)
+            # Simpler: add roughly 6 months
+            month6 = today.month + 6
+            year6 = today.year + (month6 - 1) // 12
+            month6 = (month6 - 1) % 12 + 1
+            try:
+                six_months_out = date(year6, month6, today.day)
+            except ValueError:
+                # day out of range for month (e.g. Aug 31 -> Feb 28)
+                import calendar
+                last_day = calendar.monthrange(year6, month6)[1]
+                six_months_out = date(year6, month6, last_day)
+            end_of_year = date(today.year, 12, 31)
+            target_date = max(six_months_out, end_of_year)
 
         # Determine target value (use override if provided, else template default)
         target_value = target_value_override if target_value_override is not None else template["target_value"]
@@ -95,7 +118,7 @@ class InstancesRepository:
         # Generate promise ID: P-prefix for recurring, T-prefix for non-recurring
         is_recurring = (template.get("duration_type") or "week") != "one_time"
         prefix = "P" if is_recurring else "T"
-        promise_id = f"{prefix}{instance_id[:6].upper()}"
+        promise_id = self._generate_promise_id(user_id, prefix)
         
         # Create promise text from template title
         promise_text = template["title"].replace(" ", "_")
@@ -109,7 +132,7 @@ class InstancesRepository:
             recurring=is_recurring,
             start_date=start_date,
             end_date=target_date,
-            visibility="private",
+            visibility=visibility if visibility in ("private", "public") else "public",
         )
         self.promises_repo.upsert_promise(user_id, promise)
 

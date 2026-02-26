@@ -275,6 +275,7 @@ export interface SubscribeTemplateRequest {
   start_date?: string;
   target_date?: string;
   target_value?: number;
+  visibility?: 'public' | 'private';
 }
 
 export interface SubscribeTemplateResponse {

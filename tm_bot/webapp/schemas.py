@@ -193,6 +193,7 @@ class SubscribeTemplateRequest(BaseModel):
     start_date: Optional[str] = None  # ISO date string
     target_date: Optional[str] = None  # ISO date string
     target_value: Optional[float] = None  # Override template's target_value
+    visibility: Optional[str] = "public"  # "public" (default) | "private"
 
 
 # Distractions

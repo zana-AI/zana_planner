@@ -150,6 +150,7 @@ async def subscribe_template(
         start_date = None
         target_date = None
         target_value_override = None
+        visibility = "public"
         if subscribe_request:
             if subscribe_request.start_date:
                 start_date = parse_date(subscribe_request.start_date).date()
@@ -157,8 +158,10 @@ async def subscribe_template(
                 target_date = parse_date(subscribe_request.target_date).date()
             if subscribe_request.target_value is not None:
                 target_value_override = float(subscribe_request.target_value)
+            if subscribe_request.visibility in ("private", "public"):
+                visibility = subscribe_request.visibility
         
-        result = instances_repo.subscribe_template(user_id, template_id, start_date, target_date, target_value_override)
+        result = instances_repo.subscribe_template(user_id, template_id, start_date, target_date, target_value_override, visibility)
         
         return {"status": "success", **result}
     except HTTPException:
