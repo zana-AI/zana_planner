@@ -85,12 +85,16 @@ async def get_template_users(
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT DISTINCT i.user_id, u.first_name, u.username, u.avatar_path, u.avatar_file_unique_id
-                    FROM promise_instances i
+                    SELECT i.user_id, u.first_name, u.username, u.avatar_path, u.avatar_file_unique_id
+                    FROM (
+                        SELECT user_id, MAX(created_at_utc) AS latest_created_at
+                        FROM promise_instances
+                        WHERE template_id = :template_id
+                          AND status = 'active'
+                        GROUP BY user_id
+                    ) i
                     JOIN users u ON i.user_id = u.user_id
-                    WHERE i.template_id = :template_id
-                      AND i.status = 'active'
-                    ORDER BY i.created_at_utc DESC
+                    ORDER BY i.latest_created_at DESC
                     LIMIT :limit
                 """),
                 {"template_id": template_id, "limit": limit}
