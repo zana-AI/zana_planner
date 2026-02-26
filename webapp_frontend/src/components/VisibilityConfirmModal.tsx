@@ -1,3 +1,5 @@
+import { Globe, Lock } from 'lucide-react';
+
 interface VisibilityConfirmModalProps {
   isOpen: boolean;
   currentVisibility: 'private' | 'public';
@@ -25,7 +27,7 @@ export function VisibilityConfirmModal({
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Change Visibility</h2>
+          <h2 className="modal-title">{isMakingPublic ? 'Share Promise Publicly' : 'Make Promise Private'}</h2>
           <button className="modal-close" onClick={onCancel}>
             ×
           </button>
@@ -42,10 +44,23 @@ export function VisibilityConfirmModal({
 
           {isMakingPublic && (
             <div className="modal-warning">
-              <div className="modal-warning-icon">⚠️</div>
+              <div className="modal-warning-icon"><Globe size={20} strokeWidth={1.8} /></div>
               <div className="modal-warning-text">
-                Making this promise public will make it visible to everyone. 
-                Others will be able to see your progress and activity.
+                <strong>This will:</strong>
+                <ul style={{ margin: '6px 0 0 0', paddingLeft: '18px', lineHeight: '1.7' }}>
+                  <li>Show your progress in the <strong>community activity feed</strong></li>
+                  <li>Add this promise to the <strong>promise template library</strong>, showing your activity on that template</li>
+                  <li>Let others see your streak and progress</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {!isMakingPublic && (
+            <div className="modal-warning">
+              <div className="modal-warning-icon"><Lock size={20} strokeWidth={1.8} /></div>
+              <div className="modal-warning-text">
+                Making this promise private will <strong>remove it from the community feed</strong> and the template library. Only you will see it.
               </div>
             </div>
           )}
@@ -63,7 +78,7 @@ export function VisibilityConfirmModal({
               className="modal-button modal-button-primary"
               onClick={onConfirm}
             >
-              Confirm
+              {isMakingPublic ? 'Share Publicly' : 'Make Private'}
             </button>
           </div>
         </div>

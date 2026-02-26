@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { PublicPromiseBadge as PublicPromiseBadgeType } from '../types';
 import { PromiseLogsModal } from './PromiseLogsModal';
 import { Badge } from './ui/Badge';
+import { formatPromiseText } from '../utils/activityFormat';
 
 interface PromiseBadgeProps {
   badge: PublicPromiseBadgeType;
@@ -25,7 +26,8 @@ export function PromiseBadge({ badge, compact = false, showLogsOnClick = true }:
   const { text, streak, progress_percentage, weekly_hours, hours_promised } = badge;
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
 
-  const displayText = text.length > (compact ? 26 : 44) ? `${text.substring(0, compact ? 23 : 41)}...` : text;
+  const formattedText = formatPromiseText(text);
+  const displayText = formattedText.length > (compact ? 26 : 44) ? `${formattedText.substring(0, compact ? 23 : 41)}...` : formattedText;
   const progressValue = Math.round(progress_percentage);
 
   const handleClick = () => {
@@ -37,7 +39,7 @@ export function PromiseBadge({ badge, compact = false, showLogsOnClick = true }:
   if (compact) {
     return (
       <>
-        <div className={`promise-badge compact ${showLogsOnClick ? 'clickable' : ''}`} title={text} onClick={showLogsOnClick ? handleClick : undefined}>
+        <div className={`promise-badge compact ${showLogsOnClick ? 'clickable' : ''}`} title={formattedText} onClick={showLogsOnClick ? handleClick : undefined}>
           <span className="promise-badge-text">{displayText}</span>
           <span className="promise-badge-stats">
             <Badge variant="neutral">{getStreakText(streak)}</Badge>
@@ -53,7 +55,7 @@ export function PromiseBadge({ badge, compact = false, showLogsOnClick = true }:
 
   return (
     <>
-      <div className={`promise-badge ${showLogsOnClick ? 'clickable' : ''}`} title={text} onClick={showLogsOnClick ? handleClick : undefined}>
+      <div className={`promise-badge ${showLogsOnClick ? 'clickable' : ''}`} title={formattedText} onClick={showLogsOnClick ? handleClick : undefined}>
         <div className="promise-badge-header">
           <span className="promise-badge-text">{displayText}</span>
           <Badge variant={getProgressVariant(progressValue)}>{progressValue}%</Badge>

@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Bookmark } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { PromiseTemplate } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { PageHeader } from '../components/ui/PageHeader';
-import { AppLogo } from '../components/ui/AppLogo';
+import { Emoji } from '../components/ui/Emoji';
+import { AvatarStack } from '../components/ui/AvatarStack';
+import type { AvatarStackUser } from '../components/ui/AvatarStack';
 
-interface TemplateUser {
-  user_id: string;
-  first_name?: string;
-  username?: string;
-  avatar_path?: string;
-}
+type TemplateUser = AvatarStackUser;
 
 export function TemplatesPage() {
   const navigate = useNavigate();
@@ -130,7 +128,13 @@ export function TemplatesPage() {
             <div key={template.template_id} className="template-card" onClick={() => navigate(`/templates/${template.template_id}`)}>
               <div className="template-header">
                 <span className="template-list-logo">
-                  <AppLogo size={20} title={template.title} />
+                  {(templateUsers[template.template_id] ?? []).length > 0 ? (
+                    <AvatarStack users={templateUsers[template.template_id]} size={20} max={3} />
+                  ) : template.emoji ? (
+                    <Emoji emoji={template.emoji} size={20} />
+                  ) : (
+                    <Bookmark size={16} strokeWidth={1.8} color="rgba(237,243,255,0.45)" />
+                  )}
                 </span>
                 <h3 className="template-title">{template.title}</h3>
               </div>
@@ -143,41 +147,15 @@ export function TemplatesPage() {
                   </span>
                 </div>
               </div>
-              {templateUsers[template.template_id] && templateUsers[template.template_id].length > 0 ? (
-                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  {templateUsers[template.template_id].slice(0, 6).map((templateUser) => (
-                    <div
-                      key={templateUser.user_id}
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        overflow: 'hidden',
-                        border: '2px solid rgba(232, 238, 252, 0.2)',
-                        background: 'rgba(232, 238, 252, 0.1)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '10px',
-                        color: '#fff',
-                        fontWeight: '500',
-                      }}
-                      title={templateUser.first_name || templateUser.username || `User ${templateUser.user_id}`}
-                    >
-                      {templateUser.avatar_path ? (
-                        <img src={templateUser.avatar_path} alt={templateUser.first_name || templateUser.username || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        (templateUser.first_name || templateUser.username || 'U').charAt(0).toUpperCase()
-                      )}
-                    </div>
-                  ))}
-                  {templateUsers[template.template_id].length > 6 ? (
-                    <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.6)' }}>
-                      +{templateUsers[template.template_id].length - 6}
-                    </span>
-                  ) : null}
+              {(templateUsers[template.template_id] ?? []).length > 0 && (
+                <div className="template-card-users">
+                  <span className="template-card-users-label">
+                    {templateUsers[template.template_id].length === 1
+                      ? '1 person doing this'
+                      : `${templateUsers[template.template_id].length} people doing this`}
+                  </span>
                 </div>
-              ) : null}
+              )}
             </div>
           ))
         )}

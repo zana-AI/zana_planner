@@ -41,7 +41,9 @@ export function ActivityItem({
   const actionText = buildActivitySummary(item);
   const relativeTime = formatRelativeTimestamp(item.timestamp_utc);
   const durationText = formatDurationMinutes(item.duration_minutes);
-  const canToggleFollow = !!currentUserId && actor.user_id !== currentUserId && !!onToggleFollow;
+  const isCurrentUser = !!currentUserId && actor.user_id === currentUserId;
+  const canToggleFollow = !!currentUserId && !isCurrentUser && !!onToggleFollow;
+  const shownName = isCurrentUser ? 'You' : displayName;
 
   const avatarUrl = !imageError && actor.avatar_path
     ? (actor.avatar_path.startsWith('http') ? actor.avatar_path : `/api/media/avatars/${actor.user_id}`)
@@ -63,20 +65,20 @@ export function ActivityItem({
         type="button"
         className="community-activity-avatar-wrap"
         onClick={openProfile}
-        aria-label={`Open ${displayName} profile`}
+        aria-label={isCurrentUser ? 'Open your profile' : `Open ${shownName} profile`}
       >
         <div className="community-activity-avatar">
           {avatarUrl ? (
             <img
               src={avatarUrl}
-              alt={displayName}
+              alt={shownName}
               className="community-activity-avatar-img"
               onError={() => setImageError(true)}
             />
           ) : !dicebearError ? (
             <img
               src={getDicebearUrl(actor.user_id)}
-              alt={displayName}
+              alt={shownName}
               className="community-activity-avatar-img"
               onError={() => setDicebearError(true)}
             />
@@ -91,8 +93,8 @@ export function ActivityItem({
 
       <div className="community-activity-main">
         <div className="community-activity-line">
-          <button type="button" className="community-activity-name" onClick={openProfile}>
-            {displayName}
+          <button type="button" className={`community-activity-name${isCurrentUser ? ' community-activity-name--you' : ''}`} onClick={openProfile}>
+            {shownName}
           </button>
           <span className="community-activity-text">{actionText}</span>
         </div>
@@ -103,7 +105,9 @@ export function ActivityItem({
       </div>
 
       <div className="community-activity-actions">
-        <button type="button" className="community-activity-btn" onClick={openProfile}>Profile</button>
+        {isCurrentUser ? null : (
+          <button type="button" className="community-activity-btn" onClick={openProfile}>Profile</button>
+        )}
         {canToggleFollow ? (
           <button
             type="button"

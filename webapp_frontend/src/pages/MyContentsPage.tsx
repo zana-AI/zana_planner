@@ -121,7 +121,14 @@ export function MyContentsPage() {
   };
 
   return (
-    <div style={{ padding: '1rem', maxWidth: 1200, margin: '0 auto' }}>
+    <div
+      style={{
+        padding: '1rem',
+        paddingBottom: 'calc(var(--bottom-nav-height) + 32px + env(safe-area-inset-bottom))',
+        maxWidth: 1200,
+        margin: '0 auto',
+      }}
+    >
       <PageHeader title="My Contents" showBack fallbackRoute="/templates" />
 
       <div style={{ marginBottom: '1.5rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

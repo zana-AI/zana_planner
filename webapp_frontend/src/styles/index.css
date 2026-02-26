@@ -562,32 +562,90 @@ body.modal-open {
   flex: 1;
 }
 
+/* Visibility sliding toggle */
 .card-visibility-toggle {
   flex: 0 0 auto;
-  background: rgba(237, 243, 255, 0.06);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-muted);
-  padding: 0 10px;
+  padding: 3px 8px 3px 5px;
   min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.2s;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
   margin-left: 4px;
+  color: var(--text-muted);
+}
+
+.card-visibility-toggle--public {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .card-visibility-toggle:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--border-strong);
-  background: rgba(237, 243, 255, 0.1);
+  background: rgba(237, 243, 255, 0.08);
+}
+
+.card-visibility-toggle--public:hover:not(:disabled) {
+  background: rgba(99, 167, 247, 0.25);
+  border-color: var(--accent);
+  color: var(--accent-hover);
 }
 
 .card-visibility-toggle:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.card-visibility-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.card-visibility-track {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  background: rgba(237, 243, 255, 0.10);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  transition: background 0.22s, border-color 0.22s;
+  flex-shrink: 0;
+}
+
+.card-visibility-toggle--public .card-visibility-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.card-visibility-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background 0.22s;
+}
+
+.card-visibility-toggle--public .card-visibility-thumb {
+  transform: translateX(12px);
+  background: #fff;
+}
+
+.card-visibility-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .card-actions {
@@ -1362,7 +1420,7 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 0 12px 20px;
+  padding: 0 12px calc(20px + var(--bottom-nav-height) + env(safe-area-inset-bottom));
 }
 
 .community-v2-section {
@@ -1491,6 +1549,10 @@ body.modal-open {
   font-weight: 700;
   padding: 0;
   cursor: pointer;
+}
+
+.community-activity-name--you {
+  color: var(--accent);
 }
 
 .community-activity-text {
@@ -1736,7 +1798,7 @@ body.modal-open {
 
 @media (max-width: 767px) {
   .community-v2-layout {
-    padding: 0 8px 14px;
+    padding: 0 8px calc(14px + var(--bottom-nav-height) + env(safe-area-inset-bottom));
     gap: 12px;
   }
 
@@ -3167,6 +3229,7 @@ textarea.modal-input {
   max-width: 600px;
   margin: 0 auto;
   padding: 16px;
+  padding-bottom: calc(var(--bottom-nav-height) + 32px + env(safe-area-inset-bottom));
 }
 
 .page-header {
@@ -3928,11 +3991,7 @@ textarea.modal-input {
   gap: var(--spacing-sm);
 }
 
-/* Visibility Toggle Text */
-.card-visibility-toggle span {
-  font-size: 11px;
-  color: inherit;
-}
+/* (visibility toggle text handled by .card-visibility-label) */
 
 /* Budget Bar */
 .budget-bar-container {

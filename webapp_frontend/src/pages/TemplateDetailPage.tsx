@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Bookmark } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { TemplateDetail } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
-import { AppLogo } from '../components/ui/AppLogo';
+import { Emoji } from '../components/ui/Emoji';
 
 export function TemplateDetailPage() {
   const { templateId } = useParams<{ templateId: string }>();
@@ -92,7 +93,11 @@ export function TemplateDetailPage() {
         <section className="template-detail-card">
           <div className="template-detail-title-row">
             <span className="template-detail-icon">
-              <AppLogo size={24} title={template.title} />
+              {template.emoji ? (
+                <Emoji emoji={template.emoji} size={28} />
+              ) : (
+                <Bookmark size={22} strokeWidth={1.8} color="rgba(237,243,255,0.45)" />
+              )}
             </span>
             <div>
               <h2 className="template-detail-title">{template.title}</h2>

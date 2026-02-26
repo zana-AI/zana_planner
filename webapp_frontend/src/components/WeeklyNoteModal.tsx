@@ -66,7 +66,7 @@ export function WeeklyNoteModal({ promiseId, promiseText, weekStart, isOpen, onC
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="modal-form-group">
             <label className="modal-label">Promise</label>
-            <div className="modal-promise-text">{promiseText}</div>
+            <div className="modal-promise-text">{promiseText.replace(/_/g, ' ')}</div>
           </div>
 
           <div className="modal-form-group">

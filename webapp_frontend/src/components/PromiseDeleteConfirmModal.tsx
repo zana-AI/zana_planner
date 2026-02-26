@@ -33,7 +33,7 @@ export function PromiseDeleteConfirmModal({
               Are you sure you want to delete this promise?
             </p>
             <p className="modal-message" style={{ marginTop: '8px', opacity: 0.85 }}>
-              <strong>#{promiseId}</strong> {promiseText}
+              <strong>#{promiseId}</strong> {promiseText.replace(/_/g, ' ')}
             </p>
           </div>
 

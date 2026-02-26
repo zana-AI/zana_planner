@@ -39,9 +39,14 @@ export function formatDurationMinutes(durationMinutes?: number): string | null {
   return `${hours.toFixed(1)}h`;
 }
 
+/** Replace underscores with spaces for display – promise texts may be stored with underscores. */
+export function formatPromiseText(text: string): string {
+  return text.replace(/_/g, ' ');
+}
+
 export function buildActivitySummary(item: PublicActivityItem): string {
   const base = (item.action_label || 'updated progress').trim();
   const promiseText = item.promise_text?.trim();
   if (!promiseText) return base;
-  return `${base} on ${promiseText}`;
+  return `${base} on ${formatPromiseText(promiseText)}`;
 }

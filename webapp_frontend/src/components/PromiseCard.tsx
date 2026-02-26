@@ -7,6 +7,7 @@ import { WeeklyNoteModal } from './WeeklyNoteModal';
 import { VisibilityConfirmModal } from './VisibilityConfirmModal';
 import { PromiseDeleteConfirmModal } from './PromiseDeleteConfirmModal';
 import { InlineCalendar } from './InlineCalendar';
+import { formatPromiseText } from '../utils/activityFormat';
 
 interface PromiseCardProps {
   id: string;
@@ -516,7 +517,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           >
             <div className="card-title" dir="auto">
               <span className="card-status-label">{statusLabel}</span>
-              <span className="card-title-text">{text}</span>
+              <span className="card-title-text">{formatPromiseText(text)}</span>
               {isBudget && (
                 <span className="card-budget-badge">
                   Budget
@@ -530,15 +531,40 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 <span>Edit</span>
               </button>
               <button
-                className="card-visibility-toggle"
+                className={`card-visibility-toggle${currentVisibility === 'public' ? ' card-visibility-toggle--public' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleVisibilityToggle();
                 }}
                 disabled={isUpdatingVisibility}
-                title={currentVisibility === 'private' ? 'Make public' : 'Make private'}
+                title={currentVisibility === 'private' ? 'Private — tap to share publicly' : 'Public — tap to make private'}
+                aria-label={currentVisibility === 'private' ? 'Private – tap to share publicly' : 'Public – tap to make private'}
               >
-                <span>{currentVisibility === 'private' ? 'Private' : 'Public'}</span>
+                {/* Icon: share when public, lock when private */}
+                <span className="card-visibility-icon" aria-hidden="true">
+                  {currentVisibility === 'public' ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="18" cy="5" r="3" />
+                      <circle cx="6" cy="12" r="3" />
+                      <circle cx="18" cy="19" r="3" />
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                    </svg>
+                  ) : (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="5" y="11" width="14" height="11" rx="2" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                  )}
+                </span>
+                {/* Sliding track */}
+                <span className="card-visibility-track" aria-hidden="true">
+                  <span className="card-visibility-thumb" />
+                </span>
+                {/* Label */}
+                <span className="card-visibility-label">
+                  {isUpdatingVisibility ? '…' : currentVisibility === 'public' ? 'Public' : 'Private'}
+                </span>
               </button>
             </div>
             <div className="card-meta">

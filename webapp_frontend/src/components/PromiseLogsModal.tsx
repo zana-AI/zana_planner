@@ -55,7 +55,7 @@ export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose }: Pr
         </div>
         
         <div className="modal-body">
-          <div className="promise-logs-promise-name">{promiseText}</div>
+          <div className="promise-logs-promise-name">{promiseText.replace(/_/g, ' ')}</div>
           
           {loading ? (
             <div className="promise-logs-loading">Loading logs...</div>
