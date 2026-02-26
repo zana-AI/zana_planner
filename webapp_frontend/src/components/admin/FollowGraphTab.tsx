@@ -14,6 +14,8 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
+  Handle,
+  Position,
   type Node,
   type Edge,
   type NodeTypes,
@@ -60,6 +62,17 @@ interface UserNodeData extends Record<string, unknown> {
   selected: boolean;
 }
 
+// Invisible handle style — edges need handles to connect but we don't want
+// the default square connector dots to show on the avatar circle.
+const HANDLE_STYLE: React.CSSProperties = {
+  width: 1,
+  height: 1,
+  background: 'transparent',
+  border: 'none',
+  minWidth: 0,
+  minHeight: 0,
+};
+
 function UserNodeComponent({ data }: { data: UserNodeData }) {
   const ring = data.highlighted
     ? '0 0 0 3px #facc15, 0 0 12px 4px rgba(250,204,21,0.6)'
@@ -77,8 +90,12 @@ function UserNodeComponent({ data }: { data: UserNodeData }) {
         gap: 4,
         cursor: 'pointer',
         userSelect: 'none',
+        position: 'relative',
       }}
     >
+      {/* Target handle — edges arrive here (this node is being followed) */}
+      <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
+
       <div
         style={{
           width: 40,
@@ -97,7 +114,6 @@ function UserNodeComponent({ data }: { data: UserNodeData }) {
         }}
       >
         {data.initials}
-        {/* Connection handles are positioned via React Flow's handle system */}
       </div>
       <span
         style={{
@@ -112,6 +128,9 @@ function UserNodeComponent({ data }: { data: UserNodeData }) {
       >
         {data.label}
       </span>
+
+      {/* Source handle — edges leave here (this node follows someone) */}
+      <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
     </div>
   );
 }
@@ -230,8 +249,13 @@ function InnerGraph({ graphData, searchQuery, selectedNodeId, onSelectNode }: In
     [graphData.edges],
   );
 
-  const [nodes, , onNodesChange] = useNodesState(rfNodes);
-  const [edges, , onEdgesChange] = useEdgesState(rfEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(rfNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(rfEdges);
+
+  // Sync nodes whenever highlighted/selected state or graph data changes
+  useEffect(() => { setNodes(rfNodes); }, [rfNodes, setNodes]);
+  // Sync edges whenever graph data changes
+  useEffect(() => { setEdges(rfEdges); }, [rfEdges, setEdges]);
 
   // Fit on first load
   useEffect(() => {
@@ -498,8 +522,18 @@ export function FollowGraphTab() {
             outline: 'none',
           }}
         />
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted, #94a3b8)', marginLeft: 'auto' }}>
-          {graphData.total_nodes} users · {graphData.total_edges} edges
+        <span style={{ fontSize: 12, color: 'var(--color-text-muted, #94a3b8)', display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <svg width="28" height="10" viewBox="0 0 28 10">
+              <line x1="2" y1="5" x2="22" y2="5" stroke="#6366f1" strokeWidth="1.5"/>
+              <polygon points="22,2 28,5 22,8" fill="#6366f1"/>
+            </svg>
+            <span>A follows B</span>
+          </span>
+          <span style={{ color: 'var(--color-border, #334155)' }}>·</span>
+          <span>{graphData.total_nodes} users</span>
+          <span style={{ color: 'var(--color-border, #334155)' }}>·</span>
+          <span>{graphData.total_edges} edges</span>
         </span>
       </div>
 
