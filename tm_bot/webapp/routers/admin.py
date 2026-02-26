@@ -1347,14 +1347,14 @@ async def get_follow_graph(
                 following_count[e["source"]] = following_count.get(e["source"], 0) + 1
                 follower_count[e["target"]] = follower_count.get(e["target"], 0) + 1
 
-            # Fetch display info for all involved users from user_settings
+            # Fetch display info for all involved users from the users table
             if user_ids:
                 placeholders = ", ".join([f":uid_{i}" for i in range(len(user_ids))])
                 params = {f"uid_{i}": uid for i, uid in enumerate(user_ids)}
                 settings_rows = session.execute(
                     text(f"""
                         SELECT user_id, first_name, username
-                        FROM user_settings
+                        FROM users
                         WHERE user_id IN ({placeholders})
                     """),
                     params
