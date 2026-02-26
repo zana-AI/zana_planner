@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Bookmark, Globe, Lock, Bell } from 'lucide-react';
+import { Bookmark, Globe, Lock } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { TemplateDetail } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
