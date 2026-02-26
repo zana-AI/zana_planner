@@ -18,6 +18,7 @@ import {
   CreatePromiseTab,
   ConversationsTab,
   TestsTab,
+  FollowGraphTab,
 } from './admin';
 
 export function AdminPanel() {
@@ -271,6 +272,10 @@ export function AdminPanel() {
           <p>{error}</p>
           <button onClick={() => setError('')}>x</button>
         </div>
+      )}
+
+      {activeTab === 'followgraph' && (
+        <FollowGraphTab />
       )}
 
       {activeTab === 'stats' && (

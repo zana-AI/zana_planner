@@ -1296,6 +1296,102 @@ async def create_promise_for_user(
         raise HTTPException(status_code=500, detail=f"Failed to create promise: {str(e)}")
 
 
+@router.get("/graph/follow")
+async def get_follow_graph(
+    request: Request,
+    limit: int = Query(default=2000, ge=1, le=10000, description="Max number of follow edges to return"),
+    admin_id: int = Depends(get_admin_user)
+):
+    """
+    Return the full follow graph for admin visualisation.
+
+    Response shape:
+    {
+        "nodes": [{ "id": str, "username": str|null, "first_name": str|null,
+                    "follower_count": int, "following_count": int }],
+        "edges": [{ "source": str, "target": str }],
+        "total_edges": int,
+        "total_nodes": int
+    }
+    """
+    try:
+        with get_db_session() as session:
+            # Fetch all active follow edges (most recent first)
+            edges_rows = session.execute(
+                text("""
+                    SELECT source_user_id, target_user_id
+                    FROM user_relationships
+                    WHERE relationship_type = 'follow'
+                      AND is_active = 1
+                    ORDER BY created_at_utc DESC
+                    LIMIT :limit
+                """),
+                {"limit": limit}
+            ).fetchall()
+
+            if not edges_rows:
+                return {"nodes": [], "edges": [], "total_edges": 0, "total_nodes": 0}
+
+            edges = [{"source": str(r[0]), "target": str(r[1])} for r in edges_rows]
+
+            # Collect all unique user IDs
+            user_ids: set = set()
+            for e in edges:
+                user_ids.add(e["source"])
+                user_ids.add(e["target"])
+
+            # Build per-user follower/following counts from the edge list (no extra query)
+            follower_count: Dict[str, int] = {}
+            following_count: Dict[str, int] = {}
+            for e in edges:
+                following_count[e["source"]] = following_count.get(e["source"], 0) + 1
+                follower_count[e["target"]] = follower_count.get(e["target"], 0) + 1
+
+            # Fetch display info for all involved users from user_settings
+            if user_ids:
+                placeholders = ", ".join([f":uid_{i}" for i in range(len(user_ids))])
+                params = {f"uid_{i}": uid for i, uid in enumerate(user_ids)}
+                settings_rows = session.execute(
+                    text(f"""
+                        SELECT user_id, first_name, username
+                        FROM user_settings
+                        WHERE user_id IN ({placeholders})
+                    """),
+                    params
+                ).fetchall()
+            else:
+                settings_rows = []
+
+            user_info: Dict[str, Dict[str, Any]] = {}
+            for row in settings_rows:
+                user_info[str(row[0])] = {
+                    "username": row[2],
+                    "first_name": row[1],
+                }
+
+            nodes = []
+            for uid in user_ids:
+                info = user_info.get(uid, {})
+                nodes.append({
+                    "id": uid,
+                    "username": info.get("username"),
+                    "first_name": info.get("first_name"),
+                    "follower_count": follower_count.get(uid, 0),
+                    "following_count": following_count.get(uid, 0),
+                })
+
+            return {
+                "nodes": nodes,
+                "edges": edges,
+                "total_edges": len(edges),
+                "total_nodes": len(nodes),
+            }
+
+    except Exception as e:
+        logger.exception(f"Error fetching follow graph: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch follow graph: {str(e)}")
+
+
 @router.post("/promote")
 async def promote_staging_to_prod(
     request: Request,

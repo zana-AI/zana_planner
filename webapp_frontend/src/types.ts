@@ -429,6 +429,27 @@ export interface FocusSession {
   elapsed_seconds?: number; // Current elapsed time if running/paused
 }
 
+// ── Follow Graph (admin) ─────────────────────────────────────
+export interface FollowGraphNode {
+  id: string;
+  username: string | null;
+  first_name: string | null;
+  follower_count: number;
+  following_count: number;
+}
+
+export interface FollowGraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface FollowGraphData {
+  nodes: FollowGraphNode[];
+  edges: FollowGraphEdge[];
+  total_edges: number;
+  total_nodes: number;
+}
+
 // Extend Window interface for Telegram
 declare global {
   interface Window {

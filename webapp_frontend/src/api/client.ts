@@ -24,7 +24,8 @@ import type {
   Content,
   MyContentsResponse,
   HeatmapData,
-  ConsumeEventRequest
+  ConsumeEventRequest,
+  FollowGraphData
 } from '../types';
 
 const API_BASE = '/api';
@@ -788,6 +789,10 @@ class ApiClient {
   /**
    * Get test run report (admin only).
    */
+  async getFollowGraph(limit: number = 2000): Promise<FollowGraphData> {
+    return this.request(`/admin/graph/follow?limit=${limit}`);
+  }
+
   async getTestReport(runId: string): Promise<{
     run_id: string;
     status: string;

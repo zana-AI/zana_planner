@@ -1,5 +1,6 @@
 export type TabType =
   | 'stats'
+  | 'followgraph'
   | 'compose'
   | 'scheduled'
   | 'templates'
@@ -24,7 +25,10 @@ export function AdminTabs({ activeTab, onTabChange, scheduledCount }: AdminTabsP
   const groups: AdminTabGroup[] = [
     {
       label: 'Overview',
-      items: [{ key: 'stats', label: 'Metrics' }],
+      items: [
+        { key: 'stats', label: 'Metrics' },
+        { key: 'followgraph', label: 'Follow Graph' },
+      ],
     },
     {
       label: 'Messaging',
