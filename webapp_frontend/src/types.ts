@@ -155,6 +155,34 @@ export interface PublicUsersResponse {
   total: number;
 }
 
+export interface PublicActivityActor {
+  user_id: string;
+  first_name?: string;
+  last_name?: string;
+  display_name?: string;
+  username?: string;
+  avatar_path?: string;
+  avatar_file_unique_id?: string;
+  weekly_activity_count?: number;
+  last_activity_at_utc?: string;
+}
+
+export interface PublicActivityItem {
+  activity_id: string;
+  action_type: string;
+  action_label: string;
+  duration_minutes?: number;
+  timestamp_utc: string;
+  promise_id?: string;
+  promise_text?: string;
+  actor: PublicActivityActor;
+}
+
+export interface PublicActivityResponse {
+  items: PublicActivityItem[];
+  total: number;
+}
+
 // Admin types
 export interface AdminUser {
   user_id: string;

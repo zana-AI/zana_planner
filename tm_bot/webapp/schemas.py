@@ -64,6 +64,37 @@ class PublicUsersResponse(BaseModel):
     total: int
 
 
+class PublicActivityActor(BaseModel):
+    """Public actor info used by community activity stream."""
+    user_id: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    display_name: Optional[str] = None
+    username: Optional[str] = None
+    avatar_path: Optional[str] = None
+    avatar_file_unique_id: Optional[str] = None
+    weekly_activity_count: int = 0
+    last_activity_at_utc: Optional[str] = None
+
+
+class PublicActivityItem(BaseModel):
+    """Single activity item for the community timeline."""
+    activity_id: str
+    action_type: str
+    action_label: str
+    duration_minutes: Optional[int] = None
+    timestamp_utc: str
+    promise_id: Optional[str] = None
+    promise_text: Optional[str] = None
+    actor: PublicActivityActor
+
+
+class PublicActivityResponse(BaseModel):
+    """Response model for public activity endpoint."""
+    items: List[PublicActivityItem]
+    total: int
+
+
 class PublicPromiseBadge(BaseModel):
     """Public promise badge with stats."""
     promise_id: str

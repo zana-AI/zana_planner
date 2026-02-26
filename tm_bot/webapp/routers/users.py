@@ -9,7 +9,8 @@ from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from ..dependencies import get_current_user, get_settings_repo, update_user_activity, get_reports_service
 from ..schemas import (
     WeeklyReportResponse, UserInfoResponse, TimezoneUpdateRequest,
-    UserSettingsUpdateRequest, PublicUser, PublicUsersResponse
+    UserSettingsUpdateRequest, PublicUser, PublicUsersResponse,
+    PublicActivityActor, PublicActivityItem, PublicActivityResponse
 )
 from repositories.follows_repo import FollowsRepository
 from repositories.settings_repo import SettingsRepository
@@ -93,6 +94,20 @@ def _notify_settings_change(
         )
     except Exception as e:
         logger.warning(f"Failed to queue settings-change notification for user {user_id}: {e}")
+
+
+def _build_activity_label(action_type: Optional[str], duration_minutes: Optional[int]) -> str:
+    normalized = (action_type or "").strip().lower()
+
+    if normalized in ("checkin", "check_in"):
+        return "checked in"
+    if normalized in ("focus", "focus_session", "pomodoro"):
+        return "focused"
+    if normalized in ("complete", "completed", "done"):
+        return "completed a task"
+    if duration_minutes and duration_minutes > 0:
+        return "logged progress"
+    return "updated progress"
 
 
 @router.get("/weekly", response_model=WeeklyReportResponse)
@@ -510,6 +525,109 @@ async def get_public_users(
         logger.error(f"Full traceback: {error_trace}")
         # Return a simpler error message for production
         raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+
+
+@router.get("/public/activity", response_model=PublicActivityResponse)
+async def get_public_activity(
+    _request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    _user_id: int = Depends(get_current_user),
+):
+    """
+    Get recent public activity stream (authenticated only).
+
+    Activity is sourced from actions linked to public promises.
+    """
+    try:
+        _, since_utc_week = _activity_window_starts_utc()
+
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT
+                        a.action_uuid AS activity_id,
+                        a.action_type,
+                        a.time_spent_hours,
+                        a.at_utc,
+                        COALESCE(p_uuid.current_id, p_id.current_id, a.promise_id_text) AS promise_id,
+                        COALESCE(p_uuid.text, p_id.text) AS promise_text,
+                        u.user_id AS actor_user_id,
+                        u.first_name AS actor_first_name,
+                        u.last_name AS actor_last_name,
+                        u.display_name AS actor_display_name,
+                        u.username AS actor_username,
+                        u.avatar_path AS actor_avatar_path,
+                        u.avatar_file_unique_id AS actor_avatar_file_unique_id,
+                        COALESCE(activity.weekly_activity_count, 0) AS actor_weekly_activity_count,
+                        activity.last_activity_at_utc AS actor_last_activity_at_utc
+                    FROM actions a
+                    JOIN users u ON u.user_id = a.user_id
+                    LEFT JOIN promises p_uuid
+                        ON p_uuid.promise_uuid = a.promise_uuid
+                       AND p_uuid.user_id = a.user_id
+                       AND p_uuid.is_deleted = 0
+                    LEFT JOIN promises p_id
+                        ON p_id.user_id = a.user_id
+                       AND p_id.current_id = a.promise_id_text
+                       AND p_id.is_deleted = 0
+                    LEFT JOIN (
+                        SELECT
+                            user_id,
+                            COUNT(*) FILTER (WHERE at_utc >= :since_utc_week) AS weekly_activity_count,
+                            MAX(at_utc) AS last_activity_at_utc
+                        FROM actions
+                        GROUP BY user_id
+                    ) activity ON activity.user_id = u.user_id
+                    WHERE COALESCE(p_uuid.visibility, p_id.visibility, 'private') = 'public'
+                      AND (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
+                    ORDER BY a.at_utc DESC
+                    LIMIT :limit;
+                """),
+                {"since_utc_week": since_utc_week, "limit": int(limit)},
+            ).mappings().fetchall()
+
+        items = []
+        for row in rows:
+            raw_hours = float(row.get("time_spent_hours") or 0.0)
+            duration_minutes = int(round(raw_hours * 60))
+            if duration_minutes <= 0:
+                duration_minutes = None
+
+            timestamp_utc = row.get("at_utc")
+            if not timestamp_utc:
+                timestamp_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+            actor = PublicActivityActor(
+                user_id=str(row.get("actor_user_id")),
+                first_name=row.get("actor_first_name"),
+                last_name=row.get("actor_last_name"),
+                display_name=row.get("actor_display_name"),
+                username=row.get("actor_username"),
+                avatar_path=row.get("actor_avatar_path"),
+                avatar_file_unique_id=row.get("actor_avatar_file_unique_id"),
+                weekly_activity_count=int(row.get("actor_weekly_activity_count") or 0),
+                last_activity_at_utc=row.get("actor_last_activity_at_utc"),
+            )
+
+            items.append(
+                PublicActivityItem(
+                    activity_id=str(row.get("activity_id") or ""),
+                    action_type=str(row.get("action_type") or "log_time"),
+                    action_label=_build_activity_label(row.get("action_type"), duration_minutes),
+                    duration_minutes=duration_minutes,
+                    timestamp_utc=str(timestamp_utc),
+                    promise_id=row.get("promise_id"),
+                    promise_text=row.get("promise_text"),
+                    actor=actor,
+                )
+            )
+
+        return PublicActivityResponse(items=items, total=len(items))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting public activity: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch activity: {str(e)}")
 
 
 @router.post("/users/{target_user_id}/follow")

@@ -1,22 +1,31 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
-import { UserCard } from './UserCard';
-import type { PublicUser, UserInfo } from '../types';
+import { ActivityItem } from './community/ActivityItem';
+import { CompactUserChip } from './community/CompactUserChip';
+import type { PublicActivityItem, PublicUser, UserInfo } from '../types';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { PageHeader } from './ui/PageHeader';
+
+const PREVIEW_COUNT = 8;
 
 export function UsersPage() {
   const navigate = useNavigate();
   const { user, initData, isReady } = useTelegramWebApp();
-  const [users, setUsers] = useState<PublicUser[]>([]);
+  const [discoverUsers, setDiscoverUsers] = useState<PublicUser[]>([]);
+  const [activityItems, setActivityItems] = useState<PublicActivityItem[]>([]);
   const [followers, setFollowers] = useState<PublicUser[]>([]);
   const [following, setFollowing] = useState<PublicUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [followersLoading, setFollowersLoading] = useState(false);
   const [followingLoading, setFollowingLoading] = useState(false);
   const [error, setError] = useState('');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [followBusyByUser, setFollowBusyByUser] = useState<Record<string, boolean>>({});
+  const [followingExpanded, setFollowingExpanded] = useState(false);
+  const [followersExpanded, setFollowersExpanded] = useState(false);
+  const [discoverExpanded, setDiscoverExpanded] = useState(false);
 
   const authData = initData || getDevInitData();
   const hasToken = !!localStorage.getItem('telegram_auth_token');
@@ -30,7 +39,6 @@ export function UsersPage() {
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
-    // Always fetch user info when Telegram user id is not available.
     if (user?.id) return;
 
     if (authData) {
@@ -46,6 +54,7 @@ export function UsersPage() {
   }, [isReady, isAuthenticated, user?.id, authData]);
 
   const currentUserId = user?.id?.toString() || userInfo?.user_id?.toString();
+  const followingIds = useMemo(() => new Set(following.map((person) => person.user_id)), [following]);
 
   const fetchSocialData = useCallback(async () => {
     if (!currentUserId) return;
@@ -73,38 +82,73 @@ export function UsersPage() {
     fetchSocialData();
   }, [fetchSocialData]);
 
-  useEffect(() => {
+  const fetchCommunityData = useCallback(async () => {
     if (!isReady || !isAuthenticated) return;
 
-    const fetchUsers = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        if (authData) {
-          apiClient.setInitData(authData);
-        }
-        const response = await apiClient.getPublicUsers(20);
-        const filteredUsers = response.users.filter((publicUser) => publicUser.user_id !== currentUserId);
-        setUsers(filteredUsers);
-      } catch (err) {
-        console.error('Failed to fetch users:', err);
-        if (err instanceof ApiError) {
-          if (err.status === 401) {
-            apiClient.clearAuth();
-            window.dispatchEvent(new Event('logout'));
-            navigate('/', { replace: true });
-            return;
-          }
-          setError(err.message);
-        } else {
-          setError('Failed to load users. Please try again.');
-        }
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setActivityLoading(true);
+    setError('');
+    try {
+      if (authData) {
+        apiClient.setInitData(authData);
       }
-    };
-    fetchUsers();
-  }, [currentUserId, isAuthenticated, isReady, authData, navigate]);
+
+      const [activityRes, usersRes] = await Promise.all([
+        apiClient.getPublicActivity(25),
+        apiClient.getPublicUsers(24),
+      ]);
+
+      setActivityItems(activityRes.items);
+      setDiscoverUsers(usersRes.users.filter((publicUser) => publicUser.user_id !== currentUserId));
+    } catch (err) {
+      console.error('Failed to fetch community data:', err);
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          apiClient.clearAuth();
+          window.dispatchEvent(new Event('logout'));
+          navigate('/', { replace: true });
+          return;
+        }
+        setError(err.message);
+      } else {
+        setError('Failed to load community. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+      setActivityLoading(false);
+    }
+  }, [isReady, isAuthenticated, authData, currentUserId, navigate]);
+
+  useEffect(() => {
+    fetchCommunityData();
+  }, [fetchCommunityData]);
+
+  const toggleFollow = useCallback(async (targetUserId: string) => {
+    if (!currentUserId || targetUserId === currentUserId) return;
+
+    setFollowBusyByUser((prev) => ({ ...prev, [targetUserId]: true }));
+    try {
+      if (followingIds.has(targetUserId)) {
+        await apiClient.unfollowUser(targetUserId);
+      } else {
+        await apiClient.followUser(targetUserId);
+      }
+      await fetchSocialData();
+    } catch (err) {
+      console.error(`Failed to toggle follow for ${targetUserId}:`, err);
+    } finally {
+      setFollowBusyByUser((prev) => ({ ...prev, [targetUserId]: false }));
+    }
+  }, [currentUserId, followingIds, fetchSocialData]);
+
+  const discoverCandidates = useMemo(
+    () => discoverUsers.filter((person) => !followingIds.has(person.user_id)),
+    [discoverUsers, followingIds]
+  );
+
+  const visibleFollowing = followingExpanded ? following : following.slice(0, PREVIEW_COUNT);
+  const visibleFollowers = followersExpanded ? followers : followers.slice(0, PREVIEW_COUNT);
+  const visibleDiscover = discoverExpanded ? discoverCandidates : discoverCandidates.slice(0, PREVIEW_COUNT);
 
   if (!isReady) {
     return (
@@ -129,13 +173,13 @@ export function UsersPage() {
   }
 
   return (
-    <div className="users-page">
-      <PageHeader title="Community" subtitle="Meet active users on Xaana" />
+    <div className="users-page users-page-community">
+      <PageHeader title="Community" subtitle="Recent public activity and people you follow" />
 
-      {loading ? (
+      {loading && activityItems.length === 0 ? (
         <div className="users-page-loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading users...</div>
+          <div className="loading-text">Loading community...</div>
         </div>
       ) : null}
 
@@ -143,78 +187,156 @@ export function UsersPage() {
         <div className="users-page-error">
           <div className="error-icon">!</div>
           <p className="error-message">{error}</p>
-          <button className="retry-button" onClick={() => window.location.reload()}>
+          <button type="button" className="retry-button" onClick={fetchCommunityData}>
             Try Again
           </button>
         </div>
       ) : null}
 
-      {!loading && !error && users.length === 0 ? (
-        <div className="users-page-empty">
-          <p className="empty-message">No users found yet.</p>
-          <p className="empty-hint">Be the first to join.</p>
-        </div>
-      ) : null}
-
-      {!loading && !error && currentUserId ? (
-        <div className="users-page-social">
-          <div className="social-section">
-            <div className="social-header">
-              <h3 className="social-title">Followers</h3>
-              <span className="social-count">{followers.length}</span>
+      {!error ? (
+        <div className="community-v2-layout">
+          <section className="community-v2-section community-v2-activity">
+            <div className="community-v2-section-header">
+              <h3 className="community-v2-title">Recent Activity</h3>
+              <span className="community-v2-count">{activityItems.length}</span>
             </div>
-            {followersLoading ? (
-              <div className="social-loading">Loading...</div>
-            ) : followers.length > 0 ? (
-              <div className="social-list">
-                {followers.slice(0, 5).map((follower) => (
-                  <UserCard key={follower.user_id} user={follower} currentUserId={currentUserId} showFollowButton={false} />
-                ))}
-                {followers.length > 5 ? <div className="social-more">+{followers.length - 5} more</div> : null}
-              </div>
-            ) : (
-              <div className="social-empty">No followers yet</div>
-            )}
-          </div>
 
-          <div className="social-section">
-            <div className="social-header">
-              <h3 className="social-title">Following</h3>
-              <span className="social-count">{following.length}</span>
-            </div>
-            {followingLoading ? (
-              <div className="social-loading">Loading...</div>
-            ) : following.length > 0 ? (
-              <div className="social-list">
-                {following.slice(0, 5).map((followedUser) => (
-                  <UserCard
-                    key={followedUser.user_id}
-                    user={followedUser}
+            {activityLoading && activityItems.length === 0 ? (
+              <div className="community-v2-empty-note">Loading recent activity...</div>
+            ) : activityItems.length > 0 ? (
+              <div className="community-v2-activity-list">
+                {activityItems.map((item, index) => (
+                  <ActivityItem
+                    key={`${item.activity_id}-${index}`}
+                    item={item}
                     currentUserId={currentUserId}
-                    showFollowButton={false}
-                    onFollowChange={fetchSocialData}
+                    isFollowing={followingIds.has(item.actor.user_id)}
+                    followPending={!!followBusyByUser[item.actor.user_id]}
+                    onToggleFollow={toggleFollow}
                   />
                 ))}
-                {following.length > 5 ? <div className="social-more">+{following.length - 5} more</div> : null}
               </div>
             ) : (
-              <div className="social-empty">Not following anyone yet</div>
+              <div className="community-v2-activity-empty">
+                <p className="community-v2-empty-title">No recent public activity yet</p>
+                <p className="community-v2-empty-note">Follow active users to personalize this stream.</p>
+                <div className="community-v2-placeholder-list">
+                  <div className="community-v2-placeholder-row" />
+                  <div className="community-v2-placeholder-row" />
+                  <div className="community-v2-placeholder-row" />
+                </div>
+              </div>
             )}
-          </div>
-        </div>
-      ) : null}
+          </section>
 
-      {!loading && !error ? (
-        <div className="users-page-grid">
-          {users.map((publicUser) => (
-            <UserCard
-              key={publicUser.user_id}
-              user={publicUser}
-              currentUserId={currentUserId}
-              showFollowButton={!!currentUserId}
-              onFollowChange={fetchSocialData}
-            />
-          ))}
+          {currentUserId ? (
+            <section className="community-v2-section">
+              <div className="community-v2-section-header">
+                <h3 className="community-v2-title">Following</h3>
+                <span className="community-v2-count">{following.length}</span>
+              </div>
+              {followingLoading ? (
+                <div className="community-v2-empty-note">Loading following...</div>
+              ) : following.length > 0 ? (
+                <>
+                  <div className="community-v2-people-row">
+                    {visibleFollowing.map((person) => (
+                      <CompactUserChip
+                        key={person.user_id}
+                        user={person}
+                        currentUserId={currentUserId}
+                        isFollowing
+                      />
+                    ))}
+                  </div>
+                  {following.length > PREVIEW_COUNT ? (
+                    <button
+                      type="button"
+                      className="community-v2-row-toggle"
+                      onClick={() => setFollowingExpanded((prev) => !prev)}
+                    >
+                      {followingExpanded ? 'Collapse' : `See more (${following.length - PREVIEW_COUNT})`}
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <div className="community-v2-empty-note">Not following anyone yet.</div>
+              )}
+            </section>
+          ) : null}
+
+          {currentUserId ? (
+            <section className="community-v2-section">
+              <div className="community-v2-section-header">
+                <h3 className="community-v2-title">Followers</h3>
+                <span className="community-v2-count">{followers.length}</span>
+              </div>
+              {followersLoading ? (
+                <div className="community-v2-empty-note">Loading followers...</div>
+              ) : followers.length > 0 ? (
+                <>
+                  <div className="community-v2-people-row">
+                    {visibleFollowers.map((person) => (
+                      <CompactUserChip
+                        key={person.user_id}
+                        user={person}
+                        currentUserId={currentUserId}
+                        isFollowing={followingIds.has(person.user_id)}
+                      />
+                    ))}
+                  </div>
+                  {followers.length > PREVIEW_COUNT ? (
+                    <button
+                      type="button"
+                      className="community-v2-row-toggle"
+                      onClick={() => setFollowersExpanded((prev) => !prev)}
+                    >
+                      {followersExpanded ? 'Collapse' : `See more (${followers.length - PREVIEW_COUNT})`}
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <div className="community-v2-empty-note">No followers yet.</div>
+              )}
+            </section>
+          ) : null}
+
+          <section className="community-v2-section">
+            <div className="community-v2-section-header">
+              <h3 className="community-v2-title">Discover Active Users</h3>
+              <span className="community-v2-count">{discoverCandidates.length}</span>
+            </div>
+            {visibleDiscover.length > 0 ? (
+              <>
+                <div className="community-v2-people-row">
+                  {visibleDiscover.map((person) => (
+                    <CompactUserChip
+                      key={person.user_id}
+                      user={person}
+                      currentUserId={currentUserId}
+                      showFollowButton={!!currentUserId}
+                      isFollowing={followingIds.has(person.user_id)}
+                      followPending={!!followBusyByUser[person.user_id]}
+                      onFollowToggle={toggleFollow}
+                    />
+                  ))}
+                </div>
+                {discoverCandidates.length > PREVIEW_COUNT ? (
+                  <button
+                    type="button"
+                    className="community-v2-row-toggle"
+                    onClick={() => setDiscoverExpanded((prev) => !prev)}
+                  >
+                    {discoverExpanded ? 'Collapse' : `See more (${discoverCandidates.length - PREVIEW_COUNT})`}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <div className="community-v2-empty-note">
+                You are already connected with most active users.
+              </div>
+            )}
+          </section>
         </div>
       ) : null}
     </div>

@@ -2,6 +2,7 @@ import type {
   WeeklyReportData, 
   UserInfo, 
   PublicUsersResponse,
+  PublicActivityResponse,
   AdminUsersResponse,
   Broadcast,
   CreateBroadcastRequest,
@@ -249,6 +250,13 @@ class ApiClient {
    */
   async getPublicUsers(limit: number = 20): Promise<PublicUsersResponse> {
     return this.request<PublicUsersResponse>(`/public/users?limit=${limit}`);
+  }
+
+  /**
+   * Get recent public community activity.
+   */
+  async getPublicActivity(limit: number = 20): Promise<PublicActivityResponse> {
+    return this.request<PublicActivityResponse>(`/public/activity?limit=${limit}`);
   }
 
   /**
