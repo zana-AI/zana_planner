@@ -148,11 +148,11 @@ class MessageHandlers:
             settings = self.plan_keeper.settings_service.get_settings(user_id)
             updated = False
             
-            # Update first_name if missing or changed
-            if user.first_name:
-                if settings.first_name != user.first_name:
-                    settings.first_name = user.first_name
-                    updated = True
+            # Only set first_name from Telegram if not already stored
+            # (preserves any name the user set manually in settings)
+            if user.first_name and not settings.first_name:
+                settings.first_name = user.first_name
+                updated = True
             
             # Update username if missing or changed
             if user.username:

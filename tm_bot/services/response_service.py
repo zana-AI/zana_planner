@@ -210,8 +210,29 @@ class ResponseService:
         # Check for Markdown markers
         if "**" in text or "__" in text or "`" in text or "[" in text:
             return "Markdown"
-        
+
         return None
+
+    @staticmethod
+    def _normalize_non_html_entities(text: str, parse_mode: Optional[str] = None) -> str:
+        """
+        Decode common quote entities for non-HTML output.
+
+        This fixes visible artifacts like '&#x27;' in plain/Markdown messages
+        without changing HTML-sanitized payloads.
+        """
+        safe_text = "" if text is None else str(text)
+        if not safe_text:
+            return safe_text
+        if str(parse_mode or "").strip().upper() == "HTML":
+            return safe_text
+
+        normalized = safe_text
+        normalized = re.sub(r"(?i)&#x0*27;", "'", normalized)
+        normalized = normalized.replace("&#39;", "'").replace("&apos;", "'")
+        normalized = re.sub(r"(?i)&#x0*22;", '"', normalized)
+        normalized = normalized.replace("&#34;", '"').replace("&quot;", '"')
+        return normalized
 
     def _fit_for_telegram(self, text: str, parse_mode: Optional[str]) -> tuple[str, Optional[str]]:
         """
@@ -287,6 +308,7 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             text = self._translate_if_needed(text, user_lang, user_id)
+        text = self._normalize_non_html_entities(text, parse_mode=parse_mode)
 
         # Prepend Xaana header after translation so it is never translated.
         text = prepend_xaana_to_message(text)
@@ -360,6 +382,7 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             text = self._translate_if_needed(text, user_lang, user_id)
+        text = self._normalize_non_html_entities(text, parse_mode=parse_mode)
 
         # Prepend Xaana header after translation so it is never translated.
         text = prepend_xaana_to_message(text)
@@ -535,6 +558,7 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             text = self._translate_if_needed(text, user_lang, user_id)
+        text = self._normalize_non_html_entities(text, parse_mode=parse_mode)
 
         # Prepend Xaana header after translation so it is never translated.
         text = prepend_xaana_to_message(text)
@@ -664,6 +688,7 @@ class ResponseService:
         # Translate if needed
         if auto_translate:
             final_text = self._translate_if_needed(final_text, user_lang, user_id)
+        final_text = self._normalize_non_html_entities(final_text, parse_mode=parse_mode)
 
         # Prepend Xaana header after translation so it is never translated.
         final_text = prepend_xaana_to_message(final_text)
