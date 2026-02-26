@@ -69,6 +69,21 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
     () => [...Object.entries(promises)].sort((a, b) => a[0].localeCompare(b[0])),
     [promises]
   );
+
+  // Capped total: each promise contributes at most its own target.
+  // This is the "true commitment" progress – hours beyond a promise's cap
+  // don't inflate the overall completion rate.
+  const cappedTotal = useMemo(() => {
+    return Object.values(promises).reduce((sum, p) => {
+      const achieved = p.achieved_value ?? p.hours_spent;
+      const target   = p.target_value  ?? p.hours_promised;
+      return sum + Math.min(Math.max(achieved, 0), Math.max(target, 0));
+    }, 0);
+  }, [promises]);
+
+  const overflowHours = Math.max(0, total_spent - cappedTotal);
+  const cappedPct   = total_promised > 0 ? Math.min((cappedTotal  / total_promised) * 100, 100) : 0;
+  const spentPct    = total_promised > 0 ? Math.min((total_spent   / total_promised) * 100, 100) : 0;
   
   return (
     <div className="weekly-report">
@@ -104,20 +119,47 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
             marginBottom: '8px'
           }}>
             <span style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.72)' }}>Overall Progress</span>
-            <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text)' }}>
-              {Math.round((total_spent / total_promised) * 100)}% ({total_spent.toFixed(1)}h / {total_promised.toFixed(1)}h)
+            <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text)' }}>
+                {Math.round(cappedPct)}% ({cappedTotal.toFixed(1)}h / {total_promised.toFixed(1)}h)
+              </span>
+              {overflowHours > 0.05 && (
+                <span style={{ fontSize: '0.75rem', color: 'rgba(232, 238, 252, 0.42)', fontWeight: '500' }}>
+                  +{overflowHours.toFixed(1)}h extra
+                </span>
+              )}
             </span>
           </div>
+          {/* Two-layer progress bar:
+              - dark back layer  = total actual hours (incl. overflow beyond promise caps)
+              - bright front layer = capped commitment hours (the true progress indicator) */}
           <div style={{ 
+            position: 'relative',
             height: '10px', 
             borderRadius: '999px', 
             background: 'rgba(232, 238, 252, 0.10)',
             overflow: 'hidden',
             border: '1px solid rgba(232, 238, 252, 0.06)'
           }}>
+            {/* Dark layer – actual total (shown only when there is overflow beyond caps) */}
+            {spentPct > cappedPct + 0.5 && (
+              <div style={{ 
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                height: '100%',
+                width: `${spentPct}%`,
+                background: 'rgba(99, 167, 247, 0.28)',
+                borderRadius: '999px',
+              }} />
+            )}
+            {/* Bright layer – capped commitment progress (primary indicator) */}
             <div style={{ 
+              position: 'absolute',
+              left: 0,
+              top: 0,
               height: '100%',
-              width: `${Math.min((total_spent / total_promised) * 100, 100)}%`,
+              width: `${cappedPct}%`,
               background: 'linear-gradient(90deg, var(--accent), var(--accent2))',
               borderRadius: '999px',
               transition: 'width 0.3s ease'
