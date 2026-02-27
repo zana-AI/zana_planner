@@ -8,6 +8,7 @@ import { VisibilityConfirmModal } from './VisibilityConfirmModal';
 import { PromiseDeleteConfirmModal } from './PromiseDeleteConfirmModal';
 import { InlineCalendar } from './InlineCalendar';
 import { formatPromiseText } from '../utils/activityFormat';
+import { PlanSessionsList } from './PlanSessionsList';
 
 interface PromiseCardProps {
   id: string;
@@ -802,6 +803,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     No notes for this week. Open Edit to modify this promise.
                   </div>
                 )}
+
+                {/* Plan Sessions */}
+                <PlanSessionsList promiseId={id} />
               </div>
             )}
           </div>
