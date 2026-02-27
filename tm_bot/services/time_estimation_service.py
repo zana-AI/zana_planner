@@ -242,7 +242,7 @@ Respond with just a number (e.g., "1.5" for 1.5 hours, or "0.25" for 15 minutes)
                 
                 # Try to extract suggested hours from reasoning
                 import re
-                numbers = re.findall(r'\d+\.?\d*', reasoning)
+                numbers = re.findall(r'\d+\.?\d*', str(reasoning))
                 if numbers:
                     suggested_hours = float(numbers[0])
                     # If number seems too large, it might be in minutes
