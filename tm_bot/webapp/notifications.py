@@ -3,6 +3,7 @@ Helper functions for sending Telegram notifications.
 """
 
 import os
+from datetime import datetime
 from typing import Optional
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
@@ -266,6 +267,118 @@ async def send_suggestion_notifications(
                 
     except Exception as e:
         logger.warning(f"Unexpected error sending suggestion notifications: {e}")
+
+
+async def send_plan_session_reminder(
+    bot_token: str,
+    user_id: int,
+    plan_session_id: int,
+    promise_id: str,
+    promise_text: str,
+    title: Optional[str],
+    planned_start: Optional[str],
+    planned_duration_min: Optional[int],
+) -> None:
+    """
+    Send a Telegram reminder when a planned session is about to start.
+
+    Args:
+        bot_token: Telegram bot token
+        user_id: User ID
+        plan_session_id: ID of the plan_session row
+        promise_id: Human-readable promise ID (e.g. 'P5')
+        promise_text: Promise text
+        title: Optional session title
+        planned_start: ISO datetime string for the planned start
+        planned_duration_min: Duration in minutes (optional)
+    """
+    try:
+        # Build reminder message
+        session_label = (title or promise_text or "Session").strip()
+        if len(session_label) > 60:
+            session_label = session_label[:59] + "…"
+
+        time_str = ""
+        if planned_start:
+            try:
+                dt = datetime.fromisoformat(planned_start.replace("Z", "+00:00"))
+                time_str = dt.strftime("%H:%M")
+            except Exception:
+                pass
+
+        dur_str = ""
+        if planned_duration_min:
+            h, m = divmod(planned_duration_min, 60)
+            if h and m:
+                dur_str = f"{h}h {m}min"
+            elif h:
+                dur_str = f"{h}h"
+            else:
+                dur_str = f"{m}min"
+
+        parts = [f"⏰ *Time to focus!*\n\n📌 {session_label}"]
+        if time_str:
+            parts.append(f"🕐 {time_str}" + (f"  ·  {dur_str}" if dur_str else ""))
+        elif dur_str:
+            parts.append(f"⏱ {dur_str}")
+        message = "\n".join(parts)
+
+        # Build inline keyboard (3 rows)
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "▶️ Start Focus",
+                    callback_data=encode_cb("psess_start", sid=str(plan_session_id), pid=promise_id),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⏰ Snooze 1h",
+                    callback_data=encode_cb("psess_snooze", sid=str(plan_session_id), m=60),
+                ),
+                InlineKeyboardButton(
+                    "🌙 Tomorrow",
+                    callback_data=encode_cb("psess_snooze", sid=str(plan_session_id), m=1440),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "❌ Delete",
+                    callback_data=encode_cb("psess_del", sid=str(plan_session_id)),
+                )
+            ],
+        ])
+
+        bot = Bot(token=bot_token)
+        await bot.send_message(
+            chat_id=user_id,
+            text=message,
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+        logger.info(
+            f"✓ Sent plan session reminder to user {user_id} for plan_session {plan_session_id}"
+        )
+    except TelegramError as e:
+        error_msg = str(e).lower()
+        if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+            logger.warning(
+                f"Could not send plan session reminder to user {user_id}: user blocked bot or chat not found"
+            )
+        else:
+            logger.error(
+                f"TelegramError sending plan session reminder to user {user_id} "
+                f"for plan_session {plan_session_id}: {e}",
+                exc_info=True,
+            )
+            raise
+    except Exception as e:
+        logger.error(
+            f"Unexpected error sending plan session reminder to user {user_id} "
+            f"for plan_session {plan_session_id}: {e}",
+            exc_info=True,
+        )
+        raise
 
 
 async def send_focus_finished_notification(

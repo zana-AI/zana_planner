@@ -110,7 +110,7 @@ class SessionsRepository:
                         expected_end_utc = EXCLUDED.expected_end_utc,
                         planned_duration_minutes = EXCLUDED.planned_duration_minutes,
                         timer_kind = EXCLUDED.timer_kind,
-                        notified_at_utc = EXCLUDED.notified_at_utc;
+                        notified_at_utc = COALESCE(EXCLUDED.notified_at_utc, sessions.notified_at_utc);
                 """),
                 {
                     "session_id": str(session.session_id),

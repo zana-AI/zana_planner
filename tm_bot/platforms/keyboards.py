@@ -223,6 +223,28 @@ def content_actions_kb(
     return keyboard if keyboard.buttons else None
 
 
+def plan_session_reminder_kb(plan_session_id: int, promise_id: str) -> Keyboard:
+    """Create keyboard for planned session reminder.
+
+    Row 1: ▶️ Start Focus
+    Row 2: ⏰ Snooze 1h  |  🌙 Tomorrow
+    Row 3: ❌ Delete
+    """
+    keyboard = Keyboard()
+    sid = str(plan_session_id)
+    keyboard.add_row(
+        create_button("▶️ Start Focus", callback_data=encode_cb("psess_start", sid=sid, pid=promise_id))
+    )
+    keyboard.add_row(
+        create_button("⏰ Snooze 1h", callback_data=encode_cb("psess_snooze", sid=sid, m=60)),
+        create_button("🌙 Tomorrow", callback_data=encode_cb("psess_snooze", sid=sid, m=1440)),
+    )
+    keyboard.add_row(
+        create_button("❌ Delete", callback_data=encode_cb("psess_del", sid=sid))
+    )
+    return keyboard
+
+
 def preping_kb(promise_id: str, snooze_min: int = 30) -> Keyboard:
     """Create keyboard for preping (pre-session) actions."""
     keyboard = Keyboard()
