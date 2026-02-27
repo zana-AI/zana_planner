@@ -168,14 +168,21 @@ def voice_mode_selection_kb() -> Keyboard:
     return keyboard
 
 
-def morning_calendar_kb() -> Keyboard:
-    """Create keyboard for morning calendar question."""
+def morning_calendar_kb(tasks: list = None) -> Keyboard:
+    """Create keyboard for morning plan-sessions — one button per task."""
     keyboard = Keyboard()
-    buttons = [
-        create_button("✅ Yes, add to calendar", callback_data=encode_cb("add_to_calendar_yes")),
-        create_button("❌ No, thanks", callback_data=encode_cb("add_to_calendar_no")),
-    ]
-    keyboard.add_row(*buttons)
+    emojis = ['1️⃣', '2️⃣', '3️⃣']
+    for i, task in enumerate(tasks or []):
+        emoji = emojis[i] if i < len(emojis) else f"{i + 1}."
+        label_text = task['text']
+        if len(label_text) > 26:
+            label_text = label_text[:25] + '…'
+        dur = task.get('duration_min')
+        time_str = (task.get('planned_start') or '')[11:16]  # HH:MM from ISO
+        detail = f" — {time_str}, {dur} min" if time_str and dur else (f" — {dur} min" if dur else "")
+        label = f"{emoji} {label_text}{detail}"
+        keyboard.add_row(create_button(label, callback_data=encode_cb("plan_morning_session", idx=str(i))))
+    keyboard.add_row(create_button("❌ No thanks", callback_data=encode_cb("add_to_calendar_no")))
     return keyboard
 
 

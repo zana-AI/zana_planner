@@ -268,6 +268,11 @@ class CallbackHandlers:
             await self._handle_timezone_choose(query, user_lang)
         elif action == "voice_mode":
             await self._handle_voice_mode(query, cb, user_lang)
+        elif action == "plan_morning_session":
+            idx = int(cb.get("idx", 0))
+            await self._handle_plan_morning_session(query, idx, user_lang)
+        elif action == "noop":
+            await query.answer()
         elif action == "add_to_calendar_yes":
             await self._handle_add_to_calendar_yes(query, context, user_lang)
         elif action == "add_to_calendar_no":
@@ -884,7 +889,12 @@ class CallbackHandlers:
         if 'morning_top3' not in self.application.bot_data:
             self.application.bot_data['morning_top3'] = {}
         self.application.bot_data['morning_top3'][user_id] = [
-            {'id': p.id, 'text': p.text.replace('_', ' ')} for p in top3
+            {
+                'id': p.id,
+                'text': p.text.replace('_', ' '),
+                'weekly_h': getattr(p, 'hours_per_week', 0.0) or 0.0,
+            }
+            for p in top3
         ]
         
         # Get work hour suggestion
@@ -900,33 +910,102 @@ class CallbackHandlers:
         except Exception as e:
             logger.warning(f"Error getting work hour suggestion: {str(e)}")
         
+        # Pre-compute session proposals: per-task duration + LLM-suggested start times
+        today_str = user_now.strftime("%Y-%m-%d")
+
+        def _nice_dur(weekly_h: float) -> int:
+            raw_min = (weekly_h / 5) * 60 if weekly_h > 0 else 60
+            steps = [20, 25, 30, 45, 60, 75, 90, 120, 150, 180, 240]
+            return min(steps, key=lambda s: abs(s - raw_min))
+
+        day_proposals = []
+        try:
+            _llm = self.application.bot_data.get('llm_handler')
+            tasks_meta = [
+                {
+                    'promise_id': p.id,
+                    'text': p.text.replace('_', ' '),
+                    'duration_min': _nice_dur(getattr(p, 'hours_per_week', 0.0) or 0.0),
+                }
+                for p in top3
+            ]
+            start_times: list = [None] * len(tasks_meta)
+            if _llm:
+                import json as _json, re as _re
+                tasks_lines_str = "\n".join(
+                    f"{i + 1}. {t['text']} — {t['duration_min']} min"
+                    for i, t in enumerate(tasks_meta)
+                )
+                sched_prompt = (
+                    f"Schedule sessions for {day_of_week} {today_str} timezone {tzname}. "
+                    f"Current time: {user_now.strftime('%H:%M')}.\n"
+                    f"Tasks:\n{tasks_lines_str}\n"
+                    f"Rules: start ≥ 08:30, ≥15 min gap, deep work first, round times.\n"
+                    f'Return ONLY JSON: [{{"task_index": 0, "start_time": "HH:MM"}}, ...]'
+                )
+                raw = _llm.get_response_custom(sched_prompt, str(user_id))
+                m = _re.search(r'\[.*?\]', raw, _re.DOTALL)
+                if m:
+                    for entry in _json.loads(m.group()):
+                        k = entry.get('task_index')
+                        if k is not None and 0 <= k < len(start_times):
+                            start_times[k] = entry.get('start_time')
+            fallbacks = ["09:00", "11:00", "14:00"]
+            for i, st in enumerate(start_times):
+                if not st:
+                    start_times[i] = fallbacks[i] if i < len(fallbacks) else "09:00"
+            day_proposals = [
+                {
+                    'promise_id': t['promise_id'],
+                    'text': t['text'],
+                    'duration_min': t['duration_min'],
+                    'planned_start': f"{today_str}T{start_times[i]}:00",
+                }
+                for i, t in enumerate(tasks_meta)
+            ]
+        except Exception as e:
+            logger.warning(f"Error computing session proposals for user {user_id}: {e}")
+            day_proposals = [
+                {
+                    'promise_id': p.id,
+                    'text': p.text.replace('_', ' '),
+                    'duration_min': _nice_dur(getattr(p, 'hours_per_week', 0.0) or 0.0),
+                    'planned_start': None,
+                }
+                for p in top3
+            ]
+
+        if 'morning_sessions_proposed' not in self.application.bot_data:
+            self.application.bot_data['morning_sessions_proposed'] = {}
+        self.application.bot_data['morning_sessions_proposed'][user_id] = day_proposals
+
         # Build priorities list with emojis
         emojis = ['1️⃣', '2️⃣', '3️⃣']
-        priorities_text = get_message("morning_priorities_header", user_lang) + "\n\n"
+        priorities_text = get_message("morning_priorities_header", user_lang, count=len(top3)) + "\n\n"
         for i, p in enumerate(top3):
             promise_text = p.text.replace('_', ' ')
             priorities_text += f"{emojis[i]} {promise_text}\n"
-        
+
         # Add work hour suggestion if available
         suggestion_text = ""
         if work_suggestion and work_suggestion.get('suggested_hours', 0) > 0:
             suggested_hours = work_suggestion['suggested_hours']
-            suggestion_text = "\n\n" + get_message("work_hours_suggestion", user_lang, 
-                                                  hours=suggested_hours, day=day_of_week)
-        
+            suggestion_text = "\n\n" + get_message("work_hours_suggestion", user_lang,
+                                                   hours=suggested_hours, day=day_of_week)
+
         # Build full message
         header_message = get_message("morning_header", user_lang, date=user_now.strftime("%A"))
         calendar_question = get_message("morning_calendar_question", user_lang)
         full_message = f"{header_message}\n\n{priorities_text}{suggestion_text}\n\n{calendar_question}"
-        
-        # Send single message with calendar keyboard
+
+        # Send message with one button per task
         msg = await context.bot.send_message(
             chat_id=user_id,
             text=full_message,
-            reply_markup=morning_calendar_kb(),
+            reply_markup=morning_calendar_kb(tasks=day_proposals),
             parse_mode="Markdown",
         )
-        
+
         # Store message ID for cleanup
         self._store_morning_message_id(user_id, msg.message_id, "morning_priorities")
 
@@ -1121,42 +1200,157 @@ class CallbackHandlers:
         await query.edit_message_text(text=confirmation_message, parse_mode='Markdown')
     
     async def _handle_add_to_calendar_yes(self, query, context: CallbackContext, user_lang: Language):
-        """Handle user wanting to add priorities to calendar"""
+        """Create planned sessions for today's top-3 priorities."""
         user_id = query.from_user.id
         user_now, tzname = self._get_user_now(user_id)
-        
-        # Get top 3 promises from bot_data
+
         top3_promises = self.application.bot_data.get('morning_top3', {}).get(user_id, [])
         if not top3_promises:
             await query.answer("Sorry, I couldn't find your priorities. Please try again tomorrow.")
             return
-        
-        # Generate calendar links via LLM
+
+        await query.answer("Planning your sessions... ⏳")
+
+        # Round weekly_h/5 to a natural session length (minutes)
+        def _nice_duration(weekly_h: float) -> int:
+            raw_min = (weekly_h / 5) * 60 if weekly_h > 0 else 60
+            steps = [20, 25, 30, 45, 60, 75, 90, 120, 150, 180, 240]
+            return min(steps, key=lambda s: abs(s - raw_min))
+
+        tasks_for_prompt = [
+            {
+                'index': i,
+                'text': p['text'],
+                'duration_min': _nice_duration(p.get('weekly_h', 0.0)),
+            }
+            for i, p in enumerate(top3_promises)
+        ]
+
+        tasks_lines = "\n".join(
+            f"{i + 1}. {t['text']} — {t['duration_min']} min"
+            for i, t in enumerate(tasks_for_prompt)
+        )
+        current_time_str = user_now.strftime("%H:%M")
+        today_str = user_now.strftime("%Y-%m-%d")
+        day_name = user_now.strftime("%A")
+
+        prompt = f"""You are a productivity assistant scheduling work sessions for a user.
+
+Today is {day_name} {today_str} in timezone {tzname}. Current time: {current_time_str}.
+
+Tasks to schedule today with their suggested durations:
+{tasks_lines}
+
+Rules:
+- Schedule sessions after {current_time_str}, starting no earlier than 08:30
+- Leave at least 15 minutes between sessions
+- Deep-work tasks should come first (peak focus in the morning)
+- Use natural round times (e.g. 09:00, 09:30, 10:00)
+
+Return ONLY a valid JSON array with this exact shape, no extra text:
+[
+  {{"task_index": 0, "start_time": "HH:MM"}},
+  {{"task_index": 1, "start_time": "HH:MM"}},
+  {{"task_index": 2, "start_time": "HH:MM"}}
+]"""
+
+        start_times: list = [None] * len(tasks_for_prompt)
         try:
-            calendar_links_text = await self._generate_calendar_links_via_llm(
-                top3_promises, user_now, tzname, user_id, user_lang
-            )
-            
-            # Build message with calendar links
-            header = get_message("morning_calendar_links", user_lang)
-            full_message = f"{header}\n\n{calendar_links_text}"
-            
-            # Send new message with calendar links
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=full_message,
-                parse_mode="Markdown",
-            )
-            
-            # Acknowledge the button press
-            await query.answer("Calendar links sent! ✅")
+            llm_handler = self.application.bot_data.get('llm_handler')
+            if llm_handler:
+                import json, re as _re
+                raw = llm_handler.get_response_custom(prompt, str(user_id))
+                # Extract JSON array from response
+                json_match = _re.search(r'\[.*?\]', raw, _re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group())
+                    for entry in parsed:
+                        idx = entry.get('task_index')
+                        if idx is not None and 0 <= idx < len(start_times):
+                            start_times[idx] = entry.get('start_time')
         except Exception as e:
-            logger.error(f"Error generating calendar links for user {user_id}: {str(e)}")
-            await query.answer("Sorry, I couldn't generate calendar links. Please try again later.")
+            logger.warning(f"LLM session time suggestion failed for user {user_id}: {e}")
+
+        # Fallback times if LLM parsing fails
+        fallbacks = ["09:00", "11:00", "14:00", "16:00"]
+        for i, t in enumerate(start_times):
+            if not t:
+                start_times[i] = fallbacks[i] if i < len(fallbacks) else "09:00"
+
+        # Create plan sessions and build confirmation
+        emojis = ['1️⃣', '2️⃣', '3️⃣']
+        lines = []
+        for i, task in enumerate(tasks_for_prompt):
+            start_iso = f"{today_str}T{start_times[i]}:00"
+            try:
+                self.plan_keeper.add_plan_session(
+                    user_id=user_id,
+                    promise_id=top3_promises[i]['id'],
+                    title=task['text'],
+                    planned_start=start_iso,
+                    planned_duration_min=task['duration_min'],
+                )
+                lines.append(f"{emojis[i]} {task['text']} — {start_times[i]}, {task['duration_min']} min")
+            except Exception as e:
+                logger.error(f"Failed to create plan session for promise {top3_promises[i]['id']}: {e}")
+                lines.append(f"{emojis[i]} {task['text']} — could not schedule")
+
+        header = get_message("morning_plan_sessions_created", user_lang)
+        sessions_list = "\n".join(lines)
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"{header}\n\n{sessions_list}",
+            parse_mode="Markdown",
+        )
     
     async def _handle_add_to_calendar_no(self, query, user_lang: Language):
-        """Handle user not wanting calendar links."""
-        await query.answer("Got it! Have a productive day! 💪")
+        """Handle user declining session planning."""
+        await query.answer("Got it! You can plan sessions anytime from the app. Have a great day! 💪")
+
+    async def _handle_plan_morning_session(self, query, idx: int, user_lang: Language):
+        """Create a single planned session from the morning proposals."""
+        user_id = query.from_user.id
+        proposals = self.application.bot_data.get('morning_sessions_proposed', {}).get(user_id, [])
+        if idx >= len(proposals):
+            await query.answer("Session info not found. Please try again tomorrow.")
+            return
+        task = proposals[idx]
+        try:
+            self.plan_keeper.add_plan_session(
+                user_id=user_id,
+                promise_id=task['promise_id'],
+                title=task['text'],
+                planned_start=task.get('planned_start'),
+                planned_duration_min=task.get('duration_min'),
+            )
+            time_label = (task.get('planned_start') or '')[11:16]  # HH:MM
+            dur = task.get('duration_min', '')
+            detail = f" — {time_label}, {dur} min" if time_label and dur else ""
+            await query.answer(f"✅ Planned!{detail}")
+            # Mark the tapped button with a checkmark
+            if query.message and query.message.reply_markup:
+                new_rows = []
+                for row in query.message.reply_markup.inline_keyboard:
+                    new_row = []
+                    for btn in row:
+                        cd = getattr(btn, 'callback_data', '') or ''
+                        if f"idx={idx}" in cd:
+                            new_row.append(InlineKeyboardButton(
+                                text=f"✅ {btn.text}",
+                                callback_data=encode_cb("noop"),
+                            ))
+                        else:
+                            new_row.append(btn)
+                    new_rows.append(new_row)
+                try:
+                    await query.edit_message_reply_markup(
+                        reply_markup=InlineKeyboardMarkup(new_rows),
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Failed to create plan session idx={idx} for user {user_id}: {e}")
+            await query.answer("Sorry, couldn't create this session. Please try again.")
 
     async def _handle_add_content(
         self,

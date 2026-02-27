@@ -104,9 +104,9 @@ def voice_mode_selection_kb() -> InlineKeyboardMarkup:
     return _keyboard_adapter.build_keyboard(keyboard)
 
 
-def morning_calendar_kb() -> InlineKeyboardMarkup:
-    """Create keyboard for morning calendar question."""
-    keyboard = _morning_calendar_kb()
+def morning_calendar_kb(tasks: list = None) -> InlineKeyboardMarkup:
+    """Create keyboard for morning plan-sessions question."""
+    keyboard = _morning_calendar_kb(tasks)
     return _keyboard_adapter.build_keyboard(keyboard)
 
 
