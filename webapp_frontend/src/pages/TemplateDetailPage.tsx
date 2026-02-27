@@ -18,8 +18,6 @@ function defaultEndDate(): string {
   return result.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
 export function TemplateDetailPage() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
@@ -30,7 +28,6 @@ export function TemplateDetailPage() {
   const [subscribing, setSubscribing] = useState(false);
   const [targetValue, setTargetValue] = useState<number | null>(null);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
-  const [reminders, setReminders] = useState<Array<{ weekday: number; time: string; enabled: boolean }>>([]);
   const endDateDisplay = defaultEndDate();
 
   useEffect(() => {
@@ -54,46 +51,16 @@ export function TemplateDetailPage() {
     loadTemplate();
   }, [templateId, hapticFeedback]);
 
-  const handleAddReminder = useCallback(() => {
-    setReminders((prev) => [...prev, { weekday: 0, time: '09:00', enabled: true }]);
-  }, []);
-
-  const handleRemoveReminder = useCallback((index: number) => {
-    setReminders((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const handleUpdateReminder = useCallback((index: number, field: 'weekday' | 'time' | 'enabled', value: any) => {
-    setReminders((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
-      return next;
-    });
-  }, []);
-
   const handleSubscribe = async () => {
     if (!template || !templateId) return;
 
     setSubscribing(true);
     setError('');
     try {
-      const result = await apiClient.subscribeTemplate(templateId, {
+      await apiClient.subscribeTemplate(templateId, {
         target_value: targetValue !== null ? targetValue : undefined,
         visibility,
       });
-      // Save reminders if any were configured
-      if (reminders.length > 0 && result.promise_id) {
-        try {
-          await apiClient.updatePromiseReminders(result.promise_id, reminders.map((r) => ({
-            kind: 'fixed_time',
-            weekday: r.weekday,
-            time_local: r.time + ':00',
-            enabled: r.enabled,
-          })));
-        } catch (reminderErr) {
-          console.error('Failed to save reminders:', reminderErr);
-          // Non-fatal: promise was created, just reminders failed
-        }
-      }
       hapticFeedback('success');
       navigate('/dashboard');
     } catch (err: any) {
@@ -214,58 +181,6 @@ export function TemplateDetailPage() {
             >
               {visibility === 'public' ? 'Make private' : 'Make public'}
             </button>
-          </div>
-
-          {/* Reminders */}
-          <div className="card-section card-reminders-section" style={{ marginTop: 12 }}>
-            <div className="card-section-header">
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Bell size={13} /> Reminders
-              </span>
-              <button className="card-reminders-add-button" onClick={handleAddReminder}>
-                + Add
-              </button>
-            </div>
-
-            {reminders.length === 0 ? (
-              <div className="card-empty-state">
-                No reminders — tap <strong>+ Add</strong> to set weekly nudges.
-              </div>
-            ) : (
-              reminders.map((reminder, index) => (
-                <div key={index} className="card-reminder-item">
-                  <select
-                    className="card-reminder-weekday card-form-select"
-                    value={reminder.weekday}
-                    onChange={(e) => handleUpdateReminder(index, 'weekday', parseInt(e.target.value))}
-                  >
-                    {WEEKDAY_NAMES.map((name, i) => (
-                      <option key={i} value={i}>{name}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="time"
-                    className="card-reminder-time card-form-time"
-                    value={reminder.time}
-                    onChange={(e) => handleUpdateReminder(index, 'time', e.target.value)}
-                  />
-                  <button
-                    className={`card-reminder-toggle ${reminder.enabled ? 'enabled' : ''}`}
-                    onClick={() => handleUpdateReminder(index, 'enabled', !reminder.enabled)}
-                    title={reminder.enabled ? 'Disable' : 'Enable'}
-                  >
-                    {reminder.enabled ? 'On' : 'Off'}
-                  </button>
-                  <button
-                    className="card-reminder-remove"
-                    onClick={() => handleRemoveReminder(index)}
-                    title="Remove reminder"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))
-            )}
           </div>
 
           {error ? <div className="error-message" style={{ marginTop: 10 }}>{error}</div> : null}
