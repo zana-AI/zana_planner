@@ -100,3 +100,27 @@ class AuthSession:
     created_at: datetime
     expires_at: datetime
     telegram_auth_date: int  # Original auth_date from Telegram
+
+
+@dataclass
+class PlanSession:
+    """A planned or completed work block tied to a Promise."""
+    id: int
+    promise_uuid: str
+    user_id: str
+    status: str = "planned"              # planned | done | skipped
+    title: Optional[str] = None
+    planned_start: Optional[str] = None   # ISO datetime string
+    planned_duration_min: Optional[int] = None
+    notes: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+@dataclass
+class PlanChecklistItem:
+    """An item-based subtask within a PlanSession."""
+    id: int
+    session_id: int
+    text: str
+    done: bool = False
+    position: int = 0

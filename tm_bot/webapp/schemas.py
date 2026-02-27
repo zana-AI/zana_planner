@@ -419,3 +419,48 @@ class QuizAnswerInput(BaseModel):
 class SubmitQuizRequest(BaseModel):
     """Submit quiz answers payload."""
     answers: List[QuizAnswerInput] = Field(..., min_length=1, max_length=100)
+
+
+# ---------------------------------------------------------------------------
+# Plan Sessions / Checklist
+# ---------------------------------------------------------------------------
+
+class PlanChecklistItemIn(BaseModel):
+    text: str
+    done: bool = False
+    position: int = 0
+
+
+class PlanChecklistItemOut(BaseModel):
+    id: int
+    text: str
+    done: bool
+    position: int
+
+
+class PlanSessionIn(BaseModel):
+    title: Optional[str] = None
+    planned_start: Optional[str] = None
+    planned_duration_min: Optional[int] = None
+    notes: Optional[str] = None
+    checklist: List[PlanChecklistItemIn] = []
+
+
+class PlanSessionOut(BaseModel):
+    id: int
+    promise_uuid: str
+    title: Optional[str]
+    status: str
+    planned_start: Optional[str]
+    planned_duration_min: Optional[int]
+    notes: Optional[str]
+    created_at: str
+    checklist: List[PlanChecklistItemOut]
+
+
+class PlanSessionStatusUpdate(BaseModel):
+    status: str   # planned | done | skipped
+
+
+class ChecklistItemToggle(BaseModel):
+    done: bool

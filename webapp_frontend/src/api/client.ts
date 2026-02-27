@@ -812,6 +812,39 @@ class ApiClient {
   }> {
     return this.request(`/admin/tests/report/${runId}`);
   }
+
+  // ---------------------------------------------------------------------------
+  // Plan Sessions
+  // ---------------------------------------------------------------------------
+
+  async getPlanSessions(promiseId: string): Promise<import('../types').PlanSession[]> {
+    return this.request(`/promises/${promiseId}/plan-sessions`);
+  }
+
+  async createPlanSession(promiseId: string, data: import('../types').PlanSessionIn): Promise<import('../types').PlanSession> {
+    return this.request(`/promises/${promiseId}/plan-sessions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updatePlanSessionStatus(sessionId: number, status: string): Promise<import('../types').PlanSession> {
+    return this.request(`/plan-sessions/${sessionId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async togglePlanChecklistItem(sessionId: number, itemId: number, done: boolean): Promise<import('../types').PlanSession> {
+    return this.request(`/plan-sessions/${sessionId}/checklist/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ done }),
+    });
+  }
+
+  async deletePlanSession(sessionId: number): Promise<void> {
+    return this.request(`/plan-sessions/${sessionId}`, { method: 'DELETE' });
+  }
 }
 
 /**

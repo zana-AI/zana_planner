@@ -481,6 +481,37 @@ export interface FollowGraphData {
   total_nodes: number;
 }
 
+// ---------------------------------------------------------------------------
+// Plan Sessions
+// ---------------------------------------------------------------------------
+
+export interface PlanChecklistItem {
+  id: number;
+  text: string;
+  done: boolean;
+  position: number;
+}
+
+export interface PlanSession {
+  id: number;
+  promise_uuid: string;
+  title: string | null;
+  status: 'planned' | 'done' | 'skipped';
+  planned_start: string | null;       // ISO datetime
+  planned_duration_min: number | null;
+  notes: string | null;
+  created_at: string;
+  checklist: PlanChecklistItem[];
+}
+
+export interface PlanSessionIn {
+  title?: string;
+  planned_start?: string;
+  planned_duration_min?: number;
+  notes?: string;
+  checklist?: Array<{ text: string; done?: boolean; position?: number }>;
+}
+
 // Extend Window interface for Telegram
 declare global {
   interface Window {
