@@ -3880,10 +3880,10 @@ textarea.modal-input {
 
 .card-notes-item {
   font-size: 0.8rem;
-  color: rgba(232, 238, 252, 0.85);
+  color: var(--text);
   line-height: 1.4;
   padding-left: var(--spacing-md);
-  border-left: 2px solid rgba(91, 163, 245, 0.3);
+  border-left: 2px solid rgba(91, 163, 245, 0.5);
 }
 
 .card-notes-item:not(:first-child) {
@@ -4372,4 +4372,85 @@ textarea.modal-input {
   color: var(--text);
   font-size: 28px;
   font-weight: 700;
+}
+
+/* ---- Planned sessions strip (visible without expanding) ---- */
+.planned-sessions-strip {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.planned-session-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(99, 167, 247, 0.08);
+  border: 1px solid rgba(99, 167, 247, 0.18);
+  min-height: 24px;
+  overflow: hidden;
+}
+
+.planned-session-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.planned-session-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planned-session-time {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.planned-session-dur {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(99, 167, 247, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* Add Session button — sits beside Log Time */
+.card-add-session-button {
+  padding: 8px 14px;
+  background: rgba(99, 167, 247, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(99, 167, 247, 0.28);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.card-add-session-button:hover {
+  background: rgba(99, 167, 247, 0.20);
+  border-color: rgba(99, 167, 247, 0.45);
+  transform: translateY(-1px);
+}
+
+.card-add-session-button:active {
+  transform: translateY(0);
 }

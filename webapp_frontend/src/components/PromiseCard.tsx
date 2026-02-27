@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import type { PromiseData, SessionData } from '../types';
+import { useState, useEffect, useRef } from 'react';
+import type { PromiseData, SessionData, PlanSession } from '../types';
 import { apiClient } from '../api/client';
 import { LogActionModal } from './LogActionModal';
 import { CheckinModal } from './CheckinModal';
@@ -9,6 +9,7 @@ import { PromiseDeleteConfirmModal } from './PromiseDeleteConfirmModal';
 import { InlineCalendar } from './InlineCalendar';
 import { formatPromiseText } from '../utils/activityFormat';
 import { PlanSessionsList } from './PlanSessionsList';
+import type { PlanSessionsListRef } from './PlanSessionsList';
 
 interface PromiseCardProps {
   id: string;
@@ -84,6 +85,15 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     setEditingHours(hours_promised);
     setEditingEndDate(data.end_date || '');
   }, [text, hours_promised, data.end_date]);
+
+  // Load plan sessions eagerly (visible on card without expanding)
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.getPlanSessions(id).then(data => {
+      if (!cancelled) setPlanSessions(data);
+    }).catch(() => { /* silently ignore */ });
+    return () => { cancelled = true; };
+  }, [id]);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isCheckinModalOpen, setIsCheckinModalOpen] = useState(false);
   const [isWeeklyNoteModalOpen, setIsWeeklyNoteModalOpen] = useState(false);
@@ -103,6 +113,10 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number; initialOffset: number } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isSnoozing, setIsSnoozing] = useState(false);
+
+  // Plan sessions — loaded eagerly so they show without expanding the card
+  const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
+  const planSessionsListRef = useRef<PlanSessionsListRef>(null);
   
   const SWIPE_ACTION_WIDTH = 132; // pixels
   const SWIPE_OPEN_THRESHOLD = SWIPE_ACTION_WIDTH / 2;
@@ -805,7 +819,12 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 )}
 
                 {/* Plan Sessions */}
-                <PlanSessionsList promiseId={id} />
+                <PlanSessionsList
+                  ref={planSessionsListRef}
+                  promiseId={id}
+                  externalSessions={planSessions}
+                  onSessionsChange={setPlanSessions}
+                />
               </div>
             )}
           </div>
@@ -858,6 +877,30 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           );
         })}
       </div>
+
+      {/* Planned sessions strip — visible without expanding */}
+      {planSessions.filter(s => s.status === 'planned').length > 0 && (
+        <div className="planned-sessions-strip">
+          {planSessions.filter(s => s.status === 'planned').map(session => {
+            const timeStr = session.planned_start
+              ? new Date(session.planned_start).toLocaleString(undefined, {
+                  weekday: 'short', month: 'short', day: 'numeric',
+                  hour: '2-digit', minute: '2-digit',
+                })
+              : null;
+            return (
+              <div key={session.id} className="planned-session-chip">
+                <span className="planned-session-dot" />
+                <span className="planned-session-title">{session.title || 'Session'}</span>
+                {timeStr && <span className="planned-session-time">{timeStr}</span>}
+                {session.planned_duration_min && (
+                  <span className="planned-session-dur">{session.planned_duration_min}m</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       
       <div className="card-actions">
         {isCountBased ? (
@@ -877,6 +920,17 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             + Log Time
           </button>
         )}
+        <button
+          className="card-add-session-button"
+          onClick={() => {
+            if (!isExpanded) setIsExpanded(true);
+            // Small delay so the list mounts before we open the form
+            setTimeout(() => planSessionsListRef.current?.openAddForm(), 50);
+          }}
+          title="Add planned session"
+        >
+          + Add Session
+        </button>
         {isBudget && (
           <div className="budget-bar-container">
             <div className="budget-bar">

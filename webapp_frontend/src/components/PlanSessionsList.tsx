@@ -1,9 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import type { PlanSession, PlanSessionIn } from '../types';
 import { apiClient } from '../api/client';
 
+export interface PlanSessionsListRef {
+  openAddForm: () => void;
+}
+
 interface PlanSessionsListProps {
   promiseId: string;  // user-facing promise ID (current_id)
+  /** If provided, the list will use these sessions instead of fetching them. */
+  externalSessions?: PlanSession[];
+  /** Called whenever the sessions list changes (create / delete / update). */
+  onSessionsChange?: (sessions: PlanSession[]) => void;
 }
 
 function formatPlannedStart(iso: string | null): string {
@@ -29,9 +37,10 @@ const EMPTY_FORM: PlanSessionIn = {
   checklist: [],
 };
 
-export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
-  const [sessions, setSessions] = useState<PlanSession[]>([]);
-  const [loading, setLoading] = useState(true);
+export const PlanSessionsList = forwardRef<PlanSessionsListRef, PlanSessionsListProps>(
+function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: PlanSessionsListProps, ref) {
+  const [sessions, setSessions] = useState<PlanSession[]>(externalSessions ?? []);
+  const [loading, setLoading] = useState(!externalSessions);
   const [error, setError] = useState<string | null>(null);
 
   // Add-session form
@@ -43,29 +52,48 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
   // Expanded checklist view per session
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
+  // Sync external sessions if provided
+  useEffect(() => {
+    if (externalSessions) {
+      setSessions(externalSessions);
+      setLoading(false);
+    }
+  }, [externalSessions]);
+
+  // Expose openAddForm via ref
+  useImperativeHandle(ref, () => ({
+    openAddForm: () => setShowForm(true),
+  }));
+
   const loadSessions = useCallback(async () => {
+    if (externalSessions) return; // managed by parent
     try {
       setLoading(true);
       setError(null);
       const data = await apiClient.getPlanSessions(promiseId);
       setSessions(data);
+      onSessionsChange?.(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load sessions');
     } finally {
       setLoading(false);
     }
-  }, [promiseId]);
+  }, [promiseId, externalSessions, onSessionsChange]);
 
   useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+    if (!externalSessions) loadSessions();
+  }, [loadSessions, externalSessions]);
 
   // ---- Session status toggle ----
   async function handleStatusToggle(session: PlanSession) {
     const next = session.status === 'done' ? 'planned' : 'done';
     try {
       const updated = await apiClient.updatePlanSessionStatus(session.id, next);
-      setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+      setSessions(prev => {
+        const next = prev.map(s => s.id === updated.id ? updated : s);
+        onSessionsChange?.(next);
+        return next;
+      });
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to update status');
     }
@@ -75,7 +103,11 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
   async function handleChecklistToggle(session: PlanSession, itemId: number, done: boolean) {
     try {
       const updated = await apiClient.togglePlanChecklistItem(session.id, itemId, done);
-      setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+      setSessions(prev => {
+        const next = prev.map(s => s.id === updated.id ? updated : s);
+        onSessionsChange?.(next);
+        return next;
+      });
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to update item');
     }
@@ -86,7 +118,11 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
     if (!confirm('Delete this session?')) return;
     try {
       await apiClient.deletePlanSession(sessionId);
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      setSessions(prev => {
+        const next = prev.filter(s => s.id !== sessionId);
+        onSessionsChange?.(next);
+        return next;
+      });
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to delete session');
     }
@@ -105,7 +141,11 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
         title: form.title || undefined,
       };
       const created = await apiClient.createPlanSession(promiseId, payload);
-      setSessions(prev => [...prev, created]);
+      setSessions(prev => {
+        const next = [...prev, created];
+        onSessionsChange?.(next);
+        return next;
+      });
       setForm(EMPTY_FORM);
       setNewItemText('');
       setShowForm(false);
@@ -153,21 +193,23 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
       <div
         key={session.id}
         style={{
-          border: '1px solid #e5e7eb',
+          border: '1px solid rgba(232,238,252,0.12)',
           borderRadius: 8,
           padding: '10px 12px',
           marginBottom: 8,
-          background: session.status === 'done' ? '#f0fdf4' : '#fff',
+          background: session.status === 'done'
+            ? 'rgba(34,197,94,0.1)'
+            : 'rgba(15,23,48,0.55)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {/* Title + time */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ fontWeight: 500, fontSize: 14 }}>
+            <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--text)' }}>
               {session.title || 'Session'}
             </span>
             {session.planned_start && (
-              <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 6 }}>
                 {formatPlannedStart(session.planned_start)}
               </span>
             )}
@@ -176,8 +218,8 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
           {/* Duration badge */}
           {session.planned_duration_min && (
             <span style={{
-              background: '#eff6ff',
-              color: '#1d4ed8',
+              background: 'rgba(99,167,247,0.15)',
+              color: 'var(--accent-hover)',
               borderRadius: 4,
               padding: '1px 6px',
               fontSize: 11,
@@ -191,7 +233,7 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
           {hasChecklist && (
             <button
               onClick={() => toggleExpanded(session.id)}
-              style={{ fontSize: 11, color: '#6b7280', cursor: 'pointer', background: 'none', border: 'none' }}
+              style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
             >
               {doneCount}/{session.checklist.length} ✓ {expanded ? '▲' : '▼'}
             </button>
@@ -206,9 +248,13 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
               borderRadius: 4,
               border: '1px solid',
               cursor: 'pointer',
-              background: session.status === 'done' ? '#dcfce7' : '#f3f4f6',
-              borderColor: session.status === 'done' ? '#86efac' : '#d1d5db',
-              color: session.status === 'done' ? '#166534' : '#374151',
+              background: session.status === 'done'
+                ? 'rgba(34,197,94,0.18)'
+                : 'rgba(232,238,252,0.06)',
+              borderColor: session.status === 'done'
+                ? 'rgba(34,197,94,0.4)'
+                : 'rgba(232,238,252,0.18)',
+              color: session.status === 'done' ? '#86efac' : 'var(--text)',
             }}
           >
             {session.status === 'done' ? 'Undo' : 'Mark Done'}
@@ -217,7 +263,7 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
           {/* Delete */}
           <button
             onClick={() => handleDelete(session.id)}
-            style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}
+            style={{ fontSize: 12, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}
             title="Delete session"
           >
             ✕
@@ -226,7 +272,7 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
 
         {/* Notes */}
         {session.notes && (
-          <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0 0' }}>{session.notes}</p>
+          <p style={{ fontSize: 12, color: 'var(--text)', opacity: 0.8, margin: '4px 0 0 0' }}>{session.notes}</p>
         )}
 
         {/* Checklist items */}
@@ -242,7 +288,7 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
                   checked={item.done}
                   onChange={e => handleChecklistToggle(session, item.id, e.target.checked)}
                 />
-                <span style={{ textDecoration: item.done ? 'line-through' : 'none', color: item.done ? '#9ca3af' : 'inherit' }}>
+                <span style={{ textDecoration: item.done ? 'line-through' : 'none', color: item.done ? 'var(--muted)' : 'var(--text)' }}>
                   {item.text}
                 </span>
               </label>
@@ -266,35 +312,35 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
   }
 
   if (loading) {
-    return <div style={{ fontSize: 13, color: '#9ca3af', padding: '8px 0' }}>Loading sessions…</div>;
+    return <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>Loading sessions…</div>;
   }
 
   return (
     <div style={{ marginTop: 12 }}>
       {error && (
-        <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>{error}</div>
+        <div style={{ fontSize: 12, color: '#f87171', marginBottom: 8 }}>{error}</div>
       )}
 
       {sessions.length === 0 && !showForm && (
-        <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 8 }}>No sessions yet.</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>No sessions yet.</div>
       )}
 
-      {renderGroup('Planned', planned, '#2563eb')}
-      {renderGroup('Done', done, '#16a34a')}
-      {renderGroup('Skipped', skipped, '#9ca3af')}
+      {renderGroup('Planned', planned, 'var(--accent)')}
+      {renderGroup('Done', done, '#4ade80')}
+      {renderGroup('Skipped', skipped, 'var(--muted)')}
 
       {/* Add session form */}
       {showForm ? (
         <form
           onSubmit={handleCreate}
-          style={{ border: '1px dashed #d1d5db', borderRadius: 8, padding: 12, marginTop: 8 }}
+          style={{ border: '1px dashed rgba(99,167,247,0.3)', borderRadius: 8, padding: 12, marginTop: 8, background: 'rgba(15,23,48,0.5)' }}
         >
           <div style={{ marginBottom: 8 }}>
             <input
               placeholder="Title (optional)"
               value={form.title ?? ''}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-              style={{ width: '100%', fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db', boxSizing: 'border-box' }}
+              style={{ width: '100%', fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(9,15,31,0.7)', color: 'var(--text)', boxSizing: 'border-box' }}
             />
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -302,14 +348,14 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
               type="datetime-local"
               value={form.planned_start ?? ''}
               onChange={e => setForm(f => ({ ...f, planned_start: e.target.value }))}
-              style={{ flex: 1, fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db', minWidth: 160 }}
+              style={{ flex: 1, fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(9,15,31,0.7)', color: 'var(--text)', minWidth: 160 }}
             />
             <input
               type="number"
               placeholder="Duration (min)"
               value={form.planned_duration_min ?? ''}
               onChange={e => setForm(f => ({ ...f, planned_duration_min: e.target.value ? Number(e.target.value) : undefined }))}
-              style={{ width: 130, fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}
+              style={{ width: 130, fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(9,15,31,0.7)', color: 'var(--text)' }}
               min={1}
             />
           </div>
@@ -319,7 +365,7 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
               value={form.notes ?? ''}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               rows={2}
-              style={{ width: '100%', fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db', resize: 'vertical', boxSizing: 'border-box' }}
+              style={{ width: '100%', fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(9,15,31,0.7)', color: 'var(--text)', resize: 'vertical', boxSizing: 'border-box' }}
             />
           </div>
 
@@ -327,9 +373,9 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
           {(form.checklist ?? []).length > 0 && (
             <div style={{ marginBottom: 6 }}>
               {(form.checklist ?? []).map((item, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 3 }}>
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 3, color: 'var(--text)' }}>
                   <span style={{ flex: 1 }}>• {item.text}</span>
-                  <button type="button" onClick={() => removeChecklistItem(idx)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                  <button type="button" onClick={() => removeChecklistItem(idx)} style={{ color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
                 </div>
               ))}
             </div>
@@ -340,23 +386,23 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
               value={newItemText}
               onChange={e => setNewItemText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } }}
-              style={{ flex: 1, fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}
+              style={{ flex: 1, fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(9,15,31,0.7)', color: 'var(--text)' }}
             />
-            <button type="button" onClick={addChecklistItem} style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db', cursor: 'pointer' }}>+ Add</button>
+            <button type="button" onClick={addChecklistItem} style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(232,238,252,0.06)', color: 'var(--text)', cursor: 'pointer' }}>+ Add</button>
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               type="submit"
               disabled={saving}
-              style={{ fontSize: 13, padding: '5px 14px', borderRadius: 4, background: '#2563eb', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}
+              style={{ fontSize: 13, padding: '5px 14px', borderRadius: 4, background: 'var(--accent)', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600 }}
             >
               {saving ? 'Saving…' : 'Save Session'}
             </button>
             <button
               type="button"
               onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setNewItemText(''); }}
-              style={{ fontSize: 13, padding: '5px 14px', borderRadius: 4, background: '#f3f4f6', border: '1px solid #d1d5db', cursor: 'pointer' }}
+              style={{ fontSize: 13, padding: '5px 14px', borderRadius: 4, background: 'rgba(232,238,252,0.06)', border: '1px solid rgba(232,238,252,0.14)', color: 'var(--text)', cursor: 'pointer' }}
             >
               Cancel
             </button>
@@ -367,9 +413,9 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
           onClick={() => setShowForm(true)}
           style={{
             fontSize: 13,
-            color: '#2563eb',
+            color: 'var(--accent)',
             background: 'none',
-            border: '1px dashed #93c5fd',
+            border: '1px dashed rgba(99,167,247,0.35)',
             borderRadius: 6,
             padding: '5px 12px',
             cursor: 'pointer',
@@ -381,4 +427,4 @@ export function PlanSessionsList({ promiseId }: PlanSessionsListProps) {
       )}
     </div>
   );
-}
+});
