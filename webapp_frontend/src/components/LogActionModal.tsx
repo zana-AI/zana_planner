@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useModalBodyLock } from '../hooks/useModalBodyLock';
 
 interface LogActionModalProps {
@@ -7,17 +7,33 @@ interface LogActionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Pre-fill values (e.g. from a planned session) */
+  prefillHours?: string;
+  prefillDate?: string;
+  prefillTime?: string;
+  prefillNotes?: string;
 }
 
-export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSuccess }: LogActionModalProps) {
-  const [hours, setHours] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [notes, setNotes] = useState('');
+export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSuccess, prefillHours, prefillDate, prefillTime, prefillNotes }: LogActionModalProps) {
+  const [hours, setHours] = useState(prefillHours ?? '');
+  const [date, setDate] = useState(prefillDate ?? '');
+  const [time, setTime] = useState(prefillTime ?? '');
+  const [notes, setNotes] = useState(prefillNotes ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   useModalBodyLock(isOpen);
+
+  // Sync prefill values whenever the modal opens with new session data
+  useEffect(() => {
+    if (isOpen) {
+      if (prefillHours !== undefined) setHours(prefillHours);
+      if (prefillDate !== undefined) setDate(prefillDate);
+      if (prefillTime !== undefined) setTime(prefillTime);
+      if (prefillNotes !== undefined) setNotes(prefillNotes);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   // Initialize date/time to current if not set
   if (isOpen && !date && !time) {
@@ -71,10 +87,10 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
 
   const handleClose = () => {
     if (!isSubmitting) {
-      setHours('');
-      setDate('');
-      setTime('');
-      setNotes('');
+      setHours(prefillHours ?? '');
+      setDate(prefillDate ?? '');
+      setTime(prefillTime ?? '');
+      setNotes(prefillNotes ?? '');
       setError('');
       onClose();
     }

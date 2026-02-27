@@ -116,17 +116,38 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   // Which chip is showing its inline actions
   const [expandedChipId, setExpandedChipId] = useState<number | null>(null);
+  // Plan session being logged as done (opens LogActionModal pre-filled)
+  const [logDoneSessionId, setLogDoneSessionId] = useState<number | null>(null);
   // Inline add-session form
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState({ title: '', planned_start: '', planned_duration_min: '' });
   const [addFormSaving, setAddFormSaving] = useState(false);
 
-  const handleChipMarkDone = async (sessionId: number) => {
+  // When user taps "Done" on a chip, open LogActionModal pre-filled with the session data.
+  // On successful log, also mark the plan session as done and refresh.
+  const doneSession = logDoneSessionId !== null
+    ? planSessions.find(s => s.id === logDoneSessionId) ?? null
+    : null;
+
+  const doneSessionPrefill = doneSession ? (() => {
+    const durationHours = doneSession.planned_duration_min
+      ? (doneSession.planned_duration_min / 60).toFixed(2).replace(/\.?0+$/, '')
+      : '';
+    const isoStart = doneSession.planned_start;
+    const prefillDate = isoStart ? isoStart.split('T')[0] : '';
+    const prefillTime = isoStart ? isoStart.substring(11, 16) : '';
+    return { hours: durationHours, date: prefillDate, time: prefillTime, notes: doneSession.notes ?? '' };
+  })() : null;
+
+  const handleChipDoneLogged = async () => {
+    if (logDoneSessionId === null) return;
     try {
-      const updated = await apiClient.updatePlanSessionStatus(sessionId, 'done');
+      const updated = await apiClient.updatePlanSessionStatus(logDoneSessionId, 'done');
       setPlanSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
-      setExpandedChipId(null);
     } catch { /* ignore */ }
+    setLogDoneSessionId(null);
+    setExpandedChipId(null);
+    if (onRefresh) onRefresh();
   };
 
   const handleChipDelete = async (sessionId: number) => {
@@ -934,7 +955,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   <div className="planned-session-actions">
                     <button
                       className="planned-session-action planned-session-action--done"
-                      onClick={() => handleChipMarkDone(session.id)}
+                      onClick={() => { setLogDoneSessionId(session.id); setExpandedChipId(null); }}
                     >
                       ✓ Done
                     </button>
@@ -1044,6 +1065,18 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             onRefresh();
           }
         }}
+      />
+      {/* Log + mark-done modal, opened when tapping ✓ Done on a planned session chip */}
+      <LogActionModal
+        promiseId={id}
+        promiseText={doneSession ? `${text} — ${doneSession.title || 'Session'}` : text}
+        isOpen={logDoneSessionId !== null}
+        onClose={() => setLogDoneSessionId(null)}
+        onSuccess={handleChipDoneLogged}
+        prefillHours={doneSessionPrefill?.hours}
+        prefillDate={doneSessionPrefill?.date}
+        prefillTime={doneSessionPrefill?.time}
+        prefillNotes={doneSessionPrefill?.notes}
       />
       <CheckinModal
         promiseId={id}
