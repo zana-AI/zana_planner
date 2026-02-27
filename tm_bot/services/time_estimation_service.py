@@ -167,16 +167,16 @@ Respond with just a number (e.g., "1.5" for 1.5 hours, or "0.25" for 15 minutes)
                 date_key = at.date()
                 daily_totals[date_key] += action.time_spent
             
-            # Calculate averages
-            day_counts = defaultdict(int)
+            # Count distinct active dates per day of week (exclude days with no activity)
+            day_date_sets: dict = defaultdict(set)
             for action in actions:
                 day_name = action.at.strftime('%A')
-                day_counts[day_name] += 1
-            
-            # Average per day of week (total hours / number of occurrences)
+                day_date_sets[day_name].add(action.at.date())
+
+            # Average per day of week = total hours / number of distinct active dates
             avg_by_day = {}
             for day, total in by_day.items():
-                count = day_counts.get(day, 1)
+                count = len(day_date_sets[day])  # distinct calendar days with activity
                 avg_by_day[day] = total / count if count > 0 else 0.0
             
             # Average daily hours
