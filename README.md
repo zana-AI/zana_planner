@@ -83,7 +83,36 @@ The codebase has been refactored into a clean, layered architecture:
     *   `infra/` — Infrastructure & Scheduling
 
 
-## 💡 Resolution Suggestions & Future Ideas (2026)
+## �️ Database Migrations
+
+Migrate both **production** and **staging** PostgreSQL databases in a single command.
+
+The script reads credentials from the server's env files automatically:
+- `/opt/zana-config/.env.prod` → `DATABASE_URL_PROD`
+- `/opt/zana-config/.env.staging` → `DATABASE_URL_STAGING`
+
+```bash
+# Migrate both DBs (default)
+sudo python3 scripts/run_migrations.py
+
+# Prod only
+sudo python3 scripts/run_migrations.py --prod
+
+# Staging only
+sudo python3 scripts/run_migrations.py --staging
+```
+
+To override env-file paths:
+```bash
+ZANA_ENV_PROD=/custom/.env.prod ZANA_ENV_STAGING=/custom/.env.staging \
+    sudo -E python3 scripts/run_migrations.py
+```
+
+After running, the script prints a table of row counts per table and a ✓/✗ summary per database.
+
+---
+
+## �💡 Resolution Suggestions & Future Ideas (2026)
 
 | Idea | Priority | Est. Time |
 | :--- | :--- | :--- |
