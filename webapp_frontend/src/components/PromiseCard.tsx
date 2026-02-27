@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { PromiseData, SessionData, PlanSession } from '../types';
 import { apiClient } from '../api/client';
 import { LogActionModal } from './LogActionModal';
@@ -8,8 +8,6 @@ import { VisibilityConfirmModal } from './VisibilityConfirmModal';
 import { PromiseDeleteConfirmModal } from './PromiseDeleteConfirmModal';
 import { InlineCalendar } from './InlineCalendar';
 import { formatPromiseText } from '../utils/activityFormat';
-import { PlanSessionsList } from './PlanSessionsList';
-import type { PlanSessionsListRef } from './PlanSessionsList';
 
 interface PromiseCardProps {
   id: string;
@@ -116,7 +114,45 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
 
   // Plan sessions — loaded eagerly so they show without expanding the card
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
-  const planSessionsListRef = useRef<PlanSessionsListRef>(null);
+  // Which chip is showing its inline actions
+  const [expandedChipId, setExpandedChipId] = useState<number | null>(null);
+  // Inline add-session form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState({ title: '', planned_start: '', planned_duration_min: '' });
+  const [addFormSaving, setAddFormSaving] = useState(false);
+
+  const handleChipMarkDone = async (sessionId: number) => {
+    try {
+      const updated = await apiClient.updatePlanSessionStatus(sessionId, 'done');
+      setPlanSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+      setExpandedChipId(null);
+    } catch { /* ignore */ }
+  };
+
+  const handleChipDelete = async (sessionId: number) => {
+    try {
+      await apiClient.deletePlanSession(sessionId);
+      setPlanSessions(prev => prev.filter(s => s.id !== sessionId));
+      setExpandedChipId(null);
+    } catch { /* ignore */ }
+  };
+
+  const handleAddFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddFormSaving(true);
+    try {
+      const created = await apiClient.createPlanSession(id, {
+        title: addForm.title || undefined,
+        planned_start: addForm.planned_start || undefined,
+        planned_duration_min: addForm.planned_duration_min ? Number(addForm.planned_duration_min) : undefined,
+      });
+      setPlanSessions(prev => [...prev, created]);
+      setAddForm({ title: '', planned_start: '', planned_duration_min: '' });
+      setShowAddForm(false);
+    } catch { /* ignore */ } finally {
+      setAddFormSaving(false);
+    }
+  };
   
   const SWIPE_ACTION_WIDTH = 132; // pixels
   const SWIPE_OPEN_THRESHOLD = SWIPE_ACTION_WIDTH / 2;
@@ -817,14 +853,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     No notes for this week. Open Edit to modify this promise.
                   </div>
                 )}
-
-                {/* Plan Sessions */}
-                <PlanSessionsList
-                  ref={planSessionsListRef}
-                  promiseId={id}
-                  externalSessions={planSessions}
-                  onSessionsChange={setPlanSessions}
-                />
               </div>
             )}
           </div>
@@ -879,7 +907,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       </div>
 
       {/* Planned sessions strip — visible without expanding */}
-      {planSessions.filter(s => s.status === 'planned').length > 0 && (
+      {(planSessions.filter(s => s.status === 'planned').length > 0 || showAddForm) && (
         <div className="planned-sessions-strip">
           {planSessions.filter(s => s.status === 'planned').map(session => {
             const timeStr = session.planned_start
@@ -888,17 +916,73 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   hour: '2-digit', minute: '2-digit',
                 })
               : null;
+            const isOpen = expandedChipId === session.id;
             return (
-              <div key={session.id} className="planned-session-chip">
-                <span className="planned-session-dot" />
-                <span className="planned-session-title">{session.title || 'Session'}</span>
-                {timeStr && <span className="planned-session-time">{timeStr}</span>}
-                {session.planned_duration_min && (
-                  <span className="planned-session-dur">{session.planned_duration_min}m</span>
+              <div key={session.id} className="planned-session-entry">
+                <button
+                  className={`planned-session-chip${isOpen ? ' planned-session-chip--open' : ''}`}
+                  onClick={() => setExpandedChipId(isOpen ? null : session.id)}
+                >
+                  <span className="planned-session-dot" />
+                  <span className="planned-session-title">{session.title || 'Session'}</span>
+                  {timeStr && <span className="planned-session-time">{timeStr}</span>}
+                  {session.planned_duration_min && (
+                    <span className="planned-session-dur">{session.planned_duration_min}m</span>
+                  )}
+                </button>
+                {isOpen && (
+                  <div className="planned-session-actions">
+                    <button
+                      className="planned-session-action planned-session-action--done"
+                      onClick={() => handleChipMarkDone(session.id)}
+                    >
+                      ✓ Done
+                    </button>
+                    <button
+                      className="planned-session-action planned-session-action--delete"
+                      onClick={() => handleChipDelete(session.id)}
+                    >
+                      ✕ Delete
+                    </button>
+                  </div>
                 )}
               </div>
             );
           })}
+
+          {/* Inline add form */}
+          {showAddForm && (
+            <form className="planned-session-add-form" onSubmit={handleAddFormSubmit}>
+              <input
+                className="planned-session-add-input"
+                placeholder="Title (optional)"
+                value={addForm.title}
+                onChange={e => setAddForm(f => ({ ...f, title: e.target.value }))}
+              />
+              <input
+                type="datetime-local"
+                className="planned-session-add-input"
+                value={addForm.planned_start}
+                onChange={e => setAddForm(f => ({ ...f, planned_start: e.target.value }))}
+              />
+              <input
+                type="number"
+                className="planned-session-add-input planned-session-add-input--dur"
+                placeholder="min"
+                min={1}
+                value={addForm.planned_duration_min}
+                onChange={e => setAddForm(f => ({ ...f, planned_duration_min: e.target.value }))}
+              />
+              <div className="planned-session-add-actions">
+                <button type="submit" className="planned-session-action planned-session-action--done" disabled={addFormSaving}>
+                  {addFormSaving ? '…' : 'Save'}
+                </button>
+                <button type="button" className="planned-session-action planned-session-action--delete" onClick={() => { setShowAddForm(false); setAddForm({ title: '', planned_start: '', planned_duration_min: '' }); }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       )}
       
@@ -922,11 +1006,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         )}
         <button
           className="card-add-session-button"
-          onClick={() => {
-            if (!isExpanded) setIsExpanded(true);
-            // Small delay so the list mounts before we open the form
-            setTimeout(() => planSessionsListRef.current?.openAddForm(), 50);
-          }}
+          onClick={() => { setShowAddForm(true); setExpandedChipId(null); }}
           title="Add planned session"
         >
           + Add Session

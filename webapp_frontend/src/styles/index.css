@@ -4379,7 +4379,12 @@ textarea.modal-input {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+}
+
+.planned-session-entry {
+  display: flex;
+  flex-direction: column;
 }
 
 .planned-session-chip {
@@ -4392,6 +4397,16 @@ textarea.modal-input {
   border: 1px solid rgba(99, 167, 247, 0.18);
   min-height: 24px;
   overflow: hidden;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.planned-session-chip:hover,
+.planned-session-chip--open {
+  background: rgba(99, 167, 247, 0.14);
+  border-color: rgba(99, 167, 247, 0.32);
 }
 
 .planned-session-dot {
@@ -4430,7 +4445,75 @@ textarea.modal-input {
   padding: 1px 5px;
 }
 
-/* Add Session button — sits beside Log Time */
+/* Inline action row shown when a chip is tapped */
+.planned-session-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px 2px 20px;
+}
+
+.planned-session-action {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid;
+  background: none;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+
+.planned-session-action:hover { opacity: 0.8; }
+
+.planned-session-action--done {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.planned-session-action--delete {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+/* Inline add-session form */
+.planned-session-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px dashed rgba(99, 167, 247, 0.3);
+  border-radius: 6px;
+  background: rgba(9, 15, 31, 0.55);
+  margin-top: 2px;
+}
+
+.planned-session-add-input {
+  flex: 1;
+  min-width: 120px;
+  font-size: 12px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(232, 238, 252, 0.18);
+  background: rgba(232, 238, 252, 0.05);
+  color: var(--text);
+  font-family: inherit;
+}
+
+.planned-session-add-input--dur {
+  max-width: 72px;
+  min-width: 60px;
+  flex: 0 0 auto;
+}
+
+.planned-session-add-actions {
+  display: flex;
+  gap: 5px;
+  width: 100%;
+}
+
 .card-add-session-button {
   padding: 8px 14px;
   background: rgba(99, 167, 247, 0.12);
