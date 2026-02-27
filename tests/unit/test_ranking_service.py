@@ -198,3 +198,46 @@ def test_slot3_has_variety():
             third_ids.add(result[2].id)
 
     assert len(third_ids) > 1, "3rd slot should show variety across runs"
+
+
+# ---------------------------------------------------------------------------
+# Tests: future opportunity surplus
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_future_surplus_zero_when_no_history():
+    """No action history → no surplus → signal is 0."""
+    p = _make_promise("P01")
+    svc = _build_svc([p], [])
+    assert svc._get_future_opportunity_surplus(p, [], datetime.now()) == 0.0
+
+
+@pytest.mark.unit
+def test_future_surplus_high_when_all_history_on_upcoming_days():
+    """Promise worked every day of the past → should score high surplus (future days have good affinity)."""
+    p = _make_promise("P01")
+    now = datetime.now()
+    # Spread 18 actions across the last 3 weeks, hitting all 7 weekdays
+    actions = [_make_action("P01", 1.0, days_ago=d) for d in range(1, 22)]
+    svc = _build_svc([p], actions)
+    surplus = svc._get_future_opportunity_surplus(p, actions, now)
+    # Every upcoming day in the next 6 should have affinity → surplus near max
+    assert surplus > 0.3, f"Expected high surplus for all-weekday history, got {surplus}"
+
+
+@pytest.mark.unit
+def test_future_surplus_low_when_history_only_on_today():
+    """Promise whose entire history falls on today's weekday → no surge on upcoming days."""
+    p = _make_promise("P01")
+    now = datetime.now()
+    today_name = now.strftime('%A')
+    # Build actions only on the same weekday as today, going back 5 weeks
+    actions = []
+    for weeks_ago in range(1, 6):
+        past_day = now - timedelta(weeks=weeks_ago)
+        # Adjust to the same weekday as today (it already is, since we subtract full weeks)
+        actions.append(_make_action("P01", 1.0, days_ago=weeks_ago * 7))
+    svc = _build_svc([p], actions)
+    surplus = svc._get_future_opportunity_surplus(p, actions, now)
+    # Next 6 days do NOT contain today's weekday (today is today, not in range(1,7))
+    assert surplus < 0.15, f"Expected near-zero surplus for today-only history, got {surplus}"

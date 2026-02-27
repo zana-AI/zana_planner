@@ -70,7 +70,7 @@ class MessageTemplateStore:
             "thats_all": "✅ That's all for today.",
 
             # Morning reminders
-            "morning_header": "☀️ *{date} Morning Focus*",
+            "morning_header": "☀️ *A plan for {date}*",
             "morning_priorities_header": "Here are your top {count} priorities for today:",
             "morning_priorities_item": "{emoji} {text}",
             "morning_calendar_question": "Would you like me to plan your sessions for today?",
@@ -214,7 +214,8 @@ class MessageTemplateStore:
             "link_calendar_link": "[Add to Calendar]({calendar_url})",
             
             # Work hours suggestions
-            "work_hours_suggestion": "💡 Based on your patterns, you might want to work ~{hours} hours today ({day})",
+            "work_hours_suggestion": "💡 Based on your patterns, you might want to work ~{hours} today ({day})",
+            "morning_more_promises": "Today looks light — less than an hour of planned work. If you want to stay on track, consider adding more promises in the app. Small commitments count too! 🌱",
             
             # Content summarization
             "content_summarizing": "📝 Generating summary...",

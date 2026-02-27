@@ -986,12 +986,26 @@ class CallbackHandlers:
             promise_text = p.text.replace('_', ' ')
             priorities_text += f"{emojis[i]} {promise_text}\n"
 
+        def _fmt_hours(h: float) -> str:
+            """Format fractional hours into a human-friendly string."""
+            total_min = round(h * 60)
+            if total_min < 60:
+                return f"{total_min} min"
+            hrs = total_min // 60
+            mins = total_min % 60
+            return f"{hrs}h {mins}min" if mins else f"{hrs}h"
+
         # Add work hour suggestion if available
         suggestion_text = ""
         if work_suggestion and work_suggestion.get('suggested_hours', 0) > 0:
             suggested_hours = work_suggestion['suggested_hours']
             suggestion_text = "\n\n" + get_message("work_hours_suggestion", user_lang,
-                                                   hours=suggested_hours, day=day_of_week)
+                                                   hours=_fmt_hours(suggested_hours), day=day_of_week)
+
+        # Nudge if total planned time is under an hour
+        total_planned_min = sum(d.get('duration_min', 0) for d in day_proposals)
+        if total_planned_min < 60:
+            suggestion_text += "\n\n" + get_message("morning_more_promises", user_lang)
 
         # Build full message
         header_message = get_message("morning_header", user_lang, date=user_now.strftime("%A"))

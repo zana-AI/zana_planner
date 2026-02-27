@@ -57,6 +57,12 @@ class RankingService:
         touched_today_penalty = self._get_touched_today_penalty(promise, actions, now)
         score -= touched_today_penalty * 0.5  # Weight: -0.5
 
+        # Signal 5: Future opportunity surplus
+        # If the task has strong affinity on upcoming days it can wait — discount today.
+        # If there are no good upcoming days, no penalty → raise relative urgency.
+        future_surplus = self._get_future_opportunity_surplus(promise, actions, now)
+        score -= future_surplus * 1.5  # Weight: -1.5
+
         return score
 
     # ------------------------------------------------------------------
@@ -176,6 +182,42 @@ class RankingService:
             return 2.0
         else:
             return min(3.0, delta_days * 0.5)
+
+    def _get_future_opportunity_surplus(self, promise: Promise, actions: List, now: datetime) -> float:
+        """How much opportunity this promise has in the NEXT 6 days.
+
+        Returns 0-1.  A promise the user historically works on most of the
+        coming week scores near 1; one they only work on today — or rarely
+        at all — scores near 0.
+
+        Applied with a negative weight: high surplus → discount today so the
+        task surfaces naturally on its prime upcoming day instead.
+        """
+        promise_actions = [a for a in actions if a.promise_id == promise.id]
+        if not promise_actions:
+            return 0.0
+
+        day_dates: dict = defaultdict(set)
+        for a in promise_actions:
+            day_dates[a.at.strftime('%A')].add(a.at.date())
+
+        total_distinct_days = sum(len(dates) for dates in day_dates.values())
+        if total_distinct_days == 0:
+            return 0.0
+
+        num_weekdays_active = len(day_dates)
+        future_affinity_sum = 0.0
+        for offset in range(1, 7):  # next 6 days
+            future_day_name = (now + timedelta(days=offset)).strftime('%A')
+            count = len(day_dates.get(future_day_name, set()))
+            ratio = count / total_distinct_days
+            # same raw formula as _get_weekday_affinity, then normalize to 0-1
+            raw = min(3.0, ratio * 3.0 * num_weekdays_active)
+            future_affinity_sum += raw / 3.0  # each day contributes 0-1
+
+        # max sum = 6 (every upcoming day perfect). Divide by 3 so that having
+        # strong affinity on ≥3 out of 6 upcoming days saturates at 1.0.
+        return min(1.0, future_affinity_sum / 3.0)
 
     def _get_touched_today_penalty(self, promise: Promise, actions: List, now: datetime) -> float:
         """Calculate penalty for already working on this promise today."""

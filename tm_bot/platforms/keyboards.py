@@ -168,6 +168,15 @@ def voice_mode_selection_kb() -> Keyboard:
     return keyboard
 
 
+def _fmt_dur(minutes: int) -> str:
+    """Format minutes into a human-friendly string: '30 min', '1h', '1h 30min'."""
+    if not minutes or minutes < 60:
+        return f"{minutes} min" if minutes else ""
+    h = minutes // 60
+    m = minutes % 60
+    return f"{h}h {m}min" if m else f"{h}h"
+
+
 def morning_calendar_kb(tasks: list = None) -> Keyboard:
     """Create keyboard for morning plan-sessions — one button per task."""
     keyboard = Keyboard()
@@ -179,7 +188,8 @@ def morning_calendar_kb(tasks: list = None) -> Keyboard:
             label_text = label_text[:25] + '…'
         dur = task.get('duration_min')
         time_str = (task.get('planned_start') or '')[11:16]  # HH:MM from ISO
-        detail = f" — {time_str}, {dur} min" if time_str and dur else (f" — {dur} min" if dur else "")
+        dur_label = _fmt_dur(dur) if dur else ""
+        detail = f" — {time_str}, {dur_label}" if time_str and dur_label else (f" — {dur_label}" if dur_label else "")
         label = f"{emoji} {label_text}{detail}"
         keyboard.add_row(create_button(label, callback_data=encode_cb("plan_morning_session", idx=str(i))))
     keyboard.add_row(create_button("❌ No thanks", callback_data=encode_cb("add_to_calendar_no")))
