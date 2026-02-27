@@ -78,6 +78,8 @@ class MessageTemplateStore:
             "morning_plan_sessions_failed": "Sorry, I couldn't plan your sessions. Please try again or add them manually in the app.",
             "morning_calendar_links": "📅 *Calendar Links*\n\nHere are your calendar links for today:",
             "morning_question": "🌸 What about *{promise_text}* today? Ready to start?",
+            "morning_plan_declined": "No worries — your plan will be here whenever you're ready. Enjoy your day! 🌟",
+            "morning_session_added": "✅ *{title}* — added to your plan.\n{details}\n\nYou can [view and adjust it in the app]({app_url}) whenever you like.",
 
             # Weekly reports
             "weekly_header": "Weekly: {date_range}",

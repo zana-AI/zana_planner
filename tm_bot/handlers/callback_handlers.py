@@ -270,7 +270,7 @@ class CallbackHandlers:
             await self._handle_voice_mode(query, cb, user_lang)
         elif action == "plan_morning_session":
             idx = int(cb.get("idx", 0))
-            await self._handle_plan_morning_session(query, idx, user_lang)
+            await self._handle_plan_morning_session(query, context, idx, user_lang)
         elif action == "noop":
             await query.answer()
         elif action == "add_to_calendar_yes":
@@ -1319,9 +1319,20 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
     
     async def _handle_add_to_calendar_no(self, query, user_lang: Language):
         """Handle user declining session planning."""
-        await query.answer("Got it! You can plan sessions anytime from the app. Have a great day! 💪")
+        await query.answer("Got it! 👍")
+        # Remove the keyboard so the morning message looks clean
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        # Send a short persistent acknowledgment in chat
+        declined_msg = get_message("morning_plan_declined", user_lang)
+        try:
+            await query.message.reply_text(declined_msg, parse_mode="Markdown")
+        except Exception:
+            pass
 
-    async def _handle_plan_morning_session(self, query, idx: int, user_lang: Language):
+    async def _handle_plan_morning_session(self, query, context: CallbackContext, idx: int, user_lang: Language):
         """Create a single planned session from the morning proposals."""
         user_id = query.from_user.id
         proposals = self.application.bot_data.get('morning_sessions_proposed', {}).get(user_id, [])
@@ -1341,6 +1352,30 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
             dur = task.get('duration_min', '')
             detail = f" — {time_label}, {dur} min" if time_label and dur else ""
             await query.answer(f"✅ Planned!{detail}")
+            # Send a persistent confirmation message with session details
+            details_parts = []
+            if time_label:
+                details_parts.append(f"🕐 {time_label}")
+            if dur:
+                details_parts.append(f"{dur} min")
+            details_line = " · ".join(details_parts) if details_parts else ""
+            app_url = f"{self.miniapp_url}/dashboard"
+            confirmation = get_message(
+                "morning_session_added",
+                user_lang,
+                title=task['text'],
+                details=details_line,
+                app_url=app_url,
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=confirmation,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True,
+                )
+            except Exception as send_err:
+                logger.warning(f"Could not send session-added message for user {user_id}: {send_err}")
             # Mark the tapped button with a checkmark
             if query.message and query.message.reply_markup:
                 new_rows = []
