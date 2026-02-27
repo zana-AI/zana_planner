@@ -60,3 +60,24 @@ def test_analyze_user_work_patterns_aggregates_by_day_and_hour():
     assert 11 in patterns["by_hour"]
     assert patterns["by_hour"][10] == pytest.approx(4.0)
     assert patterns["by_hour"][11] == pytest.approx(2.0)
+
+
+class FakeLLMHandlerReturnsFloat:
+    """Simulates an LLM handler that returns a float instead of a string."""
+
+    def get_response_custom(self, prompt, user_id_str):
+        return 2.5  # float, not a string
+
+
+@pytest.mark.unit
+def test_suggest_daily_work_hours_handles_float_llm_response():
+    """Regression test: LLM returning a float must not raise TypeError."""
+    actions = [
+        Action(user_id="1", promise_id="P01", action="log_time", time_spent=2.0, at=datetime(2025, 1, 6, 10, 0)),  # Mon
+    ]
+    svc = TimeEstimationService(actions_repo=FakeActionsRepo(actions))
+    result = svc.suggest_daily_work_hours(
+        user_id=1, day_of_week="Monday", llm_handler=FakeLLMHandlerReturnsFloat()
+    )
+    assert "suggested_hours" in result
+    assert isinstance(result["suggested_hours"], float)
