@@ -1,4 +1,6 @@
 from typing import List, Tuple
+import random
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from models.models import Promise
@@ -20,138 +22,209 @@ class RankingService:
         """
         promises = self.promises_repo.list_promises(user_id)
         actions = self.actions_repo.list_actions(user_id)
-        
+
         # Filter active promises (must have started and not ended)
         active_promises = [
-            p for p in promises 
+            p for p in promises
             if p.start_date and p.start_date <= now.date()
             and (not p.end_date or p.end_date >= now.date())
         ]
-        
+
         scored_promises = []
         for promise in active_promises:
             score = self._calculate_promise_score(promise, actions, now)
             scored_promises.append((promise, score))
-        
+
         return scored_promises
 
     def _calculate_promise_score(self, promise: Promise, actions: List, now: datetime) -> float:
         """Calculate score for a single promise."""
         score = 0.0
-        
-        # Signal 1: Weekly deficit (behind target this week)
-        weekly_deficit = self._get_weekly_deficit(promise, actions, now)
-        score += weekly_deficit * 2.0  # Weight: 2.0
-        
-        # Signal 2: Recency decay (not touched in N days)
+
+        # Signal 1: Motivation-adjusted weekly deficit
+        weekly_deficit = self._get_motivation_adjusted_deficit(promise, actions, now)
+        score += weekly_deficit * 2.5  # Weight: 2.5
+
+        # Signal 2: Weekday affinity (historically worked on this day?)
+        weekday_affinity = self._get_weekday_affinity(promise, actions, now)
+        score += weekday_affinity * 2.0  # Weight: 2.0
+
+        # Signal 3: Recency decay (not touched in N days)
         recency_decay = self._get_recency_decay(promise, actions, now)
         score += recency_decay * 1.5  # Weight: 1.5
-        
-        # Signal 3: Touched today penalty (small penalty for already worked on)
+
+        # Signal 4: Touched today penalty (small penalty for already worked on)
         touched_today_penalty = self._get_touched_today_penalty(promise, actions, now)
         score -= touched_today_penalty * 0.5  # Weight: -0.5
-        
-        # Signal 4: Day of week fit (optional small boost)
-        day_boost = self._get_day_of_week_boost(promise, now)
-        score += day_boost * 0.3  # Weight: 0.3
-        
+
         return score
 
-    def _get_weekly_deficit(self, promise: Promise, actions: List, now: datetime) -> float:
-        """Calculate how behind the promise is this week"""
-        tz = now.tzinfo  # may be None; if not None, we’ll localize naive datetimes to this tz
+    # ------------------------------------------------------------------
+    # Signal helpers
+    # ------------------------------------------------------------------
+
+    def _get_weekday_affinity(self, promise: Promise, actions: List, now: datetime) -> float:
+        """How strongly this promise is associated with today's weekday.
+
+        Returns 0-3.  A promise the user always works on Fridays gets ~3 on a
+        Friday; one they never touch on Fridays gets 0.
+        """
+        today_name = now.strftime('%A')
+        promise_actions = [a for a in actions if a.promise_id == promise.id]
+        if not promise_actions:
+            return 0.0
+
+        # Count distinct dates per weekday for this promise
+        day_dates: dict = defaultdict(set)
+        for a in promise_actions:
+            day_dates[a.at.strftime('%A')].add(a.at.date())
+
+        total_distinct_days = sum(len(dates) for dates in day_dates.values())
+        if total_distinct_days == 0:
+            return 0.0
+
+        today_count = len(day_dates.get(today_name, set()))
+        ratio = today_count / total_distinct_days  # 0-1 range
+        num_weekdays_active = len(day_dates)
+        # Boost when activity is concentrated on fewer days (specialist promise).
+        # e.g. if a user only works on this promise 2 days/week, each matching
+        # day should be worth more than if they spread across 7 days.
+        return min(3.0, ratio * 3.0 * num_weekdays_active)
+
+    def _get_motivation_adjusted_deficit(self, promise: Promise, actions: List, now: datetime) -> float:
+        """Weekly deficit, dampened when the user historically ignores a promise.
+
+        Pure deficit = max(0, expected_hours - hours_spent_this_week).
+        Motivation factor = avg_weekly_hours_past_4wks / hours_per_week.
+        Final = deficit * clamp(motivation, 0.15, 1.0)
+
+        A promise with 0 target hours and 0 past activity still scores low but
+        not zero (floor at 0.15) so it eventually surfaces.
+        """
+        tz = now.tzinfo
 
         def as_tz(dt: datetime) -> datetime:
-            if tz is None:  # all naive: keep as-is
+            if tz is None:
                 return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
-            # now is aware -> make dt aware in same tz if it’s naive, or convert if aware in another tz
             return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
 
-        # week start: Monday 03:00 in user's tz (or naive if tz is None)
+        # --- current-week deficit ---
         monday = now - timedelta(days=now.weekday())
         week_start = monday.replace(hour=3, minute=0, second=0, microsecond=0)
         if now < week_start:
             week_start -= timedelta(days=7)
 
-        # ensure both bounds are in the same tz domain as the actions we’ll compare to
         now_local = as_tz(now)
         week_start_local = as_tz(week_start)
 
-        # hours spent this week for this promise
         weekly_actions = [
             a for a in actions
             if a.promise_id == promise.id and week_start_local <= as_tz(a.at) <= now_local
         ]
         hours_spent = sum(float(getattr(a, "time_spent", 0.0) or 0.0) for a in weekly_actions)
 
-        # expected by proportional progress through the week
         week_seconds = 7 * 24 * 3600
         progress = (now_local - week_start_local).total_seconds() / week_seconds
-        progress = max(0.0, min(1.0, progress))  # clamp
+        progress = max(0.0, min(1.0, progress))
 
         hpw = float(getattr(promise, "hours_per_week", 0.0) or 0.0)
         expected_hours = hpw * progress
+        raw_deficit = max(0.0, expected_hours - hours_spent)
 
-        # positive if behind, 0 if on/ahead
-        return max(0.0, expected_hours - hours_spent)
+        # --- motivation factor: avg weekly hours over past 4 weeks ---
+        four_wk_start = week_start_local - timedelta(weeks=4)
+        past_actions = [
+            a for a in actions
+            if a.promise_id == promise.id and four_wk_start <= as_tz(a.at) < week_start_local
+        ]
+        past_hours = sum(float(getattr(a, "time_spent", 0.0) or 0.0) for a in past_actions)
+        avg_weekly_past = past_hours / 4.0
+
+        if hpw > 0:
+            motivation = avg_weekly_past / hpw
+        else:
+            # check-based / no target — use raw activity presence
+            motivation = min(1.0, avg_weekly_past) if avg_weekly_past > 0 else 0.15
+
+        motivation = max(0.15, min(1.0, motivation))
+        return raw_deficit * motivation
 
     def _get_recency_decay(self, promise: Promise, actions: list, now: datetime) -> float:
         """Calculate recency decay score (higher if not touched recently)."""
-        # keep only this promise's actions
         promise_actions = [a for a in actions if a.promise_id == promise.id]
         if not promise_actions:
             return 3.0  # never worked on -> high priority
 
-        # Normalize datetimes to the tz of 'now' (or keep naive if 'now' is naive)
         tz = now.tzinfo
 
         def as_tz(dt: datetime) -> datetime:
             if tz is None:
-                # controller is using naive 'now' -> keep everything naive
                 return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
-            # controller is using aware 'now' -> localize/convert actions to the same tz
             return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
 
         now_local = as_tz(now)
-        # Find most recent action in the same tz domain
         most_recent = max(promise_actions, key=lambda a: as_tz(a.at))
         last_at_local = as_tz(most_recent.at)
 
-        # Days since last action (>= 0)
         delta_days = max(0, (now_local.date() - last_at_local.date()).days)
 
-        # Piecewise scoring (cap at 3.0)
         if delta_days == 0:
-            return 0.0  # touched today
+            return 0.0
         elif delta_days == 1:
-            return 1.0  # yesterday
+            return 1.0
         elif delta_days <= 3:
-            return 2.0  # within 3 days
+            return 2.0
         else:
             return min(3.0, delta_days * 0.5)
 
     def _get_touched_today_penalty(self, promise: Promise, actions: List, now: datetime) -> float:
         """Calculate penalty for already working on this promise today."""
         today = now.date()
-        today_actions = [a for a in actions 
-                        if a.promise_id == promise.id 
-                        and a.at.date() == today]
-        
+        today_actions = [
+            a for a in actions
+            if a.promise_id == promise.id and a.at.date() == today
+        ]
         if not today_actions:
             return 0.0
-        
-        # Small penalty for already working on it today
         return 1.0
 
-    def _get_day_of_week_boost(self, promise: Promise, now: datetime) -> float:
-        """Calculate day of week boost (optional feature)."""
-        # For now, return 0 (no day-specific logic)
-        # Future: could boost certain promises on certain days
-        return 0.0
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def top_n(self, user_id: int, now: datetime, n: int = 3) -> List[Promise]:
-        """Get top N promises for today."""
+        """Return top *n* promises for today.
+
+        Slots 1-2: highest scoring promises (deterministic).
+        Slot 3+: weighted-random pick among remaining promises, favouring
+        lower-commitment tasks to encourage variety / discovery.
+        """
         scores = self.score_promises_for_today(user_id, now)
-        # Sort by score (descending) and take top N
-        sorted_promises = sorted(scores, key=lambda t: t[1], reverse=True)
-        return [promise for promise, _ in sorted_promises[:n]]
+        if not scores:
+            return []
+        sorted_all = sorted(scores, key=lambda t: t[1], reverse=True)
+
+        if n <= 2 or len(sorted_all) <= n:
+            return [p for p, _ in sorted_all[:n]]
+
+        # Deterministic top 2
+        top2 = sorted_all[:2]
+        remaining = sorted_all[2:]
+
+        # Weighted-random pick for slot 3+: score + bonus for low-commitment tasks
+        picks: List[Tuple[Promise, float]] = []
+        for _ in range(n - 2):
+            if not remaining:
+                break
+            weights = []
+            for promise, sc in remaining:
+                hpw = float(getattr(promise, 'hours_per_week', 0.0) or 0.0)
+                # Low-effort bonus: inversely proportional to weekly hours (capped)
+                low_effort_bonus = max(0.0, 3.0 - hpw) * 0.5
+                w = max(0.01, sc + low_effort_bonus + 0.5)  # baseline 0.5 so everyone has a chance
+                weights.append(w)
+            chosen_idx = random.choices(range(len(remaining)), weights=weights, k=1)[0]
+            picks.append(remaining.pop(chosen_idx))
+
+        result = top2 + picks
+        return [p for p, _ in result]
