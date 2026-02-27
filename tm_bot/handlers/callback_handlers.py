@@ -409,6 +409,7 @@ class CallbackHandlers:
             pass
 
         # --- Execute or skip the current item ---
+        _step_ok = True  # set to False only on unexpected tool error
         if is_confirm:
             try:
                 if hasattr(self.plan_keeper, tool_name):
@@ -433,9 +434,12 @@ class CallbackHandlers:
             except Exception as e:
                 logger.error("Error executing confirmed tool %s for user %s: %s", tool_name, user_id, e)
                 step_result = get_message("error_executing_action", user_lang, error=str(e))
+                _step_ok = False
         else:
             # Skip this item — note it for the progress line, then continue
             step_result = f"⏭ Skipped: {step_label}."
+
+        _progress_icon = "✅" if _step_ok else "❌"
 
         # --- Continue batch or finalise ---
         if batch_remaining:
@@ -447,12 +451,12 @@ class CallbackHandlers:
 
             if not remaining_after:
                 next_q = (
-                    f"✅ ({done_so_far}/{batch_total}) {step_result}\n\n"
+                    f"{_progress_icon} ({done_so_far}/{batch_total}) {step_result}\n\n"
                     f"Last one — {next_desc}. Proceed?"
                 )
             else:
                 next_q = (
-                    f"✅ ({done_so_far}/{batch_total}) {step_result}\n\n"
+                    f"{_progress_icon} ({done_so_far}/{batch_total}) {step_result}\n\n"
                     f"Next ({done_so_far + 1}/{batch_total}): {next_desc}. Continue?"
                 )
 

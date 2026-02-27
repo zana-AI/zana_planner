@@ -1941,9 +1941,17 @@ def create_plan_execute_graph(
                 # If field is empty or JSON parsing failed, use the string output directly
                 # This handles tools like resolve_datetime that return plain strings (e.g., "2026-01-14T00:00:00")
                 elif not src_field or not obj:
-                    # Tool returned a string (not JSON), use it directly
+                    # Tool returned a string (not JSON), use it directly.
+                    # Special case: for promise_id, try to extract '#P10'-style IDs from
+                    # add_promise / create_promise text output (e.g. "✅ #P10 Promise … added").
+                    if src_field == "promise_id":
+                        _pid_match = re.search(r'#([A-Za-z0-9]+)', src_text)
+                        if _pid_match:
+                            tool_args[arg_name] = _pid_match.group(1)
+                        elif src_text.strip() and not src_text.strip().startswith(("Could not", "Error")):
+                            tool_args[arg_name] = src_text.strip()
                     # Strip any error messages that might start with "Could not" or "Error"
-                    if src_text.strip() and not src_text.strip().startswith(("Could not", "Error")):
+                    elif src_text.strip() and not src_text.strip().startswith(("Could not", "Error")):
                         tool_args[arg_name] = src_text.strip()
                     else:
                         # Error in tool output, ask user
@@ -3230,7 +3238,14 @@ def create_routed_plan_execute_graph(
                 if resolved not in (None, "", [], {}):
                     tool_args[arg_name] = resolved
                 elif not src_field or not obj:
-                    if src_text.strip() and not src_text.strip().startswith(("Could not", "Error")):
+                    # Special case: extract '#P10'-style promise IDs from plain-string tool output.
+                    if src_field == "promise_id":
+                        _pid_match = re.search(r'#([A-Za-z0-9]+)', src_text)
+                        if _pid_match:
+                            tool_args[arg_name] = _pid_match.group(1)
+                        elif src_text.strip() and not src_text.strip().startswith(("Could not", "Error")):
+                            tool_args[arg_name] = src_text.strip()
+                    elif src_text.strip() and not src_text.strip().startswith(("Could not", "Error")):
                         tool_args[arg_name] = src_text.strip()
             
             # FROM_SEARCH handling
