@@ -1046,7 +1046,8 @@ class LLMHandler:
             "- QUERY_PROGRESS: reports, streaks, totals\n"
             "- SETTINGS: language, timezone, notification changes\n"
             "- NO_OP/CHAT: casual conversation, no action needed\n"
-            "Use canonical intent prefixes: LOG_, CREATE_, UPDATE_, DELETE_, QUERY_, SETTINGS_, NO_OP.\n"
+            "- PLAN_SESSION: schedule or view a work block for a promise ('gym tomorrow 1hr', 'plan a study session Friday')\n"
+            "Use canonical intent prefixes: LOG_, CREATE_, UPDATE_, DELETE_, QUERY_, SETTINGS_, NO_OP, PLAN_.\n"
             "Messages ending with '?' or <4 words are usually QUESTIONS, not LOG_ACTION.\n"
             "Set intent_confidence: 'high'=unambiguous action; 'medium'=one likely interpretation; 'low'=<4 words, ends '?', or ambiguous.\n"
             "For HIGH-confidence intents: fill defaults and act directly.\n"
@@ -1095,7 +1096,22 @@ class LLMHandler:
             "{\"kind\":\"tool\",\"purpose\":\"Create water drinking promise\",\"tool_name\":\"add_promise\","
             "\"tool_args\":{\"promise_text\":\"drink water\",\"num_hours_promised_per_week\":1.17,\"recurring\":true}},"
             "{\"kind\":\"respond\",\"purpose\":\"Confirm promise created\"}"
-            "],\"detected_intent\":\"CREATE_PROMISE\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n"
+            "],\"detected_intent\":\"CREATE_PROMISE\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
+
+            "User: 'tomorrow morning I want to go to the gym for 45 minutes'\n"
+            "{\"steps\":["
+            "{\"kind\":\"tool\",\"purpose\":\"Find gym promise\",\"tool_name\":\"search_promises\",\"tool_args\":{\"query\":\"gym\"}},"
+            "{\"kind\":\"tool\",\"purpose\":\"Resolve datetime\",\"tool_name\":\"resolve_datetime\",\"tool_args\":{\"datetime_text\":\"tomorrow morning\"}},"
+            "{\"kind\":\"tool\",\"purpose\":\"Schedule session\",\"tool_name\":\"add_plan_session\","
+            "\"tool_args\":{\"promise_id\":\"FROM_SEARCH\",\"planned_start\":\"FROM_TOOL:resolve_datetime:\",\"planned_duration_min\":45}},"
+            "{\"kind\":\"respond\",\"purpose\":\"Confirm session scheduled\"}"
+            "],\"detected_intent\":\"PLAN_SESSION\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
+
+            "User: 'what sessions do I have this week'\n"
+            "{\"steps\":["
+            "{\"kind\":\"tool\",\"purpose\":\"Get upcoming sessions\",\"tool_name\":\"get_upcoming_sessions\",\"tool_args\":{\"days_ahead\":7}},"
+            "{\"kind\":\"respond\",\"purpose\":\"List sessions to user\"}"
+            "],\"detected_intent\":\"PLAN_SESSION\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n"
         )
         
         # Store base prompt for mode-specific variants
@@ -1500,7 +1516,34 @@ class LLMHandler:
                         logger.info(f"Injected {len(promises)} promises into context for user {user_id}: {promise_ids_only}")
             except Exception as e:
                 logger.warning(f"Could not get promise context for user {user_id}: {e}")
-        
+
+        # Upcoming plan sessions (next 48h) — gives planner awareness of what's already scheduled
+        if user_id and mode not in ("engagement",):
+            try:
+                from datetime import timezone, timedelta as _timedelta
+                _now_utc = datetime.now(timezone.utc)
+                _since = _now_utc.isoformat()
+                _until = (_now_utc + _timedelta(hours=48)).isoformat()
+                _upcoming = self.plan_adapter.plan_sessions_repo.list_upcoming_for_user(
+                    int(user_id), _since, _until
+                )
+                if _upcoming:
+                    sections.append("\n=== UPCOMING SESSIONS (next 48h) ===")
+                    _sess_lines = []
+                    for _s in _upcoming:
+                        _p_text = (_s.get("promise_text") or _s.get("promise_id") or "?").replace("_", " ")
+                        _title = _s.get("title") or f"Session #{_s['id']}"
+                        _start = _s.get("planned_start") or "?"
+                        _dur = f"{_s['planned_duration_min']} min" if _s.get("planned_duration_min") else "?"
+                        _sess_lines.append(f"  #{_s['id']} [{_p_text}] '{_title}' at {_start} ({_dur})")
+                    sections.append("\n".join(_sess_lines))
+                    sections.append(
+                        "When the user says they completed or skipped a session, "
+                        "use update_plan_session_status with the session id above."
+                    )
+            except Exception as _e:
+                logger.debug(f"Could not get upcoming sessions context for user {user_id}: {_e}")
+
         # Recent + importance-weighted conversation context (adaptive and budgeted)
         if user_id:
             try:

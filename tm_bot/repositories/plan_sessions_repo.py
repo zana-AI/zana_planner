@@ -120,6 +120,30 @@ class PlanSessionsRepository:
             )
             return result.rowcount > 0
 
+    def update(self, session_id: int, user_id: int, data: dict) -> Optional[dict]:
+        """Patch mutable fields (title, planned_start, planned_duration_min, notes)."""
+        user = str(user_id)
+        allowed = {"title", "planned_start", "planned_duration_min", "notes"}
+        fields = {k: v for k, v in data.items() if k in allowed}
+        if not fields:
+            return self.get(session_id, int(user_id))
+        set_clause = ", ".join(f"{k} = :{k}" for k in fields)
+        params = {**fields, "session_id": session_id, "user_id": user}
+        with get_db_session() as session:
+            result = session.execute(
+                text(f"""
+                    UPDATE plan_sessions SET {set_clause}
+                    WHERE id = :session_id AND user_id = :user_id
+                    RETURNING id, promise_uuid, user_id, title, status,
+                              planned_start, planned_duration_min, notes, created_at
+                """),
+                params,
+            ).mappings().fetchone()
+            if not result:
+                return None
+            checklist = self._get_checklist(session, result["id"])
+            return {**dict(result), "checklist": checklist}
+
     # ------------------------------------------------------------------
     # Checklist items
     # ------------------------------------------------------------------
@@ -147,6 +171,31 @@ class PlanSessionsRepository:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def list_upcoming_for_user(self, user_id: int, since_iso: str, until_iso: str) -> List[dict]:
+        """List all planned sessions for a user between two ISO datetime strings.
+
+        Joins with the promises table to include promise_id and promise_text.
+        Only returns sessions with status='planned'.
+        """
+        user = str(user_id)
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT ps.id, ps.promise_uuid, ps.user_id, ps.title, ps.status,
+                           ps.planned_start, ps.planned_duration_min, ps.notes, ps.created_at,
+                           p.current_id AS promise_id, p.text AS promise_text
+                    FROM plan_sessions ps
+                    LEFT JOIN promises p ON p.promise_uuid = ps.promise_uuid
+                    WHERE ps.user_id = :user_id
+                      AND ps.status = 'planned'
+                      AND ps.planned_start >= :since_iso
+                      AND ps.planned_start <= :until_iso
+                    ORDER BY ps.planned_start
+                """),
+                {"user_id": user, "since_iso": since_iso, "until_iso": until_iso},
+            ).mappings().fetchall()
+            return [dict(r) for r in rows]
 
     @staticmethod
     def _get_checklist(session, plan_session_id: int) -> List[dict]:

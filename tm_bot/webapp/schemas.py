@@ -462,5 +462,12 @@ class PlanSessionStatusUpdate(BaseModel):
     status: str   # planned | done | skipped
 
 
+class PlanSessionUpdate(BaseModel):
+    title: Optional[str] = None
+    planned_start: Optional[str] = None
+    planned_duration_min: Optional[int] = None
+    notes: Optional[str] = None
+
+
 class ChecklistItemToggle(BaseModel):
     done: bool

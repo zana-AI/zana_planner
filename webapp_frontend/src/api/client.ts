@@ -845,6 +845,13 @@ class ApiClient {
   async deletePlanSession(sessionId: number): Promise<void> {
     return this.request(`/plan-sessions/${sessionId}`, { method: 'DELETE' });
   }
+
+  async updatePlanSession(sessionId: number, data: { title?: string; planned_start?: string; planned_duration_min?: number; notes?: string }): Promise<import('../types').PlanSession> {
+    return this.request(`/plan-sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 /**

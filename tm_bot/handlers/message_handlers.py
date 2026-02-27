@@ -1379,18 +1379,22 @@ class MessageHandlers:
                 if pending.get("reason") == "pre_mutation_confirmation":
                     tool_name = pending.get("tool_name", "")
                     tool_args = pending.get("tool_args", {})
-                    
+                    # Batch fields — extract before clearing pending
+                    batch_remaining = list(pending.get("batch_remaining") or [])
+                    batch_total = int(pending.get("batch_total") or 1)
+                    batch_current_idx = int(pending.get("batch_current_idx") or 0)
+                    step_label = pending.get("description") or tool_name
+
                     # Detect confirm/cancel tokens (language-aware)
                     is_confirm = self._is_confirmation_reply(user_message)
                     is_cancel = self._is_cancel_reply(user_message)
 
-                    
                     # Clear pending regardless of outcome
                     try:
                         context.user_data.pop("pending_clarification", None)
                     except Exception:
                         pass
-                    
+
                     if is_confirm:
                         # Execute the pending tool call
                         try:
@@ -1399,8 +1403,8 @@ class MessageHandlers:
                                 # Add user_id to tool_args
                                 tool_args_with_user = {**tool_args, "user_id": user_id}
                                 result = method(**tool_args_with_user)
-                                
-                                # Send success message
+
+                                # Build success message
                                 if tool_name in ("add_promise", "create_promise"):
                                     promise_text = tool_args.get("promise_text") or tool_args.get("text", "promise")
                                     success_msg = get_message("promise_created_confirmed", user_lang, promise_text=promise_text.replace("_", " "))
@@ -1409,7 +1413,47 @@ class MessageHandlers:
                                     success_msg = get_message("template_subscribed_confirmed", user_lang, template_id=template_id)
                                 else:
                                     success_msg = get_message("action_confirmed", user_lang)
-                                
+
+                                # --- Batch continuation: show next item if any ---
+                                if batch_remaining:
+                                    next_item = batch_remaining[0]
+                                    remaining_after = batch_remaining[1:]
+                                    next_idx = batch_current_idx + 1
+                                    next_desc = next_item.get("description", next_item.get("tool_name", "next action"))
+                                    done_so_far = next_idx
+                                    if not remaining_after:
+                                        next_q = (
+                                            f"✅ ({done_so_far}/{batch_total}) {success_msg}\n\n"
+                                            f"Last one — {next_desc}. Proceed?"
+                                        )
+                                    else:
+                                        next_q = (
+                                            f"✅ ({done_so_far}/{batch_total}) {success_msg}\n\n"
+                                            f"Next ({done_so_far + 1}/{batch_total}): {next_desc}. Continue?"
+                                        )
+                                    new_pending = {
+                                        "reason": "pre_mutation_confirmation",
+                                        "tool_name": next_item["tool_name"],
+                                        "tool_args": next_item["tool_args"],
+                                        "description": next_desc,
+                                        "batch_remaining": remaining_after,
+                                        "batch_total": batch_total,
+                                        "batch_current_idx": next_idx,
+                                    }
+                                    try:
+                                        context.user_data["pending_clarification"] = new_pending
+                                    except Exception:
+                                        pass
+                                    kb = self._mutation_confirmation_kb(user_lang)
+                                    await self.response_service.reply_text(
+                                        update, next_q,
+                                        user_id=user_id,
+                                        reply_markup=kb,
+                                        parse_mode='Markdown'
+                                    )
+                                    return
+
+                                # Single item or last item — send result and sync
                                 if voice_mode_enabled:
                                     await self._send_response_with_voice_mode(
                                         update, context, success_msg, settings, user_lang
@@ -1463,7 +1507,7 @@ class MessageHandlers:
                             )
                         return
                     elif is_cancel:
-                        # User canceled - send cancellation message
+                        # User canceled — cancel all remaining batch items too
                         cancel_msg = get_message("action_canceled", user_lang)
                         if voice_mode_enabled:
                             await self._send_response_with_voice_mode(

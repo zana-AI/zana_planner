@@ -4472,6 +4472,12 @@ textarea.modal-input {
   background: rgba(74, 222, 128, 0.08);
 }
 
+.planned-session-action--edit {
+  color: var(--accent-hover);
+  border-color: rgba(99, 167, 247, 0.35);
+  background: rgba(99, 167, 247, 0.08);
+}
+
 .planned-session-action--delete {
   color: #f87171;
   border-color: rgba(248, 113, 113, 0.35);

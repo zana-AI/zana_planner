@@ -17,6 +17,8 @@ from repositories.instances_repo import InstancesRepository
 from repositories.distractions_repo import DistractionsRepository
 from repositories.profile_repo import ProfileRepository
 from repositories.follows_repo import FollowsRepository
+from repositories.plan_sessions_repo import PlanSessionsRepository
+from db.postgres_db import get_db_session, resolve_promise_uuid
 from services.reports import ReportsService
 from services.template_unlocks import TemplateUnlocksService
 from services.ranking import RankingService
@@ -79,6 +81,9 @@ class PlannerAPIAdapter:
         # Schema and query services
         self.schema_service = SchemaService()
         self.query_service = QueryService()
+
+        # Plan sessions
+        self.plan_sessions_repo = PlanSessionsRepository()
 
     # Promise methods
     def add_promise(
@@ -1244,3 +1249,184 @@ class PlannerAPIAdapter:
     def unfollow_user(self, user_id, target_username: str) -> str:
         """Unfollow a user by their username."""
         return self.social_service.unfollow_user(int(user_id), target_username)
+
+    # =========================================================================
+    # Plan Session Tools (Promise → Session → Checklist)
+    # =========================================================================
+
+    def get_plan_sessions(self, user_id, promise_id: str) -> str:
+        """List all scheduled sessions for a promise (planned, done, and skipped).
+
+        Returns sessions with status, scheduled datetime, duration, and checklist counts.
+        Use this to check what sessions exist before scheduling or completing one.
+
+        Args:
+            promise_id: Promise ID (e.g. 'P10')
+        """
+        try:
+            with get_db_session() as session:
+                p_uuid = resolve_promise_uuid(session, str(user_id), promise_id)
+            if not p_uuid:
+                return f"Promise '{promise_id}' not found."
+            sessions = self.plan_sessions_repo.list_for_promise(p_uuid, user_id)
+            if not sessions:
+                return f"No sessions found for promise {promise_id}."
+            lines = []
+            for s in sessions:
+                status_icon = {"planned": "\U0001f4c5", "done": "\u2705", "skipped": "\u23ed\ufe0f"}.get(s["status"], "\u2753")
+                title = s.get("title") or "Untitled session"
+                start = s.get("planned_start") or "No time set"
+                dur = f"{s['planned_duration_min']} min" if s.get("planned_duration_min") else "?"
+                checklist = s.get("checklist") or []
+                cl_summary = f" ({len(checklist)} checklist items)" if checklist else ""
+                lines.append(f"  #{s['id']} {status_icon} {title} \u2014 {start} | {dur}{cl_summary}")
+            return f"Sessions for {promise_id}:\n" + "\n".join(lines)
+        except Exception as e:
+            logger.error(f"get_plan_sessions error: {e}")
+            return f"Error fetching sessions: {str(e)}"
+
+    def add_plan_session(
+        self,
+        user_id,
+        promise_id: str,
+        title: Optional[str] = None,
+        planned_start: Optional[str] = None,
+        planned_duration_min: Optional[int] = None,
+        notes: Optional[str] = None,
+    ) -> str:
+        """Schedule a work session (time block) for a promise.
+
+        Use when the user says they want to work on a promise at a specific time.
+        Examples: 'gym tomorrow at 7pm for 1 hour', 'study session Thursday 2h'.
+        The planned_start must be an ISO datetime string; call resolve_datetime() first.
+        planned_duration_min is in minutes (e.g. 60 for 1 hour, 30 for 30 minutes).
+
+        Args:
+            promise_id: Promise ID (e.g. 'P10')
+            title: Optional label for this session (e.g. 'Morning run')
+            planned_start: ISO datetime string; resolve with resolve_datetime() first
+            planned_duration_min: Duration in minutes (integer)
+            notes: Optional notes for this session
+        """
+        try:
+            with get_db_session() as session:
+                p_uuid = resolve_promise_uuid(session, str(user_id), promise_id)
+            if not p_uuid:
+                return f"Promise '{promise_id}' not found."
+            data = {
+                "title": title,
+                "planned_start": planned_start,
+                "planned_duration_min": planned_duration_min,
+                "notes": notes,
+                "checklist": [],
+            }
+            result = self.plan_sessions_repo.create(p_uuid, user_id, data)
+            dur_str = f"{planned_duration_min} min" if planned_duration_min else "unspecified duration"
+            start_str = planned_start or "no time set"
+            session_title = title or "session"
+            return (
+                f"\u2705 Session #{result['id']} scheduled for promise {promise_id}: "
+                f"'{session_title}' on {start_str} ({dur_str})."
+            )
+        except Exception as e:
+            logger.error(f"add_plan_session error: {e}")
+            return f"Error scheduling session: {str(e)}"
+
+    def update_plan_session_status(
+        self,
+        user_id,
+        session_id: int,
+        status: str,
+    ) -> str:
+        """Mark a planned session as done, skipped, or back to planned.
+
+        When marking 'done', this also logs time on the linked promise automatically
+        if the session had a planned_duration_min. Use get_upcoming_sessions or
+        get_plan_sessions to find the session_id first.
+        Allowed status values: 'done', 'skipped', 'planned'.
+
+        Args:
+            session_id: Numeric session ID (from get_plan_sessions / get_upcoming_sessions)
+            status: New status: 'done', 'skipped', or 'planned'
+        """
+        if status not in ("done", "skipped", "planned"):
+            return "Invalid status. Use 'done', 'skipped', or 'planned'."
+        try:
+            result = self.plan_sessions_repo.update_status(session_id, user_id, status)
+            if not result:
+                return f"Session #{session_id} not found."
+
+            # Auto-log time to the promise when marking a timed session done
+            if status == "done" and result.get("planned_duration_min"):
+                duration_hours = result["planned_duration_min"] / 60.0
+                p_uuid = result.get("promise_uuid")
+                if p_uuid:
+                    try:
+                        from sqlalchemy import text as _text
+                        with get_db_session() as db_session:
+                            row = db_session.execute(
+                                _text("SELECT current_id FROM promises WHERE promise_uuid = :uuid LIMIT 1"),
+                                {"uuid": p_uuid},
+                            ).fetchone()
+                        if row and row[0]:
+                            self.add_action(user_id, row[0], duration_hours)
+                    except Exception as log_err:
+                        logger.warning(f"Could not auto-log time for completed session {session_id}: {log_err}")
+
+            status_msg = {
+                "done": "\u2705 Marked done",
+                "skipped": "\u23ed\ufe0f Skipped",
+                "planned": "\U0001f4c5 Reset to planned",
+            }[status]
+            title = result.get("title") or f"Session #{session_id}"
+            return f"{status_msg}: '{title}'."
+        except Exception as e:
+            logger.error(f"update_plan_session_status error: {e}")
+            return f"Error updating session: {str(e)}"
+
+    def delete_plan_session(self, user_id, session_id: int) -> str:
+        """Cancel and delete a scheduled session for a promise.
+
+        Use when the user wants to cancel a planned work block.
+        Get the session_id first using get_plan_sessions or get_upcoming_sessions.
+
+        Args:
+            session_id: Numeric session ID to cancel
+        """
+        try:
+            deleted = self.plan_sessions_repo.delete(session_id, user_id)
+            if not deleted:
+                return f"Session #{session_id} not found."
+            return f"\U0001f5d1\ufe0f Session #{session_id} cancelled."
+        except Exception as e:
+            logger.error(f"delete_plan_session error: {e}")
+            return f"Error cancelling session: {str(e)}"
+
+    def get_upcoming_sessions(self, user_id, days_ahead: int = 7) -> str:
+        """Get all planned sessions across all promises for the next N days (default 7).
+
+        Use to give the user an overview of their scheduled work blocks.
+        Shows promise name, session title, scheduled datetime, and duration.
+
+        Args:
+            days_ahead: Number of days to look ahead (default 7)
+        """
+        try:
+            from datetime import timezone, timedelta
+            now = datetime.now(timezone.utc)
+            since_iso = now.isoformat()
+            until_iso = (now + timedelta(days=days_ahead)).isoformat()
+            sessions = self.plan_sessions_repo.list_upcoming_for_user(user_id, since_iso, until_iso)
+            if not sessions:
+                return f"No planned sessions in the next {days_ahead} days."
+            lines = [f"Upcoming sessions (next {days_ahead} days):"]
+            for s in sessions:
+                p_text = (s.get("promise_text") or s.get("promise_id") or "unknown promise").replace("_", " ")
+                title = s.get("title") or f"Session #{s['id']}"
+                start = s.get("planned_start") or "?"
+                dur = f"{s['planned_duration_min']} min" if s.get("planned_duration_min") else "?"
+                lines.append(f"  #{s['id']} [{p_text}] '{title}' \u2014 {start} | {dur}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"get_upcoming_sessions error: {e}")
+            return f"Error fetching upcoming sessions: {str(e)}"

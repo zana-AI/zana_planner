@@ -397,58 +397,100 @@ class CallbackHandlers:
 
         tool_name = str(pending.get("tool_name", "")).strip()
         tool_args = pending.get("tool_args") or {}
+        batch_remaining = list(pending.get("batch_remaining") or [])
+        batch_total = int(pending.get("batch_total") or 1)
+        batch_current_idx = int(pending.get("batch_current_idx") or 0)
+        step_label = pending.get("description") or tool_name
 
+        # Clear pending confirmation before executing
         try:
             context.user_data.pop("pending_clarification", None)
         except Exception:
             pass
 
-        if not is_confirm:
-            cancel_msg = get_message("action_canceled", user_lang)
+        # --- Execute or skip the current item ---
+        if is_confirm:
             try:
-                await query.edit_message_text(cancel_msg)
+                if hasattr(self.plan_keeper, tool_name):
+                    method = getattr(self.plan_keeper, tool_name)
+                    tool_args_with_user = {**tool_args, "user_id": user_id}
+                    method(**tool_args_with_user)
+
+                    if tool_name in ("add_promise", "create_promise"):
+                        promise_text = tool_args.get("promise_text") or tool_args.get("text", "promise")
+                        step_result = get_message(
+                            "promise_created_confirmed",
+                            user_lang,
+                            promise_text=str(promise_text).replace("_", " "),
+                        )
+                    elif tool_name == "subscribe_template":
+                        template_id = tool_args.get("template_id", "template")
+                        step_result = get_message("template_subscribed_confirmed", user_lang, template_id=template_id)
+                    else:
+                        step_result = get_message("action_confirmed", user_lang)
+                else:
+                    step_result = get_message("error_tool_not_found", user_lang, tool_name=tool_name)
+            except Exception as e:
+                logger.error("Error executing confirmed tool %s for user %s: %s", tool_name, user_id, e)
+                step_result = get_message("error_executing_action", user_lang, error=str(e))
+        else:
+            # Skip this item — note it for the progress line, then continue
+            step_result = f"⏭ Skipped: {step_label}."
+
+        # --- Continue batch or finalise ---
+        if batch_remaining:
+            next_item = batch_remaining[0]
+            remaining_after = batch_remaining[1:]
+            next_idx = batch_current_idx + 1
+            next_desc = next_item.get("description", next_item.get("tool_name", "next action"))
+            done_so_far = next_idx  # items processed including the current one
+
+            if not remaining_after:
+                next_q = (
+                    f"✅ ({done_so_far}/{batch_total}) {step_result}\n\n"
+                    f"Last one — {next_desc}. Proceed?"
+                )
+            else:
+                next_q = (
+                    f"✅ ({done_so_far}/{batch_total}) {step_result}\n\n"
+                    f"Next ({done_so_far + 1}/{batch_total}): {next_desc}. Continue?"
+                )
+
+            new_pending = {
+                "reason": "pre_mutation_confirmation",
+                "tool_name": next_item["tool_name"],
+                "tool_args": next_item["tool_args"],
+                "description": next_desc,
+                "batch_remaining": remaining_after,
+                "batch_total": batch_total,
+                "batch_current_idx": next_idx,
+            }
+            try:
+                context.user_data["pending_clarification"] = new_pending
             except Exception:
-                await query.message.reply_text(cancel_msg)
-            self._sync_llm_external_turn(
-                user_id,
-                "skip",
-                cancel_msg,
-                drop_pending_confirmation_tail=True,
-            )
+                pass
+
+            yes_text = get_message("btn_yes_confirm", user_lang)
+            skip_text = get_message("btn_skip_action", user_lang)
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton(yes_text, callback_data=encode_cb("mut_confirm", d="yes")),
+                InlineKeyboardButton(skip_text, callback_data=encode_cb("mut_confirm", d="skip")),
+            ]])
+            try:
+                await query.edit_message_text(next_q, reply_markup=kb)
+            except Exception:
+                await query.message.reply_text(next_q, reply_markup=kb)
             return
 
+        # No more items — show final result and sync history
         try:
-            if hasattr(self.plan_keeper, tool_name):
-                method = getattr(self.plan_keeper, tool_name)
-                tool_args_with_user = {**tool_args, "user_id": user_id}
-                method(**tool_args_with_user)
-
-                if tool_name in ("add_promise", "create_promise"):
-                    promise_text = tool_args.get("promise_text") or tool_args.get("text", "promise")
-                    success_msg = get_message(
-                        "promise_created_confirmed",
-                        user_lang,
-                        promise_text=str(promise_text).replace("_", " "),
-                    )
-                elif tool_name == "subscribe_template":
-                    template_id = tool_args.get("template_id", "template")
-                    success_msg = get_message("template_subscribed_confirmed", user_lang, template_id=template_id)
-                else:
-                    success_msg = get_message("action_confirmed", user_lang)
-            else:
-                success_msg = get_message("error_tool_not_found", user_lang, tool_name=tool_name)
-        except Exception as e:
-            logger.error("Error executing confirmed tool %s for user %s: %s", tool_name, user_id, e)
-            success_msg = get_message("error_executing_action", user_lang, error=str(e))
-
-        try:
-            await query.edit_message_text(success_msg)
+            await query.edit_message_text(step_result)
         except Exception:
-            await query.message.reply_text(success_msg)
+            await query.message.reply_text(step_result)
         self._sync_llm_external_turn(
             user_id,
             "yes",
-            success_msg,
+            step_result,
             drop_pending_confirmation_tail=True,
         )
     

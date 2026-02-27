@@ -116,6 +116,40 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   // Which chip is showing its inline actions
   const [expandedChipId, setExpandedChipId] = useState<number | null>(null);
+  // Which session is open for inline editing
+  const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ title: '', planned_start: '', planned_duration_min: '', notes: '' });
+  const [editFormSaving, setEditFormSaving] = useState(false);
+
+  const openEditForm = (session: PlanSession) => {
+    setEditingSessionId(session.id);
+    setExpandedChipId(null);
+    const isoStart = session.planned_start ?? '';
+    setEditForm({
+      title: session.title ?? '',
+      planned_start: isoStart ? isoStart.substring(0, 16) : '', // datetime-local needs YYYY-MM-DDTHH:MM
+      planned_duration_min: session.planned_duration_min?.toString() ?? '',
+      notes: session.notes ?? '',
+    });
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingSessionId === null) return;
+    setEditFormSaving(true);
+    try {
+      const updated = await apiClient.updatePlanSession(editingSessionId, {
+        title: editForm.title || undefined,
+        planned_start: editForm.planned_start || undefined,
+        planned_duration_min: editForm.planned_duration_min ? Number(editForm.planned_duration_min) : undefined,
+        notes: editForm.notes || undefined,
+      });
+      setPlanSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+      setEditingSessionId(null);
+    } catch { /* ignore */ } finally {
+      setEditFormSaving(false);
+    }
+  };
   // Plan session being logged as done (opens LogActionModal pre-filled)
   const [logDoneSessionId, setLogDoneSessionId] = useState<number | null>(null);
   // Inline add-session form
@@ -938,34 +972,82 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 })
               : null;
             const isOpen = expandedChipId === session.id;
+            const isEditing = editingSessionId === session.id;
             return (
               <div key={session.id} className="planned-session-entry">
-                <button
-                  className={`planned-session-chip${isOpen ? ' planned-session-chip--open' : ''}`}
-                  onClick={() => setExpandedChipId(isOpen ? null : session.id)}
-                >
-                  <span className="planned-session-dot" />
-                  <span className="planned-session-title">{session.title || 'Session'}</span>
-                  {timeStr && <span className="planned-session-time">{timeStr}</span>}
-                  {session.planned_duration_min && (
-                    <span className="planned-session-dur">{session.planned_duration_min}m</span>
-                  )}
-                </button>
-                {isOpen && (
-                  <div className="planned-session-actions">
+                {isEditing ? (
+                  <form className="planned-session-add-form" onSubmit={handleEditSave}>
+                    <input
+                      className="planned-session-add-input"
+                      placeholder="Title"
+                      value={editForm.title}
+                      onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                    />
+                    <input
+                      type="datetime-local"
+                      className="planned-session-add-input"
+                      value={editForm.planned_start}
+                      onChange={e => setEditForm(f => ({ ...f, planned_start: e.target.value }))}
+                    />
+                    <input
+                      type="number"
+                      className="planned-session-add-input planned-session-add-input--dur"
+                      placeholder="min"
+                      min={1}
+                      value={editForm.planned_duration_min}
+                      onChange={e => setEditForm(f => ({ ...f, planned_duration_min: e.target.value }))}
+                    />
+                    <input
+                      className="planned-session-add-input"
+                      placeholder="Notes"
+                      value={editForm.notes}
+                      onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                    />
+                    <div className="planned-session-add-actions">
+                      <button type="submit" className="planned-session-action planned-session-action--done" disabled={editFormSaving}>
+                        {editFormSaving ? '…' : 'Save'}
+                      </button>
+                      <button type="button" className="planned-session-action planned-session-action--delete" onClick={() => setEditingSessionId(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
                     <button
-                      className="planned-session-action planned-session-action--done"
-                      onClick={() => { setLogDoneSessionId(session.id); setExpandedChipId(null); }}
+                      className={`planned-session-chip${isOpen ? ' planned-session-chip--open' : ''}`}
+                      onClick={() => setExpandedChipId(isOpen ? null : session.id)}
                     >
-                      ✓ Done
+                      <span className="planned-session-dot" />
+                      <span className="planned-session-title">{session.title || 'Session'}</span>
+                      {timeStr && <span className="planned-session-time">{timeStr}</span>}
+                      {session.planned_duration_min && (
+                        <span className="planned-session-dur">{session.planned_duration_min}m</span>
+                      )}
                     </button>
-                    <button
-                      className="planned-session-action planned-session-action--delete"
-                      onClick={() => handleChipDelete(session.id)}
-                    >
-                      ✕ Delete
-                    </button>
-                  </div>
+                    {isOpen && (
+                      <div className="planned-session-actions">
+                        <button
+                          className="planned-session-action planned-session-action--done"
+                          onClick={() => { setLogDoneSessionId(session.id); setExpandedChipId(null); }}
+                        >
+                          ✓ Done
+                        </button>
+                        <button
+                          className="planned-session-action planned-session-action--edit"
+                          onClick={() => openEditForm(session)}
+                        >
+                          ✎ Edit
+                        </button>
+                        <button
+                          className="planned-session-action planned-session-action--delete"
+                          onClick={() => handleChipDelete(session.id)}
+                        >
+                          ✕ Delete
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );

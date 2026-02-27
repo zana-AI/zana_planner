@@ -9,6 +9,7 @@ from ..schemas import (
     PlanSessionIn,
     PlanSessionOut,
     PlanSessionStatusUpdate,
+    PlanSessionUpdate,
     ChecklistItemToggle,
 )
 from repositories.plan_sessions_repo import PlanSessionsRepository
@@ -81,3 +82,15 @@ async def delete_plan_session(
 ):
     if not PlanSessionsRepository().delete(session_id, user_id):
         raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.patch("/plan-sessions/{session_id}", response_model=PlanSessionOut)
+async def update_plan_session(
+    session_id: int,
+    body: PlanSessionUpdate,
+    user_id: int = Depends(get_current_user),
+):
+    result = PlanSessionsRepository().update(session_id, user_id, body.model_dump(exclude_none=True))
+    if not result:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result

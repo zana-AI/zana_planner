@@ -233,6 +233,8 @@ class AgentState(TypedDict):
     route_reason: Optional[str]  # Short label for telemetry
     # Explicit tracking of executed actions for response validation
     executed_actions: Optional[List[Dict[str, Any]]]  # List of {"tool_name": str, "args": dict, "result": str, "success": bool}
+    # Batch confirmation queue — mutations accumulated during plan execution, confirmed sequentially
+    pending_batch_queue: Optional[List[dict]]  # [{tool_name, tool_args, description}, ...]
 
 
 def _run_tool_calls(messages: List[BaseMessage], tools_by_name: Dict[str, object]) -> List[ToolMessage]:
@@ -1362,7 +1364,7 @@ def create_plan_execute_graph(
     
     # Tools that require confirmation when intent confidence is NOT high
     # This catches the "کتاب ؟" case where add_action shouldn't fire on ambiguous input
-    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action"}
+    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action", "add_plan_session", "delete_plan_session"}
 
     # Helper functions moved to module level - use the module-level versions
 
@@ -1812,6 +1814,41 @@ def create_plan_execute_graph(
             }
 
         if step.kind == "respond":
+            # BATCH CONFIRMATION: if mutations were accumulated during plan execution,
+            # present them as a numbered list and start sequential Yes/Skip confirmation.
+            _batch_q = list(state.get("pending_batch_queue") or [])
+            if _batch_q:
+                _lines = ["📋 Here's what I'll do:"]
+                for _i, _item in enumerate(_batch_q):
+                    _lines.append(f"  {_i + 1}. {_item['description'].capitalize()}")
+                _preview = "\n".join(_lines)
+                _first = _batch_q[0]
+                _total = len(_batch_q)
+                if _total == 1:
+                    _confirm_q = f"{_preview}\n\nShall I go ahead? Tap Yes or Skip."
+                else:
+                    _confirm_q = (
+                        f"{_preview}\n\n"
+                        f"Starting with #1: {_first['description']}. Proceed? (1/{_total})"
+                    )
+                _pending = {
+                    "reason": "pre_mutation_confirmation",
+                    "tool_name": _first["tool_name"],
+                    "tool_args": _first["tool_args"],
+                    "description": _first.get("description", ""),
+                    "batch_remaining": _batch_q[1:],
+                    "batch_total": _total,
+                    "batch_current_idx": 0,
+                }
+                return {
+                    **state,
+                    "iteration": new_iteration,
+                    "final_response": _confirm_q,
+                    "pending_clarification": _pending,
+                    "pending_batch_queue": None,
+                    "step_idx": idx + 1,
+                }
+
             # Add a lightweight instruction message (no tools).
             base_hint = step.response_hint or "Respond to the user based on tool results above."
             
@@ -2056,26 +2093,20 @@ def create_plan_execute_graph(
                 else:
                     action_description = "perform the requested action"
                 
-                question = (
-                    f"I'm about to {action_description}. "
-                    "Please confirm this is correct: tap Yes or Skip below. "
-                    "You can also reply 'yes' or 'confirm' to proceed."
-                )
-                
-                pending = {
-                    "reason": "pre_mutation_confirmation",
+                # Accumulate into batch queue; all pending mutations will be
+                # presented together as a numbered list at the respond step.
+                _batch_item = {
                     "tool_name": tool_name,
-                    "tool_args": tool_args,  # These are now resolved (placeholders filled)
-                    "detected_intent": detected_intent,
-                    "intent_confidence": intent_confidence,
+                    "tool_args": tool_args,  # Already resolved (placeholders filled)
+                    "description": action_description,
                 }
-                
+                _current_queue = list(state.get("pending_batch_queue") or [])
+                _current_queue.append(_batch_item)
                 return {
                     **state,
                     "iteration": new_iteration,
-                    "final_response": question,
-                    "pending_clarification": pending,
-                    "step_idx": idx,  # Don't advance - we'll retry this step after confirmation
+                    "pending_batch_queue": _current_queue,
+                    "step_idx": idx + 1,  # Advance — batch preview shown at respond step
                 }
 
             call_id = f"plan_{idx}_iter_{new_iteration}"
@@ -2216,7 +2247,7 @@ def create_routed_plan_execute_graph(
     ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "subscribe_template"}
     
     # Tools that require confirmation when intent confidence is NOT high
-    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action"}
+    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action", "add_plan_session", "delete_plan_session"}
     
     # Allowed mutation tools per mode
     ALLOWED_MUTATIONS_BY_MODE = {
@@ -3039,6 +3070,41 @@ def create_routed_plan_execute_graph(
             }
 
         if step.kind == "respond":
+            # BATCH CONFIRMATION: if mutations were accumulated during plan execution,
+            # present them as a numbered list and start sequential Yes/Skip confirmation.
+            _batch_q = list(state.get("pending_batch_queue") or [])
+            if _batch_q:
+                _lines = ["📋 Here's what I'll do:"]
+                for _i, _item in enumerate(_batch_q):
+                    _lines.append(f"  {_i + 1}. {_item['description'].capitalize()}")
+                _preview = "\n".join(_lines)
+                _first = _batch_q[0]
+                _total = len(_batch_q)
+                if _total == 1:
+                    _confirm_q = f"{_preview}\n\nShall I go ahead? Tap Yes or Skip."
+                else:
+                    _confirm_q = (
+                        f"{_preview}\n\n"
+                        f"Starting with #1: {_first['description']}. Proceed? (1/{_total})"
+                    )
+                _pending = {
+                    "reason": "pre_mutation_confirmation",
+                    "tool_name": _first["tool_name"],
+                    "tool_args": _first["tool_args"],
+                    "description": _first.get("description", ""),
+                    "batch_remaining": _batch_q[1:],
+                    "batch_total": _total,
+                    "batch_current_idx": 0,
+                }
+                return {
+                    **state,
+                    "iteration": new_iteration,
+                    "final_response": _confirm_q,
+                    "pending_clarification": _pending,
+                    "pending_batch_queue": None,
+                    "step_idx": idx + 1,
+                }
+
             base_hint = step.response_hint or "Respond to the user based on tool results above."
             ux_guidelines = (
                 "\n\nRESPONSE STYLE:\n"
@@ -3253,23 +3319,20 @@ def create_routed_plan_execute_graph(
                 else:
                     action_description = "perform the requested action"
                 
-                question = (
-                    f"Just to confirm: you want me to {action_description}, right?\n\n"
-                    "Tap Yes or Skip below. You can also reply 'yes' or 'confirm' to proceed."
-                )
-                pending = {
-                    "reason": "pre_mutation_confirmation",
+                # Accumulate into batch queue; all pending mutations will be
+                # presented together as a numbered list at the respond step.
+                _batch_item = {
                     "tool_name": tool_name,
                     "tool_args": tool_args,
-                    "detected_intent": detected_intent,
-                    "intent_confidence": intent_confidence,
+                    "description": action_description,
                 }
+                _current_queue = list(state.get("pending_batch_queue") or [])
+                _current_queue.append(_batch_item)
                 return {
                     **state,
                     "iteration": new_iteration,
-                    "final_response": question,
-                    "pending_clarification": pending,
-                    "step_idx": idx,
+                    "pending_batch_queue": _current_queue,
+                    "step_idx": idx + 1,  # Advance — batch preview shown at respond step
                 }
             
             # Execute tool
