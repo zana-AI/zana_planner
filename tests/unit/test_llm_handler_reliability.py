@@ -370,6 +370,53 @@ def test_strip_internal_reasoning_returns_blank_when_only_protocol_artifacts():
     assert output == ""
 
 
+def test_get_system_message_main_excludes_tools_when_include_tools_false():
+    """get_response_custom passes include_tools=False; the system message must not list tools.
+
+    This prevents Groq (and other providers) from raising a 400 'Tool choice is none,
+    but model called a tool' error when the model sees tool names in the prompt and tries
+    to call them even though no tools are bound to the chat_model.
+    """
+    handler = object.__new__(LLMHandler)
+    # Minimal stubs required by _get_system_message_main
+    handler.system_message_main_base = "You are Xaana."
+    handler.tools = []
+
+    class _FakePlanAdapter:
+        class settings_repo:
+            @staticmethod
+            def get_settings(_uid):
+                return None
+
+        class profile_service:
+            @staticmethod
+            def get_profile_status(_uid):
+                return {"facts": {}, "missing_fields": [], "completion_text": "", "pending_field_key": None, "pending_question_text": None}
+
+        class plan_sessions_repo:
+            @staticmethod
+            def list_upcoming_for_user(_uid, _since, _until):
+                return []
+
+        @staticmethod
+        def count_promises(_uid):
+            return 0
+
+        @staticmethod
+        def get_promises(_uid):
+            return []
+
+    handler.plan_adapter = _FakePlanAdapter()
+    handler.chat_history = {}
+    handler._conversation_repo = None
+
+    msg = handler._get_system_message_main(include_tools=False)
+    content = msg.content if hasattr(msg, "content") else str(msg)
+    assert "AVAILABLE TOOLS" not in content
+    assert "estimate_time_for_content" not in content
+    assert "TOOL USAGE GUIDELINES" not in content
+
+
 def _build_strict_handler_for_contract() -> LLMHandler:
     # Build a minimal handler instance without running __init__ heavy setup.
     handler = object.__new__(LLMHandler)

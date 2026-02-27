@@ -1340,11 +1340,16 @@ class LLMHandler:
             return ""
         return "\n".join(lines)
 
-    def _get_system_message_main(self, user_language: str = None, user_id: Optional[str] = None, mode: Optional[str] = None) -> SystemMessage:
+    def _get_system_message_main(self, user_language: str = None, user_id: Optional[str] = None, mode: Optional[str] = None, include_tools: bool = True) -> SystemMessage:
         """Get system message with language instruction, user info, and promise context if provided.
         
         Note: For routed graph, this is called by the planner node after routing.
         The mode-specific planner prompt is prepended separately.
+
+        Args:
+            include_tools: When False, the tool listing is omitted from the system message.
+                           Use False for plain-text generation calls (e.g. get_response_custom)
+                           to prevent the model from attempting tool calls when no tools are bound.
         """
         # Build structured system message with clear sections
         sections = []
@@ -1353,69 +1358,70 @@ class LLMHandler:
         sections.append("=== ROLE & PERSONALITY ===")
         sections.append(self.system_message_main_base)
         
-        # Add tools overview (needed for planner to know what tools are available)
-        # IMPORTANT: This must stay small to avoid blowing the system prompt budget.
-        # We list a compact subset with signatures; provide a hint to use get_tool_help() for details.
-        def _tool_is_mutation(tool_name: str) -> bool:
-            return (tool_name or "").startswith(("add_", "create_", "update_", "delete_", "log_")) or tool_name in {"subscribe_template"}
+        if include_tools:
+            # Add tools overview (needed for planner to know what tools are available)
+            # IMPORTANT: This must stay small to avoid blowing the system prompt budget.
+            # We list a compact subset with signatures; provide a hint to use get_tool_help() for details.
+            def _tool_is_mutation(tool_name: str) -> bool:
+                return (tool_name or "").startswith(("add_", "create_", "update_", "delete_", "log_")) or tool_name in {"subscribe_template"}
 
-        def _tools_for_mode(all_tools: list, active_mode: Optional[str]) -> list:
-            active_mode = (active_mode or "").lower().strip() or "operator"
-            memory_tools = {"memory_search", "memory_get", "memory_write", "web_search", "web_fetch"}
-            if active_mode == "engagement":
-                return [t for t in all_tools if getattr(t, "name", "") in memory_tools]
-            if active_mode == "social":
-                allow = {
-                    "get_my_followers",
-                    "get_my_following",
-                    "get_community_stats",
-                    "follow_user",
-                    "unfollow_user",
-                    "open_mini_app",
-                    "get_setting",
-                    "get_settings",
-                    "get_tool_help",
-                }
-                return [t for t in all_tools if getattr(t, "name", "") in allow]
-            if active_mode == "strategist":
-                # Read-only + helper tools
-                return [
-                    t
-                    for t in all_tools
-                    if not _tool_is_mutation(getattr(t, "name", ""))
-                ]
-            # operator (default): expose everything
-            return list(all_tools)
+            def _tools_for_mode(all_tools: list, active_mode: Optional[str]) -> list:
+                active_mode = (active_mode or "").lower().strip() or "operator"
+                memory_tools = {"memory_search", "memory_get", "memory_write", "web_search", "web_fetch"}
+                if active_mode == "engagement":
+                    return [t for t in all_tools if getattr(t, "name", "") in memory_tools]
+                if active_mode == "social":
+                    allow = {
+                        "get_my_followers",
+                        "get_my_following",
+                        "get_community_stats",
+                        "follow_user",
+                        "unfollow_user",
+                        "open_mini_app",
+                        "get_setting",
+                        "get_settings",
+                        "get_tool_help",
+                    }
+                    return [t for t in all_tools if getattr(t, "name", "") in allow]
+                if active_mode == "strategist":
+                    # Read-only + helper tools
+                    return [
+                        t
+                        for t in all_tools
+                        if not _tool_is_mutation(getattr(t, "name", ""))
+                    ]
+                # operator (default): expose everything
+                return list(all_tools)
 
-        tools_for_prompt = _tools_for_mode(self.tools, mode)
-        tools_for_prompt.sort(key=lambda t: getattr(t, "name", ""))
+            tools_for_prompt = _tools_for_mode(self.tools, mode)
+            tools_for_prompt.sort(key=lambda t: getattr(t, "name", ""))
 
-        MAX_TOOL_LINES = 45
-        tool_lines: list[str] = []
-        total_tools = len(tools_for_prompt)
-        for tool in tools_for_prompt[:MAX_TOOL_LINES]:
-            name = getattr(tool, "name", "unknown")
-            arg_names = []
-            if hasattr(self.plan_adapter, name):
-                try:
-                    arg_names = list(get_function_args_info(getattr(self.plan_adapter, name)).keys())
-                except Exception:
-                    arg_names = []
-            arg_sig = ", ".join(arg_names)
-            tool_lines.append(f"- {name}({arg_sig})")
-        if total_tools > MAX_TOOL_LINES:
-            remaining = total_tools - MAX_TOOL_LINES
-            tool_lines.append(f"- ... and {remaining} more tools (use get_tool_help(tool_name) if needed)")
+            MAX_TOOL_LINES = 45
+            tool_lines: list[str] = []
+            total_tools = len(tools_for_prompt)
+            for tool in tools_for_prompt[:MAX_TOOL_LINES]:
+                name = getattr(tool, "name", "unknown")
+                arg_names = []
+                if hasattr(self.plan_adapter, name):
+                    try:
+                        arg_names = list(get_function_args_info(getattr(self.plan_adapter, name)).keys())
+                    except Exception:
+                        arg_names = []
+                arg_sig = ", ".join(arg_names)
+                tool_lines.append(f"- {name}({arg_sig})")
+            if total_tools > MAX_TOOL_LINES:
+                remaining = total_tools - MAX_TOOL_LINES
+                tool_lines.append(f"- ... and {remaining} more tools (use get_tool_help(tool_name) if needed)")
 
-        tools_overview = "\n".join(tool_lines)
-        sections.append(f"\n=== AVAILABLE TOOLS ===")
-        sections.append(tools_overview)
-        sections.append("\nTOOL USAGE GUIDELINES:")
-        sections.append("- Use exact argument names from signatures above.")
-        sections.append("- When promise_id is unknown but user mentions a topic, use search_promises first.")
-        sections.append("- Default time_spent to 1.0 hour if user says 'worked on X' without specifying duration.")
-        sections.append("- Prefer action over asking: make reasonable assumptions from context.")
-        sections.append("- For detailed tool documentation, call get_tool_help(tool_name) when needed.")
+            tools_overview = "\n".join(tool_lines)
+            sections.append(f"\n=== AVAILABLE TOOLS ===")
+            sections.append(tools_overview)
+            sections.append("\nTOOL USAGE GUIDELINES:")
+            sections.append("- Use exact argument names from signatures above.")
+            sections.append("- When promise_id is unknown but user mentions a topic, use search_promises first.")
+            sections.append("- Default time_spent to 1.0 hour if user says 'worked on X' without specifying duration.")
+            sections.append("- Prefer action over asking: make reasonable assumptions from context.")
+            sections.append("- For detailed tool documentation, call get_tool_help(tool_name) when needed.")
         
         # Resolve user timezone once and inject current datetime in that timezone.
         user_settings = None
@@ -2321,11 +2327,11 @@ class LLMHandler:
 
             # Add language-aware system message if language is specified
             if user_language and user_language != "en":
-                system_msg = self._get_system_message_main(user_language, safe_user_id)
+                system_msg = self._get_system_message_main(user_language, safe_user_id, include_tools=False)
                 messages = [system_msg] + history + messages
             else:
                 # Still add system message for promise context and user info
-                system_msg = self._get_system_message_main(user_language, safe_user_id)
+                system_msg = self._get_system_message_main(user_language, safe_user_id, include_tools=False)
                 messages = [system_msg] + history + messages
 
             try:
