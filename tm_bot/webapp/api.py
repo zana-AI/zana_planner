@@ -253,6 +253,58 @@ def create_webapp_api(
         asyncio.create_task(focus_timer_sweeper())
         logger.info("✓ Started focus timer completion sweeper (checks every 30 seconds)")
 
+        # Start background task for planned session reminders
+        async def plan_session_reminder_sweeper():
+            """Periodically check for planned sessions that are due and send reminders."""
+            from repositories.plan_sessions_repo import PlanSessionsRepository
+            from webapp.notifications import send_plan_session_reminder
+
+            while True:
+                try:
+                    await asyncio.sleep(60)  # Check every 60 seconds
+
+                    plan_sessions_repo = PlanSessionsRepository()
+                    due_sessions = plan_sessions_repo.list_sessions_needing_reminder(lookahead_minutes=1)
+
+                    if due_sessions:
+                        logger.info(f"Found {len(due_sessions)} planned session(s) needing reminder")
+
+                    for ps in due_sessions:
+                        try:
+                            user_id = int(ps["user_id"])
+                            plan_session_id = int(ps["id"])
+                            promise_id = ps.get("promise_id") or ""
+                            promise_text = ps.get("promise_text") or f"Promise {promise_id}"
+
+                            await send_plan_session_reminder(
+                                bot_token=bot_token,
+                                user_id=user_id,
+                                plan_session_id=plan_session_id,
+                                promise_id=promise_id,
+                                promise_text=promise_text,
+                                title=ps.get("title"),
+                                planned_start=ps.get("planned_start"),
+                                planned_duration_min=ps.get("planned_duration_min"),
+                            )
+                            plan_sessions_repo.mark_plan_session_notified(plan_session_id)
+                            logger.info(
+                                f"✓ Sent plan session reminder for session {plan_session_id} to user {user_id}"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"❌ FAILED to send plan session reminder {ps.get('id')} "
+                                f"to user {ps.get('user_id')}: {e}",
+                                exc_info=True,
+                            )
+                            # Keep notified_at unset so the sweeper retries next cycle.
+
+                except Exception as e:
+                    logger.error(f"Error in plan session reminder sweeper: {e}", exc_info=True)
+                    await asyncio.sleep(60)  # Wait longer on error
+
+        asyncio.create_task(plan_session_reminder_sweeper())
+        logger.info("✓ Started plan session reminder sweeper (checks every 60 seconds)")
+
         # Start content learning pipeline dispatcher (every 5 seconds when enabled)
         try:
             await app.state.learning_pipeline_worker.start()

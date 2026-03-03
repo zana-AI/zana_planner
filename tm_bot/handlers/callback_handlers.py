@@ -311,6 +311,16 @@ class CallbackHandlers:
         elif action == "suggest_decline":
             suggestion_id = cb.get("sid")
             await self._handle_suggestion_decline(query, suggestion_id, user_lang)
+        elif action == "psess_start":
+            plan_session_id = cb.get("sid")
+            await self._handle_plan_session_start(query, plan_session_id, promise_id, user_lang)
+        elif action == "psess_snooze":
+            plan_session_id = cb.get("sid")
+            minutes = cb.get("m")
+            await self._handle_plan_session_snooze(query, plan_session_id, minutes, user_lang)
+        elif action == "psess_del":
+            plan_session_id = cb.get("sid")
+            await self._handle_plan_session_delete(query, plan_session_id, user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -773,7 +783,73 @@ class CallbackHandlers:
             await query.edit_message_text(message, parse_mode="Markdown")
         else:
             await query.answer("Session not found or already finished.", show_alert=True)
-    
+
+    async def _handle_plan_session_start(self, query, plan_session_id: str, promise_id: str, user_lang: Language):
+        """Handle starting a focus session from a planned session reminder."""
+        user_id = query.from_user.id
+        try:
+            sess = self.plan_keeper.sessions_service.start(user_id, promise_id)
+            # Mark the plan session as done now that the user is starting it
+            try:
+                self.plan_keeper.plan_sessions_repo.update_status(
+                    int(plan_session_id), user_id, "done"
+                )
+            except Exception:
+                pass  # Non-critical; focus session is already started
+            message = get_message("session_started", user_lang, promise_id=promise_id)
+            if not message or message == "session_started":
+                message = f"▶️ Focus session started for *#{promise_id}*!\n\nGood luck! 🎯"
+            await query.edit_message_text(
+                text=message,
+                reply_markup=session_running_kb(sess.session_id),
+                parse_mode="Markdown",
+            )
+            self._schedule_session_ticker(sess)
+        except Exception as e:
+            logger.error(f"Failed to start focus session for plan_session {plan_session_id}: {e}")
+            await query.answer("Failed to start session. Please try from the app.", show_alert=True)
+
+    async def _handle_plan_session_snooze(self, query, plan_session_id: str, minutes: str, user_lang: Language):
+        """Handle snoozing a planned session reminder (move planned_start forward)."""
+        user_id = query.from_user.id
+        try:
+            from datetime import datetime, timezone, timedelta
+            minutes_int = int(minutes or 60)
+            new_start = (datetime.now(timezone.utc) + timedelta(minutes=minutes_int)).isoformat()
+            result = self.plan_keeper.plan_sessions_repo.snooze_plan_session(
+                session_id=int(plan_session_id),
+                user_id=user_id,
+                new_planned_start=new_start,
+            )
+            if not result:
+                await query.answer("Session not found.", show_alert=True)
+                return
+            if minutes_int >= 1440:
+                label = "tomorrow"
+            elif minutes_int >= 60:
+                label = f"{minutes_int // 60}h"
+            else:
+                label = f"{minutes_int}m"
+            message = f"⏰ Snoozed! I'll remind you again in {label}."
+            await query.edit_message_text(message, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to snooze plan_session {plan_session_id}: {e}")
+            await query.answer("Failed to snooze. Please try from the app.", show_alert=True)
+
+    async def _handle_plan_session_delete(self, query, plan_session_id: str, user_lang: Language):
+        """Handle deleting a planned session from the reminder."""
+        user_id = query.from_user.id
+        try:
+            deleted = self.plan_keeper.plan_sessions_repo.delete(int(plan_session_id), user_id)
+            if deleted:
+                message = "🗑 Session removed from your agenda."
+            else:
+                message = "Session not found."
+            await query.edit_message_text(message, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to delete plan_session {plan_session_id}: {e}")
+            await query.answer("Failed to delete. Please try from the app.", show_alert=True)
+
     async def start_pomodoro_timer(self, query, context):
         """Start the Pomodoro timer."""
         user_lang = get_user_language(query.from_user.id)

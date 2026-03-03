@@ -21,6 +21,7 @@ from platforms.keyboards import (
     delete_confirmation_kb as _delete_confirmation_kb,
     mini_app_kb as _mini_app_kb,
     navigation_kb as _navigation_kb,
+    plan_session_reminder_kb as _plan_session_reminder_kb,
 )
 from platforms.telegram.keyboard_adapter import TelegramKeyboardAdapter
 
@@ -140,6 +141,12 @@ def mini_app_kb(mini_app_url: str, button_text: str = "Open App") -> InlineKeybo
 def navigation_kb(mini_app_url: str) -> InlineKeyboardMarkup:
     """Create navigation keyboard with Weekly, Community, and Explore buttons."""
     keyboard = _navigation_kb(mini_app_url)
+    return _keyboard_adapter.build_keyboard(keyboard)
+
+
+def plan_session_reminder_kb(plan_session_id: int, promise_id: str) -> InlineKeyboardMarkup:
+    """Create keyboard for planned session reminder (Start Focus / Snooze / Delete)."""
+    keyboard = _plan_session_reminder_kb(plan_session_id, promise_id)
     return _keyboard_adapter.build_keyboard(keyboard)
 
 
