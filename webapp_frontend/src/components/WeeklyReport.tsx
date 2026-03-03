@@ -65,10 +65,32 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
   const promiseEntries = Object.entries(promises);
   const hasPromises = promiseEntries.length > 0;
 
-  const sortedPromises = useMemo(
-    () => [...Object.entries(promises)].sort((a, b) => a[0].localeCompare(b[0])),
-    [promises]
-  );
+  // For past weeks, bring promises with logged activity to the top;
+  // promises with no activity sink to the bottom.  Current week keeps
+  // the default alphabetical-by-ID order so nothing jumps around mid-week.
+  const isPastWeek = useMemo(() => {
+    const weekEndDate = new Date(week_end);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return weekEndDate < today;
+  }, [week_end]);
+
+  const sortedPromises = useMemo(() => {
+    const entries = [...Object.entries(promises)];
+    if (isPastWeek) {
+      entries.sort((a, b) => {
+        const aValue = a[1].achieved_value ?? a[1].hours_spent;
+        const bValue = b[1].achieved_value ?? b[1].hours_spent;
+        const aActive = aValue > 0 ? 1 : 0;
+        const bActive = bValue > 0 ? 1 : 0;
+        if (bActive !== aActive) return bActive - aActive; // active first
+        // within each group keep alphabetical order
+        return a[0].localeCompare(b[0]);
+      });
+      return entries;
+    }
+    return entries.sort((a, b) => a[0].localeCompare(b[0]));
+  }, [promises, isPastWeek]);
 
   // Capped total: each promise contributes at most its own target.
   // This is the "true commitment" progress – hours beyond a promise's cap
