@@ -133,6 +133,11 @@ class ApiClient {
       throw new ApiError(response.status, errorMessage);
     }
 
+    // 204 No Content (e.g. DELETE) — return undefined without attempting JSON parse
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return undefined as unknown as T;
+    }
+
     return response.json();
   }
 
