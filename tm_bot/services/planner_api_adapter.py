@@ -2,6 +2,7 @@
 Adapter to provide compatibility with the existing PlannerAPI interface
 while using the new repository and service layers underneath.
 """
+import asyncio
 import json
 from datetime import datetime, date
 from typing import List, Dict, Optional, Any, Union
@@ -1430,3 +1431,28 @@ class PlannerAPIAdapter:
         except Exception as e:
             logger.error(f"get_upcoming_sessions error: {e}")
             return f"Error fetching upcoming sessions: {str(e)}"
+
+    # ---------------------------------------------------------------------------
+    # Async wrappers – offload sync DB/service calls to a thread pool so they
+    # never block the asyncio event loop when concurrent_updates is enabled.
+    # ---------------------------------------------------------------------------
+
+    async def async_get_settings(self, user_id) -> Any:
+        """Non-blocking wrapper for settings_service.get_settings."""
+        return await asyncio.to_thread(self.settings_service.get_settings, user_id)
+
+    async def async_save_settings(self, settings) -> None:
+        """Non-blocking wrapper for settings_service.save_settings."""
+        await asyncio.to_thread(self.settings_service.save_settings, settings)
+
+    async def async_get_promises(self, user_id) -> List[Dict]:
+        """Non-blocking wrapper for get_promises."""
+        return await asyncio.to_thread(self.get_promises, user_id)
+
+    async def async_get_promise_report(self, user_id, promise_id: str) -> str:
+        """Non-blocking wrapper for get_promise_report."""
+        return await asyncio.to_thread(self.get_promise_report, user_id, promise_id)
+
+    async def async_get_weekly_summary(self, user_id, ref_time=None) -> Any:
+        """Non-blocking wrapper for reports_service.get_weekly_summary."""
+        return await asyncio.to_thread(self.reports_service.get_weekly_summary, user_id, ref_time)

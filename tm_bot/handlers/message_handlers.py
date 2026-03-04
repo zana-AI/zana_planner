@@ -337,10 +337,10 @@ class MessageHandlers:
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
         
-        existing_promises = self.plan_keeper.get_promises(user_id)
-        
+        existing_promises = await self.plan_keeper.async_get_promises(user_id)
+
         # Check if user has language preference set
-        settings = self.plan_keeper.settings_service.get_settings(user_id)
+        settings = await self.plan_keeper.async_get_settings(user_id)
         if len(existing_promises) == 0 and (not hasattr(settings, 'language') or settings.language == "en"):
             # New user without language preference - show language selection
             message = get_message("choose_language", user_lang)
@@ -396,7 +396,7 @@ class MessageHandlers:
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
         
-        promises = self.plan_keeper.get_promises(user_id)
+        promises = await self.plan_keeper.async_get_promises(user_id)
         if not promises:
             message = get_message("no_promises", user_lang)
         else:
@@ -433,7 +433,7 @@ class MessageHandlers:
         report_ref_time = datetime.now()
         
         # Get weekly summary using the new service
-        summary = self.plan_keeper.reports_service.get_weekly_summary(user_id, report_ref_time)
+        summary = await self.plan_keeper.async_get_weekly_summary(user_id, report_ref_time)
         report = weekly_report_text(summary)
         
         # Compute week boundaries based on report_ref_time.
@@ -473,17 +473,17 @@ class MessageHandlers:
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
         
-        promises = self.plan_keeper.get_promises(user_id)
-        
+        promises = await self.plan_keeper.async_get_promises(user_id)
+
         if not promises:
             message = get_message("zana_no_promises", user_lang)
             await update.message.reply_text(message)
             return
-        
+
         # Generate reports for all promises
         reports = []
         for promise in promises:
-            report = self.plan_keeper.get_promise_report(user_id, promise['id'])
+            report = await self.plan_keeper.async_get_promise_report(user_id, promise['id'])
             reports.append(report)
         
         # Concatenate all reports
@@ -642,9 +642,9 @@ class MessageHandlers:
         
         try:
             # Check voice mode preference
-            settings = self.plan_keeper.settings_service.get_settings(user_id)
+            settings = await self.plan_keeper.async_get_settings(user_id)
             voice_mode_enabled = self._is_voice_mode_enabled(settings)
-            
+
             # Check if there's a text caption with the voice message
             voice_caption = update.effective_message.caption or ""
             # Avoid duplicate ack: if dispatch already sent "Thinking...", skip voice_received
@@ -1037,7 +1037,7 @@ class MessageHandlers:
         """Handle image messages with VLM parsing and text extraction."""
         user_id = update.effective_user.id
         user_lang = get_user_language(update.effective_user)
-        settings = self.plan_keeper.settings_service.get_settings(user_id)
+        settings = await self.plan_keeper.async_get_settings(user_id)
         voice_mode_enabled = self._is_voice_mode_enabled(settings)
         # User info and avatar updated in PlannerBot.dispatch()
 
@@ -1310,7 +1310,7 @@ class MessageHandlers:
             user_id = update.effective_user.id
             user_group_id = update.effective_chat.id if update.effective_chat.type in ['group', 'supergroup'] else None
             user_lang = get_user_language(update.effective_user)
-            settings = self.plan_keeper.settings_service.get_settings(user_id)
+            settings = await self.plan_keeper.async_get_settings(user_id)
             voice_mode_enabled = self._is_voice_mode_enabled(settings)
             
             # Handle persistent navigation keyboard buttons
@@ -1904,7 +1904,7 @@ class MessageHandlers:
             fallback_settings = None
             if fallback_user_id is not None:
                 try:
-                    fallback_settings = self.plan_keeper.settings_service.get_settings(fallback_user_id)
+                    fallback_settings = await self.plan_keeper.async_get_settings(fallback_user_id)
                 except Exception:
                     fallback_settings = None
 
@@ -1986,7 +1986,7 @@ class MessageHandlers:
             ref_time = datetime.fromisoformat(viz_marker.replace('Z', '+00:00'))
             
             # Get weekly summary for caption
-            summary = self.plan_keeper.reports_service.get_weekly_summary(user_id, ref_time)
+            summary = await self.plan_keeper.async_get_weekly_summary(user_id, ref_time)
             report = weekly_report_text(summary)
             
             # Compute week boundaries
@@ -2537,7 +2537,7 @@ class MessageHandlers:
         # Bot-side settings (best-effort; don't crash if fields differ).
         settings = None
         try:
-            settings = self.plan_keeper.settings_service.get_settings(user_id)
+            settings = await self.plan_keeper.async_get_settings(user_id)
         except Exception:
             settings = None
 

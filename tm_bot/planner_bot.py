@@ -338,13 +338,19 @@ class PlannerBot:
                 context.user_data["_input_context"] = ctx
 
             # Cross-cutting: heal invalid persisted timezone values (e.g., DISABLED)
+            # Fire-and-forget: offload to thread pool so it never blocks the event loop.
             if ctx.user_id:
-                BotUtils.heal_invalid_timezone(self.plan_keeper, ctx.user_id)
+                asyncio.create_task(asyncio.to_thread(
+                    BotUtils.heal_invalid_timezone, self.plan_keeper, ctx.user_id
+                ))
 
             # Cross-cutting: update user info and avatar (for any input with a user)
+            # Fire-and-forget: offload to thread pool so DB writes don't block the event loop.
             effective_user = self._get_effective_user(update)
             if ctx.user_id and effective_user:
-                self.message_handlers._update_user_info(ctx.user_id, effective_user)
+                asyncio.create_task(asyncio.to_thread(
+                    self.message_handlers._update_user_info, ctx.user_id, effective_user
+                ))
             if ctx.user_id and context:
                 await self.message_handlers._update_user_avatar_async(context, ctx.user_id)
 
@@ -372,7 +378,7 @@ class PlannerBot:
             processing_msg = None
             llm_bound = ctx.input_type in ("text", "voice", "image")
             if llm_bound and ctx.user_id:
-                settings = self.plan_keeper.settings_service.get_settings(ctx.user_id)
+                settings = await self.plan_keeper.async_get_settings(ctx.user_id)
                 voice_mode_enabled = bool(settings and getattr(settings, "voice_mode", None) == "enabled")
                 if ctx.input_type == "text" or not voice_mode_enabled:
                     processing_msg = await self._original_response_service.send_processing_message(
@@ -464,7 +470,7 @@ class PlannerBot:
     async def _on_message_edited(self, ctx: InputContext) -> None:
         """Log edited message; update last_seen. No reply."""
         if ctx.user_id:
-            self._log_structured_event(
+            await self._log_structured_event(
                 event_type="edited_message",
                 user_id=ctx.user_id,
                 chat_id=ctx.chat_id,
@@ -476,7 +482,7 @@ class PlannerBot:
     async def _on_reaction(self, ctx: InputContext) -> None:
         """Log message reaction; update last_seen. No reply (or optional lightweight response later)."""
         if ctx.user_id:
-            self._log_structured_event(
+            await self._log_structured_event(
                 event_type="message_reaction",
                 user_id=ctx.user_id,
                 chat_id=ctx.chat_id,
@@ -488,7 +494,7 @@ class PlannerBot:
     async def _on_message_pinned(self, ctx: InputContext) -> None:
         """Log pinned message; update last_seen. No reply."""
         if ctx.user_id:
-            self._log_structured_event(
+            await self._log_structured_event(
                 event_type="pinned_message",
                 user_id=ctx.user_id,
                 chat_id=ctx.chat_id,
@@ -500,7 +506,7 @@ class PlannerBot:
     async def _on_chat_member(self, ctx: InputContext) -> None:
         """Log chat member update; update last_seen. No reply."""
         if ctx.user_id:
-            self._log_structured_event(
+            await self._log_structured_event(
                 event_type="chat_member",
                 user_id=ctx.user_id,
                 chat_id=ctx.chat_id,
@@ -509,7 +515,7 @@ class PlannerBot:
                 payload=dict(ctx.metadata),
             )
 
-    def _log_structured_event(
+    async def _log_structured_event(
         self,
         event_type: str,
         user_id: int,
@@ -521,21 +527,23 @@ class PlannerBot:
         """Log a structured event for non-text interactions (edits, reactions, pins, chat_member)."""
         from datetime import datetime
         try:
-            settings = self.plan_keeper.settings_service.get_settings(user_id)
+            settings = await self.plan_keeper.async_get_settings(user_id)
             if hasattr(settings, "last_seen"):
                 settings.last_seen = datetime.now()
-                self.plan_keeper.settings_service.save_settings(settings)
+                await self.plan_keeper.async_save_settings(settings)
         except Exception as e:
             logger.debug("Could not update last_seen for event %s: %s", event_type, e)
         event_content = f"[{event_type}]"
         if content_preview:
             event_content += " " + content_preview[:100]
         try:
-            self._original_response_service.log_user_message(
-                user_id=user_id,
-                content=event_content,
-                message_id=source_message_id,
-                chat_id=chat_id,
+            await asyncio.to_thread(
+                lambda: self._original_response_service.log_user_message(
+                    user_id=user_id,
+                    content=event_content,
+                    message_id=source_message_id,
+                    chat_id=chat_id,
+                )
             )
         except Exception as e:
             logger.warning("Could not log structured event %s: %s", event_type, e)
@@ -778,7 +786,7 @@ def main():
 
     # Create Telegram platform adapter
     request = HTTPXRequest(connect_timeout=10, read_timeout=20)
-    application = Application.builder().token(BOT_TOKEN).request(request).build()
+    application = Application.builder().token(BOT_TOKEN).request(request).concurrent_updates(True).build()
 
     async def error_handler(update, context):
         err = context.error
