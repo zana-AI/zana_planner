@@ -1977,12 +1977,12 @@ body.modal-open {
 
 .home-cta-button {
   display: inline-block;
-  padding: 14px 32px;
+  padding: 17px 38px;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   color: var(--bg);
   text-decoration: none;
   border-radius: 12px;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
   border: none;
@@ -2001,8 +2001,8 @@ body.modal-open {
 }
 
 .home-cta-button-large {
-  padding: 16px 40px;
-  font-size: 16px;
+  padding: 19px 48px;
+  font-size: 19px;
 }
 
 /* Features Section */
