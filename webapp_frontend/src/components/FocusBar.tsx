@@ -13,6 +13,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const [loading, setLoading] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const finishedDismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const getCompletedSessionId = (): string | null => {
     try {
@@ -43,6 +44,13 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     }
   };
 
+  const clearFinishedDismissTimeout = () => {
+    if (finishedDismissTimeoutRef.current) {
+      clearTimeout(finishedDismissTimeoutRef.current);
+      finishedDismissTimeoutRef.current = null;
+    }
+  };
+
   const loadCurrentSession = useCallback(async () => {
     try {
       const session = await apiClient.getCurrentFocus();
@@ -67,6 +75,26 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     loadCurrentSession();
   }, [loadCurrentSession]);
 
+  useEffect(() => {
+    if (!currentSession) {
+      return;
+    }
+
+    const syncInterval = setInterval(() => {
+      loadCurrentSession();
+    }, 5000);
+
+    return () => {
+      clearInterval(syncInterval);
+    };
+  }, [currentSession?.session_id, loadCurrentSession]);
+
+  useEffect(() => {
+    return () => {
+      clearFinishedDismissTimeout();
+    };
+  }, []);
+
   const handleTimerComplete = useCallback(
     async (sessionId: string) => {
       if (completedSessionIdRef.current === sessionId || getCompletedSessionId() === sessionId) {
@@ -83,6 +111,18 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
         }
         return prev;
       });
+
+      clearFinishedDismissTimeout();
+      finishedDismissTimeoutRef.current = setTimeout(() => {
+        setCurrentSession((prev) => {
+          if (prev && prev.session_id === sessionId && prev.status === 'finished') {
+            return null;
+          }
+          return prev;
+        });
+        setCompletedSessionId(null);
+        completedSessionIdRef.current = null;
+      }, 12000);
 
       try {
         if ('Notification' in window) {
@@ -219,6 +259,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   };
 
   const handleDismissFinished = () => {
+    clearFinishedDismissTimeout();
     setCurrentSession(null);
     setCompletedSessionId(null);
     completedSessionIdRef.current = null;

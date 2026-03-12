@@ -757,7 +757,21 @@ class CallbackHandlers:
         logged = self.plan_keeper.sessions_service.finish(user_id, session_id, override_hours=float(value))
         self._stop_ticker(session_id)
         message = get_message("session_logged", user_lang, time=beautify_time(float(value)), promise_id=logged.promise_id)
-        await query.edit_message_text(message, parse_mode="Markdown")
+        try:
+            await query.edit_message_text(message, parse_mode="Markdown")
+        except Exception as edit_error:
+            logger.warning(
+                "Failed to edit finish confirmation for user %s, session %s: %s",
+                user_id,
+                session_id,
+                edit_error,
+            )
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            if query.message:
+                await query.message.reply_text(message, parse_mode="Markdown")
     
     async def _handle_session_adjust_open(self, query, session_id: str, value: float):
         """Handle session adjust options."""
@@ -769,7 +783,21 @@ class CallbackHandlers:
         logged = self.plan_keeper.sessions_service.finish(user_id, session_id, override_hours=float(value))
         self._stop_ticker(session_id)
         message = get_message("session_logged", user_lang, time=beautify_time(float(value)), promise_id=logged.promise_id)
-        await query.edit_message_text(message)
+        try:
+            await query.edit_message_text(message)
+        except Exception as edit_error:
+            logger.warning(
+                "Failed to edit adjusted finish confirmation for user %s, session %s: %s",
+                user_id,
+                session_id,
+                edit_error,
+            )
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            if query.message:
+                await query.message.reply_text(message)
     
     async def _handle_session_abort(self, query, session_id: str, user_lang: Language):
         """Handle session abort (discard without logging)."""
@@ -782,7 +810,21 @@ class CallbackHandlers:
                 message = get_message("session_discarded", user_lang)
             except:
                 message = "❌ Session discarded — not logged."
-            await query.edit_message_text(message, parse_mode="Markdown")
+            try:
+                await query.edit_message_text(message, parse_mode="Markdown")
+            except Exception as edit_error:
+                logger.warning(
+                    "Failed to edit discard confirmation for user %s, session %s: %s",
+                    user_id,
+                    session_id,
+                    edit_error,
+                )
+                try:
+                    await query.edit_message_reply_markup(reply_markup=None)
+                except Exception:
+                    pass
+                if query.message:
+                    await query.message.reply_text(message, parse_mode="Markdown")
         else:
             await query.answer("Session not found or already finished.", show_alert=True)
 
