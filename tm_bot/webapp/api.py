@@ -244,7 +244,13 @@ def create_webapp_api(
                             logger.info(f"✓ Successfully sent focus completion notification for session {session.session_id} to user {session.user_id}")
                         except Exception as e:
                             logger.error(f"❌ FAILED to send focus notification for session {session.session_id} to user {session.user_id}: {e}", exc_info=True)
-                            # Keep session unnotified on failure so the sweeper can retry.
+                            if "button_data_invalid" in str(e).lower():
+                                logger.warning(
+                                    "Marking session %s as notified after non-retryable Telegram button error to prevent infinite retries",
+                                    session.session_id,
+                                )
+                                sessions_repo.mark_session_notified(session.session_id)
+                            # Keep session unnotified on other failures so the sweeper can retry.
                             
                 except Exception as e:
                     logger.error(f"Error in focus timer sweeper: {e}", exc_info=True)

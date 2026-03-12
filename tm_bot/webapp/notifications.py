@@ -6,10 +6,10 @@ import os
 from datetime import datetime
 from typing import Optional
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
 from repositories.settings_repo import SettingsRepository
 from utils.logger import get_logger
-from cbdata import encode_cb
+from cbdata import encode_cb, encode_session_cb
 
 logger = get_logger(__name__)
 
@@ -403,8 +403,44 @@ async def send_focus_finished_notification(
     try:
         from handlers.messages_store import get_message, Language
         from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-        from cbdata import encode_cb
         from utils.time_utils import beautify_time
+
+        def build_focus_keyboard(include_actions: bool = True) -> InlineKeyboardMarkup:
+            rows = []
+            if include_actions:
+                rows.extend([
+                    [
+                        InlineKeyboardButton(
+                            f"✅ Confirm ({beautify_time(proposed_hours)})",
+                            callback_data=encode_session_cb(
+                                "session_finish_confirm",
+                                session_id,
+                                value=proposed_hours,
+                            ),
+                        ),
+                        InlineKeyboardButton(
+                            "Adjust…",
+                            callback_data=encode_session_cb(
+                                "session_adjust_open",
+                                session_id,
+                                value=proposed_hours,
+                            ),
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "❌ Discard",
+                            callback_data=encode_session_cb("session_abort", session_id),
+                        )
+                    ],
+                ])
+            rows.append([
+                InlineKeyboardButton(
+                    "📱 Open App",
+                    web_app=WebAppInfo(url=f"{miniapp_url}/dashboard")
+                )
+            ])
+            return InlineKeyboardMarkup(rows)
 
         # Get user language
         settings_repo = SettingsRepository()
@@ -434,48 +470,47 @@ async def send_focus_finished_notification(
             message = f"🎉 Great work! You completed a {beautify_time(proposed_hours)} focus session for:\n\n*{promise_text}*\n\nLog this time?"
         
         # Create inline keyboard with Confirm, Adjust, Discard buttons
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    f"✅ Confirm ({beautify_time(proposed_hours)})",
-                    callback_data=encode_cb("session_finish_confirm", s=session_id, v=proposed_hours)
-                ),
-                InlineKeyboardButton(
-                    "Adjust…",
-                    callback_data=encode_cb("session_adjust_open", s=session_id, v=proposed_hours)
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "❌ Discard",
-                    callback_data=encode_cb("session_abort", s=session_id)
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "📱 Open App",
-                    web_app=WebAppInfo(url=f"{miniapp_url}/dashboard")
-                )
-            ]
-        ])
+        keyboard = build_focus_keyboard(include_actions=True)
         
         # Send message
         logger.info(f"Attempting to send Telegram notification to user {user_id} for session {session_id}")
         logger.debug(f"Bot token present: {bool(bot_token)}, token length: {len(bot_token) if bot_token else 0}")
         
         bot = Bot(token=bot_token)
-        result = await bot.send_message(
-            chat_id=user_id,
-            text=message,
-            reply_markup=keyboard,
-            parse_mode=None
-        )
+        try:
+            result = await bot.send_message(
+                chat_id=user_id,
+                text=message,
+                reply_markup=keyboard,
+                parse_mode=None
+            )
+        except BadRequest as e:
+            if "button_data_invalid" not in str(e).lower():
+                raise
+
+            logger.warning(
+                "Focus notification keyboard rejected for session %s; sending fallback notification without callback buttons",
+                session_id,
+            )
+            result = await bot.send_message(
+                chat_id=user_id,
+                text=message,
+                reply_markup=build_focus_keyboard(include_actions=False),
+                parse_mode=None,
+            )
         
         logger.info(f"✓ Successfully sent focus completion notification to user {user_id} for session {session_id}, message_id: {result.message_id}")
     except TelegramError as e:
         error_msg = str(e).lower()
         if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
             logger.warning(f"Could not send focus notification to user {user_id}: user blocked bot or chat not found - {e}")
+        elif "button_data_invalid" in error_msg:
+            logger.warning(
+                "Focus notification had invalid callback data for session %s: %s",
+                session_id,
+                e,
+            )
+            raise
         else:
             logger.error(f"TelegramError sending focus notification to user {user_id} for session {session_id}: {e}", exc_info=True)
             raise  # Re-raise to be caught by sweeper

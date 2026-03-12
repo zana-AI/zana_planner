@@ -11,7 +11,7 @@ from datetime import datetime
 from .types import Keyboard, KeyboardButton
 from models.models import Promise
 from utils.time_utils import beautify_time, round_time
-from cbdata import encode_cb
+from cbdata import encode_cb, encode_session_cb
 
 
 def create_button(text: str, callback_data: Optional[str] = None, url: Optional[str] = None, web_app_url: Optional[str] = None) -> KeyboardButton:
@@ -261,15 +261,15 @@ def session_running_kb(session_id: str) -> Keyboard:
     """Create keyboard for running session controls."""
     keyboard = Keyboard()
     row1 = [
-        create_button("Pause ⏸️", callback_data=encode_cb("session_pause", s=session_id)),
-        create_button("Finish ✅", callback_data=encode_cb("session_finish_open", s=session_id)),
+        create_button("Pause ⏸️", callback_data=encode_session_cb("session_pause", session_id)),
+        create_button("Finish ✅", callback_data=encode_session_cb("session_finish_open", session_id)),
     ]
     keyboard.add_row(*row1)
     
     row2 = [
-        create_button("+15m", callback_data=encode_cb("session_plus", s=session_id, v=0.25)),
-        create_button("+30m", callback_data=encode_cb("session_plus", s=session_id, v=0.50)),
-        create_button("Snooze 10m", callback_data=encode_cb("session_snooze", s=session_id, m=10)),
+        create_button("+15m", callback_data=encode_session_cb("session_plus", session_id, value=0.25)),
+        create_button("+30m", callback_data=encode_session_cb("session_plus", session_id, value=0.50)),
+        create_button("Snooze 10m", callback_data=encode_session_cb("session_snooze", session_id, m=10)),
     ]
     keyboard.add_row(*row2)
     return keyboard
@@ -279,12 +279,12 @@ def session_paused_kb(session_id: str) -> Keyboard:
     """Create keyboard for paused session controls."""
     keyboard = Keyboard()
     row1 = [
-        create_button("Resume ▶️", callback_data=encode_cb("session_resume", s=session_id)),
-        create_button("Finish ✅", callback_data=encode_cb("session_finish_open", s=session_id)),
+        create_button("Resume ▶️", callback_data=encode_session_cb("session_resume", session_id)),
+        create_button("Finish ✅", callback_data=encode_session_cb("session_finish_open", session_id)),
     ]
     keyboard.add_row(*row1)
     
-    keyboard.add_row(create_button("Snooze 10m", callback_data=encode_cb("session_snooze", s=session_id, m=10)))
+    keyboard.add_row(create_button("Snooze 10m", callback_data=encode_session_cb("session_snooze", session_id, m=10)))
     return keyboard
 
 
@@ -294,9 +294,9 @@ def session_finish_confirm_kb(session_id: str, proposed_h: float) -> Keyboard:
     buttons = [
         create_button(
             f"Looks right ✅ ({beautify_time(proposed_h)})",
-            callback_data=encode_cb("session_finish_confirm", s=session_id, v=proposed_h)
+            callback_data=encode_session_cb("session_finish_confirm", session_id, value=proposed_h)
         ),
-        create_button("Adjust…", callback_data=encode_cb("session_adjust_open", s=session_id, v=proposed_h)),
+        create_button("Adjust…", callback_data=encode_session_cb("session_adjust_open", session_id, value=proposed_h)),
     ]
     keyboard.add_row(*buttons)
     return keyboard
@@ -308,7 +308,7 @@ def session_adjust_kb(session_id: str, base_h: float) -> Keyboard:
     # e.g., chips: 15m · 30m · 45m · 1h
     chips = [0.25, 0.5, 0.75, 1.0]
     buttons = [
-        create_button(beautify_time(h), callback_data=encode_cb("session_adjust_set", s=session_id, v=h))
+        create_button(beautify_time(h), callback_data=encode_session_cb("session_adjust_set", session_id, value=h))
         for h in chips
     ]
     keyboard.add_row(*buttons)

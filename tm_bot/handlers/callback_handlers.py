@@ -25,7 +25,7 @@ from ui.keyboards import (
     mini_app_kb
 )
 from ui.messages import weekly_report_text
-from cbdata import encode_cb, decode_cb
+from cbdata import encode_cb, decode_cb, is_session_callback_action, normalize_cb_action
 from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
@@ -196,10 +196,12 @@ class CallbackHandlers:
 
         # Parse callback data
         cb = decode_cb(query.data)
-        action = cb.get("a")
+        action = normalize_cb_action(cb.get("a"))
         promise_id = cb.get("p")
         value = cb.get("v")
         session_id = cb.get("s")
+        if session_id is None and is_session_callback_action(action):
+            session_id = cb.get("p")
         minutes = cb.get("m")
         current_s = cb.get("c")
         
