@@ -53,18 +53,25 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   };
 
   const updateServerClockOffset = useCallback((session: FocusSession | null) => {
-    if (!session || typeof session.elapsed_seconds !== 'number') {
+    if (
+      !session ||
+      typeof session.elapsed_seconds !== 'number' ||
+      !session.expected_end_utc ||
+      !session.planned_duration_minutes
+    ) {
       serverClockOffsetMsRef.current = 0;
       return;
     }
 
-    const startedAtMs = new Date(session.started_at).getTime();
-    if (!Number.isFinite(startedAtMs)) {
+    const endTimeMs = new Date(session.expected_end_utc).getTime();
+    if (!Number.isFinite(endTimeMs)) {
       serverClockOffsetMsRef.current = 0;
       return;
     }
 
-    const inferredServerNowMs = startedAtMs + session.elapsed_seconds * 1000;
+    const totalSeconds = Math.max(0, session.planned_duration_minutes * 60);
+    const remainingSeconds = Math.max(0, totalSeconds - session.elapsed_seconds);
+    const inferredServerNowMs = endTimeMs - remainingSeconds * 1000;
     serverClockOffsetMsRef.current = Date.now() - inferredServerNowMs;
   }, []);
 

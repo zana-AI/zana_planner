@@ -49,7 +49,7 @@ def session_to_response(session: Session, promise_text: Optional[str] = None) ->
         promise_id=session.promise_id,
         promise_text=promise_text,
         status=session.status,
-        started_at=session.started_at.isoformat(),
+        started_at=dt_to_utc_iso(session.started_at, assume_local_tz=True) or session.started_at.isoformat(),
         expected_end_utc=expected_end_utc_str,
         planned_duration_minutes=session.planned_duration_minutes or 0,
         timer_kind=session.timer_kind or "focus",
