@@ -14,6 +14,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finishedDismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const serverClockOffsetMsRef = useRef(0);
 
   const getCompletedSessionId = (): string | null => {
     try {
@@ -51,10 +52,27 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     }
   };
 
+  const updateServerClockOffset = useCallback((session: FocusSession | null) => {
+    if (!session || typeof session.elapsed_seconds !== 'number') {
+      serverClockOffsetMsRef.current = 0;
+      return;
+    }
+
+    const startedAtMs = new Date(session.started_at).getTime();
+    if (!Number.isFinite(startedAtMs)) {
+      serverClockOffsetMsRef.current = 0;
+      return;
+    }
+
+    const inferredServerNowMs = startedAtMs + session.elapsed_seconds * 1000;
+    serverClockOffsetMsRef.current = Date.now() - inferredServerNowMs;
+  }, []);
+
   const loadCurrentSession = useCallback(async () => {
     try {
       const session = await apiClient.getCurrentFocus();
       if (session) {
+        updateServerClockOffset(session);
         const completedId = getCompletedSessionId();
         if (completedId === session.session_id) {
           setCurrentSession({ ...session, status: 'finished' });
@@ -62,6 +80,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
           setCurrentSession(session);
         }
       } else {
+        serverClockOffsetMsRef.current = 0;
         setCompletedSessionId(null);
         completedSessionIdRef.current = null;
         setCurrentSession(null);
@@ -69,7 +88,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     } catch (err) {
       console.error('Failed to load current session:', err);
     }
-  }, []);
+  }, [updateServerClockOffset]);
 
   useEffect(() => {
     loadCurrentSession();
@@ -157,12 +176,23 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
   );
 
   const updateRemainingTime = useCallback(() => {
-    if (!currentSession || !currentSession.expected_end_utc) {
+    if (!currentSession) {
       setRemainingSeconds(0);
       return;
     }
 
-    const now = new Date().getTime();
+    if (currentSession.status === 'paused' && typeof currentSession.elapsed_seconds === 'number') {
+      const totalSeconds = (currentSession.planned_duration_minutes || 0) * 60;
+      setRemainingSeconds(Math.max(0, totalSeconds - currentSession.elapsed_seconds));
+      return;
+    }
+
+    if (!currentSession.expected_end_utc) {
+      setRemainingSeconds(0);
+      return;
+    }
+
+    const now = Date.now() - serverClockOffsetMsRef.current;
     const endTime = new Date(currentSession.expected_end_utc).getTime();
     const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
     setRemainingSeconds(remaining);
@@ -212,6 +242,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     setLoading(true);
     try {
       const session = await apiClient.pauseFocus(currentSession.session_id);
+      updateServerClockOffset(session);
       setCurrentSession(session);
     } catch (err) {
       console.error('Failed to pause focus:', err);
@@ -225,6 +256,7 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
     setLoading(true);
     try {
       const session = await apiClient.resumeFocus(currentSession.session_id);
+      updateServerClockOffset(session);
       setCurrentSession(session);
     } catch (err) {
       console.error('Failed to resume focus:', err);

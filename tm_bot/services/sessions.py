@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from models.models import Session, Action
 from models.enums import SessionStatus, ActionType
@@ -12,6 +12,20 @@ class SessionsService:
     def __init__(self, sessions_repo: SessionsRepository, actions_repo: ActionsRepository):
         self.sessions_repo = sessions_repo
         self.actions_repo = actions_repo
+
+    @staticmethod
+    def _pending_pause_seconds(session: Session, now: datetime) -> int:
+        """Return the current pause interval in seconds for a paused session."""
+        if session.status != SessionStatus.PAUSED.value or not session.last_state_change_at:
+            return 0
+        return max(0, int((now - session.last_state_change_at).total_seconds()))
+
+    def _elapsed_seconds(self, session: Session, now: Optional[datetime] = None) -> int:
+        """Calculate elapsed seconds excluding both stored and in-flight paused time."""
+        reference_time = now or datetime.now()
+        paused_seconds = int(session.paused_seconds_total or 0) + self._pending_pause_seconds(session, reference_time)
+        elapsed_seconds = int((reference_time - session.started_at).total_seconds()) - paused_seconds
+        return max(0, elapsed_seconds)
 
     def start(self, user_id: int, promise_id: str, message_id: Optional[int] = None, chat_id: Optional[int] = None) -> Session:
         """Start a new session for a promise."""
@@ -52,6 +66,10 @@ class SessionsService:
             return None
         
         now = datetime.now()
+        pause_seconds = self._pending_pause_seconds(session, now)
+        session.paused_seconds_total = int(session.paused_seconds_total or 0) + pause_seconds
+        if session.expected_end_utc and pause_seconds > 0:
+            session.expected_end_utc = session.expected_end_utc + timedelta(seconds=pause_seconds)
         session.status = SessionStatus.RUNNING.value
         session.last_state_change_at = now
         
@@ -70,8 +88,10 @@ class SessionsService:
         if override_hours is not None:
             elapsed_hours = override_hours
         else:
-            elapsed_seconds = (now - session.started_at).total_seconds() - session.paused_seconds_total
-            elapsed_hours = max(0, elapsed_seconds / 3600)
+            pause_seconds = self._pending_pause_seconds(session, now)
+            session.paused_seconds_total = int(session.paused_seconds_total or 0) + pause_seconds
+            elapsed_seconds = int((now - session.started_at).total_seconds()) - int(session.paused_seconds_total or 0)
+            elapsed_hours = max(0, elapsed_seconds) / 3600
         
         # Create action record
         action = Action(
@@ -99,6 +119,8 @@ class SessionsService:
             return None
         
         now = datetime.now()
+        pause_seconds = self._pending_pause_seconds(session, now)
+        session.paused_seconds_total = int(session.paused_seconds_total or 0) + pause_seconds
         session.status = SessionStatus.ABORTED.value
         session.ended_at = now
         session.last_state_change_at = now
@@ -121,8 +143,7 @@ class SessionsService:
         else:
             end_time = datetime.now()
         
-        elapsed_seconds = (end_time - session.started_at).total_seconds() - session.paused_seconds_total
-        return max(0, elapsed_seconds / 3600)  # Convert to hours
+        return self._elapsed_seconds(session, end_time) / 3600  # Convert to hours
 
     def bump(self, user_id: int, session_id: str, additional_hours: float) -> Optional[Session]:
         """Add additional time to a session."""

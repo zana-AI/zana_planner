@@ -35,20 +35,14 @@ def session_to_response(session: Session, promise_text: Optional[str] = None) ->
     now = datetime.now()
     elapsed_seconds = None
     if session.status in [SessionStatus.RUNNING.value, SessionStatus.PAUSED.value]:
-        elapsed_seconds = int((now - session.started_at).total_seconds() - session.paused_seconds_total)
+        reference_time = now
+        if session.status == SessionStatus.PAUSED.value and session.last_state_change_at:
+            reference_time = session.last_state_change_at
+        elapsed_seconds = int((reference_time - session.started_at).total_seconds() - session.paused_seconds_total)
         elapsed_seconds = max(0, elapsed_seconds)
     
     # Convert expected_end_utc to UTC ISO string
-    expected_end_utc_str = ""
-    if session.expected_end_utc:
-        # If timezone-naive, assume it's already in UTC
-        if session.expected_end_utc.tzinfo is None:
-            expected_end_utc_str = session.expected_end_utc.isoformat() + "Z"
-        else:
-            # Convert to UTC
-            from zoneinfo import ZoneInfo
-            utc_dt = session.expected_end_utc.astimezone(ZoneInfo("UTC"))
-            expected_end_utc_str = utc_dt.isoformat().replace('+00:00', 'Z')
+    expected_end_utc_str = dt_to_utc_iso(session.expected_end_utc, assume_local_tz=True) or ""
     
     return FocusSessionResponse(
         session_id=session.session_id,
