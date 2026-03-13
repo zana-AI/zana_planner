@@ -10,7 +10,9 @@ if TM_BOT_DIR not in sys.path:
 from llms.llm_handler import (  # noqa: E402
     LLMHandler,
     _build_fallback_provider_chain,
+    _extract_failed_generation,
     _is_fallback_eligible_error,
+    _is_tool_choice_mismatch_error,
     _resolve_fallback_provider,
     _resolve_fallback_role_providers,
 )
@@ -341,6 +343,74 @@ def test_apply_final_response_failsafe_keeps_existing_text():
     text, used = LLMHandler._apply_final_response_failsafe("Hello there")
     assert used is False
     assert text == "Hello there"
+
+
+def test_extract_failed_generation_parses_tool_call_payload():
+    err = Exception(
+        "Error code: 400 - {'error': {'message': 'Tool choice is none, but model called a tool', "
+        "'type': 'invalid_request_error', 'code': 'tool_use_failed', "
+        "'failed_generation': '{\"name\": \"add_plan_session\", \"arguments\": {\"promise_id\":\"P01\"}}'}}"
+    )
+    payload = _extract_failed_generation(err)
+    assert payload is not None
+    assert payload.get("name") == "add_plan_session"
+    assert payload.get("arguments") == {"promise_id": "P01"}
+
+
+def test_is_tool_choice_mismatch_error_detects_known_message():
+    err = Exception(
+        "Error code: 400 - {'error': {'message': 'Tool choice is none, but model called a tool', "
+        "'type': 'invalid_request_error', 'code': 'tool_use_failed'}}"
+    )
+    assert _is_tool_choice_mismatch_error(err) is True
+
+
+def test_get_response_custom_uses_fallback_model_after_primary_error():
+    class _FailModel:
+        def invoke(self, _messages, **_kwargs):
+            raise Exception("Error code: 429 rate limit")
+
+    class _OkModel:
+        def invoke(self, _messages, **_kwargs):
+            return AIMessage(content="fallback ok")
+
+    handler = object.__new__(LLMHandler)
+    handler.chat_history = {}
+    handler.chat_history_timestamps = {}
+    handler.chat_model = _FailModel()
+    handler._fallback_chain_model_specs = [
+        {"responder_model": _OkModel(), "label": "router=openai:gpt-4o-mini,planner=openai:gpt-4o-mini,responder=openai:gpt-4o-mini"}
+    ]
+    handler._fallback_responder_model = None
+    handler._fallback_label = None
+    handler.parser = type("_Parser", (), {"parse": staticmethod(lambda text: text)})()
+    handler._get_system_message_main = lambda _lang, _uid: HumanMessage(content="sys")
+
+    result = handler.get_response_custom("hello", "42", user_language="en")
+    assert result == "fallback ok"
+
+
+def test_get_response_custom_salvages_failed_generation_arguments_when_mismatch():
+    class _MismatchModel:
+        def invoke(self, _messages, **_kwargs):
+            raise Exception(
+                "Error code: 400 - {'error': {'message': 'Tool choice is none, but model called a tool', "
+                "'type': 'invalid_request_error', 'code': 'tool_use_failed', "
+                "'failed_generation': '{\"name\": \"add_plan_session\", \"arguments\": {\"promise_id\":\"P01\",\"title\":\"Gym\"}}'}}"
+            )
+
+    handler = object.__new__(LLMHandler)
+    handler.chat_history = {}
+    handler.chat_history_timestamps = {}
+    handler.chat_model = _MismatchModel()
+    handler._fallback_chain_model_specs = []
+    handler._fallback_responder_model = None
+    handler._fallback_label = None
+    handler.parser = type("_Parser", (), {"parse": staticmethod(lambda text: text)})()
+    handler._get_system_message_main = lambda _lang, _uid: HumanMessage(content="sys")
+
+    result = handler.get_response_custom("schedule it", "42", user_language="en")
+    assert result == '{"promise_id": "P01", "title": "Gym"}'
 
 
 def test_strip_internal_reasoning_removes_protocol_artifacts_and_keeps_answer():

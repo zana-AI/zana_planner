@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+import ast
 from collections import deque
 from contextlib import nullcontext
 from contextvars import ContextVar
@@ -105,6 +106,46 @@ def _is_fallback_eligible_error(err: Exception) -> bool:
         "tool choice is none, but model called a tool",
     )
     return any(hint in text for hint in hints)
+
+
+def _is_tool_choice_mismatch_error(err: Exception) -> bool:
+    text = str(err or "").lower()
+    return "tool_use_failed" in text or (
+        "tool choice is none" in text and "model called a tool" in text
+    )
+
+
+def _extract_failed_generation(err: Exception) -> Optional[dict]:
+    """Parse provider error payload and return failed_generation JSON object when available."""
+    message = str(err or "")
+    marker = "Error code:"
+    payload_start = message.find("{")
+    if payload_start < 0:
+        return None
+
+    raw_payload = message[payload_start:].strip()
+    if marker in message and payload_start < message.find(marker):
+        # Keep parsing robust even if message format changes.
+        raw_payload = message[message.find(marker) + len(marker):].strip()
+
+    try:
+        parsed = ast.literal_eval(raw_payload)
+    except Exception:
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+    error_obj = parsed.get("error")
+    if not isinstance(error_obj, dict):
+        return None
+    failed_generation = error_obj.get("failed_generation")
+    if not isinstance(failed_generation, str) or not failed_generation.strip():
+        return None
+    try:
+        loaded = json.loads(failed_generation)
+    except Exception:
+        return None
+    return loaded if isinstance(loaded, dict) else None
 
 
 def _resolve_fallback_provider(
@@ -2322,17 +2363,103 @@ class LLMHandler:
             # Add language-aware system message if language is specified
             if user_language and user_language != "en":
                 system_msg = self._get_system_message_main(user_language, safe_user_id)
-                messages = [system_msg] + history + messages
+                no_tool_msg = SystemMessage(
+                    content=(
+                        "This endpoint is text-only. Do not call tools/functions and do not emit tool-call JSON. "
+                        "Return plain text only."
+                    )
+                )
+                messages = [system_msg, no_tool_msg] + history + messages
             else:
                 # Still add system message for promise context and user info
                 system_msg = self._get_system_message_main(user_language, safe_user_id)
-                messages = [system_msg] + history + messages
+                no_tool_msg = SystemMessage(
+                    content=(
+                        "This endpoint is text-only. Do not call tools/functions and do not emit tool-call JSON. "
+                        "Return plain text only."
+                    )
+                )
+                messages = [system_msg, no_tool_msg] + history + messages
+
+            def _fallback_custom_entries() -> List[Dict[str, object]]:
+                entries: List[Dict[str, object]] = []
+                for spec in list(getattr(self, "_fallback_chain_model_specs", []) or []):
+                    responder = spec.get("responder_model")
+                    if responder is None:
+                        continue
+                    entries.append(
+                        {
+                            "model": responder,
+                            "label": str(spec.get("label") or "configured_fallback"),
+                        }
+                    )
+
+                if not entries and getattr(self, "_fallback_responder_model", None) is not None:
+                    entries.append(
+                        {
+                            "model": self._fallback_responder_model,
+                            "label": self._fallback_label or "configured_fallback",
+                        }
+                    )
+                return entries
 
             try:
                 response = self.chat_model.invoke(messages)
             except Exception as e:
-                logger.exception("Error getting LLM response")
-                return "I'm having trouble understanding that. Could you rephrase?"
+                response = None
+                primary_error = e
+                fallback_entries = _fallback_custom_entries()
+                if _is_fallback_eligible_error(e) and fallback_entries:
+                    for idx, entry in enumerate(fallback_entries):
+                        model = entry.get("model")
+                        if model is None:
+                            continue
+                        try:
+                            response = model.invoke(messages)
+                            if idx > 0:
+                                logger.warning(
+                                    {
+                                        "event": "custom_response_fallback_succeeded",
+                                        "user_id": safe_user_id,
+                                        "attempt": idx + 1,
+                                        "fallback_model": str(entry.get("label") or "configured_fallback"),
+                                    }
+                                )
+                            break
+                        except Exception as fallback_exc:
+                            primary_error = fallback_exc
+                            if idx < len(fallback_entries) - 1 and _is_fallback_eligible_error(fallback_exc):
+                                logger.warning(
+                                    {
+                                        "event": "custom_response_fallback_retry",
+                                        "user_id": safe_user_id,
+                                        "failed_attempt": idx + 1,
+                                        "next_attempt": idx + 2,
+                                        "reason": str(fallback_exc)[:200],
+                                    }
+                                )
+                                continue
+                            break
+
+                if response is None:
+                    if _is_tool_choice_mismatch_error(primary_error):
+                        failed_generation = _extract_failed_generation(primary_error)
+                        if failed_generation:
+                            args = failed_generation.get("arguments")
+                            if isinstance(args, (dict, list)):
+                                salvaged = json.dumps(args)
+                                logger.warning(
+                                    {
+                                        "event": "custom_response_salvaged_failed_generation",
+                                        "user_id": safe_user_id,
+                                        "tool_name": str(failed_generation.get("name") or "unknown"),
+                                    }
+                                )
+                                history.extend([messages[-1], AIMessage(content=salvaged)])
+                                return salvaged
+
+                    logger.exception("Error getting LLM response")
+                    return "I'm having trouble understanding that. Could you rephrase?"
 
             if isinstance(response, AIMessage):
                 content = message_content_to_str(response.content)
