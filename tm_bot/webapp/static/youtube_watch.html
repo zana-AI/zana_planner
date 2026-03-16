@@ -8,8 +8,35 @@
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; padding: 8px; font-family: system-ui, sans-serif; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+    .video-title {
+      font-size: 15px;
+      font-weight: 600;
+      padding: 0 0 6px;
+      color: var(--tg-theme-text-color, #000);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.35;
+      min-height: 1.35em;
+    }
     .video-wrap { position: relative; width: 100%; padding-bottom: 56.25%; height: 0; }
     .video-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    .progress-container {
+      margin-top: 6px;
+      position: relative;
+      height: 6px;
+      background: rgba(128, 128, 128, 0.18);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-segment {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: var(--tg-theme-button-color, #2481cc);
+      border-radius: 3px;
+      opacity: 0.78;
+    }
     .hint { font-size: 12px; color: var(--tg-theme-hint-color, #999); margin-top: 8px; }
     .controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
     .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -28,6 +55,7 @@
       max-height: 160px;
       overflow: auto;
     }
+    /* Landscape / immersive mode — mobile only */
     body.landscape { padding: 0; background: #000; overflow: hidden; }
     body.landscape .video-wrap {
       position: fixed;
@@ -37,15 +65,19 @@
       padding-bottom: 0;
       z-index: 10;
     }
+    body.landscape .video-title,
+    body.landscape .progress-container,
     body.landscape .hint,
     body.landscape .controls,
     body.landscape .debug { display: none; }
   </style>
 </head>
 <body>
+  <div id="videoTitle" class="video-title" hidden></div>
   <div class="video-wrap">
     <iframe id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
+  <div id="watchProgress" class="progress-container" hidden></div>
   <p class="hint">When done, tap the button below to close and get your watch summary.</p>
   <div class="controls">
     <label class="toggle">
@@ -74,8 +106,21 @@
   var lastPlayerTime = null;
   var statsSent = false;
   var immersiveLandscape = false;
+  var videoDuration = 0;
   var debugLog = document.getElementById('debugLog');
   if (debug && debugLog) debugLog.hidden = false;
+
+  // Detect mobile (Android/iOS) vs desktop — only mobile gets landscape/fullscreen handling.
+  var isMobileDevice = (function() {
+    try {
+      if (window.Telegram && window.Telegram.WebApp) {
+        var p = (window.Telegram.WebApp.platform || '').toLowerCase();
+        if (p === 'android' || p === 'ios' || p === 'android_x' || p === 'ios_x') return true;
+        if (p) return false; // any other known platform is desktop/web
+      }
+    } catch (e) {}
+    return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  }());
 
   function dlog(msg) {
     if (!debug) return;
@@ -158,6 +203,9 @@
   }
 
   function updateOrientationMode() {
+    // Only apply immersive landscape mode on mobile devices. On desktop the
+    // fixed-position overlay covers the window's resize handles and freezes them.
+    if (!isMobileDevice) return;
     var landscape = isLandscape();
     if (landscape === immersiveLandscape) return;
     immersiveLandscape = landscape;
@@ -193,6 +241,27 @@
     'https://www.youtube.com/embed/' + videoId +
     '?enablejsapi=1&playsinline=1&origin=' + encodeURIComponent(baseUrl);
 
+  // Fetch video title via YouTube oEmbed (no API key required).
+  (function() {
+    var titleEl = document.getElementById('videoTitle');
+    if (!titleEl) return;
+    var oembedUrl = 'https://www.youtube.com/oembed?url=' +
+      encodeURIComponent('https://www.youtube.com/watch?v=' + videoId) + '&format=json';
+    fetch(oembedUrl).then(function(r) {
+      if (!r.ok) throw new Error('oEmbed HTTP ' + r.status);
+      return r.json();
+    }).then(function(data) {
+      if (data && data.title) {
+        titleEl.textContent = data.title;
+        titleEl.hidden = false;
+        titleEl.title = data.title;
+        dlog("title: " + data.title);
+      }
+    }).catch(function(e) {
+      dlog("title fetch failed: " + e);
+    });
+  }());
+
   function pushSegment(start, end) {
     if (typeof start !== "number" || typeof end !== "number") return;
     if (!isFinite(start) || !isFinite(end)) return;
@@ -201,9 +270,29 @@
     if (last && typeof last[0] === "number" && typeof last[1] === "number" && start <= (last[1] + 1.5)) {
       last[0] = Math.min(last[0], start);
       last[1] = Math.max(last[1], end);
+      updateProgressDisplay();
       return;
     }
     segments.push([start, end]);
+    updateProgressDisplay();
+  }
+
+  function updateProgressDisplay() {
+    var container = document.getElementById('watchProgress');
+    if (!container) return;
+    if (!videoDuration || !segments.length) { container.hidden = true; return; }
+    container.hidden = false;
+    container.innerHTML = '';
+    segments.forEach(function(seg) {
+      var left = (seg[0] / videoDuration) * 100;
+      var width = ((seg[1] - seg[0]) / videoDuration) * 100;
+      if (width <= 0) return;
+      var div = document.createElement('div');
+      div.className = 'progress-segment';
+      div.style.left = Math.max(0, Math.min(100, left)) + '%';
+      div.style.width = Math.max(0, Math.min(100 - Math.max(0, left), width)) + '%';
+      container.appendChild(div);
+    });
   }
 
   function markPlaying(t) {
@@ -304,9 +393,27 @@
       events: {
         onReady: function() {
           dlog("player ready");
+          try {
+            var dur = player.getDuration();
+            if (dur && isFinite(dur) && dur > 0) {
+              videoDuration = dur;
+              dlog("duration=" + dur.toFixed(1));
+              updateProgressDisplay();
+            }
+          } catch (e) {}
         },
         onStateChange: function(event) {
           dlog("state=" + event.data);
+          // Capture duration once the video starts playing (may not be available in onReady).
+          if (!videoDuration) {
+            try {
+              var dur = player.getDuration();
+              if (dur && isFinite(dur) && dur > 0) {
+                videoDuration = dur;
+                updateProgressDisplay();
+              }
+            } catch (e) {}
+          }
           if (!trackingEnabled) return;
           if (event.data === YT.PlayerState.PLAYING) {
             try { markPlaying(player.getCurrentTime()); } catch (e) { markPlaying(); }
