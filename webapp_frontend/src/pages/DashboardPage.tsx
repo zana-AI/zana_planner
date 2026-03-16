@@ -3,13 +3,33 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
+import { PromiseBadge } from '../components/PromiseBadge';
 import { UserCard } from '../components/UserCard';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
-import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
+import type { WeeklyReportData, PublicUser, UserInfo, PromiseData, PublicPromiseBadge } from '../types';
+
+/** Convert a PromiseData entry into the shape expected by PromiseBadge. */
+function promiseDataToBadge(id: string, data: PromiseData): PublicPromiseBadge {
+  const targetValue = data.target_value ?? data.hours_promised ?? 0;
+  const achievedValue = data.achieved_value ?? data.hours_spent ?? 0;
+  const progress = targetValue > 0 ? Math.min(100, (achievedValue / targetValue) * 100) : 0;
+  return {
+    promise_id: id,
+    text: data.text,
+    hours_promised: data.hours_promised ?? 0,
+    hours_spent: data.hours_spent ?? 0,
+    weekly_hours: data.hours_spent ?? 0,
+    streak: 0,
+    progress_percentage: progress,
+    metric_type: data.metric_type ?? 'hours',
+    target_value: targetValue,
+    achieved_value: achievedValue,
+  };
+}
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -28,6 +48,22 @@ export function DashboardPage() {
   const [suggestToUserName, setSuggestToUserName] = useState<string>('');
   const [showSuggestionsInbox, setShowSuggestionsInbox] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // View mode toggle: 'detailed' (default) shows WeeklyReport cards; 'simple' shows promise badges
+  const [viewMode, setViewMode] = useState<'detailed' | 'simple'>(() => {
+    try {
+      return (localStorage.getItem('dashboard_view_mode') as 'detailed' | 'simple') || 'detailed';
+    } catch {
+      return 'detailed';
+    }
+  });
+
+  const handleToggleViewMode = useCallback(() => {
+    setViewMode((prev: 'detailed' | 'simple') => {
+      const next = prev === 'detailed' ? 'simple' : 'detailed';
+      try { localStorage.setItem('dashboard_view_mode', next); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   // Get current week's Monday for comparison
   const getCurrentWeekMonday = useCallback(() => {
@@ -196,19 +232,27 @@ export function DashboardPage() {
     for (const [id, promiseData] of Object.entries(reportData.promises)) {
       // Budget templates (distractions) - separate from regular promises
       if (promiseData.template_kind === 'budget') {
-        distractions[id] = promiseData;
+        // Always count snoozed items in the totals so Overall Progress is unaffected,
+        // but only add non-snoozed items to the display dict.
         distractionsTotalPromised += promiseData.hours_promised || 0;
         distractionsTotalSpent += promiseData.hours_spent || 0;
+        if (!promiseData.is_snoozed) {
+          distractions[id] = promiseData;
+        }
       } else if (promiseData.recurring === true) {
         // Recurring promises (recurring === true, non-budget)
-        promises[id] = promiseData;
         promisesTotalPromised += promiseData.hours_promised || 0;
         promisesTotalSpent += promiseData.hours_spent || 0;
+        if (!promiseData.is_snoozed) {
+          promises[id] = promiseData;
+        }
       } else {
         // One-time tasks (recurring === false or undefined, non-budget)
-        tasks[id] = promiseData;
         tasksTotalPromised += promiseData.hours_promised || 0;
         tasksTotalSpent += promiseData.hours_spent || 0;
+        if (!promiseData.is_snoozed) {
+          tasks[id] = promiseData;
+        }
       }
     }
 
@@ -316,9 +360,36 @@ export function DashboardPage() {
           title="My Week"
           subtitle="Your weekly promises and progress"
           rightSlot={
-            <Button size="sm" onClick={() => navigate('/focus')}>
-              Start Focus
-            </Button>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              {/* Toggle between detailed card view and simple badge view */}
+              <button
+                onClick={handleToggleViewMode}
+                title={viewMode === 'detailed' ? 'Switch to simple badge view' : 'Switch to detailed card view'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  background: 'rgba(232, 238, 252, 0.08)',
+                  border: '1px solid rgba(232, 238, 252, 0.18)',
+                  borderRadius: '20px',
+                  color: 'rgba(232, 238, 252, 0.85)',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(232, 238, 252, 0.15)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(232, 238, 252, 0.08)'; }}
+              >
+                <span style={{ fontSize: '1rem' }}>{viewMode === 'detailed' ? '⊞' : '▤'}</span>
+                {viewMode === 'detailed' ? 'Simple' : 'Detailed'}
+              </button>
+              <Button size="sm" onClick={() => navigate('/focus')}>
+                Start Focus
+              </Button>
+            </div>
           }
         />
 
@@ -411,7 +482,15 @@ export function DashboardPage() {
         {tasksData && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
-            <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} />
+            {viewMode === 'simple' ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                {(Object.entries(tasksData.promises) as [string, PromiseData][]).map(([id, data]) => (
+                  <PromiseBadge key={id} badge={promiseDataToBadge(id, data)} showLogsOnClick={false} />
+                ))}
+              </div>
+            ) : (
+              <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} />
+            )}
           </div>
         )}
 
@@ -419,7 +498,15 @@ export function DashboardPage() {
         {promisesData && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
-            <WeeklyReport data={promisesData} onRefresh={handleRefresh} hideHeader={true} />
+            {viewMode === 'simple' ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                {(Object.entries(promisesData.promises) as [string, PromiseData][]).map(([id, data]) => (
+                  <PromiseBadge key={id} badge={promiseDataToBadge(id, data)} showLogsOnClick={false} />
+                ))}
+              </div>
+            ) : (
+              <WeeklyReport data={promisesData} onRefresh={handleRefresh} hideHeader={true} />
+            )}
           </div>
         )}
 
@@ -427,7 +514,15 @@ export function DashboardPage() {
         {distractionsPromisesData && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Distractions</h2>
-            <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} />
+            {viewMode === 'simple' ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                {(Object.entries(distractionsPromisesData.promises) as [string, PromiseData][]).map(([id, data]) => (
+                  <PromiseBadge key={id} badge={promiseDataToBadge(id, data)} showLogsOnClick={false} />
+                ))}
+              </div>
+            ) : (
+              <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} />
+            )}
           </div>
         )}
 

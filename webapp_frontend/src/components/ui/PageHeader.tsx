@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useTelegramBackButton } from '../../hooks/useTelegramBackButton';
 import { Button } from './Button';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { AppLogo } from './AppLogo';
 
 interface PageHeaderProps {
@@ -48,9 +49,7 @@ export function PageHeader({
           <Button variant="ghost" size="sm" onClick={handleBack} leftIcon={<ArrowLeft size={16} />}>
             {backLabel}
           </Button>
-        ) : (
-          <AppLogo size={26} />
-        )}
+        ) : null}
         <div className="ui-page-title-wrap">
           <h1 className="ui-page-title">{title}</h1>
           {subtitle ? <p className="ui-page-subtitle">{subtitle}</p> : null}

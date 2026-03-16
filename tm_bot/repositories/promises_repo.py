@@ -33,7 +33,7 @@ class PromisesRepository:
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, visibility, description
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, visibility, description, snoozed_until
                     FROM promises
                     WHERE user_id = :user_id AND is_deleted = 0
                     ORDER BY current_id ASC;
@@ -52,6 +52,11 @@ class PromisesRepository:
             description = None
             if "description" in r.keys():
                 description = str(r["description"]) if r["description"] else None
+
+            # Handle snoozed_until column - may not exist in older schemas
+            snoozed_until = None
+            if "snoozed_until" in r.keys():
+                snoozed_until = date_from_iso(r["snoozed_until"])
             
             promises.append(
                 Promise(
@@ -64,6 +69,7 @@ class PromisesRepository:
                     end_date=date_from_iso(r["end_date"]),
                     visibility=visibility,
                     description=description,
+                    snoozed_until=snoozed_until,
                 )
             )
         return promises
@@ -81,7 +87,7 @@ class PromisesRepository:
 
             row = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, is_deleted, visibility, description
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, is_deleted, visibility, description, snoozed_until
                     FROM promises
                     WHERE user_id = :user_id AND promise_uuid = :p_uuid
                     LIMIT 1;
@@ -102,6 +108,11 @@ class PromisesRepository:
         if "description" in row.keys():
             description = str(row["description"]) if row["description"] else None
 
+        # Handle snoozed_until column - may not exist in older schemas
+        snoozed_until = None
+        if "snoozed_until" in row.keys():
+            snoozed_until = date_from_iso(row["snoozed_until"])
+
         return Promise(
             user_id=user,
             id=str(row["current_id"]),
@@ -112,6 +123,7 @@ class PromisesRepository:
             end_date=date_from_iso(row["end_date"]),
             visibility=visibility,
             description=description,
+            snoozed_until=snoozed_until,
         )
 
     def upsert_promise(self, user_id: int, promise: Promise) -> None:
@@ -180,11 +192,11 @@ class PromisesRepository:
                 text("""
                     INSERT INTO promises(
                         promise_uuid, user_id, current_id, text, hours_per_week, recurring,
-                        start_date, end_date, is_deleted, visibility, description,
+                        start_date, end_date, is_deleted, visibility, description, snoozed_until,
                         created_at_utc, updated_at_utc
                     ) VALUES (
                         :p_uuid, :user_id, :pid, :text, :hours_per_week, :recurring,
-                        :start_date, :end_date, :is_deleted, :visibility, :description,
+                        :start_date, :end_date, :is_deleted, :visibility, :description, :snoozed_until,
                         :created_at_utc, :updated_at_utc
                     )
                     ON CONFLICT (promise_uuid) DO UPDATE SET
@@ -198,6 +210,7 @@ class PromisesRepository:
                         is_deleted = EXCLUDED.is_deleted,
                         visibility = EXCLUDED.visibility,
                         description = EXCLUDED.description,
+                        snoozed_until = EXCLUDED.snoozed_until,
                         updated_at_utc = EXCLUDED.updated_at_utc;
                 """),
                 {
@@ -212,6 +225,7 @@ class PromisesRepository:
                     "is_deleted": 0,
                     "visibility": str(promise.visibility or "private"),
                     "description": promise.description or None,
+                    "snoozed_until": date_to_iso(promise.snoozed_until) if promise.snoozed_until else None,
                     "created_at_utc": now if is_new else now,
                     "updated_at_utc": now,
                 },

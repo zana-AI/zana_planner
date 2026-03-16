@@ -130,6 +130,11 @@ class ReportsService:
                     'achieved_value': 0.0,  # Will be computed
                     'start_date': promise.start_date.isoformat() if promise.start_date else None,
                     'end_date': promise.end_date.isoformat() if promise.end_date else None,
+                    # Mark as snoozed if snoozed_until is set and falls within or after the current week start.
+                    # For past weeks the snooze flag is not raised so historical data remains intact.
+                    'is_snoozed': bool(
+                        promise.snoozed_until and promise.snoozed_until > week_start.date()
+                    ),
                 }
                 norm = normalize_promise_id(promise.id)
                 canonical_by_norm.setdefault(norm, promise.id)
