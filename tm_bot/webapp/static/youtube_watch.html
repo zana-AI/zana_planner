@@ -56,8 +56,11 @@
       overflow: auto;
     }
     /* Landscape / immersive mode — mobile only */
-    body.landscape { padding: 0; background: #000; overflow: hidden; }
-    body.landscape .video-wrap {
+    /* Desktop fullscreen mode shares the same immersive layout */
+    body.landscape,
+    body.desktop-fullscreen { padding: 0; background: #000; overflow: hidden; }
+    body.landscape .video-wrap,
+    body.desktop-fullscreen .video-wrap {
       position: fixed;
       inset: 0;
       width: 100vw;
@@ -69,7 +72,48 @@
     body.landscape .progress-container,
     body.landscape .hint,
     body.landscape .controls,
-    body.landscape .debug { display: none; }
+    body.landscape .debug,
+    body.desktop-fullscreen .video-title,
+    body.desktop-fullscreen .progress-container,
+    body.desktop-fullscreen .hint,
+    body.desktop-fullscreen .controls,
+    body.desktop-fullscreen .debug { display: none; }
+    /* Floating action buttons — appear over the video in immersive modes */
+    .float-btn {
+      display: none;
+      position: fixed;
+      z-index: 200;
+      padding: 7px 16px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      border: 1.5px solid rgba(255, 255, 255, 0.45);
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      touch-action: manipulation;
+    }
+    #floatDoneBtn { bottom: 14px; right: 14px; }
+    #floatExitBtn { top: 14px; right: 14px; }
+    body.landscape #floatDoneBtn { display: block; }
+    body.desktop-fullscreen #floatDoneBtn { display: block; }
+    body.desktop-fullscreen #floatExitBtn { display: block; }
+    /* Expand / fullscreen toggle button — shown in the controls bar */
+    .expand-btn {
+      padding: 5px 10px;
+      background: transparent;
+      color: var(--tg-theme-button-color, #2481cc);
+      border: 1px solid currentColor;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .expand-btn:hover { opacity: 0.75; }
   </style>
 </head>
 <body>
@@ -85,8 +129,14 @@
       Track
     </label>
     <span class="hint">Track watched segments (polling fallback).</span>
+    <button id="expandBtn" class="expand-btn" hidden>⛶ Expand</button>
   </div>
   <pre id="debugLog" class="debug" hidden></pre>
+
+  <!-- Floating Done button: shown over the video in landscape / fullscreen modes -->
+  <button id="floatDoneBtn" class="float-btn">✓ Done</button>
+  <!-- Floating Exit button: shown over the video in desktop fullscreen mode -->
+  <button id="floatExitBtn" class="float-btn">✕ Exit fullscreen</button>
 
   <script>
 (function() {
@@ -214,12 +264,25 @@
       if (!requestTelegramFullscreen()) {
         requestBrowserFullscreen();
       }
+      // Hide the Telegram MainButton in landscape — it takes too much space.
+      // A small floating Done button is shown via CSS instead.
+      try {
+        if (window.Telegram && window.Telegram.WebApp) {
+          window.Telegram.WebApp.MainButton.hide();
+        }
+      } catch (e) {}
       dlog("orientation: landscape immersive=on");
     } else {
       document.body.classList.remove("landscape");
       if (!exitTelegramFullscreen()) {
         exitBrowserFullscreen();
       }
+      // Restore the Telegram MainButton when returning to portrait.
+      try {
+        if (window.Telegram && window.Telegram.WebApp) {
+          window.Telegram.WebApp.MainButton.show();
+        }
+      } catch (e) {}
       dlog("orientation: portrait immersive=off");
     }
   }
@@ -470,33 +533,100 @@
     }
   }
 
-  if (window.Telegram && window.Telegram.WebApp) {
-    window.Telegram.WebApp.ready();
-    window.Telegram.WebApp.expand();
-    setTimeout(updateOrientationMode, 60);
-    window.Telegram.WebApp.MainButton.setText('Done').show().onClick(function() {
-      if (statsSent) { window.Telegram.WebApp.close(); return; }
-      var payload = getPayload('done');
-      fetch(baseUrl + '/api/youtube/report_stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).then(function() {
-        statsSent = true;
-        dlog("fetch sent: done");
-        window.Telegram.WebApp.close();
-      }).catch(function() {
-        dlog("fetch failed; falling back to beacon");
-        sendBeaconStats('done_beacon');
-        window.Telegram.WebApp.close();
-      });
-    });
-  }
-
   window.addEventListener('pagehide', function() {
     sendBeaconStats('beacon');
     stopPolling();
   });
+
+  // ── Helper: perform the "Done" action (send stats + close mini app) ──────────
+  function handleDone() {
+    if (statsSent) {
+      if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
+      return;
+    }
+    var payload = getPayload('done');
+    fetch(baseUrl + '/api/youtube/report_stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function() {
+      statsSent = true;
+      dlog("fetch sent: done");
+      if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
+    }).catch(function() {
+      dlog("fetch failed; falling back to beacon");
+      sendBeaconStats('done_beacon');
+      if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
+    });
+  }
+
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+    setTimeout(updateOrientationMode, 60);
+    window.Telegram.WebApp.MainButton.setText('Done').show().onClick(handleDone);
+  }
+
+  // ── Floating Done button (landscape / desktop-fullscreen overlay) ────────────
+  var floatDoneBtn = document.getElementById('floatDoneBtn');
+  if (floatDoneBtn) {
+    floatDoneBtn.addEventListener('click', handleDone);
+  }
+
+  // ── Expand / fullscreen button (desktop) ─────────────────────────────────────
+  var expandBtn = document.getElementById('expandBtn');
+  var floatExitBtn = document.getElementById('floatExitBtn');
+
+  function enterDesktopFullscreen() {
+    if (!requestTelegramFullscreen()) requestBrowserFullscreen();
+    document.body.classList.add('desktop-fullscreen');
+    // Hide the Telegram MainButton while the page is in its own fullscreen state.
+    try {
+      if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.MainButton.hide();
+      }
+    } catch (e) {}
+    dlog("desktop: entered fullscreen");
+  }
+
+  function exitDesktopFullscreen() {
+    if (!exitTelegramFullscreen()) exitBrowserFullscreen();
+    document.body.classList.remove('desktop-fullscreen');
+    // Restore the Telegram MainButton.
+    try {
+      if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.MainButton.show();
+      }
+    } catch (e) {}
+    dlog("desktop: exited fullscreen");
+  }
+
+  if (!isMobileDevice && expandBtn) {
+    expandBtn.hidden = false;
+    expandBtn.addEventListener('click', function() {
+      enterDesktopFullscreen();
+    });
+  }
+
+  if (floatExitBtn) {
+    floatExitBtn.addEventListener('click', function() {
+      exitDesktopFullscreen();
+    });
+  }
+
+  // Keep desktop-fullscreen class in sync with the browser's actual fullscreen state.
+  function onFullscreenChange() {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      document.body.classList.remove('desktop-fullscreen');
+      try {
+        if (window.Telegram && window.Telegram.WebApp) {
+          window.Telegram.WebApp.MainButton.show();
+        }
+      } catch (e) {}
+    }
+  }
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 })();
   </script>
 </body>
