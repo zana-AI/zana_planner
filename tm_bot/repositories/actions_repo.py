@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, date
+from typing import Dict, List, Optional
 
 import pandas as pd
 from sqlalchemy import text
@@ -103,6 +103,41 @@ class ActionsRepository:
                 )
             )
         return actions
+
+    def get_earliest_action_dates(self, user_id: int) -> Dict[str, date]:
+        """Return a mapping of canonical promise_id -> earliest action date for the user.
+
+        Used to compute an effective start date = min(promise.start_date, earliest_action_date)
+        so that promises which already had activity appear correctly in historical reports
+        even when their declared start_date was set later.
+        """
+        user = str(user_id)
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT
+                        -- Use canonical current_id when known; fall back to the raw promise_id_text
+                        -- stored on the action row for older actions that pre-date the promises table
+                        -- or whose promise_uuid was never linked.
+                        COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id,
+                        MIN(a.at_utc) AS earliest_at_utc
+                    FROM actions a
+                    LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
+                    WHERE a.user_id = :user_id
+                    GROUP BY canonical_promise_id;
+                """),
+                {"user_id": user},
+            ).mappings().fetchall()
+
+        result: Dict[str, date] = {}
+        for r in rows:
+            pid = str(r["canonical_promise_id"] or "")
+            if not pid:
+                continue
+            at = dt_utc_iso_to_local_naive(r["earliest_at_utc"])
+            if at:
+                result[pid] = at.date()
+        return result
 
     def last_action_for_promise(self, user_id: int, promise_id: str) -> Optional[Action]:
         pid = (promise_id or "").strip().upper()
