@@ -14,7 +14,6 @@ class Promise:
     end_date: Optional[date] = None
     visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
     description: Optional[str] = None  # Additional description/content (URLs, notes, etc.)
-    snoozed_until: Optional[date] = None  # If set, promise is hidden from the week that starts on/before this date
     # Future: pinned/focus flags, tags
 
     def is_check_based(self) -> bool:

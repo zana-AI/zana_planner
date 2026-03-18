@@ -99,16 +99,10 @@ export interface PromiseData {
   hours_promised: number;
   hours_spent: number;
   sessions: SessionData[];
-  visibility?: string;
+  visibility?: string; // "private" | "public"
   recurring?: boolean;
-  metric_type?: 'hours' | 'count';
-  target_value?: number;
-  target_direction?: 'at_least' | 'at_most';
-  template_kind?: 'commitment' | 'budget';
-  achieved_value?: number;
   start_date?: string; // ISO date string (YYYY-MM-DD)
   end_date?: string; // ISO date string (YYYY-MM-DD)
-  is_snoozed?: boolean; // True if the promise has been snoozed for this week
 }
 
 export interface WeeklyReportData {
@@ -372,6 +366,23 @@ export interface CreatePromiseForUserRequest {
   visibility?: 'private' | 'followers' | 'clubs' | 'public';
   description?: string;
   reminders?: DayReminder[];
+}
+
+// Extended PromiseData to include metric fields
+export interface PromiseData {
+  text: string;
+  hours_promised: number;
+  hours_spent: number;
+  sessions: SessionData[];
+  visibility?: string;
+  recurring?: boolean;
+  metric_type?: 'hours' | 'count';
+  target_value?: number;
+  target_direction?: 'at_least' | 'at_most';
+  template_kind?: 'commitment' | 'budget';
+  achieved_value?: number;
+  start_date?: string; // ISO date string (YYYY-MM-DD)
+  end_date?: string; // ISO date string (YYYY-MM-DD)
 }
 
 // Content consumption manager

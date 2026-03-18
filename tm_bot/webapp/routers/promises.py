@@ -372,10 +372,8 @@ async def snooze_promise(
             days_until_monday = 7  # If today is Monday, go to next Monday
         next_monday = today + timedelta(days=days_until_monday)
         
-        # Set snoozed_until to next week without changing start_date.
-        # This hides the promise from the current week only; previous weeks
-        # are unaffected and the total hours in "Overall Progress" stay the same.
-        promise.snoozed_until = next_monday
+        # Update promise start_date to next week
+        promise.start_date = next_monday
         promises_repo.upsert_promise(user_id, promise)
         
         return {"status": "success", "message": f"Promise snoozed until {next_monday.isoformat()}"}
