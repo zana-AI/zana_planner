@@ -32,21 +32,47 @@ class ReportsService:
         
         # Get actions from this week
         actions = self.actions_repo.list_actions(user_id, since=week_start)
+
+        # For past weeks use effective_start_date = min(start_date, earliest_action_date)
+        today = datetime.now().date()
+        is_past_week = week_end.date() < today
+        if is_past_week:
+            raw_earliest = self.actions_repo.get_earliest_action_dates(user_id)
+            earliest_action_dates: Dict[str, date] = {
+                normalize_promise_id(k): v for k, v in raw_earliest.items() if k
+            }
+        else:
+            earliest_action_dates = {}
         
         # Initialize report data (keyed by canonical promise.id from storage)
         report_data: Dict[str, Any] = {}
         canonical_by_norm: Dict[str, str] = {}
         for promise in promises:
-            # Check if promise is active (no start_date = always active, or start date has passed)
-            if not promise.start_date or promise.start_date <= ref_time.date():
-                report_data[promise.id] = {
-                    'text': promise.text.replace('_', ' '),
-                    'hours_promised': promise.hours_per_week,
-                    'hours_spent': 0.0
-                }
-                # Map normalized id -> canonical id (first one wins if duplicates exist)
-                norm = normalize_promise_id(promise.id)
-                canonical_by_norm.setdefault(norm, promise.id)
+            if is_past_week:
+                norm_id = normalize_promise_id(promise.id)
+                earliest_action = earliest_action_dates.get(norm_id)
+                if earliest_action is not None:
+                    effective_start: date | None = (
+                        min(promise.start_date, earliest_action)
+                        if promise.start_date else earliest_action
+                    )
+                else:
+                    effective_start = promise.start_date
+                active = effective_start is None or effective_start <= week_end.date()
+            else:
+                active = not promise.start_date or promise.start_date <= ref_time.date()
+
+            if not active:
+                continue
+
+            report_data[promise.id] = {
+                'text': promise.text.replace('_', ' '),
+                'hours_promised': promise.hours_per_week,
+                'hours_spent': 0.0
+            }
+            # Map normalized id -> canonical id (first one wins if duplicates exist)
+            norm = normalize_promise_id(promise.id)
+            canonical_by_norm.setdefault(norm, promise.id)
         
         # Accumulate hours for each promise
         for action in actions:
@@ -74,6 +100,19 @@ class ReportsService:
         # Get actions from this week
         actions = self.actions_repo.list_actions(user_id, since=week_start)
         logger.debug(f"[DEBUG] Found {len(actions)} actions since {week_start}")
+
+        # For past weeks, use effective_start_date = min(start_date, earliest_ever_action_date)
+        # so that promises with prior activity appear even if start_date was set later.
+        today = datetime.now().date()
+        is_past_week = week_end.date() < today
+        if is_past_week:
+            raw_earliest = self.actions_repo.get_earliest_action_dates(user_id)
+            # Normalise keys for robust lookup (handles case / formatting differences)
+            earliest_action_dates: Dict[str, date] = {
+                normalize_promise_id(k): v for k, v in raw_earliest.items() if k
+            }
+        else:
+            earliest_action_dates = {}
         
         # Get instances to check for template-derived promises
         instances_by_promise_uuid: Dict[str, Dict] = {}
@@ -92,52 +131,72 @@ class ReportsService:
         canonical_by_norm: Dict[str, str] = {}
         promise_uuid_by_id: Dict[str, str] = {}
         for promise in promises:
-            # Check if promise is active (no start_date = always active, or start date has passed)
-            if not promise.start_date or promise.start_date <= ref_time.date():
-                user = str(user_id)
-                promise_uuid = None
-                instance = None
-                with get_db_session() as session_db:
-                    promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
-                    if promise_uuid:
-                        promise_uuid_by_id[promise.id] = promise_uuid
-                        instance = instances_by_promise_uuid.get(promise_uuid)
-                
-                # Determine metric type and target
-                if instance:
-                    metric_type = instance.get('metric_type', 'hours')
-                    target_value = instance.get('target_value', 0)
-                    target_direction = instance.get('target_direction', 'at_least')
-                    template_kind = instance.get('template_kind', 'commitment')
+            # Determine effective start date for this promise.
+            # For past weeks: effective_start = min(declared start_date, earliest action date).
+            # This ensures promises that already had activity appear in historical reports
+            # even when their start_date was configured after the fact.
+            if is_past_week:
+                norm_id = normalize_promise_id(promise.id)
+                earliest_action = earliest_action_dates.get(norm_id)
+                if earliest_action is not None:
+                    effective_start: date | None = (
+                        min(promise.start_date, earliest_action)
+                        if promise.start_date else earliest_action
+                    )
                 else:
-                    # Legacy promise: hours-based
-                    metric_type = 'hours'
-                    target_value = promise.hours_per_week
-                    target_direction = 'at_least'
-                    template_kind = 'commitment'
-                
-                report_data[promise.id] = {
-                    'text': promise.text.replace('_', ' '),
-                    'hours_promised': promise.hours_per_week,  # Keep for backward compat
-                    'hours_spent': 0.0,  # Will be updated based on metric_type
-                    'sessions': [],  # List of {'date': date, 'hours': float} or {'date': date, 'count': int}
-                    'visibility': getattr(promise, 'visibility', 'private'),
-                    'recurring': bool(promise.recurring),
-                    'metric_type': metric_type,
-                    'target_value': target_value,
-                    'target_direction': target_direction,
-                    'template_kind': template_kind,
-                    'achieved_value': 0.0,  # Will be computed
-                    'start_date': promise.start_date.isoformat() if promise.start_date else None,
-                    'end_date': promise.end_date.isoformat() if promise.end_date else None,
-                    # Mark as snoozed if snoozed_until is set and falls within or after the current week start.
-                    # For past weeks the snooze flag is not raised so historical data remains intact.
-                    'is_snoozed': bool(
-                        promise.snoozed_until and promise.snoozed_until > week_start.date()
-                    ),
-                }
-                norm = normalize_promise_id(promise.id)
-                canonical_by_norm.setdefault(norm, promise.id)
+                    effective_start = promise.start_date
+                cutoff = week_end.date()
+            else:
+                effective_start = promise.start_date
+                cutoff = ref_time.date()
+
+            if effective_start is not None and effective_start > cutoff:
+                continue
+
+            user = str(user_id)
+            promise_uuid = None
+            instance = None
+            with get_db_session() as session_db:
+                promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
+                if promise_uuid:
+                    promise_uuid_by_id[promise.id] = promise_uuid
+                    instance = instances_by_promise_uuid.get(promise_uuid)
+            
+            # Determine metric type and target
+            if instance:
+                metric_type = instance.get('metric_type', 'hours')
+                target_value = instance.get('target_value', 0)
+                target_direction = instance.get('target_direction', 'at_least')
+                template_kind = instance.get('template_kind', 'commitment')
+            else:
+                # Legacy promise: hours-based
+                metric_type = 'hours'
+                target_value = promise.hours_per_week
+                target_direction = 'at_least'
+                template_kind = 'commitment'
+            
+            report_data[promise.id] = {
+                'text': promise.text.replace('_', ' '),
+                'hours_promised': promise.hours_per_week,  # Keep for backward compat
+                'hours_spent': 0.0,  # Will be updated based on metric_type
+                'sessions': [],  # List of {'date': date, 'hours': float} or {'date': date, 'count': int}
+                'visibility': getattr(promise, 'visibility', 'private'),
+                'recurring': bool(promise.recurring),
+                'metric_type': metric_type,
+                'target_value': target_value,
+                'target_direction': target_direction,
+                'template_kind': template_kind,
+                'achieved_value': 0.0,  # Will be computed
+                'start_date': promise.start_date.isoformat() if promise.start_date else None,
+                'end_date': promise.end_date.isoformat() if promise.end_date else None,
+                # Mark as snoozed if snoozed_until is set and falls within or after the current week start.
+                # For past weeks the snooze flag is not raised so historical data remains intact.
+                'is_snoozed': bool(
+                    promise.snoozed_until and promise.snoozed_until > week_start.date()
+                ),
+            }
+            norm = normalize_promise_id(promise.id)
+            canonical_by_norm.setdefault(norm, promise.id)
         
         # Group actions by promise and date
         actions_by_promise_date: Dict[str, Dict[date, Any]] = {}
