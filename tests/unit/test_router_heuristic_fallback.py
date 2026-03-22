@@ -13,22 +13,30 @@ from llms.agent import (  # noqa: E402
 )
 
 
-def test_router_heuristic_fallback_is_engagement_for_transactional_phrase():
+def test_router_heuristic_fallback_detects_operator_for_transactional_phrase():
     route = _heuristic_route_decision_from_text("please add a promise to run 3 hours this week")
-    assert route.mode == "engagement"
-    assert route.reason == "parsing_failed_fallback"
+    assert route.mode == "operator"
+    assert route.reason == "keyword_operator_fallback"
 
 
-def test_router_heuristic_fallback_is_engagement_for_advice_phrase():
+def test_router_heuristic_fallback_detects_strategist_for_advice_phrase():
     route = _heuristic_route_decision_from_text("what should I focus on next week to improve progress?")
-    assert route.mode == "engagement"
-    assert route.reason == "parsing_failed_fallback"
+    assert route.mode == "strategist"
+    assert route.reason == "keyword_strategist_fallback"
 
 
-def test_router_heuristic_fallback_is_engagement_for_social_phrase():
+def test_router_heuristic_fallback_detects_social_for_social_phrase():
     route = _heuristic_route_decision_from_text("show me my followers and community feed")
-    assert route.mode == "engagement"
-    assert route.reason == "parsing_failed_fallback"
+    assert route.mode == "social"
+    assert route.reason == "keyword_social_fallback"
+
+
+
+
+def test_router_heuristic_fallback_detects_operator_for_persian_transactional_phrase():
+    route = _heuristic_route_decision_from_text("یه تسک جدید اضافه کن")
+    assert route.mode == "operator"
+    assert route.reason == "keyword_operator_fallback"
 
 
 def test_router_heuristic_fallback_is_engagement_for_short_casual_phrase():
