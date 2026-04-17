@@ -3127,10 +3127,29 @@ textarea.modal-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  gap: 16px;
+  min-height: 64px;
+  padding: 8px 16px;
   background: rgba(9, 15, 31, 0.92);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
+}
+
+.app-shell-left,
+.app-shell-right {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.app-shell-left {
+  gap: 12px;
+  flex: 1 1 auto;
+}
+
+.app-shell-right {
+  gap: 12px;
+  flex: 0 0 auto;
 }
 
 .app-shell-brand {
@@ -3143,6 +3162,35 @@ textarea.modal-input {
   gap: 10px;
   font-family: var(--font-family-app);
   cursor: pointer;
+}
+
+.app-shell-brand .ui-app-logo {
+  display: block;
+}
+
+.app-shell-page-title {
+  min-width: 0;
+}
+
+.app-shell-page-title h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-shell-page-title p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-shell-brand-name {
@@ -3174,6 +3222,29 @@ textarea.modal-input {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+@media (max-width: 520px) {
+  .app-shell-header {
+    gap: 10px;
+    padding: 8px 12px;
+  }
+
+  .app-shell-left {
+    gap: 10px;
+  }
+
+  .app-shell-page-title h1 {
+    font-size: 20px;
+  }
+
+  .app-shell-page-title p {
+    display: none;
+  }
+
+  .app-shell-right {
+    gap: 8px;
+  }
 }
 
 .app-shell-menu {

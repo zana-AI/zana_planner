@@ -2,11 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
-import { useSessionMode } from '../hooks/useSessionMode';
-import { UserAvatar } from './UserAvatar';
-import type { AdminUser, Broadcast, PromiseTemplate, UserInfo } from '../types';
+import type { AdminUser, Broadcast, PromiseTemplate } from '../types';
 import {
-  AdminHeader,
   AdminTabs,
   type TabType,
   StatsTab,
@@ -23,8 +20,7 @@ import {
 
 export function AdminPanel() {
   const navigate = useNavigate();
-  const { initData, user: telegramUser } = useTelegramWebApp();
-  const sessionMode = useSessionMode();
+  const { initData } = useTelegramWebApp();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -40,9 +36,6 @@ export function AdminPanel() {
   const [editingTemplate, setEditingTemplate] = useState<PromiseTemplate | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
-  const [botUsername, setBotUsername] = useState<string | null>(null);
 
   // Check for authentication (initData or browser token)
   const authData = initData || getDevInitData();
@@ -55,38 +48,6 @@ export function AdminPanel() {
       apiClient.setInitData(initData);
     }
   }, [initData]);
-
-  // Fetch user info for browser login users
-  useEffect(() => {
-    if (hasToken && !authData) {
-      apiClient.getUserInfo()
-        .then(setUserInfo)
-        .catch(() => {
-          console.error('Failed to fetch user info');
-        });
-    }
-  }, [hasToken, authData]);
-
-  // Fetch bot username for Telegram links
-  useEffect(() => {
-    const fetchBotUsername = async () => {
-      try {
-        const response = await fetch('/api/auth/bot-username');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.bot_username) {
-            setBotUsername(data.bot_username.trim());
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch bot username:', error);
-      }
-    };
-    
-    if (isAuthenticated) {
-      fetchBotUsername();
-    }
-  }, [isAuthenticated]);
 
   // Fetch stats when Stats tab is active
   useEffect(() => {
@@ -214,15 +175,6 @@ export function AdminPanel() {
   if (loading) {
     return (
       <div className="admin-panel">
-        <div className="admin-panel-header" style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '1rem'
-        }}>
-          <h1 className="admin-panel-title" style={{ margin: 0 }}>Admin Panel</h1>
-          <UserAvatar size={40} showMenu={false} />
-        </div>
         <div className="admin-panel-loading">
           <div className="loading-spinner" />
           <div className="loading-text">Loading users...</div>
@@ -234,15 +186,6 @@ export function AdminPanel() {
   if (error && error.includes('Access denied')) {
     return (
       <div className="admin-panel">
-        <div className="admin-panel-header" style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '1rem'
-        }}>
-          <h1 className="admin-panel-title" style={{ margin: 0 }}>Admin Panel</h1>
-          <UserAvatar size={40} showMenu={false} />
-        </div>
         <div className="admin-panel-error">
           <div className="error-icon">!</div>
           <p className="error-message">{error}</p>
@@ -253,14 +196,6 @@ export function AdminPanel() {
 
   return (
     <div className="admin-panel">
-      <AdminHeader
-        telegramUser={telegramUser}
-        userInfo={userInfo}
-        botUsername={botUsername}
-        showProfileMenu={showProfileMenu}
-        setShowProfileMenu={setShowProfileMenu}
-        sessionMode={sessionMode}
-      />
       <AdminTabs
         activeTab={activeTab}
         onTabChange={setActiveTab}

@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
 import type { UserContentWithDetails, MyContentsResponse } from '../types';
-import { PageHeader } from '../components/ui/PageHeader';
 
 type StatusFilter = 'in_progress' | 'saved' | 'completed' | '';
 
@@ -129,8 +128,6 @@ export function MyContentsPage() {
         margin: '0 auto',
       }}
     >
-      <PageHeader title="My Contents" showBack fallbackRoute="/templates" />
-
       <div style={{ marginBottom: '1.5rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           type="url"

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import type { UserInfo } from '../types';
-import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 
 const LANGUAGES = [
@@ -138,8 +137,6 @@ export function SettingsPage() {
 
   return (
     <div className="page-container">
-      <PageHeader title="Settings" showBack />
-
       <div className="settings-sections">
         {/* Display name */}
         <section className="settings-section">

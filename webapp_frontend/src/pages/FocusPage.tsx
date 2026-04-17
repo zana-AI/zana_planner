@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import type { WeeklyReportData } from '../types';
 import { DurationWheelPicker } from '../components/DurationWheelPicker';
-import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import './FocusPage.css';
 
@@ -70,8 +69,6 @@ export function FocusPage() {
   return (
     <div className="focus-page">
       <div className="focus-page-container">
-        <PageHeader title="Start Focus Session" showBack fallbackRoute="/dashboard" onBack={handleCancel} />
-
         {loadingPromises ? (
           <div className="focus-page-content">
             <div className="focus-loading-message">Loading promises...</div>

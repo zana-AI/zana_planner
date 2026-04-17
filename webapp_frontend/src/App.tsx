@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { FocusPage } from './pages/FocusPage';
 import { MyContentsPage } from './pages/MyContentsPage';
+import { DevAdminLoginPage } from './pages/DevAdminLoginPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
@@ -89,6 +90,9 @@ function App() {
     <BrowserRouter>
       <Navigation />
       <Routes>
+        {/* Local development helper - backend must explicitly enable dev auth */}
+        <Route path="/dev-admin" element={<DevAdminLoginPage />} />
+
         {/* Admin Panel - accessible via /admin */}
         <Route path="/admin" element={<AdminPanel />} />
         

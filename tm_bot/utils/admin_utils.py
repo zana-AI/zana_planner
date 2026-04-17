@@ -4,6 +4,7 @@ Admin utility functions for checking admin status.
 import os
 from typing import Set
 from dotenv import load_dotenv
+from webapp.dev_auth import is_dev_admin_user
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +50,9 @@ def is_admin(user_id: int) -> bool:
     Returns:
         True if user is an admin, False otherwise
     """
+    if is_dev_admin_user(user_id):
+        return True
+
     admin_ids = _load_admin_ids()
     return user_id in admin_ids
 

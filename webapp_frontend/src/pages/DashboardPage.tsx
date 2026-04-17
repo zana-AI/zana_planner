@@ -7,8 +7,6 @@ import { UserCard } from '../components/UserCard';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
-import { Button } from '../components/ui/Button';
-import { PageHeader } from '../components/ui/PageHeader';
 import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
 
 export function DashboardPage() {
@@ -312,16 +310,6 @@ export function DashboardPage() {
         flex: '1 1 0',
         minWidth: 0 // Allow flex item to shrink below content size
       }}>
-        <PageHeader
-          title="My Week"
-          subtitle="Your weekly promises and progress"
-          rightSlot={
-            <Button size="sm" onClick={() => navigate('/focus')}>
-              Start Focus
-            </Button>
-          }
-        />
-
         {/* Week Navigation Header */}
         <div style={{
           display: 'flex',
@@ -624,4 +612,3 @@ export function DashboardPage() {
     </div>
   );
 }
-
