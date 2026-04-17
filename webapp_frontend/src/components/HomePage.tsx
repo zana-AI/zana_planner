@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Target, Brain, BarChart2, Unlock, TrendingDown, Mic, Globe, Timer, Bell, Users } from 'lucide-react';
+import { Target, Brain, BarChart2, Send, TrendingDown, Mic, Globe, Timer, Bell, Users } from 'lucide-react';
 import { NewYearBanner } from './NewYearBanner';
 import { TelegramLogin } from './TelegramLogin';
 import { apiClient } from '../api/client';
@@ -220,10 +220,10 @@ export function HomePage() {
           </div>
           
           <div className="home-feature-card">
-            <div className="home-feature-icon"><Unlock size={44} strokeWidth={1.5} /></div>
-            <h3 className="home-feature-title">Progressive Unlocks</h3>
+            <div className="home-feature-icon"><Send size={44} strokeWidth={1.5} /></div>
+            <h3 className="home-feature-title">Promise Suggestions</h3>
             <p className="home-feature-description">
-              Unlock advanced promises as you complete easier ones. Build momentum with a structured progression system.
+              Send a promise idea to a friend, or accept one from your inbox when someone knows what would help.
             </p>
           </div>
           
