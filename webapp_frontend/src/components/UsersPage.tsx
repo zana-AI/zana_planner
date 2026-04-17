@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { ActivityItem } from './community/ActivityItem';
 import { CompactUserChip } from './community/CompactUserChip';
-import type { PublicActivityItem, PublicUser, UserInfo } from '../types';
+import { AvatarStack } from './ui/AvatarStack';
+import type { ClubSummary, PublicActivityItem, PublicUser, UserInfo } from '../types';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 const PREVIEW_COUNT = 8;
@@ -86,19 +87,30 @@ export function UsersPage() {
   const { user, initData, isReady } = useTelegramWebApp();
   const [discoverUsers, setDiscoverUsers] = useState<PublicUser[]>([]);
   const [activityItems, setActivityItems] = useState<PublicActivityItem[]>([]);
+  const [clubs, setClubs] = useState<ClubSummary[]>([]);
   const [followers, setFollowers] = useState<PublicUser[]>([]);
   const [following, setFollowing] = useState<PublicUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [clubsLoading, setClubsLoading] = useState(false);
+  const [creatingClub, setCreatingClub] = useState(false);
   const [followersLoading, setFollowersLoading] = useState(false);
   const [followingLoading, setFollowingLoading] = useState(false);
   const [error, setError] = useState('');
+  const [clubError, setClubError] = useState('');
+  const [showCreateClubDialog, setShowCreateClubDialog] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [followBusyByUser, setFollowBusyByUser] = useState<Record<string, boolean>>({});
   const [followingExpanded, setFollowingExpanded] = useState(false);
   const [followersExpanded, setFollowersExpanded] = useState(false);
   const [discoverExpanded, setDiscoverExpanded] = useState(false);
   const [activityExpanded, setActivityExpanded] = useState(false);
+  const [clubForm, setClubForm] = useState({
+    name: '',
+    visibility: 'private' as 'private' | 'public',
+    promise_text: '',
+    target_count_per_week: 2,
+  });
 
   const authData = initData || getDevInitData();
   const hasToken = !!localStorage.getItem('telegram_auth_token');
@@ -160,19 +172,22 @@ export function UsersPage() {
 
     setLoading(true);
     setActivityLoading(true);
+    setClubsLoading(true);
     setError('');
     try {
       if (authData) {
         apiClient.setInitData(authData);
       }
 
-      const [activityRes, usersRes] = await Promise.all([
+      const [activityRes, usersRes, clubsRes] = await Promise.all([
         apiClient.getPublicActivity(ACTIVITY_FETCH_COUNT),
         apiClient.getPublicUsers(24),
+        apiClient.getMyClubs().catch(() => ({ clubs: [], total: 0 })),
       ]);
 
       setActivityItems(activityRes.items);
       setDiscoverUsers(usersRes.users.filter((publicUser) => publicUser.user_id !== currentUserId));
+      setClubs(clubsRes.clubs);
     } catch (err) {
       console.error('Failed to fetch community data:', err);
       if (err instanceof ApiError) {
@@ -189,6 +204,7 @@ export function UsersPage() {
     } finally {
       setLoading(false);
       setActivityLoading(false);
+      setClubsLoading(false);
     }
   }, [isReady, isAuthenticated, authData, currentUserId, navigate]);
 
@@ -231,6 +247,41 @@ export function UsersPage() {
   const visibleFollowers = followersExpanded ? followers : followers.slice(0, PREVIEW_COUNT);
   const visibleDiscover = discoverExpanded ? discoverCandidates : discoverCandidates.slice(0, PREVIEW_COUNT);
   const visibleActivity = activityExpanded ? activityFeed : activityFeed.slice(0, ACTIVITY_PAGE_SIZE);
+
+  const handleCreateClub = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setClubError('');
+
+    const name = clubForm.name.trim();
+    const promiseText = clubForm.promise_text.trim();
+    if (!name || !promiseText) {
+      setClubError('Add a club name and one shared promise.');
+      return;
+    }
+
+    setCreatingClub(true);
+    try {
+      const created = await apiClient.createClub({
+        name,
+        visibility: clubForm.visibility,
+        promise_text: promiseText,
+        target_count_per_week: clubForm.target_count_per_week,
+      });
+      setClubs((prev) => [created, ...prev.filter((club) => club.club_id !== created.club_id)]);
+      setClubForm({
+        name: '',
+        visibility: 'private',
+        promise_text: '',
+        target_count_per_week: 2,
+      });
+      setShowCreateClubDialog(false);
+    } catch (err) {
+      console.error('Failed to create club:', err);
+      setClubError(err instanceof ApiError ? err.message : 'Failed to create club.');
+    } finally {
+      setCreatingClub(false);
+    }
+  }, [clubForm]);
 
   if (!isReady) {
     return (
@@ -275,6 +326,147 @@ export function UsersPage() {
 
       {!error ? (
         <div className="community-v2-layout">
+          <section className="community-v2-section community-v2-clubs-section">
+            <div className="community-v2-section-header">
+              <div>
+                <h3 className="community-v2-title">Clubs</h3>
+                <p className="community-v2-section-subtitle">Small circles for shared promises.</p>
+              </div>
+              <div className="community-club-header-actions">
+                <span className="community-v2-count">{clubs.length}</span>
+                <button
+                  type="button"
+                  className="community-club-create-trigger"
+                  onClick={() => {
+                    setClubError('');
+                    setShowCreateClubDialog(true);
+                  }}
+                >
+                  Create club
+                </button>
+              </div>
+            </div>
+
+            {clubsLoading && clubs.length === 0 ? (
+              <div className="community-v2-empty-note">Loading clubs...</div>
+            ) : clubs.length > 0 ? (
+              <div className="community-club-grid">
+                {clubs.map((club) => (
+                  <article className="community-club-card" key={club.club_id}>
+                    <div className="community-club-card-header">
+                      <h4>{club.name}</h4>
+                      <span>{club.visibility}</span>
+                    </div>
+                    <p>{club.promise_text || 'No shared promise yet'}</p>
+                    <div className="community-club-meta">
+                      <span className="community-club-members">
+                        <AvatarStack users={club.members} size={24} max={4} />
+                        {club.member_count} {club.member_count === 1 ? 'member' : 'members'}
+                      </span>
+                      {club.target_count_per_week ? <span>{club.target_count_per_week}x/week</span> : null}
+                      <span>Telegram later</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="community-v2-empty-note">No clubs yet.</div>
+            )}
+          </section>
+
+          {showCreateClubDialog ? (
+            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="create-club-title">
+              <section className="modal-content community-club-dialog">
+                <div className="modal-header">
+                  <h3 id="create-club-title" className="modal-title">Create club</h3>
+                  <button
+                    type="button"
+                    className="modal-close"
+                    aria-label="Close"
+                    disabled={creatingClub}
+                    onClick={() => setShowCreateClubDialog(false)}
+                  >
+                    x
+                  </button>
+                </div>
+
+                <form className="modal-form community-club-dialog-form" onSubmit={handleCreateClub}>
+                  <label className="modal-form-group">
+                    <span className="modal-label">Club name</span>
+                    <input
+                      className="modal-input"
+                      value={clubForm.name}
+                      onChange={(event) => setClubForm((prev) => ({ ...prev, name: event.target.value }))}
+                      placeholder="Tennis friends"
+                      maxLength={80}
+                      autoFocus
+                    />
+                  </label>
+
+                  <label className="modal-form-group">
+                    <span className="modal-label">Shared promise</span>
+                    <input
+                      className="modal-input"
+                      value={clubForm.promise_text}
+                      onChange={(event) => setClubForm((prev) => ({ ...prev, promise_text: event.target.value }))}
+                      placeholder="Play tennis"
+                      maxLength={160}
+                    />
+                  </label>
+
+                  <div className="community-club-dialog-row">
+                    <label className="modal-form-group">
+                      <span className="modal-label">Visibility</span>
+                      <select
+                        className="modal-input"
+                        value={clubForm.visibility}
+                        onChange={(event) => setClubForm((prev) => ({
+                          ...prev,
+                          visibility: event.target.value as 'private' | 'public',
+                        }))}
+                      >
+                        <option value="private">Private</option>
+                        <option value="public">Public</option>
+                      </select>
+                    </label>
+
+                    <label className="modal-form-group">
+                      <span className="modal-label">Per week</span>
+                      <input
+                        className="modal-input"
+                        type="number"
+                        min={1}
+                        max={21}
+                        step={1}
+                        value={clubForm.target_count_per_week}
+                        onChange={(event) => setClubForm((prev) => ({
+                          ...prev,
+                          target_count_per_week: Number(event.target.value) || 1,
+                        }))}
+                      />
+                    </label>
+                  </div>
+
+                  {clubError ? <div className="modal-error">{clubError}</div> : null}
+
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      className="modal-button modal-button-secondary"
+                      disabled={creatingClub}
+                      onClick={() => setShowCreateClubDialog(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="modal-button modal-button-primary" disabled={creatingClub}>
+                      {creatingClub ? 'Creating...' : 'Create club'}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            </div>
+          ) : null}
+
           <section className="community-v2-section community-v2-people-section">
             <div className="community-v2-section-header">
               <h3 className="community-v2-title">Discover Active Users</h3>

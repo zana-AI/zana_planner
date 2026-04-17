@@ -3,8 +3,6 @@ from typing import List, Optional, Dict
 from datetime import datetime
 
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
-
 from db.postgres_db import get_db_session, utc_now_iso
 
 
@@ -201,15 +199,12 @@ class ClubsRepository:
         """Share a promise to a club (for visibility='clubs')."""
         now = utc_now_iso()
         with get_db_session() as session:
-            try:
-                session.execute(
-                    text("""
-                        INSERT INTO promise_club_shares(promise_uuid, club_id, created_at_utc)
-                        VALUES (:promise_uuid, :club_id, :created_at_utc);
-                    """),
-                    {"promise_uuid": promise_uuid, "club_id": club_id, "created_at_utc": now},
-                )
-                return True
-            except IntegrityError:
-                return False  # Already shared
-
+            result = session.execute(
+                text("""
+                    INSERT INTO promise_club_shares(promise_uuid, club_id, created_at_utc)
+                    VALUES (:promise_uuid, :club_id, :created_at_utc)
+                    ON CONFLICT (promise_uuid, club_id) DO NOTHING;
+                """),
+                {"promise_uuid": promise_uuid, "club_id": club_id, "created_at_utc": now},
+            )
+            return result.rowcount > 0

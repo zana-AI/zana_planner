@@ -2,21 +2,262 @@
 Community-related endpoints (suggestions, public promises, follows).
 """
 
+from datetime import datetime
 from typing import List
+import uuid
+
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from sqlalchemy import text
 from ..dependencies import get_current_user
-from ..schemas import CreateSuggestionRequest, PublicPromiseBadge
+from ..schemas import (
+    ClubMemberSummary,
+    CreateClubRequest,
+    ClubsResponse,
+    ClubSummary,
+    CreateSuggestionRequest,
+    PublicPromiseBadge,
+)
+from models.models import Promise
+from repositories.clubs_repo import ClubsRepository
+from repositories.settings_repo import SettingsRepository
 from repositories.suggestions_repo import SuggestionsRepository
 from repositories.templates_repo import TemplatesRepository
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from services.reports import ReportsService
+from db.postgres_db import get_db_session, resolve_promise_uuid, utc_now_iso, date_to_iso
 from ..notifications import send_suggestion_notifications
 from utils.logger import get_logger
 import asyncio
 
 router = APIRouter(prefix="/api", tags=["community"])
 logger = get_logger(__name__)
+
+
+def _generate_club_promise_id(user_id: int) -> str:
+    promises = PromisesRepository().list_promises(user_id)
+    numbers = []
+    for promise in promises:
+        pid = (promise.id or "").upper()
+        if not pid.startswith("C"):
+            continue
+        try:
+            numbers.append(int(pid[1:]))
+        except ValueError:
+            continue
+    return f"C{(max(numbers) if numbers else 0) + 1:02d}"
+
+
+def _ensure_user_exists(user_id: int) -> None:
+    settings_repo = SettingsRepository()
+    settings = settings_repo.get_settings(user_id)
+    settings_repo.save_settings(settings)
+
+
+def _create_club_promise(
+    user_id: int,
+    club_id: str,
+    club_name: str,
+    promise_text: str,
+    target_count_per_week: float,
+) -> tuple[str, str]:
+    user = str(user_id)
+    promise_id = _generate_club_promise_id(user_id)
+    now = utc_now_iso()
+    today = datetime.now().date()
+
+    template_id = TemplatesRepository().create_template({
+        "title": promise_text.strip(),
+        "description": f"Shared promise for {club_name}",
+        "category": "club",
+        "target_value": target_count_per_week,
+        "metric_type": "count",
+        "emoji": None,
+        "is_active": False,
+        "created_by_user_id": user,
+    })
+
+    promise = Promise(
+        user_id=user,
+        id=promise_id,
+        text=promise_text.strip(),
+        hours_per_week=0.0,
+        recurring=True,
+        start_date=today,
+        visibility="clubs",
+        description=f"Shared with club: {club_name}",
+    )
+    PromisesRepository().upsert_promise(user_id, promise)
+
+    with get_db_session() as session:
+        promise_uuid = resolve_promise_uuid(session, user, promise_id)
+        if not promise_uuid:
+            raise RuntimeError("Failed to resolve club promise")
+
+        session.execute(
+            text("""
+                INSERT INTO promise_instances (
+                    instance_id, user_id, template_id, promise_uuid, status,
+                    metric_type, target_value, estimated_hours_per_unit,
+                    start_date, end_date, created_at_utc, updated_at_utc
+                ) VALUES (
+                    :instance_id, :user_id, :template_id, :promise_uuid, 'active',
+                    'count', :target_value, 1.0,
+                    :start_date, NULL, :now, :now
+                );
+            """),
+            {
+                "instance_id": str(uuid.uuid4()),
+                "user_id": user,
+                "template_id": template_id,
+                "promise_uuid": promise_uuid,
+                "target_value": float(target_count_per_week),
+                "start_date": date_to_iso(today),
+                "now": now,
+            },
+        )
+
+    ClubsRepository().share_promise_to_club(promise_uuid, club_id)
+    return promise_id, promise_uuid
+
+
+def _list_user_clubs(user_id: int) -> List[ClubSummary]:
+    user = str(user_id)
+    with get_db_session() as session:
+        rows = session.execute(
+            text("""
+                SELECT
+                    c.club_id,
+                    c.name,
+                    c.visibility,
+                    cm.role,
+                    COALESCE(member_counts.member_count, 0) AS member_count,
+                    p.current_id AS promise_id,
+                    p.text AS promise_text,
+                    pi.target_value AS target_count_per_week
+                FROM clubs c
+                INNER JOIN club_members cm
+                    ON cm.club_id = c.club_id
+                   AND cm.user_id = :user_id
+                   AND cm.status = 'active'
+                LEFT JOIN (
+                    SELECT club_id, COUNT(*) AS member_count
+                    FROM club_members
+                    WHERE status = 'active'
+                    GROUP BY club_id
+                ) member_counts ON member_counts.club_id = c.club_id
+                LEFT JOIN promise_club_shares pcs ON pcs.club_id = c.club_id
+                LEFT JOIN promises p
+                    ON p.promise_uuid = pcs.promise_uuid
+                   AND p.is_deleted = 0
+                LEFT JOIN promise_instances pi
+                    ON pi.promise_uuid = p.promise_uuid
+                   AND pi.user_id = p.user_id
+                   AND pi.status = 'active'
+                ORDER BY c.created_at_utc DESC;
+            """),
+            {"user_id": user},
+        ).mappings().fetchall()
+
+        club_ids = [str(row["club_id"]) for row in rows]
+        member_rows = []
+        if club_ids:
+            member_rows = session.execute(
+                text("""
+                    SELECT
+                        cm.club_id,
+                        cm.user_id,
+                        u.first_name,
+                        u.username,
+                        u.avatar_path
+                    FROM club_members cm
+                    LEFT JOIN users u ON u.user_id = cm.user_id
+                    WHERE cm.status = 'active'
+                      AND cm.club_id = ANY(:club_ids)
+                    ORDER BY cm.joined_at_utc ASC;
+                """),
+                {"club_ids": club_ids},
+            ).mappings().fetchall()
+
+    members_by_club: dict[str, List[ClubMemberSummary]] = {}
+    for member in member_rows:
+        club_id = str(member["club_id"])
+        members_by_club.setdefault(club_id, []).append(
+            ClubMemberSummary(
+                user_id=str(member["user_id"]),
+                first_name=str(member["first_name"]) if member["first_name"] else None,
+                username=str(member["username"]) if member["username"] else None,
+                avatar_path=str(member["avatar_path"]) if member["avatar_path"] else None,
+            )
+        )
+
+    return [
+        ClubSummary(
+            club_id=str(row["club_id"]),
+            name=str(row["name"]),
+            visibility=str(row["visibility"] or "private"),
+            role=str(row["role"] or "member"),
+            member_count=int(row["member_count"] or 0),
+            members=members_by_club.get(str(row["club_id"]), []),
+            telegram_status="not_connected",
+            promise_id=str(row["promise_id"]) if row["promise_id"] else None,
+            promise_text=str(row["promise_text"]) if row["promise_text"] else None,
+            target_count_per_week=float(row["target_count_per_week"]) if row["target_count_per_week"] is not None else None,
+        )
+        for row in rows
+    ]
+
+
+@router.get("/clubs", response_model=ClubsResponse)
+async def list_my_clubs(user_id: int = Depends(get_current_user)):
+    """List clubs where the current user is an active member."""
+    try:
+        clubs = _list_user_clubs(user_id)
+        return ClubsResponse(clubs=clubs, total=len(clubs))
+    except Exception as e:
+        logger.exception(f"Error listing clubs for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load clubs: {str(e)}")
+
+
+@router.post("/clubs", response_model=ClubSummary)
+async def create_club(
+    club_request: CreateClubRequest,
+    user_id: int = Depends(get_current_user),
+):
+    """Create a minimal Xaana club with one shared count-based promise."""
+    try:
+        _ensure_user_exists(user_id)
+        name = club_request.name.strip()
+        promise_text = club_request.promise_text.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Club name is required")
+        if not promise_text:
+            raise HTTPException(status_code=400, detail="Shared promise is required")
+
+        clubs_repo = ClubsRepository()
+        club_id = clubs_repo.create_club(
+            owner_user_id=user_id,
+            name=name,
+            description=None,
+            visibility=club_request.visibility,
+        )
+        _create_club_promise(
+            user_id=user_id,
+            club_id=club_id,
+            club_name=name,
+            promise_text=promise_text,
+            target_count_per_week=club_request.target_count_per_week,
+        )
+        clubs = _list_user_clubs(user_id)
+        created = next((club for club in clubs if club.club_id == club_id), None)
+        if not created:
+            raise RuntimeError("Club was created but could not be loaded")
+        return created
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error creating club for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create club: {str(e)}")
 
 
 @router.post("/suggestions")

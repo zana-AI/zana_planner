@@ -109,6 +109,43 @@ class PublicPromiseBadge(BaseModel):
     achieved_value: float = 0.0
 
 
+# Clubs
+class CreateClubRequest(BaseModel):
+    """Minimal request model for creating a club with one shared promise."""
+    name: str = Field(..., min_length=2, max_length=80)
+    visibility: Literal["private", "public"] = "private"
+    promise_text: str = Field(..., min_length=2, max_length=160)
+    target_count_per_week: float = Field(default=2.0, gt=0, le=21)
+
+
+class ClubMemberSummary(BaseModel):
+    """Lightweight club member identity for avatar previews."""
+    user_id: str
+    first_name: Optional[str] = None
+    username: Optional[str] = None
+    avatar_path: Optional[str] = None
+
+
+class ClubSummary(BaseModel):
+    """Club summary for the Community page."""
+    club_id: str
+    name: str
+    visibility: str
+    role: str = "member"
+    member_count: int = 0
+    members: List[ClubMemberSummary] = Field(default_factory=list)
+    telegram_status: str = "not_connected"
+    promise_id: Optional[str] = None
+    promise_text: Optional[str] = None
+    target_count_per_week: Optional[float] = None
+
+
+class ClubsResponse(BaseModel):
+    """Response model for the current user's clubs."""
+    clubs: List[ClubSummary]
+    total: int
+
+
 # Auth
 class TelegramLoginRequest(BaseModel):
     """Request model for Telegram Login Widget authentication."""

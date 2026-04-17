@@ -3,6 +3,9 @@ import type {
   UserInfo, 
   PublicUsersResponse,
   PublicActivityResponse,
+  ClubSummary,
+  ClubsResponse,
+  CreateClubRequest,
   AdminUsersResponse,
   Broadcast,
   CreateBroadcastRequest,
@@ -271,6 +274,23 @@ class ApiClient {
    */
   async getPublicActivity(limit: number = 20): Promise<PublicActivityResponse> {
     return this.request<PublicActivityResponse>(`/public/activity?limit=${limit}`);
+  }
+
+  /**
+   * Get clubs where the authenticated user is a member.
+   */
+  async getMyClubs(): Promise<ClubsResponse> {
+    return this.request<ClubsResponse>('/clubs');
+  }
+
+  /**
+   * Create a minimal Xaana club with one shared promise.
+   */
+  async createClub(request: CreateClubRequest): Promise<ClubSummary> {
+    return this.request<ClubSummary>('/clubs', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   }
 
   /**

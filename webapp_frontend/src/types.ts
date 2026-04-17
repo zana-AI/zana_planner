@@ -183,6 +183,36 @@ export interface PublicActivityResponse {
   total: number;
 }
 
+export interface ClubSummary {
+  club_id: string;
+  name: string;
+  visibility: 'private' | 'public';
+  role: string;
+  member_count: number;
+  members: {
+    user_id: string;
+    first_name?: string;
+    username?: string;
+    avatar_path?: string;
+  }[];
+  telegram_status: 'not_connected' | 'connected';
+  promise_id?: string;
+  promise_text?: string;
+  target_count_per_week?: number;
+}
+
+export interface ClubsResponse {
+  clubs: ClubSummary[];
+  total: number;
+}
+
+export interface CreateClubRequest {
+  name: string;
+  visibility: 'private' | 'public';
+  promise_text: string;
+  target_count_per_week: number;
+}
+
 // Admin types
 export interface AdminUser {
   user_id: string;
