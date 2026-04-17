@@ -34,6 +34,7 @@ pandas>=2.3.0
 # ============================================================================
 fastapi==0.104.1                # Pinned for stability
 uvicorn[standard]==0.24.0       # Pinned for stability
+python-multipart==0.0.20        # Required for FastAPI form/file uploads
 
 # ============================================================================
 # Utilities
