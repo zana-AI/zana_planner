@@ -147,6 +147,13 @@ class ClubsResponse(BaseModel):
     total: int
 
 
+class ClubActionResponse(BaseModel):
+    """Response model for reversible club actions."""
+    status: str
+    club_id: str
+    message: str
+
+
 class AdminClubSetupSummary(ClubSummary):
     """Admin view of a club waiting for Telegram setup."""
     owner_user_id: str

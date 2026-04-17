@@ -175,6 +175,7 @@ def upgrade() -> None:
         sa.Column('name', sa.Text(), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('visibility', sa.Text(), nullable=False, server_default='private'),
+        sa.Column('status', sa.Text(), nullable=False, server_default='active'),
         sa.Column('telegram_status', sa.Text(), nullable=False, server_default='not_connected'),
         sa.Column('telegram_invite_link', sa.Text(), nullable=True),
         sa.Column('telegram_chat_id', sa.Text(), nullable=True),

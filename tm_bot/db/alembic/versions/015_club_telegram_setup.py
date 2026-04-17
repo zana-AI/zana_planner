@@ -16,6 +16,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'")
     op.execute("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_status TEXT NOT NULL DEFAULT 'not_connected'")
     op.execute("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_invite_link TEXT")
     op.execute("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT")
@@ -25,6 +26,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_column("clubs", "status")
     op.drop_column("clubs", "telegram_setup_by_admin_id")
     op.drop_column("clubs", "telegram_ready_at_utc")
     op.drop_column("clubs", "telegram_requested_at_utc")

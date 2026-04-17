@@ -1613,6 +1613,29 @@ body.modal-open {
   padding-left: 4px;
 }
 
+.community-club-remove {
+  margin-top: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  padding: 7px 9px;
+  font-family: var(--font-family-app);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.community-club-remove:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+}
+
+.community-club-remove:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .community-club-dialog {
   max-width: 460px;
   border: 1px solid var(--border);

@@ -99,6 +99,7 @@ export function UsersPage() {
   const [error, setError] = useState('');
   const [clubError, setClubError] = useState('');
   const [showCreateClubDialog, setShowCreateClubDialog] = useState(false);
+  const [clubBusyById, setClubBusyById] = useState<Record<string, boolean>>({});
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [followBusyByUser, setFollowBusyByUser] = useState<Record<string, boolean>>({});
   const [followingExpanded, setFollowingExpanded] = useState(false);
@@ -283,6 +284,26 @@ export function UsersPage() {
     }
   }, [clubForm]);
 
+  const handleRemoveClub = useCallback(async (club: ClubSummary) => {
+    const isOwner = club.role === 'owner';
+    const actionLabel = isOwner ? 'cancel this club' : 'leave this club';
+    if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) {
+      return;
+    }
+
+    setClubError('');
+    setClubBusyById((prev) => ({ ...prev, [club.club_id]: true }));
+    try {
+      await apiClient.removeMyClub(club.club_id);
+      setClubs((prev) => prev.filter((item) => item.club_id !== club.club_id));
+    } catch (err) {
+      console.error('Failed to remove club:', err);
+      setClubError(err instanceof ApiError ? err.message : 'Failed to update club.');
+    } finally {
+      setClubBusyById((prev) => ({ ...prev, [club.club_id]: false }));
+    }
+  }, []);
+
   if (!isReady) {
     return (
       <div className="users-page">
@@ -377,6 +398,20 @@ export function UsersPage() {
                         <span>Telegram pending</span>
                       )}
                     </div>
+                    {club.role === 'owner' && club.telegram_status !== 'pending_admin_setup' ? null : (
+                      <button
+                        type="button"
+                        className="community-club-remove"
+                        disabled={!!clubBusyById[club.club_id]}
+                        onClick={() => handleRemoveClub(club)}
+                      >
+                        {clubBusyById[club.club_id]
+                          ? 'Updating...'
+                          : club.role === 'owner'
+                            ? 'Cancel club'
+                            : 'Leave club'}
+                      </button>
+                    )}
                   </article>
                 ))}
               </div>

@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from sqlalchemy import text
 from ..dependencies import get_current_user
 from ..schemas import (
+    ClubActionResponse,
     ClubMemberSummary,
     CreateClubRequest,
     ClubsResponse,
@@ -171,6 +172,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     ON pi.promise_uuid = p.promise_uuid
                    AND pi.user_id = p.user_id
                    AND pi.status = 'active'
+                WHERE COALESCE(c.status, 'active') = 'active'
                 ORDER BY c.created_at_utc DESC;
             """),
             {"user_id": user},
@@ -287,6 +289,51 @@ async def create_club(
     except Exception as e:
         logger.exception(f"Error creating club for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create club: {str(e)}")
+
+
+@router.delete("/clubs/{club_id}", response_model=ClubActionResponse)
+async def remove_my_club(
+    club_id: str,
+    user_id: int = Depends(get_current_user),
+):
+    """Cancel a pending owner-created club, or leave a club as a non-owner."""
+    try:
+        clubs_repo = ClubsRepository()
+        club = clubs_repo.get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        with get_db_session() as session:
+            member_row = session.execute(
+                text("""
+                    SELECT role
+                    FROM club_members
+                    WHERE club_id = :club_id
+                      AND user_id = :user_id
+                      AND status = 'active'
+                    LIMIT 1;
+                """),
+                {"club_id": club_id, "user_id": str(user_id)},
+            ).mappings().fetchone()
+
+        if not member_row:
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if str(club.get("owner_user_id")) == str(user_id):
+            if str(club.get("telegram_status") or "") != "pending_admin_setup":
+                raise HTTPException(status_code=409, detail="Active clubs cannot be cancelled yet.")
+            if not clubs_repo.cancel_pending_club(club_id, user_id):
+                raise HTTPException(status_code=409, detail="Club could not be cancelled.")
+            return ClubActionResponse(status="cancelled", club_id=club_id, message="Club cancelled.")
+
+        if not clubs_repo.remove_member(club_id, user_id):
+            raise HTTPException(status_code=409, detail="Club could not be left.")
+        return ClubActionResponse(status="left", club_id=club_id, message="You left the club.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error removing club {club_id} for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update club: {str(e)}")
 
 
 @router.post("/suggestions")

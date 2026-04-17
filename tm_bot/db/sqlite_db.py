@@ -593,6 +593,7 @@ def _apply_v3(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL,
             description TEXT NULL,
             visibility TEXT NOT NULL DEFAULT 'private',
+            status TEXT NOT NULL DEFAULT 'active',
             telegram_status TEXT NOT NULL DEFAULT 'not_connected',
             telegram_invite_link TEXT NULL,
             telegram_chat_id TEXT NULL,
@@ -611,6 +612,7 @@ def _apply_v3(conn: sqlite3.Connection) -> None:
 
     club_columns = [row[1] for row in conn.execute("PRAGMA table_info(clubs);").fetchall()]
     club_new_columns = [
+        ("status", "TEXT NOT NULL DEFAULT 'active'"),
         ("telegram_status", "TEXT NOT NULL DEFAULT 'not_connected'"),
         ("telegram_invite_link", "TEXT NULL"),
         ("telegram_chat_id", "TEXT NULL"),
@@ -1222,6 +1224,7 @@ def _apply_v10(conn: sqlite3.Connection) -> None:
     """Apply schema version 10 migrations: add Telegram setup fields to clubs."""
     club_columns = [row[1] for row in conn.execute("PRAGMA table_info(clubs);").fetchall()]
     club_new_columns = [
+        ("status", "TEXT NOT NULL DEFAULT 'active'"),
         ("telegram_status", "TEXT NOT NULL DEFAULT 'not_connected'"),
         ("telegram_invite_link", "TEXT NULL"),
         ("telegram_chat_id", "TEXT NULL"),

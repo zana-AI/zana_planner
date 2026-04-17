@@ -16,6 +16,7 @@ def ensure_club_telegram_columns(session) -> None:
         return
 
     for ddl in (
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_status TEXT NOT NULL DEFAULT 'not_connected'",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_invite_link TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT",
@@ -164,6 +165,7 @@ class ClubsRepository:
                     text("""
                         SELECT * FROM clubs
                         WHERE visibility = 'public'
+                          AND COALESCE(status, 'active') = 'active'
                         ORDER BY created_at_utc DESC;
                     """),
                 ).fetchall()
@@ -236,6 +238,45 @@ class ClubsRepository:
                 {"left_at_utc": now, "club_id": club_id, "user_id": user},
             )
             return result.rowcount > 0
+
+    def cancel_pending_club(self, club_id: str, owner_user_id: int) -> bool:
+        """Cancel a pending owner-created club before it becomes active."""
+        owner = str(owner_user_id)
+        now = utc_now_iso()
+
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            result = session.execute(
+                text("""
+                    UPDATE clubs
+                    SET status = 'cancelled',
+                        telegram_status = 'cancelled',
+                        updated_at_utc = :updated_at_utc
+                    WHERE club_id = :club_id
+                      AND owner_user_id = :owner_user_id
+                      AND COALESCE(status, 'active') = 'active'
+                      AND telegram_status = 'pending_admin_setup';
+                """),
+                {
+                    "club_id": club_id,
+                    "owner_user_id": owner,
+                    "updated_at_utc": now,
+                },
+            )
+            if result.rowcount <= 0:
+                return False
+
+            session.execute(
+                text("""
+                    UPDATE club_members
+                    SET status = 'left',
+                        left_at_utc = :left_at_utc
+                    WHERE club_id = :club_id
+                      AND status = 'active';
+                """),
+                {"club_id": club_id, "left_at_utc": now},
+            )
+            return True
 
     def get_members(self, club_id: str) -> List[Dict]:
         """Get all active members of a club."""

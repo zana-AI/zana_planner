@@ -492,6 +492,12 @@ class ApiClient {
     });
   }
 
+  async removeMyClub(clubId: string): Promise<{ status: string; club_id: string; message: string }> {
+    return this.request<{ status: string; club_id: string; message: string }>(`/clubs/${clubId}`, {
+      method: 'DELETE',
+    });
+  }
+
   /**
    * Get conversation history for a user (admin only).
    */
