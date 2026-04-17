@@ -24,7 +24,7 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from telegram.request import HTTPXRequest
-from telegram import error as telegram_error
+from telegram import error as telegram_error, InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy.exc import OperationalError as SQLOperationalError
 from sqlalchemy import text
 
@@ -37,12 +37,13 @@ from handlers.messages_store import initialize_message_store, get_user_language
 from webapp.notifications import send_club_telegram_ready_notification
 from router_types import InputContext
 from utils.bot_utils import BotUtils
-from utils.admin_utils import get_admin_ids
+from utils.admin_utils import get_admin_ids, is_admin
 from utils.logger import get_logger, configure_admin_error_notifications
 from db.postgres_db import get_db_session, utc_now_iso
 from repositories.clubs_repo import ensure_club_telegram_columns, get_club_columns
 
 logger = get_logger(__name__)
+CLUB_TELEGRAM_CONFIRM_PREFIX = "clubtg_confirm:"
 
 
 def _is_staging_or_test_mode() -> bool:
@@ -580,9 +581,46 @@ class PlannerBot:
 
     async def _route_callback(self, ctx: InputContext) -> None:
         """Delegate callback to CallbackHandlers."""
+        if (ctx.callback_data or "").startswith(CLUB_TELEGRAM_CONFIRM_PREFIX):
+            await self._handle_club_telegram_confirm_callback(ctx)
+            return
         await self.callback_handlers.handle_promise_callback(
             ctx.platform_update, ctx.platform_context
         )
+
+    async def _handle_club_telegram_confirm_callback(self, ctx: InputContext) -> None:
+        query = getattr(ctx.platform_update, "callback_query", None)
+        if not query:
+            return
+
+        if not is_admin(ctx.user_id):
+            await query.answer("Only Xaana admins can confirm this.", show_alert=True)
+            return
+
+        club_id = (ctx.callback_data or "").replace(CLUB_TELEGRAM_CONFIRM_PREFIX, "", 1).strip()
+        if not club_id:
+            await query.answer("Missing club id.", show_alert=True)
+            return
+
+        confirmed = await self._confirm_pending_club_telegram_link(
+            club_id=club_id,
+            admin_user_id=ctx.user_id,
+            bot_token=os.getenv("BOT_TOKEN", ""),
+        )
+        if not confirmed:
+            await query.answer("Could not confirm. Open Club Setup and link it manually.", show_alert=True)
+            return
+
+        await query.answer("Club Telegram group confirmed.")
+        text_value = "\n".join([
+            "Club Telegram group confirmed.",
+            f"Club: {confirmed['club_name']}",
+            f"Chat ID: {confirmed['telegram_chat_id']}",
+        ])
+        try:
+            await query.edit_message_text(text=text_value, parse_mode=None)
+        except Exception as e:
+            logger.debug("Could not edit club Telegram confirmation message: %s", e)
 
     async def _route_to_agent(self, ctx: InputContext) -> None:
         """Route text to the LLM agent pipeline."""
@@ -686,23 +724,30 @@ class PlannerBot:
             )
             return
 
-        connected = await self._auto_connect_club_from_group(
+        proposed = await self._stage_club_group_candidate(
             chat_id=chat_id,
             chat_title=chat_title,
             actor_user_id=actor_id,
             invite_link=invite_link,
-            bot_token=os.getenv("BOT_TOKEN", ""),
         )
 
-        if connected:
+        if proposed:
             await self._notify_admins_about_group_setup(
                 bot=bot,
                 message=(
-                    "Club Telegram link auto-connected.\n"
-                    f"Club: \"{connected.get('club_name', chat_title)}\"\n"
+                    "Telegram group detected for a pending club.\n"
+                    "Please confirm before Xaana links it.\n"
+                    f"Suggested club: \"{proposed.get('club_name', chat_title)}\"\n"
+                    f"Group: \"{chat_title or chat_id}\"\n"
                     f"Chat ID: {chat_id}\n"
                     f"Invite: {invite_link}"
                 ),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        "Confirm club link",
+                        callback_data=f"{CLUB_TELEGRAM_CONFIRM_PREFIX}{proposed['club_id']}",
+                    )
+                ]]),
             )
             return
 
@@ -717,26 +762,25 @@ class PlannerBot:
             ),
         )
 
-    async def _notify_admins_about_group_setup(self, bot, message: str) -> None:
+    async def _notify_admins_about_group_setup(self, bot, message: str, reply_markup=None) -> None:
         """Send operational club-group setup updates to configured admins."""
         admin_ids = sorted(get_admin_ids())
         if not admin_ids:
             return
         for admin_id in admin_ids:
             try:
-                await bot.send_message(chat_id=admin_id, text=message, parse_mode=None)
+                await bot.send_message(chat_id=admin_id, text=message, reply_markup=reply_markup, parse_mode=None)
             except Exception as e:
                 logger.debug("Could not notify admin %s about group setup: %s", admin_id, e)
 
-    async def _auto_connect_club_from_group(
+    async def _stage_club_group_candidate(
         self,
         chat_id: int,
         chat_title: str,
         actor_user_id: int,
         invite_link: str,
-        bot_token: str,
     ) -> Optional[dict]:
-        """Best-effort mapping from group title to pending club and store generated invite link."""
+        """Best-effort mapping from group title to one pending club, waiting for admin confirmation."""
         normalized_title = (chat_title or "").strip()
         if not normalized_title:
             return None
@@ -746,7 +790,7 @@ class PlannerBot:
             ensure_club_telegram_columns(session)
             club_columns = get_club_columns(session)
 
-            required = {"telegram_status", "telegram_invite_link", "telegram_ready_at_utc"}
+            required = {"telegram_status", "telegram_invite_link", "telegram_chat_id"}
             if not required.issubset(club_columns):
                 return None
 
@@ -761,27 +805,23 @@ class PlannerBot:
                 {"group_name": normalized_title},
             ).mappings().fetchall()
 
-            # Only auto-connect on unambiguous exact name match.
+            # Only propose an unambiguous exact name match. Admin must still confirm.
             if len(pending_rows) != 1:
                 return None
 
             row = pending_rows[0]
             set_parts = [
-                "telegram_status = 'ready'",
                 "telegram_invite_link = :invite_link",
-                "telegram_ready_at_utc = :ready_at",
+                "telegram_chat_id = :telegram_chat_id",
                 "updated_at_utc = :updated_at",
             ]
             params = {
                 "club_id": str(row["club_id"]),
                 "invite_link": invite_link,
-                "ready_at": now,
+                "telegram_chat_id": str(chat_id),
                 "updated_at": now,
             }
 
-            if "telegram_chat_id" in club_columns:
-                set_parts.append("telegram_chat_id = :telegram_chat_id")
-                params["telegram_chat_id"] = str(chat_id)
             if "telegram_setup_by_admin_id" in club_columns and actor_user_id:
                 set_parts.append("telegram_setup_by_admin_id = :setup_by_admin_id")
                 params["setup_by_admin_id"] = str(actor_user_id)
@@ -795,24 +835,68 @@ class PlannerBot:
                 params,
             )
 
-            try:
-                owner_user_id = int(row["owner_user_id"])
-                if bot_token and owner_user_id:
-                    asyncio.create_task(
-                        send_club_telegram_ready_notification(
-                            bot_token=bot_token,
-                            user_id=owner_user_id,
-                            club_name=str(row["name"]),
-                            invite_link=invite_link,
-                        )
-                    )
-            except Exception as e:
-                logger.debug("Could not schedule creator ready notification for club %s: %s", row["club_id"], e)
-
             return {
                 "club_id": str(row["club_id"]),
                 "club_name": str(row["name"]),
             }
+
+    async def _confirm_pending_club_telegram_link(
+        self,
+        club_id: str,
+        admin_user_id: int,
+        bot_token: str,
+    ) -> Optional[dict]:
+        """Mark a staged Telegram group candidate as ready after admin confirmation."""
+        now = utc_now_iso()
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            row = session.execute(
+                text("""
+                    SELECT club_id, owner_user_id, name, telegram_invite_link, telegram_chat_id
+                    FROM clubs
+                    WHERE club_id = :club_id
+                    LIMIT 1;
+                """),
+                {"club_id": club_id},
+            ).mappings().fetchone()
+            if not row or not row["telegram_invite_link"] or not row["telegram_chat_id"]:
+                return None
+
+            session.execute(
+                text("""
+                    UPDATE clubs
+                    SET telegram_status = 'ready',
+                        telegram_ready_at_utc = :ready_at,
+                        telegram_setup_by_admin_id = :admin_id,
+                        updated_at_utc = :updated_at
+                    WHERE club_id = :club_id;
+                """),
+                {
+                    "club_id": club_id,
+                    "ready_at": now,
+                    "admin_id": str(admin_user_id),
+                    "updated_at": now,
+                },
+            )
+
+            result = {
+                "club_id": str(row["club_id"]),
+                "club_name": str(row["name"]),
+                "owner_user_id": int(row["owner_user_id"]),
+                "telegram_invite_link": str(row["telegram_invite_link"]),
+                "telegram_chat_id": str(row["telegram_chat_id"]),
+            }
+
+        if bot_token:
+            asyncio.create_task(
+                send_club_telegram_ready_notification(
+                    bot_token=bot_token,
+                    user_id=result["owner_user_id"],
+                    club_name=result["club_name"],
+                    invite_link=result["telegram_invite_link"],
+                )
+            )
+        return result
 
     async def _log_structured_event(
         self,

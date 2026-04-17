@@ -364,7 +364,7 @@ export function UsersPage() {
                         {club.member_count} {club.member_count === 1 ? 'member' : 'members'}
                       </span>
                       {club.target_count_per_week ? <span>{club.target_count_per_week}x/week</span> : null}
-                      {club.telegram_invite_link ? (
+                      {club.telegram_invite_link && ['ready', 'connected'].includes(club.telegram_status) ? (
                         <a
                           className="community-club-telegram-link"
                           href={club.telegram_invite_link}
