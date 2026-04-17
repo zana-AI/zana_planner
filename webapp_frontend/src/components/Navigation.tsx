@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bot, Library, LogOut, Settings, Shield, User, Users } from 'lucide-react';
+import { ArrowLeft, Library, LogOut, Settings, Shield } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { useSessionMode } from '../hooks/useSessionMode';
@@ -108,7 +108,6 @@ export function Navigation() {
   const sessionMode = useSessionMode();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
-  const [botUsername, setBotUsername] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -130,25 +129,6 @@ export function Navigation() {
       apiClient.getUserInfo().then(setUserInfo).catch(() => console.error('Failed to fetch user info'));
     }
   }, [hasToken, authData]);
-
-  useEffect(() => {
-    const fetchBotUsername = async () => {
-      try {
-        const response = await fetch('/api/auth/bot-username');
-        if (!response.ok) return;
-        const data = await response.json();
-        if (data.bot_username) {
-          setBotUsername(data.bot_username.trim());
-        }
-      } catch (error) {
-        console.error('Failed to fetch bot username:', error);
-      }
-    };
-
-    if (isAuthenticated) {
-      fetchBotUsername();
-    }
-  }, [isAuthenticated]);
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -247,101 +227,61 @@ export function Navigation() {
           ) : null}
 
           <div className="app-shell-profile-wrap" ref={menuRef}>
-          <button
-            className="app-shell-avatar"
-            onClick={() => setShowProfileMenu((prev) => !prev)}
-            aria-label="Open profile menu"
-          >
-            {telegramUser?.photo_url ? (
-              <img src={telegramUser.photo_url} alt={displayName} />
-            ) : (
-              <span>{displayInitial}</span>
-            )}
-          </button>
+            <button
+              className="app-shell-avatar"
+              onClick={() => setShowProfileMenu((prev) => !prev)}
+              aria-label="Open profile menu"
+            >
+              {telegramUser?.photo_url ? (
+                <img src={telegramUser.photo_url} alt={displayName} />
+              ) : (
+                <span>{displayInitial}</span>
+              )}
+            </button>
 
-          {showProfileMenu && (
-            <div className="app-shell-menu">
-              <div className="app-shell-menu-user">{displayName}</div>
-              <button
-                className="app-shell-menu-item"
-                onClick={() => {
-                  navigate('/dashboard');
-                  setShowProfileMenu(false);
-                }}
-              >
-                <User size={16} />
-                <span>My Week</span>
-              </button>
-              <button
-                className="app-shell-menu-item"
-                onClick={() => {
-                  navigate('/community');
-                  setShowProfileMenu(false);
-                }}
-              >
-                <Users size={16} />
-                <span>Community</span>
-              </button>
-              <button
-                className="app-shell-menu-item"
-                onClick={() => {
-                  navigate('/templates');
-                  setShowProfileMenu(false);
-                }}
-              >
-                <Library size={16} />
-                <span>Explore</span>
-              </button>
-              <button
-                className="app-shell-menu-item"
-                onClick={() => {
-                  navigate('/my-contents');
-                  setShowProfileMenu(false);
-                }}
-              >
-                <Library size={16} />
-                <span>My Contents</span>
-              </button>
-              <button
-                className="app-shell-menu-item"
-                onClick={() => {
-                  navigate('/settings');
-                  setShowProfileMenu(false);
-                }}
-              >
-                <Settings size={16} />
-                <span>Settings</span>
-              </button>
-              <a
-                href={botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="app-shell-menu-item"
-                onClick={() => setShowProfileMenu(false)}
-              >
-                <Bot size={16} />
-                <span>Open Bot</span>
-              </a>
-              {isAdmin && (
+            {showProfileMenu && (
+              <div className="app-shell-menu">
+                <div className="app-shell-menu-user">{displayName}</div>
                 <button
-                  className="app-shell-menu-item app-shell-menu-item-admin"
+                  className="app-shell-menu-item"
                   onClick={() => {
-                    navigate('/admin');
+                    navigate('/my-contents');
                     setShowProfileMenu(false);
                   }}
                 >
-                  <Shield size={16} />
-                  <span>Admin Panel</span>
+                  <Library size={16} />
+                  <span>My Contents</span>
                 </button>
-              )}
-              {sessionMode === 'browser_token' && (
-                <button className="app-shell-menu-item app-shell-menu-item-danger" onClick={handleLogout}>
-                  <LogOut size={16} />
-                  <span>Logout</span>
+                <button
+                  className="app-shell-menu-item"
+                  onClick={() => {
+                    navigate('/settings');
+                    setShowProfileMenu(false);
+                  }}
+                >
+                  <Settings size={16} />
+                  <span>Settings</span>
                 </button>
-              )}
-            </div>
-          )}
+                {isAdmin && (
+                  <button
+                    className="app-shell-menu-item app-shell-menu-item-admin"
+                    onClick={() => {
+                      navigate('/admin');
+                      setShowProfileMenu(false);
+                    }}
+                  >
+                    <Shield size={16} />
+                    <span>Admin Panel</span>
+                  </button>
+                )}
+                {sessionMode === 'browser_token' && (
+                  <button className="app-shell-menu-item app-shell-menu-item-danger" onClick={handleLogout}>
+                    <LogOut size={16} />
+                    <span>Logout</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
