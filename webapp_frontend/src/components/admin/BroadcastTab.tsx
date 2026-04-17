@@ -68,6 +68,10 @@ export function BroadcastTab({
   const [loadingBotTokens, setLoadingBotTokens] = useState(false);
   const [translateToUserLanguage, setTranslateToUserLanguage] = useState(false);
   const [sourceLanguage, setSourceLanguage] = useState<'en' | 'fr' | 'fa'>('en');
+  const [mediaType, setMediaType] = useState<'' | 'image'>('');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState('');
+  const [uploadingMedia, setUploadingMedia] = useState(false);
 
   // Fetch bot tokens
   useEffect(() => {
@@ -124,6 +128,16 @@ export function BroadcastTab({
       return;
     }
 
+    if (uploadingMedia) {
+      setError('Please wait for media upload to finish');
+      return;
+    }
+
+    if (mediaType === 'image' && !mediaUrl.trim()) {
+      setError('Please upload an image before sending');
+      return;
+    }
+
     setSending(true);
     setError('');
 
@@ -141,6 +155,8 @@ export function BroadcastTab({
         bot_token_id: selectedBotTokenId || undefined,
         translate_to_user_language: translateToUserLanguage,
         source_language: sourceLanguage,
+        media_type: mediaType || undefined,
+        media_url: mediaType ? mediaUrl.trim() || undefined : undefined,
       };
 
       await apiClient.createBroadcast(request);
@@ -151,6 +167,12 @@ export function BroadcastTab({
       setSelectedUserIds(new Set());
       setTranslateToUserLanguage(false);
       setSourceLanguage('en');
+      if (mediaPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaPreviewUrl);
+      }
+      setMediaType('');
+      setMediaUrl('');
+      setMediaPreviewUrl('');
       
       // Refresh broadcasts
       await onRefreshBroadcasts();
@@ -173,6 +195,47 @@ export function BroadcastTab({
     return toDateTimeLocalInputValue(new Date());
   };
 
+  const handleImageFileSelected = async (file: File | null) => {
+    if (!file) {
+      if (mediaPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaPreviewUrl);
+      }
+      setMediaType('');
+      setMediaUrl('');
+      setMediaPreviewUrl('');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Only image files are currently supported');
+      return;
+    }
+
+    setUploadingMedia(true);
+    setError('');
+    try {
+      const uploaded = await apiClient.uploadBroadcastMedia(file);
+      if (mediaPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaPreviewUrl);
+      }
+      const objectUrl = URL.createObjectURL(file);
+      setMediaType('image');
+      setMediaUrl(uploaded.media_url);
+      setMediaPreviewUrl(objectUrl);
+    } catch (err) {
+      console.error('Failed to upload broadcast image:', err);
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to upload image. Please try again.');
+      }
+      setMediaType('');
+      setMediaUrl('');
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
   return (
     <div className="admin-panel-compose">
       <div className="admin-section">
@@ -184,6 +247,29 @@ export function BroadcastTab({
           placeholder="Enter your broadcast message..."
           rows={5}
         />
+      </div>
+
+      <div className="admin-section">
+        <h2 className="admin-section-title">Attach Media (Image)</h2>
+        <input
+          type="file"
+          accept="image/*"
+          className="admin-select-input"
+          onChange={(e) => handleImageFileSelected(e.target.files?.[0] || null)}
+        />
+        <p className="admin-hint">
+          Uploaded images are stored on the server VM, sent from local storage, then removed after dispatch.
+        </p>
+        {uploadingMedia ? <p className="admin-hint">Uploading image...</p> : null}
+        {mediaType === 'image' && mediaPreviewUrl ? (
+          <div style={{ marginTop: 10 }}>
+            <img
+              src={mediaPreviewUrl}
+              alt="Broadcast media preview"
+              style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)' }}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="admin-section">
@@ -278,14 +364,14 @@ export function BroadcastTab({
         <button
           className="admin-send-btn"
           onClick={() => sendBroadcast(true)}
-          disabled={sending || !message.trim() || selectedUserIds.size === 0}
+          disabled={sending || uploadingMedia || !message.trim() || selectedUserIds.size === 0}
         >
           {sending ? 'Sending...' : 'Send Now'}
         </button>
         <button
           className="admin-schedule-btn"
           onClick={() => sendBroadcast(false)}
-          disabled={sending || !message.trim() || selectedUserIds.size === 0}
+          disabled={sending || uploadingMedia || !message.trim() || selectedUserIds.size === 0}
         >
           {sending ? 'Scheduling...' : 'Schedule'}
         </button>

@@ -3,6 +3,11 @@ Broadcast service for sending messages to all users.
 """
 import os
 import asyncio
+import base64
+import binascii
+import tempfile
+from pathlib import Path
+from io import BytesIO
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from zoneinfo import ZoneInfo
@@ -15,6 +20,7 @@ logger = get_logger(__name__)
 
 _broadcast_execution_lock = asyncio.Lock()
 _broadcasts_in_flight: set[str] = set()
+_BROADCAST_MEDIA_DIR = Path(tempfile.gettempdir()) / "zana_broadcast_media"
 
 # Try to import dateparser for natural language parsing
 try:
@@ -85,7 +91,9 @@ async def send_broadcast(
     user_ids: List[int],
     message: str,
     rate_limit_delay: float = 0.05,
-    bot_token: Optional[str] = None
+    bot_token: Optional[str] = None,
+    media_type: Optional[str] = None,
+    media_url: Optional[str] = None,
 ) -> Dict[str, int]:
     """
     Send a broadcast message to all users with rate limiting.
@@ -96,6 +104,8 @@ async def send_broadcast(
         message: Message text to send
         rate_limit_delay: Delay between messages in seconds (default 0.05 = 20 msg/sec)
         bot_token: Optional bot token to use instead of the default response service
+        media_type: Optional media type (currently supports "image")
+        media_url: Optional media payload (public URL or data URL)
         
     Returns:
         Dictionary with 'success' and 'failed' counts
@@ -105,6 +115,34 @@ async def send_broadcast(
 
     success_count = 0
     failed_count = 0
+    has_image_media = media_type == "image" and bool(media_url)
+    image_bytes: Optional[bytes] = None
+    local_media_path: Optional[Path] = None
+
+    if has_image_media and media_url and media_url.startswith("local://"):
+        filename = media_url[len("local://"):].strip()
+        if "/" in filename or "\\" in filename or ".." in filename:
+            logger.error("Invalid local media reference: %s", media_url)
+            has_image_media = False
+        else:
+            local_media_path = _BROADCAST_MEDIA_DIR / filename
+            try:
+                if local_media_path.exists():
+                    image_bytes = local_media_path.read_bytes()
+                else:
+                    logger.error("Local broadcast media not found: %s", local_media_path)
+                    has_image_media = False
+            except Exception as e:
+                logger.error("Failed to read local broadcast media %s: %s", local_media_path, e)
+                has_image_media = False
+
+    if has_image_media and media_url and media_url.startswith("data:"):
+        try:
+            _, encoded_part = media_url.split(",", 1)
+            image_bytes = base64.b64decode(encoded_part)
+        except (ValueError, binascii.Error) as e:
+            logger.error("Invalid broadcast image data URL: %s", e)
+            has_image_media = False
     
     logger.info(f"Starting broadcast to {len(user_ids)} users")
     
@@ -121,13 +159,49 @@ async def send_broadcast(
     
     for user_id in user_ids:
         try:
-            if bot:
+            if bot and has_image_media:
+                if image_bytes is not None:
+                    image_file = BytesIO(image_bytes)
+                    image_file.name = "broadcast_image"
+                    await bot.send_photo(
+                        chat_id=user_id,
+                        photo=image_file,
+                        caption=message,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await bot.send_photo(
+                        chat_id=user_id,
+                        photo=media_url,
+                        caption=message,
+                        parse_mode='Markdown'
+                    )
+            elif bot:
                 # Use the custom bot token directly
                 await bot.send_message(
                     chat_id=user_id,
                     text=message,
                     parse_mode='Markdown'
                 )
+            elif has_image_media:
+                if image_bytes is not None:
+                    image_file = BytesIO(image_bytes)
+                    image_file.name = "broadcast_image"
+                    await response_service.send_photo(
+                        user_id=user_id,
+                        chat_id=user_id,
+                        photo=image_file,
+                        caption=message,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await response_service.send_photo(
+                        user_id=user_id,
+                        chat_id=user_id,
+                        photo=media_url,
+                        caption=message,
+                        parse_mode='Markdown'
+                    )
             else:
                 # Use the default response service
                 await response_service.send_text(
@@ -215,11 +289,25 @@ async def execute_broadcast_from_db(
             broadcast.target_user_ids,
             broadcast.message,
             bot_token=bot_token,
+            media_type=broadcast.media_type,
+            media_url=broadcast.media_url,
         )
         
         # Mark as completed
         broadcasts_repo.mark_broadcast_completed(broadcast_id)
         logger.info(f"Broadcast {broadcast_id} marked as completed")
+
+        media_ref = getattr(broadcast, "media_url", None)
+        if getattr(broadcast, "media_type", None) == "image" and isinstance(media_ref, str) and media_ref.startswith("local://"):
+            filename = media_ref[len("local://"):].strip()
+            if filename and "/" not in filename and "\\" not in filename and ".." not in filename:
+                local_path = _BROADCAST_MEDIA_DIR / filename
+                try:
+                    if local_path.exists():
+                        local_path.unlink()
+                        logger.info("Deleted local broadcast media %s", local_path)
+                except Exception as e:
+                    logger.warning("Failed to delete local broadcast media %s: %s", local_path, e)
         
         return results
     finally:

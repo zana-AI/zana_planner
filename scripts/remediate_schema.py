@@ -219,6 +219,21 @@ def _migration_006_steps(conn) -> list[tuple[str, str]]:
     return steps
 
 
+def _migration_007_steps(conn) -> list[tuple[str, str]]:
+    """Migration 007: broadcasts media columns."""
+    steps = []
+
+    if not has_column(conn, "broadcasts", "media_type"):
+        steps.append(("Add broadcasts.media_type",
+                       "ALTER TABLE broadcasts ADD COLUMN media_type TEXT;"))
+
+    if not has_column(conn, "broadcasts", "media_url"):
+        steps.append(("Add broadcasts.media_url",
+                       "ALTER TABLE broadcasts ADD COLUMN media_url TEXT;"))
+
+    return steps
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -228,6 +243,7 @@ ALL_MIGRATION_STEPS = [
     ("004 — Simplify promise_templates", _migration_004_steps),
     ("005 — User profiling", _migration_005_steps),
     ("006 — Bot tokens", _migration_006_steps),
+    ("007 — Broadcast media", _migration_007_steps),
 ]
 
 

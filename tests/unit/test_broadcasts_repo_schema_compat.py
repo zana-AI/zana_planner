@@ -77,6 +77,8 @@ def test_create_broadcast_omits_bot_token_id_when_column_missing(monkeypatch):
         target_user_ids=[123],
         scheduled_time_utc=datetime(2026, 2, 19, 23, 0, tzinfo=timezone.utc),
         bot_token_id="token-id",
+        media_type="image",
+        media_url="https://example.com/image.jpg",
     )
 
     assert broadcast_id == "fixed-broadcast-id"
@@ -84,7 +86,11 @@ def test_create_broadcast_omits_bot_token_id_when_column_missing(monkeypatch):
     insert_sql, insert_params = fake_session.calls[0]
     assert "INSERT INTO broadcasts" in insert_sql
     assert "bot_token_id" not in insert_sql
+    assert "media_type" not in insert_sql
+    assert "media_url" not in insert_sql
     assert "bot_token_id" not in insert_params
+    assert "media_type" not in insert_params
+    assert "media_url" not in insert_params
 
 
 @pytest.mark.unit
@@ -97,6 +103,8 @@ def test_get_broadcast_selects_null_bot_token_id_when_column_missing(monkeypatch
         "scheduled_time_utc": "2026-02-19T23:00:00Z",
         "status": "pending",
         "bot_token_id": None,
+        "media_type": None,
+        "media_url": None,
         "created_at_utc": "2026-02-19T23:00:00Z",
         "updated_at_utc": "2026-02-19T23:00:00Z",
     }
@@ -126,6 +134,10 @@ def test_get_broadcast_selects_null_bot_token_id_when_column_missing(monkeypatch
 
     assert broadcast is not None
     assert broadcast.bot_token_id is None
+    assert broadcast.media_type is None
+    assert broadcast.media_url is None
     assert len(fake_session.calls) == 1
     select_sql, _ = fake_session.calls[0]
     assert "NULL AS bot_token_id" in select_sql
+    assert "NULL AS media_type" in select_sql
+    assert "NULL AS media_url" in select_sql

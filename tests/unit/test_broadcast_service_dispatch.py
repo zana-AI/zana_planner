@@ -33,6 +33,8 @@ async def test_execute_broadcast_from_db_uses_default_bot_token(monkeypatch):
         scheduled_time_utc=now,
         status="pending",
         bot_token_id=None,
+        media_type="image",
+        media_url="https://example.com/image.jpg",
         created_at=now,
         updated_at=now,
     )
@@ -41,13 +43,23 @@ async def test_execute_broadcast_from_db_uses_default_bot_token(monkeypatch):
 
     send_calls = []
 
-    async def _fake_send(response_service, user_ids, message, rate_limit_delay=0.05, bot_token=None):
+    async def _fake_send(
+        response_service,
+        user_ids,
+        message,
+        rate_limit_delay=0.05,
+        bot_token=None,
+        media_type=None,
+        media_url=None,
+    ):
         send_calls.append(
             {
                 "response_service": response_service,
                 "user_ids": user_ids,
                 "message": message,
                 "bot_token": bot_token,
+                "media_type": media_type,
+                "media_url": media_url,
             }
         )
         return {"success": len(user_ids), "failed": 0}
@@ -63,6 +75,8 @@ async def test_execute_broadcast_from_db_uses_default_bot_token(monkeypatch):
     assert result == {"success": 2, "failed": 0}
     assert len(send_calls) == 1
     assert send_calls[0]["bot_token"] == "fallback-token"
+    assert send_calls[0]["media_type"] == "image"
+    assert send_calls[0]["media_url"] == "https://example.com/image.jpg"
     assert fake_broadcast.status == "completed"
 
 
@@ -77,6 +91,8 @@ async def test_execute_broadcast_from_db_without_delivery_channel_raises(monkeyp
         scheduled_time_utc=now,
         status="pending",
         bot_token_id=None,
+        media_type=None,
+        media_url=None,
         created_at=now,
         updated_at=now,
     )

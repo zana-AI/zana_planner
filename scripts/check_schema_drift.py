@@ -116,7 +116,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         # 006 added bot_token_id
         "broadcast_id", "admin_id", "message", "target_user_ids",
         "scheduled_time_utc", "status", "created_at_utc",
-        "updated_at_utc", "bot_token_id",
+        "updated_at_utc", "bot_token_id", "media_type", "media_url",
     ],
     "promise_templates": [
         # 004 dropped: program_key, level, why, done, effort, template_kind,

@@ -88,6 +88,8 @@ class Broadcast:
     scheduled_time_utc: datetime
     status: str = "pending"  # "pending" | "completed" | "cancelled"
     bot_token_id: Optional[str] = None  # ID of the bot token to use for this broadcast
+    media_type: Optional[str] = None  # "image" for now; reserved for future media support
+    media_url: Optional[str] = None  # Public URL or data URL payload
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

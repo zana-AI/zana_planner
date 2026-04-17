@@ -267,6 +267,8 @@ export interface Broadcast {
   scheduled_time_utc: string;
   status: 'pending' | 'completed' | 'cancelled';
   bot_token_id?: string;
+  media_type?: 'image' | 'video';
+  media_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -278,6 +280,8 @@ export interface CreateBroadcastRequest {
   bot_token_id?: string;
   translate_to_user_language?: boolean;
   source_language?: string;
+  media_type?: 'image' | 'video';
+  media_url?: string;
 }
 
 export interface BotToken {
@@ -293,6 +297,8 @@ export interface UpdateBroadcastRequest {
   message?: string;
   target_user_ids?: number[];
   scheduled_time_utc?: string;
+  media_type?: 'image' | 'video';
+  media_url?: string;
 }
 
 // Template types (simplified schema)

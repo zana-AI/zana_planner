@@ -305,6 +305,8 @@ class CreateBroadcastRequest(BaseModel):
     bot_token_id: Optional[str] = None  # Optional bot token ID to use for this broadcast
     translate_to_user_language: bool = False
     source_language: str = "en"
+    media_type: Optional[str] = None  # currently supports "image"
+    media_url: Optional[str] = None  # public URL or data URL
 
 
 class UpdateBroadcastRequest(BaseModel):
@@ -312,6 +314,8 @@ class UpdateBroadcastRequest(BaseModel):
     message: Optional[str] = None
     target_user_ids: Optional[List[int]] = None
     scheduled_time_utc: Optional[str] = None  # ISO format datetime string
+    media_type: Optional[str] = None
+    media_url: Optional[str] = None
 
 
 class BroadcastResponse(BaseModel):
@@ -323,6 +327,8 @@ class BroadcastResponse(BaseModel):
     scheduled_time_utc: str
     status: str
     bot_token_id: Optional[str] = None
+    media_type: Optional[str] = None
+    media_url: Optional[str] = None
     created_at: str
     updated_at: str
 

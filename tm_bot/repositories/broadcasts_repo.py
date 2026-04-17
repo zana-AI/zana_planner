@@ -30,6 +30,12 @@ class BroadcastsRepository:
         """Return True when broadcasts.bot_token_id exists."""
         return "bot_token_id" in set(get_table_columns(session, "broadcasts"))
 
+    @staticmethod
+    def _has_media_columns(session) -> bool:
+        """Return True when broadcasts.media_type/media_url exist."""
+        cols = set(get_table_columns(session, "broadcasts"))
+        return "media_type" in cols and "media_url" in cols
+
     def create_broadcast(
         self,
         admin_id: int,
@@ -37,6 +43,8 @@ class BroadcastsRepository:
         target_user_ids: List[int],
         scheduled_time_utc: datetime,
         bot_token_id: Optional[str] = None,
+        media_type: Optional[str] = None,
+        media_url: Optional[str] = None,
     ) -> str:
         """
         Create a new broadcast.
@@ -60,7 +68,36 @@ class BroadcastsRepository:
         scheduled_time_str = dt_to_utc_iso(scheduled_time_utc)
         
         with get_db_session() as session:
-            if self._has_bot_token_column(session):
+            has_bot_token_column = self._has_bot_token_column(session)
+            has_media_columns = self._has_media_columns(session)
+
+            if has_bot_token_column and has_media_columns:
+                session.execute(
+                    text("""
+                        INSERT INTO broadcasts(
+                            broadcast_id, admin_id, message, target_user_ids,
+                            scheduled_time_utc, status, bot_token_id, media_type, media_url,
+                            created_at_utc, updated_at_utc
+                        ) VALUES (
+                            :broadcast_id, :admin_id, :message, :target_user_ids,
+                            :scheduled_time_utc, 'pending', :bot_token_id, :media_type, :media_url,
+                            :created_at_utc, :updated_at_utc
+                        );
+                    """),
+                    {
+                        "broadcast_id": broadcast_id,
+                        "admin_id": admin,
+                        "message": message,
+                        "target_user_ids": target_ids_json,
+                        "scheduled_time_utc": scheduled_time_str,
+                        "bot_token_id": bot_token_id,
+                        "media_type": media_type,
+                        "media_url": media_url,
+                        "created_at_utc": now,
+                        "updated_at_utc": now,
+                    },
+                )
+            elif has_bot_token_column:
                 session.execute(
                     text("""
                         INSERT INTO broadcasts(
@@ -88,6 +125,10 @@ class BroadcastsRepository:
                 if bot_token_id:
                     logger.warning(
                         "broadcasts.bot_token_id column is missing; creating broadcast without custom bot token"
+                    )
+                if media_type or media_url:
+                    logger.warning(
+                        "broadcasts media columns are missing; creating broadcast without media"
                     )
                 session.execute(
                     text("""
@@ -120,10 +161,13 @@ class BroadcastsRepository:
             bot_token_select = (
                 "bot_token_id" if self._has_bot_token_column(session) else "NULL AS bot_token_id"
             )
+            media_select = (
+                "media_type, media_url" if self._has_media_columns(session) else "NULL AS media_type, NULL AS media_url"
+            )
             row = session.execute(
                 text(f"""
                     SELECT broadcast_id, admin_id, message, target_user_ids,
-                           scheduled_time_utc, status, {bot_token_select},
+                           scheduled_time_utc, status, {bot_token_select}, {media_select},
                            created_at_utc, updated_at_utc
                     FROM broadcasts
                     WHERE broadcast_id = :broadcast_id
@@ -146,6 +190,8 @@ class BroadcastsRepository:
                 scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
                 status=row["status"],
                 bot_token_id=row.get("bot_token_id"),
+                media_type=row.get("media_type"),
+                media_url=row.get("media_url"),
                 created_at=dt_from_utc_iso(row["created_at_utc"]),
                 updated_at=dt_from_utc_iso(row["updated_at_utc"]),
             )
@@ -168,6 +214,7 @@ class BroadcastsRepository:
         
         with get_db_session() as session:
             has_bot_token_column = self._has_bot_token_column(session)
+            has_media_columns = self._has_media_columns(session)
             conditions = ["1=1"]
             params = {}
             
@@ -185,6 +232,7 @@ class BroadcastsRepository:
                 SELECT broadcast_id, admin_id, message, target_user_ids,
                        scheduled_time_utc, status,
                        {'bot_token_id' if has_bot_token_column else 'NULL AS bot_token_id'},
+                      {'media_type, media_url' if has_media_columns else 'NULL AS media_type, NULL AS media_url'},
                        created_at_utc, updated_at_utc
                 FROM broadcasts
                 WHERE {' AND '.join(conditions)}
@@ -206,6 +254,8 @@ class BroadcastsRepository:
                         scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
                         status=row["status"],
                         bot_token_id=row.get("bot_token_id"),
+                        media_type=row.get("media_type"),
+                        media_url=row.get("media_url"),
                         created_at=dt_from_utc_iso(row["created_at_utc"]),
                         updated_at=dt_from_utc_iso(row["updated_at_utc"]),
                     )
@@ -229,6 +279,7 @@ class BroadcastsRepository:
 
         with get_db_session() as session:
             has_bot_token_column = self._has_bot_token_column(session)
+            has_media_columns = self._has_media_columns(session)
             now_utc_iso = dt_to_utc_iso(now_utc)
             rows = session.execute(
                 text(
@@ -236,6 +287,7 @@ class BroadcastsRepository:
                     SELECT broadcast_id, admin_id, message, target_user_ids,
                            scheduled_time_utc, status,
                            {'bot_token_id' if has_bot_token_column else 'NULL AS bot_token_id'},
+                           {'media_type, media_url' if has_media_columns else 'NULL AS media_type, NULL AS media_url'},
                            created_at_utc, updated_at_utc
                     FROM broadcasts
                     WHERE status = 'pending'
@@ -258,6 +310,8 @@ class BroadcastsRepository:
                         scheduled_time_utc=dt_from_utc_iso(row["scheduled_time_utc"]),
                         status=row["status"],
                         bot_token_id=row.get("bot_token_id"),
+                        media_type=row.get("media_type"),
+                        media_url=row.get("media_url"),
                         created_at=dt_from_utc_iso(row["created_at_utc"]),
                         updated_at=dt_from_utc_iso(row["updated_at_utc"]),
                     )
@@ -273,6 +327,8 @@ class BroadcastsRepository:
         scheduled_time_utc: Optional[datetime] = None,
         status: Optional[str] = None,
         bot_token_id: Optional[str] = None,
+        media_type: Optional[str] = None,
+        media_url: Optional[str] = None,
     ) -> bool:
         """
         Update a broadcast.
@@ -302,6 +358,14 @@ class BroadcastsRepository:
         if bot_token_id is not None:
             updates.append("bot_token_id = :bot_token_id")
             params["bot_token_id"] = bot_token_id
+
+        if media_type is not None:
+            updates.append("media_type = :media_type")
+            params["media_type"] = media_type
+
+        if media_url is not None:
+            updates.append("media_url = :media_url")
+            params["media_url"] = media_url
         
         if not updates:
             return False
@@ -316,6 +380,18 @@ class BroadcastsRepository:
                 )
                 updates = [u for u in updates if u != "bot_token_id = :bot_token_id"]
                 params.pop("bot_token_id", None)
+
+            if (media_type is not None or media_url is not None) and not self._has_media_columns(session):
+                logger.warning(
+                    "broadcasts media columns are missing; skipping media update"
+                )
+                updates = [
+                    u
+                    for u in updates
+                    if u not in ("media_type = :media_type", "media_url = :media_url")
+                ]
+                params.pop("media_type", None)
+                params.pop("media_url", None)
 
             if not updates or updates == ["updated_at_utc = :updated_at_utc"]:
                 return False

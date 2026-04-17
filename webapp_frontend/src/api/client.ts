@@ -595,6 +595,54 @@ class ApiClient {
   /**
    * Create or schedule a broadcast (admin only).
    */
+  async uploadBroadcastMedia(file: File): Promise<{ media_type: 'image'; media_url: string }> {
+    const headers: Record<string, string> = {};
+    const token = this.authToken || localStorage.getItem('telegram_auth_token');
+    const isTelegramMiniApp = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
+
+    if (isTelegramMiniApp && this.initData) {
+      headers['X-Telegram-Init-Data'] = this.initData;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      if (!this.authToken) {
+        this.authToken = token;
+      }
+    } else if (this.initData) {
+      headers['X-Telegram-Init-Data'] = this.initData;
+    }
+
+    const formData = new FormData();
+    formData.append('media', file);
+
+    const response = await fetch(`${API_BASE}/admin/broadcast-media`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      let errorMessage: string;
+      if (errorData.detail) {
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (typeof errorData.detail === 'object') {
+          errorMessage = JSON.stringify(errorData.detail);
+        } else {
+          errorMessage = String(errorData.detail);
+        }
+      } else {
+        errorMessage = `HTTP error ${response.status}`;
+      }
+      throw new ApiError(response.status, errorMessage);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Create or schedule a broadcast (admin only).
+   */
   async createBroadcast(request: CreateBroadcastRequest): Promise<Broadcast> {
     return this.request<Broadcast>('/admin/broadcast', {
       method: 'POST',

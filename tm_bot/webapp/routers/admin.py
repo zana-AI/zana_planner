@@ -8,12 +8,14 @@ import subprocess
 import re
 import uuid
 import tempfile
+import shutil
 import threading
 import asyncio
 import html
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Literal
-from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from fastapi import APIRouter, HTTPException, Query, Depends, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, Response
 from ..dependencies import get_current_user, get_admin_user
 from ..schemas import (
@@ -68,6 +70,47 @@ _SAFE_EXPORT_LINK_RE = re.compile(r"^(https?://|mailto:|tg://|tg:)", re.IGNORECA
 _UNSAFE_EXPORT_TAG_RE = re.compile(r"<\s*/?\s*(script|style)[^>]*>", re.IGNORECASE)
 _UNSAFE_EXPORT_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL)
 _UNSAFE_EXPORT_JS_URL_RE = re.compile(r"javascript\s*:", re.IGNORECASE)
+
+_BROADCAST_MEDIA_DIR = Path(tempfile.gettempdir()) / "zana_broadcast_media"
+_BROADCAST_MEDIA_MAX_BYTES = 10 * 1024 * 1024
+_ALLOWED_BROADCAST_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+
+def _ensure_broadcast_media_dir() -> Path:
+    _BROADCAST_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    return _BROADCAST_MEDIA_DIR
+
+
+def _to_local_media_ref(filename: str) -> str:
+    return f"local://{filename}"
+
+
+def _resolve_local_media_ref(media_ref: Optional[str]) -> Optional[Path]:
+    if not media_ref or not media_ref.startswith("local://"):
+        return None
+    filename = media_ref[len("local://"):].strip()
+    if not filename:
+        return None
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return None
+    return _ensure_broadcast_media_dir() / filename
+
+
+def _cleanup_local_media_ref(media_ref: Optional[str]) -> None:
+    path = _resolve_local_media_ref(media_ref)
+    if not path:
+        return
+    try:
+        if path.exists():
+            path.unlink()
+    except Exception as e:
+        logger.warning("Failed to delete local broadcast media %s: %s", path, e)
 
 
 def _valid_telegram_invite_link(link: str) -> bool:
@@ -832,6 +875,23 @@ async def create_broadcast(
         if not broadcast_request.target_user_ids:
             raise HTTPException(status_code=400, detail="At least one target user must be selected")
 
+        # Validate media payload (currently image-only).
+        media_type = (broadcast_request.media_type or "").strip().lower() or None
+        media_url = (broadcast_request.media_url or "").strip() or None
+        if media_type and media_type != "image":
+            raise HTTPException(status_code=400, detail="Unsupported media_type. Currently only 'image' is supported")
+        if media_type and not media_url:
+            raise HTTPException(status_code=400, detail="media_url is required when media_type is provided")
+        if media_url and not media_type:
+            media_type = "image"
+        if media_url and not media_url.startswith("local://"):
+            raise HTTPException(status_code=400, detail="media_url must be a local media reference. Upload via /api/admin/broadcast-media first")
+
+        source_media_path = _resolve_local_media_ref(media_url)
+        if media_type == "image":
+            if not source_media_path or not source_media_path.exists():
+                raise HTTPException(status_code=400, detail="Uploaded media file not found on server. Please upload again")
+
         # Get all valid users
         all_users = get_all_users_from_db()
         valid_user_ids = [uid for uid in broadcast_request.target_user_ids if uid in all_users]
@@ -884,29 +944,42 @@ async def create_broadcast(
         broadcast_ids_by_language: Dict[str, str] = {}
         translated_cache: Dict[str, str] = {}
 
-        for target_lang, group_ids in user_groups.items():
-            if not group_ids:
-                continue
+        try:
+            for target_lang, group_ids in user_groups.items():
+                if not group_ids:
+                    continue
 
-            message = broadcast_request.message
-            if translate_to_user_language and target_lang != source_language:
-                if target_lang not in translated_cache:
-                    translated_cache[target_lang] = translate_text(
-                        message,
-                        target_lang,
-                        source_language,
-                    )
-                message = translated_cache[target_lang]
+                message = broadcast_request.message
+                if translate_to_user_language and target_lang != source_language:
+                    if target_lang not in translated_cache:
+                        translated_cache[target_lang] = translate_text(
+                            message,
+                            target_lang,
+                            source_language,
+                        )
+                    message = translated_cache[target_lang]
 
-            broadcast_id = broadcasts_repo.create_broadcast(
-                admin_id=admin_id,
-                message=message,
-                target_user_ids=group_ids,
-                scheduled_time_utc=scheduled_dt,
-                bot_token_id=broadcast_request.bot_token_id,
-            )
-            broadcast_ids.append(broadcast_id)
-            broadcast_ids_by_language[target_lang] = broadcast_id
+                group_media_ref = media_url
+                if media_type == "image" and source_media_path:
+                    cloned_name = f"{uuid.uuid4()}{source_media_path.suffix.lower() or '.img'}"
+                    cloned_path = _ensure_broadcast_media_dir() / cloned_name
+                    shutil.copyfile(source_media_path, cloned_path)
+                    group_media_ref = _to_local_media_ref(cloned_name)
+
+                broadcast_id = broadcasts_repo.create_broadcast(
+                    admin_id=admin_id,
+                    message=message,
+                    target_user_ids=group_ids,
+                    scheduled_time_utc=scheduled_dt,
+                    bot_token_id=broadcast_request.bot_token_id,
+                    media_type=media_type,
+                    media_url=group_media_ref,
+                )
+                broadcast_ids.append(broadcast_id)
+                broadcast_ids_by_language[target_lang] = broadcast_id
+        finally:
+            if media_url:
+                _cleanup_local_media_ref(media_url)
 
         if not broadcast_ids:
             raise HTTPException(status_code=500, detail="Failed to create broadcast")
@@ -948,6 +1021,8 @@ async def create_broadcast(
             scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
             status=broadcast.status,
             bot_token_id=broadcast.bot_token_id,
+            media_type=broadcast.media_type,
+            media_url=broadcast.media_url,
             created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
             updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
         )
@@ -994,6 +1069,8 @@ async def list_broadcasts(
                 scheduled_time_utc=b.scheduled_time_utc.isoformat(),
                 status=b.status,
                 bot_token_id=b.bot_token_id,
+                media_type=b.media_type,
+                media_url=b.media_url,
                 created_at=b.created_at.isoformat() if b.created_at else "",
                 updated_at=b.updated_at.isoformat() if b.updated_at else "",
             )
@@ -1042,6 +1119,8 @@ async def get_broadcast(
             scheduled_time_utc=broadcast.scheduled_time_utc.isoformat(),
             status=broadcast.status,
             bot_token_id=broadcast.bot_token_id,
+            media_type=broadcast.media_type,
+            media_url=broadcast.media_url,
             created_at=broadcast.created_at.isoformat() if broadcast.created_at else "",
             updated_at=broadcast.updated_at.isoformat() if broadcast.updated_at else "",
         )
@@ -1103,6 +1182,21 @@ async def update_broadcast(
                     raise HTTPException(status_code=400, detail="Scheduled time cannot be in the past")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"Invalid scheduled_time_utc format: {e}")
+
+        # Validate media payload (currently image-only).
+        media_type = None
+        media_url = None
+        if update_request.media_type is not None:
+            media_type = update_request.media_type.strip().lower() or ""
+            if media_type and media_type != "image":
+                raise HTTPException(status_code=400, detail="Unsupported media_type. Currently only 'image' is supported")
+            if media_type == "":
+                media_type = None
+        if update_request.media_url is not None:
+            media_url = update_request.media_url.strip() or None
+
+        if media_type is not None and media_type and media_url is None:
+            raise HTTPException(status_code=400, detail="media_url is required when media_type is provided")
         
         # Update broadcast
         success = broadcasts_repo.update_broadcast(
@@ -1110,6 +1204,8 @@ async def update_broadcast(
             message=update_request.message,
             target_user_ids=update_request.target_user_ids,
             scheduled_time_utc=scheduled_dt,
+            media_type=media_type,
+            media_url=media_url,
         )
         
         if not success:
@@ -1128,6 +1224,8 @@ async def update_broadcast(
             scheduled_time_utc=updated_broadcast.scheduled_time_utc.isoformat(),
             status=updated_broadcast.status,
             bot_token_id=updated_broadcast.bot_token_id,
+            media_type=updated_broadcast.media_type,
+            media_url=updated_broadcast.media_url,
             created_at=updated_broadcast.created_at.isoformat() if updated_broadcast.created_at else "",
             updated_at=updated_broadcast.updated_at.isoformat() if updated_broadcast.updated_at else "",
         )
@@ -1175,6 +1273,9 @@ async def cancel_broadcast(
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to cancel broadcast")
+
+        # Clean up local media for cancelled broadcasts.
+        _cleanup_local_media_ref(getattr(broadcast, "media_url", None))
         
         return {"status": "success", "message": "Broadcast cancelled successfully"}
         
@@ -1183,6 +1284,42 @@ async def cancel_broadcast(
     except Exception as e:
         logger.exception(f"Error cancelling broadcast: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to cancel broadcast: {str(e)}")
+
+
+@router.post("/broadcast-media")
+async def upload_broadcast_media(
+    request: Request,
+    media: UploadFile = File(...),
+    admin_id: int = Depends(get_admin_user),
+):
+    """Upload broadcast media to local VM storage and return a local reference."""
+    try:
+        content_type = str(media.content_type or "").lower()
+        if content_type not in _ALLOWED_BROADCAST_IMAGE_TYPES:
+            raise HTTPException(status_code=400, detail="Unsupported image type. Use JPG, PNG, WEBP, or GIF")
+
+        payload = await media.read()
+        if not payload:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        if len(payload) > _BROADCAST_MEDIA_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="Image too large. Max size is 10MB")
+
+        suffix = _ALLOWED_BROADCAST_IMAGE_TYPES[content_type]
+        filename = f"{uuid.uuid4()}{suffix}"
+        dst = _ensure_broadcast_media_dir() / filename
+        with open(dst, "wb") as f:
+            f.write(payload)
+
+        logger.info("Admin %s uploaded broadcast media %s", admin_id, dst.name)
+        return {
+            "media_type": "image",
+            "media_url": _to_local_media_ref(filename),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error uploading broadcast media: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to upload media")
 
 
 @router.get("/templates")

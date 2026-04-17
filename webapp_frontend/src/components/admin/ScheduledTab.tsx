@@ -57,6 +57,18 @@ export function ScheduledTab({ broadcasts, loadingBroadcasts, onRefresh }: Sched
               <span className="admin-broadcast-time">{new Date(broadcast.scheduled_time_utc).toLocaleString()}</span>
             </div>
             <div className="admin-broadcast-message">{broadcast.message}</div>
+            {broadcast.media_type === 'image' && broadcast.media_url && !broadcast.media_url.startsWith('local://') ? (
+              <div style={{ marginTop: 10 }}>
+                <img
+                  src={broadcast.media_url}
+                  alt="Broadcast attachment"
+                  style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)' }}
+                />
+              </div>
+            ) : null}
+            {broadcast.media_type === 'image' && broadcast.media_url && broadcast.media_url.startsWith('local://') ? (
+              <div className="admin-broadcast-meta">Image attachment uploaded to server</div>
+            ) : null}
             <div className="admin-broadcast-meta">To {broadcast.target_user_ids.length} user(s)</div>
             {broadcast.status === 'pending' ? (
               <button className="admin-cancel-btn" onClick={() => cancelBroadcast(broadcast.broadcast_id)}>
