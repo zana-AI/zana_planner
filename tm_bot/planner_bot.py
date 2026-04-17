@@ -266,8 +266,16 @@ class PlannerBot:
             user_id = update.effective_user.id if update.effective_user else 0
             chat_id = update.effective_chat.id if update.effective_chat else user_id
             message_id = msg.message_id if msg else None
+            if update.effective_chat:
+                metadata["chat_type"] = getattr(update.effective_chat, "type", None)
 
-            if getattr(msg, "pinned_message", None):
+            if getattr(msg, "new_chat_members", None):
+                input_type = "new_chat_members"
+                metadata["new_chat_members"] = msg.new_chat_members
+            elif getattr(msg, "left_chat_member", None):
+                input_type = "left_chat_member"
+                metadata["left_chat_member"] = msg.left_chat_member
+            elif getattr(msg, "pinned_message", None):
                 input_type = "pinned_message"
                 metadata["pinned_message"] = msg.pinned_message
             elif getattr(msg, "voice", None):
@@ -379,6 +387,19 @@ class PlannerBot:
                     chat_id=ctx.chat_id,
                 )
 
+            if self._is_group_chat(ctx) and ctx.input_type in {
+                "command",
+                "text",
+                "voice",
+                "image",
+                "location",
+                "poll",
+                "new_chat_members",
+                "left_chat_member",
+            }:
+                await self._handle_group_input(ctx)
+                return
+
             # Ack policy: send "Thinking..." only for LLM-bound types when response will be editable text
             processing_msg = None
             llm_bound = ctx.input_type in ("text", "voice", "image")
@@ -430,11 +451,108 @@ class PlannerBot:
             if ctx.input_type == "chat_member":
                 await self._on_chat_member(ctx)
                 return
+            if ctx.input_type in {"new_chat_members", "left_chat_member"}:
+                return
 
             logger.warning("dispatch: unhandled input_type=%s", ctx.input_type)
             await self._route_to_agent(ctx)
         finally:
             await self._cleanup_orphan_processing_message(context)
+
+    def _is_group_chat(self, ctx: InputContext) -> bool:
+        chat_type = ctx.metadata.get("chat_type")
+        if chat_type in {"group", "supergroup"}:
+            return True
+        chat = getattr(ctx.platform_update, "effective_chat", None)
+        if chat and getattr(chat, "type", None) in {"group", "supergroup"}:
+            return True
+        return bool(ctx.chat_id and ctx.chat_id < 0)
+
+    async def _handle_group_input(self, ctx: InputContext) -> None:
+        """Keep group behavior club-scoped and avoid personal assistant routing."""
+        if ctx.input_type == "new_chat_members":
+            await self._welcome_group_members(ctx)
+            return
+
+        if ctx.input_type == "command":
+            command = (ctx.command or "").split("@", 1)[0].lower()
+            if command in {"club", "promise", "status"}:
+                await self._reply_with_group_club_summary(ctx)
+            return
+
+        text_value = (ctx.raw_text or "").strip().lower()
+        if text_value in {"club", "promise", "status"}:
+            await self._reply_with_group_club_summary(ctx)
+
+    async def _welcome_group_members(self, ctx: InputContext) -> None:
+        members = ctx.metadata.get("new_chat_members") or []
+        human_names = []
+        for member in members:
+            if getattr(member, "is_bot", False):
+                continue
+            name = (getattr(member, "first_name", "") or getattr(member, "username", "") or "").strip()
+            if name:
+                human_names.append(name)
+        if not human_names:
+            return
+
+        club = self._get_club_for_group_chat(ctx.chat_id)
+        if not club:
+            return
+
+        promise_line = f"Shared promise: {club['promise_text']}" if club.get("promise_text") else "Shared promise is being set up."
+        message = "\n".join([
+            f"Welcome {', '.join(human_names)}.",
+            f"This group is connected to {club['club_name']} on Xaana.",
+            promise_line,
+            "Use /club to see the club promise here.",
+        ])
+        await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text=message, parse_mode=None)
+
+    async def _reply_with_group_club_summary(self, ctx: InputContext) -> None:
+        club = self._get_club_for_group_chat(ctx.chat_id)
+        if not club:
+            return
+
+        lines = [f"Club: {club['club_name']}"]
+        if club.get("promise_text"):
+            lines.append(f"Promise: {club['promise_text']}")
+        if club.get("target_count_per_week") is not None:
+            target = float(club["target_count_per_week"])
+            target_text = str(int(target)) if target.is_integer() else str(target)
+            lines.append(f"Target: {target_text} times/week")
+        lines.append("I only share club-level promise info in this group.")
+        await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text="\n".join(lines), parse_mode=None)
+
+    def _get_club_for_group_chat(self, chat_id: int) -> Optional[dict]:
+        if not chat_id:
+            return None
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            row = session.execute(
+                text("""
+                    SELECT
+                        c.club_id,
+                        c.name AS club_name,
+                        p.text AS promise_text,
+                        pi.target_value AS target_count_per_week
+                    FROM clubs c
+                    LEFT JOIN promise_club_shares pcs ON pcs.club_id = c.club_id
+                    LEFT JOIN promises p
+                        ON p.promise_uuid = pcs.promise_uuid
+                       AND p.is_deleted = 0
+                    LEFT JOIN promise_instances pi
+                        ON pi.promise_uuid = p.promise_uuid
+                       AND pi.user_id = p.user_id
+                       AND pi.status = 'active'
+                    WHERE c.telegram_chat_id = :chat_id
+                      AND c.telegram_status IN ('ready', 'connected')
+                    ORDER BY COALESCE(c.telegram_ready_at_utc, c.created_at_utc) DESC
+                    LIMIT 1;
+                """),
+                {"chat_id": str(chat_id)},
+            ).mappings().fetchone()
+        return dict(row) if row else None
 
     async def _cleanup_orphan_processing_message(self, context) -> None:
         """Delete a leftover processing message that was not consumed by handlers."""
@@ -756,6 +874,12 @@ class PlannerBot:
         # Pinned message (service message) -> dispatch
         self.application.add_handler(
             MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, self.dispatch)
+        )
+        self.application.add_handler(
+            MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.dispatch)
+        )
+        self.application.add_handler(
+            MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, self.dispatch)
         )
 
         # Callback query handler -> dispatch
