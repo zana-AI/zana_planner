@@ -251,7 +251,7 @@ export function HomePage() {
           </div>
           <div className="home-additional-item">
             <span className="home-additional-icon"><Timer size={26} strokeWidth={1.6} /></span>
-            <span className="home-additional-text">Pomodoro Sessions</span>
+            <span className="home-additional-text">Focus Sessions</span>
           </div>
           <div className="home-additional-item">
             <span className="home-additional-icon"><Bell size={26} strokeWidth={1.6} /></span>
