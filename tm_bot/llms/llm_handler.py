@@ -2500,6 +2500,7 @@ class LLMHandler:
             club_name = str(group_context.get("club_name") or "this club").strip()
             promise_text = str(group_context.get("promise_text") or "").strip()
             target_text = str(group_context.get("target_text") or "").strip()
+            recent_messages = group_context.get("recent_messages") or []
 
             context_lines = [
                 f"Club name: {club_name}",
@@ -2507,6 +2508,17 @@ class LLMHandler:
             ]
             if target_text:
                 context_lines.append(f"Weekly target: {target_text}")
+
+            recent_lines: List[str] = []
+            if isinstance(recent_messages, list):
+                for item in recent_messages[-16:]:
+                    if not isinstance(item, dict):
+                        continue
+                    sender = str(item.get("sender_name") or "Someone").strip()[:80]
+                    text = str(item.get("text") or "").strip()
+                    if not text:
+                        continue
+                    recent_lines.append(f"{sender}: {text[:500]}")
 
             language_line = (
                 f"Reply in the user's language when clear. User language preference: {user_language}."
@@ -2517,6 +2529,7 @@ class LLMHandler:
             system_text = "\n".join([
                 "You are Xaana replying inside a Telegram group connected to a Xaana club.",
                 "Use only the club-level context below and general knowledge.",
+                "You may use the recent group transcript below because those messages were visible in this Telegram group.",
                 "Do not use or mention private user data, private promises, private memories, settings, or DM history.",
                 "Do not claim you can see private information about any member.",
                 "Do not create, update, delete, or log personal promises from a group message.",
@@ -2526,6 +2539,9 @@ class LLMHandler:
                 "",
                 "Club-level context:",
                 *context_lines,
+                "",
+                "Recent visible group messages:",
+                *(recent_lines or ["No recent group messages."]),
             ])
             messages: List[BaseMessage] = [
                 SystemMessage(content=system_text),

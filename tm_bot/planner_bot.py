@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+from collections import defaultdict, deque
 from typing import Optional
 from unittest.mock import Mock
 
@@ -91,6 +92,7 @@ class PlannerBot:
         self.platform_adapter = platform_adapter
         self.root_dir = root_dir
         self.miniapp_url = miniapp_url
+        self._group_chat_history = defaultdict(lambda: deque(maxlen=40))
         
         # Initialize core components
         self.llm_handler = LLMHandler()
@@ -475,6 +477,9 @@ class PlannerBot:
             await self._welcome_group_members(ctx)
             return
 
+        if ctx.input_type == "text":
+            self._record_group_visible_message(ctx)
+
         if ctx.input_type == "command":
             command = (ctx.command or "").split("@", 1)[0].lower()
             if command in {"start", "club", "promise", "status"}:
@@ -566,6 +571,7 @@ class PlannerBot:
                 "club_name": club.get("club_name"),
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
+                "recent_messages": self._get_recent_group_messages(ctx),
             },
             ctx.language.value if ctx.language else None,
         )
@@ -611,6 +617,31 @@ class PlannerBot:
             cleaned = cleaned.replace(f"/{ctx.command}", "", 1).strip()
 
         return cleaned.strip() or "The user addressed you in the group."
+
+    def _record_group_visible_message(self, ctx: InputContext) -> None:
+        if not ctx.chat_id or not ctx.raw_text:
+            return
+
+        sender = getattr(ctx.platform_update, "effective_user", None)
+        sender_name = (
+            getattr(sender, "first_name", None)
+            or getattr(sender, "username", None)
+            or getattr(sender, "full_name", None)
+            or "Someone"
+        )
+        text_value = str(ctx.raw_text or "").strip()
+        if not text_value:
+            return
+
+        self._group_chat_history[ctx.chat_id].append({
+            "sender_name": str(sender_name).strip()[:80] or "Someone",
+            "text": text_value[:800],
+        })
+
+    def _get_recent_group_messages(self, ctx: InputContext) -> list[dict[str, str]]:
+        if not ctx.chat_id:
+            return []
+        return list(self._group_chat_history.get(ctx.chat_id, []))[-16:]
 
     async def _message_addresses_bot(self, ctx: InputContext) -> bool:
         message = getattr(ctx.platform_update, "effective_message", None)
