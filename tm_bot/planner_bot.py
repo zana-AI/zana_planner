@@ -40,6 +40,7 @@ from utils.bot_utils import BotUtils
 from utils.admin_utils import get_admin_ids
 from utils.logger import get_logger, configure_admin_error_notifications
 from db.postgres_db import get_db_session, utc_now_iso
+from repositories.clubs_repo import ensure_club_telegram_columns, get_club_columns
 
 logger = get_logger(__name__)
 
@@ -624,15 +625,8 @@ class PlannerBot:
 
         now = utc_now_iso()
         with get_db_session() as session:
-            columns = session.execute(
-                text("""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = current_schema()
-                      AND table_name = 'clubs';
-                """),
-            ).fetchall()
-            club_columns = {row[0] for row in columns}
+            ensure_club_telegram_columns(session)
+            club_columns = get_club_columns(session)
 
             required = {"telegram_status", "telegram_invite_link", "telegram_ready_at_utc"}
             if not required.issubset(club_columns):

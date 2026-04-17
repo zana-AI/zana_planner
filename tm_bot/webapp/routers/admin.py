@@ -28,6 +28,7 @@ from repositories.promises_repo import PromisesRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.broadcasts_repo import BroadcastsRepository
 from repositories.bot_tokens_repo import BotTokensRepository
+from repositories.clubs_repo import ensure_club_telegram_columns
 from repositories.reminders_repo import RemindersRepository
 from services.reminder_dispatch import ReminderDispatchService
 from db.postgres_db import get_db_session, dt_to_utc_iso, utc_now_iso, resolve_promise_uuid
@@ -364,6 +365,7 @@ async def list_club_telegram_setup(
             params["status"] = "ready"
 
         with get_db_session() as session:
+            ensure_club_telegram_columns(session)
             rows = session.execute(
                 text(f"""
                     SELECT
@@ -428,6 +430,7 @@ async def update_club_telegram_link(
     now = utc_now_iso()
     try:
         with get_db_session() as session:
+            ensure_club_telegram_columns(session)
             row = session.execute(
                 text("""
                     SELECT club_id, owner_user_id, name

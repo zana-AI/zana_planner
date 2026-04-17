@@ -20,7 +20,7 @@ from ..schemas import (
     PublicPromiseBadge,
 )
 from models.models import Promise
-from repositories.clubs_repo import ClubsRepository
+from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns, get_club_columns
 from repositories.settings_repo import SettingsRepository
 from repositories.suggestions_repo import SuggestionsRepository
 from repositories.templates_repo import TemplatesRepository
@@ -125,15 +125,8 @@ def _create_club_promise(
 def _list_user_clubs(user_id: int) -> List[ClubSummary]:
     user = str(user_id)
     with get_db_session() as session:
-        columns = session.execute(
-            text("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = current_schema()
-                  AND table_name = 'clubs';
-            """),
-        ).fetchall()
-        club_columns = {row[0] for row in columns}
+        ensure_club_telegram_columns(session)
+        club_columns = get_club_columns(session)
 
         telegram_status_select = (
             "c.telegram_status"

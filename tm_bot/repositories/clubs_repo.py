@@ -6,6 +6,39 @@ from sqlalchemy import text
 from db.postgres_db import get_db_session, utc_now_iso
 
 
+_CLUB_TELEGRAM_COLUMNS_CHECKED = False
+
+
+def ensure_club_telegram_columns(session) -> None:
+    """Best-effort runtime guard for deployments where Alembic has not run yet."""
+    global _CLUB_TELEGRAM_COLUMNS_CHECKED
+    if _CLUB_TELEGRAM_COLUMNS_CHECKED:
+        return
+
+    for ddl in (
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_status TEXT NOT NULL DEFAULT 'not_connected'",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_invite_link TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_requested_at_utc TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_ready_at_utc TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_setup_by_admin_id TEXT",
+    ):
+        session.execute(text(ddl))
+    _CLUB_TELEGRAM_COLUMNS_CHECKED = True
+
+
+def get_club_columns(session) -> set[str]:
+    rows = session.execute(
+        text("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'clubs';
+        """),
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
 class ClubsRepository:
     """Repository for managing clubs (groups) and memberships."""
 
@@ -28,15 +61,8 @@ class ClubsRepository:
         now = utc_now_iso()
         
         with get_db_session() as session:
-            columns = session.execute(
-                text("""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = current_schema()
-                      AND table_name = 'clubs';
-                """),
-            ).fetchall()
-            club_columns = {row[0] for row in columns}
+            ensure_club_telegram_columns(session)
+            club_columns = get_club_columns(session)
 
             has_telegram_columns = (
                 "telegram_status" in club_columns
