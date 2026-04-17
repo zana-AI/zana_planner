@@ -6,6 +6,7 @@ interface WeeklyReportProps {
   data: WeeklyReportData;
   onRefresh?: () => void; // Callback to refresh data
   hideHeader?: boolean; // Hide header when used in dashboard sections
+  onCreatePromise?: () => void;
 }
 
 /**
@@ -49,7 +50,7 @@ function getWeekDays(weekStart: string): string[] {
 /**
  * WeeklyReport component - displays the full weekly report with header and promise cards
  */
-export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyReportProps) {
+export function WeeklyReport({ data, onRefresh, hideHeader = false, onCreatePromise }: WeeklyReportProps) {
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
   const dateRange = useMemo(
@@ -194,13 +195,27 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false }: WeeklyRepo
               onRefresh={onRefresh}
             />
           ))}
+          {onCreatePromise ? (
+            <button className="create-promise-card" type="button" onClick={onCreatePromise}>
+              <span className="create-promise-card-icon">+</span>
+              <span className="create-promise-card-title">New Promise</span>
+              <span className="create-promise-card-subtitle">Add a custom weekly commitment</span>
+            </button>
+          ) : null}
         </main>
       ) : (
         <div className="empty-state">
           <h2 className="empty-title" dir="auto">No data available for this week</h2>
           <p className="empty-subtitle">
-            Start tracking your promises in the Telegram bot to see your progress here.
+            {onCreatePromise
+              ? 'Create a custom promise to start tracking your week.'
+              : 'Start tracking your promises in the Telegram bot to see your progress here.'}
           </p>
+          {onCreatePromise ? (
+            <button className="create-promise-empty-button" type="button" onClick={onCreatePromise}>
+              New Promise
+            </button>
+          ) : null}
         </div>
       )}
     </div>

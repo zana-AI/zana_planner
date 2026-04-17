@@ -6,7 +6,7 @@ Handles all callback query processing from inline keyboards.
 import asyncio
 import io
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
@@ -323,6 +323,10 @@ class CallbackHandlers:
         elif action == "psess_del":
             plan_session_id = cb.get("sid")
             await self._handle_plan_session_delete(query, plan_session_id, user_lang)
+        elif action == "club_cancel":
+            await self._handle_club_cancel(query, cb.get("cid"), user_lang)
+        elif action == "club_remind":
+            await self._handle_club_remind(query, cb.get("cid"), user_lang)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -893,6 +897,141 @@ class CallbackHandlers:
         except Exception as e:
             logger.error(f"Failed to delete plan_session {plan_session_id}: {e}")
             await query.answer("Failed to delete. Please try from the app.", show_alert=True)
+
+    @staticmethod
+    def _parse_utc_datetime(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    def _get_pending_club_context(self, club_id: str, user_id: int) -> Optional[dict]:
+        if not club_id:
+            return None
+        from sqlalchemy import text
+        from db.postgres_db import get_db_session
+        from repositories.clubs_repo import ensure_club_telegram_columns
+
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            row = session.execute(
+                text("""
+                    SELECT
+                        c.club_id,
+                        c.owner_user_id,
+                        c.name,
+                        c.status,
+                        c.telegram_status,
+                        c.created_at_utc,
+                        c.telegram_requested_at_utc,
+                        c.telegram_last_admin_reminder_at_utc,
+                        p.text AS promise_text
+                    FROM clubs c
+                    LEFT JOIN promise_club_shares pcs ON pcs.club_id = c.club_id
+                    LEFT JOIN promises p
+                        ON p.promise_uuid = pcs.promise_uuid
+                       AND p.is_deleted = 0
+                    WHERE c.club_id = :club_id
+                    LIMIT 1;
+                """),
+                {"club_id": club_id},
+            ).mappings().fetchone()
+        if not row:
+            return None
+
+        club = dict(row)
+        if str(club.get("owner_user_id")) != str(user_id):
+            return None
+        return club
+
+    async def _handle_club_cancel(self, query, club_id: str, user_lang: Language):
+        """Cancel a pending club from the Telegram notification."""
+        user_id = query.from_user.id
+        try:
+            from repositories.clubs_repo import ClubsRepository
+
+            club = self._get_pending_club_context(club_id, user_id)
+            if not club:
+                await query.edit_message_text("This club request was not found.")
+                return
+
+            if str(club.get("telegram_status") or "") != "pending_admin_setup":
+                await query.edit_message_text("This club is no longer waiting for setup.")
+                return
+
+            cancelled = ClubsRepository().cancel_pending_club(club_id, user_id)
+            if not cancelled:
+                await query.edit_message_text("This club request could not be cancelled.")
+                return
+
+            await query.edit_message_text(
+                "Club request cancelled. You can create a new club later from Community.",
+                parse_mode=None,
+            )
+            logger.info("User %s cancelled pending club %s from Telegram", user_id, club_id)
+        except Exception as e:
+            logger.error("Error cancelling club %s for user %s: %s", club_id, user_id, e)
+            await query.edit_message_text("Could not cancel this club request. Please try again.")
+
+    async def _handle_club_remind(self, query, club_id: str, user_lang: Language):
+        """Remind admins about a pending club, with a one-hour cooldown."""
+        user_id = query.from_user.id
+        try:
+            from repositories.clubs_repo import ClubsRepository
+            from webapp.notifications import send_club_admin_reminder
+
+            club = self._get_pending_club_context(club_id, user_id)
+            if not club:
+                await query.edit_message_text("This club request was not found.")
+                return
+
+            if str(club.get("telegram_status") or "") != "pending_admin_setup":
+                await query.edit_message_text("This club is no longer waiting for setup.")
+                return
+
+            last_touch = (
+                self._parse_utc_datetime(club.get("telegram_last_admin_reminder_at_utc"))
+                or self._parse_utc_datetime(club.get("telegram_requested_at_utc"))
+                or self._parse_utc_datetime(club.get("created_at_utc"))
+            )
+            now = datetime.now(timezone.utc)
+            if last_touch and now - last_touch < timedelta(hours=1):
+                remaining = timedelta(hours=1) - (now - last_touch)
+                minutes = max(1, int((remaining.total_seconds() + 59) // 60))
+                await query.answer(
+                    f"The admin already has this request. You can remind again in about {minutes} min.",
+                    show_alert=True,
+                )
+                return
+
+            marked = ClubsRepository().mark_admin_reminded(club_id, user_id)
+            if not marked:
+                await query.edit_message_text("This club request is no longer waiting for setup.")
+                return
+
+            await send_club_admin_reminder(
+                bot_token=(
+                    getattr(self.application.bot, "token", None)
+                    or os.getenv("TELEGRAM_BOT_TOKEN")
+                    or os.getenv("BOT_TOKEN")
+                    or ""
+                ),
+                club_id=club_id,
+                club_name=str(club.get("name") or "Club"),
+                creator_user_id=user_id,
+                promise_text=str(club.get("promise_text") or "Shared promise"),
+                miniapp_url=self.miniapp_url,
+            )
+            await query.answer("Reminder sent to admin.", show_alert=True)
+            logger.info("User %s reminded admins about pending club %s", user_id, club_id)
+        except Exception as e:
+            logger.error("Error reminding admins about club %s for user %s: %s", club_id, user_id, e)
+            await query.answer("Could not send a reminder. Please try again.", show_alert=True)
 
     async def start_pomodoro_timer(self, query, context):
         """Start the Pomodoro timer."""

@@ -393,6 +393,15 @@ export interface CreateSuggestionRequest {
   message?: string;
 }
 
+export interface CreatePromiseRequest {
+  text: string;
+  hours_per_week: number;
+  recurring?: boolean;
+  start_date?: string;
+  end_date?: string;
+  visibility?: 'private' | 'public';
+}
+
 // Admin create promise types
 export interface DayReminder {
   weekday: number; // 0-6 (Monday-Sunday)

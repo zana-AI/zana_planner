@@ -195,6 +195,71 @@ body.modal-open {
   gap: 14px;
 }
 
+.create-promise-card {
+  width: 100%;
+  min-height: 132px;
+  padding: 18px;
+  border: 1px dashed rgba(91, 163, 245, 0.5);
+  border-radius: 8px;
+  background: rgba(15, 23, 48, 0.42);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.create-promise-card:hover {
+  border-color: rgba(91, 163, 245, 0.85);
+  background: rgba(91, 163, 245, 0.1);
+  transform: translateY(-1px);
+}
+
+.create-promise-card-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(91, 163, 245, 0.18);
+  color: #5ba3f5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.create-promise-card-title {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.create-promise-card-subtitle {
+  font-size: 0.86rem;
+  color: rgba(232, 238, 252, 0.68);
+}
+
+.create-promise-empty-button {
+  margin-top: 1rem;
+  min-height: 42px;
+  padding: 0.65rem 1.1rem;
+  border: 1px solid rgba(91, 163, 245, 0.45);
+  border-radius: 8px;
+  background: rgba(91, 163, 245, 0.14);
+  color: #5ba3f5;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.create-promise-empty-button:hover {
+  background: rgba(91, 163, 245, 0.22);
+}
+
 /* Force single column layout for dashboard (one card per row) */
 .dashboard .promises-grid {
   grid-template-columns: 1fr !important;

@@ -598,6 +598,7 @@ def _apply_v3(conn: sqlite3.Connection) -> None:
             telegram_invite_link TEXT NULL,
             telegram_chat_id TEXT NULL,
             telegram_requested_at_utc TEXT NULL,
+            telegram_last_admin_reminder_at_utc TEXT NULL,
             telegram_ready_at_utc TEXT NULL,
             telegram_setup_by_admin_id TEXT NULL,
             created_at_utc TEXT NOT NULL,
@@ -617,6 +618,7 @@ def _apply_v3(conn: sqlite3.Connection) -> None:
         ("telegram_invite_link", "TEXT NULL"),
         ("telegram_chat_id", "TEXT NULL"),
         ("telegram_requested_at_utc", "TEXT NULL"),
+        ("telegram_last_admin_reminder_at_utc", "TEXT NULL"),
         ("telegram_ready_at_utc", "TEXT NULL"),
         ("telegram_setup_by_admin_id", "TEXT NULL"),
     ]
@@ -1229,6 +1231,7 @@ def _apply_v10(conn: sqlite3.Connection) -> None:
         ("telegram_invite_link", "TEXT NULL"),
         ("telegram_chat_id", "TEXT NULL"),
         ("telegram_requested_at_utc", "TEXT NULL"),
+        ("telegram_last_admin_reminder_at_utc", "TEXT NULL"),
         ("telegram_ready_at_utc", "TEXT NULL"),
         ("telegram_setup_by_admin_id", "TEXT NULL"),
     ]

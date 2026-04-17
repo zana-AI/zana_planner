@@ -477,12 +477,15 @@ class PlannerBot:
 
         if ctx.input_type == "command":
             command = (ctx.command or "").split("@", 1)[0].lower()
-            if command in {"club", "promise", "status"}:
+            if command in {"start", "club", "promise", "status"}:
                 await self._reply_with_group_club_summary(ctx)
             return
 
         text_value = (ctx.raw_text or "").strip().lower()
         if text_value in {"club", "promise", "status"}:
+            await self._reply_with_group_club_summary(ctx)
+            return
+        if await self._message_addresses_bot(ctx):
             await self._reply_with_group_club_summary(ctx)
 
     async def _welcome_group_members(self, ctx: InputContext) -> None:
@@ -513,6 +516,9 @@ class PlannerBot:
     async def _reply_with_group_club_summary(self, ctx: InputContext) -> None:
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
+            club = self._link_ready_club_for_group_chat(ctx)
+        if not club:
+            await self._reply_with_group_setup_help(ctx)
             return
 
         lines = [f"Club: {club['club_name']}"]
@@ -524,6 +530,138 @@ class PlannerBot:
             lines.append(f"Target: {target_text} times/week")
         lines.append("I only share club-level promise info in this group.")
         await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text="\n".join(lines), parse_mode=None)
+
+    async def _reply_with_group_setup_help(self, ctx: InputContext) -> None:
+        message = "\n".join([
+            "I can help here after this Telegram group is connected to a Xaana club.",
+            "",
+            "If you just created the club, wait for admin approval and the group link.",
+            "If you are setting up the group, add me as an admin, then ask a Xaana admin to confirm the link.",
+            "",
+            "After it is connected, use /club here.",
+        ])
+        await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text=message, parse_mode=None)
+
+    async def _message_addresses_bot(self, ctx: InputContext) -> bool:
+        message = getattr(ctx.platform_update, "effective_message", None)
+        if not message:
+            return False
+
+        text_value = (getattr(message, "text", None) or getattr(message, "caption", None) or ctx.raw_text or "")
+        entities = list(getattr(message, "entities", None) or getattr(message, "caption_entities", None) or [])
+        reply_to_message = getattr(message, "reply_to_message", None)
+
+        needs_bot_identity = bool(
+            "@" in text_value
+            or entities
+            or reply_to_message
+        )
+        if not needs_bot_identity:
+            return False
+
+        username, bot_id = await self._resolve_bot_identity(ctx)
+
+        if username and f"@{username}" in text_value.lower():
+            return True
+
+        if reply_to_message:
+            reply_author = getattr(reply_to_message, "from_user", None)
+            if bot_id and getattr(reply_author, "id", None) == bot_id:
+                return True
+
+        for entity in entities:
+            entity_type = getattr(entity, "type", None)
+            if entity_type == "text_mention":
+                mentioned_user = getattr(entity, "user", None)
+                if bot_id and getattr(mentioned_user, "id", None) == bot_id:
+                    return True
+            if entity_type == "mention" and username:
+                try:
+                    mention_text = entity.extract_from(text_value)
+                except Exception:
+                    offset = int(getattr(entity, "offset", 0) or 0)
+                    length = int(getattr(entity, "length", 0) or 0)
+                    mention_text = text_value[offset:offset + length]
+                if mention_text.strip().lower() == f"@{username}":
+                    return True
+
+        return False
+
+    async def _resolve_bot_identity(self, ctx: InputContext) -> tuple[Optional[str], Optional[int]]:
+        bot = getattr(ctx.platform_context, "bot", None)
+        if not bot:
+            return None, None
+
+        username = (getattr(bot, "username", "") or "").strip().lower() or None
+        bot_id = getattr(bot, "id", None)
+        if username and bot_id:
+            return username, bot_id
+
+        try:
+            me = await bot.get_me()
+        except Exception as e:
+            logger.debug("Could not resolve bot identity for group mention detection: %s", e)
+            return username, bot_id
+
+        username = (getattr(me, "username", "") or "").strip().lower()
+        bot_id = getattr(me, "id", bot_id)
+        return username or None, bot_id
+
+    def _get_group_title(self, ctx: InputContext) -> str:
+        chat = getattr(ctx.platform_update, "effective_chat", None)
+        return (getattr(chat, "title", "") or "").strip()
+
+    def _link_ready_club_for_group_chat(self, ctx: InputContext) -> Optional[dict]:
+        if not ctx.chat_id or not ctx.user_id:
+            return None
+
+        group_title = self._get_group_title(ctx)
+        if not group_title:
+            return None
+
+        now = utc_now_iso()
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            club_columns = get_club_columns(session)
+            if not {"telegram_status", "telegram_chat_id"}.issubset(club_columns):
+                return None
+
+            rows = session.execute(
+                text("""
+                    SELECT club_id
+                    FROM clubs
+                    WHERE owner_user_id = :owner_user_id
+                      AND COALESCE(status, 'active') = 'active'
+                      AND telegram_status = 'ready'
+                      AND NULLIF(trim(COALESCE(telegram_chat_id, '')), '') IS NULL
+                      AND lower(trim(name)) = lower(trim(:group_name))
+                    ORDER BY COALESCE(telegram_ready_at_utc, created_at_utc) DESC;
+                """),
+                {
+                    "owner_user_id": str(ctx.user_id),
+                    "group_name": group_title,
+                },
+            ).mappings().fetchall()
+            if len(rows) != 1:
+                return None
+
+            session.execute(
+                text("""
+                    UPDATE clubs
+                    SET telegram_chat_id = :telegram_chat_id,
+                        updated_at_utc = :updated_at
+                    WHERE club_id = :club_id
+                      AND telegram_status = 'ready'
+                      AND NULLIF(trim(COALESCE(telegram_chat_id, '')), '') IS NULL;
+                """),
+                {
+                    "club_id": str(rows[0]["club_id"]),
+                    "telegram_chat_id": str(ctx.chat_id),
+                    "updated_at": now,
+                },
+            )
+
+        return self._get_club_for_group_chat(ctx.chat_id)
 
     def _get_club_for_group_chat(self, chat_id: int) -> Optional[dict]:
         if not chat_id:
@@ -732,10 +870,16 @@ class PlannerBot:
         )
 
         if proposed:
+            setup_state = str(proposed.get("telegram_status") or "")
+            intro = (
+                "Telegram group detected for an approved club.\n"
+                if setup_state == "ready"
+                else "Telegram group detected for a pending club.\n"
+            )
             await self._notify_admins_about_group_setup(
                 bot=bot,
                 message=(
-                    "Telegram group detected for a pending club.\n"
+                    intro +
                     "Please confirm before Xaana links it.\n"
                     f"Suggested club: \"{proposed.get('club_name', chat_title)}\"\n"
                     f"Group: \"{chat_title or chat_id}\"\n"
@@ -780,7 +924,7 @@ class PlannerBot:
         actor_user_id: int,
         invite_link: str,
     ) -> Optional[dict]:
-        """Best-effort mapping from group title to one pending club, waiting for admin confirmation."""
+        """Best-effort mapping from group title to one unlinked club, waiting for admin confirmation."""
         normalized_title = (chat_title or "").strip()
         if not normalized_title:
             return None
@@ -796,9 +940,15 @@ class PlannerBot:
 
             pending_rows = session.execute(
                 text("""
-                    SELECT club_id, owner_user_id, name
+                    SELECT club_id, owner_user_id, name, telegram_status
                     FROM clubs
-                    WHERE telegram_status = 'pending_admin_setup'
+                    WHERE (
+                        telegram_status = 'pending_admin_setup'
+                        OR (
+                            telegram_status = 'ready'
+                            AND NULLIF(trim(COALESCE(telegram_chat_id, '')), '') IS NULL
+                        )
+                    )
                       AND lower(trim(name)) = lower(trim(:group_name))
                     ORDER BY COALESCE(telegram_requested_at_utc, created_at_utc) DESC;
                 """),
@@ -838,6 +988,7 @@ class PlannerBot:
             return {
                 "club_id": str(row["club_id"]),
                 "club_name": str(row["name"]),
+                "telegram_status": str(row["telegram_status"]),
             }
 
     async def _confirm_pending_club_telegram_link(

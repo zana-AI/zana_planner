@@ -196,6 +196,15 @@ class CreateSuggestionRequest(BaseModel):
 
 
 # Promises
+class CreatePromiseRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=240)
+    hours_per_week: float = Field(..., gt=0)
+    recurring: bool = True
+    start_date: Optional[str] = None  # ISO date string (YYYY-MM-DD)
+    end_date: Optional[str] = None  # ISO date string (YYYY-MM-DD)
+    visibility: str = "private"  # "private" or "public"
+
+
 class UpdateVisibilityRequest(BaseModel):
     visibility: str  # "private" or "public"
 

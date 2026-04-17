@@ -29,7 +29,11 @@ from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from services.reports import ReportsService
 from db.postgres_db import get_db_session, resolve_promise_uuid, utc_now_iso, date_to_iso
-from ..notifications import send_club_telegram_setup_request, send_suggestion_notifications
+from ..notifications import (
+    send_club_pending_notification,
+    send_club_telegram_setup_request,
+    send_suggestion_notifications,
+)
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["community"])
@@ -277,6 +281,14 @@ async def create_club(
                 creator_user_id=user_id,
                 promise_text=promise_text,
                 miniapp_url=os.getenv("MINIAPP_URL", "https://xaana.club"),
+            )
+        )
+        asyncio.create_task(
+            send_club_pending_notification(
+                bot_token=request.app.state.bot_token,
+                user_id=user_id,
+                club_id=club_id,
+                club_name=name,
             )
         )
         clubs = _list_user_clubs(user_id)

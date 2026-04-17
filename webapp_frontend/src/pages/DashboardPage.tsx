@@ -7,6 +7,7 @@ import { UserCard } from '../components/UserCard';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
+import { CreatePromiseModal } from '../components/CreatePromiseModal';
 import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
 
 export function DashboardPage() {
@@ -25,6 +26,7 @@ export function DashboardPage() {
   const [suggestToUserId, setSuggestToUserId] = useState<string>('');
   const [suggestToUserName, setSuggestToUserName] = useState<string>('');
   const [showSuggestionsInbox, setShowSuggestionsInbox] = useState(false);
+  const [showCreatePromiseModal, setShowCreatePromiseModal] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // Get current week's Monday for comparison
@@ -237,6 +239,16 @@ export function DashboardPage() {
     fetchReport(authData || '', currentRefTime);
   }, [initData, fetchReport, currentRefTime]);
 
+  const emptyPromisesData = useMemo(() => {
+    if (!reportData) return null;
+    return {
+      ...reportData,
+      promises: {},
+      total_promised: 0,
+      total_spent: 0,
+    };
+  }, [reportData]);
+
   const handlePreviousWeek = useCallback(() => {
     if (!reportData) return;
     const currentStart = new Date(reportData.week_start);
@@ -404,10 +416,15 @@ export function DashboardPage() {
         )}
 
         {/* Promises Section - Second */}
-        {promisesData && (
+        {(promisesData || (isCurrentWeek && emptyPromisesData)) && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
-            <WeeklyReport data={promisesData} onRefresh={handleRefresh} hideHeader={true} />
+            <WeeklyReport
+              data={promisesData || emptyPromisesData!}
+              onRefresh={handleRefresh}
+              hideHeader={true}
+              onCreatePromise={isCurrentWeek ? () => setShowCreatePromiseModal(true) : undefined}
+            />
           </div>
         )}
 
@@ -420,7 +437,7 @@ export function DashboardPage() {
         )}
 
         {/* Empty State */}
-        {!loading && !promisesData && !tasksData && !distractionsPromisesData && (
+        {!loading && !isCurrentWeek && !promisesData && !tasksData && !distractionsPromisesData && (
           <div className="empty-state">
             <h2 className="empty-title">No promises or tasks yet</h2>
             <p className="empty-subtitle">
@@ -591,6 +608,16 @@ export function DashboardPage() {
           }}
           onSuccess={() => {
             hapticFeedback('success');
+          }}
+        />
+      )}
+
+      {showCreatePromiseModal && (
+        <CreatePromiseModal
+          onClose={() => setShowCreatePromiseModal(false)}
+          onSuccess={() => {
+            hapticFeedback('success');
+            handleRefresh();
           }}
         />
       )}

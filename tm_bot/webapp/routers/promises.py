@@ -3,11 +3,12 @@ Promise-related endpoints.
 """
 
 from datetime import datetime, timedelta
+import re
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
 from ..dependencies import get_current_user, get_settings_repo
 from ..schemas import (
-    UpdateVisibilityRequest, UpdateRecurringRequest, UpdatePromiseRequest,
+    CreatePromiseRequest, UpdateVisibilityRequest, UpdateRecurringRequest, UpdatePromiseRequest,
     LogActionRequest, ScheduleSlotRequest, UpdateScheduleRequest,
     ReminderRequest, UpdateRemindersRequest, CheckinRequest, WeeklyNoteRequest
 )
@@ -24,6 +25,71 @@ from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["promises"])
 logger = get_logger(__name__)
+
+
+@router.post("/promises")
+async def create_promise(
+    request: Request,
+    promise_request: CreatePromiseRequest,
+    user_id: int = Depends(get_current_user)
+):
+    """Create a custom promise for the authenticated user."""
+    try:
+        from services.planner_api_adapter import PlannerAPIAdapter
+        from datetime import date as date_type
+
+        if promise_request.visibility not in ["private", "public"]:
+            raise HTTPException(status_code=400, detail="Visibility must be 'private' or 'public'")
+        promise_text = promise_request.text.strip()
+        if not promise_text:
+            raise HTTPException(status_code=400, detail="Promise text is required")
+
+        start_date_obj = None
+        end_date_obj = None
+        if promise_request.start_date:
+            try:
+                start_date_obj = date_type.fromisoformat(promise_request.start_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid start_date format: {promise_request.start_date}. Expected YYYY-MM-DD")
+
+        if promise_request.end_date:
+            try:
+                end_date_obj = date_type.fromisoformat(promise_request.end_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid end_date format: {promise_request.end_date}. Expected YYYY-MM-DD")
+
+        if start_date_obj and end_date_obj and start_date_obj > end_date_obj:
+            raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+
+        plan_keeper = PlannerAPIAdapter(request.app.state.root_dir)
+        result = plan_keeper.add_promise(
+            user_id=user_id,
+            promise_text=promise_text,
+            num_hours_promised_per_week=promise_request.hours_per_week,
+            recurring=promise_request.recurring,
+            start_date=start_date_obj,
+            end_date=end_date_obj
+        )
+
+        match = re.search(r'#([PT]\w+)', result)
+        if not match:
+            raise HTTPException(status_code=500, detail="Failed to extract promise ID from creation result")
+        promise_id = match.group(1)
+
+        if promise_request.visibility != "private":
+            promises_repo = PromisesRepository()
+            promise = promises_repo.get_promise(user_id, promise_id)
+            if not promise:
+                raise HTTPException(status_code=500, detail="Failed to retrieve created promise")
+            promise.visibility = promise_request.visibility
+            promises_repo.upsert_promise(user_id, promise)
+
+        return {"status": "success", "promise_id": promise_id, "message": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error creating promise: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create promise: {str(e)}")
 
 
 @router.patch("/promises/{promise_id}/visibility")

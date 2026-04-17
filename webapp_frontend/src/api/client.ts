@@ -23,6 +23,7 @@ import type {
   WeeklyDistractionsResponse,
   PromiseSuggestion,
   CreateSuggestionRequest,
+  CreatePromiseRequest,
   BotToken,
   CreatePromiseForUserRequest,
   ConversationResponse,
@@ -378,6 +379,16 @@ class ApiClient {
     return this.request<{ status: string; message: string }>(`/promises/${promiseId}`, {
       method: 'PATCH',
       body: JSON.stringify(fields),
+    });
+  }
+
+  /**
+   * Create a custom promise for the current user.
+   */
+  async createPromise(request: CreatePromiseRequest): Promise<{ status: string; promise_id: string; message: string }> {
+    return this.request<{ status: string; promise_id: string; message: string }>('/promises', {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 

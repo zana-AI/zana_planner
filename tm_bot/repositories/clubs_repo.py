@@ -21,6 +21,7 @@ def ensure_club_telegram_columns(session) -> None:
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_invite_link TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_requested_at_utc TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_last_admin_reminder_at_utc TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_ready_at_utc TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_setup_by_admin_id TEXT",
     ):
@@ -277,6 +278,32 @@ class ClubsRepository:
                 {"club_id": club_id, "left_at_utc": now},
             )
             return True
+
+    def mark_admin_reminded(self, club_id: str, owner_user_id: int) -> bool:
+        """Record that the owner sent a reminder to admins for a pending club."""
+        owner = str(owner_user_id)
+        now = utc_now_iso()
+
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            result = session.execute(
+                text("""
+                    UPDATE clubs
+                    SET telegram_last_admin_reminder_at_utc = :reminded_at,
+                        updated_at_utc = :updated_at_utc
+                    WHERE club_id = :club_id
+                      AND owner_user_id = :owner_user_id
+                      AND COALESCE(status, 'active') = 'active'
+                      AND telegram_status = 'pending_admin_setup';
+                """),
+                {
+                    "club_id": club_id,
+                    "owner_user_id": owner,
+                    "reminded_at": now,
+                    "updated_at_utc": now,
+                },
+            )
+            return result.rowcount > 0
 
     def get_members(self, club_id: str) -> List[Dict]:
         """Get all active members of a club."""

@@ -69,6 +69,98 @@ async def send_club_telegram_setup_request(
         logger.warning(f"Unexpected error sending club Telegram setup request: {e}")
 
 
+async def send_club_admin_reminder(
+    bot_token: str,
+    club_id: str,
+    club_name: str,
+    creator_user_id: int,
+    promise_text: str,
+    miniapp_url: str,
+) -> None:
+    """Remind admins that a pending club still needs Telegram setup."""
+    try:
+        admin_ids = sorted(get_admin_ids())
+        if not bot_token or not admin_ids:
+            logger.info("Skipping club Telegram reminder: missing bot token or ADMIN_IDS")
+            return
+
+        creator_settings = SettingsRepository().get_settings(creator_user_id)
+        creator_name = (
+            creator_settings.first_name
+            or (f"@{creator_settings.username}" if creator_settings.username else None)
+            or str(creator_user_id)
+        )
+        setup_url = f"{miniapp_url.rstrip('/')}/admin?tab=clubs&club_id={club_id}"
+        message = "\n".join([
+            "Reminder: club is still waiting for Telegram setup",
+            "",
+            f"Club: <code>{html.escape(club_name)}</code>",
+            f"Creator: {html.escape(creator_name)}",
+            f"Promise: {html.escape(promise_text)}",
+            "",
+            "Open setup, create/connect the Telegram group, and save the invite link.",
+        ])
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Open setup", url=setup_url)]
+        ])
+        bot = Bot(token=bot_token)
+        for admin_id in admin_ids:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=message,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
+            except TelegramError as e:
+                logger.warning(f"Could not remind admin {admin_id} for club {club_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error sending club Telegram reminder: {e}")
+
+
+async def send_club_pending_notification(
+    bot_token: str,
+    user_id: int,
+    club_id: str,
+    club_name: str,
+) -> None:
+    """Tell the club creator that admin setup is pending and offer actions."""
+    try:
+        if not bot_token:
+            return
+
+        message = "\n".join([
+            f"Nice, your club request is in: {club_name}",
+            "",
+            "Making a new club needs admin approval. It usually takes only a few minutes.",
+            "",
+            "When it is ready, you will get a Telegram group link. Join the group, then invite your friends in that group.",
+            "",
+            "You can cancel while it is waiting, or remind an admin after 1 hour.",
+        ])
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Cancel request", callback_data=encode_cb("club_cancel", cid=club_id)),
+                InlineKeyboardButton("Remind admin", callback_data=encode_cb("club_remind", cid=club_id)),
+            ]
+        ])
+        bot = Bot(token=bot_token)
+        await bot.send_message(
+            chat_id=user_id,
+            text=message,
+            reply_markup=keyboard,
+            parse_mode=None,
+        )
+    except TelegramError as e:
+        error_msg = str(e).lower()
+        if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+            logger.debug(f"Could not send pending club notification to user {user_id}: user blocked bot")
+        else:
+            logger.warning(f"Could not send pending club notification to user {user_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error sending pending club notification: {e}")
+
+
 async def send_club_telegram_ready_notification(
     bot_token: str,
     user_id: int,
