@@ -28,30 +28,67 @@ class ClubsRepository:
         now = utc_now_iso()
         
         with get_db_session() as session:
-            session.execute(
+            columns = session.execute(
                 text("""
-                    INSERT INTO clubs(
-                        club_id, owner_user_id, name, description,
-                        visibility, telegram_status, telegram_requested_at_utc,
-                        created_at_utc, updated_at_utc
-                    ) VALUES (
-                        :club_id, :owner_user_id, :name, :description,
-                        :visibility, :telegram_status, :telegram_requested_at_utc,
-                        :created_at_utc, :updated_at_utc
-                    );
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'clubs';
                 """),
-                {
-                    "club_id": club_id,
-                    "owner_user_id": owner,
-                    "name": name,
-                    "description": description,
-                    "visibility": visibility,
-                    "telegram_status": "pending_admin_setup",
-                    "telegram_requested_at_utc": now,
-                    "created_at_utc": now,
-                    "updated_at_utc": now,
-                },
+            ).fetchall()
+            club_columns = {row[0] for row in columns}
+
+            has_telegram_columns = (
+                "telegram_status" in club_columns
+                and "telegram_requested_at_utc" in club_columns
             )
+
+            if has_telegram_columns:
+                session.execute(
+                    text("""
+                        INSERT INTO clubs(
+                            club_id, owner_user_id, name, description,
+                            visibility, telegram_status, telegram_requested_at_utc,
+                            created_at_utc, updated_at_utc
+                        ) VALUES (
+                            :club_id, :owner_user_id, :name, :description,
+                            :visibility, :telegram_status, :telegram_requested_at_utc,
+                            :created_at_utc, :updated_at_utc
+                        );
+                    """),
+                    {
+                        "club_id": club_id,
+                        "owner_user_id": owner,
+                        "name": name,
+                        "description": description,
+                        "visibility": visibility,
+                        "telegram_status": "pending_admin_setup",
+                        "telegram_requested_at_utc": now,
+                        "created_at_utc": now,
+                        "updated_at_utc": now,
+                    },
+                )
+            else:
+                session.execute(
+                    text("""
+                        INSERT INTO clubs(
+                            club_id, owner_user_id, name, description,
+                            visibility, created_at_utc, updated_at_utc
+                        ) VALUES (
+                            :club_id, :owner_user_id, :name, :description,
+                            :visibility, :created_at_utc, :updated_at_utc
+                        );
+                    """),
+                    {
+                        "club_id": club_id,
+                        "owner_user_id": owner,
+                        "name": name,
+                        "description": description,
+                        "visibility": visibility,
+                        "created_at_utc": now,
+                        "updated_at_utc": now,
+                    },
+                )
             
             # Add owner as member with 'owner' role
             session.execute(

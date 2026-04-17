@@ -125,14 +125,35 @@ def _create_club_promise(
 def _list_user_clubs(user_id: int) -> List[ClubSummary]:
     user = str(user_id)
     with get_db_session() as session:
-        rows = session.execute(
+        columns = session.execute(
             text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'clubs';
+            """),
+        ).fetchall()
+        club_columns = {row[0] for row in columns}
+
+        telegram_status_select = (
+            "c.telegram_status"
+            if "telegram_status" in club_columns
+            else "'not_connected' AS telegram_status"
+        )
+        telegram_invite_select = (
+            "c.telegram_invite_link"
+            if "telegram_invite_link" in club_columns
+            else "CAST(NULL AS TEXT) AS telegram_invite_link"
+        )
+
+        rows = session.execute(
+            text(f"""
                 SELECT
                     c.club_id,
                     c.name,
                     c.visibility,
-                    c.telegram_status,
-                    c.telegram_invite_link,
+                    {telegram_status_select},
+                    {telegram_invite_select},
                     cm.role,
                     COALESCE(member_counts.member_count, 0) AS member_count,
                     p.current_id AS promise_id,
