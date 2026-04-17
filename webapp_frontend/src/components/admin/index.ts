@@ -1,5 +1,4 @@
 // Re-exports for admin components
-export { AdminHeader } from './AdminHeader';
 export { AdminTabs, type TabType } from './AdminTabs';
 export { StatsTab } from './StatsTab';
 export { BroadcastTab } from './BroadcastTab';

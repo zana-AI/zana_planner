@@ -5,7 +5,6 @@ import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { PublicUser, PublicPromiseBadge, UserInfo } from '../types';
 import { PromiseBadge } from '../components/PromiseBadge';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
-import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { buildActivitySummaryText } from '../utils/activitySummary';
 import { getDicebearUrl } from '../utils/dicebearAvatar';
@@ -166,8 +165,6 @@ export function UserDetailPage() {
 
   return (
     <div className="app">
-      <PageHeader title={displayName} showBack fallbackRoute="/community" />
-
       <div className="user-detail-container">
         <div className="user-detail-card">
           <div className="user-detail-head">

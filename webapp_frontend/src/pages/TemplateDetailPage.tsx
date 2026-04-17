@@ -4,7 +4,6 @@ import { Bookmark, Globe, Lock } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { TemplateDetail } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { Emoji } from '../components/ui/Emoji';
 
@@ -100,8 +99,6 @@ export function TemplateDetailPage() {
 
   return (
     <div className="app">
-      <PageHeader title="Add Promise" showBack fallbackRoute="/templates" />
-
       <main className="template-detail-page">
         {/* Info card — read-only */}
         <section className="template-detail-card">

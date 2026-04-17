@@ -1,12 +1,105 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Bot, Library, LogOut, Settings, Shield, User, Users } from 'lucide-react';
+import { ArrowLeft, Bot, Library, LogOut, Settings, Shield, User, Users } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { useSessionMode } from '../hooks/useSessionMode';
 import type { AppNavItem, UserInfo } from '../types';
 import { AppLogo } from './ui/AppLogo';
 import { BottomNav } from './ui/BottomNav';
+import { Button } from './ui/Button';
+
+interface ShellPageMeta {
+  title: string;
+  subtitle?: string;
+  showBack?: boolean;
+  fallbackRoute?: string;
+}
+
+function getShellPageMeta(pathname: string): ShellPageMeta {
+  if (pathname === '/dashboard') {
+    return {
+      title: 'My Week',
+      subtitle: 'Your weekly promises and progress',
+    };
+  }
+
+  if (pathname === '/community') {
+    return {
+      title: 'Community',
+      subtitle: 'Recent public activity and people you follow',
+    };
+  }
+
+  if (pathname === '/templates') {
+    return {
+      title: 'Explore',
+      subtitle: 'Promise library and marketplace',
+    };
+  }
+
+  if (pathname === '/my-contents') {
+    return {
+      title: 'My Contents',
+      subtitle: 'Saved videos, articles, and podcasts',
+      showBack: true,
+      fallbackRoute: '/templates',
+    };
+  }
+
+  if (pathname === '/admin') {
+    return {
+      title: 'Admin',
+      showBack: true,
+      fallbackRoute: '/dashboard',
+    };
+  }
+
+  if (pathname === '/focus') {
+    return {
+      title: 'Start Focus Session',
+      showBack: true,
+      fallbackRoute: '/dashboard',
+    };
+  }
+
+  if (pathname === '/settings') {
+    return {
+      title: 'Settings',
+      showBack: true,
+      fallbackRoute: '/dashboard',
+    };
+  }
+
+  if (pathname === '/timezone') {
+    return {
+      title: 'Timezone',
+      subtitle: 'Select your timezone',
+      showBack: true,
+      fallbackRoute: '/settings',
+    };
+  }
+
+  if (pathname.startsWith('/templates/')) {
+    return {
+      title: 'Add Promise',
+      showBack: true,
+      fallbackRoute: '/templates',
+    };
+  }
+
+  if (pathname.startsWith('/users/')) {
+    return {
+      title: 'Profile',
+      showBack: true,
+      fallbackRoute: '/community',
+    };
+  }
+
+  return {
+    title: 'Xaana',
+  };
+}
 
 export function Navigation() {
   const navigate = useNavigate();
@@ -93,15 +186,27 @@ export function Navigation() {
     return undefined;
   }, [showProfileMenu]);
 
-  if (!isAuthenticated || location.pathname === '/' || location.pathname === '/admin') {
+  if (!isAuthenticated || location.pathname === '/') {
     return null;
   }
+
+  const shellPage = getShellPageMeta(location.pathname);
+  const isDashboard = location.pathname === '/dashboard';
+  const isAdminRoute = location.pathname === '/admin';
 
   const handleLogout = () => {
     apiClient.clearAuth();
     window.dispatchEvent(new Event('logout'));
     setShowProfileMenu(false);
     navigate('/', { replace: true });
+  };
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(shellPage.fallbackRoute || '/dashboard', { replace: true });
   };
 
   const displayName =
@@ -117,11 +222,31 @@ export function Navigation() {
   return (
     <>
       <header className="app-shell-header">
-        <button className="app-shell-brand" onClick={() => navigate('/dashboard')}>
-          <AppLogo size={24} />
-        </button>
+        <div className="app-shell-left">
+          <button className="app-shell-brand" onClick={() => navigate('/dashboard')} aria-label="Go to My Week">
+            <AppLogo size={40} />
+          </button>
 
-        <div className="app-shell-profile-wrap" ref={menuRef}>
+          {shellPage.showBack ? (
+            <Button variant="ghost" size="sm" onClick={handleBack} leftIcon={<ArrowLeft size={16} />}>
+              Back
+            </Button>
+          ) : null}
+
+          <div className="app-shell-page-title">
+            <h1>{shellPage.title}</h1>
+            {shellPage.subtitle ? <p>{shellPage.subtitle}</p> : null}
+          </div>
+        </div>
+
+        <div className="app-shell-right">
+          {isDashboard ? (
+            <Button size="sm" onClick={() => navigate('/focus')}>
+              Start Focus
+            </Button>
+          ) : null}
+
+          <div className="app-shell-profile-wrap" ref={menuRef}>
           <button
             className="app-shell-avatar"
             onClick={() => setShowProfileMenu((prev) => !prev)}
@@ -217,19 +342,22 @@ export function Navigation() {
               )}
             </div>
           )}
+          </div>
         </div>
       </header>
 
-      <BottomNav
-        items={navItems.map((item) =>
-          item.key === 'explore'
-            ? {
-                ...item,
-                to: isExploreActive ? location.pathname : item.to,
-              }
-            : item
-        )}
-      />
+      {!isAdminRoute ? (
+        <BottomNav
+          items={navItems.map((item) =>
+            item.key === 'explore'
+              ? {
+                  ...item,
+                  to: isExploreActive ? location.pathname : item.to,
+                }
+              : item
+          )}
+        />
+      ) : null}
     </>
   );
 }

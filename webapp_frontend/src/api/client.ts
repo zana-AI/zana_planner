@@ -251,6 +251,15 @@ class ApiClient {
   }
 
   /**
+   * Development-only login for local admin UI traversal.
+   */
+  async devAdminLogin(): Promise<{ session_token: string; user_id: number; expires_at: string; is_admin: boolean }> {
+    return this.request<{ session_token: string; user_id: number; expires_at: string; is_admin: boolean }>('/auth/dev-admin-login', {
+      method: 'POST',
+    });
+  }
+
+  /**
    * Get public list of users (authentication required).
    */
   async getPublicUsers(limit: number = 20): Promise<PublicUsersResponse> {

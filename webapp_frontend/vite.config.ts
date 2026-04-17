@@ -14,7 +14,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://127.0.0.1:8080',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path, // Don't rewrite the path
@@ -28,7 +28,7 @@ export default defineConfig({
         },
       },
       '/assets': {
-        target: 'http://localhost:8080',
+        target: 'http://127.0.0.1:8080',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path, // Don't rewrite the path

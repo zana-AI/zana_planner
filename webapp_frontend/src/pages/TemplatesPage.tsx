@@ -4,7 +4,6 @@ import { Bookmark } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { PromiseTemplate } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import { PageHeader } from '../components/ui/PageHeader';
 import { Emoji } from '../components/ui/Emoji';
 import { AvatarStack } from '../components/ui/AvatarStack';
 import type { AvatarStackUser } from '../components/ui/AvatarStack';
@@ -98,8 +97,6 @@ export function TemplatesPage() {
 
   return (
     <div className="app">
-      <PageHeader title="Explore" subtitle="Promise library and marketplace" />
-
       {categories.length > 0 ? (
         <div className="category-filters">
           <button className={`category-filter ${selectedCategory === '' ? 'active' : ''}`} onClick={() => setSelectedCategory('')}>

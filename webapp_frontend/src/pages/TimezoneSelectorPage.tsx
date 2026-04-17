@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
-import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 
 // Common timezones grouped by region
@@ -137,8 +136,6 @@ export function TimezoneSelectorPage() {
 
   return (
     <div className="page-container">
-      <PageHeader title="Timezone" subtitle="Select your timezone" showBack fallbackRoute="/settings" />
-
       <div className="timezone-selector">
         {currentTimezone && currentTimezone !== 'DEFAULT' && (
           <div className="timezone-info">

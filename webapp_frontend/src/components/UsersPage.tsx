@@ -5,7 +5,6 @@ import { ActivityItem } from './community/ActivityItem';
 import { CompactUserChip } from './community/CompactUserChip';
 import type { PublicActivityItem, PublicUser, UserInfo } from '../types';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import { PageHeader } from './ui/PageHeader';
 
 const PREVIEW_COUNT = 8;
 
@@ -174,8 +173,6 @@ export function UsersPage() {
 
   return (
     <div className="users-page users-page-community">
-      <PageHeader title="Community" subtitle="Recent public activity and people you follow" />
-
       {loading && activityItems.length === 0 ? (
         <div className="users-page-loading">
           <div className="loading-spinner" />
