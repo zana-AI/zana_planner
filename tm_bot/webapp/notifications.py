@@ -3,6 +3,7 @@ Helper functions for sending Telegram notifications.
 """
 
 import os
+import html
 from datetime import datetime
 from typing import Optional
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
@@ -40,9 +41,9 @@ async def send_club_telegram_setup_request(
         message = "\n".join([
             "New club needs Telegram group",
             "",
-            f"Club: `{club_name}`",
-            f"Creator: {creator_name}",
-            f"Promise: {promise_text}",
+            f"Club: <code>{html.escape(club_name)}</code>",
+            f"Creator: {html.escape(creator_name)}",
+            f"Promise: {html.escape(promise_text)}",
             "",
             "Steps:",
             "1. Create a Telegram group named exactly as the club name above",
@@ -60,7 +61,7 @@ async def send_club_telegram_setup_request(
                     chat_id=admin_id,
                     text=message,
                     reply_markup=keyboard,
-                    parse_mode=None,
+                    parse_mode="HTML",
                 )
             except TelegramError as e:
                 logger.warning(f"Could not notify admin {admin_id} for club {club_id}: {e}")
