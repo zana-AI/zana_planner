@@ -6,6 +6,8 @@ import type {
   ClubSummary,
   ClubsResponse,
   CreateClubRequest,
+  AdminClubSetupResponse,
+  AdminClubSetupSummary,
   AdminUsersResponse,
   Broadcast,
   CreateBroadcastRequest,
@@ -477,6 +479,17 @@ class ApiClient {
    */
   async getAdminUsers(limit: number = 1000): Promise<AdminUsersResponse> {
     return this.request<AdminUsersResponse>(`/admin/users?limit=${limit}`);
+  }
+
+  async getAdminClubTelegramSetup(status: 'pending' | 'ready' | 'all' = 'pending'): Promise<AdminClubSetupResponse> {
+    return this.request<AdminClubSetupResponse>(`/admin/clubs/telegram-setup?status=${status}`);
+  }
+
+  async updateAdminClubTelegramLink(clubId: string, telegramInviteLink: string): Promise<AdminClubSetupSummary> {
+    return this.request<AdminClubSetupSummary>(`/admin/clubs/${clubId}/telegram-link`, {
+      method: 'POST',
+      body: JSON.stringify({ telegram_invite_link: telegramInviteLink }),
+    });
   }
 
   /**

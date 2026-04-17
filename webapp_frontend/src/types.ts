@@ -195,7 +195,8 @@ export interface ClubSummary {
     username?: string;
     avatar_path?: string;
   }[];
-  telegram_status: 'not_connected' | 'connected';
+  telegram_status: 'not_connected' | 'pending_admin_setup' | 'ready' | 'connected';
+  telegram_invite_link?: string;
   promise_id?: string;
   promise_text?: string;
   target_count_per_week?: number;
@@ -203,6 +204,19 @@ export interface ClubSummary {
 
 export interface ClubsResponse {
   clubs: ClubSummary[];
+  total: number;
+}
+
+export interface AdminClubSetupSummary extends ClubSummary {
+  owner_user_id: string;
+  owner_name?: string;
+  created_at_utc?: string;
+  telegram_requested_at_utc?: string;
+  telegram_ready_at_utc?: string;
+}
+
+export interface AdminClubSetupResponse {
+  clubs: AdminClubSetupSummary[];
   total: number;
 }
 

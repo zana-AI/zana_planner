@@ -4,6 +4,7 @@ export type TabType =
   | 'compose'
   | 'scheduled'
   | 'templates'
+  | 'clubs'
   | 'promote'
   | 'devtools'
   | 'createPromise'
@@ -43,6 +44,7 @@ export function AdminTabs({ activeTab, onTabChange, scheduledCount }: AdminTabsP
       items: [
         { key: 'templates', label: 'Template Library' },
         { key: 'createPromise', label: 'Create Promise' },
+        { key: 'clubs', label: 'Club Setup' },
       ],
     },
     {

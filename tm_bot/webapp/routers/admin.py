@@ -20,7 +20,8 @@ from ..schemas import (
     AdminUsersResponse, CreateBroadcastRequest, UpdateBroadcastRequest,
     BroadcastResponse, BotTokenResponse, ConversationResponse, ConversationMessage,
     GenerateTemplateRequest, CreatePromiseForUserRequest, DayReminder,
-    RunTestsRequest, TestRunResponse, TestReportResponse
+    RunTestsRequest, TestRunResponse, TestReportResponse,
+    AdminClubSetupResponse, AdminClubSetupSummary, UpdateClubTelegramRequest
 )
 from repositories.templates_repo import TemplatesRepository
 from repositories.promises_repo import PromisesRepository
@@ -33,6 +34,7 @@ from db.postgres_db import get_db_session, dt_to_utc_iso, utc_now_iso, resolve_p
 from sqlalchemy import text, bindparam
 from utils.admin_utils import is_admin
 from utils.logger import get_logger
+from ..notifications import send_club_telegram_ready_notification
 from llms.llm_env_utils import load_llm_env
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
@@ -65,6 +67,36 @@ _SAFE_EXPORT_LINK_RE = re.compile(r"^(https?://|mailto:|tg://|tg:)", re.IGNORECA
 _UNSAFE_EXPORT_TAG_RE = re.compile(r"<\s*/?\s*(script|style)[^>]*>", re.IGNORECASE)
 _UNSAFE_EXPORT_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL)
 _UNSAFE_EXPORT_JS_URL_RE = re.compile(r"javascript\s*:", re.IGNORECASE)
+
+
+def _valid_telegram_invite_link(link: str) -> bool:
+    value = (link or "").strip()
+    return (
+        value.startswith("https://t.me/")
+        or value.startswith("https://telegram.me/")
+        or value.startswith("tg://")
+    )
+
+
+def _admin_club_setup_from_row(row: Dict[str, Any]) -> AdminClubSetupSummary:
+    return AdminClubSetupSummary(
+        club_id=str(row["club_id"]),
+        name=str(row["name"]),
+        visibility=str(row["visibility"] or "private"),
+        role="admin",
+        member_count=int(row["member_count"] or 0),
+        members=[],
+        telegram_status=str(row["telegram_status"] or "not_connected"),
+        telegram_invite_link=str(row["telegram_invite_link"]) if row.get("telegram_invite_link") else None,
+        promise_id=str(row["promise_id"]) if row.get("promise_id") else None,
+        promise_text=str(row["promise_text"]) if row.get("promise_text") else None,
+        target_count_per_week=float(row["target_count_per_week"]) if row.get("target_count_per_week") is not None else None,
+        owner_user_id=str(row["owner_user_id"]),
+        owner_name=str(row["owner_name"]) if row.get("owner_name") else None,
+        created_at_utc=str(row["created_at_utc"]) if row.get("created_at_utc") else None,
+        telegram_requested_at_utc=str(row["telegram_requested_at_utc"]) if row.get("telegram_requested_at_utc") else None,
+        telegram_ready_at_utc=str(row["telegram_ready_at_utc"]) if row.get("telegram_ready_at_utc") else None,
+    )
 
 
 class _ConversationExportSanitizer:
@@ -313,6 +345,141 @@ async def check_admin_status(
 ):
     """Check if the current user is an admin."""
     return {"is_admin": is_admin(user_id)}
+
+
+@router.get("/clubs/telegram-setup", response_model=AdminClubSetupResponse)
+async def list_club_telegram_setup(
+    status: Literal["pending", "ready", "all"] = "pending",
+    admin_id: int = Depends(get_admin_user),
+):
+    """List clubs that need or have Telegram group setup."""
+    try:
+        where_clause = ""
+        params: Dict[str, Any] = {}
+        if status == "pending":
+            where_clause = "WHERE c.telegram_status = :status"
+            params["status"] = "pending_admin_setup"
+        elif status == "ready":
+            where_clause = "WHERE c.telegram_status = :status"
+            params["status"] = "ready"
+
+        with get_db_session() as session:
+            rows = session.execute(
+                text(f"""
+                    SELECT
+                        c.club_id,
+                        c.owner_user_id,
+                        COALESCE(NULLIF(u.display_name, ''), NULLIF(u.first_name, ''), NULLIF(u.username, '')) AS owner_name,
+                        c.name,
+                        c.visibility,
+                        c.telegram_status,
+                        c.telegram_invite_link,
+                        c.created_at_utc,
+                        c.telegram_requested_at_utc,
+                        c.telegram_ready_at_utc,
+                        COALESCE(member_counts.member_count, 0) AS member_count,
+                        p.current_id AS promise_id,
+                        p.text AS promise_text,
+                        pi.target_value AS target_count_per_week
+                    FROM clubs c
+                    LEFT JOIN users u ON u.user_id = c.owner_user_id
+                    LEFT JOIN (
+                        SELECT club_id, COUNT(*) AS member_count
+                        FROM club_members
+                        WHERE status = 'active'
+                        GROUP BY club_id
+                    ) member_counts ON member_counts.club_id = c.club_id
+                    LEFT JOIN promise_club_shares pcs ON pcs.club_id = c.club_id
+                    LEFT JOIN promises p
+                        ON p.promise_uuid = pcs.promise_uuid
+                       AND p.is_deleted = 0
+                    LEFT JOIN promise_instances pi
+                        ON pi.promise_uuid = p.promise_uuid
+                       AND pi.user_id = p.user_id
+                       AND pi.status = 'active'
+                    {where_clause}
+                    ORDER BY COALESCE(c.telegram_requested_at_utc, c.created_at_utc) DESC;
+                """),
+                params,
+            ).mappings().fetchall()
+
+        clubs = [_admin_club_setup_from_row(row) for row in rows]
+        return AdminClubSetupResponse(clubs=clubs, total=len(clubs))
+    except Exception as e:
+        logger.exception(f"Error listing club Telegram setup queue: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load club setup queue: {str(e)}")
+
+
+@router.post("/clubs/{club_id}/telegram-link", response_model=AdminClubSetupSummary)
+async def update_club_telegram_link(
+    request: Request,
+    club_id: str,
+    payload: UpdateClubTelegramRequest,
+    admin_id: int = Depends(get_admin_user),
+):
+    """Save a Telegram invite link for a club and notify the creator."""
+    invite_link = payload.telegram_invite_link.strip()
+    if not _valid_telegram_invite_link(invite_link):
+        raise HTTPException(
+            status_code=400,
+            detail="Use a Telegram invite link, for example https://t.me/+...",
+        )
+
+    now = utc_now_iso()
+    try:
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT club_id, owner_user_id, name
+                    FROM clubs
+                    WHERE club_id = :club_id
+                    LIMIT 1;
+                """),
+                {"club_id": club_id},
+            ).mappings().fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Club not found")
+
+            session.execute(
+                text("""
+                    UPDATE clubs
+                    SET telegram_status = 'ready',
+                        telegram_invite_link = :telegram_invite_link,
+                        telegram_ready_at_utc = :telegram_ready_at_utc,
+                        telegram_setup_by_admin_id = :admin_id,
+                        updated_at_utc = :updated_at_utc
+                    WHERE club_id = :club_id;
+                """),
+                {
+                    "club_id": club_id,
+                    "telegram_invite_link": invite_link,
+                    "telegram_ready_at_utc": now,
+                    "admin_id": str(admin_id),
+                    "updated_at_utc": now,
+                },
+            )
+            owner_user_id = int(row["owner_user_id"])
+            club_name = str(row["name"])
+
+        asyncio.create_task(
+            send_club_telegram_ready_notification(
+                bot_token=request.app.state.bot_token,
+                user_id=owner_user_id,
+                club_name=club_name,
+                invite_link=invite_link,
+            )
+        )
+
+        setup = await list_club_telegram_setup(status="all", admin_id=admin_id)
+        updated = next((club for club in setup.clubs if club.club_id == club_id), None)
+        if not updated:
+            raise RuntimeError("Club updated but could not be reloaded")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error saving Telegram link for club {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save Telegram link: {str(e)}")
 
 
 @router.get("/stats")

@@ -8,10 +8,95 @@ from typing import Optional
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, TelegramError
 from repositories.settings_repo import SettingsRepository
+from utils.admin_utils import get_admin_ids
 from utils.logger import get_logger
 from cbdata import encode_cb, encode_session_cb
 
 logger = get_logger(__name__)
+
+
+async def send_club_telegram_setup_request(
+    bot_token: str,
+    club_id: str,
+    club_name: str,
+    creator_user_id: int,
+    promise_text: str,
+    miniapp_url: str,
+) -> None:
+    """Ask configured bot admins to manually create/connect a club Telegram group."""
+    try:
+        admin_ids = sorted(get_admin_ids())
+        if not bot_token or not admin_ids:
+            logger.info("Skipping club Telegram setup request: missing bot token or ADMIN_IDS")
+            return
+
+        creator_settings = SettingsRepository().get_settings(creator_user_id)
+        creator_name = (
+            creator_settings.first_name
+            or (f"@{creator_settings.username}" if creator_settings.username else None)
+            or str(creator_user_id)
+        )
+        setup_url = f"{miniapp_url.rstrip('/')}/admin?tab=clubs&club_id={club_id}"
+        message = "\n".join([
+            "New club needs Telegram group",
+            "",
+            f"Club: {club_name}",
+            f"Creator: {creator_name}",
+            f"Promise: {promise_text}",
+            "",
+            "Steps:",
+            "1. Create a Telegram group with this club name",
+            "2. Add Xaana bot and make it admin",
+            "3. Save the invite link in Xaana",
+        ])
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Open setup", url=setup_url)]
+        ])
+        bot = Bot(token=bot_token)
+        for admin_id in admin_ids:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=message,
+                    reply_markup=keyboard,
+                    parse_mode=None,
+                )
+            except TelegramError as e:
+                logger.warning(f"Could not notify admin {admin_id} for club {club_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error sending club Telegram setup request: {e}")
+
+
+async def send_club_telegram_ready_notification(
+    bot_token: str,
+    user_id: int,
+    club_name: str,
+    invite_link: str,
+) -> None:
+    """Notify the club creator that the Telegram group is ready."""
+    try:
+        if not bot_token or not invite_link:
+            return
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Join Telegram group", url=invite_link)]
+        ])
+        message = "\n".join([
+            f"Your club Telegram group is ready: {club_name}",
+            "",
+            "Use the button below to join it.",
+        ])
+        bot = Bot(token=bot_token)
+        await bot.send_message(
+            chat_id=user_id,
+            text=message,
+            reply_markup=keyboard,
+            parse_mode=None,
+        )
+    except TelegramError as e:
+        logger.warning(f"Could not notify club creator {user_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error sending club Telegram ready notification: {e}")
 
 
 def _language_name(language_code: str) -> str:

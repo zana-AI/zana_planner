@@ -204,7 +204,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -275,6 +275,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
                 (9, utc_now_iso()),
+            )
+        if current < 10:
+            _apply_v10(conn)
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at_utc) VALUES (?, ?);",
+                (10, utc_now_iso()),
             )
 
 
@@ -587,6 +593,12 @@ def _apply_v3(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL,
             description TEXT NULL,
             visibility TEXT NOT NULL DEFAULT 'private',
+            telegram_status TEXT NOT NULL DEFAULT 'not_connected',
+            telegram_invite_link TEXT NULL,
+            telegram_chat_id TEXT NULL,
+            telegram_requested_at_utc TEXT NULL,
+            telegram_ready_at_utc TEXT NULL,
+            telegram_setup_by_admin_id TEXT NULL,
             created_at_utc TEXT NOT NULL,
             updated_at_utc TEXT NOT NULL,
             FOREIGN KEY (owner_user_id) REFERENCES users(user_id)
@@ -596,6 +608,19 @@ def _apply_v3(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_clubs_owner ON clubs(owner_user_id, created_at_utc DESC);"
     )
+
+    club_columns = [row[1] for row in conn.execute("PRAGMA table_info(clubs);").fetchall()]
+    club_new_columns = [
+        ("telegram_status", "TEXT NOT NULL DEFAULT 'not_connected'"),
+        ("telegram_invite_link", "TEXT NULL"),
+        ("telegram_chat_id", "TEXT NULL"),
+        ("telegram_requested_at_utc", "TEXT NULL"),
+        ("telegram_ready_at_utc", "TEXT NULL"),
+        ("telegram_setup_by_admin_id", "TEXT NULL"),
+    ]
+    for col_name, col_def in club_new_columns:
+        if col_name not in club_columns:
+            conn.execute(f"ALTER TABLE clubs ADD COLUMN {col_name} {col_def};")
     
     # Step 8: Create club_members table
     conn.execute(
@@ -1191,3 +1216,19 @@ def _apply_v9(conn: sqlite3.Connection) -> None:
             FROM promises;
             """
         )
+
+
+def _apply_v10(conn: sqlite3.Connection) -> None:
+    """Apply schema version 10 migrations: add Telegram setup fields to clubs."""
+    club_columns = [row[1] for row in conn.execute("PRAGMA table_info(clubs);").fetchall()]
+    club_new_columns = [
+        ("telegram_status", "TEXT NOT NULL DEFAULT 'not_connected'"),
+        ("telegram_invite_link", "TEXT NULL"),
+        ("telegram_chat_id", "TEXT NULL"),
+        ("telegram_requested_at_utc", "TEXT NULL"),
+        ("telegram_ready_at_utc", "TEXT NULL"),
+        ("telegram_setup_by_admin_id", "TEXT NULL"),
+    ]
+    for col_name, col_def in club_new_columns:
+        if col_name not in club_columns:
+            conn.execute(f"ALTER TABLE clubs ADD COLUMN {col_name} {col_def};")

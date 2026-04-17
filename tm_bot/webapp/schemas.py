@@ -135,6 +135,7 @@ class ClubSummary(BaseModel):
     member_count: int = 0
     members: List[ClubMemberSummary] = Field(default_factory=list)
     telegram_status: str = "not_connected"
+    telegram_invite_link: Optional[str] = None
     promise_id: Optional[str] = None
     promise_text: Optional[str] = None
     target_count_per_week: Optional[float] = None
@@ -144,6 +145,26 @@ class ClubsResponse(BaseModel):
     """Response model for the current user's clubs."""
     clubs: List[ClubSummary]
     total: int
+
+
+class AdminClubSetupSummary(ClubSummary):
+    """Admin view of a club waiting for Telegram setup."""
+    owner_user_id: str
+    owner_name: Optional[str] = None
+    created_at_utc: Optional[str] = None
+    telegram_requested_at_utc: Optional[str] = None
+    telegram_ready_at_utc: Optional[str] = None
+
+
+class AdminClubSetupResponse(BaseModel):
+    """Response model for admin club setup queue."""
+    clubs: List[AdminClubSetupSummary]
+    total: int
+
+
+class UpdateClubTelegramRequest(BaseModel):
+    """Admin request to attach a Telegram invite link to a club."""
+    telegram_invite_link: str = Field(..., min_length=8, max_length=512)
 
 
 # Auth

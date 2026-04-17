@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import type { AdminUser, Broadcast, PromiseTemplate } from '../types';
@@ -16,10 +16,12 @@ import {
   ConversationsTab,
   TestsTab,
   FollowGraphTab,
+  ClubsTelegramSetupTab,
 } from './admin';
 
 export function AdminPanel() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { initData } = useTelegramWebApp();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,7 +29,9 @@ export function AdminPanel() {
   const [searchQuery, setSearchQuery] = useState('');
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('stats');
+  const initialTab: TabType = searchParams.get('tab') === 'clubs' ? 'clubs' : 'stats';
+  const highlightedClubId = searchParams.get('club_id');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [stats, setStats] = useState<{ total_users: number; active_users: number; total_promises: number } | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
   const [statsError, setStatsError] = useState<string>('');
@@ -252,6 +256,13 @@ export function AdminPanel() {
           onSetShowDeleteConfirm={setShowDeleteConfirm}
           onSetDeleteConfirmText={setDeleteConfirmText}
           onSetTemplates={setTemplates}
+          onError={setError}
+        />
+      )}
+
+      {activeTab === 'clubs' && (
+        <ClubsTelegramSetupTab
+          highlightClubId={highlightedClubId}
           onError={setError}
         />
       )}

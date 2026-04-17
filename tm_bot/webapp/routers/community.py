@@ -4,6 +4,8 @@ Community-related endpoints (suggestions, public promises, follows).
 
 from datetime import datetime
 from typing import List
+import asyncio
+import os
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
@@ -26,9 +28,8 @@ from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from services.reports import ReportsService
 from db.postgres_db import get_db_session, resolve_promise_uuid, utc_now_iso, date_to_iso
-from ..notifications import send_suggestion_notifications
+from ..notifications import send_club_telegram_setup_request, send_suggestion_notifications
 from utils.logger import get_logger
-import asyncio
 
 router = APIRouter(prefix="/api", tags=["community"])
 logger = get_logger(__name__)
@@ -130,6 +131,8 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     c.club_id,
                     c.name,
                     c.visibility,
+                    c.telegram_status,
+                    c.telegram_invite_link,
                     cm.role,
                     COALESCE(member_counts.member_count, 0) AS member_count,
                     p.current_id AS promise_id,
@@ -199,7 +202,8 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             role=str(row["role"] or "member"),
             member_count=int(row["member_count"] or 0),
             members=members_by_club.get(str(row["club_id"]), []),
-            telegram_status="not_connected",
+            telegram_status=str(row["telegram_status"] or "not_connected"),
+            telegram_invite_link=str(row["telegram_invite_link"]) if row["telegram_invite_link"] else None,
             promise_id=str(row["promise_id"]) if row["promise_id"] else None,
             promise_text=str(row["promise_text"]) if row["promise_text"] else None,
             target_count_per_week=float(row["target_count_per_week"]) if row["target_count_per_week"] is not None else None,
@@ -221,6 +225,7 @@ async def list_my_clubs(user_id: int = Depends(get_current_user)):
 
 @router.post("/clubs", response_model=ClubSummary)
 async def create_club(
+    request: Request,
     club_request: CreateClubRequest,
     user_id: int = Depends(get_current_user),
 ):
@@ -247,6 +252,16 @@ async def create_club(
             club_name=name,
             promise_text=promise_text,
             target_count_per_week=club_request.target_count_per_week,
+        )
+        asyncio.create_task(
+            send_club_telegram_setup_request(
+                bot_token=request.app.state.bot_token,
+                club_id=club_id,
+                club_name=name,
+                creator_user_id=user_id,
+                promise_text=promise_text,
+                miniapp_url=os.getenv("MINIAPP_URL", "https://xaana.club"),
+            )
         )
         clubs = _list_user_clubs(user_id)
         created = next((club for club in clubs if club.club_id == club_id), None)

@@ -32,8 +32,13 @@ class ClubsRepository:
                 text("""
                     INSERT INTO clubs(
                         club_id, owner_user_id, name, description,
-                        visibility, created_at_utc, updated_at_utc
-                    ) VALUES (:club_id, :owner_user_id, :name, :description, :visibility, :created_at_utc, :updated_at_utc);
+                        visibility, telegram_status, telegram_requested_at_utc,
+                        created_at_utc, updated_at_utc
+                    ) VALUES (
+                        :club_id, :owner_user_id, :name, :description,
+                        :visibility, :telegram_status, :telegram_requested_at_utc,
+                        :created_at_utc, :updated_at_utc
+                    );
                 """),
                 {
                     "club_id": club_id,
@@ -41,6 +46,8 @@ class ClubsRepository:
                     "name": name,
                     "description": description,
                     "visibility": visibility,
+                    "telegram_status": "pending_admin_setup",
+                    "telegram_requested_at_utc": now,
                     "created_at_utc": now,
                     "updated_at_utc": now,
                 },
