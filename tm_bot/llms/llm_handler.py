@@ -2478,6 +2478,117 @@ class LLMHandler:
             logger.exception("Unexpected error in get_response_custom")
             return _LLM_USER_FACING_ERROR
 
+    def get_response_group_safe(
+        self,
+        user_message: str,
+        group_context: Optional[Dict[str, object]] = None,
+        user_language: str = None,
+    ) -> str:
+        """
+        Text-only group response path.
+
+        This intentionally avoids private user history, durable memory, and tools. The
+        only application context included is club-level data already visible in the
+        Telegram group.
+        """
+        try:
+            group_context = dict(group_context or {})
+            user_message = "" if user_message is None else str(user_message).strip()
+            if not user_message:
+                user_message = "The user addressed you in the group."
+
+            club_name = str(group_context.get("club_name") or "this club").strip()
+            promise_text = str(group_context.get("promise_text") or "").strip()
+            target_text = str(group_context.get("target_text") or "").strip()
+
+            context_lines = [
+                f"Club name: {club_name}",
+                f"Shared promise: {promise_text or 'not set'}",
+            ]
+            if target_text:
+                context_lines.append(f"Weekly target: {target_text}")
+
+            language_line = (
+                f"Reply in the user's language when clear. User language preference: {user_language}."
+                if user_language
+                else "Reply in the user's language when clear."
+            )
+
+            system_text = "\n".join([
+                "You are Xaana replying inside a Telegram group connected to a Xaana club.",
+                "Use only the club-level context below and general knowledge.",
+                "Do not use or mention private user data, private promises, private memories, settings, or DM history.",
+                "Do not claim you can see private information about any member.",
+                "Do not create, update, delete, or log personal promises from a group message.",
+                "If the user asks for a private action or private data, tell them to DM you.",
+                "Keep replies short, friendly, and useful for the group.",
+                language_line,
+                "",
+                "Club-level context:",
+                *context_lines,
+            ])
+            messages: List[BaseMessage] = [
+                SystemMessage(content=system_text),
+                HumanMessage(content=user_message),
+            ]
+
+            def _fallback_entries() -> List[Dict[str, object]]:
+                entries: List[Dict[str, object]] = []
+                for spec in list(getattr(self, "_fallback_chain_model_specs", []) or []):
+                    responder = spec.get("responder_model")
+                    if responder is not None:
+                        entries.append({
+                            "model": responder,
+                            "label": str(spec.get("label") or "configured_fallback"),
+                        })
+                if not entries and getattr(self, "_fallback_responder_model", None) is not None:
+                    entries.append({
+                        "model": self._fallback_responder_model,
+                        "label": self._fallback_label or "configured_fallback",
+                    })
+                return entries
+
+            model = self.responder_model or self.chat_model
+            response = None
+            primary_error = None
+            try:
+                response = model.invoke(messages)
+            except Exception as e:
+                primary_error = e
+                if _is_fallback_eligible_error(e):
+                    fallback_entries = _fallback_entries()
+                    for idx, entry in enumerate(fallback_entries):
+                        fallback_model = entry.get("model")
+                        if fallback_model is None:
+                            continue
+                        try:
+                            response = fallback_model.invoke(messages)
+                            if idx > 0:
+                                logger.warning({
+                                    "event": "group_safe_response_fallback_succeeded",
+                                    "attempt": idx + 1,
+                                    "fallback_model": str(entry.get("label") or "configured_fallback"),
+                                })
+                            break
+                        except Exception as fallback_exc:
+                            primary_error = fallback_exc
+                            if idx < len(fallback_entries) - 1 and _is_fallback_eligible_error(fallback_exc):
+                                continue
+                            break
+
+            if response is None:
+                logger.warning("Group-safe LLM response failed: %s", primary_error)
+                return _LLM_USER_FACING_ERROR
+
+            if isinstance(response, AIMessage):
+                content = message_content_to_str(response.content)
+            else:
+                content = message_content_to_str(getattr(response, "content", str(response)))
+            return self._strip_internal_reasoning(content).strip() or _LLM_USER_FACING_ERROR
+        except Exception:
+            logger.exception("Unexpected error in get_response_group_safe")
+            return _LLM_USER_FACING_ERROR
+
     def set_progress_callback(self, callback: Optional[Callable[[str, dict], None]]) -> None:
         """Set a default progress callback for future agent runs."""
         self._progress_callback_default = callback

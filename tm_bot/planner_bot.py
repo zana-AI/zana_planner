@@ -486,7 +486,7 @@ class PlannerBot:
             await self._reply_with_group_club_summary(ctx)
             return
         if await self._message_addresses_bot(ctx):
-            await self._reply_with_group_club_summary(ctx)
+            await self._handle_group_llm_message(ctx)
 
     async def _welcome_group_members(self, ctx: InputContext) -> None:
         members = ctx.metadata.get("new_chat_members") or []
@@ -529,7 +529,7 @@ class PlannerBot:
             target_text = str(int(target)) if target.is_integer() else str(target)
             lines.append(f"Target: {target_text} times/week")
         lines.append("I only share club-level promise info in this group.")
-        await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text="\n".join(lines), parse_mode=None)
+        await self._reply_to_group_message(ctx, "\n".join(lines), parse_mode=None)
 
     async def _reply_with_group_setup_help(self, ctx: InputContext) -> None:
         message = "\n".join([
@@ -540,7 +540,77 @@ class PlannerBot:
             "",
             "After it is connected, use /club here.",
         ])
-        await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text=message, parse_mode=None)
+        await self._reply_to_group_message(ctx, message, parse_mode=None)
+
+    async def _handle_group_llm_message(self, ctx: InputContext) -> None:
+        club = self._get_club_for_group_chat(ctx.chat_id)
+        if not club:
+            club = self._link_ready_club_for_group_chat(ctx)
+        if not club:
+            await self._reply_with_group_setup_help(ctx)
+            return
+
+        user_message = await self._clean_group_user_message(ctx)
+        target_text = ""
+        if club.get("target_count_per_week") is not None:
+            target = float(club["target_count_per_week"])
+            target_text = str(int(target)) if target.is_integer() else str(target)
+            target_text = f"{target_text} times/week"
+
+        processing_msg = await self._reply_to_group_message(ctx, "Thinking...", parse_mode=None)
+        response_text = await asyncio.to_thread(
+            self.llm_handler.get_response_group_safe,
+            user_message,
+            {
+                "chat_id": ctx.chat_id,
+                "club_name": club.get("club_name"),
+                "promise_text": club.get("promise_text"),
+                "target_text": target_text,
+            },
+            ctx.language.value if ctx.language else None,
+        )
+        response_text = str(response_text or "").strip() or "I am having trouble right now. Please try again in a moment."
+
+        if processing_msg:
+            try:
+                await processing_msg.edit_text(text=response_text, parse_mode=None)
+                return
+            except Exception as e:
+                logger.debug("Could not edit group processing reply: %s", e)
+
+        await self._reply_to_group_message(ctx, response_text, parse_mode=None)
+
+    async def _reply_to_group_message(self, ctx: InputContext, text: str, **kwargs):
+        message = getattr(ctx.platform_update, "effective_message", None)
+        if message:
+            try:
+                return await message.reply_text(text=text, **kwargs)
+            except Exception as e:
+                logger.debug("Could not reply to group message directly: %s", e)
+
+        bot = getattr(ctx.platform_context, "bot", None)
+        if not bot:
+            return None
+        return await bot.send_message(chat_id=ctx.chat_id, text=text, **kwargs)
+
+    async def _clean_group_user_message(self, ctx: InputContext) -> str:
+        message = getattr(ctx.platform_update, "effective_message", None)
+        text_value = (
+            getattr(message, "text", None)
+            or getattr(message, "caption", None)
+            or ctx.raw_text
+            or ""
+        )
+        username, _bot_id = await self._resolve_bot_identity(ctx)
+        cleaned = str(text_value or "").strip()
+        if username:
+            cleaned = cleaned.replace(f"@{username}", "").replace(f"@{username.lower()}", "")
+
+        command = (ctx.command or "").split("@", 1)[0].lower()
+        if command:
+            cleaned = cleaned.replace(f"/{ctx.command}", "", 1).strip()
+
+        return cleaned.strip() or "The user addressed you in the group."
 
     async def _message_addresses_bot(self, ctx: InputContext) -> bool:
         message = getattr(ctx.platform_update, "effective_message", None)
