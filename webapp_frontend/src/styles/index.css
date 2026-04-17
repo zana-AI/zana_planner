@@ -1453,7 +1453,7 @@ body.modal-open {
 }
 
 .users-page-community {
-  max-width: 900px;
+  max-width: 1120px;
 }
 
 .community-v2-layout {
@@ -1465,9 +1465,13 @@ body.modal-open {
 
 .community-v2-section {
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: linear-gradient(180deg, rgba(15, 26, 56, 0.98), rgba(15, 23, 48, 0.98));
   padding: 14px;
+}
+
+.community-v2-people-section {
+  padding-bottom: 16px;
 }
 
 .community-v2-section-header {
@@ -1685,28 +1689,17 @@ body.modal-open {
   background: rgba(91, 163, 245, 0.04);
 }
 
-.community-v2-people-row {
-  display: flex;
+.community-v2-people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scroll-snap-type: x proximity;
-}
-
-.community-v2-people-row::-webkit-scrollbar {
-  height: 6px;
-}
-
-.community-v2-people-row::-webkit-scrollbar-thumb {
-  background: rgba(91, 163, 245, 0.25);
-  border-radius: 999px;
 }
 
 .compact-user-chip {
-  min-width: 200px;
-  max-width: 260px;
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: rgba(11, 19, 39, 0.72);
   padding: 8px;
   display: grid;
@@ -1714,7 +1707,6 @@ body.modal-open {
   gap: 8px;
   align-items: center;
   cursor: pointer;
-  scroll-snap-align: start;
 }
 
 .compact-user-chip-idle {
@@ -1846,6 +1838,10 @@ body.modal-open {
     padding: 10px;
   }
 
+  .community-v2-people-grid {
+    grid-template-columns: 1fr;
+  }
+
   .community-activity-item {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 8px;
@@ -1857,8 +1853,7 @@ body.modal-open {
   }
 
   .compact-user-chip {
-    min-width: 172px;
-    max-width: 220px;
+    min-width: 0;
   }
 }
 

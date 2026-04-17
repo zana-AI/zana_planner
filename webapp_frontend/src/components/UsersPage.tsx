@@ -7,6 +7,79 @@ import type { PublicActivityItem, PublicUser, UserInfo } from '../types';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 const PREVIEW_COUNT = 8;
+const ACTIVITY_FETCH_COUNT = 60;
+const ACTIVITY_PAGE_SIZE = 10;
+
+type CommunityFeedItem = {
+  item: PublicActivityItem;
+  mergedCount: number;
+};
+
+function mergeSimilarActivity(items: PublicActivityItem[]): CommunityFeedItem[] {
+  const grouped = new Map<string, CommunityFeedItem>();
+  const orderedGroups: CommunityFeedItem[] = [];
+
+  for (const item of items) {
+    const key = [
+      item.actor.user_id,
+      item.action_type || item.action_label,
+      item.promise_id || item.promise_text || 'general',
+    ].join('|');
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.mergedCount += 1;
+      existing.item.duration_minutes =
+        (existing.item.duration_minutes || 0) + (item.duration_minutes || 0) || undefined;
+      continue;
+    }
+
+    const groupItem = { item: { ...item }, mergedCount: 1 };
+    grouped.set(key, groupItem);
+    orderedGroups.push(groupItem);
+  }
+
+  return orderedGroups.map((group) => {
+    if (group.mergedCount === 1) {
+      return group;
+    }
+
+    return {
+      ...group,
+      item: {
+        ...group.item,
+        activity_id: `${group.item.activity_id}-merged-${group.mergedCount}`,
+        action_label: `${group.item.action_label || 'updated progress'} ${group.mergedCount} times`,
+      },
+    };
+  });
+}
+
+function buildMomentumActivity(users: PublicUser[]): CommunityFeedItem[] {
+  return users
+    .filter((person) => (person.weekly_activity_count ?? 0) >= 3 && person.last_activity_at_utc)
+    .slice(0, 3)
+    .map((person) => ({
+      mergedCount: 1,
+      item: {
+        activity_id: `momentum-${person.user_id}-${person.last_activity_at_utc}`,
+        action_type: 'momentum',
+        action_label: `kept momentum with ${person.weekly_activity_count} public updates this week`,
+        timestamp_utc: person.last_activity_at_utc || new Date().toISOString(),
+        actor: {
+          user_id: person.user_id,
+          first_name: person.first_name,
+          last_name: person.last_name,
+          display_name: person.display_name,
+          username: person.username,
+          avatar_path: person.avatar_path,
+          avatar_file_unique_id: person.avatar_file_unique_id,
+          weekly_activity_count: person.weekly_activity_count,
+          last_activity_at_utc: person.last_activity_at_utc,
+        },
+      },
+    }));
+}
 
 export function UsersPage() {
   const navigate = useNavigate();
@@ -25,6 +98,7 @@ export function UsersPage() {
   const [followingExpanded, setFollowingExpanded] = useState(false);
   const [followersExpanded, setFollowersExpanded] = useState(false);
   const [discoverExpanded, setDiscoverExpanded] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(false);
 
   const authData = initData || getDevInitData();
   const hasToken = !!localStorage.getItem('telegram_auth_token');
@@ -93,7 +167,7 @@ export function UsersPage() {
       }
 
       const [activityRes, usersRes] = await Promise.all([
-        apiClient.getPublicActivity(25),
+        apiClient.getPublicActivity(ACTIVITY_FETCH_COUNT),
         apiClient.getPublicUsers(24),
       ]);
 
@@ -144,10 +218,19 @@ export function UsersPage() {
     () => discoverUsers.filter((person) => !followingIds.has(person.user_id)),
     [discoverUsers, followingIds]
   );
+  const activityFeed = useMemo(() => {
+    const mergedActivity = mergeSimilarActivity(activityItems);
+    const momentumActivity = buildMomentumActivity(discoverUsers);
+
+    return [...momentumActivity, ...mergedActivity].sort(
+      (left, right) => new Date(right.item.timestamp_utc).getTime() - new Date(left.item.timestamp_utc).getTime()
+    );
+  }, [activityItems, discoverUsers]);
 
   const visibleFollowing = followingExpanded ? following : following.slice(0, PREVIEW_COUNT);
   const visibleFollowers = followersExpanded ? followers : followers.slice(0, PREVIEW_COUNT);
   const visibleDiscover = discoverExpanded ? discoverCandidates : discoverCandidates.slice(0, PREVIEW_COUNT);
+  const visibleActivity = activityExpanded ? activityFeed : activityFeed.slice(0, ACTIVITY_PAGE_SIZE);
 
   if (!isReady) {
     return (
@@ -192,42 +275,45 @@ export function UsersPage() {
 
       {!error ? (
         <div className="community-v2-layout">
-          <section className="community-v2-section community-v2-activity">
+          <section className="community-v2-section community-v2-people-section">
             <div className="community-v2-section-header">
-              <h3 className="community-v2-title">Recent Activity</h3>
-              <span className="community-v2-count">{activityItems.length}</span>
+              <h3 className="community-v2-title">Discover Active Users</h3>
+              <span className="community-v2-count">{discoverCandidates.length}</span>
             </div>
-
-            {activityLoading && activityItems.length === 0 ? (
-              <div className="community-v2-empty-note">Loading recent activity...</div>
-            ) : activityItems.length > 0 ? (
-              <div className="community-v2-activity-list">
-                {activityItems.map((item, index) => (
-                  <ActivityItem
-                    key={`${item.activity_id}-${index}`}
-                    item={item}
-                    currentUserId={currentUserId}
-                    isFollowing={followingIds.has(item.actor.user_id)}
-                    followPending={!!followBusyByUser[item.actor.user_id]}
-                    onToggleFollow={toggleFollow}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="community-v2-activity-empty">
-                <p className="community-v2-empty-title">No recent public activity yet</p>
-                <p className="community-v2-empty-note">Follow active users to personalize this stream.</p>
-                <div className="community-v2-placeholder-list">
-                  <div className="community-v2-placeholder-row" />
-                  <div className="community-v2-placeholder-row" />
-                  <div className="community-v2-placeholder-row" />
+            {visibleDiscover.length > 0 ? (
+              <>
+                <div className="community-v2-people-grid">
+                  {visibleDiscover.map((person) => (
+                    <CompactUserChip
+                      key={person.user_id}
+                      user={person}
+                      currentUserId={currentUserId}
+                      showFollowButton={!!currentUserId}
+                      isFollowing={followingIds.has(person.user_id)}
+                      followPending={!!followBusyByUser[person.user_id]}
+                      onFollowToggle={toggleFollow}
+                    />
+                  ))}
                 </div>
+                {discoverCandidates.length > PREVIEW_COUNT ? (
+                  <button
+                    type="button"
+                    className="community-v2-row-toggle"
+                    onClick={() => setDiscoverExpanded((prev) => !prev)}
+                  >
+                    {discoverExpanded ? 'Collapse' : `See more (${discoverCandidates.length - PREVIEW_COUNT})`}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <div className="community-v2-empty-note">
+                You are already connected with most active users.
               </div>
             )}
           </section>
 
           {currentUserId ? (
-            <section className="community-v2-section">
+            <section className="community-v2-section community-v2-people-section">
               <div className="community-v2-section-header">
                 <h3 className="community-v2-title">Following</h3>
                 <span className="community-v2-count">{following.length}</span>
@@ -236,7 +322,7 @@ export function UsersPage() {
                 <div className="community-v2-empty-note">Loading following...</div>
               ) : following.length > 0 ? (
                 <>
-                  <div className="community-v2-people-row">
+                  <div className="community-v2-people-grid">
                     {visibleFollowing.map((person) => (
                       <CompactUserChip
                         key={person.user_id}
@@ -263,7 +349,7 @@ export function UsersPage() {
           ) : null}
 
           {currentUserId ? (
-            <section className="community-v2-section">
+            <section className="community-v2-section community-v2-people-section">
               <div className="community-v2-section-header">
                 <h3 className="community-v2-title">Followers</h3>
                 <span className="community-v2-count">{followers.length}</span>
@@ -272,7 +358,7 @@ export function UsersPage() {
                 <div className="community-v2-empty-note">Loading followers...</div>
               ) : followers.length > 0 ? (
                 <>
-                  <div className="community-v2-people-row">
+                  <div className="community-v2-people-grid">
                     {visibleFollowers.map((person) => (
                       <CompactUserChip
                         key={person.user_id}
@@ -298,39 +384,47 @@ export function UsersPage() {
             </section>
           ) : null}
 
-          <section className="community-v2-section">
+          <section className="community-v2-section community-v2-activity">
             <div className="community-v2-section-header">
-              <h3 className="community-v2-title">Discover Active Users</h3>
-              <span className="community-v2-count">{discoverCandidates.length}</span>
+              <h3 className="community-v2-title">Recent Activity</h3>
+              <span className="community-v2-count">{activityFeed.length}</span>
             </div>
-            {visibleDiscover.length > 0 ? (
+
+            {activityLoading && activityItems.length === 0 ? (
+              <div className="community-v2-empty-note">Loading recent activity...</div>
+            ) : activityFeed.length > 0 ? (
               <>
-                <div className="community-v2-people-row">
-                  {visibleDiscover.map((person) => (
-                    <CompactUserChip
-                      key={person.user_id}
-                      user={person}
+                <div className="community-v2-activity-list">
+                  {visibleActivity.map(({ item }, index) => (
+                    <ActivityItem
+                      key={`${item.activity_id}-${index}`}
+                      item={item}
                       currentUserId={currentUserId}
-                      showFollowButton={!!currentUserId}
-                      isFollowing={followingIds.has(person.user_id)}
-                      followPending={!!followBusyByUser[person.user_id]}
-                      onFollowToggle={toggleFollow}
+                      isFollowing={followingIds.has(item.actor.user_id)}
+                      followPending={!!followBusyByUser[item.actor.user_id]}
+                      onToggleFollow={toggleFollow}
                     />
                   ))}
                 </div>
-                {discoverCandidates.length > PREVIEW_COUNT ? (
+                {activityFeed.length > ACTIVITY_PAGE_SIZE ? (
                   <button
                     type="button"
                     className="community-v2-row-toggle"
-                    onClick={() => setDiscoverExpanded((prev) => !prev)}
+                    onClick={() => setActivityExpanded((prev) => !prev)}
                   >
-                    {discoverExpanded ? 'Collapse' : `See more (${discoverCandidates.length - PREVIEW_COUNT})`}
+                    {activityExpanded ? 'Show fewer' : `Show earlier activity (${activityFeed.length - ACTIVITY_PAGE_SIZE})`}
                   </button>
                 ) : null}
               </>
             ) : (
-              <div className="community-v2-empty-note">
-                You are already connected with most active users.
+              <div className="community-v2-activity-empty">
+                <p className="community-v2-empty-title">No recent public activity yet</p>
+                <p className="community-v2-empty-note">Follow active users to personalize this stream.</p>
+                <div className="community-v2-placeholder-list">
+                  <div className="community-v2-placeholder-row" />
+                  <div className="community-v2-placeholder-row" />
+                  <div className="community-v2-placeholder-row" />
+                </div>
               </div>
             )}
           </section>
