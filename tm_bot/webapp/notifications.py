@@ -40,14 +40,15 @@ async def send_club_telegram_setup_request(
         message = "\n".join([
             "New club needs Telegram group",
             "",
-            f"Club: {club_name}",
+            f"Club: `{club_name}`",
             f"Creator: {creator_name}",
             f"Promise: {promise_text}",
             "",
             "Steps:",
-            "1. Create a Telegram group with this club name",
-            "2. Add Xaana bot and make it admin",
-            "3. Save the invite link in Xaana",
+            "1. Create a Telegram group named exactly as the club name above",
+            "2. Add @xaana_bot and make it admin",
+            "3. Open setup, paste the group invite link in Xaana, and save",
+            "4. Optional: after confirming setup, you may leave the group if another human admin remains",
         ])
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("Open setup", url=setup_url)]
