@@ -1721,73 +1721,6 @@ body.modal-open {
   background: var(--bg);
 }
 
-.community-club-detail-dialog {
-  max-width: 520px;
-}
-
-.community-club-detail-subtitle {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-  text-transform: capitalize;
-}
-
-.community-club-detail-body {
-  padding: 18px 20px 20px;
-}
-
-.community-club-detail-section + .community-club-detail-section {
-  margin-top: 16px;
-}
-
-.community-club-detail-label {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.community-club-detail-promise,
-.community-club-detail-value {
-  margin: 0;
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.community-club-detail-members {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.community-club-detail-member {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  padding: 4px 8px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.community-club-detail-actions {
-  align-items: stretch;
-}
-
-.community-club-detail-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  text-decoration: none;
-}
-
 .community-club-dialog-form {
   padding-top: 16px;
 }
@@ -4720,6 +4653,11 @@ textarea.modal-input {
   margin: 0 auto;
 }
 
+.user-detail-container > .ui-button,
+.club-detail-container > .ui-button {
+  margin-bottom: 12px;
+}
+
 .user-detail-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-16);
@@ -4806,6 +4744,129 @@ textarea.modal-input {
   color: var(--text-muted);
 }
 
+.club-detail-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.club-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(15, 26, 56, 0.98), rgba(15, 23, 48, 0.98));
+  padding: 20px;
+}
+
+.club-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.club-detail-eyebrow {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.club-detail-header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.club-detail-status {
+  flex-shrink: 0;
+  border: 1px solid rgba(91, 163, 245, 0.35);
+  border-radius: 999px;
+  background: rgba(91, 163, 245, 0.12);
+  color: var(--accent);
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.club-detail-section + .club-detail-section,
+.club-detail-grid + .club-detail-section,
+.club-detail-section + .club-detail-grid {
+  margin-top: 18px;
+}
+
+.club-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.club-detail-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.club-detail-promise,
+.club-detail-value {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.club-detail-members-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.club-detail-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.club-detail-member {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.club-detail-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.club-detail-actions > * {
+  flex: 1;
+}
+
+.club-detail-action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
+
 @media (max-width: 640px) {
   .user-detail-actions {
     width: 100%;
@@ -4815,6 +4876,20 @@ textarea.modal-input {
 
   .user-detail-actions .ui-button {
     flex: 1 1 140px;
+  }
+
+  .club-detail-header,
+  .club-detail-actions {
+    flex-direction: column;
+  }
+
+  .club-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .club-detail-status,
+  .club-detail-actions > * {
+    width: 100%;
   }
 }
 

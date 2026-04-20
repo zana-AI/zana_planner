@@ -8,6 +8,7 @@ import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
+import { ClubDetailPage } from './pages/ClubDetailPage';
 import { FocusPage } from './pages/FocusPage';
 import { MyContentsPage } from './pages/MyContentsPage';
 import { DevAdminLoginPage } from './pages/DevAdminLoginPage';
@@ -114,6 +115,18 @@ function App() {
           element={
             isAuthenticated ? (
               <UserDetailPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+
+        {/* Club Detail Page - authenticated only */}
+        <Route
+          path="/clubs/:clubId"
+          element={
+            isAuthenticated ? (
+              <ClubDetailPage />
             ) : (
               <Navigate to="/" replace />
             )
