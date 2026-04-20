@@ -3543,6 +3543,10 @@ textarea.modal-input {
   display: block;
 }
 
+.app-shell-back-button {
+  flex-shrink: 0;
+}
+
 .app-shell-page-title {
   min-width: 0;
 }
@@ -4651,11 +4655,6 @@ textarea.modal-input {
 .user-detail-container {
   max-width: 800px;
   margin: 0 auto;
-}
-
-.user-detail-container > .ui-button,
-.club-detail-container > .ui-button {
-  margin-bottom: 12px;
 }
 
 .user-detail-card {

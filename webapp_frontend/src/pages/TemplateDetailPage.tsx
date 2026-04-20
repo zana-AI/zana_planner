@@ -89,9 +89,6 @@ export function TemplateDetailPage() {
           <div className="error-icon">!</div>
           <h1 className="error-title">Template not found</h1>
           <p className="error-message">{error || 'The selected template does not exist.'}</p>
-          <Button variant="secondary" onClick={() => navigate('/templates')}>
-            Back to Explore
-          </Button>
         </div>
       </div>
     );
