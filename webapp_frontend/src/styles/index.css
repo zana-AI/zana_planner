@@ -1721,6 +1721,73 @@ body.modal-open {
   background: var(--bg);
 }
 
+.community-club-detail-dialog {
+  max-width: 520px;
+}
+
+.community-club-detail-subtitle {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.community-club-detail-body {
+  padding: 18px 20px 20px;
+}
+
+.community-club-detail-section + .community-club-detail-section {
+  margin-top: 16px;
+}
+
+.community-club-detail-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.community-club-detail-promise,
+.community-club-detail-value {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.community-club-detail-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.community-club-detail-member {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.community-club-detail-actions {
+  align-items: stretch;
+}
+
+.community-club-detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
+
 .community-club-dialog-form {
   padding-top: 16px;
 }
