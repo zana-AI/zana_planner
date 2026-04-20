@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { ActivityItem } from './community/ActivityItem';
@@ -99,6 +99,7 @@ export function UsersPage() {
   const [error, setError] = useState('');
   const [clubError, setClubError] = useState('');
   const [showCreateClubDialog, setShowCreateClubDialog] = useState(false);
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubBusyById, setClubBusyById] = useState<Record<string, boolean>>({});
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [followBusyByUser, setFollowBusyByUser] = useState<Record<string, boolean>>({});
@@ -248,6 +249,10 @@ export function UsersPage() {
   const visibleFollowers = followersExpanded ? followers : followers.slice(0, PREVIEW_COUNT);
   const visibleDiscover = discoverExpanded ? discoverCandidates : discoverCandidates.slice(0, PREVIEW_COUNT);
   const visibleActivity = activityExpanded ? activityFeed : activityFeed.slice(0, ACTIVITY_PAGE_SIZE);
+  const selectedClub = useMemo(
+    () => clubs.find((club) => club.club_id === selectedClubId) || null,
+    [clubs, selectedClubId]
+  );
 
   const handleCreateClub = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -296,12 +301,19 @@ export function UsersPage() {
     try {
       await apiClient.removeMyClub(club.club_id);
       setClubs((prev) => prev.filter((item) => item.club_id !== club.club_id));
+      setSelectedClubId((prev) => (prev === club.club_id ? null : prev));
     } catch (err) {
       console.error('Failed to remove club:', err);
       setClubError(err instanceof ApiError ? err.message : 'Failed to update club.');
     } finally {
       setClubBusyById((prev) => ({ ...prev, [club.club_id]: false }));
     }
+  }, []);
+
+  const handleClubCardKeyDown = useCallback((event: KeyboardEvent<HTMLElement>, club: ClubSummary) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    setSelectedClubId(club.club_id);
   }, []);
 
   if (!isReady) {
@@ -373,7 +385,15 @@ export function UsersPage() {
             ) : clubs.length > 0 ? (
               <div className="community-club-grid">
                 {clubs.map((club) => (
-                  <article className="community-club-card" key={club.club_id}>
+                  <article
+                    className="community-club-card community-club-card-clickable"
+                    key={club.club_id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${club.name} club details`}
+                    onClick={() => setSelectedClubId(club.club_id)}
+                    onKeyDown={(event) => handleClubCardKeyDown(event, club)}
+                  >
                     <div className="community-club-card-header">
                       <h4>{club.name}</h4>
                       <span>{club.visibility}</span>
@@ -391,6 +411,7 @@ export function UsersPage() {
                           href={club.telegram_invite_link}
                           target="_blank"
                           rel="noreferrer"
+                          onClick={(event) => event.stopPropagation()}
                         >
                           Join Telegram
                         </a>
@@ -403,7 +424,10 @@ export function UsersPage() {
                         type="button"
                         className="community-club-remove"
                         disabled={!!clubBusyById[club.club_id]}
-                        onClick={() => handleRemoveClub(club)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleRemoveClub(club);
+                        }}
                       >
                         {clubBusyById[club.club_id]
                           ? 'Updating...'
@@ -421,8 +445,14 @@ export function UsersPage() {
           </section>
 
           {showCreateClubDialog ? (
-            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="create-club-title">
-              <section className="modal-content community-club-dialog">
+            <div
+              className="modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-club-title"
+              onClick={() => setShowCreateClubDialog(false)}
+            >
+              <section className="modal-content community-club-dialog" onClick={(event) => event.stopPropagation()}>
                 <div className="modal-header">
                   <h3 id="create-club-title" className="modal-title">Create club</h3>
                   <button
@@ -509,6 +539,104 @@ export function UsersPage() {
                     </button>
                   </div>
                 </form>
+              </section>
+            </div>
+          ) : null}
+
+          {selectedClub ? (
+            <div
+              className="modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="club-detail-title"
+              onClick={() => setSelectedClubId(null)}
+            >
+              <section className="modal-content community-club-dialog community-club-detail-dialog" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-header">
+                  <div>
+                    <h3 id="club-detail-title" className="modal-title">{selectedClub.name}</h3>
+                    <p className="community-club-detail-subtitle">
+                      {selectedClub.visibility} club · {selectedClub.role}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close"
+                    aria-label="Close"
+                    onClick={() => setSelectedClubId(null)}
+                  >
+                    x
+                  </button>
+                </div>
+
+                <div className="community-club-detail-body">
+                  <section className="community-club-detail-section">
+                    <span className="community-club-detail-label">Shared promise</span>
+                    <p className="community-club-detail-promise">{selectedClub.promise_text || 'No shared promise yet'}</p>
+                  </section>
+
+                  <section className="community-club-detail-section">
+                    <span className="community-club-detail-label">Progress target</span>
+                    <p className="community-club-detail-value">
+                      {selectedClub.target_count_per_week ? `${selectedClub.target_count_per_week} times per week` : 'No weekly target'}
+                    </p>
+                  </section>
+
+                  <section className="community-club-detail-section">
+                    <span className="community-club-detail-label">Members</span>
+                    <div className="community-club-detail-members">
+                      {selectedClub.members.map((member) => (
+                        <span className="community-club-detail-member" key={member.user_id}>
+                          {member.first_name || member.username || `User ${member.user_id}`}
+                        </span>
+                      ))}
+                      {selectedClub.member_count > selectedClub.members.length ? (
+                        <span className="community-club-detail-member">
+                          +{selectedClub.member_count - selectedClub.members.length} more
+                        </span>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className="community-club-detail-section">
+                    <span className="community-club-detail-label">Telegram</span>
+                    <p className="community-club-detail-value">
+                      {selectedClub.telegram_status.replace(/_/g, ' ')}
+                    </p>
+                  </section>
+
+                  {clubError ? <div className="modal-error">{clubError}</div> : null}
+
+                  <div className="modal-actions community-club-detail-actions">
+                    {selectedClub.telegram_invite_link && ['ready', 'connected'].includes(selectedClub.telegram_status) ? (
+                      <a
+                        className="modal-button modal-button-primary community-club-detail-link"
+                        href={selectedClub.telegram_invite_link}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Join Telegram
+                      </a>
+                    ) : (
+                      <button type="button" className="modal-button modal-button-secondary" disabled>
+                        Telegram pending
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      className="modal-button modal-button-danger"
+                      disabled={!!clubBusyById[selectedClub.club_id]}
+                      onClick={() => handleRemoveClub(selectedClub)}
+                    >
+                      {clubBusyById[selectedClub.club_id]
+                        ? 'Updating...'
+                        : selectedClub.role === 'owner'
+                          ? 'Cancel club'
+                          : 'Leave club'}
+                    </button>
+                  </div>
+                </div>
               </section>
             </div>
           ) : null}
