@@ -135,6 +135,39 @@ class TelegramJobScheduler(IJobScheduler):
             data=data or {}
         )
     
+    def schedule_daily_utc(
+        self,
+        name: str,
+        callback: Callable,
+        hh: int = 21,
+        mm: int = 0,
+        data: Optional[dict] = None,
+    ) -> None:
+        """Schedule a shared daily job at a fixed UTC time (not tied to any user)."""
+        # Clear any existing job with the same name
+        existing_jobs = list(self._job_queue.get_jobs_by_name(name))
+        if existing_jobs:
+            logger.debug(f"TelegramJobScheduler: clearing {len(existing_jobs)} existing job(s) with name '{name}'")
+            for job in existing_jobs:
+                job.enabled = False
+                job.schedule_removal()
+
+        try:
+            self._job_queue.run_daily(
+                callback,
+                time=time(hh, mm, tzinfo=ZoneInfo("UTC")),
+                days=(0, 1, 2, 3, 4, 5, 6),
+                name=name,
+                data=data or {},
+            )
+            if _is_staging_or_test_mode():
+                logger.debug(f"TelegramJobScheduler: scheduled shared job '{name}' at {hh:02d}:{mm:02d} UTC")
+            else:
+                logger.info(f"TelegramJobScheduler: scheduled shared job '{name}' at {hh:02d}:{mm:02d} UTC")
+        except Exception as e:
+            logger.exception(f"TelegramJobScheduler: ✗ failed to schedule shared job '{name}': {e}")
+            raise
+
     def cancel_job(self, name: str) -> None:
         """Cancel a job by name."""
         for job in self._job_queue.get_jobs_by_name(name):

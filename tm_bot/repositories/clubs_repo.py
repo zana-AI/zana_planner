@@ -346,3 +346,63 @@ class ClubsRepository:
                 {"promise_uuid": promise_uuid, "club_id": club_id, "created_at_utc": now},
             )
             return result.rowcount > 0
+
+    def get_active_clubs_with_telegram(self) -> List[Dict]:
+        """
+        Return all clubs that have a confirmed Telegram group connected.
+
+        These are the clubs eligible to receive nightly group reminders.
+        """
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT
+                        club_id,
+                        owner_user_id,
+                        name,
+                        telegram_chat_id
+                    FROM clubs
+                    WHERE telegram_status IN ('ready', 'connected')
+                      AND NULLIF(trim(COALESCE(telegram_chat_id, '')), '') IS NOT NULL
+                      AND COALESCE(status, 'active') = 'active'
+                    ORDER BY created_at_utc ASC;
+                """),
+            ).mappings().fetchall()
+            return [dict(row) for row in rows]
+
+    def get_club_members_promises(self, club_id: str) -> List[Dict]:
+        """
+        Return each active club member paired with the promise they explicitly
+        shared to this specific club via promise_club_shares.
+
+        Privacy guarantee: the join through promise_club_shares with
+        pcs.club_id = :club_id means only promises shared to THIS club are
+        returned — a member's private promises are never exposed.
+
+        Members who have not shared a promise to this club will appear with
+        promise_text=None.
+        """
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT
+                        cm.user_id,
+                        u.first_name,
+                        u.username,
+                        p.text AS promise_text,
+                        p.promise_uuid
+                    FROM club_members cm
+                    JOIN users u ON u.user_id = cm.user_id
+                    LEFT JOIN promise_club_shares pcs
+                        ON pcs.club_id = cm.club_id
+                    LEFT JOIN promises p
+                        ON p.promise_uuid = pcs.promise_uuid
+                       AND p.user_id = cm.user_id
+                       AND p.is_deleted = 0
+                    WHERE cm.club_id = :club_id
+                      AND cm.status = 'active'
+                    ORDER BY cm.joined_at_utc ASC;
+                """),
+                {"club_id": club_id},
+            ).mappings().fetchall()
+            return [dict(row) for row in rows]

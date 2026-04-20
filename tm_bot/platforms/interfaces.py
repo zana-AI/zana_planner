@@ -131,6 +131,18 @@ class IJobScheduler(ABC):
         pass
     
     @abstractmethod
+    def schedule_daily_utc(
+        self,
+        name: str,
+        callback: Callable,
+        hh: int = 21,
+        mm: int = 0,
+        data: Optional[dict] = None,
+    ) -> None:
+        """Schedule a shared daily job at a fixed UTC time (not tied to any user)."""
+        pass
+
+    @abstractmethod
     def cancel_job(self, name: str) -> None:
         """Cancel a job by name."""
         pass

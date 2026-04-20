@@ -1346,6 +1346,20 @@ class PlannerBot:
         
         logger.info(f"bootstrap_schedule_existing_users: successfully scheduled reminders for {scheduled_count}/{len(user_ids)} users")
 
+        # Schedule a SINGLE shared daily job for club group reminders.
+        # This job fires every night at 21:00 UTC and sends one reminder message
+        # to each active club's Telegram group chat.
+        try:
+            job_scheduler.schedule_daily_utc(
+                name="club_nightly_reminders",
+                callback=self._send_club_nightly_reminders,
+                hh=21,
+                mm=0,
+            )
+            logger.info("bootstrap_schedule_existing_users: scheduled club_nightly_reminders at 21:00 UTC")
+        except Exception as exc:
+            logger.exception("bootstrap_schedule_existing_users: failed to schedule club_nightly_reminders: %s", exc)
+
     def run(self) -> None:
         """
         Start the bot. For Telegram this runs polling; for other platforms, their event loop.
@@ -1366,6 +1380,22 @@ class PlannerBot:
         except BaseException as e:
             logger.exception("Bot run loop failed: %s", e)
             raise
+
+    async def _send_club_nightly_reminders(self, context) -> None:
+        """
+        Scheduled callback: send nightly promise-recap to every active club's
+        Telegram group chat at 21:00 UTC.
+        """
+        from services.club_reminder_service import ClubReminderService
+        bot = getattr(context, "bot", None)
+        if bot is None:
+            logger.warning("[ClubReminder] No bot instance in context — skipping nightly run")
+            return
+        try:
+            service = ClubReminderService()
+            await service.send_all_club_nightly_reminders(bot)
+        except Exception as exc:
+            logger.exception("[ClubReminder] Nightly run failed: %s", exc)
 
 
 def main():
