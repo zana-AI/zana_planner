@@ -93,9 +93,6 @@ export function ClubDetailPage() {
           <div className="error-icon">!</div>
           <h1 className="error-title">Club not found</h1>
           <p className="error-message">{error || 'The club you are looking for does not exist.'}</p>
-          <Button variant="secondary" onClick={() => navigate('/community')}>
-            Back to Community
-          </Button>
         </div>
       </div>
     );
@@ -106,10 +103,6 @@ export function ClubDetailPage() {
   return (
     <div className="app">
       <div className="club-detail-container">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/community')}>
-          Back to Community
-        </Button>
-
         <section className="club-detail-card">
           <div className="club-detail-header">
             <div>

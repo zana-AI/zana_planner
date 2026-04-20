@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { ArrowLeft, Library, LogOut, Settings, Shield } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
+import { useTelegramBackButton } from '../hooks/useTelegramBackButton';
 import { useSessionMode } from '../hooks/useSessionMode';
 import type { AppNavItem, UserInfo } from '../types';
 import { AppLogo } from './ui/AppLogo';
 import { BottomNav } from './ui/BottomNav';
 import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
 
 interface ShellPageMeta {
   title: string;
@@ -112,12 +114,16 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
 export function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const { initData, user: telegramUser } = useTelegramWebApp();
   const sessionMode = useSessionMode();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const routeStackRef = useRef<string[]>([]);
+  const lastRouteRef = useRef<string | null>(null);
 
   const authData = initData || getDevInitData();
   const hasToken = !!localStorage.getItem('telegram_auth_token');
@@ -174,6 +180,31 @@ export function Navigation() {
     return undefined;
   }, [showProfileMenu]);
 
+  const currentRoute = `${location.pathname}${location.search}${location.hash}`;
+
+  useEffect(() => {
+    const lastRoute = lastRouteRef.current;
+
+    if (!lastRoute) {
+      lastRouteRef.current = currentRoute;
+      setCanGoBack(false);
+      return;
+    }
+
+    if (lastRoute === currentRoute) {
+      return;
+    }
+
+    if (navigationType === 'POP') {
+      routeStackRef.current.pop();
+    } else if (navigationType === 'PUSH') {
+      routeStackRef.current.push(lastRoute);
+    }
+
+    lastRouteRef.current = currentRoute;
+    setCanGoBack(routeStackRef.current.length > 0);
+  }, [currentRoute, navigationType]);
+
   if (!isAuthenticated || location.pathname === '/') {
     return null;
   }
@@ -181,6 +212,7 @@ export function Navigation() {
   const shellPage = getShellPageMeta(location.pathname);
   const isDashboard = location.pathname === '/dashboard';
   const isAdminRoute = location.pathname === '/admin';
+  const shouldShowBack = canGoBack || !!shellPage.showBack;
 
   const handleLogout = () => {
     apiClient.clearAuth();
@@ -190,12 +222,14 @@ export function Navigation() {
   };
 
   const handleBack = () => {
-    if (window.history.length > 1) {
+    if (canGoBack && window.history.length > 1) {
       navigate(-1);
       return;
     }
     navigate(shellPage.fallbackRoute || '/dashboard', { replace: true });
   };
+
+  useTelegramBackButton({ enabled: shouldShowBack, onClick: handleBack });
 
   const displayName =
     userInfo?.first_name ||
@@ -215,10 +249,14 @@ export function Navigation() {
             <AppLogo size={40} />
           </button>
 
-          {shellPage.showBack ? (
-            <Button variant="ghost" size="sm" onClick={handleBack} leftIcon={<ArrowLeft size={16} />}>
-              Back
-            </Button>
+          {shouldShowBack ? (
+            <IconButton
+              className="app-shell-back-button"
+              variant="soft"
+              label="Back"
+              icon={<ArrowLeft size={18} />}
+              onClick={handleBack}
+            />
           ) : null}
 
           <div className="app-shell-page-title">

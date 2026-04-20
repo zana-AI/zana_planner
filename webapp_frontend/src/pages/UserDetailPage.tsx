@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { PublicUser, PublicPromiseBadge, UserInfo } from '../types';
@@ -11,7 +11,6 @@ import { getDicebearUrl } from '../utils/dicebearAvatar';
 
 export function UserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
-  const navigate = useNavigate();
   const { user, initData, hapticFeedback } = useTelegramWebApp();
   const [userData, setUserData] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -143,9 +142,6 @@ export function UserDetailPage() {
           <div className="error-icon">!</div>
           <h1 className="error-title">User not found</h1>
           <p className="error-message">{error || 'The user you are looking for does not exist.'}</p>
-          <Button variant="secondary" onClick={() => navigate('/community')}>
-            Back to Community
-          </Button>
         </div>
       </div>
     );
@@ -166,10 +162,6 @@ export function UserDetailPage() {
   return (
     <div className="app">
       <div className="user-detail-container">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/community')}>
-          Back to Community
-        </Button>
-
         <div className="user-detail-card">
           <div className="user-detail-head">
             {avatarUrl ? (
