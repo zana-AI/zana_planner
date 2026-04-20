@@ -1393,7 +1393,7 @@ class PlannerBot:
             return
         try:
             service = ClubReminderService()
-            await service.send_all_club_nightly_reminders(bot)
+            await service.send_all_club_nightly_reminders(bot, context.bot_data)
         except Exception as exc:
             logger.exception("[ClubReminder] Nightly run failed: %s", exc)
 

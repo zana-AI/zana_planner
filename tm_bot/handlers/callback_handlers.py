@@ -15,6 +15,11 @@ from telegram.ext import CallbackContext
 from handlers.messages_store import get_message, get_user_language, Language
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
+from services.club_reminder_service import (
+    CLUB_CHECKIN_PREFIX,
+    build_club_reminder_message,
+    create_club_checkin_keyboard,
+)
 from platforms.interfaces import IResponseService
 from models.models import Action
 from utils.time_utils import beautify_time, round_time, get_week_range
@@ -194,7 +199,12 @@ class CallbackHandlers:
         user_lang = get_user_language(query.from_user)
         # User info updated in PlannerBot.dispatch()
 
-        # Parse callback data
+        # Intercept club checkins first because they don't use encode_cb()
+        if query.data and query.data.startswith(CLUB_CHECKIN_PREFIX):
+            await self._handle_club_checkin(query, context, user_id)
+            return
+
+        # Parse legacy callback data
         cb = decode_cb(query.data)
         action = normalize_cb_action(cb.get("a"))
         promise_id = cb.get("p")
@@ -2036,3 +2046,63 @@ Generate the calendar links now:"""
         except Exception as e:
             logger.error(f"Error declining suggestion {suggestion_id}: {e}")
             await query.edit_message_text("❌ Error declining suggestion. Please try again.")
+
+    async def _handle_club_checkin(self, query, context, user_id: int):
+        """Handle inline button presses for the nightly club check-in message."""
+        try:
+            # query.data format: club_checkin:{club_id}:{action}
+            parts = query.data.split(":")
+            if len(parts) != 3:
+                return
+            _, club_id, action = parts
+        except ValueError:
+            return
+
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        bot_data = context.bot_data
+
+        # Find state
+        state_key = (chat_id, message_id)
+        if "club_checkins" not in bot_data or state_key not in bot_data["club_checkins"]:
+            await query.answer("This check-in has expired. ⏳", show_alert=True)
+            # Remove keyboard since it's expired
+            await query.edit_message_reply_markup(reply_markup=None)
+            return
+
+        state = bot_data["club_checkins"][state_key]
+        members = state["members"]
+        club_name = state["club_name"]
+
+        # Find the specific member
+        member = next((m for m in members if m["user_id"] == user_id), None)
+        if not member:
+            await query.answer("You are not part of this check-in! 🚫", show_alert=True)
+            return
+
+        # Toggle status: clicking the same button removes the status
+        old_status = member.get("status")
+        if old_status == action:
+            new_status = None
+            msg = "Feedback removed."
+        else:
+            new_status = action
+            msg = "Checked in! ✅" if action == "done" else "Noted! ❌"
+            
+        member["status"] = new_status
+
+        # Re-build message and edit
+        new_text = build_club_reminder_message(club_name, members)
+        if new_text:
+            try:
+                # We can reuse create_club_checkin_keyboard inside here just to be clean
+                # But it's also fine to just pass the existing reply_markup
+                await query.edit_message_text(
+                    text=new_text,
+                    reply_markup=query.message.reply_markup,
+                )
+            except Exception as e:
+                # E.g. Message is not modified
+                pass
+
+        await query.answer(msg)

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Target, Brain, BarChart2, Send, TrendingDown, Mic, Globe, Timer, Bell, Users } from 'lucide-react';
-import { NewYearBanner } from './NewYearBanner';
 import { TelegramLogin } from './TelegramLogin';
 import { apiClient } from '../api/client';
 
@@ -93,8 +92,6 @@ export function HomePage() {
 
   return (
     <div className="home-page">
-      <NewYearBanner />
-      
       {/* Mobile: Show Telegram CTAs instead of login widget */}
       {showLogin && isMobile && (
         <section className="home-login-section" style={{
