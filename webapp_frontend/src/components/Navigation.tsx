@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { ArrowLeft, Library, LogOut, Settings, Shield } from 'lucide-react';
 import { apiClient } from '../api/client';
@@ -221,13 +221,13 @@ export function Navigation() {
     navigate('/', { replace: true });
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     if (canGoBack && window.history.length > 1) {
       navigate(-1);
       return;
     }
     navigate(shellPage.fallbackRoute || '/dashboard', { replace: true });
-  };
+  }, [canGoBack, navigate, shellPage.fallbackRoute]);
 
   useTelegramBackButton({ enabled: shouldShowBack, onClick: handleBack });
 
