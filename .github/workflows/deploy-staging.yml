@@ -99,6 +99,10 @@ jobs:
             # Build webapp container (includes frontend build in Dockerfile.webapp).
             docker compose --progress plain build zana-webapp
 
+            # Clean stale compose containers that may block recreate due name conflicts.
+            docker ps -aq --filter label=com.docker.compose.service=zana-staging | xargs -r docker rm -f || true
+            docker ps -aq --filter label=com.docker.compose.service=zana-webapp | xargs -r docker rm -f || true
+
             # Start both containers.
             docker compose up -d zana-staging zana-webapp
 

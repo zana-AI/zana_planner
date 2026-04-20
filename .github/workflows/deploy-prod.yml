@@ -61,6 +61,10 @@ jobs:
             echo '[PROD] Tagging zana-ai-bot:staging as zana-ai-bot:prod...'
             docker tag zana-ai-bot:staging zana-ai-bot:prod
 
+            echo '[PROD] Cleaning stale compose containers that may block recreate...'
+            docker ps -aq --filter label=com.docker.compose.service=zana-prod | xargs -r docker rm -f || true
+            docker ps -aq --filter label=com.docker.compose.service=zana-webapp | xargs -r docker rm -f || true
+
             echo '[PROD] Restarting production container...'
             docker compose up -d zana-prod
 

@@ -215,3 +215,20 @@ class FastAPIJobScheduler(IJobScheduler):
             del self._jobs[name]
             logger.info(f"Cancelled job {name}")
 
+    def schedule_daily_utc(
+        self,
+        name: str,
+        callback: Callable,
+        hh: int = 21,
+        mm: int = 0,
+        data: Optional[dict] = None,
+    ) -> None:
+        """Schedule a shared daily job at a fixed UTC time (not tied to any user)."""
+        if name in self._jobs:
+            self.cancel_job(name)
+        
+        # We can reuse the _daily_job_loop but pass 0 for user_id and "UTC" for tz
+        task = asyncio.create_task(self._daily_job_loop(name, 0, "UTC", callback, hh, mm))
+        self._jobs[name] = task
+        logger.info(f"Scheduled shared daily UTC job {name} at {hh:02d}:{mm:02d}")
+
