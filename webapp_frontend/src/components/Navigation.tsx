@@ -96,6 +96,14 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     };
   }
 
+  if (pathname.startsWith('/clubs/')) {
+    return {
+      title: 'Club',
+      showBack: true,
+      fallbackRoute: '/community',
+    };
+  }
+
   return {
     title: 'Xaana',
   };

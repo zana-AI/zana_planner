@@ -166,6 +166,10 @@ export function UserDetailPage() {
   return (
     <div className="app">
       <div className="user-detail-container">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/community')}>
+          Back to Community
+        </Button>
+
         <div className="user-detail-card">
           <div className="user-detail-head">
             {avatarUrl ? (
