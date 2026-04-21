@@ -36,7 +36,7 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
       // Only run one-time SDK setup calls once across all hook instances.
       // This hook is used in 14+ components; calling ready()/expand()/setHeaderColor()
       // from every mount simultaneously causes Telegram's mobile WebView to malfunction.
-      if (\!_sdkInitialized) {
+      if (!_sdkInitialized) {
         _sdkInitialized = true;
 
         // Tell Telegram we're ready
@@ -73,7 +73,7 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
   }, [webApp]);
 
   const hapticFeedback = useCallback((type: 'success' | 'error' | 'warning' | 'light' | 'medium' | 'heavy') => {
-    if (\!webApp?.HapticFeedback) return;
+    if (!webApp?.HapticFeedback) return;
 
     // Check if HapticFeedback is supported (version 6.1+)
     try {
@@ -107,8 +107,8 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
     expand,
     close,
     hapticFeedback,
-    isTelegramMiniApp: \!\!webApp,
-    canUseBackButton: \!\!webApp?.BackButton,
+    isTelegramMiniApp: !!webApp,
+    canUseBackButton: !!webApp?.BackButton,
   };
 }
 
