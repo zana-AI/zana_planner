@@ -1,6 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { TelegramWebApp, TelegramUser } from '../types';
 
+// Module-level flag: SDK init must only run once across all hook instances.
+// Calling tg.ready() / tg.expand() / setHeaderColor() from multiple components
+// simultaneously causes Telegram's mobile WebView to malfunction (blank screen).
+let _sdkInitialized = false;
+
 interface UseTelegramWebAppResult {
   webApp: TelegramWebApp | null;
   user: TelegramUser | null;
@@ -24,27 +29,33 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
-    
+
     if (tg) {
       setWebApp(tg);
-      
-      // Tell Telegram we're ready
-      tg.ready();
-      
-      // Expand to full height
-      tg.expand();
-      
-      // Set theme colors to match our dark theme (only if supported)
-      // Check version to avoid warnings in older Telegram versions
-      try {
-        if (tg.version && parseFloat(tg.version) >= 6.1) {
-          tg.setHeaderColor('#0b1020');
-          tg.setBackgroundColor('#0b1020');
+
+      // Only run one-time SDK setup calls once across all hook instances.
+      // This hook is used in 14+ components; calling ready()/expand()/setHeaderColor()
+      // from every mount simultaneously causes Telegram's mobile WebView to malfunction.
+      if (\!_sdkInitialized) {
+        _sdkInitialized = true;
+
+        // Tell Telegram we're ready
+        tg.ready();
+
+        // Expand to full height
+        tg.expand();
+
+        // Set theme colors to match our dark theme (only if supported)
+        try {
+          if (tg.version && parseFloat(tg.version) >= 6.1) {
+            tg.setHeaderColor('#0b1020');
+            tg.setBackgroundColor('#0b1020');
+          }
+        } catch (e) {
+          // Ignore if not supported
         }
-      } catch (e) {
-        // Ignore if not supported
       }
-      
+
       setIsReady(true);
     } else {
       // Development mode - no Telegram SDK available
@@ -62,8 +73,8 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
   }, [webApp]);
 
   const hapticFeedback = useCallback((type: 'success' | 'error' | 'warning' | 'light' | 'medium' | 'heavy') => {
-    if (!webApp?.HapticFeedback) return;
-    
+    if (\!webApp?.HapticFeedback) return;
+
     // Check if HapticFeedback is supported (version 6.1+)
     try {
       if (webApp.version && parseFloat(webApp.version) < 6.1) {
@@ -72,7 +83,7 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
     } catch (e) {
       // If version check fails, try anyway
     }
-    
+
     switch (type) {
       case 'success':
       case 'error':
@@ -96,8 +107,8 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
     expand,
     close,
     hapticFeedback,
-    isTelegramMiniApp: !!webApp,
-    canUseBackButton: !!webApp?.BackButton,
+    isTelegramMiniApp: \!\!webApp,
+    canUseBackButton: \!\!webApp?.BackButton,
   };
 }
 
