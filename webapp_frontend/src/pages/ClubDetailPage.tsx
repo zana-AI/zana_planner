@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { ClubSummary } from '../types';
-import { AvatarStack } from '../components/ui/AvatarStack';
 import { Button } from '../components/ui/Button';
 
 export function ClubDetailPage() {
@@ -120,9 +119,15 @@ export function ClubDetailPage() {
           <div className="club-detail-grid">
             <div className="club-detail-section">
               <span className="club-detail-label">Members</span>
-              <div className="club-detail-members-summary">
-                <AvatarStack users={club.members} size={28} max={5} />
-                <span>{club.member_count} {club.member_count === 1 ? 'member' : 'members'}</span>
+              <div className="club-detail-members">
+                {club.members.map((member) => (
+                  <span className="club-detail-member" key={member.user_id}>
+                    {member.first_name || member.username || `User ${member.user_id}`}
+                  </span>
+                ))}
+                {club.member_count > club.members.length ? (
+                  <span className="club-detail-member">+{club.member_count - club.members.length} more</span>
+                ) : null}
               </div>
             </div>
 
@@ -131,20 +136,6 @@ export function ClubDetailPage() {
               <p className="club-detail-value">
                 {club.target_count_per_week ? `${club.target_count_per_week} times per week` : 'No weekly target'}
               </p>
-            </div>
-          </div>
-
-          <div className="club-detail-section">
-            <span className="club-detail-label">People</span>
-            <div className="club-detail-members">
-              {club.members.map((member) => (
-                <span className="club-detail-member" key={member.user_id}>
-                  {member.first_name || member.username || `User ${member.user_id}`}
-                </span>
-              ))}
-              {club.member_count > club.members.length ? (
-                <span className="club-detail-member">+{club.member_count - club.members.length} more</span>
-              ) : null}
             </div>
           </div>
 
