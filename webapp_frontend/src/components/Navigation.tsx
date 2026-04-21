@@ -205,10 +205,8 @@ export function Navigation() {
     setCanGoBack(routeStackRef.current.length > 0);
   }, [currentRoute, navigationType]);
 
-  if (!isAuthenticated || location.pathname === '/') {
-    return null;
-  }
-
+  // NOTE: handleBack (useCallback) and useTelegramBackButton (useEffect) must be
+  // called BEFORE the early return to satisfy React rules of hooks.
   const shellPage = getShellPageMeta(location.pathname);
   const isDashboard = location.pathname === '/dashboard';
   const isAdminRoute = location.pathname === '/admin';
@@ -231,6 +229,9 @@ export function Navigation() {
 
   useTelegramBackButton({ enabled: shouldShowBack, onClick: handleBack });
 
+  if (!isAuthenticated || location.pathname === '/') {
+    return null;
+  }
   const displayName =
     userInfo?.first_name ||
     telegramUser?.first_name ||
