@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { getAvatarColor } from '../../utils/publicUserDisplay';
 
 export interface AvatarStackUser {
@@ -17,6 +18,11 @@ interface AvatarStackProps {
 
 export function AvatarStack({ users, size = 22, max = 3 }: AvatarStackProps) {
   if (users.length === 0) return null;
+  // Track which avatars failed to load so we can fall back to initials
+  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
+  const handleImgError = (userId: string) => {
+    setFailedAvatars(prev => new Set(prev).add(userId));
+  };
 
   const visible = users.slice(0, max);
   const rest = users.length - visible.length;
@@ -31,7 +37,8 @@ export function AvatarStack({ users, size = 22, max = 3 }: AvatarStackProps) {
       {visible.map((user, i) => {
         const initial = (user.first_name || user.username || 'U').charAt(0).toUpperCase();
         const bg = getAvatarColor(user.user_id);
-        const avatarSrc = user.avatar_path
+        const hasFailed = failedAvatars.has(user.user_id);
+        const avatarSrc = (!hasFailed && user.avatar_path)
           ? user.avatar_path.startsWith('http')
             ? user.avatar_path
             : `/api/media/avatars/${user.user_id}`
@@ -56,6 +63,7 @@ export function AvatarStack({ users, size = 22, max = 3 }: AvatarStackProps) {
                 src={avatarSrc}
                 alt={initial}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={() => handleImgError(user.user_id)}
               />
             ) : (
               initial
