@@ -138,6 +138,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ title: '', planned_start: '', planned_duration_min: '', notes: '' });
   const [editFormSaving, setEditFormSaving] = useState(false);
+  const [activeDurationPicker, setActiveDurationPicker] = useState<'add' | 'edit' | null>(null);
 
   const openEditForm = (session: PlanSession) => {
     setEditingSessionId(session.id);
@@ -176,7 +177,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState({ title: '', planned_start: '', planned_duration_min: '' });
   const [addFormSaving, setAddFormSaving] = useState(false);
-  const [activeDurationPicker, setActiveDurationPicker] = useState<'add' | 'edit' | null>(null);
 
   // When user taps "Done" on a chip, open LogActionModal pre-filled with the session data.
   // On successful log, also mark the plan session as done and refresh.
@@ -1046,27 +1046,41 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 {isEditing ? (
                   <form className="planned-session-add-form" onSubmit={handleEditSave}>
                     <input
-                      className="planned-session-add-input"
+                      className="planned-session-add-input planned-session-add-title"
                       placeholder="Title"
                       value={editForm.title}
                       onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
                     />
+                    <div className="planned-session-add-row">
+                      <input
+                        type="datetime-local"
+                        className="planned-session-add-input planned-session-add-date"
+                        value={editForm.planned_start}
+                        onChange={e => setEditForm(f => ({ ...f, planned_start: e.target.value }))}
+                      />
+                      <div className="planned-session-duration-field">
+                        <button
+                          type="button"
+                          className="planned-session-duration-trigger"
+                          onClick={() => setActiveDurationPicker(activeDurationPicker === 'edit' ? null : 'edit')}
+                        >
+                          <span>{editForm.planned_duration_min || '25'}</span>
+                          <span>min</span>
+                        </button>
+                        {activeDurationPicker === 'edit' && (
+                          <div className="planned-session-duration-popover">
+                            <DurationWheelPicker
+                              value={Number(editForm.planned_duration_min) || 25}
+                              onChange={value => setEditForm(f => ({ ...f, planned_duration_min: String(value) }))}
+                              min={1}
+                              max={120}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <input
-                      type="datetime-local"
-                      className="planned-session-add-input"
-                      value={editForm.planned_start}
-                      onChange={e => setEditForm(f => ({ ...f, planned_start: e.target.value }))}
-                    />
-                    <input
-                      type="number"
-                      className="planned-session-add-input planned-session-add-input--dur"
-                      placeholder="min"
-                      min={1}
-                      value={editForm.planned_duration_min}
-                      onChange={e => setEditForm(f => ({ ...f, planned_duration_min: e.target.value }))}
-                    />
-                    <input
-                      className="planned-session-add-input"
+                      className="planned-session-add-input planned-session-add-title"
                       placeholder="Notes"
                       value={editForm.notes}
                       onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
@@ -1075,7 +1089,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       <button type="submit" className="planned-session-action planned-session-action--done" disabled={editFormSaving}>
                         {editFormSaving ? '…' : 'Save'}
                       </button>
-                      <button type="button" className="planned-session-action planned-session-action--delete" onClick={() => setEditingSessionId(null)}>
+                      <button type="button" className="planned-session-action planned-session-action--delete" onClick={() => { setEditingSessionId(null); setActiveDurationPicker(null); }}>
                         Cancel
                       </button>
                     </div>
@@ -1125,30 +1139,44 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           {showAddForm && (
             <form className="planned-session-add-form" onSubmit={handleAddFormSubmit}>
               <input
-                className="planned-session-add-input"
+                className="planned-session-add-input planned-session-add-title"
                 placeholder="Title (optional)"
                 value={addForm.title}
                 onChange={e => setAddForm(f => ({ ...f, title: e.target.value }))}
               />
-              <input
-                type="datetime-local"
-                className="planned-session-add-input"
-                value={addForm.planned_start}
-                onChange={e => setAddForm(f => ({ ...f, planned_start: e.target.value }))}
-              />
-              <input
-                type="number"
-                className="planned-session-add-input planned-session-add-input--dur"
-                placeholder="min"
-                min={1}
-                value={addForm.planned_duration_min}
-                onChange={e => setAddForm(f => ({ ...f, planned_duration_min: e.target.value }))}
-              />
+              <div className="planned-session-add-row">
+                <input
+                  type="datetime-local"
+                  className="planned-session-add-input planned-session-add-date"
+                  value={addForm.planned_start}
+                  onChange={e => setAddForm(f => ({ ...f, planned_start: e.target.value }))}
+                />
+                <div className="planned-session-duration-field">
+                  <button
+                    type="button"
+                    className="planned-session-duration-trigger"
+                    onClick={() => setActiveDurationPicker(activeDurationPicker === 'add' ? null : 'add')}
+                  >
+                    <span>{addForm.planned_duration_min || '25'}</span>
+                    <span>min</span>
+                  </button>
+                  {activeDurationPicker === 'add' && (
+                    <div className="planned-session-duration-popover">
+                      <DurationWheelPicker
+                        value={Number(addForm.planned_duration_min) || 25}
+                        onChange={value => setAddForm(f => ({ ...f, planned_duration_min: String(value) }))}
+                        min={1}
+                        max={120}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
               <div className="planned-session-add-actions">
                 <button type="submit" className="planned-session-action planned-session-action--done" disabled={addFormSaving}>
                   {addFormSaving ? '…' : 'Save'}
                 </button>
-                <button type="button" className="planned-session-action planned-session-action--delete" onClick={() => { setShowAddForm(false); setAddForm({ title: '', planned_start: '', planned_duration_min: '' }); }}>
+                <button type="button" className="planned-session-action planned-session-action--delete" onClick={cancelAddSessionForm}>
                   Cancel
                 </button>
               </div>
@@ -1178,7 +1206,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         {currentRecurring && (
           <button
             className="card-add-session-button"
-            onClick={() => { setShowAddForm(true); setExpandedChipId(null); }}
+            onClick={openAddSessionForm}
             title="Add planned session"
           >
             + Add Session

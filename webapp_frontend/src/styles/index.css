@@ -5292,21 +5292,30 @@ textarea.modal-input {
 
 /* Inline add-session form */
 .planned-session-add-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 6px 8px;
-  border: 1px dashed rgba(99, 167, 247, 0.3);
-  border-radius: 6px;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed rgba(99, 167, 247, 0.34);
+  border-radius: 8px;
   background: rgba(9, 15, 31, 0.55);
   margin-top: 2px;
 }
 
+.planned-session-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
 .planned-session-add-input {
-  flex: 1;
-  min-width: 120px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
   font-size: 12px;
-  padding: 3px 7px;
+  padding: 7px 9px;
   border-radius: 4px;
   border: 1px solid rgba(232, 238, 252, 0.18);
   background: rgba(232, 238, 252, 0.05);
@@ -5314,16 +5323,82 @@ textarea.modal-input {
   font-family: inherit;
 }
 
-.planned-session-add-input--dur {
-  max-width: 72px;
-  min-width: 60px;
-  flex: 0 0 auto;
+.planned-session-add-title {
+  grid-column: 1 / -1;
+}
+
+.planned-session-add-date {
+  min-width: 0;
+}
+
+.planned-session-duration-field {
+  position: relative;
+}
+
+.planned-session-duration-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 78px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(99, 167, 247, 0.28);
+  background: linear-gradient(135deg, rgba(99, 167, 247, 0.16), rgba(21, 184, 166, 0.08));
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.planned-session-duration-trigger span:first-child {
+  font-weight: 800;
+}
+
+.planned-session-duration-trigger span:last-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.planned-session-duration-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 190px;
+  padding: 8px;
+  border: 1px solid rgba(99, 167, 247, 0.24);
+  border-radius: 8px;
+  background: rgba(9, 15, 31, 0.97);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
+}
+
+.planned-session-duration-popover .wheel-picker-container {
+  margin: 0;
+  max-width: none;
 }
 
 .planned-session-add-actions {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   width: 100%;
+}
+
+@media (max-width: 520px) {
+  .planned-session-add-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planned-session-duration-trigger {
+    width: 100%;
+  }
+
+  .planned-session-duration-popover {
+    left: 0;
+    right: auto;
+    width: min(190px, 100%);
+  }
 }
 
 .card-add-session-button {
