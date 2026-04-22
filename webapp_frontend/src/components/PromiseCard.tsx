@@ -7,6 +7,7 @@ import { WeeklyNoteModal } from './WeeklyNoteModal';
 import { VisibilityConfirmModal } from './VisibilityConfirmModal';
 import { PromiseDeleteConfirmModal } from './PromiseDeleteConfirmModal';
 import { InlineCalendar } from './InlineCalendar';
+import { DurationWheelPicker } from './DurationWheelPicker';
 import { formatPromiseText } from '../utils/activityFormat';
 
 interface PromiseCardProps {
@@ -18,6 +19,23 @@ interface PromiseCardProps {
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 type PromiseProgressTone = 'strong' | 'on-track' | 'attention' | 'risk';
+
+function formatDateTimeLocal(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function roundUpToNextQuarterHour(date: Date): Date {
+  const rounded = new Date(date);
+  const minutes = rounded.getMinutes();
+  const nextMinutes = Math.ceil((minutes + 1) / 15) * 15;
+  rounded.setMinutes(nextMinutes, 0, 0);
+  return rounded;
+}
 
 /**
  * Get status label based on progress percentage
@@ -124,6 +142,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const openEditForm = (session: PlanSession) => {
     setEditingSessionId(session.id);
     setExpandedChipId(null);
+    setActiveDurationPicker(null);
     const isoStart = session.planned_start ?? '';
     setEditForm({
       title: session.title ?? '',
@@ -146,6 +165,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       });
       setPlanSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
       setEditingSessionId(null);
+      setActiveDurationPicker(null);
     } catch { /* ignore */ } finally {
       setEditFormSaving(false);
     }
@@ -156,6 +176,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState({ title: '', planned_start: '', planned_duration_min: '' });
   const [addFormSaving, setAddFormSaving] = useState(false);
+  const [activeDurationPicker, setActiveDurationPicker] = useState<'add' | 'edit' | null>(null);
 
   // When user taps "Done" on a chip, open LogActionModal pre-filled with the session data.
   // On successful log, also mark the plan session as done and refresh.
@@ -204,9 +225,38 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       setPlanSessions(prev => [...prev, created]);
       setAddForm({ title: '', planned_start: '', planned_duration_min: '' });
       setShowAddForm(false);
+      setActiveDurationPicker(null);
     } catch { /* ignore */ } finally {
       setAddFormSaving(false);
     }
+  };
+
+  const getDefaultPlannedStart = () => {
+    const now = new Date();
+    const todayKey = formatDateTimeLocal(now).slice(0, 10);
+    if (weekDays.includes(todayKey)) {
+      return formatDateTimeLocal(roundUpToNextQuarterHour(now));
+    }
+
+    const firstWeekDay = weekDays[0] || todayKey;
+    return `${firstWeekDay}T09:00`;
+  };
+
+  const openAddSessionForm = () => {
+    setAddForm({
+      title: '',
+      planned_start: getDefaultPlannedStart(),
+      planned_duration_min: '25',
+    });
+    setShowAddForm(true);
+    setExpandedChipId(null);
+    setActiveDurationPicker(null);
+  };
+
+  const cancelAddSessionForm = () => {
+    setShowAddForm(false);
+    setAddForm({ title: '', planned_start: '', planned_duration_min: '' });
+    setActiveDurationPicker(null);
   };
   
   const SWIPE_ACTION_WIDTH = 132; // pixels
