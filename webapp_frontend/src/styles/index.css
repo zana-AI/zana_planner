@@ -57,6 +57,59 @@ body.modal-open {
   padding-bottom: calc(var(--bottom-nav-height) + 32px + env(safe-area-inset-bottom));
 }
 
+.dashboard-overall-progress {
+  max-width: 600px;
+  margin: 0 auto 24px;
+  padding: 12px 18px;
+  border: 1px solid rgba(232, 238, 252, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 23, 48, 0.5);
+}
+
+.dashboard-overall-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: rgba(232, 238, 252, 0.72);
+  font-size: 0.85rem;
+}
+
+.dashboard-overall-progress-header strong {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dashboard-overall-progress-track {
+  position: relative;
+  height: 10px;
+  border: 1px solid rgba(232, 238, 252, 0.06);
+  border-radius: 999px;
+  background: rgba(232, 238, 252, 0.10);
+  overflow: hidden;
+}
+
+.dashboard-overall-progress-overflow,
+.dashboard-overall-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.dashboard-overall-progress-overflow {
+  background: rgba(99, 167, 247, 0.28);
+}
+
+.dashboard-overall-progress-fill {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  transition: width 0.3s ease;
+}
+
 /* Loading state */
 .loading {
   display: flex;
@@ -197,8 +250,8 @@ body.modal-open {
 
 .create-promise-card {
   width: 100%;
-  min-height: 132px;
-  padding: 18px;
+  min-height: 92px;
+  padding: 14px 16px;
   border: 1px dashed rgba(91, 163, 245, 0.5);
   border-radius: 8px;
   background: rgba(15, 23, 48, 0.42);
@@ -208,7 +261,7 @@ body.modal-open {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   text-align: left;
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
@@ -217,6 +270,12 @@ body.modal-open {
   border-color: rgba(91, 163, 245, 0.85);
   background: rgba(91, 163, 245, 0.1);
   transform: translateY(-1px);
+}
+
+.create-promise-card-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .create-promise-card-icon {
@@ -624,6 +683,7 @@ body.modal-open {
 .card-title {
   flex: 1;
   min-width: 0;
+  width: 100%;
   font-size: 15px;
   font-weight: 800;
   line-height: 1.25;
@@ -631,7 +691,7 @@ body.modal-open {
   gap: 8px;
   align-items: center;
   unicode-bidi: plaintext;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .card-status-label {
@@ -657,23 +717,25 @@ body.modal-open {
   text-overflow: ellipsis;
   unicode-bidi: plaintext;
   word-break: break-word;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  order: 1;
 }
 
-/* Visibility sliding toggle */
+/* Visibility tag */
 .card-visibility-toggle {
   flex: 0 0 auto;
+  order: 3;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: transparent;
+  gap: 4px;
+  background: rgba(237, 243, 255, 0.08);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   cursor: pointer;
-  padding: 3px 8px 3px 5px;
-  min-height: 24px;
+  padding: 0 8px;
+  min-height: 22px;
   transition: border-color 0.2s, background 0.2s, color 0.2s;
-  margin-left: 4px;
   color: var(--text-muted);
 }
 
@@ -708,14 +770,7 @@ body.modal-open {
 }
 
 .card-visibility-track {
-  position: relative;
-  width: 26px;
-  height: 14px;
-  background: rgba(237, 243, 255, 0.10);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  transition: background 0.22s, border-color 0.22s;
-  flex-shrink: 0;
+  display: none;
 }
 
 .card-visibility-toggle--public .card-visibility-track {
@@ -724,14 +779,7 @@ body.modal-open {
 }
 
 .card-visibility-thumb {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 10px;
-  height: 10px;
-  background: var(--text-muted);
-  border-radius: 50%;
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background 0.22s;
+  display: none;
 }
 
 .card-visibility-toggle--public .card-visibility-thumb {
@@ -741,7 +789,7 @@ body.modal-open {
 
 .card-visibility-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 800;
   line-height: 1;
   white-space: nowrap;
 }
@@ -807,7 +855,14 @@ body.modal-open {
   justify-content: flex-end;
   align-items: stretch;
   pointer-events: none;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.card-swipe-rail--visible {
   background: linear-gradient(90deg, rgba(245, 158, 11, 0.05), rgba(245, 158, 11, 0.22));
+  opacity: 1;
 }
 
 .card-swipe-action {
@@ -822,6 +877,11 @@ body.modal-open {
   transition: filter 0.2s ease, opacity 0.2s ease;
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
   user-select: none;
+  opacity: 0;
+}
+
+.card-swipe-rail--visible .card-swipe-action {
+  opacity: 1;
 }
 
 .card-swipe-action:disabled {
@@ -919,6 +979,40 @@ body.modal-open {
 .promise-card-risk {
   border-color: rgba(239, 68, 68, 0.32);
   background: linear-gradient(180deg, rgba(44, 20, 26, 0.95), rgba(30, 16, 20, 0.98));
+}
+
+.promise-card-club {
+  border-color: rgba(56, 189, 248, 0.48);
+  background:
+    linear-gradient(90deg, rgba(56, 189, 248, 0.16), transparent 44%),
+    linear-gradient(180deg, rgba(16, 35, 60, 0.97), rgba(14, 25, 48, 0.98));
+}
+
+.promise-card-club::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: #38bdf8;
+}
+
+.card-club-badge {
+  order: 2;
+  flex: 0 0 auto;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(56, 189, 248, 0.44);
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .promise-card-strong .card-status-label {
@@ -4046,10 +4140,12 @@ textarea.modal-input {
 .card-edit-button {
   display: flex;
   align-items: center;
+  order: 4;
+  flex: 0 0 auto;
   gap: var(--spacing-xs);
   font-size: 0.75rem;
-  margin-left: auto;
-  margin-right: var(--spacing-md);
+  margin-left: 0;
+  margin-right: 0;
   padding: var(--spacing-xs) var(--spacing-md);
   background: rgba(232, 238, 252, 0.1);
   border: 1px solid rgba(232, 238, 252, 0.2);
@@ -4069,6 +4165,8 @@ textarea.modal-input {
 
 /* Budget Badge */
 .card-budget-badge {
+  order: 2;
+  flex: 0 0 auto;
   padding: 2px 6px;
   background: rgba(255, 68, 68, 0.2);
   border: 1px solid rgba(255, 68, 68, 0.4);
@@ -4076,7 +4174,7 @@ textarea.modal-input {
   font-size: 0.65rem;
   font-weight: 600;
   color: #ff6b6b;
-  margin-left: var(--spacing-xs);
+  margin-left: 0;
 }
 
 /* Expanded Section */
@@ -4864,6 +4962,59 @@ textarea.modal-input {
   justify-content: center;
   text-align: center;
   text-decoration: none;
+}
+
+.club-detail-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.club-detail-admin-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.club-detail-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--accent, #5b8dee);
+  padding: 0;
+}
+
+.club-detail-action-btn--danger {
+  color: var(--danger, #e05252);
+}
+
+.club-detail-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.club-detail-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.club-detail-edit-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--text, #000);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.club-detail-edit-buttons {
+  display: flex;
+  gap: 8px;
 }
 
 @media (max-width: 640px) {

@@ -13,6 +13,9 @@ export function ClubDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [editingPromise, setEditingPromise] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [editTarget, setEditTarget] = useState<number | ''>('');
 
   useEffect(() => {
     if (initData) {
@@ -74,6 +77,50 @@ export function ClubDetailPage() {
     }
   };
 
+  const handleEditPromise = () => {
+    if (!club) return;
+    setEditText(club.promise_text || '');
+    setEditTarget(club.target_count_per_week ?? '');
+    setEditingPromise(true);
+  };
+
+  const handleSavePromise = async () => {
+    if (!club?.promise_uuid) return;
+    setBusy(true);
+    setError('');
+    try {
+      const updated = await apiClient.updateClubPromise(club.club_id, club.promise_uuid, {
+        promise_text: editText || undefined,
+        target_count_per_week: editTarget !== '' ? Number(editTarget) : undefined,
+      });
+      setClub(updated);
+      setEditingPromise(false);
+      hapticFeedback('success');
+    } catch (err) {
+      hapticFeedback('error');
+      setError(err instanceof ApiError ? err.message : 'Failed to update promise.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeletePromise = async () => {
+    if (!club?.promise_uuid) return;
+    if (!window.confirm('Delete this club promise? This cannot be undone.')) return;
+    setBusy(true);
+    setError('');
+    try {
+      await apiClient.deleteClubPromise(club.club_id, club.promise_uuid);
+      setClub({ ...club, promise_uuid: undefined, promise_text: undefined, target_count_per_week: undefined });
+      hapticFeedback('success');
+    } catch (err) {
+      hapticFeedback('error');
+      setError(err instanceof ApiError ? err.message : 'Failed to delete promise.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="app">
@@ -97,6 +144,7 @@ export function ClubDetailPage() {
     );
   }
 
+  const isAdmin = club.role === 'owner';
   const telegramReady = !!club.telegram_invite_link && ['ready', 'connected'].includes(club.telegram_status);
 
   return (
@@ -112,8 +160,45 @@ export function ClubDetailPage() {
           </div>
 
           <div className="club-detail-section">
-            <span className="club-detail-label">Shared promise</span>
-            <p className="club-detail-promise">{club.promise_text || 'No shared promise yet'}</p>
+            <div className="club-detail-label-row">
+              <span className="club-detail-label">Shared promise</span>
+              {isAdmin && club.promise_uuid && !editingPromise && (
+                <span className="club-detail-admin-actions">
+                  <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>Edit</button>
+                  <button type="button" className="club-detail-action-btn club-detail-action-btn--danger" onClick={handleDeletePromise} disabled={busy}>Delete</button>
+                </span>
+              )}
+            </div>
+            {editingPromise ? (
+              <div className="club-detail-edit-form">
+                <input
+                  className="club-detail-edit-input"
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  maxLength={160}
+                  placeholder="Promise text"
+                />
+                <input
+                  className="club-detail-edit-input"
+                  type="number"
+                  min={1}
+                  max={21}
+                  value={editTarget}
+                  onChange={(e) => setEditTarget(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="Times per week"
+                />
+                <div className="club-detail-edit-buttons">
+                  <button type="button" className="modal-button modal-button-primary" onClick={handleSavePromise} disabled={busy || !editText.trim()}>
+                    {busy ? 'Saving…' : 'Save'}
+                  </button>
+                  <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingPromise(false)} disabled={busy}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="club-detail-promise">{club.promise_text || 'No shared promise yet'}</p>
+            )}
           </div>
 
           <div className="club-detail-grid">
@@ -122,7 +207,7 @@ export function ClubDetailPage() {
               <div className="club-detail-members">
                 {club.members.map((member) => (
                   <span className="club-detail-member" key={member.user_id}>
-                    {member.first_name || member.username || `User ${member.user_id}`}
+                    {member.first_name || member.username || `Member`}
                   </span>
                 ))}
                 {club.member_count > club.members.length ? (

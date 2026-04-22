@@ -217,6 +217,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const isCountBased = metric_type === 'count';
   const isBudget = template_kind === 'budget';
   const isAtMost = target_direction === 'at_most';
+  const isClubPromise = visibility === 'clubs';
   
   let progress: number;
   if (isCountBased) {
@@ -595,7 +596,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   return (
     <>
       <div className="promise-card-swipe-shell">
-        <div className="card-swipe-rail" aria-hidden={!isSwipeRevealed}>
+        <div className={`card-swipe-rail${isSwipeRevealed ? ' card-swipe-rail--visible' : ''}`} aria-hidden={!isSwipeRevealed}>
           <button
             className="card-swipe-action card-swipe-action-snooze"
             onClick={handleSnoozeButtonClick}
@@ -606,7 +607,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         </div>
 
         <article 
-          className={`promise-card promise-card-${statusTone}`}
+          className={`promise-card promise-card-${statusTone}${isClubPromise ? ' promise-card-club' : ''}`}
           style={{
             transform: `translateX(${swipeOffset}px)`,
             transition: swipeStart ? 'none' : 'transform 0.22s ease',
@@ -628,6 +629,19 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   Budget
                 </span>
               )}
+              {isClubPromise && (
+                <span className="card-club-badge" title="Club promise">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M16 21v-2a4 4 0 0 0-8 0v2" />
+                    <circle cx="12" cy="7" r="4" />
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    <path d="M2 21v-2a4 4 0 0 1 3-3.87" />
+                    <path d="M8 3.13a4 4 0 0 0 0 7.75" />
+                  </svg>
+                  Club
+                </span>
+              )}
               <button
                 className="card-edit-button"
                 onClick={handleEditClick}
@@ -635,6 +649,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               >
                 <span>Edit</span>
               </button>
+              {!isClubPromise && (
               <button
                 className={`card-visibility-toggle${currentVisibility === 'public' ? ' card-visibility-toggle--public' : ''}`}
                 onClick={(e) => {
@@ -671,6 +686,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   {isUpdatingVisibility ? '…' : currentVisibility === 'public' ? 'Public' : 'Private'}
                 </span>
               </button>
+              )}
             </div>
             <div className="card-meta">
               <span className="card-id" dir="ltr">#{id}</span>
@@ -924,45 +940,47 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         </div>
       )}
       
-      <div className="days-row" aria-hidden="true">
-        {dayValues.map((value, index) => {
-          const heightPct = Math.round((value / baseline) * 100);
-          const dateKey = weekDays[index];
-          const dayNotes = notesByDate[dateKey] || [];
-          const hasNotes = dayNotes.length > 0;
-          
-          let title = isCountBased 
-            ? `${DAY_LABELS[index]}: ${Math.round(value)}`
-            : `${DAY_LABELS[index]}: ${value.toFixed(2)}h`;
-          
-          if (hasNotes) {
-            title += '\n\nNotes:\n' + dayNotes.join('\n');
-          }
-          
-          return (
-            <div 
-              key={index} 
-              className="day-col"
-              title={title}
-            >
+      {currentRecurring && (
+        <div className="days-row" aria-hidden="true">
+          {dayValues.map((value, index) => {
+            const heightPct = Math.round((value / baseline) * 100);
+            const dateKey = weekDays[index];
+            const dayNotes = notesByDate[dateKey] || [];
+            const hasNotes = dayNotes.length > 0;
+            
+            let title = isCountBased 
+              ? `${DAY_LABELS[index]}: ${Math.round(value)}`
+              : `${DAY_LABELS[index]}: ${value.toFixed(2)}h`;
+            
+            if (hasNotes) {
+              title += '\n\nNotes:\n' + dayNotes.join('\n');
+            }
+            
+            return (
               <div 
-                className="day-bar" 
-                style={{ height: `${heightPct}%` }}
-              />
-              {hasNotes && (
-                <div
-                  className="card-day-indicator"
-                  title={dayNotes.join('\n')}
+                key={index} 
+                className="day-col"
+                title={title}
+              >
+                <div 
+                  className="day-bar" 
+                  style={{ height: `${heightPct}%` }}
                 />
-              )}
-              <div className="day-label" dir="ltr">{DAY_LABELS[index]}</div>
-            </div>
-          );
-        })}
-      </div>
+                {hasNotes && (
+                  <div
+                    className="card-day-indicator"
+                    title={dayNotes.join('\n')}
+                  />
+                )}
+                <div className="day-label" dir="ltr">{DAY_LABELS[index]}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Planned sessions strip — visible without expanding */}
-      {(planSessions.filter(s => s.status === 'planned').length > 0 || showAddForm) && (
+      {currentRecurring && (planSessions.filter(s => s.status === 'planned').length > 0 || showAddForm) && (
         <div className="planned-sessions-strip">
           {planSessions.filter(s => s.status === 'planned').map(session => {
             const timeStr = session.planned_start
@@ -1107,13 +1125,15 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             + Log Time
           </button>
         )}
-        <button
-          className="card-add-session-button"
-          onClick={() => { setShowAddForm(true); setExpandedChipId(null); }}
-          title="Add planned session"
-        >
-          + Add Session
-        </button>
+        {currentRecurring && (
+          <button
+            className="card-add-session-button"
+            onClick={() => { setShowAddForm(true); setExpandedChipId(null); }}
+            title="Add planned session"
+          >
+            + Add Session
+          </button>
+        )}
         {isBudget && (
           <div className="budget-bar-container">
             <div className="budget-bar">

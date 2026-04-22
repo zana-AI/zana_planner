@@ -249,6 +249,25 @@ export function DashboardPage() {
     };
   }, [reportData]);
 
+  const overallProgress = useMemo(() => {
+    if (!reportData) {
+      return { cappedTotal: 0, cappedPct: 0, spentPct: 0 };
+    }
+
+    const cappedTotal = Object.values(reportData.promises).reduce((sum, promiseData) => {
+      const achieved = promiseData.achieved_value ?? promiseData.hours_spent;
+      const target = promiseData.target_value ?? promiseData.hours_promised;
+      return sum + Math.min(Math.max(achieved, 0), Math.max(target, 0));
+    }, 0);
+
+    const totalPromised = reportData.total_promised;
+    return {
+      cappedTotal,
+      cappedPct: totalPromised > 0 ? Math.min((cappedTotal / totalPromised) * 100, 100) : 0,
+      spentPct: totalPromised > 0 ? Math.min((reportData.total_spent / totalPromised) * 100, 100) : 0,
+    };
+  }, [reportData]);
+
   const handlePreviousWeek = useCallback(() => {
     if (!reportData) return;
     const currentStart = new Date(reportData.week_start);
@@ -406,12 +425,35 @@ export function DashboardPage() {
             Next
           </button>
         </div>
+
+        {reportData && reportData.total_promised > 0 && (
+          <div className="dashboard-overall-progress">
+            <div className="dashboard-overall-progress-header">
+              <span>Overall Progress</span>
+              <strong>
+                {Math.round(overallProgress.cappedPct)}% ({overallProgress.cappedTotal.toFixed(1)}h / {reportData.total_promised.toFixed(1)}h)
+              </strong>
+            </div>
+            <div className="dashboard-overall-progress-track" aria-hidden="true">
+              {overallProgress.spentPct > overallProgress.cappedPct + 0.5 && (
+                <div
+                  className="dashboard-overall-progress-overflow"
+                  style={{ width: `${overallProgress.spentPct}%` }}
+                />
+              )}
+              <div
+                className="dashboard-overall-progress-fill"
+                style={{ width: `${overallProgress.cappedPct}%` }}
+              />
+            </div>
+          </div>
+        )}
         
         {/* Tasks Section - First */}
         {tasksData && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
-            <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} />
+            <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} hideProgress={true} />
           </div>
         )}
 
@@ -423,6 +465,7 @@ export function DashboardPage() {
               data={promisesData || emptyPromisesData!}
               onRefresh={handleRefresh}
               hideHeader={true}
+              hideProgress={true}
               onCreatePromise={isCurrentWeek ? () => setShowCreatePromiseModal(true) : undefined}
             />
           </div>
@@ -432,7 +475,7 @@ export function DashboardPage() {
         {distractionsPromisesData && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Distractions</h2>
-            <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} />
+            <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} hideProgress={true} />
           </div>
         )}
 

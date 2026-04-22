@@ -141,7 +141,7 @@ export function SuggestionsInbox() {
             >
               <div style={{ marginBottom: '0.75rem' }}>
                 <div style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.6)', marginBottom: '0.25rem' }}>
-                  From {suggestion.from_user_name || `User ${suggestion.from_user_id}`}
+                  From {suggestion.from_user_name || `Someone`}
                 </div>
                 {suggestion.message && (
                   <div style={{ color: 'rgba(232, 238, 252, 0.8)', fontSize: '0.9rem', marginTop: '0.5rem' }}>

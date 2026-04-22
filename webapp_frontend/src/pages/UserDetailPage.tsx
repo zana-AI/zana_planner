@@ -121,7 +121,7 @@ export function UserDetailPage() {
     if (publicUser.first_name && publicUser.last_name) return `${publicUser.first_name} ${publicUser.last_name}`;
     if (publicUser.first_name) return publicUser.first_name;
     if (publicUser.username) return `@${publicUser.username}`;
-    return `User ${publicUser.user_id}`;
+    return `Member`;
   };
 
   if (loading) {

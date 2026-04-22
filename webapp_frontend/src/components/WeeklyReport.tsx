@@ -6,6 +6,7 @@ interface WeeklyReportProps {
   data: WeeklyReportData;
   onRefresh?: () => void; // Callback to refresh data
   hideHeader?: boolean; // Hide header when used in dashboard sections
+  hideProgress?: boolean; // Hide progress when a parent renders a combined summary
   onCreatePromise?: () => void;
 }
 
@@ -50,7 +51,7 @@ function getWeekDays(weekStart: string): string[] {
 /**
  * WeeklyReport component - displays the full weekly report with header and promise cards
  */
-export function WeeklyReport({ data, onRefresh, hideHeader = false, onCreatePromise }: WeeklyReportProps) {
+export function WeeklyReport({ data, onRefresh, hideHeader = false, hideProgress = false, onCreatePromise }: WeeklyReportProps) {
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
   const dateRange = useMemo(
@@ -126,7 +127,7 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false, onCreateProm
       )}
       
       {/* Overall Progress Bar */}
-      {total_promised > 0 && (
+      {!hideProgress && total_promised > 0 && (
         <div style={{ 
           marginBottom: '18px', 
           padding: '12px 18px',
@@ -197,8 +198,10 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false, onCreateProm
           ))}
           {onCreatePromise ? (
             <button className="create-promise-card" type="button" onClick={onCreatePromise}>
-              <span className="create-promise-card-icon">+</span>
-              <span className="create-promise-card-title">New Promise</span>
+              <span className="create-promise-card-header">
+                <span className="create-promise-card-icon">+</span>
+                <span className="create-promise-card-title">New Promise</span>
+              </span>
               <span className="create-promise-card-subtitle">Add a custom weekly commitment</span>
             </button>
           ) : null}

@@ -509,6 +509,27 @@ class ApiClient {
     });
   }
 
+  async updateClubPromise(
+    clubId: string,
+    promiseUuid: string,
+    body: { promise_text?: string; target_count_per_week?: number },
+  ): Promise<ClubSummary> {
+    return this.request<ClubSummary>(`/clubs/${clubId}/promises/${promiseUuid}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteClubPromise(
+    clubId: string,
+    promiseUuid: string,
+  ): Promise<{ status: string; club_id: string; message: string }> {
+    return this.request<{ status: string; club_id: string; message: string }>(
+      `/clubs/${clubId}/promises/${promiseUuid}`,
+      { method: 'DELETE' },
+    );
+  }
+
   /**
    * Get conversation history for a user (admin only).
    */
