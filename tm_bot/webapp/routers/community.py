@@ -151,7 +151,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
 
         rows = session.execute(
             text(f"""
-                SELECT
+                SELECT DISTINCT ON (c.club_id)
                     c.club_id,
                     c.name,
                     c.visibility,
@@ -185,7 +185,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                    AND pi.user_id = p.user_id
                    AND pi.status = 'active'
                 WHERE COALESCE(c.status, 'active') = 'active'
-                ORDER BY c.created_at_utc DESC;
+                ORDER BY c.club_id, pcs.created_at_utc ASC;
             """),
             {"user_id": user},
         ).mappings().fetchall()
