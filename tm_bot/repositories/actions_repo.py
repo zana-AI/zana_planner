@@ -112,6 +112,96 @@ class ActionsRepository:
         ps = [a for a in actions if (a.promise_id or "").strip().upper() == pid]
         return max(ps, key=lambda a: a.at) if ps else None
 
+    def append_club_checkin(self, user_id: int, promise_uuid: str) -> None:
+        """Record a club check-in for today (idempotent — replaces any existing one)."""
+        user = str(user_id)
+        now_dt = datetime.utcnow()
+        at_utc = now_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        today = now_dt.strftime("%Y-%m-%d")
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    DELETE FROM actions
+                    WHERE user_id = :user_id
+                      AND promise_uuid = :promise_uuid
+                      AND action_type = 'club_checkin'
+                      AND DATE(at_utc) = :today;
+                """),
+                {"user_id": user, "promise_uuid": promise_uuid, "today": today},
+            )
+            session.execute(
+                text("""
+                    INSERT INTO actions(
+                        action_uuid, user_id, promise_uuid, promise_id_text,
+                        action_type, time_spent_hours, at_utc, notes
+                    ) VALUES (
+                        :action_uuid, :user_id, :promise_uuid, '',
+                        'club_checkin', 0.0, :at_utc, NULL
+                    );
+                """),
+                {
+                    "action_uuid": str(uuid.uuid4()),
+                    "user_id": user,
+                    "promise_uuid": promise_uuid,
+                    "at_utc": at_utc,
+                },
+            )
+
+    def delete_club_checkin(self, user_id: int, promise_uuid: str) -> None:
+        """Remove today's club check-in action."""
+        user = str(user_id)
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    DELETE FROM actions
+                    WHERE user_id = :user_id
+                      AND promise_uuid = :promise_uuid
+                      AND action_type = 'club_checkin'
+                      AND DATE(at_utc) = :today;
+                """),
+                {"user_id": user, "promise_uuid": promise_uuid, "today": today},
+            )
+
+    def get_checkin_streak(self, user_id: int, promise_uuid: str) -> int:
+        """Count consecutive days (ending today or yesterday) with a club_checkin action."""
+        from datetime import date, timedelta
+        user = str(user_id)
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT DISTINCT DATE(at_utc) AS check_date
+                    FROM actions
+                    WHERE user_id = :user_id
+                      AND promise_uuid = :promise_uuid
+                      AND action_type = 'club_checkin'
+                    ORDER BY check_date DESC;
+                """),
+                {"user_id": user, "promise_uuid": promise_uuid},
+            ).fetchall()
+
+        if not rows:
+            return 0
+
+        dates = []
+        for row in rows:
+            d = row[0]
+            if isinstance(d, str):
+                d = date.fromisoformat(d)
+            dates.append(d)
+
+        today = datetime.utcnow().date()
+        if dates[0] < today - timedelta(days=1):
+            return 0  # Streak broken — most recent was more than yesterday
+
+        streak = 1
+        for i in range(1, len(dates)):
+            if dates[i] == dates[i - 1] - timedelta(days=1):
+                streak += 1
+            else:
+                break
+        return streak
+
     def get_actions_df(self, user_id: int) -> pd.DataFrame:
         """
         Return DataFrame with legacy columns: ['date','time','promise_id','time_spent'].

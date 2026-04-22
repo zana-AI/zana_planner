@@ -6,6 +6,7 @@ Handles all callback query processing from inline keyboards.
 import asyncio
 import io
 import os
+import random
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -35,6 +36,52 @@ from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+async def _send_delayed_checkin_reply(
+    bot,
+    bot_data: dict,
+    chat_id: int,
+    reply_to_message_id: int,
+    user_id: int,
+    name: str,
+    new_status: str | None,
+) -> None:
+    """Send (or edit/delete) a short group reply after a random human-feeling delay."""
+    await asyncio.sleep(random.uniform(8, 20))
+
+    if "club_checkin_replies" not in bot_data:
+        bot_data["club_checkin_replies"] = {}
+    reply_key = (chat_id, user_id)
+    existing_msg_id = bot_data["club_checkin_replies"].get(reply_key)
+
+    if new_status is None:
+        if existing_msg_id:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=existing_msg_id)
+            except Exception:
+                pass
+            bot_data["club_checkin_replies"].pop(reply_key, None)
+        return
+
+    text = f"🔥 {name} is in!" if new_status == "done" else f"😅 {name} sat this one out. Tomorrow! 💪"
+
+    if existing_msg_id:
+        try:
+            await bot.edit_message_text(chat_id=chat_id, message_id=existing_msg_id, text=text)
+            return
+        except Exception:
+            pass
+
+    try:
+        sent = await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_to_message_id=reply_to_message_id,
+        )
+        bot_data["club_checkin_replies"][reply_key] = sent.message_id
+    except Exception:
+        pass
 
 
 def _is_staging_or_test_mode() -> bool:
@@ -2048,9 +2095,8 @@ Generate the calendar links now:"""
             await query.edit_message_text("❌ Error declining suggestion. Please try again.")
 
     async def _handle_club_checkin(self, query, context, user_id: int):
-        """Handle inline button presses for the nightly club check-in message."""
+        """Handle inline button presses for the club check-in message."""
         try:
-            # query.data format: club_checkin:{club_id}:{action}
             parts = query.data.split(":")
             if len(parts) != 3:
                 return
@@ -2062,47 +2108,63 @@ Generate the calendar links now:"""
         message_id = query.message.message_id
         bot_data = context.bot_data
 
-        # Find state
         state_key = (chat_id, message_id)
         if "club_checkins" not in bot_data or state_key not in bot_data["club_checkins"]:
             await query.answer("This check-in has expired. ⏳", show_alert=True)
-            # Remove keyboard since it's expired
             await query.edit_message_reply_markup(reply_markup=None)
             return
 
         state = bot_data["club_checkins"][state_key]
         members = state["members"]
         club_name = state["club_name"]
+        promise_uuid = state.get("promise_uuid")
+        promise_text = state.get("promise_text")
 
-        # Find the specific member
         member = next((m for m in members if m["user_id"] == user_id), None)
         if not member:
             await query.answer("You are not part of this check-in! 🚫", show_alert=True)
             return
 
-        # Toggle status: clicking the same button removes the status
         old_status = member.get("status")
         if old_status == action:
             new_status = None
-            msg = "Feedback removed."
+            msg = "Removed."
         else:
             new_status = action
             msg = "Checked in! ✅" if action == "done" else "Noted! ❌"
-            
+
         member["status"] = new_status
 
-        # Re-build message and edit
-        new_text = build_club_reminder_message(club_name, members)
+        # Persist to actions table
+        if promise_uuid:
+            from repositories.actions_repo import ActionsRepository
+            actions_repo = ActionsRepository()
+            try:
+                if new_status == "done":
+                    actions_repo.append_club_checkin(user_id, promise_uuid)
+                elif old_status == "done":
+                    actions_repo.delete_club_checkin(user_id, promise_uuid)
+            except Exception as exc:
+                logger.warning("[ClubCheckin] Failed to persist action for user %s: %s", user_id, exc)
+
+        new_text = build_club_reminder_message(club_name, members, promise_text=promise_text)
         if new_text:
             try:
-                # We can reuse create_club_checkin_keyboard inside here just to be clean
-                # But it's also fine to just pass the existing reply_markup
-                await query.edit_message_text(
-                    text=new_text,
-                    reply_markup=query.message.reply_markup,
-                )
-            except Exception as e:
-                # E.g. Message is not modified
+                await query.edit_message_text(text=new_text, reply_markup=query.message.reply_markup)
+            except Exception:
                 pass
 
         await query.answer(msg)
+
+        # Delayed group reply (non-blocking)
+        asyncio.create_task(
+            _send_delayed_checkin_reply(
+                bot=context.bot,
+                bot_data=bot_data,
+                chat_id=chat_id,
+                reply_to_message_id=message_id,
+                user_id=user_id,
+                name=member["name"],
+                new_status=new_status,
+            )
+        )

@@ -17,6 +17,8 @@ A member's private promises are never touched.
 """
 from __future__ import annotations
 
+import random
+from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -24,6 +26,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from repositories.clubs_repo import ClubsRepository
 from repositories.settings_repo import SettingsRepository
+from repositories.actions_repo import ActionsRepository
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -76,65 +79,57 @@ def create_club_checkin_keyboard(club_id: str) -> InlineKeyboardMarkup:
     ]])
 
 
-def build_club_reminder_message(club_name: str, members: list[dict]) -> Optional[str]:
+def build_club_reminder_message(
+    club_name: str,
+    members: list[dict],
+    promise_text: str | None = None,
+) -> Optional[str]:
     """
-    Compose the nightly reminder text for a club group chat.
+    Compose the check-in reminder text for a club group chat.
 
-    Each member dict is expected to have:
+    Member dict fields:
         user_id      int
-        name         str   (pre-computed display name)
-        promise_text str | None
+        name         str
+        promise_text str | None  (fallback if promise_text arg not given)
         status       None | 'done' | 'skip'
+        streak       int   (consecutive done-days before today, 0 if none)
 
-    Returns None if no member has shared a promise to this club (so the
-    message is skipped entirely for empty clubs).
+    Returns None if there is no promise and no members.
     """
-    promised = [m for m in members if m.get("promise_text")]
-    no_promise = [m for m in members if not m.get("promise_text")]
+    shared_promise = promise_text or next(
+        (m.get("promise_text") for m in members if m.get("promise_text")), None
+    )
 
-    # Skip entirely when nobody has a promise
-    if not promised:
+    if not members:
         return None
 
     total = len(members)
-    responded = sum(1 for m in members if m.get("status"))
+    done_count = sum(1 for m in members if m.get("status") == "done")
 
-    lines: list[str] = [
-        f"🌙 Nightly Club Check-in: {club_name}",
-        "",
-        "📋 Member Check-in:",
-    ]
+    lines: list[str] = [f"🎯 {club_name} · check-in", ""]
 
-    # Members with a promise (numbered list)
-    for i, member in enumerate(promised, 1):
+    if shared_promise:
+        lines.append(shared_promise.replace("_", " "))
+        lines.append("")
+
+    for member in members:
         status = member.get("status")
-        if status == "done":
-            marker = "✅"
-        elif status == "skip":
-            marker = "❌"
-        else:
-            marker = f"{i}."
         name = member["name"]
-        promise = str(member["promise_text"]).replace("_", " ")
-        lines.append(f"{marker} {name}: {promise}")
-
-    # Members without a shared promise (bullet list)
-    for member in no_promise:
-        status = member.get("status")
+        streak = int(member.get("streak", 0))
         if status == "done":
-            marker = "✅"
+            new_streak = streak + 1
+            streak_label = f" 🔥{new_streak}" if new_streak > 1 else ""
+            lines.append(f"✅ {name}{streak_label}")
         elif status == "skip":
-            marker = "❌"
+            lines.append(f"❌ {name}")
         else:
-            marker = "•"
-        name = member["name"]
-        lines.append(f"{marker} {name}: (No promise shared yet)")
+            lines.append(f"⬜ {name}")
 
     lines.append("")
-    if responded > 0:
-        lines.append(f"Checked in: {responded}/{total} 💪")
+    if done_count > 0:
+        lines.append(f"{done_count}/{total} checked in 💪")
     else:
-        lines.append("Tap a button below to check in!")
+        lines.append("Tap a button to check in!")
 
     return "\n".join(lines)
 
@@ -144,79 +139,103 @@ def build_club_reminder_message(club_name: str, members: list[dict]) -> Optional
 # ---------------------------------------------------------------------------
 
 class ClubReminderService:
-    """Send nightly promise-recap messages to each club's Telegram group."""
+    """Send scheduled check-in messages to each club's Telegram group."""
 
     def __init__(self) -> None:
         self.clubs_repo = ClubsRepository()
+        self.actions_repo = ActionsRepository()
 
-    async def send_all_club_nightly_reminders(self, bot, bot_data: dict) -> None:
+    def _is_reminder_due(self, reminder_time: str, owner_tz: str, now_utc: datetime) -> bool:
+        """Return True if the club's reminder falls within the current 15-min window."""
+        try:
+            hh, mm = map(int, reminder_time.split(":"))
+        except (ValueError, AttributeError):
+            hh, mm = 21, 0
+
+        now_local = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo(owner_tz))
+        target_minutes = hh * 60 + mm
+        current_minutes = now_local.hour * 60 + now_local.minute
+        return target_minutes <= current_minutes < target_minutes + 15
+
+    async def send_due_club_reminders(self, bot, bot_data: dict, now_utc: datetime | None = None) -> None:
         """
-        Iterate over all active clubs with a connected Telegram group and
-        post the nightly check-in reminder to each group chat.
+        Called every 15 minutes. Sends a check-in reminder to each club whose
+        configured reminder_time falls within the current 15-minute window and
+        has not yet been sent today.
 
         State for each sent message is stored in bot_data['club_checkins']
-        under the key (chat_id, message_id), so the callback handler can
-        find and edit it when members tap their buttons.
-
-        Args:
-            bot:      python-telegram-bot ``Bot`` instance.
-            bot_data: The application's bot_data dict for state storage.
+        under (chat_id, message_id) so the callback handler can edit it on tap.
         """
+        now = now_utc or datetime.utcnow()
+        today_str = now.strftime("%Y-%m-%d")
+
         clubs = self.clubs_repo.get_active_clubs_with_telegram()
-        logger.info(
-            "[ClubReminder] Starting nightly run — %d club(s) with Telegram groups",
-            len(clubs),
-        )
+        logger.info("[ClubReminder] Tick — %d club(s) with Telegram groups", len(clubs))
 
         if "club_checkins" not in bot_data:
             bot_data["club_checkins"] = {}
+        if "club_reminder_sent" not in bot_data:
+            bot_data["club_reminder_sent"] = {}
 
         for club in clubs:
             club_id = str(club["club_id"])
             club_name = str(club.get("name") or "Club")
             chat_id = club.get("telegram_chat_id")
             owner_user_id = str(club.get("owner_user_id") or "")
+            reminder_time = str(club.get("reminder_time") or "21:00")
+
+            # Already sent today?
+            if bot_data["club_reminder_sent"].get(club_id) == today_str:
+                continue
+
+            owner_tz = _owner_timezone(owner_user_id)
+            if not self._is_reminder_due(reminder_time, owner_tz, now):
+                continue
 
             if not chat_id:
-                logger.warning(
-                    "[ClubReminder] Club %s ('%s') has no telegram_chat_id — skipping",
-                    club_id, club_name,
-                )
+                logger.warning("[ClubReminder] Club %s has no telegram_chat_id — skipping", club_id)
                 continue
 
             try:
                 raw_members = self.clubs_repo.get_club_members_promises(club_id)
             except Exception as exc:
-                logger.exception(
-                    "[ClubReminder] Failed to fetch members for club %s: %s",
-                    club_id, exc,
-                )
+                logger.exception("[ClubReminder] Failed to fetch members for club %s: %s", club_id, exc)
                 continue
 
             if not raw_members:
-                logger.info(
-                    "[ClubReminder] Club %s ('%s') has no active members — skipping",
-                    club_id, club_name,
-                )
+                logger.info("[ClubReminder] Club %s has no active members — skipping", club_id)
                 continue
 
-            # Build initial member state list (all statuses start as None)
-            members = [
-                {
-                    "user_id": int(m["user_id"]),
+            # Shared club promise text (same for all members)
+            promise_text = next(
+                (m.get("promise_text") for m in raw_members if m.get("promise_text")), None
+            )
+            # Pick the promise_uuid to record actions against
+            promise_uuid = next(
+                (m.get("promise_uuid") for m in raw_members if m.get("promise_uuid")), None
+            )
+
+            # Build member state with streak pre-loaded from DB
+            members = []
+            for m in raw_members:
+                uid = int(m["user_id"])
+                streak = 0
+                if promise_uuid:
+                    try:
+                        streak = self.actions_repo.get_checkin_streak(uid, promise_uuid)
+                    except Exception:
+                        pass
+                members.append({
+                    "user_id": uid,
                     "name": _display_name(m),
                     "promise_text": m.get("promise_text"),
                     "status": None,
-                }
-                for m in raw_members
-            ]
+                    "streak": streak,
+                })
 
-            message = build_club_reminder_message(club_name, members)
+            message = build_club_reminder_message(club_name, members, promise_text=promise_text)
             if message is None:
-                logger.info(
-                    "[ClubReminder] Club %s ('%s') has no shared promises — skipping",
-                    club_id, club_name,
-                )
+                logger.info("[ClubReminder] Club %s has no promise — skipping", club_id)
                 continue
 
             keyboard = create_club_checkin_keyboard(club_id)
@@ -225,22 +244,28 @@ class ClubReminderService:
                 sent = await bot.send_message(
                     chat_id=int(chat_id),
                     text=message,
-                    parse_mode=None,  # plain text — safe in group chats
+                    parse_mode=None,
                     reply_markup=keyboard,
                 )
-                # Register state so the callback handler can edit this message
                 state_key = (sent.chat_id, sent.message_id)
                 bot_data["club_checkins"][state_key] = {
                     "club_id": club_id,
                     "club_name": club_name,
+                    "promise_text": promise_text,
+                    "promise_uuid": promise_uuid,
                     "members": members,
                 }
+                bot_data["club_reminder_sent"][club_id] = today_str
                 logger.info(
-                    "[ClubReminder] ✓ Sent check-in to club %s ('%s') chat %s msg %s",
+                    "[ClubReminder] ✓ Sent to club %s ('%s') chat %s msg %s",
                     club_id, club_name, sent.chat_id, sent.message_id,
                 )
             except Exception as exc:
                 logger.warning(
-                    "[ClubReminder] ✗ Failed to send to club %s ('%s') chat %s: %s",
-                    club_id, club_name, chat_id, exc,
+                    "[ClubReminder] ✗ Failed to send to club %s chat %s: %s",
+                    club_id, chat_id, exc,
                 )
+
+    # Keep old name as alias so any external callers don't break
+    async def send_all_club_nightly_reminders(self, bot, bot_data: dict) -> None:
+        await self.send_due_club_reminders(bot, bot_data)

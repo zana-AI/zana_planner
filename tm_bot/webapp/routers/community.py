@@ -8,10 +8,13 @@ import asyncio
 import os
 import uuid
 
+import httpx
+
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from sqlalchemy import text
 from ..dependencies import get_current_user
 from ..schemas import (
+    AddClubPromiseRequest,
     ClubActionResponse,
     ClubMemberSummary,
     CreateClubRequest,
@@ -19,6 +22,7 @@ from ..schemas import (
     ClubSummary,
     CreateSuggestionRequest,
     PublicPromiseBadge,
+    UpdateClubPromiseRequest,
 )
 from models.models import Promise
 from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns, get_club_columns
@@ -155,6 +159,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     cm.role,
                     COALESCE(member_counts.member_count, 0) AS member_count,
                     p.current_id AS promise_id,
+                    pcs.promise_uuid AS promise_uuid,
                     p.text AS promise_text,
                     pi.target_value AS target_count_per_week
                 FROM clubs c
@@ -225,11 +230,32 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             telegram_status=str(row["telegram_status"] or "not_connected"),
             telegram_invite_link=str(row["telegram_invite_link"]) if row["telegram_invite_link"] else None,
             promise_id=str(row["promise_id"]) if row["promise_id"] else None,
+            promise_uuid=str(row["promise_uuid"]) if row["promise_uuid"] else None,
             promise_text=str(row["promise_text"]) if row["promise_text"] else None,
             target_count_per_week=float(row["target_count_per_week"]) if row["target_count_per_week"] is not None else None,
         )
         for row in rows
     ]
+
+
+async def _is_club_admin(user_id: int, club: dict, bot_token: str) -> bool:
+    """Return True if user is the club owner, or a Telegram group admin."""
+    if str(club.get("owner_user_id")) == str(user_id):
+        return True
+    telegram_chat_id = club.get("telegram_chat_id")
+    if not telegram_chat_id:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/getChatAdministrators"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url, params={"chat_id": telegram_chat_id})
+        if resp.status_code == 200:
+            admins = resp.json().get("result", [])
+            admin_ids = {str(m["user"]["id"]) for m in admins}
+            return str(user_id) in admin_ids
+    except Exception:
+        pass
+    return False
 
 
 @router.get("/clubs", response_model=ClubsResponse)
@@ -301,6 +327,142 @@ async def create_club(
     except Exception as e:
         logger.exception(f"Error creating club for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create club: {str(e)}")
+
+
+@router.post("/clubs/{club_id}/promises", response_model=ClubSummary)
+async def add_club_promise(
+    request: Request,
+    club_id: str,
+    body: AddClubPromiseRequest,
+    user_id: int = Depends(get_current_user),
+):
+    """Add a club-level promise. Only the club owner or a Telegram group admin may do this."""
+    try:
+        clubs_repo = ClubsRepository()
+        club = clubs_repo.get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if not await _is_club_admin(user_id, club, request.app.state.bot_token):
+            raise HTTPException(status_code=403, detail="Only club admins can define club promises")
+
+        promise_text = body.promise_text.strip()
+        if not promise_text:
+            raise HTTPException(status_code=400, detail="Promise text is required")
+
+        _ensure_user_exists(user_id)
+        _create_club_promise(
+            user_id=user_id,
+            club_id=club_id,
+            club_name=str(club["name"]),
+            promise_text=promise_text,
+            target_count_per_week=body.target_count_per_week,
+        )
+
+        clubs = _list_user_clubs(user_id)
+        updated = next((c for c in clubs if c.club_id == club_id), None)
+        if not updated:
+            raise RuntimeError("Club promise created but club could not be reloaded")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error adding promise to club {club_id} for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to add club promise: {str(e)}")
+
+
+@router.put("/clubs/{club_id}/promises/{promise_uuid}", response_model=ClubSummary)
+async def update_club_promise(
+    request: Request,
+    club_id: str,
+    promise_uuid: str,
+    body: UpdateClubPromiseRequest,
+    user_id: int = Depends(get_current_user),
+):
+    """Edit a club-level promise. Only the club owner or a Telegram group admin may do this."""
+    try:
+        clubs_repo = ClubsRepository()
+        club = clubs_repo.get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if not await _is_club_admin(user_id, club, request.app.state.bot_token):
+            raise HTTPException(status_code=403, detail="Only club admins can edit club promises")
+
+        now = utc_now_iso()
+        with get_db_session() as session:
+            # Verify the promise is actually shared to this club
+            shared = session.execute(
+                text("SELECT 1 FROM promise_club_shares WHERE promise_uuid = :uuid AND club_id = :club_id LIMIT 1;"),
+                {"uuid": promise_uuid, "club_id": club_id},
+            ).fetchone()
+            if not shared:
+                raise HTTPException(status_code=404, detail="Promise not found in this club")
+
+            if body.promise_text is not None:
+                session.execute(
+                    text("UPDATE promises SET text = :text, updated_at_utc = :now WHERE promise_uuid = :uuid;"),
+                    {"text": body.promise_text.strip(), "now": now, "uuid": promise_uuid},
+                )
+            if body.target_count_per_week is not None:
+                session.execute(
+                    text("UPDATE promise_instances SET target_value = :val, updated_at_utc = :now WHERE promise_uuid = :uuid AND status = 'active';"),
+                    {"val": float(body.target_count_per_week), "now": now, "uuid": promise_uuid},
+                )
+
+        clubs = _list_user_clubs(user_id)
+        updated = next((c for c in clubs if c.club_id == club_id), None)
+        if not updated:
+            raise RuntimeError("Club promise updated but club could not be reloaded")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating promise {promise_uuid} in club {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update club promise: {str(e)}")
+
+
+@router.delete("/clubs/{club_id}/promises/{promise_uuid}", response_model=ClubActionResponse)
+async def delete_club_promise(
+    request: Request,
+    club_id: str,
+    promise_uuid: str,
+    user_id: int = Depends(get_current_user),
+):
+    """Delete a club-level promise. Only the club owner or a Telegram group admin may do this."""
+    try:
+        clubs_repo = ClubsRepository()
+        club = clubs_repo.get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if not await _is_club_admin(user_id, club, request.app.state.bot_token):
+            raise HTTPException(status_code=403, detail="Only club admins can delete club promises")
+
+        now = utc_now_iso()
+        with get_db_session() as session:
+            shared = session.execute(
+                text("SELECT 1 FROM promise_club_shares WHERE promise_uuid = :uuid AND club_id = :club_id LIMIT 1;"),
+                {"uuid": promise_uuid, "club_id": club_id},
+            ).fetchone()
+            if not shared:
+                raise HTTPException(status_code=404, detail="Promise not found in this club")
+
+            session.execute(
+                text("DELETE FROM promise_club_shares WHERE promise_uuid = :uuid AND club_id = :club_id;"),
+                {"uuid": promise_uuid, "club_id": club_id},
+            )
+            session.execute(
+                text("UPDATE promises SET is_deleted = 1, updated_at_utc = :now WHERE promise_uuid = :uuid;"),
+                {"now": now, "uuid": promise_uuid},
+            )
+
+        return ClubActionResponse(status="deleted", club_id=club_id, message="Club promise deleted.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting promise {promise_uuid} from club {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete club promise: {str(e)}")
 
 
 @router.delete("/clubs/{club_id}", response_model=ClubActionResponse)

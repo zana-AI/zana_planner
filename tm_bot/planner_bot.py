@@ -1346,19 +1346,17 @@ class PlannerBot:
         
         logger.info(f"bootstrap_schedule_existing_users: successfully scheduled reminders for {scheduled_count}/{len(user_ids)} users")
 
-        # Schedule a SINGLE shared daily job for club group reminders.
-        # This job fires every night at 21:00 UTC and sends one reminder message
-        # to each active club's Telegram group chat.
+        # Repeating tick every 15 min — sends reminders to clubs whose
+        # configured reminder_time falls within the current window.
         try:
-            job_scheduler.schedule_daily_utc(
-                name="club_nightly_reminders",
-                callback=self._send_club_nightly_reminders,
-                hh=21,
-                mm=0,
+            job_scheduler.schedule_repeating(
+                name="club_reminder_tick",
+                callback=self._send_due_club_reminders,
+                seconds=900,
             )
-            logger.info("bootstrap_schedule_existing_users: scheduled club_nightly_reminders at 21:00 UTC")
+            logger.info("bootstrap_schedule_existing_users: scheduled club_reminder_tick every 15 min")
         except Exception as exc:
-            logger.exception("bootstrap_schedule_existing_users: failed to schedule club_nightly_reminders: %s", exc)
+            logger.exception("bootstrap_schedule_existing_users: failed to schedule club_reminder_tick: %s", exc)
 
     def run(self) -> None:
         """
@@ -1381,21 +1379,18 @@ class PlannerBot:
             logger.exception("Bot run loop failed: %s", e)
             raise
 
-    async def _send_club_nightly_reminders(self, context) -> None:
-        """
-        Scheduled callback: send nightly promise-recap to every active club's
-        Telegram group chat at 21:00 UTC.
-        """
+    async def _send_due_club_reminders(self, context) -> None:
+        """Scheduled callback (every 15 min): send reminders to clubs whose time is now due."""
         from services.club_reminder_service import ClubReminderService
         bot = getattr(context, "bot", None)
         if bot is None:
-            logger.warning("[ClubReminder] No bot instance in context — skipping nightly run")
+            logger.warning("[ClubReminder] No bot instance in context — skipping tick")
             return
         try:
             service = ClubReminderService()
-            await service.send_all_club_nightly_reminders(bot, context.bot_data)
+            await service.send_due_club_reminders(bot, context.bot_data)
         except Exception as exc:
-            logger.exception("[ClubReminder] Nightly run failed: %s", exc)
+            logger.exception("[ClubReminder] Tick failed: %s", exc)
 
 
 def main():

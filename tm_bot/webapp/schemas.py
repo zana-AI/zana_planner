@@ -110,6 +110,18 @@ class PublicPromiseBadge(BaseModel):
 
 
 # Clubs
+class AddClubPromiseRequest(BaseModel):
+    """Request to add a club-level promise; only club admins may call this."""
+    promise_text: str = Field(..., min_length=2, max_length=160)
+    target_count_per_week: float = Field(default=2.0, gt=0, le=21)
+
+
+class UpdateClubPromiseRequest(BaseModel):
+    """Request to edit a club-level promise; only club admins may call this."""
+    promise_text: Optional[str] = Field(default=None, min_length=2, max_length=160)
+    target_count_per_week: Optional[float] = Field(default=None, gt=0, le=21)
+
+
 class CreateClubRequest(BaseModel):
     """Minimal request model for creating a club with one shared promise."""
     name: str = Field(..., min_length=2, max_length=80)
@@ -137,6 +149,7 @@ class ClubSummary(BaseModel):
     telegram_status: str = "not_connected"
     telegram_invite_link: Optional[str] = None
     promise_id: Optional[str] = None
+    promise_uuid: Optional[str] = None
     promise_text: Optional[str] = None
     target_count_per_week: Optional[float] = None
 

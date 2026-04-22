@@ -26,6 +26,20 @@ logger = get_logger(__name__)
 _pending_follow_notification_jobs: dict = {}
 
 
+def _safe_user_timezone(tz_name: Optional[str], user_id: int) -> str:
+    """Return a pytz-compatible timezone name, falling back for invalid persisted values."""
+    if not tz_name or tz_name == "DEFAULT":
+        return "UTC"
+
+    try:
+        import pytz
+        pytz.timezone(tz_name)
+        return tz_name
+    except Exception:
+        logger.warning("Invalid timezone '%s' for user %s; falling back to UTC", tz_name, user_id)
+        return "UTC"
+
+
 def _activity_window_starts_utc() -> tuple[str, str]:
     now_utc = datetime.now(timezone.utc)
     since_utc_30 = (now_utc - timedelta(days=30)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -124,10 +138,10 @@ async def get_weekly_report(
                  Defaults to current time in user's timezone.
     """
     try:
-        # Get user timezone (fall back to UTC if not set or is DEFAULT placeholder)
+        # Get user timezone (fall back to UTC if not set or invalid)
         settings_repo = get_settings_repo(request)
         settings = settings_repo.get_settings(user_id)
-        user_tz = settings.timezone if settings and settings.timezone not in (None, "DEFAULT") else "UTC"
+        user_tz = _safe_user_timezone(settings.timezone if settings else None, user_id)
         
         # Parse reference time or use current time
         if ref_time:

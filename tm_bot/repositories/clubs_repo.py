@@ -24,6 +24,8 @@ def ensure_club_telegram_columns(session) -> None:
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_last_admin_reminder_at_utc TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_ready_at_utc TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_setup_by_admin_id TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS reminder_time TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS language TEXT",
     ):
         session.execute(text(ddl))
     _CLUB_TELEGRAM_COLUMNS_CHECKED = True
@@ -351,16 +353,19 @@ class ClubsRepository:
         """
         Return all clubs that have a confirmed Telegram group connected.
 
-        These are the clubs eligible to receive nightly group reminders.
+        These are the clubs eligible to receive scheduled group reminders.
         """
         with get_db_session() as session:
+            ensure_club_telegram_columns(session)
             rows = session.execute(
                 text("""
                     SELECT
                         club_id,
                         owner_user_id,
                         name,
-                        telegram_chat_id
+                        telegram_chat_id,
+                        COALESCE(reminder_time, '21:00') AS reminder_time,
+                        language
                     FROM clubs
                     WHERE telegram_status IN ('ready', 'connected')
                       AND NULLIF(trim(COALESCE(telegram_chat_id, '')), '') IS NOT NULL
@@ -385,7 +390,7 @@ class ClubsRepository:
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT
+                    SELECT DISTINCT ON (cm.user_id)
                         cm.user_id,
                         u.first_name,
                         u.username,
@@ -397,11 +402,10 @@ class ClubsRepository:
                         ON pcs.club_id = cm.club_id
                     LEFT JOIN promises p
                         ON p.promise_uuid = pcs.promise_uuid
-                       AND p.user_id = cm.user_id
                        AND p.is_deleted = 0
                     WHERE cm.club_id = :club_id
                       AND cm.status = 'active'
-                    ORDER BY cm.joined_at_utc ASC;
+                    ORDER BY cm.user_id, pcs.created_at_utc ASC;
                 """),
                 {"club_id": club_id},
             ).mappings().fetchall()
