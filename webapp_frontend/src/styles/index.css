@@ -5017,6 +5017,12 @@ textarea.modal-input {
   gap: 8px;
 }
 
+.club-detail-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+}
+
 @media (max-width: 640px) {
   .user-detail-actions {
     width: 100%;

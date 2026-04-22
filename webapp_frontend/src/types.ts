@@ -201,6 +201,8 @@ export interface ClubSummary {
   promise_uuid?: string;
   promise_text?: string;
   target_count_per_week?: number;
+  reminder_time?: string;
+  language?: string;
 }
 
 export interface ClubsResponse {

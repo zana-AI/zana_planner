@@ -16,6 +16,8 @@ export function ClubDetailPage() {
   const [editingPromise, setEditingPromise] = useState(false);
   const [editText, setEditText] = useState('');
   const [editTarget, setEditTarget] = useState<number | ''>('');
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [editReminderTime, setEditReminderTime] = useState('');
 
   useEffect(() => {
     if (initData) {
@@ -99,6 +101,29 @@ export function ClubDetailPage() {
     } catch (err) {
       hapticFeedback('error');
       setError(err instanceof ApiError ? err.message : 'Failed to update promise.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleEditSettings = () => {
+    if (!club) return;
+    setEditReminderTime(club.reminder_time || '21:00');
+    setEditingSettings(true);
+  };
+
+  const handleSaveSettings = async () => {
+    if (!club) return;
+    setBusy(true);
+    setError('');
+    try {
+      const updated = await apiClient.updateClub(club.club_id, { reminder_time: editReminderTime });
+      setClub(updated);
+      setEditingSettings(false);
+      hapticFeedback('success');
+    } catch (err) {
+      hapticFeedback('error');
+      setError(err instanceof ApiError ? err.message : 'Failed to save settings.');
     } finally {
       setBusy(false);
     }
@@ -223,6 +248,42 @@ export function ClubDetailPage() {
               </p>
             </div>
           </div>
+
+          {isAdmin && (
+            <div className="club-detail-section">
+              <div className="club-detail-label-row">
+                <span className="club-detail-label">Daily reminder</span>
+                {!editingSettings && (
+                  <button type="button" className="club-detail-action-btn" onClick={handleEditSettings} disabled={busy}>
+                    Edit
+                  </button>
+                )}
+              </div>
+              {editingSettings ? (
+                <div className="club-detail-edit-form">
+                  <input
+                    className="club-detail-edit-input"
+                    type="time"
+                    value={editReminderTime}
+                    onChange={(e) => setEditReminderTime(e.target.value)}
+                  />
+                  <p className="club-detail-hint">Time is in your local timezone.</p>
+                  <div className="club-detail-edit-buttons">
+                    <button type="button" className="modal-button modal-button-primary" onClick={handleSaveSettings} disabled={busy || !editReminderTime}>
+                      {busy ? 'Saving…' : 'Save'}
+                    </button>
+                    <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingSettings(false)} disabled={busy}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="club-detail-value">
+                  {club.reminder_time ? `${club.reminder_time} daily` : '21:00 daily (default)'}
+                </p>
+              )}
+            </div>
+          )}
 
           {error ? <div className="modal-error">{error}</div> : null}
 

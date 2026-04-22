@@ -122,6 +122,12 @@ class UpdateClubPromiseRequest(BaseModel):
     target_count_per_week: Optional[float] = Field(default=None, gt=0, le=21)
 
 
+class UpdateClubSettingsRequest(BaseModel):
+    """Request to update club-level settings; only club admins may call this."""
+    reminder_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    language: Optional[str] = Field(default=None, min_length=2, max_length=10)
+
+
 class CreateClubRequest(BaseModel):
     """Minimal request model for creating a club with one shared promise."""
     name: str = Field(..., min_length=2, max_length=80)
@@ -152,6 +158,8 @@ class ClubSummary(BaseModel):
     promise_uuid: Optional[str] = None
     promise_text: Optional[str] = None
     target_count_per_week: Optional[float] = None
+    reminder_time: Optional[str] = None
+    language: Optional[str] = None
 
 
 class ClubsResponse(BaseModel):

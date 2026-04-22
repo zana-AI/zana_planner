@@ -509,6 +509,16 @@ class ApiClient {
     });
   }
 
+  async updateClub(
+    clubId: string,
+    body: { reminder_time?: string; language?: string },
+  ): Promise<ClubSummary> {
+    return this.request<ClubSummary>(`/clubs/${clubId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
   async updateClubPromise(
     clubId: string,
     promiseUuid: string,

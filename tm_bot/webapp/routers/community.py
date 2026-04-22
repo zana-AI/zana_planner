@@ -23,6 +23,7 @@ from ..schemas import (
     CreateSuggestionRequest,
     PublicPromiseBadge,
     UpdateClubPromiseRequest,
+    UpdateClubSettingsRequest,
 )
 from models.models import Promise
 from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns, get_club_columns
@@ -161,7 +162,9 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     p.current_id AS promise_id,
                     pcs.promise_uuid AS promise_uuid,
                     p.text AS promise_text,
-                    pi.target_value AS target_count_per_week
+                    pi.target_value AS target_count_per_week,
+                    c.reminder_time,
+                    c.language
                 FROM clubs c
                 INNER JOIN club_members cm
                     ON cm.club_id = c.club_id
@@ -233,6 +236,8 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             promise_uuid=str(row["promise_uuid"]) if row["promise_uuid"] else None,
             promise_text=str(row["promise_text"]) if row["promise_text"] else None,
             target_count_per_week=float(row["target_count_per_week"]) if row["target_count_per_week"] is not None else None,
+            reminder_time=str(row["reminder_time"]) if row["reminder_time"] else None,
+            language=str(row["language"]) if row["language"] else None,
         )
         for row in rows
     ]
@@ -327,6 +332,52 @@ async def create_club(
     except Exception as e:
         logger.exception(f"Error creating club for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create club: {str(e)}")
+
+
+@router.put("/clubs/{club_id}", response_model=ClubSummary)
+async def update_club_settings(
+    request: Request,
+    club_id: str,
+    body: UpdateClubSettingsRequest,
+    user_id: int = Depends(get_current_user),
+):
+    """Update club settings (reminder_time, language). Only club admins may call this."""
+    try:
+        clubs_repo = ClubsRepository()
+        club = clubs_repo.get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if not await _is_club_admin(user_id, club, request.app.state.bot_token):
+            raise HTTPException(status_code=403, detail="Only club admins can update club settings")
+
+        updates: dict = {}
+        if body.reminder_time is not None:
+            updates["reminder_time"] = body.reminder_time
+        if body.language is not None:
+            updates["language"] = body.language
+
+        if updates:
+            now = utc_now_iso()
+            set_clause = ", ".join(f"{k} = :{k}" for k in updates)
+            updates["club_id"] = club_id
+            updates["updated_at_utc"] = now
+            with get_db_session() as session:
+                session.execute(
+                    text(f"UPDATE clubs SET {set_clause}, updated_at_utc = :updated_at_utc WHERE club_id = :club_id;"),
+                    updates,
+                )
+
+        clubs = _list_user_clubs(user_id)
+        updated = next((c for c in clubs if c.club_id == club_id), None)
+        if not updated:
+            raise RuntimeError("Club updated but could not be reloaded")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating club settings {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update club: {str(e)}")
 
 
 @router.post("/clubs/{club_id}/promises", response_model=ClubSummary)

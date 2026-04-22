@@ -1358,6 +1358,17 @@ class PlannerBot:
         except Exception as exc:
             logger.exception("bootstrap_schedule_existing_users: failed to schedule club_reminder_tick: %s", exc)
 
+        # Repeating tick every 5 min — dispatches due promise reminders.
+        try:
+            job_scheduler.schedule_repeating(
+                name="promise_reminder_tick",
+                callback=self._dispatch_promise_reminders,
+                seconds=300,
+            )
+            logger.info("bootstrap_schedule_existing_users: scheduled promise_reminder_tick every 5 min")
+        except Exception as exc:
+            logger.exception("bootstrap_schedule_existing_users: failed to schedule promise_reminder_tick: %s", exc)
+
     def run(self) -> None:
         """
         Start the bot. For Telegram this runs polling; for other platforms, their event loop.
@@ -1391,6 +1402,39 @@ class PlannerBot:
             await service.send_due_club_reminders(bot, context.bot_data)
         except Exception as exc:
             logger.exception("[ClubReminder] Tick failed: %s", exc)
+
+    async def _dispatch_promise_reminders(self, context) -> None:
+        """Scheduled callback (every 5 min): send due promise reminders to users."""
+        from services.reminder_dispatch import ReminderDispatchService
+        from sqlalchemy import text
+        from db.postgres_db import get_db_session
+        bot = getattr(context, "bot", None)
+        if bot is None:
+            return
+
+        due: list[tuple[int, str, dict]] = []
+
+        def collect(user_id: int, promise_uuid: str, reminder: dict) -> None:
+            due.append((user_id, promise_uuid, reminder))
+
+        try:
+            ReminderDispatchService().dispatch_due_reminders(callback=collect)
+        except Exception as exc:
+            logger.exception("[PromiseReminder] dispatch_due_reminders failed: %s", exc)
+            return
+
+        for user_id, promise_uuid, _reminder in due:
+            try:
+                with get_db_session() as session:
+                    row = session.execute(
+                        text("SELECT text FROM promises WHERE promise_uuid = :uuid AND is_deleted = 0 LIMIT 1;"),
+                        {"uuid": promise_uuid},
+                    ).fetchone()
+                promise_text = row[0] if row else None
+                msg = f"⏰ Time to work on: {promise_text}" if promise_text else "⏰ Reminder: time to keep your promise!"
+                await bot.send_message(chat_id=user_id, text=msg)
+            except Exception as exc:
+                logger.warning("[PromiseReminder] Failed to send to user %s: %s", user_id, exc)
 
 
 def main():
