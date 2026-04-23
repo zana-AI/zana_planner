@@ -374,7 +374,7 @@ class ApiClient {
    */
   async updatePromise(
     promiseId: string,
-    fields: { text?: string; hours_per_week?: number; end_date?: string }
+    fields: { text?: string; hours_per_week?: number; target_value?: number; end_date?: string }
   ): Promise<{ status: string; message: string }> {
     return this.request<{ status: string; message: string }>(`/promises/${promiseId}`, {
       method: 'PATCH',

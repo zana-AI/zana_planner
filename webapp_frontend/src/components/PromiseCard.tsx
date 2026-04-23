@@ -99,8 +99,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   useEffect(() => {
     setEditingText(text);
     setEditingHours(hours_promised);
+    setEditingTarget(target_value ?? 1);
     setEditingEndDate(data.end_date || '');
-  }, [text, hours_promised, data.end_date]);
+  }, [text, hours_promised, target_value, data.end_date]);
 
   // Load plan sessions eagerly (visible on card without expanding)
   useEffect(() => {
@@ -121,6 +122,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   // Editable fields state
   const [editingText, setEditingText] = useState(text);
   const [editingHours, setEditingHours] = useState(hours_promised);
+  const [editingTarget, setEditingTarget] = useState(target_value ?? 1);
   const [editingEndDate, setEditingEndDate] = useState(data.end_date || '');
   const [showCalendar, setShowCalendar] = useState(false);
   const [isUpdatingPromise, setIsUpdatingPromise] = useState(false);
@@ -357,23 +359,29 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const handleSavePromise = async () => {
     if (isUpdatingPromise) return;
     
-    // Validate hours
-    if (editingHours <= 0) {
+    // Validate
+    if (!isCountBased && editingHours <= 0) {
       alert('Hours per week must be greater than 0');
       return;
     }
-    
+    if (isCountBased && editingTarget <= 0) {
+      alert('Times per week must be greater than 0');
+      return;
+    }
+
     setIsUpdatingPromise(true);
-    
+
     try {
-      const updateFields: { text?: string; hours_per_week?: number; end_date?: string } = {};
-      
-      // Only include fields that have changed
+      const updateFields: { text?: string; hours_per_week?: number; target_value?: number; end_date?: string } = {};
+
       if (editingText !== text) {
         updateFields.text = editingText;
       }
-      if (editingHours !== hours_promised) {
+      if (!isCountBased && editingHours !== hours_promised) {
         updateFields.hours_per_week = editingHours;
+      }
+      if (isCountBased && editingTarget !== (target_value ?? 1)) {
+        updateFields.target_value = editingTarget;
       }
       if (editingEndDate !== (data.end_date || '')) {
         updateFields.end_date = editingEndDate || undefined;
@@ -777,20 +785,32 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   />
                 </div>
                 
-                {/* Hours per week field */}
+                {/* Target field — Times per Week for count-based, Hours per Week for time-loggable */}
                 <div className="card-form-group">
                   <label className="card-form-label">
-                    Hours per Week
+                    {isCountBased ? 'Times per Week' : 'Hours per Week'}
                   </label>
-                  <input
-                    type="number"
-                    className="card-form-input"
-                    value={editingHours}
-                    onChange={(e) => setEditingHours(parseFloat(e.target.value) || 0)}
-                    min="0.1"
-                    step="0.1"
-                    placeholder="0.0"
-                  />
+                  {isCountBased ? (
+                    <input
+                      type="number"
+                      className="card-form-input"
+                      value={editingTarget}
+                      onChange={(e) => setEditingTarget(parseInt(e.target.value) || 1)}
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      className="card-form-input"
+                      value={editingHours}
+                      onChange={(e) => setEditingHours(parseFloat(e.target.value) || 0)}
+                      min="0.1"
+                      step="0.1"
+                      placeholder="0.0"
+                    />
+                  )}
                 </div>
                 
                 {/* End date field */}

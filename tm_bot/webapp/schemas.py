@@ -237,6 +237,7 @@ class UpdateRecurringRequest(BaseModel):
 class UpdatePromiseRequest(BaseModel):
     text: Optional[str] = None
     hours_per_week: Optional[float] = None
+    target_value: Optional[float] = None  # for count-based promises (times per week)
     end_date: Optional[str] = None  # ISO date string (YYYY-MM-DD)
 
 

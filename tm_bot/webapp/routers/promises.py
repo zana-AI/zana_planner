@@ -312,7 +312,12 @@ async def update_promise(
         if update_request.hours_per_week is not None:
             if update_request.hours_per_week <= 0:
                 raise HTTPException(status_code=400, detail="hours_per_week must be a positive number")
-        
+
+        # Validate target_value if provided
+        if update_request.target_value is not None:
+            if update_request.target_value <= 0:
+                raise HTTPException(status_code=400, detail="target_value must be a positive number")
+
         # Update promise using PlannerAPIAdapter
         result = plan_keeper.update_promise(
             user_id=user_id,
@@ -321,6 +326,20 @@ async def update_promise(
             hours_per_week=update_request.hours_per_week,
             end_date=end_date_obj
         )
+
+        # Update target_value in promise_instances for count-based promises
+        if update_request.target_value is not None:
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, str(user_id), promise_id)
+                if promise_uuid:
+                    session.execute(
+                        text("""
+                            UPDATE promise_instances
+                            SET target_value = :val, updated_at_utc = :now
+                            WHERE promise_uuid = :uuid AND user_id = :uid AND status = 'active'
+                        """),
+                        {"val": float(update_request.target_value), "now": utc_now_iso(), "uuid": promise_uuid, "uid": str(user_id)},
+                    )
         
         # Check if update was successful (returns error message string on failure)
         if result and result.startswith("Promise with ID"):
