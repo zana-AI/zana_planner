@@ -30,6 +30,7 @@ from sqlalchemy.exc import OperationalError as SQLOperationalError
 from sqlalchemy import text
 
 from llms.llm_handler import LLMHandler
+from llms.group_router import route_group_message, budget_allows, RouterDecision
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
 from handlers.message_handlers import MessageHandlers
@@ -507,17 +508,68 @@ class PlannerBot:
             elif command == "club":
                 await self._reply_with_group_club_info(ctx)
             return
-        if await self._message_addresses_bot(ctx):
-            if self._is_emoji_only(ctx.raw_text or ""):
-                return
-            if self._is_short_ack(ctx.raw_text or ""):
-                return
-            await self._handle_group_llm_message(ctx)
+
+        is_mentioned = await self._message_addresses_bot(ctx)
+        is_completion = self._is_task_completion(ctx.raw_text or "")
+
+        # Only route if the message is relevant
+        if not is_mentioned and not is_completion:
             return
 
-        # Proactive reaction: task completion shared without @mentioning the bot
-        if self._is_task_completion(ctx.raw_text or ""):
-            await self._handle_group_task_completion(ctx)
+        club = self._get_club_for_group_chat(ctx.chat_id)
+        vibe = (club or {}).get("club_vibe") or "coach"
+        club_id = (club or {}).get("club_id", "")
+        ptb_context = getattr(ctx, "platform_context", None)
+        bot_data = getattr(ptb_context, "bot_data", {}) if ptb_context else {}
+
+        # Check budget for spontaneous (proactive) messages
+        if not is_mentioned and not budget_allows(bot_data, ctx.chat_id, vibe, is_commanded=False):
+            logger.debug("group_router: budget exhausted for chat %s, skipping proactive response", ctx.chat_id)
+            return
+
+        # Fetch member status once — used by router and LLM
+        member_status = self._get_today_checkin_status(club_id) if club else []
+        sender_name = ctx.metadata.get("sender_name") or ""
+        sender_checked_in = any(
+            m.get("name") == sender_name and m.get("status") == "done"
+            for m in member_status
+        )
+
+        # Call Groq router
+        decision: RouterDecision = await asyncio.to_thread(
+            route_group_message,
+            ctx.raw_text or "",
+            sender_name,
+            vibe,
+            is_mentioned,
+            sender_checked_in,
+            self._get_recent_group_messages(ctx),
+        )
+        logger.debug("group_router: %s → %s (%s)", sender_name, decision.action, decision.reason)
+
+        if decision.action == "IGNORE":
+            return
+
+        if decision.action == "REACT_EMOJI":
+            await asyncio.sleep(decision.delay_seconds)
+            await self._send_emoji_reaction(ctx, decision.emoji)
+            return
+
+        # SHORT_REPLY or FULL_REPLY — hand off to LLM
+        await asyncio.sleep(decision.delay_seconds)
+        if is_mentioned:
+            await self._handle_group_llm_message(
+                ctx,
+                member_status=member_status,
+                sender_checked_in=sender_checked_in,
+                short_reply=(decision.action == "SHORT_REPLY"),
+            )
+        else:
+            await self._handle_group_task_completion(
+                ctx,
+                member_status=member_status,
+                sender_checked_in=sender_checked_in,
+            )
 
     async def _welcome_group_members(self, ctx: InputContext) -> None:
         members = ctx.metadata.get("new_chat_members") or []
@@ -809,7 +861,23 @@ class PlannerBot:
         except Exception:
             return []
 
-    async def _handle_group_task_completion(self, ctx: InputContext) -> None:
+    async def _send_emoji_reaction(self, ctx: InputContext, emoji: str) -> None:
+        """Add an emoji reaction to the triggering message without sending any text."""
+        try:
+            from telegram import ReactionTypeEmoji
+            message = getattr(ctx.platform_update, "effective_message", None)
+            if not message:
+                return
+            await message.set_reaction([ReactionTypeEmoji(emoji)])
+        except Exception as e:
+            logger.debug("_send_emoji_reaction failed: %s", e)
+
+    async def _handle_group_task_completion(
+        self,
+        ctx: InputContext,
+        member_status: list | None = None,
+        sender_checked_in: bool = False,
+    ) -> None:
         """React proactively when a member shares a task completion without @mentioning the bot."""
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
@@ -822,7 +890,8 @@ class PlannerBot:
             t = float(club["target_count_per_week"])
             target_text = f"{int(t) if t.is_integer() else t} times/week"
 
-        await asyncio.sleep(3)  # feel like a human noticing, not an instant reflex
+        if member_status is None:
+            member_status = self._get_today_checkin_status(club.get("club_id", ""))
 
         response = await asyncio.to_thread(
             self.llm_handler.get_response_group_safe,
@@ -838,7 +907,9 @@ class PlannerBot:
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
-                "member_status": self._get_today_checkin_status(club.get("club_id", "")),
+                "member_status": member_status,
+                "sender_name": sender_name,
+                "sender_checked_in": sender_checked_in,
                 "proactive": True,
             },
             club.get("club_language"),
@@ -847,7 +918,13 @@ class PlannerBot:
         if response:
             await self._reply_to_group_message(ctx, response, parse_mode=None)
 
-    async def _handle_group_llm_message(self, ctx: InputContext) -> None:
+    async def _handle_group_llm_message(
+        self,
+        ctx: InputContext,
+        member_status: list | None = None,
+        sender_checked_in: bool = False,
+        short_reply: bool = False,
+    ) -> None:
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
             club = self._link_ready_club_for_group_chat(ctx)
@@ -855,6 +932,7 @@ class PlannerBot:
             await self._reply_with_group_setup_help(ctx)
             return
 
+        sender_name = ctx.metadata.get("sender_name") or ""
         user_message = await self._clean_group_user_message(ctx)
         target_text = ""
         if club.get("target_count_per_week") is not None:
@@ -862,7 +940,9 @@ class PlannerBot:
             target_text = str(int(target)) if target.is_integer() else str(target)
             target_text = f"{target_text} times/week"
 
-        await asyncio.sleep(2)  # brief pause — feels like a participant, not a reflex
+        if member_status is None:
+            member_status = self._get_today_checkin_status(club.get("club_id", ""))
+
         processing_msg = await self._reply_to_group_message(ctx, "Thinking...", parse_mode=None)
         response_text = await asyncio.to_thread(
             self.llm_handler.get_response_group_safe,
@@ -878,7 +958,10 @@ class PlannerBot:
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
-                "member_status": self._get_today_checkin_status(club.get("club_id", "")),
+                "member_status": member_status,
+                "sender_name": sender_name,
+                "sender_checked_in": sender_checked_in,
+                "short_reply": short_reply,
             },
             club.get("club_language"),
         )

@@ -2508,6 +2508,7 @@ class LLMHandler:
             recent_messages = group_context.get("recent_messages") or []
             member_status = group_context.get("member_status") or []
             is_proactive = bool(group_context.get("proactive"))
+            is_short_reply = bool(group_context.get("short_reply"))
 
             context_lines = [
                 f"Club name: {club_name}",
@@ -2544,27 +2545,44 @@ class LLMHandler:
                         continue
                     recent_lines.append(f"{sender}: {text[:500]}")
 
-            language_line = (
-                f"LANGUAGE: Always reply in {user_language}."
-                if user_language
-                else "Reply in the same language as the user's message."
-            )
+            sender_name = str(group_context.get("sender_name") or "").strip()
+            sender_checked_in = bool(group_context.get("sender_checked_in"))
+
+            if user_language:
+                language_line = (
+                    f"LANGUAGE: Always reply in {user_language}. "
+                    "Never switch languages regardless of what individual members write."
+                )
+            else:
+                language_line = (
+                    "LANGUAGE: Identify the dominant language of this group from the conversation "
+                    "and reply consistently in that language. Do not switch languages between turns."
+                )
 
             system_text = "\n".join([
                 "You are Xaana, the accountability coach inside a Telegram group connected to a Xaana club.",
                 "Your primary role is to keep members motivated and help the group fulfill their shared promise.",
+                "You are NOT a general assistant, therapist, social mediator, or entertainer.",
+                "Stay focused on the club. Keep replies short — one paragraph at most.",
                 "",
                 "Core behaviour:",
                 "- If a member shares ANY evidence they completed the club activity today — a result, a score,",
                 "  a photo description, a workout share, a game result, a simple 'I did it!' — celebrate it",
                 "  warmly and genuinely. Recognise the effort. Engage with the social energy (challenges,",
-                "  taunts, streaks). Then gently remind them to tap the check-in button in the daily reminder",
-                "  so it gets recorded — but do NOT claim you logged it yourself.",
+                "  taunts, streaks).",
+                *(["- This member has NOT checked in yet today. Gently remind them to tap the check-in button",
+                   "  in the daily reminder so it gets recorded — but do NOT claim you logged it yourself."]
+                  if not sender_checked_in else
+                  ["- This member has already checked in today. Just celebrate — do NOT mention the check-in button."]),
                 *(["- You noticed this activity proactively (the member didn't ask you anything).",
                    "  Keep your reaction short, warm, and natural — 1-2 sentences max. Don't over-explain."]
                   if is_proactive else []),
+                *(["- Keep this reply to 1-2 sentences maximum. Light touch only."]
+                  if is_short_reply else []),
                 "- If a member is struggling, skipping, or frustrated, be empathetic first, then encouraging.",
-                "- Keep the group energy positive and playful. Short replies win over long ones.",
+                "- Keep the group energy positive. Short replies win over long ones.",
+                "- Never explain interpersonal motives, conflicts, or intentions. If you don't know the reason, say so.",
+                "- Never improvise as a social mediator or life coach. Stay in your lane: club accountability.",
                 "",
                 "AUTHORITY HIERARCHY — follow this strictly:",
                 "1. Club-level context below (from the database) is GROUND TRUTH.",
