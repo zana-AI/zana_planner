@@ -169,8 +169,12 @@ export function ClubDetailPage() {
 
   const handleInvite = () => {
     if (!club || !botUsername) return;
-    const deepLink = `https://t.me/${botUsername}?start=invite_${club.club_id}`;
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(`Join me in "${club.name}" on Xaana!`)}`;
+    const botLink = `https://t.me/${botUsername}?start=invite_${club.club_id}`;
+    const groupLink = club.telegram_invite_link;
+    const mainUrl = groupLink || botLink;
+    const textLines = [`Join me in "${club.name}" on Xaana!`];
+    if (groupLink) textLines.push(`Open in app: ${botLink}`);
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(mainUrl)}&text=${encodeURIComponent(textLines.join('\n'))}`;
     window.Telegram?.WebApp?.openTelegramLink(shareUrl);
   };
 
