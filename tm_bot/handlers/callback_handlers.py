@@ -255,6 +255,11 @@ class CallbackHandlers:
             await self._handle_club_checkin(query, context, user_id)
             return
 
+        # Club onboarding answers (vibe / check-in definition)
+        if query.data and query.data.startswith("club_onboard:"):
+            await self._handle_club_onboard(query)
+            return
+
         # Parse legacy callback data
         cb = decode_cb(query.data)
         action = normalize_cb_action(cb.get("a"))
@@ -1011,6 +1016,29 @@ class CallbackHandlers:
         if str(club.get("owner_user_id")) != str(user_id):
             return None
         return club
+
+    async def _handle_club_onboard(self, query) -> None:
+        """Persist a club onboarding answer (vibe or checkin definition) from inline button."""
+        from repositories.clubs_repo import ClubsRepository
+        try:
+            # Format: club_onboard:{club_id}:{field}:{value}
+            parts = query.data.split(":", 3)
+            if len(parts) != 4:
+                await query.answer("Invalid onboarding data.")
+                return
+            _, club_id, field, value = parts
+            repo = ClubsRepository()
+            if field == "vibe":
+                repo.update_club_context(club_id, vibe=value)
+                await query.edit_message_text(f"Got it — {value} vibe saved. The bot will keep that in mind in the group.")
+            elif field == "checkin":
+                repo.update_club_context(club_id, checkin_what_counts=value)
+                await query.edit_message_text(f"Saved: \"{value}\" — I'll use that to understand check-ins in the group.")
+            else:
+                await query.answer("Unknown field.")
+        except Exception as e:
+            logger.warning("Failed to handle club onboard callback: %s", e)
+            await query.answer("Something went wrong. Please try again.")
 
     async def _handle_club_cancel(self, query, club_id: str, user_lang: Language):
         """Cancel a pending club from the Telegram notification."""

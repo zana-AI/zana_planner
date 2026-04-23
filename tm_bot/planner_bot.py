@@ -390,6 +390,16 @@ class PlannerBot:
                     chat_id=ctx.chat_id,
                 )
 
+            # Intercept free-text onboarding replies in private DMs
+            if (
+                ctx.input_type == "text"
+                and not self._is_group_chat(ctx)
+                and ctx.user_id
+                and ctx.raw_text
+            ):
+                if await self._maybe_capture_onboarding_reply(ctx, context):
+                    return
+
             if self._is_group_chat(ctx) and ctx.input_type in {
                 "command",
                 "text",
@@ -492,8 +502,10 @@ class PlannerBot:
 
         if ctx.input_type == "command":
             command = (ctx.command or "").split("@", 1)[0].lower()
-            if command in {"status", "club"}:
+            if command == "status":
                 await self._reply_with_group_club_summary(ctx)
+            elif command == "club":
+                await self._reply_with_group_club_info(ctx)
             return
         if await self._message_addresses_bot(ctx):
             if self._is_emoji_only(ctx.raw_text or ""):
@@ -624,6 +636,45 @@ class PlannerBot:
             except Exception:
                 pass
 
+            # Pin the status card silently so it's always visible at the top
+            try:
+                await ctx.platform_context.bot.pin_chat_message(
+                    chat_id=ctx.chat_id,
+                    message_id=sent.message_id,
+                    disable_notification=True,
+                )
+            except Exception as e:
+                logger.debug("Could not pin /status message in chat %s: %s", ctx.chat_id, e)
+
+    async def _reply_with_group_club_info(self, ctx: InputContext) -> None:
+        """Static club info card for /club — no check-in data, no keyboard."""
+        club = self._get_club_for_group_chat(ctx.chat_id)
+        if not club:
+            club = self._link_ready_club_for_group_chat(ctx)
+        if not club:
+            await self._reply_with_group_setup_help(ctx)
+            return
+
+        raw_members = ClubsRepository().get_club_members_promises(club["club_id"])
+        member_count = len(raw_members)
+
+        lines = [f"🏷 {club['club_name']}"]
+        if club.get("club_description"):
+            lines.append(club["club_description"])
+        lines.append("")
+        if club.get("promise_text"):
+            lines.append(f"Promise: {club['promise_text']}")
+        if club.get("target_count_per_week") is not None:
+            t = float(club["target_count_per_week"])
+            lines.append(f"Target: {int(t) if t.is_integer() else t}×/week")
+        if club.get("club_checkin_what_counts"):
+            lines.append(f"Check-in: {club['club_checkin_what_counts']}")
+        if club.get("club_vibe"):
+            lines.append(f"Vibe: {club['club_vibe']}")
+        lines.append(f"Members: {member_count}")
+
+        await self._reply_to_group_message(ctx, "\n".join(lines), parse_mode=None)
+
     async def _reply_with_group_setup_help(self, ctx: InputContext) -> None:
         message = "\n".join([
             "I can help here after this Telegram group is connected to a Xaana club.",
@@ -692,6 +743,38 @@ class PlannerBot:
         combined = re.compile("|".join(patterns), re.IGNORECASE | re.UNICODE)
         return bool(combined.search(text))
 
+    async def _maybe_capture_onboarding_reply(self, ctx: InputContext, ptb_context) -> bool:
+        """
+        If this user has a pending club onboarding free-text question, capture
+        their reply as the club_goal and clear the pending state.
+        Returns True if the message was consumed.
+        """
+        try:
+            pending = ptb_context.bot_data.get("club_onboarding_pending", {})
+            state = pending.get(ctx.user_id)
+            if not state:
+                return False
+
+            goal_text = (ctx.raw_text or "").strip()
+            if not goal_text or len(goal_text) < 5:
+                return False  # too short — let normal DM flow handle it
+
+            club_id = state["club_id"]
+            club_name = state["club_name"]
+            ClubsRepository().update_club_context(club_id, club_goal=goal_text)
+            pending.pop(ctx.user_id, None)
+
+            await ctx.platform_context.bot.send_message(
+                chat_id=ctx.user_id,
+                text=f"Got it! I'll keep that in mind for {club_name}. You're all set — I'm ready to coach the group.",
+                parse_mode=None,
+            )
+            logger.info("club_onboarding: captured goal for club %s from user %s", club_id, ctx.user_id)
+            return True
+        except Exception as e:
+            logger.warning("_maybe_capture_onboarding_reply error: %s", e)
+            return False
+
     def _get_today_checkin_status(self, club_id: str) -> list[dict]:
         """
         Return today's check-in status for every active club member.
@@ -737,6 +820,10 @@ class PlannerBot:
             {
                 "chat_id": ctx.chat_id,
                 "club_name": club.get("club_name"),
+                "club_description": club.get("club_description"),
+                "club_vibe": club.get("club_vibe"),
+                "club_checkin_what_counts": club.get("club_checkin_what_counts"),
+                "club_goal": club.get("club_goal"),
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
@@ -772,6 +859,10 @@ class PlannerBot:
             {
                 "chat_id": ctx.chat_id,
                 "club_name": club.get("club_name"),
+                "club_description": club.get("club_description"),
+                "club_vibe": club.get("club_vibe"),
+                "club_checkin_what_counts": club.get("club_checkin_what_counts"),
+                "club_goal": club.get("club_goal"),
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
@@ -978,6 +1069,10 @@ class PlannerBot:
                     SELECT
                         c.club_id,
                         c.name AS club_name,
+                        c.description AS club_description,
+                        c.vibe AS club_vibe,
+                        c.checkin_what_counts AS club_checkin_what_counts,
+                        c.club_goal AS club_goal,
                         c.language AS club_language,
                         p.text AS promise_text,
                         pi.target_value AS target_count_per_week
@@ -1388,6 +1483,7 @@ class PlannerBot:
                     user_id=result["owner_user_id"],
                     club_name=result["club_name"],
                     invite_link=result["telegram_invite_link"],
+                    club_id=result["club_id"],
                 )
             )
         return result

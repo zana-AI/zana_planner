@@ -26,6 +26,9 @@ def ensure_club_telegram_columns(session) -> None:
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS telegram_setup_by_admin_id TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS reminder_time TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS language TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS vibe TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS checkin_what_counts TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS club_goal TEXT",
     ):
         session.execute(text(ddl))
     _CLUB_TELEGRAM_COLUMNS_CHECKED = True
@@ -401,6 +404,39 @@ class ClubsRepository:
                 """),
             ).mappings().fetchall()
             return [dict(row) for row in rows]
+
+    def update_club_context(
+        self,
+        club_id: str,
+        vibe: str = None,
+        checkin_what_counts: str = None,
+        description: str = None,
+        club_goal: str = None,
+    ) -> None:
+        """Persist admin-provided context fields that the bot uses in group responses."""
+        now = utc_now_iso()
+        updates: dict = {"updated_at_utc": now, "club_id": club_id}
+        parts: list[str] = ["updated_at_utc = :updated_at_utc"]
+        if vibe is not None:
+            updates["vibe"] = vibe
+            parts.append("vibe = :vibe")
+        if checkin_what_counts is not None:
+            updates["checkin_what_counts"] = checkin_what_counts
+            parts.append("checkin_what_counts = :checkin_what_counts")
+        if description is not None:
+            updates["description"] = description
+            parts.append("description = :description")
+        if club_goal is not None:
+            updates["club_goal"] = club_goal
+            parts.append("club_goal = :club_goal")
+        if len(parts) == 1:
+            return
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            session.execute(
+                text(f"UPDATE clubs SET {', '.join(parts)} WHERE club_id = :club_id;"),
+                updates,
+            )
 
     def get_club_members_promises(self, club_id: str) -> List[Dict]:
         """

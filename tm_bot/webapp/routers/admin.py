@@ -513,6 +513,7 @@ async def update_club_telegram_link(
                 user_id=owner_user_id,
                 club_name=club_name,
                 invite_link=invite_link,
+                club_id=club_id,
             )
         )
 

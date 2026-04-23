@@ -166,31 +166,103 @@ async def send_club_telegram_ready_notification(
     user_id: int,
     club_name: str,
     invite_link: str,
+    club_id: str = None,
 ) -> None:
-    """Notify the club creator that the Telegram group is ready."""
+    """Notify the club creator that the Telegram group is ready, then ask onboarding questions."""
     try:
         if not bot_token or not invite_link:
             return
 
+        bot = Bot(token=bot_token)
+
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("Join Telegram group", url=invite_link)]
         ])
-        message = "\n".join([
-            f"Your club Telegram group is ready: {club_name}",
-            "",
-            "Use the button below to join it.",
-        ])
-        bot = Bot(token=bot_token)
         await bot.send_message(
             chat_id=user_id,
-            text=message,
+            text=f"Your club Telegram group is ready: {club_name}\n\nUse the button below to join it.",
             reply_markup=keyboard,
             parse_mode=None,
         )
+
+        # Follow-up: onboarding questions so the bot has context for the group
+        if club_id:
+            await _send_club_onboarding_questions(bot, user_id, club_id, club_name)
+
     except TelegramError as e:
         logger.warning(f"Could not notify club creator {user_id}: {e}")
     except Exception as e:
         logger.warning(f"Unexpected error sending club Telegram ready notification: {e}")
+
+
+async def _send_club_onboarding_questions(
+    bot,
+    user_id: int,
+    club_id: str,
+    club_name: str,
+) -> None:
+    """
+    Ask the club admin 3 quick questions so the bot has reliable context
+    when responding in the group. Q1 & Q2 use inline buttons; Q3 is free text.
+    State for Q3 is stored in bot.bot_data so the DM handler can capture the reply.
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    await bot.send_message(
+        chat_id=user_id,
+        text=(
+            f"One quick thing — help me understand {club_name} better "
+            f"so I can be a better coach in the group. Just 3 short questions 👇"
+        ),
+        parse_mode=None,
+    )
+
+    # Q1: vibe
+    vibe_keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🏆 Competitive", callback_data=f"club_onboard:{club_id}:vibe:competitive"),
+        InlineKeyboardButton("🤝 Supportive",  callback_data=f"club_onboard:{club_id}:vibe:supportive"),
+        InlineKeyboardButton("😄 Casual",      callback_data=f"club_onboard:{club_id}:vibe:casual"),
+    ]])
+    await bot.send_message(
+        chat_id=user_id,
+        text="1️⃣ What's the vibe of this club?",
+        reply_markup=vibe_keyboard,
+        parse_mode=None,
+    )
+
+    # Q2: what counts as a check-in
+    checkin_keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Any attempt",      callback_data=f"club_onboard:{club_id}:checkin:any attempt counts"),
+        InlineKeyboardButton("Full completion",  callback_data=f"club_onboard:{club_id}:checkin:full completion only"),
+        InlineKeyboardButton("Share the result", callback_data=f"club_onboard:{club_id}:checkin:sharing the result counts"),
+    ]])
+    await bot.send_message(
+        chat_id=user_id,
+        text="2️⃣ What counts as a valid check-in?",
+        reply_markup=checkin_keyboard,
+        parse_mode=None,
+    )
+
+    # Q3: free-text goal / challenge — store pending state so DM handler captures the reply
+    await bot.send_message(
+        chat_id=user_id,
+        text=(
+            "3️⃣ What's the main goal or challenge for this club? "
+            "(e.g. \"We're a group of friends trying to beat each other at Cheenva every day\" "
+            "or \"Coworkers building a morning run habit before the summer\")\n\n"
+            "Just reply to this message with a sentence or two."
+        ),
+        parse_mode=None,
+    )
+
+    # Mark this admin as awaiting a free-text goal answer
+    try:
+        bot.bot_data.setdefault("club_onboarding_pending", {})[user_id] = {
+            "club_id": club_id,
+            "club_name": club_name,
+        }
+    except Exception:
+        pass
 
 
 def _language_name(language_code: str) -> str:
