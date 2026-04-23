@@ -160,7 +160,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     cm.role,
                     COALESCE(member_counts.member_count, 0) AS member_count,
                     p.current_id AS promise_id,
-                    pcs.promise_uuid AS promise_uuid,
+                    p.promise_uuid AS promise_uuid,
                     p.text AS promise_text,
                     pi.target_value AS target_count_per_week,
                     c.reminder_time,

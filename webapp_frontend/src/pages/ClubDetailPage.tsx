@@ -187,7 +187,7 @@ export function ClubDetailPage() {
           <div className="club-detail-section">
             <div className="club-detail-label-row">
               <span className="club-detail-label">Shared promise</span>
-              {isAdmin && club.promise_uuid && !editingPromise && (
+              {isAdmin && club.promise_uuid && club.promise_text && !editingPromise && (
                 <span className="club-detail-admin-actions">
                   <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>Edit</button>
                   <button type="button" className="club-detail-action-btn club-detail-action-btn--danger" onClick={handleDeletePromise} disabled={busy}>Delete</button>
