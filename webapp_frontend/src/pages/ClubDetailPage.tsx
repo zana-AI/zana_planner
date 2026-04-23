@@ -171,142 +171,116 @@ export function ClubDetailPage() {
 
   const isAdmin = club.role === 'owner';
   const telegramReady = !!club.telegram_invite_link && ['ready', 'connected'].includes(club.telegram_status);
+  const statusLabel = club.telegram_status.replace(/_/g, ' ');
+  const promiseLine = club.promise_text
+    ? `${club.promise_text}${club.target_count_per_week ? ` · ${club.target_count_per_week}×/week` : ''}`
+    : null;
 
   return (
     <div className="app">
       <div className="club-detail-container">
         <section className="club-detail-card">
-          <div className="club-detail-header">
-            <div>
-              <p className="club-detail-eyebrow">{club.visibility} club · {club.role}</p>
-              <h2>{club.name}</h2>
+
+          {/* Header */}
+          <div className="club-detail-header2">
+            <div className="club-detail-title-row">
+              <h2 className="club-detail-name">{club.name}</h2>
+              <div className="club-detail-badges">
+                <span className="club-badge club-badge--visibility">{club.visibility}</span>
+                <span className={`club-badge club-badge--status club-badge--${club.telegram_status}`}>{statusLabel}</span>
+              </div>
             </div>
-            <span className="club-detail-status">{club.telegram_status.replace(/_/g, ' ')}</span>
+            <p className="club-detail-role">{club.role}</p>
           </div>
 
+          {/* Promise */}
           <div className="club-detail-section">
             <div className="club-detail-label-row">
-              <span className="club-detail-label">Shared promise</span>
-              {isAdmin && club.promise_uuid && club.promise_text && !editingPromise && (
+              <span className="club-detail-label">Promise</span>
+              {isAdmin && !editingPromise && (
                 <span className="club-detail-admin-actions">
-                  <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>Edit</button>
-                  <button type="button" className="club-detail-action-btn club-detail-action-btn--danger" onClick={handleDeletePromise} disabled={busy}>Delete</button>
+                  {club.promise_uuid && club.promise_text && (
+                    <>
+                      <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>Edit</button>
+                      <button type="button" className="club-detail-action-btn club-detail-action-btn--danger" onClick={handleDeletePromise} disabled={busy}>Delete</button>
+                    </>
+                  )}
                 </span>
               )}
             </div>
             {editingPromise ? (
               <div className="club-detail-edit-form">
-                <input
-                  className="club-detail-edit-input"
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  maxLength={160}
-                  placeholder="Promise text"
-                />
-                <input
-                  className="club-detail-edit-input"
-                  type="number"
-                  min={1}
-                  max={21}
-                  value={editTarget}
-                  onChange={(e) => setEditTarget(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="Times per week"
-                />
+                <input className="club-detail-edit-input" value={editText} onChange={(e) => setEditText(e.target.value)} maxLength={160} placeholder="What will the group do?" />
+                <input className="club-detail-edit-input" type="number" min={1} max={21} value={editTarget} onChange={(e) => setEditTarget(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Times per week" />
                 <div className="club-detail-edit-buttons">
-                  <button type="button" className="modal-button modal-button-primary" onClick={handleSavePromise} disabled={busy || !editText.trim()}>
-                    {busy ? 'Saving…' : 'Save'}
-                  </button>
-                  <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingPromise(false)} disabled={busy}>
-                    Cancel
-                  </button>
+                  <button type="button" className="modal-button modal-button-primary" onClick={handleSavePromise} disabled={busy || !editText.trim()}>{busy ? 'Saving…' : 'Save'}</button>
+                  <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingPromise(false)} disabled={busy}>Cancel</button>
                 </div>
               </div>
+            ) : promiseLine ? (
+              <p className="club-detail-promise">{promiseLine}</p>
             ) : (
-              <p className="club-detail-promise">{club.promise_text || 'No shared promise yet'}</p>
+              <p className="club-detail-empty">No promise set yet{isAdmin ? ' — add one above' : '.'}</p>
             )}
           </div>
 
-          <div className="club-detail-grid">
-            <div className="club-detail-section">
-              <span className="club-detail-label">Members</span>
-              <div className="club-detail-members">
-                {club.members.map((member) => (
-                  <span className="club-detail-member" key={member.user_id}>
-                    {member.first_name || member.username || `Member`}
-                  </span>
-                ))}
-                {club.member_count > club.members.length ? (
-                  <span className="club-detail-member">+{club.member_count - club.members.length} more</span>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="club-detail-section">
-              <span className="club-detail-label">Weekly target</span>
-              <p className="club-detail-value">
-                {club.target_count_per_week ? `${club.target_count_per_week} times per week` : 'No weekly target'}
-              </p>
+          {/* Members */}
+          <div className="club-detail-section">
+            <span className="club-detail-label">Members · {club.member_count}</span>
+            <div className="club-detail-members">
+              {club.members.map((member) => (
+                <span className="club-detail-member" key={member.user_id}>
+                  {member.first_name || member.username || 'Member'}
+                </span>
+              ))}
+              {club.member_count > club.members.length && (
+                <span className="club-detail-member">+{club.member_count - club.members.length} more</span>
+              )}
             </div>
           </div>
 
+          {/* Reminder (admin only) */}
           {isAdmin && (
             <div className="club-detail-section">
               <div className="club-detail-label-row">
                 <span className="club-detail-label">Daily reminder</span>
                 {!editingSettings && (
-                  <button type="button" className="club-detail-action-btn" onClick={handleEditSettings} disabled={busy}>
-                    Edit
-                  </button>
+                  <button type="button" className="club-detail-action-btn" onClick={handleEditSettings} disabled={busy}>Edit</button>
                 )}
               </div>
               {editingSettings ? (
                 <div className="club-detail-edit-form">
-                  <input
-                    className="club-detail-edit-input"
-                    type="time"
-                    value={editReminderTime}
-                    onChange={(e) => setEditReminderTime(e.target.value)}
-                  />
-                  <p className="club-detail-hint">Time is in your local timezone.</p>
+                  <input className="club-detail-edit-input" type="time" value={editReminderTime} onChange={(e) => setEditReminderTime(e.target.value)} />
+                  <p className="club-detail-hint">In your local timezone.</p>
                   <div className="club-detail-edit-buttons">
-                    <button type="button" className="modal-button modal-button-primary" onClick={handleSaveSettings} disabled={busy || !editReminderTime}>
-                      {busy ? 'Saving…' : 'Save'}
-                    </button>
-                    <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingSettings(false)} disabled={busy}>
-                      Cancel
-                    </button>
+                    <button type="button" className="modal-button modal-button-primary" onClick={handleSaveSettings} disabled={busy || !editReminderTime}>{busy ? 'Saving…' : 'Save'}</button>
+                    <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingSettings(false)} disabled={busy}>Cancel</button>
                   </div>
                 </div>
               ) : (
-                <p className="club-detail-value">
-                  {club.reminder_time ? `${club.reminder_time} daily` : '21:00 daily (default)'}
-                </p>
+                <p className="club-detail-promise">{club.reminder_time ?? '21:00'} daily</p>
               )}
             </div>
           )}
 
-          {error ? <div className="modal-error">{error}</div> : null}
+          {error && <div className="modal-error">{error}</div>}
 
+          {/* Actions */}
           <div className="club-detail-actions">
             {telegramReady ? (
-              <a
-                className="modal-button modal-button-primary club-detail-action-link"
-                href={club.telegram_invite_link}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a className="modal-button modal-button-primary club-detail-action-link" href={club.telegram_invite_link} target="_blank" rel="noreferrer">
                 Join Telegram
               </a>
             ) : (
               <button type="button" className="modal-button modal-button-secondary" disabled>
-                Telegram pending
+                {club.telegram_status === 'not_connected' ? 'No Telegram group' : 'Telegram pending…'}
               </button>
             )}
-
             <Button variant="danger" onClick={handleRemoveClub} disabled={busy}>
-              {busy ? 'Updating...' : club.role === 'owner' ? 'Cancel club' : 'Leave club'}
+              {busy ? 'Updating…' : isAdmin ? 'Cancel club' : 'Leave club'}
             </Button>
           </div>
+
         </section>
       </div>
     </div>
