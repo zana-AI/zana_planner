@@ -18,12 +18,20 @@ export function ClubDetailPage() {
   const [editTarget, setEditTarget] = useState<number | ''>('');
   const [editingSettings, setEditingSettings] = useState(false);
   const [editReminderTime, setEditReminderTime] = useState('');
+  const [botUsername, setBotUsername] = useState('');
 
   useEffect(() => {
     if (initData) {
       apiClient.setInitData(initData);
     }
   }, [initData]);
+
+  useEffect(() => {
+    fetch('/api/auth/bot-username')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.bot_username) setBotUsername(d.bot_username.trim()); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!clubId) {
@@ -144,6 +152,13 @@ export function ClubDetailPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleInvite = () => {
+    if (!club || !botUsername) return;
+    const deepLink = `https://t.me/${botUsername}?start=invite_${club.club_id}`;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(`Join me in "${club.name}" on Xaana!`)}`;
+    window.Telegram?.WebApp?.openTelegramLink(shareUrl);
   };
 
   if (loading) {
@@ -276,6 +291,11 @@ export function ClubDetailPage() {
             ) : (
               <button type="button" className="modal-button modal-button-secondary" disabled>
                 {club.telegram_status === 'not_connected' ? 'No Telegram group' : 'Telegram pending…'}
+              </button>
+            )}
+            {botUsername && (
+              <button type="button" className="modal-button modal-button-secondary" onClick={handleInvite}>
+                Invite
               </button>
             )}
             <Button variant="danger" onClick={handleRemoveClub} disabled={busy}>

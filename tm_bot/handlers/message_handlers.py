@@ -336,6 +336,13 @@ class MessageHandlers:
         """Send a message when the command /start is issued."""
         user_id = update.effective_user.id
         user_lang = get_user_language(user_id)
+
+        # Handle invite deep links: /start invite_{club_id}
+        args = context.args or []
+        if args and args[0].startswith("invite_"):
+            club_id = args[0][len("invite_"):]
+            await self._handle_club_invite(update, club_id)
+            return
         
         existing_promises = await self.plan_keeper.async_get_promises(user_id)
 
@@ -390,7 +397,29 @@ class MessageHandlers:
             name_prefix="nightly"
         )
         logger.info(f"Scheduled nightly reminders at 22:59 {tzname} for user {user_id}")
-    
+
+    async def _handle_club_invite(self, update: Update, club_id: str) -> None:
+        from repositories.clubs_repo import ClubsRepository
+        user = update.effective_user
+        inviter_name = user.first_name or user.username or "Someone"
+        try:
+            club = ClubsRepository().get_club(club_id)
+        except Exception:
+            club = None
+
+        if not club:
+            await update.message.reply_text("This invite link is no longer valid.")
+            return
+
+        club_name = club.get("name", "a club")
+        invite_link = club.get("telegram_invite_link")
+
+        text = f"👋 *{inviter_name}* invited you to join *{club_name}* on Xaana\\!"
+        if invite_link:
+            text += f"\n\n[Join the Telegram group]({invite_link})"
+
+        await update.message.reply_text(text, parse_mode="MarkdownV2")
+
     async def list_promises(self, update: Update, context: CallbackContext) -> None:
         """Send a message listing all promises for the user."""
         user_id = update.effective_user.id
