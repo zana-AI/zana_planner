@@ -2501,6 +2501,7 @@ class LLMHandler:
             promise_text = str(group_context.get("promise_text") or "").strip()
             target_text = str(group_context.get("target_text") or "").strip()
             recent_messages = group_context.get("recent_messages") or []
+            is_proactive = bool(group_context.get("proactive"))
 
             context_lines = [
                 f"Club name: {club_name}",
@@ -2521,9 +2522,9 @@ class LLMHandler:
                     recent_lines.append(f"{sender}: {text[:500]}")
 
             language_line = (
-                f"Reply in the user's language when clear. User language preference: {user_language}."
+                f"LANGUAGE: Always reply in {user_language}."
                 if user_language
-                else "Reply in the user's language when clear."
+                else "Reply in the same language as the user's message."
             )
 
             system_text = "\n".join([
@@ -2536,14 +2537,22 @@ class LLMHandler:
                 "  warmly and genuinely. Recognise the effort. Engage with the social energy (challenges,",
                 "  taunts, streaks). Then gently remind them to tap the check-in button in the daily reminder",
                 "  so it gets recorded — but do NOT claim you logged it yourself.",
+                *(["- You noticed this activity proactively (the member didn't ask you anything).",
+                   "  Keep your reaction short, warm, and natural — 1-2 sentences max. Don't over-explain."]
+                  if is_proactive else []),
                 "- If a member is struggling, skipping, or frustrated, be empathetic first, then encouraging.",
                 "- Keep the group energy positive and playful. Short replies win over long ones.",
                 "",
                 "Boundaries:",
                 "Use only the club-level context below and general knowledge.",
                 "You may use the recent group transcript because those messages were visible in this Telegram group.",
+                "Transcript fidelity: when referencing what someone shared or said, report only what is",
+                "literally written. Do not interpret, infer scores, invent outcomes, or add detail beyond",
+                "what the message explicitly says. 'X shared a result' is safe; 'X scored 5-0' is not",
+                "unless those exact words appeared.",
+                "If asked who completed the club activity, you may summarise what you literally saw shared",
+                "in the transcript (e.g. 'Mahmoud shared a Cheenva result'). Do not fabricate specifics.",
                 "Do not use or mention private user data, private promises, private memories, settings, or DM history.",
-                "Do not claim you can see private check-in data or individual progress.",
                 "Do not create, update, delete, or log personal promises from a group message.",
                 "If the user asks for a private action or private data, tell them to DM you.",
                 language_line,

@@ -5162,6 +5162,14 @@ textarea.modal-input {
   color: var(--text-secondary, #888);
 }
 
+.club-detail-field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #888);
+  margin-bottom: 4px;
+}
+
 /* Redesigned header */
 .club-detail-header2 {
   margin-bottom: 18px;

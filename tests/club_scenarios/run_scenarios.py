@@ -133,6 +133,7 @@ async def run_turn(
     club: dict,
     ctx: InputContext,
     recent_messages: list[dict],
+    proactive: bool = False,
 ) -> str:
     """Run one message through get_response_group_safe and return the response."""
     target_text = ""
@@ -149,6 +150,7 @@ async def run_turn(
             "promise_text": club.get("promise_text"),
             "target_text": target_text,
             "recent_messages": recent_messages,
+            "proactive": proactive,
         },
         None,  # language — let LLM infer
     )
@@ -197,13 +199,14 @@ async def run_scenario(
         text = turn["text"]
         expect = turn.get("expect", "")
         addressed = turn.get("addressed_to_bot", "@" + addressed_bot_name in text or i > 0)
+        proactive = turn.get("proactive", False)
 
         # Record in transcript
         recent_messages.append({"sender_name": first_name, "text": text})
 
         print(f"\n  {YELLOW}[Turn {i+1}] {first_name}:{RESET} {text}")
 
-        if not addressed:
+        if not addressed and not proactive:
             print(f"  {GREY}→ (not addressed to bot — expecting silence){RESET}")
             results.append({"turn": i+1, "addressed": False, "response": None, "expect": expect})
             continue
@@ -211,7 +214,10 @@ async def run_scenario(
         ctx = _make_ctx(user_id, first_name, text, chat_id, bot, list(recent_messages))
         bot.sent.clear()
 
-        response = await run_turn(llm_handler, club, ctx, list(recent_messages[:-1]))
+        if proactive:
+            print(f"  {GREY}→ (proactive — bot detects task completion without @mention){RESET}")
+
+        response = await run_turn(llm_handler, club, ctx, list(recent_messages[:-1]), proactive=proactive)
         recent_messages.append({"sender_name": "Xaana", "text": response})
 
         print(f"\n  {GREEN}[Bot response]{RESET}")

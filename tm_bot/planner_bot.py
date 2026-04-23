@@ -503,7 +503,14 @@ class PlannerBot:
         if await self._message_addresses_bot(ctx):
             if self._is_emoji_only(ctx.raw_text or ""):
                 return
+            if self._is_short_ack(ctx.raw_text or ""):
+                return
             await self._handle_group_llm_message(ctx)
+            return
+
+        # Proactive reaction: task completion shared without @mentioning the bot
+        if self._is_task_completion(ctx.raw_text or ""):
+            await self._handle_group_task_completion(ctx)
 
     async def _welcome_group_members(self, ctx: InputContext) -> None:
         members = ctx.metadata.get("new_chat_members") or []
@@ -592,6 +599,73 @@ class PlannerBot:
         ).strip()
         return len(no_emoji) == 0
 
+    @staticmethod
+    def _is_short_ack(text: str) -> bool:
+        """Return True for short social acknowledgements that don't need a bot reply."""
+        import re
+        cleaned = re.sub(r"@\w+", "", text).strip()
+        if not cleaned or len(cleaned) > 30:
+            return False
+        ack_pattern = re.compile(
+            r"^(ok|okay|اوا|باشه|ممنون|thanks|آره|نه|هوم|آها|عالی|ایول|خب|خوب|"
+            r"سلام|hi|hey|wow|oh|اوه|ههه|هاها|مرسی|دستت درد نکنه|👌|🙏|👍)+[!.،؟?]*$",
+            re.IGNORECASE,
+        )
+        return bool(ack_pattern.match(cleaned))
+
+    @staticmethod
+    def _is_task_completion(text: str) -> bool:
+        """
+        Return True if the message looks like a member sharing that they completed
+        the club activity — regardless of whether they @mentioned the bot.
+        Intentionally general: game result shares, workout logs, 'I did it' messages.
+        """
+        import re
+        if not text or len(text.strip()) < 5:
+            return False
+        patterns = [
+            r"\d\s*/\s*\d",                      # score like 1/6, 3/5
+            r"[\U0001F7E9\U0001F7E8\U0001F7E5\U0001F7E6\U0001F7E7\U00002B1B\U00002B1C]{3,}",  # coloured squares
+            r"بازی کردم|played|did it|انجام دادم|زدم|دویدم|ran|finished|تموم کردم",
+            r"روز\s*\d+\s*ام",                   # "Day N" in Persian
+            r"streak|روز\s+پشت\s+هم",
+            r"حریف\s*می.طلبم|challenge",         # challenge call-out
+        ]
+        combined = re.compile("|".join(patterns), re.IGNORECASE | re.UNICODE)
+        return bool(combined.search(text))
+
+    async def _handle_group_task_completion(self, ctx: InputContext) -> None:
+        """React proactively when a member shares a task completion without @mentioning the bot."""
+        club = self._get_club_for_group_chat(ctx.chat_id)
+        if not club:
+            return
+
+        sender_name = ctx.metadata.get("sender_name") or "Someone"
+        text = ctx.raw_text or ""
+        target_text = ""
+        if club.get("target_count_per_week") is not None:
+            t = float(club["target_count_per_week"])
+            target_text = f"{int(t) if t.is_integer() else t} times/week"
+
+        await asyncio.sleep(3)  # feel like a human noticing, not an instant reflex
+
+        response = await asyncio.to_thread(
+            self.llm_handler.get_response_group_safe,
+            f"{sender_name} shared: {text}",
+            {
+                "chat_id": ctx.chat_id,
+                "club_name": club.get("club_name"),
+                "promise_text": club.get("promise_text"),
+                "target_text": target_text,
+                "recent_messages": self._get_recent_group_messages(ctx),
+                "proactive": True,
+            },
+            club.get("club_language"),
+        )
+        response = str(response or "").strip()
+        if response:
+            await self._reply_to_group_message(ctx, response, parse_mode=None)
+
     async def _handle_group_llm_message(self, ctx: InputContext) -> None:
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
@@ -619,7 +693,7 @@ class PlannerBot:
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
             },
-            ctx.language.value if ctx.language else None,
+            club.get("club_language"),
         )
         response_text = str(response_text or "").strip() or "I am having trouble right now. Please try again in a moment."
 
@@ -820,6 +894,7 @@ class PlannerBot:
                     SELECT
                         c.club_id,
                         c.name AS club_name,
+                        c.language AS club_language,
                         p.text AS promise_text,
                         pi.target_value AS target_count_per_week
                     FROM clubs c

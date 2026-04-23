@@ -5,6 +5,16 @@ import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { ClubSummary } from '../types';
 import { Button } from '../components/ui/Button';
 
+const LANG_LABELS: Record<string, string> = {
+  en: 'English',
+  fa: 'Persian',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  ar: 'Arabic',
+  tr: 'Turkish',
+};
+
 export function ClubDetailPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
@@ -18,6 +28,7 @@ export function ClubDetailPage() {
   const [editTarget, setEditTarget] = useState<number | ''>('');
   const [editingSettings, setEditingSettings] = useState(false);
   const [editReminderTime, setEditReminderTime] = useState('');
+  const [editLanguage, setEditLanguage] = useState('en');
   const [botUsername, setBotUsername] = useState('');
 
   useEffect(() => {
@@ -129,6 +140,7 @@ export function ClubDetailPage() {
   const handleEditSettings = () => {
     if (!club) return;
     setEditReminderTime(club.reminder_time || '21:00');
+    setEditLanguage(club.language || 'en');
     setEditingSettings(true);
   };
 
@@ -137,7 +149,7 @@ export function ClubDetailPage() {
     setBusy(true);
     setError('');
     try {
-      const updated = await apiClient.updateClub(club.club_id, { reminder_time: editReminderTime });
+      const updated = await apiClient.updateClub(club.club_id, { reminder_time: editReminderTime, language: editLanguage });
       setClub(updated);
       setEditingSettings(false);
       hapticFeedback('success');
@@ -284,15 +296,27 @@ export function ClubDetailPage() {
               </div>
               {editingSettings ? (
                 <div className="club-detail-edit-form">
+                  <label className="club-detail-field-label">Reminder time</label>
                   <input className="club-detail-edit-input" type="time" value={editReminderTime} onChange={(e) => setEditReminderTime(e.target.value)} />
                   <p className="club-detail-hint">In your local timezone.</p>
+                  <label className="club-detail-field-label">Bot language</label>
+                  <select className="club-detail-edit-input" value={editLanguage} onChange={(e) => setEditLanguage(e.target.value)}>
+                    <option value="en">English</option>
+                    <option value="fa">Persian (فارسی)</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="es">Spanish</option>
+                    <option value="ar">Arabic</option>
+                    <option value="tr">Turkish</option>
+                  </select>
+                  <p className="club-detail-hint">The language Xaana uses in this group's chat.</p>
                   <div className="club-detail-edit-buttons">
                     <button type="button" className="modal-button modal-button-primary" onClick={handleSaveSettings} disabled={busy || !editReminderTime}>{busy ? 'Saving…' : 'Save'}</button>
                     <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingSettings(false)} disabled={busy}>Cancel</button>
                   </div>
                 </div>
               ) : (
-                <p className="club-detail-promise">{club.reminder_time ?? '21:00'} daily</p>
+                <p className="club-detail-promise">{club.reminder_time ?? '21:00'} daily · {LANG_LABELS[club.language ?? 'en'] ?? club.language ?? 'English'}</p>
               )}
             </div>
           )}

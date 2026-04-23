@@ -140,7 +140,7 @@ scenarios:
   # Uses a different club context; the runner picks up `club_override` when set.
 
   - id: cheenva_result_shared
-    description: "Player pastes their Cheenva game result in the group (Persian)"
+    description: "Player pastes Cheenva result without @mentioning bot — proactive reaction"
     club_override:
       club_id: "test-club-cheenva"
       club_name: "Cheenva Club"
@@ -150,7 +150,7 @@ scenarios:
     turns:
       - user_id: 1002
         first_name: Javad
-        addressed_to_bot: true
+        proactive: true
         text: |
           cheenva.com
           چینوا - روز ۱۳۶ام
@@ -163,10 +163,44 @@ scenarios:
 
           cheenva.com
         expect: >
-          Responds in Persian. Recognises this as a Cheenva game result — solved
-          in 1 out of 6 attempts in only 4 seconds, which is exceptional (perfect
-          game, all green). Celebrates the achievement enthusiastically. Engages
-          playfully with the "I challenge anyone!" taunt — maybe calls out other
-          members or teases them to try. Gently reminds Javad to tap the check-in
-          button in the daily reminder so today's play is recorded. Does NOT claim
-          to have logged it automatically.
+          Bot detects this as a task completion (proactive path) and reacts without
+          being @mentioned. Responds in Persian. Celebrates the result warmly and
+          briefly (1-2 sentences). Engages playfully with the "I challenge anyone!"
+          taunt. Gently nudges Javad to tap check-in. Does NOT claim to have logged
+          it. Does NOT write a long essay — this is a proactive cheer, keep it short.
+
+  - id: cheenva_result_addressed
+    description: "Player pastes Cheenva result and then asks the bot directly (Persian)"
+    club_override:
+      club_id: "test-club-cheenva"
+      club_name: "Cheenva Club"
+      promise_text: "Play Cheenva every day"
+      target_count_per_week: 7
+      reminder_time: "21:00"
+    turns:
+      - user_id: 1002
+        first_name: Javad
+        addressed_to_bot: false
+        text: |
+          cheenva.com
+          چینوا - روز ۱۳۶ام
+          ۳ اردیبهشت ۱۴۰۵
+          ⏱️ ۰۰:۰۰:۰۴
+          🎉 ۱/۶
+          من چینوای امروزم رو بازی کردم. حریف می‌طلبم!
+
+           🟩🟩🟩🟩🟩
+
+          cheenva.com
+        expect: >
+          Bot stays silent — this turn is not addressed to bot and will be picked
+          up by the proactive path in planner_bot.py, not the LLM runner directly.
+      - user_id: 1002
+        first_name: Javad
+        addressed_to_bot: true
+        text: "@xaana_bot did you see my result? Was that good?"
+        expect: >
+          Responds in Persian. Confirms it saw the result in the transcript. Says
+          yes, 1/6 in 4 seconds is exceptional — perfect game. Celebrates again.
+          Does NOT fabricate any private stats. Does NOT claim to have logged it.
+          Nudges check-in button.
