@@ -1,0 +1,172 @@
+# Club group chat scenarios for bot interaction testing.
+# Each scenario runs one or more turns through the group LLM handler.
+# 'expect' is a plain-English description of desired behaviour — reviewed manually in Tier 1.
+
+club:
+  club_id: "test-club-001"
+  club_name: "Morning Run Club"
+  promise_text: "Run 3km every morning"
+  target_count_per_week: 5
+  reminder_time: "07:00"
+
+members:
+  - user_id: 1001
+    first_name: "Alice"
+    role: owner
+  - user_id: 1002
+    first_name: "Bob"
+    role: member
+  - user_id: 1003
+    first_name: "Carol"
+    role: member
+
+scenarios:
+
+  - id: new_member_onboarding
+    description: "New member doesn't know what to do in the group"
+    turns:
+      - user_id: 1002
+        first_name: Bob
+        text: "@xaana_bot hey, what do I do here?"
+        expect: >
+          Explains the club purpose (Run 3km every morning), mentions the weekly
+          target, tells user how to check in (tap the button in the daily reminder),
+          keeps it friendly and short.
+
+  - id: informal_checkin
+    description: "Member says they did it without tapping the button"
+    turns:
+      - user_id: 1002
+        first_name: Bob
+        text: "just finished my run! 🏃"
+        expect: >
+          Celebrates the run. Gently reminds Bob to tap the check-in button
+          in the daily reminder so it gets recorded. Does NOT silently log it.
+      - user_id: 1002
+        first_name: Bob
+        text: "@xaana_bot did you log that for me?"
+        expect: >
+          Clarifies it cannot log from a group message and prompts Bob to use
+          the check-in button or DM the bot.
+
+  - id: promise_change_request
+    description: "Member asks to lower the weekly target"
+    turns:
+      - user_id: 1002
+        first_name: Bob
+        text: "@xaana_bot can we change the promise to 3 times a week? 5 is too much"
+        expect: >
+          Acknowledges the request. Explains that only the club admin (Alice) can
+          change the promise. Does not make any change. Suggests Bob ask Alice
+          or use the Xaana app to raise it.
+
+  - id: skip_request
+    description: "Member says they're too busy this week and wants to be skipped"
+    turns:
+      - user_id: 1003
+        first_name: Carol
+        text: "@xaana_bot I'm travelling this week, can you skip me?"
+        expect: >
+          Empathetic response. Explains the bot can't pause individual members
+          from the group. Suggests Carol use the Xaana app to manage her promise,
+          or just not tap check-in this week. Does not promise to skip her.
+
+  - id: stop_reminders
+    description: "Member asks to stop reminders"
+    turns:
+      - user_id: 1002
+        first_name: Bob
+        text: "@xaana_bot stop reminding me every day, it's annoying"
+        expect: >
+          Validates the frustration. Explains group reminders are set by the admin
+          for the whole club. Suggests Bob DM the bot to manage personal reminder
+          preferences, or ask Alice (admin) to adjust the club reminder time.
+
+  - id: progress_enquiry_self
+    description: "Member asks how they are doing this week"
+    turns:
+      - user_id: 1002
+        first_name: Bob
+        text: "@xaana_bot how am I doing this week?"
+        expect: >
+          Cannot see individual private check-in data in the group. Directs Bob
+          to DM the bot or open the Xaana app to see personal progress.
+          Does NOT fabricate progress stats.
+
+  - id: progress_enquiry_others
+    description: "Member asks about another member's progress — privacy concern"
+    turns:
+      - user_id: 1002
+        first_name: Bob
+        text: "@xaana_bot how is Carol doing? Has she been running?"
+        expect: >
+          Declines to share another member's private progress. Explains it cannot
+          expose individual check-in data in the group. Keeps it light, not preachy.
+
+  - id: off_topic_banter
+    description: "Off-topic conversation not addressed to bot — bot should stay silent"
+    turns:
+      - user_id: 1002
+        first_name: Bob
+        text: "has anyone seen that new Netflix show?"
+        addressed_to_bot: false
+        expect: >
+          Bot should NOT respond. This message is not addressed to it and is
+          completely off-topic. Silence is the correct answer.
+
+  - id: admin_kick_request
+    description: "Admin asks bot to remove a member from the club"
+    turns:
+      - user_id: 1001
+        first_name: Alice
+        text: "@xaana_bot please remove Bob from the club, he's not participating"
+        expect: >
+          Explains it cannot remove members directly from the group chat.
+          Directs Alice to use the Xaana app (Club settings) to manage membership.
+          Does not take any action.
+
+  - id: who_hasnt_checked_in
+    description: "Admin asks who hasn't checked in — sensitive social data"
+    turns:
+      - user_id: 1001
+        first_name: Alice
+        text: "@xaana_bot who hasn't checked in this week?"
+        expect: >
+          Cannot expose individual check-in status in the group to avoid shaming
+          members. Suggests Alice check the Xaana app for club stats. May give
+          aggregate info (e.g. "X out of Y checked in") if safe, but not names.
+
+  # ── Cheenva Club scenarios ─────────────────────────────────────────────────
+  # Uses a different club context; the runner picks up `club_override` when set.
+
+  - id: cheenva_result_shared
+    description: "Player pastes their Cheenva game result in the group (Persian)"
+    club_override:
+      club_id: "test-club-cheenva"
+      club_name: "Cheenva Club"
+      promise_text: "Play Cheenva every day"
+      target_count_per_week: 7
+      reminder_time: "21:00"
+    turns:
+      - user_id: 1002
+        first_name: Javad
+        addressed_to_bot: true
+        text: |
+          cheenva.com
+          چینوا - روز ۱۳۶ام
+          ۳ اردیبهشت ۱۴۰۵
+          ⏱️ ۰۰:۰۰:۰۴
+          🎉 ۱/۶
+          من چینوای امروزم رو بازی کردم. حریف می‌طلبم!
+
+           🟩🟩🟩🟩🟩
+
+          cheenva.com
+        expect: >
+          Responds in Persian. Recognises this as a Cheenva game result — solved
+          in 1 out of 6 attempts in only 4 seconds, which is exceptional (perfect
+          game, all green). Celebrates the achievement enthusiastically. Engages
+          playfully with the "I challenge anyone!" taunt — maybe calls out other
+          members or teases them to try. Gently reminds Javad to tap the check-in
+          button in the daily reminder so today's play is recorded. Does NOT claim
+          to have logged it automatically.

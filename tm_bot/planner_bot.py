@@ -501,6 +501,8 @@ class PlannerBot:
             await self._reply_with_group_club_summary(ctx)
             return
         if await self._message_addresses_bot(ctx):
+            if self._is_emoji_only(ctx.raw_text or ""):
+                return
             await self._handle_group_llm_message(ctx)
 
     async def _welcome_group_members(self, ctx: InputContext) -> None:
@@ -568,6 +570,28 @@ class PlannerBot:
         ])
         await self._reply_to_group_message(ctx, message, parse_mode=None)
 
+    @staticmethod
+    def _is_emoji_only(text: str) -> bool:
+        """Return True if the text contains only emoji, whitespace, or common reaction chars."""
+        import re
+        # Strip bot mention, whitespace, common punctuation
+        cleaned = re.sub(r"@\w+", "", text).strip()
+        if not cleaned:
+            return True
+        # Remove all emoji (Unicode ranges covering emoji blocks)
+        no_emoji = re.sub(
+            r"[\U0001F300-\U0001FFFF"
+            r"\U00002600-\U000027BF"
+            r"\U0001F000-\U0001F02F"
+            r"\u2000-\u206F"
+            r"\uFE00-\uFE0F"
+            r"\u20D0-\u20FF"
+            r"]+",
+            "",
+            cleaned,
+        ).strip()
+        return len(no_emoji) == 0
+
     async def _handle_group_llm_message(self, ctx: InputContext) -> None:
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
@@ -583,6 +607,7 @@ class PlannerBot:
             target_text = str(int(target)) if target.is_integer() else str(target)
             target_text = f"{target_text} times/week"
 
+        await asyncio.sleep(2)  # brief pause — feels like a participant, not a reflex
         processing_msg = await self._reply_to_group_message(ctx, "Thinking...", parse_mode=None)
         response_text = await asyncio.to_thread(
             self.llm_handler.get_response_group_safe,

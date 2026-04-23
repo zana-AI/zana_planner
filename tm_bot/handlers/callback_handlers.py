@@ -5,10 +5,13 @@ Handles all callback query processing from inline keyboards.
 
 import asyncio
 import io
+import json
 import os
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import CallbackContext
@@ -32,6 +35,7 @@ from ui.keyboards import (
 )
 from ui.messages import weekly_report_text
 from cbdata import encode_cb, decode_cb, is_session_callback_action, normalize_cb_action
+from utils.admin_utils import is_admin
 from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
@@ -384,6 +388,8 @@ class CallbackHandlers:
             await self._handle_club_cancel(query, cb.get("cid"), user_lang)
         elif action == "club_remind":
             await self._handle_club_remind(query, cb.get("cid"), user_lang)
+        elif action == "deploy_promote_prod":
+            await self._handle_deploy_promote_prod(query, cb)
         else:
             logger.warning(f"Unknown callback action: {action}")
     
@@ -1089,6 +1095,112 @@ class CallbackHandlers:
         except Exception as e:
             logger.error("Error reminding admins about club %s for user %s: %s", club_id, user_id, e)
             await query.answer("Could not send a reminder. Please try again.", show_alert=True)
+
+    @staticmethod
+    def _dispatch_github_workflow(
+        repository: str,
+        workflow_file: str,
+        ref: str,
+        token: str,
+        inputs: Optional[dict] = None,
+    ) -> None:
+        api_url = (
+            f"https://api.github.com/repos/{repository}/actions/workflows/"
+            f"{workflow_file}/dispatches"
+        )
+        payload = {"ref": ref}
+        if inputs:
+            payload["inputs"] = inputs
+
+        request = Request(
+            api_url,
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "Content-Type": "application/json",
+            },
+        )
+
+        try:
+            with urlopen(request, timeout=10) as response:
+                status = getattr(response, "status", response.getcode())
+                if status not in {201, 204}:
+                    raise RuntimeError(f"Unexpected GitHub API status: {status}")
+        except HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"GitHub dispatch failed with {e.code}: {body[:400]}"
+            ) from e
+        except URLError as e:
+            raise RuntimeError(f"Could not reach GitHub API: {e}") from e
+
+    async def _handle_deploy_promote_prod(self, query, cb: dict) -> None:
+        """Allow bot admins to trigger prod promotion workflow from Telegram."""
+        user_id = getattr(query.from_user, "id", None)
+        if not user_id or not is_admin(user_id):
+            await query.answer("Only bot admins can promote to production.", show_alert=True)
+            return
+
+        repository = (os.getenv("GITHUB_DEPLOY_REPOSITORY") or "").strip()
+        workflow_file = (os.getenv("GITHUB_DEPLOY_WORKFLOW") or "deploy-prod.yml").strip()
+        ref = (os.getenv("GITHUB_DEPLOY_REF") or "master").strip()
+        token = (os.getenv("GITHUB_DEPLOY_TOKEN") or "").strip()
+
+        if not repository or not token:
+            logger.error(
+                "Missing GitHub deploy config: GITHUB_DEPLOY_REPOSITORY and/or GITHUB_DEPLOY_TOKEN"
+            )
+            await query.answer("Prod promotion is not configured yet.", show_alert=True)
+            return
+
+        requester = getattr(query.from_user, "username", None)
+        requested_by = requester if requester else str(user_id)
+        source_run_id = str(cb.get("rid") or "").strip()
+        source_sha = str(cb.get("sha") or "").strip()
+
+        inputs = {
+            "requested_via": "telegram",
+            "requested_by": requested_by,
+        }
+        if source_run_id:
+            inputs["source_run_id"] = source_run_id
+        if source_sha:
+            inputs["source_sha"] = source_sha
+
+        try:
+            await asyncio.to_thread(
+                self._dispatch_github_workflow,
+                repository,
+                workflow_file,
+                ref,
+                token,
+                inputs,
+            )
+        except Exception as e:
+            logger.error("Prod promotion dispatch failed (user=%s): %s", user_id, e)
+            await query.answer("Failed to start prod promotion.", show_alert=True)
+            return
+
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception as e:
+            logger.debug("Could not clear promote keyboard after click: %s", e)
+
+        await query.answer("Prod promotion started.")
+        sha_label = source_sha or "n/a"
+        run_label = source_run_id or "n/a"
+        text = (
+            "#deploy_prod_requested\n"
+            f"requested_by={requested_by}\n"
+            f"source_staging_run={run_label}\n"
+            f"sha={sha_label}"
+        )
+        chat_id = getattr(getattr(query, "message", None), "chat_id", None)
+        if chat_id and getattr(self.application, "bot", None):
+            await self.application.bot.send_message(chat_id=chat_id, text=text)
 
     async def start_pomodoro_timer(self, query, context):
         """Start the Pomodoro timer."""

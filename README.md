@@ -58,6 +58,13 @@ Optional (memory and pre-compaction flush):
 - `MEMORY_FLUSH_ENABLED` – Set to `1` to enable pre-compaction flush (writes durable memories to `memory/YYYY-MM-DD.md` per user when the session is near context limit). Can be used even before a vector DB.
 - Memory files live **per user** at `ROOT_DIR/users/<user_id>/MEMORY.md` and `ROOT_DIR/users/<user_id>/memory/` (e.g. `memory/2025-02-19.md`).
 
+Optional (Telegram-triggered production promotion):
+
+- `GITHUB_DEPLOY_REPOSITORY` - GitHub repository in `owner/repo` format.
+- `GITHUB_DEPLOY_TOKEN` - GitHub token with permission to dispatch workflows.
+- `GITHUB_DEPLOY_WORKFLOW` - Workflow file name to dispatch (default: `deploy-prod.yml`).
+- `GITHUB_DEPLOY_REF` - Branch ref used for dispatch (default: `master`).
+
 ### 📂 Directory Structure
 
 Optional (content-to-learning pipeline):
