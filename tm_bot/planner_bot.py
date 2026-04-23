@@ -41,7 +41,7 @@ from utils.bot_utils import BotUtils
 from utils.admin_utils import get_admin_ids, is_admin
 from utils.logger import get_logger, configure_admin_error_notifications
 from db.postgres_db import get_db_session, utc_now_iso
-from repositories.clubs_repo import ensure_club_telegram_columns, get_club_columns
+from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns, get_club_columns
 
 logger = get_logger(__name__)
 CLUB_TELEGRAM_CONFIRM_PREFIX = "clubtg_confirm:"
@@ -454,7 +454,17 @@ class PlannerBot:
             if ctx.input_type == "chat_member":
                 await self._on_chat_member(ctx)
                 return
-            if ctx.input_type in {"new_chat_members", "left_chat_member"}:
+            if ctx.input_type == "new_chat_members":
+                return
+            if ctx.input_type == "left_chat_member":
+                left_user = ctx.metadata.get("left_chat_member")
+                if left_user and not getattr(left_user, "is_bot", False):
+                    club = self._get_club_for_group_chat(ctx.chat_id)
+                    if club:
+                        user_id = getattr(left_user, "id", None)
+                        if user_id:
+                            ClubsRepository().remove_member(club["club_id"], user_id)
+                            logger.info("club_member_sync (left_chat_member): removed user %s from club %s", user_id, club["club_id"])
                 return
 
             logger.warning("dispatch: unhandled input_type=%s", ctx.input_type)
@@ -508,6 +518,17 @@ class PlannerBot:
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
             return
+
+        # Sync new members into club_members
+        repo = ClubsRepository()
+        for member in members:
+            if getattr(member, "is_bot", False):
+                continue
+            member_id = getattr(member, "id", None)
+            if member_id:
+                added = repo.add_member(club["club_id"], member_id)
+                if added:
+                    logger.info("club_member_sync (new_chat_members): added user %s to club %s", member_id, club["club_id"])
 
         promise_line = f"Shared promise: {club['promise_text']}" if club.get("promise_text") else "Shared promise is being set up."
         message = "\n".join([
@@ -903,6 +924,26 @@ class PlannerBot:
                 payload=dict(ctx.metadata),
             )
 
+    async def _sync_club_member_from_update(self, chat_id: int, user, new_status: str) -> None:
+        """Sync a Telegram group member join/leave into club_members."""
+        if not chat_id or not user or getattr(user, "is_bot", False):
+            return
+        club = self._get_club_for_group_chat(chat_id)
+        if not club:
+            return
+        club_id = club["club_id"]
+        user_id = getattr(user, "id", None)
+        if not user_id:
+            return
+        repo = ClubsRepository()
+        if new_status in ("member", "administrator", "creator"):
+            added = repo.add_member(club_id, user_id)
+            if added:
+                logger.info("club_member_sync: added user %s to club %s", user_id, club_id)
+        elif new_status in ("left", "kicked", "banned"):
+            repo.remove_member(club_id, user_id)
+            logger.info("club_member_sync: removed user %s from club %s", user_id, club_id)
+
     async def _on_chat_member(self, ctx: InputContext) -> None:
         """Handle chat member updates and auto-connect club Telegram links when possible."""
         if ctx.user_id:
@@ -916,6 +957,18 @@ class PlannerBot:
             )
 
         update = ctx.platform_update
+
+        # Sync non-bot member joins/leaves (CHAT_MEMBER updates)
+        chat_member_update = getattr(update, "chat_member", None)
+        if chat_member_update:
+            new_member = getattr(chat_member_update, "new_chat_member", None)
+            new_status = getattr(new_member, "status", None)
+            member_user = getattr(new_member, "user", None)
+            chat = getattr(chat_member_update, "chat", None)
+            chat_id = getattr(chat, "id", None)
+            if chat_id and new_status and member_user:
+                await self._sync_club_member_from_update(chat_id, member_user, new_status)
+
         my_chat_member = getattr(update, "my_chat_member", None)
         if not my_chat_member:
             return
