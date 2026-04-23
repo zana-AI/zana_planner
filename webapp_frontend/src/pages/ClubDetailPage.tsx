@@ -199,11 +199,13 @@ export function ClubDetailPage() {
               <span className="club-detail-label">Promise</span>
               {isAdmin && !editingPromise && (
                 <span className="club-detail-admin-actions">
-                  {club.promise_uuid && club.promise_text && (
+                  {club.promise_uuid && club.promise_text ? (
                     <>
                       <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>Edit</button>
                       <button type="button" className="club-detail-action-btn club-detail-action-btn--danger" onClick={handleDeletePromise} disabled={busy}>Delete</button>
                     </>
+                  ) : (
+                    <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>+ Add</button>
                   )}
                 </span>
               )}
@@ -220,7 +222,7 @@ export function ClubDetailPage() {
             ) : promiseLine ? (
               <p className="club-detail-promise">{promiseLine}</p>
             ) : (
-              <p className="club-detail-empty">No promise set yet{isAdmin ? ' — add one above' : '.'}</p>
+              <p className="club-detail-empty">No promise set yet.</p>
             )}
           </div>
 
