@@ -492,13 +492,8 @@ class PlannerBot:
 
         if ctx.input_type == "command":
             command = (ctx.command or "").split("@", 1)[0].lower()
-            if command in {"start", "club", "promise", "status"}:
+            if command in {"status", "club"}:
                 await self._reply_with_group_club_summary(ctx)
-            return
-
-        text_value = (ctx.raw_text or "").strip().lower()
-        if text_value in {"club", "promise", "status"}:
-            await self._reply_with_group_club_summary(ctx)
             return
         if await self._message_addresses_bot(ctx):
             if self._is_emoji_only(ctx.raw_text or ""):

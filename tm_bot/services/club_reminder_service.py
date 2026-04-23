@@ -69,11 +69,11 @@ def create_club_checkin_keyboard(club_id: str) -> InlineKeyboardMarkup:
     """Build the two-button inline keyboard attached to the nightly reminder."""
     return InlineKeyboardMarkup([[
         InlineKeyboardButton(
-            "✅ Done!",
+            "✅ Check in",
             callback_data=f"{CLUB_CHECKIN_PREFIX}{club_id}:done",
         ),
         InlineKeyboardButton(
-            "❌ Not Today",
+            "❌ Skip today",
             callback_data=f"{CLUB_CHECKIN_PREFIX}{club_id}:skip",
         ),
     ]])
