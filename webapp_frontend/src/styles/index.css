@@ -5085,6 +5085,96 @@ textarea.modal-input {
   color: var(--text-secondary, #888);
 }
 
+/* Redesigned header */
+.club-detail-header2 {
+  margin-bottom: 18px;
+}
+
+.club-detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.club-detail-name {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.club-detail-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.club-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.club-badge--visibility {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+
+.club-badge--status {
+  border: 1px solid rgba(91, 163, 245, 0.35);
+  background: rgba(91, 163, 245, 0.12);
+  color: var(--accent);
+}
+
+.club-badge--ready,
+.club-badge--connected {
+  border-color: rgba(72, 199, 142, 0.4);
+  background: rgba(72, 199, 142, 0.12);
+  color: #48c78e;
+}
+
+.club-badge--pending_admin_setup {
+  border-color: rgba(255, 190, 64, 0.4);
+  background: rgba(255, 190, 64, 0.10);
+  color: #f0a500;
+}
+
+.club-badge--not_connected {
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+
+.club-detail-role {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.club-detail-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
 @media (max-width: 640px) {
   .user-detail-actions {
     width: 100%;
