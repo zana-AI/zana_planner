@@ -768,27 +768,32 @@ async def get_public_promises(
                 weekly_hours = summary.get('weekly_hours', 0.0)
                 total_hours = summary.get('total_hours', 0.0)
                 streak = summary.get('streak', 0)
-                
+                weekly_count = summary.get('weekly_count', 0)
+                target_value = summary.get('target_value', 0)
+
                 # Calculate progress percentage
                 hours_promised = promise.hours_per_week
                 if hours_promised > 0:
                     progress_percentage = min(100, (weekly_hours / hours_promised) * 100)
+                elif target_value > 0:
+                    # Count-based promise (e.g. check-in 3x/week)
+                    progress_percentage = min(100, (weekly_count / target_value) * 100)
                 else:
-                    # For check-based promises, use total actions or count
                     progress_percentage = 0.0
                 
+                is_count_based = hours_promised == 0 and target_value > 0
                 badges.append(
                     PublicPromiseBadge(
                         promise_id=promise.id,
-                        text=promise.text.replace('_', ' '),  # Convert underscores to spaces for display
+                        text=promise.text.replace('_', ' '),
                         hours_promised=hours_promised,
                         hours_spent=total_hours,
                         weekly_hours=weekly_hours,
                         streak=streak,
                         progress_percentage=progress_percentage,
-                        metric_type="hours",  # Default to hours
-                        target_value=hours_promised,
-                        achieved_value=weekly_hours,
+                        metric_type="count" if is_count_based else "hours",
+                        target_value=target_value if is_count_based else hours_promised,
+                        achieved_value=weekly_count if is_count_based else weekly_hours,
                     )
                 )
             except Exception as e:

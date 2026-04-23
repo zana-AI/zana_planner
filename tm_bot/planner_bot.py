@@ -47,6 +47,19 @@ from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_column
 logger = get_logger(__name__)
 CLUB_TELEGRAM_CONFIRM_PREFIX = "clubtg_confirm:"
 
+# ── club UI short labels (en/fa only — long messages go through the LLM) ──────
+_CLUB_LABELS: dict[str, dict[str, str]] = {
+    "en": {"thinking": "Thinking...", "promise": "Promise", "target": "Target",
+           "checkin": "Check-in", "vibe": "Vibe", "members": "Members"},
+    "fa": {"thinking": "در حال فکر کردن...", "promise": "تعهد", "target": "هدف",
+           "checkin": "چک‌این", "vibe": "حال‌وهوا", "members": "اعضا"},
+}
+
+def _ct(lang: str | None, key: str) -> str:
+    code = (lang or "en").lower()[:2]
+    row = _CLUB_LABELS.get(code, _CLUB_LABELS["en"])
+    return row.get(key, _CLUB_LABELS["en"][key])
+
 
 def _is_staging_or_test_mode() -> bool:
     env = (os.getenv("ENV", "") or os.getenv("ENVIRONMENT", "")).lower()
@@ -603,13 +616,36 @@ class PlannerBot:
                 if added:
                     logger.info("club_member_sync (new_chat_members): added user %s to club %s", member_id, club["club_id"])
 
-        promise_line = f"Shared promise: {club['promise_text']}" if club.get("promise_text") else "Shared promise is being set up."
-        message = "\n".join([
-            f"Welcome {', '.join(human_names)}.",
-            f"This group is connected to {club['club_name']} on Xaana.",
-            promise_line,
-            "Use /club to see the club promise here.",
-        ])
+        names_str = ", ".join(human_names)
+        prompt = (
+            f"{names_str} just joined the group. "
+            f"Write a short, warm welcome (2-3 lines max). "
+            f"Mention they joined {club['club_name']} and the shared promise. "
+            f"Tell them to use /club to learn more. No markdown."
+        )
+        target_text = ""
+        if club.get("target_count_per_week") is not None:
+            t = float(club["target_count_per_week"])
+            target_text = f"{int(t) if t.is_integer() else t} times/week"
+        message = await asyncio.to_thread(
+            self.llm_handler.get_response_group_safe,
+            prompt,
+            {
+                "club_name": club.get("club_name"),
+                "promise_text": club.get("promise_text"),
+                "target_text": target_text,
+                "club_vibe": club.get("club_vibe"),
+                "club_description": club.get("club_description"),
+                "club_goal": club.get("club_goal"),
+                "recent_messages": [],
+                "member_status": [],
+            },
+            club.get("club_language"),
+        )
+        message = str(message or "").strip()
+        if not message:
+            # Fallback to simple template if LLM fails
+            message = f"Welcome {names_str}! 👋 This group is connected to {club['club_name']} on Xaana. Use /club to see the shared promise."
         await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text=message, parse_mode=None)
 
     async def _reply_with_group_club_summary(self, ctx: InputContext) -> None:
@@ -707,6 +743,7 @@ class PlannerBot:
             await self._reply_with_group_setup_help(ctx)
             return
 
+        lang = club.get("club_language")
         raw_members = ClubsRepository().get_club_members_promises(club["club_id"])
         member_count = len(raw_members)
 
@@ -715,28 +752,33 @@ class PlannerBot:
             lines.append(club["club_description"])
         lines.append("")
         if club.get("promise_text"):
-            lines.append(f"Promise: {club['promise_text']}")
+            lines.append(f"{_ct(lang, 'promise')}: {club['promise_text']}")
         if club.get("target_count_per_week") is not None:
             t = float(club["target_count_per_week"])
-            lines.append(f"Target: {int(t) if t.is_integer() else t}×/week")
+            lines.append(f"{_ct(lang, 'target')}: {int(t) if t.is_integer() else t}×/week")
         if club.get("club_checkin_what_counts"):
-            lines.append(f"Check-in: {club['club_checkin_what_counts']}")
+            lines.append(f"{_ct(lang, 'checkin')}: {club['club_checkin_what_counts']}")
         if club.get("club_vibe"):
-            lines.append(f"Vibe: {club['club_vibe']}")
-        lines.append(f"Members: {member_count}")
+            lines.append(f"{_ct(lang, 'vibe')}: {club['club_vibe']}")
+        lines.append(f"{_ct(lang, 'members')}: {member_count}")
 
         await self._reply_to_group_message(ctx, "\n".join(lines), parse_mode=None)
 
     async def _reply_with_group_setup_help(self, ctx: InputContext) -> None:
-        message = "\n".join([
-            "I can help here after this Telegram group is connected to a Xaana club.",
-            "",
-            "If you just created the club, wait for admin approval and the group link.",
-            "If you are setting up the group, add me as an admin, then ask a Xaana admin to confirm the link.",
-            "",
-            "After it is connected, use /club here.",
-        ])
-        await self._reply_to_group_message(ctx, message, parse_mode=None)
+        msg = await asyncio.to_thread(
+            self.llm_handler.get_response_group_safe,
+            (
+                "This Telegram group is not yet connected to a Xaana club. "
+                "Briefly explain how to get connected (add bot as admin, ask Xaana admin to confirm the link). "
+                "Mention they can use /club once connected. Keep it short — 3-4 lines max."
+            ),
+            {"recent_messages": [], "member_status": []},
+            None,
+        )
+        msg = str(msg or "").strip()
+        if not msg:
+            msg = "This group isn't connected to a Xaana club yet. Add me as admin and ask a Xaana admin to confirm the link. Then use /club."
+        await self._reply_to_group_message(ctx, msg, parse_mode=None)
 
     @staticmethod
     def _is_emoji_only(text: str) -> bool:
@@ -943,7 +985,7 @@ class PlannerBot:
         if member_status is None:
             member_status = self._get_today_checkin_status(club.get("club_id", ""))
 
-        processing_msg = await self._reply_to_group_message(ctx, "Thinking...", parse_mode=None)
+        processing_msg = await self._reply_to_group_message(ctx, _ct(club.get("club_language"), "thinking"), parse_mode=None)
         response_text = await asyncio.to_thread(
             self.llm_handler.get_response_group_safe,
             user_message,

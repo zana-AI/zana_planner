@@ -159,7 +159,7 @@ class ReportsService:
                         # Collect notes if present
                         if action.notes and action.notes.strip():
                             actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
-                    elif action.action == 'checkin':
+                    elif action.action in ('checkin', 'club_checkin'):
                         actions_by_promise_date[canonical][action_date]['count'] += 1
                         # Collect notes if present
                         if action.notes and action.notes.strip():
@@ -240,20 +240,37 @@ class ReportsService:
         # Get actions for this promise
         all_actions = self.actions_repo.list_actions(user_id)
         promise_actions = [a for a in all_actions if promise_ids_equal(a.promise_id, canonical_promise_id)]
-        
-        # Calculate weekly hours
+
+        # Calculate weekly hours and count
         weekly_actions = [a for a in promise_actions if week_start <= a.at <= week_end]
         weekly_hours = sum(a.time_spent for a in weekly_actions)
-        
+        # Count check-in style actions (checkin + club_checkin) for count-based promises
+        weekly_count = sum(1 for a in weekly_actions if a.action in ('checkin', 'club_checkin'))
+
         # Calculate total hours
         total_hours = sum(a.time_spent for a in promise_actions)
-        
+
+        # Look up instance target_value for count-based progress
+        target_value = promise.hours_per_week or 0
+        try:
+            from repositories.instances_repo import InstancesRepository
+            with get_db_session() as session_db:
+                p_uuid = resolve_promise_uuid(session_db, str(user_id), canonical_promise_id)
+            if p_uuid:
+                inst = InstancesRepository().get_instance_by_promise_uuid(user_id, p_uuid)
+                if inst:
+                    target_value = inst.get('target_value', target_value) or target_value
+        except Exception:
+            pass
+
         # Calculate streak
         streak = self._calculate_streak(promise_actions, ref_time)
-        
+
         return {
             'promise': promise,
             'weekly_hours': weekly_hours,
+            'weekly_count': weekly_count,
+            'target_value': target_value,
             'total_hours': total_hours,
             'streak': streak,
             'recent_actions': promise_actions[-3:] if promise_actions else []

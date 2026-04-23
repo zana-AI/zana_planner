@@ -2278,7 +2278,7 @@ Generate the calendar links now:"""
 
         member["status"] = new_status
 
-        # Persist to actions table
+        # Persist to actions table and re-sync all member statuses from DB
         if promise_uuid:
             from repositories.actions_repo import ActionsRepository
             actions_repo = ActionsRepository()
@@ -2287,6 +2287,13 @@ Generate the calendar links now:"""
                     actions_repo.append_club_checkin(user_id, promise_uuid)
                 elif old_status == "done":
                     actions_repo.delete_club_checkin(user_id, promise_uuid)
+                # Re-query DB so counter stays accurate across multiple cards / restarts
+                checked_in = actions_repo.get_today_checkins(promise_uuid)
+                for m in members:
+                    if str(m["user_id"]) in checked_in:
+                        m["status"] = "done"
+                    elif m.get("status") == "done":
+                        m["status"] = None
             except Exception as exc:
                 logger.warning("[ClubCheckin] Failed to persist action for user %s: %s", user_id, exc)
 
