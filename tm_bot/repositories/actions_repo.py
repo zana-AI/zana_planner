@@ -163,6 +163,21 @@ class ActionsRepository:
                 {"user_id": user, "promise_uuid": promise_uuid, "today": today},
             )
 
+    def get_today_checkins(self, promise_uuid: str) -> set[str]:
+        """Return the set of user_ids (as str) who have a club_checkin action today."""
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT DISTINCT user_id FROM actions
+                    WHERE promise_uuid = :promise_uuid
+                      AND action_type = 'club_checkin'
+                      AND DATE(at_utc) = :today;
+                """),
+                {"promise_uuid": promise_uuid, "today": today},
+            ).fetchall()
+        return {str(row[0]) for row in rows}
+
     def get_checkin_streak(self, user_id: int, promise_uuid: str) -> int:
         """Count consecutive days (ending today or yesterday) with a club_checkin action."""
         from datetime import date, timedelta

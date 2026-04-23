@@ -554,6 +554,13 @@ class PlannerBot:
         await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text=message, parse_mode=None)
 
     async def _reply_with_group_club_summary(self, ctx: InputContext) -> None:
+        from services.club_reminder_service import (
+            build_club_reminder_message,
+            create_club_checkin_keyboard,
+            _display_name,
+        )
+        from repositories.actions_repo import ActionsRepository
+
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
             club = self._link_ready_club_for_group_chat(ctx)
@@ -561,15 +568,66 @@ class PlannerBot:
             await self._reply_with_group_setup_help(ctx)
             return
 
-        lines = [f"Club: {club['club_name']}"]
-        if club.get("promise_text"):
-            lines.append(f"Promise: {club['promise_text']}")
-        if club.get("target_count_per_week") is not None:
-            target = float(club["target_count_per_week"])
-            target_text = str(int(target)) if target.is_integer() else str(target)
-            lines.append(f"Target: {target_text} times/week")
-        lines.append("I only share club-level promise info in this group.")
-        await self._reply_to_group_message(ctx, "\n".join(lines), parse_mode=None)
+        club_id = club["club_id"]
+        club_name = club["club_name"]
+
+        clubs_repo = ClubsRepository()
+        actions_repo = ActionsRepository()
+
+        raw_members = clubs_repo.get_club_members_promises(club_id)
+        if not raw_members:
+            await self._reply_to_group_message(ctx, f"{club_name} has no active members yet.", parse_mode=None)
+            return
+
+        promise_text = next((m.get("promise_text") for m in raw_members if m.get("promise_text")), None)
+        promise_uuid = next((m.get("promise_uuid") for m in raw_members if m.get("promise_uuid")), None)
+
+        checked_in_today = actions_repo.get_today_checkins(promise_uuid) if promise_uuid else set()
+
+        members = []
+        for m in raw_members:
+            uid = int(m["user_id"])
+            streak = 0
+            if promise_uuid:
+                try:
+                    streak = actions_repo.get_checkin_streak(uid, promise_uuid)
+                except Exception:
+                    pass
+            status = "done" if str(uid) in checked_in_today else None
+            members.append({
+                "user_id": uid,
+                "name": _display_name(m),
+                "promise_text": m.get("promise_text"),
+                "status": status,
+                "streak": streak,
+            })
+
+        message = build_club_reminder_message(club_name, members, promise_text=promise_text)
+        if not message:
+            await self._reply_to_group_message(ctx, f"{club_name} — no promise set yet.", parse_mode=None)
+            return
+
+        keyboard = create_club_checkin_keyboard(club_id) if promise_uuid else None
+        sent = await ctx.platform_context.bot.send_message(
+            chat_id=ctx.chat_id,
+            text=message,
+            parse_mode=None,
+            reply_markup=keyboard,
+        )
+        if keyboard and sent:
+            try:
+                bot_data = ctx.platform_context.bot_data
+                if "club_checkins" not in bot_data:
+                    bot_data["club_checkins"] = {}
+                bot_data["club_checkins"][(sent.chat_id, sent.message_id)] = {
+                    "club_id": club_id,
+                    "club_name": club_name,
+                    "promise_text": promise_text,
+                    "promise_uuid": promise_uuid,
+                    "members": members,
+                }
+            except Exception:
+                pass
 
     async def _reply_with_group_setup_help(self, ctx: InputContext) -> None:
         message = "\n".join([
@@ -639,6 +697,30 @@ class PlannerBot:
         combined = re.compile("|".join(patterns), re.IGNORECASE | re.UNICODE)
         return bool(combined.search(text))
 
+    def _get_today_checkin_status(self, club_id: str) -> list[dict]:
+        """
+        Return today's check-in status for every active club member.
+        Each entry: {"name": str, "status": "done" | "pending"}
+        """
+        from repositories.actions_repo import ActionsRepository
+        from services.club_reminder_service import _display_name
+        try:
+            clubs_repo = ClubsRepository()
+            raw_members = clubs_repo.get_club_members_promises(club_id)
+            if not raw_members:
+                return []
+            promise_uuid = next((m.get("promise_uuid") for m in raw_members if m.get("promise_uuid")), None)
+            checked_in = ActionsRepository().get_today_checkins(promise_uuid) if promise_uuid else set()
+            return [
+                {
+                    "name": _display_name(m),
+                    "status": "done" if str(m["user_id"]) in checked_in else "pending",
+                }
+                for m in raw_members
+            ]
+        except Exception:
+            return []
+
     async def _handle_group_task_completion(self, ctx: InputContext) -> None:
         """React proactively when a member shares a task completion without @mentioning the bot."""
         club = self._get_club_for_group_chat(ctx.chat_id)
@@ -663,6 +745,7 @@ class PlannerBot:
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
+                "member_status": self._get_today_checkin_status(club.get("club_id", "")),
                 "proactive": True,
             },
             club.get("club_language"),
@@ -697,6 +780,7 @@ class PlannerBot:
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
+                "member_status": self._get_today_checkin_status(club.get("club_id", "")),
             },
             club.get("club_language"),
         )

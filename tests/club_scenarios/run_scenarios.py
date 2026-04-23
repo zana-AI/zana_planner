@@ -134,6 +134,7 @@ async def run_turn(
     ctx: InputContext,
     recent_messages: list[dict],
     proactive: bool = False,
+    member_status: list[dict] | None = None,
 ) -> str:
     """Run one message through get_response_group_safe and return the response."""
     target_text = ""
@@ -151,6 +152,7 @@ async def run_turn(
             "target_text": target_text,
             "recent_messages": recent_messages,
             "proactive": proactive,
+            "member_status": member_status or [],
         },
         None,  # language — let LLM infer
     )
@@ -200,6 +202,7 @@ async def run_scenario(
         expect = turn.get("expect", "")
         addressed = turn.get("addressed_to_bot", "@" + addressed_bot_name in text or i > 0)
         proactive = turn.get("proactive", False)
+        member_status = turn.get("member_status") or scenario.get("member_status") or club.get("member_status") or []
 
         # Record in transcript
         recent_messages.append({"sender_name": first_name, "text": text})
@@ -217,7 +220,7 @@ async def run_scenario(
         if proactive:
             print(f"  {GREY}→ (proactive — bot detects task completion without @mention){RESET}")
 
-        response = await run_turn(llm_handler, club, ctx, list(recent_messages[:-1]), proactive=proactive)
+        response = await run_turn(llm_handler, club, ctx, list(recent_messages[:-1]), proactive=proactive, member_status=member_status)
         recent_messages.append({"sender_name": "Xaana", "text": response})
 
         print(f"\n  {GREEN}[Bot response]{RESET}")
