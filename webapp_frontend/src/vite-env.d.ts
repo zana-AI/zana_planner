@@ -1,14 +1,5 @@
 /// <reference types="vite/client" />
 
-interface Window {
-  Telegram?: {
-    WebApp?: {
-      openTelegramLink: (url: string) => void;
-      [key: string]: unknown;
-    };
-  };
-}
-
 interface ImportMetaEnv {
   readonly DEV: boolean;
   readonly PROD: boolean;

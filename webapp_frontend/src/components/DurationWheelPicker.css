@@ -96,3 +96,31 @@
   background: rgba(8, 13, 28, 0.58);
   border-top: 1px solid var(--border);
 }
+
+.wheel-picker-container--compact {
+  border-radius: 8px;
+}
+
+.wheel-picker-container--compact .wheel-picker-item {
+  font-size: 1.05rem;
+}
+
+.wheel-picker-container--compact .wheel-picker-item.selected {
+  font-size: 1.35rem;
+}
+
+.wheel-picker-container--compact .wheel-picker-fade-top,
+.wheel-picker-container--compact .wheel-picker-fade-bottom {
+  height: 34px;
+}
+
+.wheel-picker-container--compact .wheel-picker-highlight {
+  left: 8px;
+  right: 8px;
+  border-radius: 6px;
+}
+
+.wheel-picker-container--compact .wheel-picker-unit {
+  padding: 6px 0 7px;
+  font-size: 12px;
+}

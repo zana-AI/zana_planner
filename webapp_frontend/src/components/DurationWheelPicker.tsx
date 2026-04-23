@@ -6,17 +6,21 @@ interface DurationWheelPickerProps {
   onChange: (value: number) => void;
   min?: number;
   max?: number;
+  itemHeight?: number;
+  visibleItems?: number;
+  className?: string;
 }
 
 export function DurationWheelPicker({ 
   value, 
   onChange, 
   min = 1, 
-  max = 120 
+  max = 120,
+  itemHeight = 44,
+  visibleItems = 5,
+  className = '',
 }: DurationWheelPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const itemHeight = 44; // Height of each number item
-  const visibleItems = 5; // Number of visible items (odd number for center selection)
   
   // Generate array of numbers
   const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i);
@@ -78,7 +82,7 @@ export function DurationWheelPicker({
   } as CSSProperties;
 
   return (
-    <div className="wheel-picker-container" style={containerStyle}>
+    <div className={`wheel-picker-container${className ? ` ${className}` : ''}`} style={containerStyle}>
       <div className="wheel-picker-viewport">
         <div className="wheel-picker-highlight" />
         <div className="wheel-picker-fade-top" />

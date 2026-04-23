@@ -1074,6 +1074,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                               onChange={value => setEditForm(f => ({ ...f, planned_duration_min: String(value) }))}
                               min={1}
                               max={120}
+                              itemHeight={34}
+                              visibleItems={3}
+                              className="wheel-picker-container--compact"
                             />
                           </div>
                         )}
@@ -1167,6 +1170,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                         onChange={value => setAddForm(f => ({ ...f, planned_duration_min: String(value) }))}
                         min={1}
                         max={120}
+                        itemHeight={34}
+                        visibleItems={3}
+                        className="wheel-picker-container--compact"
                       />
                     </div>
                   )}

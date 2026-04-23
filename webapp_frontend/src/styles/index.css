@@ -5391,6 +5391,7 @@ textarea.modal-input {
   border-radius: 8px;
   background: rgba(9, 15, 31, 0.55);
   margin-top: 2px;
+  overflow: visible;
 }
 
 .planned-session-add-row {
@@ -5401,6 +5402,7 @@ textarea.modal-input {
 }
 
 .planned-session-add-input {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
   min-height: 32px;
@@ -5418,14 +5420,18 @@ textarea.modal-input {
 }
 
 .planned-session-add-date {
+  box-sizing: border-box;
   min-width: 0;
+  max-width: 100%;
 }
 
 .planned-session-duration-field {
   position: relative;
+  min-width: 0;
 }
 
 .planned-session-duration-trigger {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5454,10 +5460,11 @@ textarea.modal-input {
 .planned-session-duration-popover {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 30;
-  width: 190px;
-  padding: 8px;
+  width: 150px;
+  padding: 6px;
   border: 1px solid rgba(99, 167, 247, 0.24);
   border-radius: 8px;
   background: rgba(9, 15, 31, 0.97);
@@ -5485,9 +5492,10 @@ textarea.modal-input {
   }
 
   .planned-session-duration-popover {
-    left: 0;
-    right: auto;
-    width: min(190px, 100%);
+    position: static;
+    transform: none;
+    width: 100%;
+    margin-top: 6px;
   }
 }
 
