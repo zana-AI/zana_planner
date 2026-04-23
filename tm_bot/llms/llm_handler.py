@@ -2502,6 +2502,7 @@ class LLMHandler:
             club_vibe = str(group_context.get("club_vibe") or "supportive").strip()
             club_checkin_what_counts = str(group_context.get("club_checkin_what_counts") or "any sincere attempt counts").strip()
             club_goal = str(group_context.get("club_goal") or "").strip()
+            club_memory = str(group_context.get("club_memory") or "").strip()
             promise_text = str(group_context.get("promise_text") or "").strip()
             target_text = str(group_context.get("target_text") or "").strip()
             recent_messages = group_context.get("recent_messages") or []
@@ -2520,6 +2521,9 @@ class LLMHandler:
                 context_lines.append(f"Club description: {club_description}")
             context_lines.append(f"Club vibe: {club_vibe}")
             context_lines.append(f"What counts as a check-in: {club_checkin_what_counts}")
+            if club_memory:
+                context_lines.append("")
+                context_lines.append(club_memory)
 
             # Today's check-in status — authoritative DB data
             if member_status:

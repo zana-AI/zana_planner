@@ -762,6 +762,8 @@ class PlannerBot:
             club_id = state["club_id"]
             club_name = state["club_name"]
             ClubsRepository().update_club_context(club_id, club_goal=goal_text)
+            from memory.club_memory import club_memory_upsert_fact
+            club_memory_upsert_fact(self.root_dir, club_id, "club_goal", goal_text)
             pending.pop(ctx.user_id, None)
 
             await ctx.platform_context.bot.send_message(
@@ -774,6 +776,14 @@ class PlannerBot:
         except Exception as e:
             logger.warning("_maybe_capture_onboarding_reply error: %s", e)
             return False
+
+    def _get_club_memory_block(self, club_id: str) -> str:
+        """Return formatted club memory for LLM prompt injection."""
+        try:
+            from memory.club_memory import club_memory_format_for_prompt
+            return club_memory_format_for_prompt(self.root_dir, club_id)
+        except Exception:
+            return ""
 
     def _get_today_checkin_status(self, club_id: str) -> list[dict]:
         """
@@ -824,6 +834,7 @@ class PlannerBot:
                 "club_vibe": club.get("club_vibe"),
                 "club_checkin_what_counts": club.get("club_checkin_what_counts"),
                 "club_goal": club.get("club_goal"),
+                "club_memory": self._get_club_memory_block(club.get("club_id", "")),
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
@@ -863,6 +874,7 @@ class PlannerBot:
                 "club_vibe": club.get("club_vibe"),
                 "club_checkin_what_counts": club.get("club_checkin_what_counts"),
                 "club_goal": club.get("club_goal"),
+                "club_memory": self._get_club_memory_block(club.get("club_id", "")),
                 "promise_text": club.get("promise_text"),
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),

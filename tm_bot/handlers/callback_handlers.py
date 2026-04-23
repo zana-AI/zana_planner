@@ -1020,6 +1020,7 @@ class CallbackHandlers:
     async def _handle_club_onboard(self, query) -> None:
         """Persist a club onboarding answer (vibe or checkin definition) from inline button."""
         from repositories.clubs_repo import ClubsRepository
+        from memory.club_memory import club_memory_upsert_fact
         try:
             # Format: club_onboard:{club_id}:{field}:{value}
             parts = query.data.split(":", 3)
@@ -1030,9 +1031,11 @@ class CallbackHandlers:
             repo = ClubsRepository()
             if field == "vibe":
                 repo.update_club_context(club_id, vibe=value)
+                club_memory_upsert_fact(self.plan_keeper.root_dir, club_id, "vibe", value)
                 await query.edit_message_text(f"Got it — {value} vibe saved. The bot will keep that in mind in the group.")
             elif field == "checkin":
                 repo.update_club_context(club_id, checkin_what_counts=value)
+                club_memory_upsert_fact(self._root_dir, club_id, "checkin_what_counts", value)
                 await query.edit_message_text(f"Saved: \"{value}\" — I'll use that to understand check-ins in the group.")
             else:
                 await query.answer("Unknown field.")

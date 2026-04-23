@@ -260,6 +260,14 @@ class ClubReminderService:
                     "[ClubReminder] ✓ Sent to club %s ('%s') chat %s msg %s",
                     club_id, club_name, sent.chat_id, sent.message_id,
                 )
+                try:
+                    await bot.pin_chat_message(
+                        chat_id=int(chat_id),
+                        message_id=sent.message_id,
+                        disable_notification=True,
+                    )
+                except Exception as pin_exc:
+                    logger.debug("[ClubReminder] Could not pin reminder for club %s: %s", club_id, pin_exc)
             except Exception as exc:
                 logger.warning(
                     "[ClubReminder] ✗ Failed to send to club %s chat %s: %s",

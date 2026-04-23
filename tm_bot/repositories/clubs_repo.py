@@ -31,6 +31,7 @@ def ensure_club_telegram_columns(session) -> None:
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS club_goal TEXT",
     ):
         session.execute(text(ddl))
+
     _CLUB_TELEGRAM_COLUMNS_CHECKED = True
 
 

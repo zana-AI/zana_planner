@@ -14,6 +14,13 @@ from memory.config import (
     is_flush_enabled,
     is_memory_configured,
 )
+from memory.club_memory import (
+    club_memory_format_for_prompt,
+    club_memory_get,
+    club_memory_search,
+    club_memory_upsert_fact,
+    club_memory_write,
+)
 from memory.read import memory_get
 from memory.search import memory_search
 from memory.write import memory_write
@@ -24,6 +31,11 @@ from memory.flush import (
 )
 
 __all__ = [
+    "club_memory_format_for_prompt",
+    "club_memory_get",
+    "club_memory_search",
+    "club_memory_upsert_fact",
+    "club_memory_write",
     "get_memory_root",
     "get_memory_vector_db_url",
     "get_memory_vector_db_api_key",

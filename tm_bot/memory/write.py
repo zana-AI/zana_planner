@@ -61,5 +61,12 @@ def memory_write(
         logger.warning("memory_write failed for user %s: %s", user_id, e)
         return {"ok": False, "path": rel_path, "error": str(e)}
 
+    # Invalidate the Qdrant sync manifest so the next search re-indexes this file.
+    manifest = root / ".memory_index_manifest.json"
+    try:
+        manifest.unlink(missing_ok=True)
+    except OSError:
+        pass
+
     logger.info("memory_write: appended %d chars for user %s → %s", len(stripped), user_id, rel_path)
     return {"ok": True, "path": rel_path}
