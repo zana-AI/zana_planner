@@ -708,17 +708,10 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 <span>Edit</span>
               </button>
               {!isClubPromise && (
-              <button
-                className={`card-visibility-toggle${currentVisibility === 'public' ? ' card-visibility-toggle--public' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleVisibilityToggle();
-                }}
-                disabled={isUpdatingVisibility}
-                title={currentVisibility === 'private' ? 'Private — tap to share publicly' : 'Public — tap to make private'}
-                aria-label={currentVisibility === 'private' ? 'Private – tap to share publicly' : 'Public – tap to make private'}
+              <span
+                className={`card-visibility-toggle card-visibility-tag${currentVisibility === 'public' ? ' card-visibility-toggle--public' : ''}`}
+                title={currentVisibility === 'private' ? 'Private promise' : 'Public promise'}
               >
-                {/* Icon: share when public, lock when private */}
                 <span className="card-visibility-icon" aria-hidden="true">
                   {currentVisibility === 'public' ? (
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -735,15 +728,10 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     </svg>
                   )}
                 </span>
-                {/* Sliding track */}
-                <span className="card-visibility-track" aria-hidden="true">
-                  <span className="card-visibility-thumb" />
-                </span>
-                {/* Label */}
                 <span className="card-visibility-label">
-                  {isUpdatingVisibility ? '…' : currentVisibility === 'public' ? 'Public' : 'Private'}
+                  {currentVisibility === 'public' ? 'Public' : 'Private'}
                 </span>
-              </button>
+              </span>
               )}
             </div>
             <div className="card-meta">
@@ -834,24 +822,55 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   )}
                 </div>
                 
-                {/* Recurring toggle */}
-                <div className="card-recurring-section">
-                  <div className="card-recurring-info">
-                    <span className="card-recurring-title">
-                      {currentRecurring ? 'Recurring Promise' : 'One-time Task'}
-                    </span>
-                    <span className="card-recurring-subtitle">
-                      {currentRecurring 
-                        ? 'This promise repeats every week' 
-                        : 'This is a one-time task'}
+                {!isClubPromise && (
+                  <div className="card-setting-row">
+                    <div className="card-setting-info">
+                      <span className="card-setting-title">Public visibility</span>
+                      <span className="card-setting-subtitle">
+                        {currentVisibility === 'public'
+                          ? 'Visible to other people'
+                          : 'Only visible to you'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`card-switch${currentVisibility === 'public' ? ' card-switch--on' : ''}`}
+                      onClick={handleVisibilityToggle}
+                      disabled={isUpdatingVisibility}
+                      aria-pressed={currentVisibility === 'public'}
+                    >
+                      <span className="card-switch-track" aria-hidden="true">
+                        <span className="card-switch-thumb" />
+                      </span>
+                      <span className="card-switch-label">
+                        {isUpdatingVisibility ? 'Saving' : currentVisibility === 'public' ? 'Public' : 'Private'}
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="card-setting-row">
+                  <div className="card-setting-info">
+                    <span className="card-setting-title">Repeat weekly</span>
+                    <span className="card-setting-subtitle">
+                      {currentRecurring
+                        ? 'Shows every week with weekday tracking'
+                        : 'Stays as a one-time task'}
                     </span>
                   </div>
                   <button
-                    className={`card-recurring-toggle-button ${currentRecurring ? 'active' : ''}`}
+                    type="button"
+                    className={`card-switch${currentRecurring ? ' card-switch--on' : ''}`}
                     onClick={handleRecurringToggle}
                     disabled={isUpdatingRecurring}
+                    aria-pressed={currentRecurring}
                   >
-                    {isUpdatingRecurring ? '...' : (currentRecurring ? 'Make One-time' : 'Make Recurring')}
+                    <span className="card-switch-track" aria-hidden="true">
+                      <span className="card-switch-thumb" />
+                    </span>
+                    <span className="card-switch-label">
+                      {isUpdatingRecurring ? 'Saving' : currentRecurring ? 'On' : 'Off'}
+                    </span>
                   </button>
                 </div>
                 

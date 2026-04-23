@@ -516,6 +516,73 @@ async def delete_club_promise(
         raise HTTPException(status_code=500, detail=f"Failed to delete club promise: {str(e)}")
 
 
+@router.post("/clubs/{club_id}/sync-description", response_model=ClubActionResponse)
+async def sync_club_description(
+    request: Request,
+    club_id: str,
+    user_id: int = Depends(get_current_user),
+):
+    """Push current club promise + reminder as the Telegram group description."""
+    try:
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        club = ClubsRepository().get_club(club_id)
+        if not club:
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if not await _is_club_admin(user_id, club, bot_token):
+            raise HTTPException(status_code=403, detail="Only club admins can update the group description")
+
+        chat_id = club.get("telegram_chat_id")
+        if not chat_id:
+            raise HTTPException(status_code=400, detail="No Telegram group connected to this club")
+
+        # Build description
+        parts = []
+        promise_text = club.get("promise_text") or ""
+        if not promise_text:
+            # Fetch from promise_club_shares
+            with get_db_session() as session:
+                row = session.execute(
+                    text("""
+                        SELECT p.text, pi.target_value
+                        FROM promise_club_shares pcs
+                        JOIN promises p ON p.promise_uuid = pcs.promise_uuid AND p.is_deleted = 0
+                        LEFT JOIN promise_instances pi ON pi.promise_uuid = p.promise_uuid AND pi.status = 'active'
+                        WHERE pcs.club_id = :club_id
+                        LIMIT 1
+                    """),
+                    {"club_id": club_id},
+                ).fetchone()
+                if row:
+                    promise_text = row["text"] or ""
+                    target = row["target_value"]
+                    if promise_text:
+                        parts.append(f"{promise_text}{f' · {int(target)}×/week' if target else ''}")
+        else:
+            parts.append(promise_text)
+
+        reminder = club.get("reminder_time") or "21:00"
+        parts.append(f"Reminder: {reminder}")
+        description = " | ".join(parts)
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/setChatDescription",
+                json={"chat_id": chat_id, "description": description},
+                timeout=10,
+            )
+        if not resp.is_success or not resp.json().get("ok"):
+            detail = resp.json().get("description", "Failed to update group description")
+            raise HTTPException(status_code=502, detail=detail)
+
+        return ClubActionResponse(status="updated", club_id=club_id, message="Group description updated.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error syncing description for club {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/clubs/{club_id}", response_model=ClubActionResponse)
 async def remove_my_club(
     club_id: str,

@@ -746,7 +746,7 @@ body.modal-open {
     rgba(237, 243, 255, 0.08);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  cursor: pointer;
+  cursor: default;
   padding: 0 8px;
   min-height: 22px;
   transition: border-color 0.2s, background 0.2s, color 0.2s;
@@ -762,7 +762,7 @@ body.modal-open {
   color: var(--accent);
 }
 
-.card-visibility-toggle:hover:not(:disabled) {
+.card-visibility-toggle:not(.card-visibility-tag):hover:not(:disabled) {
   color: var(--text);
   border-color: var(--border-strong);
   background:
@@ -770,7 +770,7 @@ body.modal-open {
     rgba(237, 243, 255, 0.10);
 }
 
-.card-visibility-toggle--public:hover:not(:disabled) {
+.card-visibility-toggle--public:not(.card-visibility-tag):hover:not(:disabled) {
   background:
     linear-gradient(180deg, rgba(128, 188, 255, 0.26), rgba(99, 167, 247, 0.10)),
     rgba(99, 167, 247, 0.18);
@@ -4318,28 +4318,105 @@ textarea.modal-input {
   color: rgba(232, 238, 252, 0.6);
 }
 
-/* Recurring Toggle Section */
+.card-setting-row,
 .card-recurring-section {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid rgba(232, 238, 252, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)),
+    rgba(232, 238, 252, 0.04);
 }
 
+.card-setting-info,
 .card-recurring-info {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  min-width: 0;
 }
 
+.card-setting-title,
 .card-recurring-title {
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--text);
 }
 
+.card-setting-subtitle,
 .card-recurring-subtitle {
   font-size: 0.75rem;
   color: rgba(232, 238, 252, 0.6);
+  line-height: 1.25;
+}
+
+.card-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 5px 8px 5px 6px;
+  border: 1px solid rgba(232, 238, 252, 0.16);
+  border-radius: 8px;
+  background: rgba(232, 238, 252, 0.07);
+  color: var(--muted);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.card-switch--on {
+  border-color: rgba(99, 167, 247, 0.38);
+  background:
+    linear-gradient(135deg, rgba(99, 167, 247, 0.18), rgba(21, 184, 166, 0.10)),
+    rgba(99, 167, 247, 0.10);
+  color: var(--accent-hover);
+}
+
+.card-switch:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.card-switch-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: rgba(232, 238, 252, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.28);
+  transition: background 0.18s ease;
+}
+
+.card-switch--on .card-switch-track {
+  background: linear-gradient(135deg, var(--accent), #15b8a6);
+}
+
+.card-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  transition: transform 0.18s ease;
+}
+
+.card-switch--on .card-switch-thumb {
+  transform: translateX(16px);
+}
+
+.card-switch-label {
+  min-width: 38px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 800;
 }
 
 .card-recurring-toggle-button {

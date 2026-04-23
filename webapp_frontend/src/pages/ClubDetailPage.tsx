@@ -94,6 +94,17 @@ export function ClubDetailPage() {
     setEditingPromise(true);
   };
 
+  const maybeSyncDescription = async (clubId: string, hasTelegram: boolean) => {
+    if (!hasTelegram) return;
+    if (window.confirm('Update the Telegram group description with the latest promise and reminder?')) {
+      try {
+        await apiClient.syncClubDescription(clubId);
+      } catch {
+        setError('Saved, but failed to update group description.');
+      }
+    }
+  };
+
   const handleSavePromise = async () => {
     if (!club?.promise_uuid) return;
     setBusy(true);
@@ -106,6 +117,7 @@ export function ClubDetailPage() {
       setClub(updated);
       setEditingPromise(false);
       hapticFeedback('success');
+      await maybeSyncDescription(club.club_id, telegramReady);
     } catch (err) {
       hapticFeedback('error');
       setError(err instanceof ApiError ? err.message : 'Failed to update promise.');
@@ -129,6 +141,7 @@ export function ClubDetailPage() {
       setClub(updated);
       setEditingSettings(false);
       hapticFeedback('success');
+      await maybeSyncDescription(club.club_id, telegramReady);
     } catch (err) {
       hapticFeedback('error');
       setError(err instanceof ApiError ? err.message : 'Failed to save settings.');
