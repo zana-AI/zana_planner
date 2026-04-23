@@ -180,12 +180,39 @@ class ClubsRepository:
         club_id: str,
         user_id: int,
         role: str = "member",
+        first_name: str = None,
+        username: str = None,
     ) -> bool:
-        """Add a user to a club."""
+        """Add a user to a club.
+
+        If the user has never started the bot they won't have a row in `users`.
+        We upsert a stub row first so the FK constraint is satisfied; a real
+        onboarding flow will fill in the remaining fields later.
+        """
         user = str(user_id)
         now = utc_now_iso()
-        
+
         with get_db_session() as session:
+            # Ensure a users row exists (stub if never onboarded via bot)
+            session.execute(
+                text("""
+                    INSERT INTO users (
+                        user_id, first_name, username,
+                        timezone, nightly_hh, nightly_mm, language,
+                        created_at_utc, updated_at_utc
+                    ) VALUES (
+                        :user_id, :first_name, :username,
+                        'UTC', 21, 0, 'en',
+                        :now, :now
+                    )
+                    ON CONFLICT (user_id) DO UPDATE
+                        SET first_name = COALESCE(EXCLUDED.first_name, users.first_name),
+                            username   = COALESCE(EXCLUDED.username,   users.username),
+                            updated_at_utc = EXCLUDED.updated_at_utc;
+                """),
+                {"user_id": user, "first_name": first_name, "username": username, "now": now},
+            )
+
             # Check if already a member
             existing = session.execute(
                 text("""
@@ -195,7 +222,7 @@ class ClubsRepository:
                 """),
                 {"club_id": club_id, "user_id": user},
             ).fetchone()
-            
+
             if existing:
                 if existing[0] == "active":
                     return False  # Already a member
@@ -209,7 +236,7 @@ class ClubsRepository:
                     {"role": role, "joined_at_utc": now, "club_id": club_id, "user_id": user},
                 )
                 return True
-            
+
             # Add new member
             session.execute(
                 text("""

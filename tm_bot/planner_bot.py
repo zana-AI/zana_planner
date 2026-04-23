@@ -535,7 +535,12 @@ class PlannerBot:
                 continue
             member_id = getattr(member, "id", None)
             if member_id:
-                added = repo.add_member(club["club_id"], member_id)
+                added = repo.add_member(
+                    club["club_id"],
+                    member_id,
+                    first_name=getattr(member, "first_name", None),
+                    username=getattr(member, "username", None),
+                )
                 if added:
                     logger.info("club_member_sync (new_chat_members): added user %s to club %s", member_id, club["club_id"])
 
@@ -1037,7 +1042,12 @@ class PlannerBot:
             return
         repo = ClubsRepository()
         if new_status in ("member", "administrator", "creator"):
-            added = repo.add_member(club_id, user_id)
+            added = repo.add_member(
+                club_id,
+                user_id,
+                first_name=getattr(user, "first_name", None),
+                username=getattr(user, "username", None),
+            )
             if added:
                 logger.info("club_member_sync: added user %s to club %s", user_id, club_id)
         elif new_status in ("left", "kicked", "banned"):
