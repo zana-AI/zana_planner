@@ -1668,6 +1668,10 @@ class PlannerBot:
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.dispatch)
         )
+        # Catch-all for commands not in COMMAND_ROUTE_MAP (e.g. /status in group chats)
+        self.application.add_handler(
+            MessageHandler(filters.COMMAND, self.dispatch)
+        )
         self.application.add_handler(MessageHandler(filters.LOCATION, self.dispatch))
         self.application.add_handler(MessageHandler(filters.VOICE, self.dispatch))
         self.application.add_handler(
