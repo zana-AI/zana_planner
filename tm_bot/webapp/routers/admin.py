@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends, Request, UploadFil
 from fastapi.responses import StreamingResponse, Response
 from ..dependencies import get_current_user, get_admin_user
 from ..schemas import (
-    AdminUsersResponse, CreateBroadcastRequest, UpdateBroadcastRequest,
+    AdminUsersResponse, AdminUserUpdateRequest, CreateBroadcastRequest, UpdateBroadcastRequest,
     BroadcastResponse, BotTokenResponse, ConversationResponse, ConversationMessage,
     GenerateTemplateRequest, CreatePromiseForUserRequest, DayReminder,
     RunTestsRequest, TestRunResponse, TestReportResponse,
@@ -629,11 +629,13 @@ async def get_admin_users(
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT 
+                    SELECT
                         u.user_id,
                         u.first_name,
                         u.last_name,
                         u.username,
+                        u.non_latin_name,
+                        u.latin_name,
                         u.last_seen_utc,
                         u.timezone,
                         u.language,
@@ -667,6 +669,8 @@ async def get_admin_users(
                     first_name=row.get("first_name"),
                     last_name=row.get("last_name"),
                     username=row.get("username"),
+                    non_latin_name=row.get("non_latin_name"),
+                    latin_name=row.get("latin_name"),
                     last_seen_utc=row.get("last_seen_utc"),
                     timezone=row.get("timezone"),
                     language=row.get("language"),
@@ -676,12 +680,68 @@ async def get_admin_users(
             )
 
         return AdminUsersResponse(users=users, total=len(users))
-            
+
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Error getting admin users: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+
+
+@router.patch("/users/{user_id}")
+async def update_admin_user(
+    user_id: str,
+    body: AdminUserUpdateRequest,
+    admin_id: int = Depends(get_admin_user),
+):
+    """Update curated multilingual name fields for a user (admin only)."""
+    try:
+        now = utc_now_iso()
+        fields: dict = {}
+        if body.non_latin_name is not None:
+            fields["non_latin_name"] = body.non_latin_name.strip() or None
+        if body.latin_name is not None:
+            fields["latin_name"] = body.latin_name.strip() or None
+
+        if not fields:
+            raise HTTPException(status_code=400, detail="No fields provided to update.")
+
+        set_clause = ", ".join(f"{k} = :{k}" for k in fields)
+        params = {"user_id": user_id, "updated_at_utc": now, **fields}
+
+        with get_db_session() as session:
+            result = session.execute(
+                text(f"""
+                    UPDATE users
+                    SET {set_clause}, updated_at_utc = :updated_at_utc
+                    WHERE user_id = :user_id
+                    RETURNING user_id, first_name, last_name, username, non_latin_name, latin_name,
+                              last_seen_utc, timezone, language
+                """),
+                params,
+            ).mappings().fetchone()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="User not found.")
+
+        from ..schemas import AdminUser
+        return AdminUser(
+            user_id=str(result["user_id"]),
+            first_name=result.get("first_name"),
+            last_name=result.get("last_name"),
+            username=result.get("username"),
+            non_latin_name=result.get("non_latin_name"),
+            latin_name=result.get("latin_name"),
+            last_seen_utc=result.get("last_seen_utc"),
+            timezone=result.get("timezone"),
+            language=result.get("language"),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update user: {str(e)}")
 
 
 @router.get("/bot-tokens", response_model=List[BotTokenResponse])

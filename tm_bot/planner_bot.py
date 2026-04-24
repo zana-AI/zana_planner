@@ -539,7 +539,11 @@ class PlannerBot:
         member_status = self._get_today_checkin_status(club_id) if club else []
         sender_name = ctx.metadata.get("sender_name") or ""
         sender_checked_in = any(
-            m.get("name") == sender_name and m.get("status") == "done"
+            m.get("status") == "done" and sender_name and (
+                m.get("name") == sender_name
+                or (m.get("non_latin_name") and m["non_latin_name"] == sender_name)
+                or (m.get("latin_name") and m["latin_name"] == sender_name)
+            )
             for m in member_status
         )
 
@@ -895,6 +899,8 @@ class PlannerBot:
             return [
                 {
                     "name": _display_name(m),
+                    "non_latin_name": (m.get("non_latin_name") or "").strip(),
+                    "latin_name": (m.get("latin_name") or "").strip(),
                     "status": "done" if str(m["user_id"]) in checked_in else "pending",
                 }
                 for m in raw_members

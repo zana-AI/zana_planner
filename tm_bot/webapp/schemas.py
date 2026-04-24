@@ -306,6 +306,8 @@ class AdminUser(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     username: Optional[str] = None
+    non_latin_name: Optional[str] = None
+    latin_name: Optional[str] = None
     last_seen_utc: Optional[str] = None
     timezone: Optional[str] = None
     language: Optional[str] = None
@@ -317,6 +319,12 @@ class AdminUsersResponse(BaseModel):
     """Response model for admin users endpoint."""
     users: List[AdminUser]
     total: int
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """Request model for updating curated name fields on a user (admin only)."""
+    non_latin_name: Optional[str] = None
+    latin_name: Optional[str] = None
 
 
 class CreateBroadcastRequest(BaseModel):

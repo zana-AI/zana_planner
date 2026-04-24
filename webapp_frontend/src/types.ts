@@ -237,6 +237,8 @@ export interface AdminUser {
   first_name?: string;
   last_name?: string;
   username?: string;
+  non_latin_name?: string;
+  latin_name?: string;
   last_seen_utc?: string;
   timezone?: string;
   language?: string;

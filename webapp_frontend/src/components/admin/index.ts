@@ -14,3 +14,4 @@ export { TemplateForm } from './TemplateForm';
 export { DeleteConfirmModal } from './DeleteConfirmModal';
 export { UserSelector } from './UserSelector';
 export { FollowGraphTab } from './FollowGraphTab';
+export { UsersTab } from './UsersTab';
