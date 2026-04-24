@@ -100,22 +100,23 @@ Output EXACTLY one JSON object on one line, nothing else:
 {"action": "...", "emoji": "...", "reason": "..."}
 
 action must be one of:
-- IGNORE: no response needed (side chatter, banter, off-topic, insults, mockery, repeated bait, stickers)
-- REACT_EMOJI: add a single emoji reaction to the message, no text (light achievements, quick social moments)
-- SHORT_REPLY: 1-2 sentence text reply (simple questions, mild engagement)
+- IGNORE: truly ignore — no reaction, no text (hostile content, insults, mockery, deliberate bait, repeated provocations)
+- REACT_EMOJI: add a single emoji reaction, no text (casual banter, side chatter, social moments, greetings, short acks — show presence without intruding)
+- SHORT_REPLY: 1-2 sentence text reply (simple questions, mild engagement, task completions worth a comment)
 - FULL_REPLY: full thoughtful response (direct club questions, complex situations, check-in info needed)
 
-emoji: pick an appropriate reaction for REACT_EMOJI (🔥 for achievements, 👍 for acks, ❤️ for support, 🎉 for milestones).
+emoji: pick a fitting reaction (🔥 achievements, 👍 acks, ❤️ support, 🎉 milestones, 👀 curious/watching, 😊 friendly, 💪 encouragement).
 reason: one short clause explaining the decision.
 
 Rules (in priority order):
-1. If the bot was NOT @mentioned AND message is not a task completion result → IGNORE almost always
-2. Emoji-only, sticker, short acks (ok, باشه, 😂, هاها, 👌) → IGNORE
-3. Identity bait, insults, mockery, "are you a robot?" → IGNORE (or one REACT_EMOJI at most)
+1. Insults, mockery, hostile content, deliberate identity bait → IGNORE (never reward hostility)
+2. Direct club question or task from @mention → FULL_REPLY
+3. Task completion (workout done, score, game result) → REACT_EMOJI if brief; SHORT_REPLY if they seem proud or want acknowledgment
 4. Fake facts or provocations about club stats → SHORT_REPLY to gently correct, nothing more
-5. Task completion (score, game result, workout done) → REACT_EMOJI if brief; SHORT_REPLY if they seem proud
-6. Direct club question from an @mention → FULL_REPLY
-7. Match vibe: quiet vibe → prefer IGNORE; playful vibe → allow SHORT_REPLY for social moments
+5. Casual banter, side chatter, greetings, short acks, emoji-only → REACT_EMOJI (show you're alive without interrupting)
+6. Off-topic but friendly conversation → REACT_EMOJI
+7. Match vibe: quiet vibe → prefer REACT_EMOJI over SHORT_REPLY; playful vibe → allow SHORT_REPLY for fun moments
+8. Default when unsure → REACT_EMOJI (presence > silence)
 """
 
 _USER_TEMPLATE = """Club vibe: {vibe}

@@ -522,23 +522,18 @@ class PlannerBot:
                 await self._reply_with_group_club_info(ctx)
             return
 
+        # Skip non-text noise (stickers, gifs, etc. arrive as non-text update types)
+        if ctx.input_type != "text" or not (ctx.raw_text or "").strip():
+            return
+
         is_mentioned = await self._message_addresses_bot(ctx)
         is_completion = self._is_task_completion(ctx.raw_text or "")
-
-        # Only route if the message is relevant
-        if not is_mentioned and not is_completion:
-            return
 
         club = self._get_club_for_group_chat(ctx.chat_id)
         vibe = (club or {}).get("club_vibe") or "coach"
         club_id = (club or {}).get("club_id", "")
         ptb_context = getattr(ctx, "platform_context", None)
         bot_data = getattr(ptb_context, "bot_data", {}) if ptb_context else {}
-
-        # Check budget for spontaneous (proactive) messages
-        if not is_mentioned and not budget_allows(bot_data, ctx.chat_id, vibe, is_commanded=False):
-            logger.debug("group_router: budget exhausted for chat %s, skipping proactive response", ctx.chat_id)
-            return
 
         # Fetch member status once — used by router and LLM
         member_status = self._get_today_checkin_status(club_id) if club else []
@@ -548,7 +543,7 @@ class PlannerBot:
             for m in member_status
         )
 
-        # Call Groq router
+        # Call Groq router for every text message — it decides IGNORE/REACT_EMOJI/SHORT_REPLY/FULL_REPLY
         decision: RouterDecision = await asyncio.to_thread(
             route_group_message,
             ctx.raw_text or "",
@@ -568,7 +563,11 @@ class PlannerBot:
             await self._send_emoji_reaction(ctx, decision.emoji)
             return
 
-        # SHORT_REPLY or FULL_REPLY — hand off to LLM
+        # SHORT_REPLY or FULL_REPLY — budget gate applies only to text responses
+        if not is_mentioned and not budget_allows(bot_data, ctx.chat_id, vibe, is_commanded=False):
+            logger.debug("group_router: budget exhausted for chat %s, skipping proactive text response", ctx.chat_id)
+            return
+
         await asyncio.sleep(decision.delay_seconds)
         if is_mentioned:
             await self._handle_group_llm_message(
