@@ -41,10 +41,14 @@ CLUB_CHECKIN_PREFIX = "club_checkin:"
 # ---------------------------------------------------------------------------
 
 def _display_name(member: dict) -> str:
-    """Return the best available display name for a club member."""
-    first = (member.get("first_name") or "").strip()
+    """Return the best display name for a club member, combining both scripts when available."""
+    non_latin = (member.get("non_latin_name") or "").strip()
+    latin = (member.get("latin_name") or "").strip()
+    if non_latin and latin:
+        return f"{non_latin} / {latin}"
+    primary = non_latin or latin or (member.get("first_name") or "").strip()
     username = (member.get("username") or "").strip()
-    return first or (f"@{username}" if username else "Member")
+    return primary or (f"@{username}" if username else "Member")
 
 
 def _owner_timezone(owner_user_id: str) -> str:

@@ -17,6 +17,7 @@ import {
   TestsTab,
   FollowGraphTab,
   ClubsTelegramSetupTab,
+  UsersTab,
 } from './admin';
 
 export function AdminPanel() {
@@ -295,6 +296,18 @@ export function AdminPanel() {
 
       {activeTab === 'tests' && (
         <TestsTab />
+      )}
+
+      {activeTab === 'users' && (
+        <UsersTab
+          users={users}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          onUsersChange={(updated) =>
+            setUsers((prev) => prev.map((u) => (u.user_id === updated.user_id ? { ...u, ...updated } : u)))
+          }
+          onError={setError}
+        />
       )}
     </div>
   );

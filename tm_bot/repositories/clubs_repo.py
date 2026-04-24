@@ -458,6 +458,8 @@ class ClubsRepository:
                         cm.user_id,
                         u.first_name,
                         u.username,
+                        u.non_latin_name,
+                        u.latin_name,
                         p.text AS promise_text,
                         p.promise_uuid
                     FROM club_members cm

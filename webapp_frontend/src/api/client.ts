@@ -9,6 +9,7 @@ import type {
   AdminClubSetupResponse,
   AdminClubSetupSummary,
   AdminUsersResponse,
+  AdminUser,
   Broadcast,
   CreateBroadcastRequest,
   UpdateBroadcastRequest,
@@ -490,6 +491,16 @@ class ApiClient {
    */
   async getAdminUsers(limit: number = 1000): Promise<AdminUsersResponse> {
     return this.request<AdminUsersResponse>(`/admin/users?limit=${limit}`);
+  }
+
+  async updateAdminUser(
+    userId: string,
+    body: { non_latin_name?: string | null; latin_name?: string | null },
+  ): Promise<AdminUser> {
+    return this.request<AdminUser>(`/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
   }
 
   async getAdminClubTelegramSetup(status: 'pending' | 'ready' | 'all' = 'pending'): Promise<AdminClubSetupResponse> {
