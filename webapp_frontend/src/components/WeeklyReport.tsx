@@ -80,14 +80,13 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false, hideProgress
   const sortedPromises = useMemo(() => {
     const entries = [...Object.entries(promises)];
     if (isPastWeek) {
+      // Sort by achieved_value descending so the most active promises float to the top.
+      // Promises with no activity (0 hours / 0 count) naturally sink to the bottom.
       entries.sort((a, b) => {
         const aValue = a[1].achieved_value ?? a[1].hours_spent;
         const bValue = b[1].achieved_value ?? b[1].hours_spent;
-        const aActive = aValue > 0 ? 1 : 0;
-        const bActive = bValue > 0 ? 1 : 0;
-        if (bActive !== aActive) return bActive - aActive; // active first
-        // within each group keep alphabetical order
-        return a[0].localeCompare(b[0]);
+        if (bValue !== aValue) return bValue - aValue; // descending by activity
+        return a[0].localeCompare(b[0]); // tie-break alphabetically
       });
       return entries;
     }
