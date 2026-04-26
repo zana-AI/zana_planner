@@ -2528,10 +2528,22 @@ class LLMHandler:
 
             # Today's check-in status — authoritative DB data
             if member_status:
+                member_alias_lines = []
+                for member in member_status:
+                    aliases = []
+                    non_latin = str(member.get("non_latin_name") or "").strip()
+                    latin = str(member.get("latin_name") or "").strip()
+                    if non_latin:
+                        aliases.append(f"non-Latin: {non_latin}")
+                    if latin:
+                        aliases.append(f"Latin: {latin}")
+                    suffix = f" ({'; '.join(aliases)})" if aliases else ""
+                    member_alias_lines.append(f"{member['name']}{suffix}")
                 done = [m["name"] for m in member_status if m.get("status") == "done"]
                 pending = [m["name"] for m in member_status if m.get("status") != "done"]
                 done_str = ", ".join(done) if done else "nobody yet"
                 pending_str = ", ".join(pending) if pending else "everyone"
+                context_lines.append(f"Club member aliases: {', '.join(member_alias_lines)}")
                 context_lines.append(f"Today's check-ins ({len(done)}/{len(member_status)}): checked in: {done_str} | not yet: {pending_str}")
 
             recent_lines: List[str] = []
@@ -2597,6 +2609,8 @@ class LLMHandler:
                 "Transcript fidelity: when quoting what someone shared (a game result, a workout),",
                 "report only what is literally written. Do not interpret scores or invent outcomes.",
                 "Check-in status: answer questions about who checked in ONLY from the club context data.",
+                "Membership/name questions: answer from Club member aliases ONLY. If a queried name or alias appears there, say yes; if not, say it is not in the club context.",
+                "You may list club member display names when directly asked in this group, but do not share any private data beyond the names and check-in status shown in club context.",
                 "Do not use or mention private user data, private promises, private memories, or DM history.",
                 "Do not create, update, delete, or log personal promises from a group message.",
                 "If the user asks for a private action or private data, tell them to DM you.",
