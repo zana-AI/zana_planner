@@ -38,6 +38,32 @@ import type {
 
 const API_BASE = '/api';
 
+export interface AdminLLMUsageRow {
+  provider: string;
+  model_name: string;
+  role: string | null;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  avg_latency_ms: number;
+  errors: number;
+  estimated_cost_usd: number | null;
+}
+
+export interface AdminLLMUsageResponse {
+  window_hours: number;
+  totals: {
+    calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    errors: number;
+    estimated_cost_usd: number;
+  };
+  per_model: AdminLLMUsageRow[];
+}
+
 /**
  * API client for the Zana Web App backend.
  * All requests include Telegram initData for authentication.
@@ -503,6 +529,12 @@ class ApiClient {
     });
   }
 
+  async guessAdminUserNameVariants(userId: string): Promise<AdminUser> {
+    return this.request<AdminUser>(`/admin/users/${encodeURIComponent(userId)}/guess-name-variants`, {
+      method: 'POST',
+    });
+  }
+
   async getAdminClubTelegramSetup(status: 'pending' | 'ready' | 'all' = 'pending'): Promise<AdminClubSetupResponse> {
     return this.request<AdminClubSetupResponse>(`/admin/clubs/telegram-setup?status=${status}`);
   }
@@ -748,6 +780,13 @@ class ApiClient {
    */
   async getAdminStats(): Promise<{ total_users: number; active_users: number; total_promises: number }> {
     return this.request<{ total_users: number; active_users: number; total_promises: number }>('/admin/stats');
+  }
+
+  /**
+   * Get LLM usage telemetry over the last N hours (admin only).
+   */
+  async getAdminLLMUsage(hours: number = 24): Promise<AdminLLMUsageResponse> {
+    return this.request<AdminLLMUsageResponse>(`/admin/llm-usage?hours=${hours}`);
   }
 
   /**

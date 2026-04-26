@@ -2,6 +2,7 @@ from sqlalchemy import text
 
 from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso, dt_to_utc_iso
 from models.models import UserSettings
+from services.name_variant_service import guess_name_variants
 
 
 class SettingsRepository:
@@ -62,16 +63,36 @@ class SettingsRepository:
     def save_settings(self, settings: UserSettings) -> None:
         user = str(settings.user_id)
         now = utc_now_iso()
+        non_latin_name = None
+        latin_name = None
+
+        try:
+            with get_db_session() as session:
+                existing_user = session.execute(
+                    text("SELECT 1 FROM users WHERE user_id = :user_id LIMIT 1;"),
+                    {"user_id": user},
+                ).scalar()
+            if not existing_user:
+                variants = guess_name_variants(
+                    first_name=settings.first_name,
+                    username=settings.username,
+                )
+                non_latin_name = variants.non_latin_name
+                latin_name = variants.latin_name
+        except Exception:
+            non_latin_name = None
+            latin_name = None
+
         with get_db_session() as session:
             session.execute(
                 text("""
                     INSERT INTO users(
                         user_id, timezone, nightly_hh, nightly_mm, language, voice_mode,
-                        first_name, username, last_seen_utc,
+                        first_name, username, non_latin_name, latin_name, last_seen_utc,
                         created_at_utc, updated_at_utc
                     ) VALUES (
                         :user_id, :timezone, :nightly_hh, :nightly_mm, :language, :voice_mode,
-                        :first_name, :username, :last_seen_utc,
+                        :first_name, :username, :non_latin_name, :latin_name, :last_seen_utc,
                         :created_at_utc, :updated_at_utc
                     )
                     ON CONFLICT (user_id) DO UPDATE SET
@@ -94,6 +115,8 @@ class SettingsRepository:
                     "voice_mode": settings.voice_mode,
                     "first_name": settings.first_name,
                     "username": settings.username,
+                    "non_latin_name": non_latin_name,
+                    "latin_name": latin_name,
                     "last_seen_utc": dt_to_utc_iso(settings.last_seen) if settings.last_seen else None,
                     "created_at_utc": now,
                     "updated_at_utc": now,

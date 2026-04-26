@@ -33,6 +33,7 @@ from repositories.bot_tokens_repo import BotTokensRepository
 from repositories.clubs_repo import ensure_club_telegram_columns
 from repositories.reminders_repo import RemindersRepository
 from services.reminder_dispatch import ReminderDispatchService
+from services.name_variant_service import guess_name_variants
 from db.postgres_db import get_db_session, dt_to_utc_iso, utc_now_iso, resolve_promise_uuid
 from sqlalchemy import text, bindparam
 from utils.admin_utils import is_admin
@@ -604,6 +605,34 @@ async def get_admin_stats(
         raise HTTPException(status_code=500, detail=f"Failed to compute stats: {str(e)}")
 
 
+@router.get("/llm-usage")
+async def get_llm_usage(
+    hours: int = Query(24, ge=1, le=24 * 90),
+    admin_id: int = Depends(get_admin_user),
+):
+    """
+    Per-model LLM usage and token telemetry over the last N hours (admin only).
+    """
+    try:
+        from repositories.llm_usage_repo import get_summary, get_totals
+        per_model = get_summary(window_hours=hours)
+        totals = get_totals(window_hours=hours)
+        total_cost = sum(
+            (row.get("estimated_cost_usd") or 0.0) for row in per_model
+        )
+        return {
+            "window_hours": int(hours),
+            "totals": {
+                **totals,
+                "estimated_cost_usd": round(total_cost, 4),
+            },
+            "per_model": per_model,
+        }
+    except Exception as e:
+        logger.exception(f"Error computing llm usage: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to compute llm usage: {str(e)}")
+
+
 @router.get("/users", response_model=AdminUsersResponse)
 async def get_admin_users(
     request: Request,
@@ -742,6 +771,79 @@ async def update_admin_user(
     except Exception as e:
         logger.exception(f"Error updating user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update user: {str(e)}")
+
+
+@router.post("/users/{user_id}/guess-name-variants")
+async def guess_admin_user_name_variants(
+    user_id: str,
+    admin_id: int = Depends(get_admin_user),
+):
+    """Guess and save missing multilingual name fields for a user (admin only)."""
+    try:
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT user_id, first_name, last_name, username, non_latin_name, latin_name
+                    FROM users
+                    WHERE user_id = :user_id
+                    LIMIT 1;
+                """),
+                {"user_id": user_id},
+            ).mappings().fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found.")
+
+        variants = guess_name_variants(
+            first_name=row.get("first_name"),
+            last_name=row.get("last_name"),
+            username=row.get("username"),
+            existing_non_latin_name=row.get("non_latin_name"),
+            existing_latin_name=row.get("latin_name"),
+        )
+
+        if not variants.non_latin_name and not variants.latin_name:
+            raise HTTPException(status_code=422, detail="AI could not infer useful name variants.")
+
+        now = utc_now_iso()
+        with get_db_session() as session:
+            result = session.execute(
+                text("""
+                    UPDATE users
+                    SET non_latin_name = :non_latin_name,
+                        latin_name = :latin_name,
+                        updated_at_utc = :updated_at_utc
+                    WHERE user_id = :user_id
+                    RETURNING user_id, first_name, last_name, username, non_latin_name, latin_name,
+                              last_seen_utc, timezone, language
+                """),
+                {
+                    "user_id": user_id,
+                    "non_latin_name": variants.non_latin_name,
+                    "latin_name": variants.latin_name,
+                    "updated_at_utc": now,
+                },
+            ).mappings().fetchone()
+
+        from ..schemas import AdminUser
+        logger.info("Admin %s guessed name variants for user %s", admin_id, user_id)
+        return AdminUser(
+            user_id=str(result["user_id"]),
+            first_name=result.get("first_name"),
+            last_name=result.get("last_name"),
+            username=result.get("username"),
+            non_latin_name=result.get("non_latin_name"),
+            latin_name=result.get("latin_name"),
+            last_seen_utc=result.get("last_seen_utc"),
+            timezone=result.get("timezone"),
+            language=result.get("language"),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error guessing name variants for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to guess name variants: {str(e)}")
 
 
 @router.get("/bot-tokens", response_model=List[BotTokenResponse])

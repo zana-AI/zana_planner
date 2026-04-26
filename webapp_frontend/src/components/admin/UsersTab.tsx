@@ -19,6 +19,7 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState>({ non_latin_name: '', latin_name: '' });
   const [saving, setSaving] = useState(false);
+  const [guessingId, setGuessingId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -65,6 +66,28 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const guessNames = async (user: AdminUser) => {
+    setGuessingId(user.user_id);
+    onError('');
+    try {
+      const updated = await apiClient.guessAdminUserNameVariants(user.user_id);
+      onUsersChange(updated);
+      setEditingId(updated.user_id);
+      setEditState({
+        non_latin_name: updated.non_latin_name || '',
+        latin_name: updated.latin_name || '',
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        onError(err.message || 'Failed to guess user names.');
+      } else {
+        onError('Failed to guess user names.');
+      }
+    } finally {
+      setGuessingId(null);
     }
   };
 
@@ -122,21 +145,41 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
                   </span>
                 </div>
                 {!isEditing && (
-                  <button
-                    onClick={() => startEdit(user)}
-                    style={{
-                      padding: '0.3rem 0.7rem',
-                      background: 'rgba(99,102,241,0.2)',
-                      border: '1px solid rgba(99,102,241,0.4)',
-                      borderRadius: '6px',
-                      color: '#a5b4fc',
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Edit names
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {(!user.non_latin_name || !user.latin_name) && (
+                      <button
+                        onClick={() => guessNames(user)}
+                        disabled={guessingId === user.user_id}
+                        style={{
+                          padding: '0.3rem 0.7rem',
+                          background: guessingId === user.user_id ? 'rgba(20,184,166,0.1)' : 'rgba(20,184,166,0.2)',
+                          border: '1px solid rgba(20,184,166,0.4)',
+                          borderRadius: '6px',
+                          color: '#5eead4',
+                          cursor: guessingId === user.user_id ? 'not-allowed' : 'pointer',
+                          fontSize: '0.8rem',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {guessingId === user.user_id ? 'Guessing...' : 'Guess with AI'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => startEdit(user)}
+                      style={{
+                        padding: '0.3rem 0.7rem',
+                        background: 'rgba(99,102,241,0.2)',
+                        border: '1px solid rgba(99,102,241,0.4)',
+                        borderRadius: '6px',
+                        color: '#a5b4fc',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Edit names
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -195,15 +238,30 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
                   </label>
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                     <button
+                      onClick={() => guessNames(user)}
+                      disabled={saving || guessingId === user.user_id}
+                      style={{
+                        padding: '0.4rem 1rem',
+                        background: guessingId === user.user_id ? 'rgba(20,184,166,0.1)' : 'rgba(20,184,166,0.2)',
+                        border: '1px solid rgba(20,184,166,0.45)',
+                        borderRadius: '6px',
+                        color: '#5eead4',
+                        cursor: saving || guessingId === user.user_id ? 'not-allowed' : 'pointer',
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {guessingId === user.user_id ? 'Guessing...' : 'Guess with AI'}
+                    </button>
+                    <button
                       onClick={() => saveEdit(user.user_id)}
-                      disabled={saving}
+                      disabled={saving || guessingId === user.user_id}
                       style={{
                         padding: '0.4rem 1rem',
                         background: saving ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.3)',
                         border: '1px solid rgba(99,102,241,0.5)',
                         borderRadius: '6px',
                         color: '#a5b4fc',
-                        cursor: saving ? 'not-allowed' : 'pointer',
+                        cursor: saving || guessingId === user.user_id ? 'not-allowed' : 'pointer',
                         fontSize: '0.85rem',
                       }}
                     >
