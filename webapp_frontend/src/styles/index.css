@@ -5355,6 +5355,95 @@ textarea.modal-input {
   font-weight: 700;
 }
 
+/* ---- Admin LLM usage section ---- */
+.admin-llm-usage {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-llm-usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.admin-llm-usage-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.admin-llm-usage-windows {
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  padding: 4px;
+  background: rgba(15, 23, 48, 0.6);
+}
+
+.admin-llm-usage-window-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.admin-llm-usage-window-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  color: var(--text);
+}
+
+.admin-llm-usage-loading,
+.admin-llm-usage-empty,
+.admin-llm-usage-error {
+  padding: 12px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.admin-llm-usage-error {
+  color: #f87171;
+}
+
+.admin-llm-usage-table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+}
+
+.admin-llm-usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-llm-usage-table th,
+.admin-llm-usage-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.admin-llm-usage-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 600;
+  background: rgba(15, 23, 48, 0.4);
+}
+
+.admin-llm-usage-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* ---- Planned sessions strip (visible without expanding) ---- */
 .planned-sessions-strip {
   margin-top: 8px;

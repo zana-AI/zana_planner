@@ -38,8 +38,8 @@ MODEL_CONFIGS = {
     ),
     "groq": RoleModels(
         router="openai/gpt-oss-20b",
-        planner="openai/gpt-oss-20b",
-        responder="openai/gpt-oss-20b",
+        planner="llama-3.3-70b-versatile",
+        responder="llama-3.3-70b-versatile",
     ),
 }
 
@@ -53,6 +53,38 @@ FALLBACK_MODELS = {
 
 # Some Gemini models are global-only.
 GLOBAL_ONLY_PREFIXES: Tuple[str, ...] = ("gemini-3-",)
+
+
+# Approximate per-1M-token pricing (USD), input/output.
+# Used only for cost estimation in the admin LLM-usage dashboard.
+# Update as provider prices change. Models not present here render with cost=None.
+MODEL_PRICING: Dict[str, Tuple[float, float]] = {
+    # Groq
+    "openai/gpt-oss-20b": (0.10, 0.50),
+    "openai/gpt-oss-120b": (0.15, 0.75),
+    "llama-3.3-70b-versatile": (0.59, 0.79),
+    "llama-3.1-8b-instant": (0.05, 0.08),
+    "moonshotai/kimi-k2-instruct": (1.00, 3.00),
+    "qwen/qwen3-32b": (0.29, 0.59),
+    "deepseek-r1-distill-llama-70b": (0.75, 0.99),
+    # Gemini (Vertex AI list price)
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-pro": (1.25, 10.00),
+    # OpenAI
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (2.50, 10.00),
+    # DeepSeek
+    "deepseek-chat": (0.27, 1.10),
+}
+
+
+def estimate_cost_usd(model_name: str, input_tokens: int, output_tokens: int) -> float | None:
+    price = MODEL_PRICING.get((model_name or "").strip())
+    if not price:
+        return None
+    in_price, out_price = price
+    return (input_tokens * in_price + output_tokens * out_price) / 1_000_000.0
 
 
 def normalize_provider_name(provider: str | None) -> str:

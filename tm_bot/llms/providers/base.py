@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import replace
 from typing import Any, Dict, Optional, Protocol, Sequence
 
 from langchain_core.messages import BaseMessage
 
 from .types import LLMInvokeOptions, NormalizedLLMResult, ProviderCapabilities
+from .usage import extract_model_name, extract_tokens
+
+_logger = logging.getLogger(__name__)
 
 
 class ProviderAdapter(Protocol):
@@ -42,11 +47,41 @@ class ProviderBoundModel:
         self._options = options
 
     def invoke(self, messages: Sequence[BaseMessage], **kwargs: Any) -> Any:
-        result = self._adapter.invoke(
-            model=self._model,
-            messages=messages,
-            options=self._options,
-            extra_kwargs=kwargs or None,
+        provider = getattr(self._adapter, "name", "unknown") or "unknown"
+        model_name = extract_model_name(self._model, self._options)
+        role = getattr(self._options, "purpose", None)
+        start = time.perf_counter()
+        try:
+            result = self._adapter.invoke(
+                model=self._model,
+                messages=messages,
+                options=self._options,
+                extra_kwargs=kwargs or None,
+            )
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            _record_usage(
+                provider=provider,
+                model_name=model_name,
+                role=role,
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=latency_ms,
+                success=False,
+                error_type=type(exc).__name__,
+            )
+            raise
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        in_tok, out_tok = extract_tokens(result.raw)
+        _record_usage(
+            provider=provider,
+            model_name=model_name,
+            role=role,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            latency_ms=latency_ms,
+            success=True,
+            error_type=None,
         )
         return result.raw
 
@@ -64,4 +99,36 @@ class ProviderBoundModel:
 
 def wrap_model(adapter: ProviderAdapter, model: Any, options: LLMInvokeOptions) -> ProviderBoundModel:
     return ProviderBoundModel(adapter=adapter, model=model, options=options)
+
+
+def _record_usage(
+    *,
+    provider: str,
+    model_name: str,
+    role: Optional[str],
+    input_tokens: int,
+    output_tokens: int,
+    latency_ms: int,
+    success: bool,
+    error_type: Optional[str],
+) -> None:
+    """Lazy-imported, exception-swallowing wrapper around llm_usage_repo.log_usage."""
+    try:
+        from repositories.llm_usage_repo import log_usage  # local import to avoid cycles
+    except Exception as exc:
+        _logger.debug("llm_usage_repo unavailable (%s); skipping telemetry", exc)
+        return
+    try:
+        log_usage(
+            provider=provider,
+            model_name=model_name,
+            role=role,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=latency_ms,
+            success=success,
+            error_type=error_type,
+        )
+    except Exception as exc:  # pragma: no cover
+        _logger.debug("log_usage failed (%s); ignoring", exc)
 
