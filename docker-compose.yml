@@ -126,6 +126,97 @@ services:
       - web
 
   # =========================
+  # LANGFUSE — LLM observability + dataset/eval platform
+  # Reachable internally as langfuse-web:3000; nginx fronts it as
+  # https://langfuse.xaana.club. All env in /opt/zana-config/.env.langfuse
+  # (see docs/plan_langfuse_integration.md for required keys).
+  # =========================
+  langfuse-postgres:
+    image: postgres:16-alpine
+    container_name: zana-langfuse-postgres
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=${LANGFUSE_DB_PASSWORD:-langfuse}
+      - POSTGRES_DB=langfuse
+    volumes:
+      - /srv/langfuse-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - web
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: zana-langfuse-clickhouse
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - /srv/langfuse-clickhouse-data:/var/lib/clickhouse
+      - /srv/langfuse-clickhouse-logs:/var/log/clickhouse-server
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    restart: unless-stopped
+    networks:
+      - web
+
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: zana-langfuse-redis
+    command:
+      - "redis-server"
+      - "--requirepass"
+      - "${LANGFUSE_REDIS_PASSWORD:-redis}"
+    restart: unless-stopped
+    networks:
+      - web
+
+  langfuse-minio:
+    image: minio/minio:RELEASE.2024-08-26T15-33-07Z
+    container_name: zana-langfuse-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      - MINIO_ROOT_USER=${LANGFUSE_MINIO_USER:-minio}
+      - MINIO_ROOT_PASSWORD=${LANGFUSE_MINIO_PASSWORD:-miniominio}
+    volumes:
+      - /srv/langfuse-minio:/data
+    restart: unless-stopped
+    networks:
+      - web
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: zana-langfuse-web
+    depends_on:
+      - langfuse-postgres
+      - langfuse-clickhouse
+      - langfuse-redis
+      - langfuse-minio
+    env_file:
+      - /opt/zana-config/.env.langfuse
+    expose:
+      - "3000"
+    restart: unless-stopped
+    networks:
+      - web
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: zana-langfuse-worker
+    depends_on:
+      - langfuse-postgres
+      - langfuse-clickhouse
+      - langfuse-redis
+      - langfuse-minio
+    env_file:
+      - /opt/zana-config/.env.langfuse
+    restart: unless-stopped
+    networks:
+      - web
+
+  # =========================
   # NGINX REVERSE PROXY
   # Serves http://xaana.club → zana-webapp:8080
   # =========================

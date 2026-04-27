@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Protocol, Sequence
 
 from langchain_core.messages import BaseMessage
 
+from .langfuse_client import trace_generation as _trace_generation
 from .types import LLMInvokeOptions, NormalizedLLMResult, ProviderCapabilities
 from .telemetry import record_usage_safely
 from .usage import extract_model_name, extract_tokens
@@ -57,6 +58,7 @@ class ProviderBoundModel:
             )
         except Exception as exc:
             latency_ms = int((time.perf_counter() - start) * 1000)
+            error_type = type(exc).__name__
             _record_usage(
                 provider=provider,
                 model_name=model_name,
@@ -65,7 +67,19 @@ class ProviderBoundModel:
                 output_tokens=0,
                 latency_ms=latency_ms,
                 success=False,
-                error_type=type(exc).__name__,
+                error_type=error_type,
+            )
+            _emit_trace(
+                provider=provider,
+                model_name=model_name,
+                role=role,
+                messages_in=messages,
+                output_text="",
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=latency_ms,
+                success=False,
+                error_type=error_type,
             )
             raise
         latency_ms = int((time.perf_counter() - start) * 1000)
@@ -74,6 +88,18 @@ class ProviderBoundModel:
             provider=provider,
             model_name=model_name,
             role=role,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            latency_ms=latency_ms,
+            success=True,
+            error_type=None,
+        )
+        _emit_trace(
+            provider=provider,
+            model_name=model_name,
+            role=role,
+            messages_in=messages,
+            output_text=getattr(result, "text", "") or "",
             input_tokens=in_tok,
             output_tokens=out_tok,
             latency_ms=latency_ms,
@@ -120,3 +146,11 @@ def _record_usage(
         success=success,
         error_type=error_type,
     )
+
+
+def _emit_trace(**kwargs: Any) -> None:
+    """Best-effort Langfuse trace emit; never raises."""
+    try:
+        _trace_generation(**kwargs)
+    except Exception:  # pragma: no cover
+        pass
