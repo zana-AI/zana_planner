@@ -23,6 +23,30 @@ def extract_tokens(raw: Any) -> Tuple[int, int]:
     if raw is None:
         return 0, 0
 
+    def _read_usage_value(usage_obj: Any, *names: str) -> int:
+        if usage_obj is None:
+            return 0
+        for name in names:
+            value = None
+            if isinstance(usage_obj, dict):
+                value = usage_obj.get(name)
+            else:
+                value = getattr(usage_obj, name, None)
+            if value is not None:
+                try:
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+        return 0
+
+    # Raw OpenAI-compatible SDK responses expose usage directly on the response.
+    direct_usage = raw.get("usage") if isinstance(raw, dict) else getattr(raw, "usage", None)
+    if direct_usage is not None:
+        in_tok = _read_usage_value(direct_usage, "prompt_tokens", "input_tokens")
+        out_tok = _read_usage_value(direct_usage, "completion_tokens", "output_tokens")
+        if in_tok or out_tok:
+            return in_tok, out_tok
+
     # langchain_core normalises this on AIMessage as `usage_metadata`.
     usage = getattr(raw, "usage_metadata", None)
     if isinstance(usage, dict):

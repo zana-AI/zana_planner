@@ -21,10 +21,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import date
 from typing import List, Optional
 
+from llms.providers.telemetry import record_usage_safely
+from llms.providers.usage import extract_tokens
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -160,6 +163,7 @@ def route_group_message(
     )
 
     for model in (_ROUTER_MODEL, _FALLBACK_MODEL):
+        start = time.perf_counter()
         try:
             from openai import OpenAI
             client = OpenAI(api_key=api_key, base_url=_GROQ_BASE_URL)
@@ -173,8 +177,31 @@ def route_group_message(
                 temperature=0.0,
             )
             raw = (resp.choices[0].message.content or "").strip()
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            input_tokens, output_tokens = extract_tokens(resp)
+            record_usage_safely(
+                provider="groq",
+                model_name=model,
+                role="group_router",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=latency_ms,
+                success=True,
+                error_type=None,
+            )
             return _parse(raw, is_mentioned)
         except Exception as exc:
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            record_usage_safely(
+                provider="groq",
+                model_name=model,
+                role="group_router",
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=latency_ms,
+                success=False,
+                error_type=type(exc).__name__,
+            )
             logger.warning("group_router: %s failed: %s", model, exc)
 
     return _heuristic(message, is_mentioned)

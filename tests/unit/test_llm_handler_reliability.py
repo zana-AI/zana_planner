@@ -11,8 +11,10 @@ from llms.llm_handler import (  # noqa: E402
     LLMHandler,
     _build_fallback_provider_chain,
     _extract_failed_generation,
+    _has_disallowed_script_for_language,
     _is_fallback_eligible_error,
     _is_tool_choice_mismatch_error,
+    _language_script_guard_instruction,
     _resolve_fallback_provider,
     _resolve_fallback_role_providers,
 )
@@ -438,6 +440,19 @@ def test_strip_internal_reasoning_returns_blank_when_only_protocol_artifacts():
     )
     output = LLMHandler._strip_internal_reasoning(raw)
     assert output == ""
+
+
+def test_persian_script_guard_detects_foreign_script_leakage():
+    assert _has_disallowed_script_for_language("سلام امروز ثبت شد", "fa") is False
+    assert _has_disallowed_script_for_language("سلام 今天 ثبت شد", "fa") is True
+    assert _has_disallowed_script_for_language("سلام क्लब ثبت شد", "fa") is True
+
+
+def test_persian_script_guard_instruction_is_explicit():
+    instruction = _language_script_guard_instruction("fa")
+    assert "Persian/Farsi" in instruction
+    assert "Chinese" in instruction
+    assert "Japanese" in instruction
 
 
 def _build_strict_handler_for_contract() -> LLMHandler:

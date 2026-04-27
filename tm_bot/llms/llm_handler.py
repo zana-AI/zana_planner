@@ -76,6 +76,9 @@ _DEBUG_FOOTER_TO_USER = os.getenv("LLM_DEBUG_USER_FOOTER", "0") == "1"
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
 _MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
+_NON_PERSIAN_FOREIGN_SCRIPT_RE = re.compile(
+    r"[\u0900-\u097f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]"
+)
 
 
 def _is_fallback_eligible_error(err: Exception) -> bool:
@@ -146,6 +149,33 @@ def _extract_failed_generation(err: Exception) -> Optional[dict]:
     except Exception:
         return None
     return loaded if isinstance(loaded, dict) else None
+
+
+def _language_script_guard_instruction(user_language: Optional[str]) -> str:
+    lang = (user_language or "").strip().lower()
+    if lang == "fa":
+        return (
+            "SCRIPT GUARD: Write Persian/Farsi with Persian/Arabic-script letters, "
+            "Persian/Arabic or Latin digits, punctuation, and exact Latin names only. "
+            "Do not output Chinese, Japanese, Korean, Devanagari, Cyrillic, or random foreign words "
+            "unless you are directly quoting the user's latest message."
+        )
+    if lang in {"en", "fr"}:
+        return (
+            "SCRIPT GUARD: Use the normal writing system for the selected language. "
+            "Do not mix in unrelated scripts or random foreign words unless directly quoting the user."
+        )
+    return (
+        "SCRIPT GUARD: Use one consistent writing system for the reply. "
+        "Do not mix in unrelated scripts or random foreign words unless directly quoting the user."
+    )
+
+
+def _has_disallowed_script_for_language(text: str, user_language: Optional[str]) -> bool:
+    lang = (user_language or "").strip().lower()
+    if lang != "fa":
+        return False
+    return bool(_NON_PERSIAN_FOREIGN_SCRIPT_RE.search(text or ""))
 
 
 def _resolve_fallback_provider(
@@ -1627,6 +1657,7 @@ class LLMHandler:
             "Respond in the user's current language setting. "
             "Do NOT change language automatically based on detected language in the message or history."
         )
+        sections.append(_language_script_guard_instruction(current_lang))
         sections.append(
             "Only change language if the user EXPLICITLY asks (e.g., 'switch to English', 'change language to Persian'). "
             "In that case, call update_setting(setting_key='language', setting_value='fr'/'fa'/'en') and respond in the new language."
@@ -2570,6 +2601,7 @@ class LLMHandler:
                     "LANGUAGE: Identify the dominant language of this group from the conversation "
                     "and reply consistently in that language. Do not switch languages between turns."
                 )
+            script_guard_line = _language_script_guard_instruction(user_language)
 
             system_text = "\n".join([
                 "You are Xaana, the accountability coach inside a Telegram group connected to a Xaana club.",
@@ -2615,6 +2647,7 @@ class LLMHandler:
                 "Do not create, update, delete, or log personal promises from a group message.",
                 "If the user asks for a private action or private data, tell them to DM you.",
                 language_line,
+                script_guard_line,
                 "",
                 "Club-level context (ground truth):",
                 *context_lines,
@@ -2679,7 +2712,35 @@ class LLMHandler:
                 content = message_content_to_str(response.content)
             else:
                 content = message_content_to_str(getattr(response, "content", str(response)))
-            return self._strip_internal_reasoning(content).strip() or _LLM_USER_FACING_ERROR
+            content = self._strip_internal_reasoning(content).strip()
+
+            if content and _has_disallowed_script_for_language(content, user_language):
+                logger.warning({
+                    "event": "group_safe_response_script_guard_retry",
+                    "user_language": user_language or "",
+                })
+                retry_prompt = SystemMessage(
+                    content=(
+                        "Your previous answer used characters from the wrong writing system. "
+                        "Answer the user's latest message again, following the LANGUAGE and SCRIPT GUARD exactly. "
+                        "Keep the same meaning and do not mention this correction."
+                    )
+                )
+                try:
+                    retry_response = model.invoke(messages + [retry_prompt])
+                    if isinstance(retry_response, AIMessage):
+                        retry_content = message_content_to_str(retry_response.content)
+                    else:
+                        retry_content = message_content_to_str(
+                            getattr(retry_response, "content", str(retry_response))
+                        )
+                    retry_content = self._strip_internal_reasoning(retry_content).strip()
+                    if retry_content and not _has_disallowed_script_for_language(retry_content, user_language):
+                        content = retry_content
+                except Exception as retry_exc:
+                    logger.warning("Group-safe script guard retry failed: %s", retry_exc)
+
+            return content or _LLM_USER_FACING_ERROR
         except Exception:
             logger.exception("Unexpected error in get_response_group_safe")
             return _LLM_USER_FACING_ERROR

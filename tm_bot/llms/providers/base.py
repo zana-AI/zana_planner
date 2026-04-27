@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import time
 from dataclasses import replace
 from typing import Any, Dict, Optional, Protocol, Sequence
@@ -8,10 +7,8 @@ from typing import Any, Dict, Optional, Protocol, Sequence
 from langchain_core.messages import BaseMessage
 
 from .types import LLMInvokeOptions, NormalizedLLMResult, ProviderCapabilities
+from .telemetry import record_usage_safely
 from .usage import extract_model_name, extract_tokens
-
-_logger = logging.getLogger(__name__)
-
 
 class ProviderAdapter(Protocol):
     name: str
@@ -112,23 +109,14 @@ def _record_usage(
     success: bool,
     error_type: Optional[str],
 ) -> None:
-    """Lazy-imported, exception-swallowing wrapper around llm_usage_repo.log_usage."""
-    try:
-        from repositories.llm_usage_repo import log_usage  # local import to avoid cycles
-    except Exception as exc:
-        _logger.debug("llm_usage_repo unavailable (%s); skipping telemetry", exc)
-        return
-    try:
-        log_usage(
-            provider=provider,
-            model_name=model_name,
-            role=role,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            latency_ms=latency_ms,
-            success=success,
-            error_type=error_type,
-        )
-    except Exception as exc:  # pragma: no cover
-        _logger.debug("log_usage failed (%s); ignoring", exc)
-
+    """Backward-compatible wrapper around shared best-effort telemetry."""
+    record_usage_safely(
+        provider=provider,
+        model_name=model_name,
+        role=role,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        latency_ms=latency_ms,
+        success=success,
+        error_type=error_type,
+    )
