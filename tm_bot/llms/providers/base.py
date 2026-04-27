@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional, Protocol, Sequence
 
 from langchain_core.messages import BaseMessage
 
-from .langfuse_client import trace_generation as _trace_generation
 from .types import LLMInvokeOptions, NormalizedLLMResult, ProviderCapabilities
 from .telemetry import record_usage_safely
 from .usage import extract_model_name, extract_tokens
@@ -149,8 +148,13 @@ def _record_usage(
 
 
 def _emit_trace(**kwargs: Any) -> None:
-    """Best-effort Langfuse trace emit; never raises."""
+    """Best-effort Langfuse trace emit; never raises.
+
+    Imports are deferred so missing module / missing langfuse package /
+    misconfigured env never blocks bot startup on a fresh server.
+    """
     try:
-        _trace_generation(**kwargs)
+        from .langfuse_client import trace_generation
+        trace_generation(**kwargs)
     except Exception:  # pragma: no cover
         pass

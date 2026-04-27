@@ -130,10 +130,17 @@ services:
   # Reachable internally as langfuse-web:3000; nginx fronts it as
   # https://langfuse.xaana.club. All env in /opt/zana-config/.env.langfuse
   # (see docs/plan_langfuse_integration.md for required keys).
+  #
+  # All services are gated behind the "langfuse" profile, so a fresh
+  # `docker compose up -d` (or the existing GH Actions deploy that names
+  # zana-prod/zana-staging/zana-webapp explicitly) will NOT pull or start
+  # them. To bring the stack up:
+  #     docker compose --profile langfuse up -d
   # =========================
   langfuse-postgres:
     image: postgres:16-alpine
     container_name: zana-langfuse-postgres
+    profiles: ["langfuse"]
     environment:
       - POSTGRES_USER=langfuse
       - POSTGRES_PASSWORD=${LANGFUSE_DB_PASSWORD:-langfuse}
@@ -147,6 +154,7 @@ services:
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24.8
     container_name: zana-langfuse-clickhouse
+    profiles: ["langfuse"]
     environment:
       - CLICKHOUSE_DB=default
       - CLICKHOUSE_USER=clickhouse
@@ -165,6 +173,7 @@ services:
   langfuse-redis:
     image: redis:7-alpine
     container_name: zana-langfuse-redis
+    profiles: ["langfuse"]
     command:
       - "redis-server"
       - "--requirepass"
@@ -176,6 +185,7 @@ services:
   langfuse-minio:
     image: minio/minio:RELEASE.2024-08-26T15-33-07Z
     container_name: zana-langfuse-minio
+    profiles: ["langfuse"]
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       - MINIO_ROOT_USER=${LANGFUSE_MINIO_USER:-minio}
@@ -189,6 +199,7 @@ services:
   langfuse-web:
     image: langfuse/langfuse:3
     container_name: zana-langfuse-web
+    profiles: ["langfuse"]
     depends_on:
       - langfuse-postgres
       - langfuse-clickhouse
@@ -205,6 +216,7 @@ services:
   langfuse-worker:
     image: langfuse/langfuse-worker:3
     container_name: zana-langfuse-worker
+    profiles: ["langfuse"]
     depends_on:
       - langfuse-postgres
       - langfuse-clickhouse

@@ -215,6 +215,30 @@ Revisit only if (a) we need preference tuning (A vs. B response ranking at scale
 - **Separate DB** for Langfuse — never reuse the Neon prod URL
 - **Backups encrypted** if self-host (Langfuse data contains full chat content)
 
+## Day-1-on-a-new-server safety
+
+The integration is built so that nothing here blocks bringing the bot up on a
+fresh server before Langfuse itself is configured:
+
+1. **Lazy import.** `providers/base.py::_emit_trace()` imports `langfuse_client`
+   inside its try/except. A missing module, missing `langfuse` pip package, or
+   broken import all degrade silently — the bot keeps running.
+2. **Lazy client construction.** `langfuse_client._get_client()` returns `None`
+   if any of `LANGFUSE_HOST`/`PUBLIC_KEY`/`SECRET_KEY` are unset; trace calls
+   become no-ops.
+3. **Compose profile gate.** All six langfuse services have
+   `profiles: ["langfuse"]` so `docker compose up -d` (or the existing GH
+   Actions deploys, which name `zana-prod`/`zana-staging`/`zana-webapp`
+   explicitly) won't pull or start them. Activate with
+   `docker compose --profile langfuse up -d`.
+4. **nginx block commented out.** The `langfuse.xaana.club` server block in
+   `nginx.conf` is disabled by default to prevent nginx from refusing to start
+   on a server where the cert hasn't been issued yet. Uncomment after the cert
+   is in place (see Phase 2 step 6).
+
+To roll out on a new server: deploy bot first, verify it works, *then* run the
+Phase 2 steps to enable Langfuse.
+
 ---
 
 ## Order of work
