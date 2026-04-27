@@ -3,7 +3,7 @@ import os
 import sys
 
 from langchain_core.tools import StructuredTool
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 TM_BOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tm_bot"))
 if TM_BOT_DIR not in sys.path:
@@ -18,8 +18,10 @@ class FakeModel:
     def __init__(self, responses=None, responder_fn=None):
         self._responses = list(responses or [])
         self._responder_fn = responder_fn
+        self.invocations = []
 
     def invoke(self, messages):
+        self.invocations.append(messages)
         if self._responder_fn is not None:
             return self._responder_fn(messages)
         if not self._responses:
@@ -48,6 +50,13 @@ def _initial_state(user_text: str) -> dict:
         "route_reason": None,
         "executed_actions": [],
     }
+
+
+def _latest_tool_result_summary(messages) -> str:
+    for msg in reversed(messages or []):
+        if isinstance(msg, SystemMessage) and "Executed tool results for this turn" in str(msg.content):
+            return str(msg.content)
+    return ""
 
 
 def test_routed_strategist_query_misplan_recovers_to_read_only_count():
@@ -97,9 +106,9 @@ def test_routed_strategist_query_misplan_recovers_to_read_only_count():
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
     def responder_fn(messages):
-        for msg in reversed(messages):
-            if isinstance(msg, ToolMessage):
-                return AIMessage(content=f"You currently have {msg.content} promises.")
+        summary = _latest_tool_result_summary(messages)
+        if "count_promises" in summary and "-> 3" in summary:
+            return AIMessage(content="You currently have 3 promises.")
         return AIMessage(content="No data.")
 
     responder = FakeModel(responder_fn=responder_fn)
@@ -245,7 +254,7 @@ def test_routed_operator_add_promise_missing_args_infers_from_user_text():
     final_response = (result.get("final_response") or "").lower()
 
     # add_promise requires confirmation in operator mode; ensure inference happened before that gate.
-    assert "just to confirm" in final_response
+    assert "shall i go ahead" in final_response
     pending = result.get("pending_clarification") or {}
     assert pending.get("reason") == "pre_mutation_confirmation"
     assert pending.get("tool_name") == "add_promise"
@@ -294,9 +303,9 @@ def test_routed_strategist_infers_datetime_text_for_resolve_datetime():
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
     def responder_fn(messages):
-        for msg in reversed(messages):
-            if isinstance(msg, ToolMessage):
-                return AIMessage(content=f"Window: {msg.content}")
+        summary = _latest_tool_result_summary(messages)
+        if "resolve_datetime" in summary:
+            return AIMessage(content=f"Window: {summary}")
         return AIMessage(content="No window.")
 
     responder = FakeModel(responder_fn=responder_fn)
@@ -317,3 +326,113 @@ def test_routed_strategist_infers_datetime_text_for_resolve_datetime():
 
     assert "resolved:what are my main tasks next week" in (result.get("final_response") or "").lower()
     assert result.get("pending_clarification") is None
+
+
+def test_routed_responder_receives_no_tool_protocol_or_tool_docs():
+    def _count_promises():
+        return 3
+
+    tools = [
+        StructuredTool.from_function(func=_count_promises, name="count_promises", description="Count user promises."),
+    ]
+    router = FakeModel(
+        [
+            AIMessage(
+                content=json.dumps(
+                    {"mode": "operator", "confidence": "high", "reason": "query_intent"}
+                )
+            )
+        ]
+    )
+    plan = {
+        "steps": [
+            {"kind": "tool", "purpose": "Count promises.", "tool_name": "count_promises", "tool_args": {}},
+            {"kind": "respond", "purpose": "Answer.", "response_hint": "Answer with the count."},
+        ],
+        "detected_intent": "QUERY_PROGRESS",
+        "intent_confidence": "high",
+        "safety": {"requires_confirmation": False},
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+    responder = FakeModel([AIMessage(content="You have 3 promises.")])
+
+    app = create_routed_plan_execute_graph(
+        tools=tools,
+        router_model=router,
+        planner_model=planner,
+        responder_model=responder,
+        router_prompt="Output route JSON.",
+        get_planner_prompt_for_mode=lambda _mode: "Output plan JSON.",
+        get_system_message_for_mode=lambda *_args: SystemMessage(
+            content="=== AVAILABLE TOOLS ===\n- count_promises()\n\n=== LANGUAGE MANAGEMENT ===\nReply in English."
+        ),
+        get_response_system_message_for_mode=lambda *_args: SystemMessage(
+            content="=== LANGUAGE MANAGEMENT ===\nReply in English."
+        ),
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(_initial_state("how many promises do I have"))
+
+    responder_messages = responder.invocations[-1]
+    combined = "\n".join(str(getattr(m, "content", "") or "") for m in responder_messages)
+    assert result.get("final_response") == "You have 3 promises."
+    assert "AVAILABLE TOOLS" not in combined
+    assert "count_promises()" not in combined
+    assert "Executed tool results for this turn" in combined
+    assert not any(isinstance(m, ToolMessage) for m in responder_messages)
+    assert not any(isinstance(m, AIMessage) and getattr(m, "tool_calls", None) for m in responder_messages)
+
+
+def test_routed_engagement_responder_is_not_bound_to_tools():
+    def _memory_write(text: str):
+        return f"saved:{text}"
+
+    tools = [
+        StructuredTool.from_function(func=_memory_write, name="memory_write", description="Save a memory."),
+    ]
+    router = FakeModel(
+        [
+            AIMessage(
+                content=json.dumps(
+                    {"mode": "engagement", "confidence": "high", "reason": "casual_chat"}
+                )
+            )
+        ]
+    )
+    planner = FakeModel(
+        [
+            AIMessage(
+                content=json.dumps(
+                    {
+                        "steps": [],
+                        "final_response_if_no_tools": "planner fallback",
+                        "detected_intent": "NO_OP",
+                        "intent_confidence": "high",
+                        "safety": {"requires_confirmation": False},
+                    }
+                )
+            )
+        ]
+    )
+    responder = FakeModel([AIMessage(content="Nice to hear from you.")])
+
+    app = create_routed_plan_execute_graph(
+        tools=tools,
+        router_model=router,
+        planner_model=planner,
+        responder_model=responder,
+        router_prompt="Output route JSON.",
+        get_planner_prompt_for_mode=lambda _mode: "Output plan JSON.",
+        get_system_message_for_mode=None,
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(_initial_state("my cat is called Rex"))
+
+    assert result.get("final_response") == "Nice to hear from you."
+    combined = "\n".join(str(getattr(m, "content", "") or "") for m in responder.invocations[-1])
+    assert "Do not call or imitate tools" in combined
+    assert "memory_write" not in combined

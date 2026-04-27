@@ -177,6 +177,156 @@ def _sanitize_router_history(messages: Sequence[BaseMessage], max_messages: int 
     return sanitized
 
 
+def _sanitize_responder_history(messages: Sequence[BaseMessage], max_messages: int = 12) -> List[BaseMessage]:
+    """
+    Keep responder context conversational. Tool calls/results are summarized
+    separately so the responder never sees callable protocol messages.
+    """
+    sanitized: List[BaseMessage] = []
+    for msg in messages:
+        if isinstance(msg, (SystemMessage, ToolMessage)):
+            continue
+        if isinstance(msg, AIMessage):
+            if getattr(msg, "tool_calls", None):
+                continue
+            text = message_content_to_str(getattr(msg, "content", "") or "").strip()
+            if not text or _looks_like_protocol_artifact_text(text):
+                continue
+            sanitized.append(AIMessage(content=text))
+            continue
+        if isinstance(msg, HumanMessage):
+            text = message_content_to_str(getattr(msg, "content", "") or "").strip()
+            if not text:
+                continue
+            sanitized.append(HumanMessage(content=text))
+            continue
+    if max_messages > 0:
+        return sanitized[-max_messages:]
+    return sanitized
+
+
+def _summarize_tool_results_for_responder(
+    messages: Sequence[BaseMessage],
+    executed_actions: Optional[Sequence[dict]] = None,
+) -> str:
+    calls_by_id: Dict[str, dict] = {}
+    rows: List[dict] = []
+
+    for msg in messages or []:
+        if isinstance(msg, AIMessage):
+            for call in getattr(msg, "tool_calls", None) or []:
+                if isinstance(call, dict):
+                    call_id = str(call.get("id") or "").strip()
+                    if call_id:
+                        calls_by_id[call_id] = call
+            continue
+        if isinstance(msg, ToolMessage):
+            tool_call_id = str(getattr(msg, "tool_call_id", "") or "").strip()
+            call = calls_by_id.get(tool_call_id, {})
+            rows.append(
+                {
+                    "tool_name": str(call.get("name") or "tool").strip(),
+                    "args": call.get("args") or {},
+                    "result": message_content_to_str(getattr(msg, "content", "") or ""),
+                    "success": True,
+                }
+            )
+
+    if not rows:
+        for action in executed_actions or []:
+            if not isinstance(action, dict):
+                continue
+            rows.append(
+                {
+                    "tool_name": str(action.get("tool_name") or "tool").strip(),
+                    "args": action.get("args") or {},
+                    "result": str(action.get("result") or ""),
+                    "success": bool(action.get("success")),
+                }
+            )
+
+    if not rows:
+        return ""
+
+    lines = [
+        "Executed tool results for this turn. Treat these as trusted internal context.",
+        "Use them to answer naturally; do not expose raw JSON or tool protocol unless the user explicitly asks.",
+    ]
+    used = sum(len(line) + 1 for line in lines)
+    for idx, row in enumerate(rows[-8:], start=1):
+        args = row.get("args") if isinstance(row.get("args"), dict) else {}
+        result = " ".join(str(row.get("result") or "").split())
+        if len(result) > 1400:
+            result = result[:1397] + "..."
+        args_text = json.dumps(args, ensure_ascii=False, default=str)[:500]
+        line = (
+            f"{idx}. {row.get('tool_name') or 'tool'} "
+            f"(success={bool(row.get('success'))}, args={args_text}) -> {result or '(empty result)'}"
+        )
+        line_len = len(line) + 1
+        if used + line_len > 6000:
+            lines.append("... additional tool results omitted for brevity")
+            break
+        lines.append(line)
+        used += line_len
+    return "\n".join(lines)
+
+
+def _strip_tool_sections_from_system_content(content: str) -> str:
+    lines = (content or "").splitlines()
+    kept: List[str] = []
+    skipping = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "=== AVAILABLE TOOLS ===":
+            skipping = True
+            continue
+        if skipping and stripped.startswith("===") and stripped.endswith("==="):
+            skipping = False
+        if not skipping:
+            kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def _build_responder_messages(
+    state: dict,
+    hint: str,
+    system_msg: Optional[SystemMessage] = None,
+) -> List[BaseMessage]:
+    messages = list(state.get("messages") or [])
+    clean_messages: List[BaseMessage] = []
+    if system_msg:
+        content = _strip_tool_sections_from_system_content(str(system_msg.content or ""))
+        if content:
+            clean_messages.append(SystemMessage(content=content))
+
+    clean_messages.extend(_sanitize_responder_history(messages))
+
+    tool_summary = _summarize_tool_results_for_responder(
+        messages,
+        executed_actions=state.get("executed_actions") or [],
+    )
+    if tool_summary:
+        clean_messages.append(SystemMessage(content=tool_summary))
+    if hint:
+        clean_messages.append(SystemMessage(content=hint))
+    return _ensure_messages_have_content(clean_messages)
+
+
+def _step_idx_after_deferred_mutation(plan: Sequence[dict], idx: int) -> int:
+    """Advance past auto-added verification reads when a mutation is only queued."""
+    next_idx = int(idx or 0) + 1
+    while next_idx < len(plan or []):
+        step = dict((plan or [])[next_idx] or {})
+        kind = str(step.get("kind") or "").strip().lower()
+        purpose = str(step.get("purpose") or "").strip().lower()
+        if kind == "tool" and purpose.startswith("verify"):
+            next_idx += 1
+            continue
+        break
+    return next_idx
+
+
 def _json_candidates_from_text(text: str) -> List[str]:
     candidates: List[str] = []
     seen: set[str] = set()
@@ -1753,7 +1903,7 @@ def create_plan_execute_graph(
                     "If retryable is true, suggest the user try again.\n"
                     "Keep it friendly and helpful - don't make the user feel bad about the error."
                 )
-                messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
+                messages_to_send = _build_responder_messages(state, hint)
                 _track_llm_call("responder_error", "responder_model")
                 result = _invoke_model(responder_model, messages_to_send)
             else:
@@ -1779,7 +1929,7 @@ def create_plan_execute_graph(
                     )
                 executed_actions = state.get("executed_actions") or []
                 default_hint += _execution_truth_hint(executed_actions, MUTATION_PREFIXES)
-                messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=default_hint)])
+                messages_to_send = _build_responder_messages(state, default_hint)
                 _track_llm_call("responder_default", "responder_model")
                 result = _invoke_model(responder_model, messages_to_send)
             return {
@@ -1793,7 +1943,11 @@ def create_plan_execute_graph(
 
         if new_iteration > max_iterations:
             # hard stop: respond with best effort
-            validated_messages = _ensure_messages_have_content(state["messages"])
+            max_iter_hint = (
+                "The execution loop hit its safety limit. Give the best user-facing answer from the latest "
+                "conversation and tool-result summary. Do not mention internal loop details."
+            )
+            validated_messages = _build_responder_messages(state, max_iter_hint)
             _track_llm_call("responder_max_iter", "responder_model")
             result = _invoke_model(responder_model, validated_messages)
             return {
@@ -1896,7 +2050,7 @@ def create_plan_execute_graph(
                     "Be reassuring - errors happen!"
                 )
                 hint = hint + failure_hint
-            messages_to_send = _ensure_messages_have_content(state["messages"] + [SystemMessage(content=hint)])
+            messages_to_send = _build_responder_messages(state, hint)
             _track_llm_call("responder_respond_step", "responder_model")
             result = _invoke_model(responder_model, messages_to_send)
             return {
@@ -2114,7 +2268,7 @@ def create_plan_execute_graph(
                     **state,
                     "iteration": new_iteration,
                     "pending_batch_queue": _current_queue,
-                    "step_idx": idx + 1,  # Advance — batch preview shown at respond step
+                    "step_idx": _step_idx_after_deferred_mutation(plan, idx),  # Advance to batch preview
                 }
 
             call_id = f"plan_{idx}_iter_{new_iteration}"
@@ -2238,6 +2392,7 @@ def create_routed_plan_execute_graph(
     router_prompt: str,
     get_planner_prompt_for_mode: Callable[[str], str],
     get_system_message_for_mode: Optional[Callable[[Optional[str], Optional[str], Optional[str]], SystemMessage]] = None,
+    get_response_system_message_for_mode: Optional[Callable[[Optional[str], Optional[str], Optional[str]], SystemMessage]] = None,
     emit_plan: bool = False,
     max_iterations: int = 6,
     progress_getter: Optional[Callable[[], Optional[Callable[[str, dict], None]]]] = None,
@@ -2697,12 +2852,13 @@ def create_routed_plan_execute_graph(
         return repaired, pending_meta_by_idx
     
     def _get_system_message_for_response(mode: str) -> Optional[SystemMessage]:
-        if not get_system_message_for_mode:
+        callback = get_response_system_message_for_mode or get_system_message_for_mode
+        if not callback:
             return None
         from llms.tool_wrappers import _current_user_id, _current_user_language
         user_id = _current_user_id.get()
         user_language = _current_user_language.get()
-        return get_system_message_for_mode(user_id, mode, user_language)
+        return callback(user_id, mode, user_language)
 
     def _last_user_text(messages: List[BaseMessage]) -> str:
         """Return the latest human message text (best effort)."""
@@ -2929,65 +3085,26 @@ def create_routed_plan_execute_graph(
     def executor(state: AgentState) -> AgentState:
         mode = state.get("mode") or "operator"
         
-        # Engagement mode: respond conversationally but allow memory tools
+        # Engagement mode: respond conversationally with no responder-level tools.
         if mode == "engagement":
-            memory_tool_names = {"memory_search", "memory_get", "memory_write", "web_search", "web_fetch"}
-            memory_tools = [t for t in tools if getattr(t, "name", "") in memory_tool_names]
             system_msg = _get_system_message_for_response(mode)
-            base_messages = state["messages"]
-            if system_msg:
-                base_messages = [system_msg] + base_messages
-            messages_to_send = _ensure_messages_have_content(base_messages)
             engagement_hint = (
                 "You are Xaana, a friendly assistant. The user is just chatting. "
                 "Respond warmly, with humor if appropriate, and keep them engaged. "
                 "Keep it short (1-3 sentences). "
                 "Never reveal internal analysis or thinking steps; give only the final user-facing text. "
-                "If the user shares personal facts worth remembering (pets, hobbies, preferences, "
-                "life events, recurring patterns), call memory_write to save them."
+                "Do not call or imitate tools."
             )
-            if memory_tools:
-                _track_llm_call("responder_engagement", "responder_model")
-                bound_model = responder_model.bind_tools(memory_tools)
-                result = _invoke_model(bound_model, messages_to_send + [SystemMessage(content=engagement_hint)])
-                tool_calls = getattr(result, "tool_calls", None) or []
-                new_messages = list(state["messages"]) + [result]
-                if tool_calls:
-                    from langchain_core.messages import ToolMessage as TM
-                    for tc in tool_calls:
-                        t_name = tc.get("name", "")
-                        t_args = tc.get("args", {})
-                        tool_obj = tool_by_name.get(t_name)
-                        if tool_obj:
-                            try:
-                                t_result = tool_obj.invoke(t_args)
-                            except Exception as e:
-                                t_result = f"Error: {e}"
-                            new_messages.append(TM(content=str(t_result), tool_call_id=tc.get("id", "")))
-                    _track_llm_call("responder_engagement_final", "responder_model")
-                    final = _invoke_model(responder_model, _ensure_messages_have_content(
-                        [system_msg] + new_messages + [SystemMessage(content=engagement_hint)] if system_msg
-                        else new_messages + [SystemMessage(content=engagement_hint)]
-                    ))
-                    new_messages.append(final)
-                    return {
-                        **state,
-                        "messages": new_messages,
-                        "final_response": getattr(final, "content", None),
-                    }
-                return {
-                    **state,
-                    "messages": new_messages,
-                    "final_response": getattr(result, "content", None),
-                }
-            else:
-                _track_llm_call("responder_engagement", "responder_model")
-                result = _invoke_model(responder_model, messages_to_send + [SystemMessage(content=engagement_hint)])
-                return {
-                    **state,
-                    "messages": state["messages"] + [result],
-                    "final_response": getattr(result, "content", None),
-                }
+            _track_llm_call("responder_engagement", "responder_model")
+            result = _invoke_model(
+                responder_model,
+                _build_responder_messages(state, engagement_hint, system_msg),
+            )
+            return {
+                **state,
+                "messages": state["messages"] + [result],
+                "final_response": getattr(result, "content", None),
+            }
         
         # If planner already provided final response and there are no steps, finish.
         if state.get("final_response") and not (state.get("plan") or []):
@@ -3012,11 +3129,8 @@ def create_routed_plan_execute_graph(
                     "If retryable is true, suggest the user try again.\n"
                     "Keep it friendly and helpful - don't make the user feel bad about the error."
                 )
-                base_messages = state["messages"]
                 system_msg = _get_system_message_for_response(mode)
-                if system_msg:
-                    base_messages = [system_msg] + base_messages
-                messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=hint)])
+                messages_to_send = _build_responder_messages(state, hint, system_msg)
                 _track_llm_call("routed_responder_error", "responder_model")
                 result = _invoke_model(responder_model, messages_to_send)
             else:
@@ -3040,11 +3154,8 @@ def create_routed_plan_execute_graph(
                     )
                 executed_actions = state.get("executed_actions") or []
                 default_hint += _execution_truth_hint(executed_actions, MUTATION_PREFIXES)
-                base_messages = state["messages"]
                 system_msg = _get_system_message_for_response(mode)
-                if system_msg:
-                    base_messages = [system_msg] + base_messages
-                messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=default_hint)])
+                messages_to_send = _build_responder_messages(state, default_hint, system_msg)
                 _track_llm_call("routed_responder_default", "responder_model")
                 result = _invoke_model(responder_model, messages_to_send)
             return {
@@ -3057,7 +3168,12 @@ def create_routed_plan_execute_graph(
         new_iteration = int(state.get("iteration", 0) or 0) + 1
 
         if new_iteration > max_iterations:
-            validated_messages = _ensure_messages_have_content(state["messages"])
+            system_msg = _get_system_message_for_response(mode)
+            max_iter_hint = (
+                "The execution loop hit its safety limit. Give the best user-facing answer from the latest "
+                "conversation and tool-result summary. Do not mention internal loop details."
+            )
+            validated_messages = _build_responder_messages(state, max_iter_hint, system_msg)
             _track_llm_call("routed_responder_max_iter", "responder_model")
             result = _invoke_model(responder_model, validated_messages)
             return {
@@ -3153,11 +3269,8 @@ def create_routed_plan_execute_graph(
                     "Be reassuring - errors happen!"
                 )
                 hint = hint + failure_hint
-            base_messages = state["messages"]
             system_msg = _get_system_message_for_response(mode)
-            if system_msg:
-                base_messages = [system_msg] + base_messages
-            messages_to_send = _ensure_messages_have_content(base_messages + [SystemMessage(content=hint)])
+            messages_to_send = _build_responder_messages(state, hint, system_msg)
             _track_llm_call("routed_responder_respond_step", "responder_model")
             result = _invoke_model(responder_model, messages_to_send)
             return {
@@ -3347,7 +3460,7 @@ def create_routed_plan_execute_graph(
                     **state,
                     "iteration": new_iteration,
                     "pending_batch_queue": _current_queue,
-                    "step_idx": idx + 1,  # Advance — batch preview shown at respond step
+                    "step_idx": _step_idx_after_deferred_mutation(plan, idx),  # Advance to batch preview
                 }
             
             # Execute tool

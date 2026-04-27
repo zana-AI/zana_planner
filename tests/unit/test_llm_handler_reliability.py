@@ -10,11 +10,13 @@ if TM_BOT_DIR not in sys.path:
 from llms.llm_handler import (  # noqa: E402
     LLMHandler,
     _build_fallback_provider_chain,
+    _build_tool_usage_guidelines,
     _extract_failed_generation,
     _has_disallowed_script_for_language,
     _is_fallback_eligible_error,
     _is_tool_choice_mismatch_error,
     _language_script_guard_instruction,
+    _resolve_group_reply_language,
     _resolve_fallback_provider,
     _resolve_fallback_role_providers,
 )
@@ -453,6 +455,56 @@ def test_persian_script_guard_instruction_is_explicit():
     assert "Persian/Farsi" in instruction
     assert "Chinese" in instruction
     assert "Japanese" in instruction
+
+
+def test_limited_tool_guidance_does_not_reference_unavailable_planner_tools():
+    guidance = "\n".join(
+        _build_tool_usage_guidelines(
+            {"memory_search", "memory_get", "memory_write", "web_search", "web_fetch", "get_tool_help"}
+        )
+    )
+
+    assert "search_promises" not in guidance
+    assert "time_spent" not in guidance
+    assert "memory_write" in guidance
+    assert "web tools" in guidance
+
+
+def test_group_reply_language_uses_persian_for_persian_group_turn_even_when_configured_english():
+    persian_message = "\u0686\u0631\u0627 \u0627\u0646\u06af\u0644\u06cc\u0633\u06cc \u062c\u0648\u0627\u0628 \u0645\u06cc\u062f\u06cc\u061f"
+
+    assert _resolve_group_reply_language("en", persian_message, []) == "fa"
+    assert _resolve_group_reply_language("en", "why are you answering in English?", []) == "en"
+
+
+def test_group_safe_prompt_uses_effective_persian_language():
+    class _CaptureModel:
+        def __init__(self):
+            self.messages = None
+
+        def invoke(self, messages, **_kwargs):
+            self.messages = messages
+            return AIMessage(content="\u0628\u0627\u0634\u0647")
+
+    model = _CaptureModel()
+    handler = object.__new__(LLMHandler)
+    handler.responder_model = model
+    handler.chat_model = model
+    handler._fallback_chain_model_specs = []
+    handler._fallback_responder_model = None
+    handler._fallback_label = None
+
+    persian_message = "\u06a9\u06cc\u0627 \u0628\u0627\u0632\u06cc \u06a9\u0631\u062f\u0646\u061f"
+    result = handler.get_response_group_safe(
+        persian_message,
+        {"recent_messages": [], "member_status": []},
+        "en",
+    )
+
+    system_prompt = model.messages[0].content
+    assert result == "\u0628\u0627\u0634\u0647"
+    assert "Reply in Persian/Farsi" in system_prompt
+    assert "Reply in English" not in system_prompt
 
 
 def _build_strict_handler_for_contract() -> LLMHandler:

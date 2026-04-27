@@ -3,7 +3,7 @@ import os
 import sys
 
 from langchain_core.tools import StructuredTool
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 TM_BOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tm_bot"))
 if TM_BOT_DIR not in sys.path:
@@ -25,6 +25,13 @@ class FakeModel:
         if not self._responses:
             raise RuntimeError("No more fake responses available")
         return self._responses.pop(0)
+
+
+def _latest_tool_result_summary(messages) -> str:
+    for msg in reversed(messages or []):
+        if isinstance(msg, SystemMessage) and "Executed tool results for this turn" in str(msg.content):
+            return str(msg.content)
+    return ""
 
 
 def _get_setting(setting_key: str):
@@ -72,12 +79,8 @@ def test_plan_execute_tool_then_respond_emits_plan_when_enabled():
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
     def responder_fn(messages):
-        last_tool = None
-        for m in reversed(messages):
-            if isinstance(m, ToolMessage):
-                last_tool = m.content
-                break
-        if last_tool == "fr":
+        summary = _latest_tool_result_summary(messages)
+        if "get_setting" in summary and "-> fr" in summary:
             return AIMessage(content="Your preferred language is fr.")
         return AIMessage(content="done")
 
@@ -133,12 +136,8 @@ def test_plan_execute_does_not_emit_plan_when_disabled():
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
     def responder_fn(messages):
-        last_tool = None
-        for m in reversed(messages):
-            if isinstance(m, ToolMessage):
-                last_tool = m.content
-                break
-        if str(last_tool) == "3":
+        summary = _latest_tool_result_summary(messages)
+        if "count_actions_today" in summary and "-> 3" in summary:
             return AIMessage(content="You logged 3 actions today.")
         return AIMessage(content="done")
 
@@ -244,9 +243,9 @@ def test_plan_validation_infers_datetime_text_for_resolve_datetime():
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
     def responder_fn(messages):
-        for msg in reversed(messages):
-            if isinstance(msg, ToolMessage):
-                return AIMessage(content=f"Window: {msg.content}")
+        summary = _latest_tool_result_summary(messages)
+        if "resolve_datetime" in summary:
+            return AIMessage(content=f"Window: {summary}")
         return AIMessage(content="No window.")
 
     responder = FakeModel(responder_fn=responder_fn)
@@ -278,7 +277,7 @@ def test_plan_validation_infers_datetime_text_for_resolve_datetime():
     assert result.get("pending_clarification") is None
 
 
-def test_verify_by_reading_appends_verification_tool_after_mutation():
+def test_mutation_step_asks_confirmation_before_verification():
     calls = []
 
     def _add_action(promise_id: str, time_spent: float):
@@ -315,13 +314,9 @@ def test_verify_by_reading_appends_verification_tool_after_mutation():
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
     def responder_fn(messages):
-        # After verification, last tool output should be "verified"
-        last_tool = None
-        for m in reversed(messages):
-            if isinstance(m, ToolMessage):
-                last_tool = m.content
-                break
-        if last_tool == "verified":
+        # After verification, the responder summary should include "verified".
+        summary = _latest_tool_result_summary(messages)
+        if "get_last_action_on_promise" in summary and "-> verified" in summary:
             return AIMessage(content="Logged and verified.")
         return AIMessage(content="done")
 
@@ -350,12 +345,10 @@ def test_verify_by_reading_appends_verification_tool_after_mutation():
         }
     )
 
-    assert result.get("final_response") == "Logged and verified."
-    # Both mutation and verification tool should have been called.
-    assert ("add_action", "P01", 1.0) in calls
-    assert ("get_last_action_on_promise", "P01") in calls
-    tool_msgs = [m for m in result.get("messages", []) if isinstance(m, ToolMessage)]
-    assert len(tool_msgs) == 2
+    final_response = (result.get("final_response") or "").lower()
+    assert "shall i go ahead" in final_response
+    assert "log 1.0 hour(s) on p01" in final_response
+    assert calls == []
 
 
 def test_retry_once_on_transient_tool_failure():
@@ -378,12 +371,8 @@ def test_retry_once_on_transient_tool_failure():
     planner = FakeModel([AIMessage(content=json.dumps(plan))])
 
     def responder_fn(messages):
-        last_tool = None
-        for m in reversed(messages):
-            if isinstance(m, ToolMessage):
-                last_tool = m.content
-                break
-        if str(last_tool) == "2":
+        summary = _latest_tool_result_summary(messages)
+        if "flaky_tool" in summary and "-> 2" in summary:
             return AIMessage(content="ok:2")
         return AIMessage(content="done")
 
@@ -666,7 +655,9 @@ def test_low_confidence_mutation_asks_confirmation():
     )
 
     # Should ask for confirmation before executing
-    assert "confirm" in (result.get("final_response") or "").lower()
+    final_response = (result.get("final_response") or "").lower()
+    assert "shall i go ahead" in final_response
+    assert "yes or skip" in final_response
     pending = result.get("pending_clarification") or {}
     assert pending.get("reason") == "pre_mutation_confirmation"
     assert pending.get("tool_name") == "add_action"
@@ -674,8 +665,8 @@ def test_low_confidence_mutation_asks_confirmation():
     assert len(calls) == 0
 
 
-def test_high_confidence_mutation_proceeds_normally():
-    """Test that high-confidence mutation tools proceed without confirmation."""
+def test_high_confidence_mutation_still_asks_confirmation():
+    """Test that mutation tools require confirmation even with high confidence."""
     calls = []
 
     def _add_action(promise_id: str, time_spent: float):
@@ -727,11 +718,10 @@ def test_high_confidence_mutation_proceeds_normally():
         }
     )
 
-    # Should proceed without asking for confirmation
-    assert "confirm" not in (result.get("final_response") or "").lower()
-    # Tool should have been called
-    assert ("add_action", "P01", 2.0) in calls
-    assert result.get("final_response") == "Logged 2 hours on P01."
+    final_response = (result.get("final_response") or "").lower()
+    assert "shall i go ahead" in final_response
+    assert "log 2.0 hour(s) on p01" in final_response
+    assert calls == []
 
 
 def test_safety_requires_confirmation_triggers_ask():
@@ -784,7 +774,9 @@ def test_safety_requires_confirmation_triggers_ask():
     )
 
     # Should ask for confirmation even with high confidence
-    assert "confirm" in (result.get("final_response") or "").lower()
+    final_response = (result.get("final_response") or "").lower()
+    assert "shall i go ahead" in final_response
+    assert "yes or skip" in final_response
     pending = result.get("pending_clarification") or {}
     assert pending.get("reason") == "pre_mutation_confirmation"
     # Tool should NOT have been called yet

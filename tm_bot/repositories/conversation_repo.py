@@ -20,6 +20,14 @@ class ConversationRepository:
 
     SESSION_GAP_MINUTES = 30
     _SESSION_ID_RE = re.compile(r"^s-(\d{8}T\d{6}Z)-[0-9a-f]{8}$")
+    _FUNCTION_BLOCK_RE = re.compile(
+        r"(?:<|&lt;)function\b.*?(?:(?:<|&lt;)/function(?:>|&gt;))",
+        re.IGNORECASE | re.DOTALL,
+    )
+    _DSML_BLOCK_RE = re.compile(
+        r"(?:<|&lt;)\|?DSML\|?function_calls.*?(?:(?:<|&lt;)/\|?DSML\|?function_calls(?:>|&gt;))",
+        re.IGNORECASE | re.DOTALL,
+    )
 
     def __init__(self) -> None:
         self._session_column_available: Optional[bool] = None
@@ -68,7 +76,11 @@ class ConversationRepository:
 
     @staticmethod
     def _compact_summary_text(content: str) -> str:
-        return " ".join((content or "").split())
+        text = "" if content is None else str(content)
+        text = ConversationRepository._DSML_BLOCK_RE.sub(" ", text)
+        text = ConversationRepository._FUNCTION_BLOCK_RE.sub(" ", text)
+        text = re.sub(r"\(calling\s+tool\)", " ", text, flags=re.IGNORECASE)
+        return " ".join(text.split())
 
     def _has_conversation_session_column(self, session) -> bool:
         """Cache whether conversations.conversation_session_id exists."""

@@ -84,3 +84,17 @@ def test_recent_summary_is_chronological_and_session_aware(monkeypatch):
     assert any("importance_score" in m for m in history_desc)
     assert history_desc[3].get("intent_category") == "promise_creation"
 
+
+def test_recent_summary_strips_bot_tool_call_artifacts():
+    raw = (
+        "I will check that. "
+        '<function=name="memory_search" {"query": "schedule"}></function> '
+        "Here is the user-facing part."
+    )
+
+    cleaned = ConversationRepository._compact_summary_text(raw)
+
+    assert "I will check that." in cleaned
+    assert "Here is the user-facing part." in cleaned
+    assert "function" not in cleaned
+    assert "memory_search" not in cleaned
