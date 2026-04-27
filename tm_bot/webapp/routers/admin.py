@@ -620,6 +620,10 @@ async def get_llm_usage(
         total_cost = sum(
             (row.get("estimated_cost_usd") or 0.0) for row in per_model
         )
+        # Surface the configured Langfuse base URL to the admin UI so the
+        # frontend can render "Open in Langfuse" deep-links. None when
+        # Langfuse isn't set up — frontend hides the link entirely.
+        langfuse_url = (os.environ.get("LANGFUSE_HOST") or "").strip() or None
         return {
             "window_hours": int(hours),
             "totals": {
@@ -627,10 +631,29 @@ async def get_llm_usage(
                 "estimated_cost_usd": round(total_cost, 4),
             },
             "per_model": per_model,
+            "langfuse_url": langfuse_url,
         }
     except Exception as e:
         logger.exception(f"Error computing llm usage: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to compute llm usage: {str(e)}")
+
+
+@router.post("/traces/{trace_id}/flag")
+async def flag_langfuse_trace(
+    trace_id: str,
+    admin_id: int = Depends(get_admin_user),
+):
+    """Mark a Langfuse trace as needing human review (writes a `needs_review`
+    score). Returns 503 when Langfuse isn't configured on this server."""
+    try:
+        from llms.providers.langfuse_client import flag_trace
+    except Exception as exc:
+        logger.warning("Langfuse client import failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Langfuse client unavailable")
+    result = flag_trace(trace_id=trace_id, flagged_by=admin_id)
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("message") or "flag failed")
+    return {"trace_id": trace_id, "status": "flagged"}
 
 
 @router.get("/users", response_model=AdminUsersResponse)

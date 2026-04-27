@@ -1330,6 +1330,18 @@ class MessageHandlers:
         user_message_override: Optional[str] = None,
     ) -> None:
         """Core general text-message flow (single run, no queue orchestration)."""
+        # Tag downstream LLM calls with Telegram identifiers so Langfuse can
+        # group traces by chat. No-op (silently swallowed) if Langfuse is not
+        # installed or configured.
+        try:
+            from llms.providers.langfuse_client import set_bot_context as _lf_set_ctx
+            _lf_set_ctx(
+                user_id=getattr(getattr(update, "effective_user", None), "id", None),
+                chat_id=getattr(getattr(update, "effective_chat", None), "id", None),
+                message_id=getattr(getattr(update, "message", None), "message_id", None),
+            )
+        except Exception:
+            pass
         try:
             user_message = (
                 user_message_override

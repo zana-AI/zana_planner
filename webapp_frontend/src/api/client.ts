@@ -62,6 +62,7 @@ export interface AdminLLMUsageResponse {
     estimated_cost_usd: number;
   };
   per_model: AdminLLMUsageRow[];
+  langfuse_url?: string | null;
 }
 
 /**

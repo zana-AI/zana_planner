@@ -78,6 +78,17 @@ function LLMUsageSection() {
               {opt.label}
             </button>
           ))}
+          {data?.langfuse_url && (
+            <a
+              href={data.langfuse_url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="admin-llm-usage-langfuse-link"
+              title="Open Langfuse dashboard for trace exploration"
+            >
+              Open Langfuse →
+            </a>
+          )}
         </div>
       </div>
 

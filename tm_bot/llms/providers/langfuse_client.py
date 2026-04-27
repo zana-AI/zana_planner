@@ -198,6 +198,35 @@ def trace_generation(
         _logger.debug("trace_generation submit failed (%s); ignoring", exc)
 
 
+def flag_trace(
+    *,
+    trace_id: str,
+    flagged_by: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Synchronously flag a trace for human review by writing a Langfuse
+    score (`name="needs_review"`, `value=1`).
+
+    Returns ``{"ok": bool, "message": str}``. Never raises — admin endpoint
+    surfaces ``ok=False`` as a 503.
+    """
+    client = _get_client()
+    if client is None:
+        return {"ok": False, "message": "Langfuse not configured"}
+    try:
+        client.score(
+            trace_id=trace_id,
+            name="needs_review",
+            value=1,
+            comment=(
+                f"flagged_by_admin={flagged_by}" if flagged_by is not None else None
+            ),
+        )
+        return {"ok": True, "message": "flagged"}
+    except Exception as exc:
+        _logger.warning("Langfuse flag_trace failed (%s)", exc)
+        return {"ok": False, "message": f"langfuse score failed: {exc}"}
+
+
 def _send_trace(
     *,
     provider: str,
