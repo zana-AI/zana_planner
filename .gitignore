@@ -9,6 +9,7 @@ env.*
 !webapp_frontend/tsconfig.node.json
 *.txt
 *.md
+!.claude/skills/**/*.md
 *.jar
 *.mp3
 !requirements*
