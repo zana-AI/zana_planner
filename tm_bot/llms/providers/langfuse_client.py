@@ -214,14 +214,27 @@ def flag_trace(
     if client is None:
         return {"ok": False, "message": "Langfuse not configured"}
     try:
-        client.score(
-            trace_id=trace_id,
-            name="needs_review",
-            value=1,
-            comment=(
-                f"flagged_by_admin={flagged_by}" if flagged_by is not None else None
-            ),
+        comment = (
+            f"flagged_by_admin={flagged_by}" if flagged_by is not None else None
         )
+        if hasattr(client, "score"):
+            client.score(
+                trace_id=trace_id,
+                name="needs_review",
+                value=1,
+                comment=comment,
+            )
+        elif hasattr(client, "create_score"):
+            client.create_score(
+                trace_id=trace_id,
+                name="needs_review",
+                value=1,
+                data_type="BOOLEAN",
+                comment=comment,
+            )
+        else:
+            return {"ok": False, "message": "Langfuse score API unavailable"}
+        _flush_client(client)
         return {"ok": True, "message": "flagged"}
     except Exception as exc:
         _logger.warning("Langfuse flag_trace failed (%s)", exc)
@@ -252,29 +265,69 @@ def _send_trace(
         rendered_input = [_render_message(m, redact) for m in messages_in]
         rendered_output = _redact(output_text) if redact else output_text
 
-        trace = client.trace(
-            name=f"xaana.{role or 'llm'}",
-            user_id=user_id,
-            session_id=chat_id,
-            metadata={
-                "message_id": message_id,
-                "provider": provider,
-                "redacted": redact,
-            },
-        )
-        trace.generation(
-            name=role or "llm",
-            model=model_name,
-            input=rendered_input,
-            output=rendered_output,
-            usage={
-                "input": input_tokens,
-                "output": output_tokens,
-                "total": input_tokens + output_tokens,
-            },
-            metadata={"latency_ms": latency_ms, "provider": provider},
-            level="ERROR" if not success else "DEFAULT",
-            status_message=error_type,
-        )
+        trace_name = f"xaana.{role or 'llm'}"
+        trace_metadata = {
+            "message_id": message_id,
+            "provider": provider,
+            "redacted": redact,
+        }
+        level = "ERROR" if not success else "DEFAULT"
+
+        if hasattr(client, "trace"):
+            trace = client.trace(
+                name=trace_name,
+                user_id=user_id,
+                session_id=chat_id,
+                metadata=trace_metadata,
+            )
+            trace.generation(
+                name=role or "llm",
+                model=model_name,
+                input=rendered_input,
+                output=rendered_output,
+                usage={
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": input_tokens + output_tokens,
+                },
+                metadata={"latency_ms": latency_ms, "provider": provider},
+                level=level,
+                status_message=error_type,
+            )
+        elif hasattr(client, "start_as_current_generation"):
+            with client.start_as_current_generation(
+                name=role or "llm",
+                model=model_name,
+                input=rendered_input,
+                output=rendered_output,
+                usage_details={
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": input_tokens + output_tokens,
+                },
+                metadata={"latency_ms": latency_ms, "provider": provider},
+                level=level,
+                status_message=error_type,
+            ):
+                if hasattr(client, "update_current_trace"):
+                    client.update_current_trace(
+                        name=trace_name,
+                        user_id=user_id,
+                        session_id=chat_id,
+                        metadata=trace_metadata,
+                    )
+        else:
+            _logger.warning("Langfuse trace API unavailable; tracing disabled")
+            return
+        _flush_client(client)
     except Exception as exc:  # pragma: no cover
         _logger.debug("Langfuse send failed (%s); ignoring", exc)
+
+
+def _flush_client(client: Any) -> None:
+    try:
+        flush = getattr(client, "flush", None)
+        if callable(flush):
+            flush()
+    except Exception as exc:  # pragma: no cover
+        _logger.debug("Langfuse flush failed (%s); ignoring", exc)
