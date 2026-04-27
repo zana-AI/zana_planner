@@ -4,7 +4,7 @@ Lazy singleton + fire-and-forget `trace_generation()`. All errors are
 swallowed so a Langfuse outage never crashes the bot, mirroring the
 swallow-all pattern in `providers.telemetry.record_usage_safely`.
 
-Configuration via env (any one missing -> tracing disabled silently):
+Configuration via env (any one missing -> tracing disabled and logged once):
     LANGFUSE_HOST           e.g. https://langfuse.xaana.club  or cloud.langfuse.com
     LANGFUSE_PUBLIC_KEY     pk-lf-...
     LANGFUSE_SECRET_KEY     sk-lf-...
@@ -22,14 +22,15 @@ are still sent, just ungrouped.
 from __future__ import annotations
 
 import contextvars
-import logging
 import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Sequence
 
-_logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+
+_logger = get_logger(__name__)
 
 
 # --- Per-message context ----------------------------------------------------
@@ -94,7 +95,7 @@ def _get_client() -> Any:
         secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
         host = os.environ.get("LANGFUSE_HOST", "").strip()
         if not (public_key and secret_key and host):
-            _logger.info(
+            _logger.warning(
                 "Langfuse not configured (missing LANGFUSE_HOST/PUBLIC_KEY/SECRET_KEY); "
                 "tracing disabled"
             )
