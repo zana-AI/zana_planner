@@ -2779,6 +2779,7 @@ class LLMHandler:
                     non_latin = str(member.get("non_latin_name") or "").strip()
                     latin = str(member.get("latin_name") or "").strip()
                     username = str(member.get("username") or "").strip()
+                    username = username.lstrip("@")
                     if non_latin:
                         aliases.append(f"non-Latin: {non_latin}")
                     if latin:
@@ -2957,7 +2958,7 @@ class LLMHandler:
                 "Recent check-ins: answer only from Today's check-ins and Recent check-ins above. If the question asks outside the provided recent window, say the available window is limited.",
                 "Membership/name questions: answer from Club member aliases ONLY. If a queried name or alias appears there, say yes; if not, say it is not in the club context.",
                 "Name resolution: when a message mentions a person, match it to Club member aliases.",
-                "Ignore honorifics like 'جان' (dear), 'خانم' (Ms.), and 'آقا' (Mr.) when matching names.",
+                "Ignore Persian honorifics like 'جان' (dear), 'خانم' (Ms.), and 'آقا' (Mr.) when matching names.",
                 "If you address a member directly, prefer @username when available.",
                 "You may list club member display names when directly asked in this group, but do not share any private data beyond the names and check-in status shown in club context.",
                 "Do not use or mention private user data, private promises, private memories, or DM history.",
