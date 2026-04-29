@@ -2747,6 +2747,7 @@ class LLMHandler:
                 for alias in (group_context.get("bot_self_aliases") or [])
                 if str(alias).strip()
             ][:12]
+            sender_name = str(group_context.get("sender_name") or "").strip()
 
             context_lines = [
                 f"Club name: {club_name}",
@@ -2754,6 +2755,8 @@ class LLMHandler:
                 f"Conversation state: {conversation_state}",
                 f"Response mode: {response_mode}",
             ]
+            if sender_name:
+                context_lines.append(f"Current sender: {sender_name}")
             if bot_self_aliases:
                 context_lines.append(f"Bot self aliases: {', '.join(bot_self_aliases)}")
             if target_text:
@@ -2775,10 +2778,13 @@ class LLMHandler:
                     aliases = []
                     non_latin = str(member.get("non_latin_name") or "").strip()
                     latin = str(member.get("latin_name") or "").strip()
+                    username = str(member.get("username") or "").strip().lstrip("@")
                     if non_latin:
                         aliases.append(f"non-Latin: {non_latin}")
                     if latin:
                         aliases.append(f"Latin: {latin}")
+                    if username:
+                        aliases.append(f"username: @{username}")
                     suffix = f" ({'; '.join(aliases)})" if aliases else ""
                     member_alias_lines.append(f"{member['name']}{suffix}")
                 done = [m["name"] for m in member_status if m.get("status") == "done"]
@@ -2847,7 +2853,6 @@ class LLMHandler:
                         "Use this focused reply context first for short follow-ups; use the transcript only after that.",
                     ]
 
-            sender_name = str(group_context.get("sender_name") or "").strip()
             sender_checked_in = bool(group_context.get("sender_checked_in"))
             latest_sender_text = _extract_latest_sender_message(recent_messages, sender_name)
             current_turn_text = user_message or latest_sender_text
@@ -2951,6 +2956,7 @@ class LLMHandler:
                 "Check-in status: answer questions about who checked in ONLY from the club context data.",
                 "Recent check-ins: answer only from Today's check-ins and Recent check-ins above. If the question asks outside the provided recent window, say the available window is limited.",
                 "Membership/name questions: answer from Club member aliases ONLY. If a queried name or alias appears there, say yes; if not, say it is not in the club context.",
+                "Name resolution: when a message mentions a person, match it to Club member aliases (ignore honorifics like 'جان', 'خانم', 'آقا'); if you address them, prefer @username when available.",
                 "You may list club member display names when directly asked in this group, but do not share any private data beyond the names and check-in status shown in club context.",
                 "Do not use or mention private user data, private promises, private memories, or DM history.",
                 "Do not create, update, delete, or log personal promises from a group message.",
