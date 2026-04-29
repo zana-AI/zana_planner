@@ -312,6 +312,24 @@ def _is_group_address_only(text: str) -> bool:
     return not mention_stripped
 
 
+def _is_tiny_group_followup(text: str) -> bool:
+    normalized = _normalize_group_text(text)
+    if not normalized or _is_group_address_only(normalized):
+        return False
+    if _asks_for_checkin_status(normalized):
+        return False
+    if any(token in normalized for token in ("check in", "checkin", "/status", "status")):
+        return False
+
+    compact = re.sub(r"@\w+", "", normalized)
+    compact = re.sub(r"[\s,.;:!?\u061f\u060c\u061b_\-~]+", " ", compact).strip()
+    if not compact:
+        return False
+    if len(compact) <= 16:
+        return True
+    return len(compact.split()) <= 3 and len(compact) <= 28
+
+
 def _extract_latest_sender_message(recent_messages: List[dict], sender_name: str) -> str:
     sender = str(sender_name or "").strip().lower()
     if not sender:
@@ -2832,13 +2850,13 @@ class LLMHandler:
             sender_name = str(group_context.get("sender_name") or "").strip()
             sender_checked_in = bool(group_context.get("sender_checked_in"))
             latest_sender_text = _extract_latest_sender_message(recent_messages, sender_name)
-            current_turn_text = latest_sender_text or user_message
+            current_turn_text = user_message or latest_sender_text
             is_address_only_turn = _is_group_address_only(current_turn_text)
+            is_tiny_followup = _is_tiny_group_followup(current_turn_text)
             sender_shared_completion = _looks_like_completion_evidence(current_turn_text)
-            sender_asked_checkin_status = _asks_for_checkin_status(current_turn_text)
             should_nudge_checkin_button = (
                 (not sender_checked_in)
-                and (sender_shared_completion or sender_asked_checkin_status)
+                and sender_shared_completion
                 and (not is_proactive)
                 and (not is_short_reply)
             )
@@ -2887,11 +2905,11 @@ class LLMHandler:
                 "  a photo description, a workout share, a game result, a simple 'I did it!' — celebrate it",
                 "  warmly and genuinely. Recognise the effort. Engage with the social energy (challenges,",
                 "  taunts, streaks).",
-                *(["- This member has NOT checked in yet today and this turn includes a fresh completion update",
-                   "  or a check-in-status question. You may add ONE gentle check-in reminder (button/daily reminder).",
+                *(["- This member has NOT checked in yet today and this turn includes a fresh completion update.",
+                   "  You may add ONE gentle check-in reminder (button/daily reminder).",
                    "  If bot reminders were already repeated recently, skip the reminder and focus on acknowledgment/help."]
                   if should_nudge_checkin_button and not suppress_nudge_due_to_repetition else
-                  ["- Do NOT add a check-in reminder in this turn unless the member asks about check-in logging",
+                  ["- Do NOT add a check-in reminder in this turn unless the member asks how to log a check-in",
                    "  or shares a fresh completion update right now."]),
                 *(["- This member has already checked in today. Just celebrate - do NOT mention the check-in button."]
                   if sender_checked_in else []),
@@ -2900,6 +2918,9 @@ class LLMHandler:
                 *(["- This is only an address/ping without content. Reply briefly and naturally,",
                    "  and do NOT add check-in reminders or check-in stats in this turn."]
                   if is_address_only_turn else []),
+                *(["- This is a tiny follow-up. Answer only the narrow point in the latest message;",
+                   "  do NOT recap club status, checked-in/pending members, streaks, or motivation unless directly requested."]
+                  if is_tiny_followup else []),
                 *(["- You noticed this activity proactively (the member didn't ask you anything).",
                    "  Keep your reaction short, warm, and natural — 1-2 sentences max. Don't over-explain."]
                   if is_proactive else []),
@@ -2907,7 +2928,7 @@ class LLMHandler:
                   if is_short_reply else []),
                 *(["- SHORT_REPLY means one concise line. Do not include check-in stats, pending lists, or reminders unless the latest user directly asked for them."]
                   if is_short_reply else []),
-                "- Do not inject today's check-in stats into social banter, off-topic questions, or casual replies unless the user directly asks for status or you must correct a false status claim.",
+                "- Only mention check-in status when the latest message asks for it, corrects a false claim, or reports fresh completion.",
                 *(["- Persian style: use casual, conversational Persian. Avoid bookish phrasing, unnecessary formality, and awkward mixed-language words."]
                   if effective_language == "fa" else []),
                 "- If a member is struggling, skipping, or frustrated, be empathetic first, then encouraging.",

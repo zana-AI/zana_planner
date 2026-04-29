@@ -660,6 +660,35 @@ def test_group_safe_short_reply_prompt_forbids_status_spam():
     assert "Do not include check-in stats" in system_prompt
 
 
+def test_group_safe_prompt_uses_current_turn_for_checkin_nudge_detection():
+    system_prompt = _capture_group_safe_prompt(
+        "say you",
+        {
+            "sender_name": "Mahmoud",
+            "sender_checked_in": False,
+            "recent_messages": [{"sender_name": "Mahmoud", "text": "Who checked in today?"}],
+            "member_status": [{"name": "Mahmoud", "status": "pending"}],
+        },
+    )
+
+    assert "Do NOT add a check-in reminder" in system_prompt
+    assert "You may add ONE gentle check-in reminder" not in system_prompt
+
+
+def test_group_safe_tiny_followup_prompt_forbids_status_recaps():
+    system_prompt = _capture_group_safe_prompt(
+        "what about me",
+        {
+            "conversation_state": "active",
+            "recent_messages": [{"sender_name": "Xaana", "text": "Sepideh has an 8-day streak.", "is_bot": True}],
+            "member_status": [{"name": "Mahmoud", "status": "pending"}],
+        },
+    )
+
+    assert "This is a tiny follow-up" in system_prompt
+    assert "do NOT recap club status" in system_prompt
+
+
 def test_group_safe_script_guard_falls_back_if_retry_still_bad():
     class _BadScriptModel:
         def __init__(self):

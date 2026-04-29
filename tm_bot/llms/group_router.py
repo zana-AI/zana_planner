@@ -134,7 +134,16 @@ Current message from {sender}:
 {message}"""
 
 _ACK_RE = re.compile(
-    r"^(ok|okay|k|yes|no|yep|nope|thanks|thank you|agreed|agree|cool|nice)$",
+    r"^(ok|okay|k|yes|no|yep|nope|thanks|thank you|agreed|agree|cool|nice|"
+    r"\u0628\u0627\u0634\u0647|\u0627\u0648\u06a9\u06cc|\u0645\u0631\u0633\u06cc|"
+    r"\u0645\u0645\u0646\u0648\u0646|\u0622\u0631\u0647|\u0627\u0631\u0647|"
+    r"\u0646\u0647|\u062e\u0648\u0628\u0647|\u0639\u0627\u0644\u06cc\u0647|"
+    r"\u0645\u0648\u0627\u0641\u0642\u0645|\u0627\u06cc\u0648\u0644)$",
+    re.IGNORECASE,
+)
+
+_STATUS_RE = re.compile(
+    r"\b(who checked|who check(?:ed)? in|how many checked|check-?in status|status)\b",
     re.IGNORECASE,
 )
 
@@ -267,12 +276,24 @@ def _is_short_ack(message: str) -> bool:
     return bool(cleaned) and len(cleaned) <= 24 and bool(_ACK_RE.match(cleaned))
 
 
+def _is_direct_status_question(message: str) -> bool:
+    cleaned = _message_without_mentions(message)
+    return bool(cleaned) and bool(_STATUS_RE.search(cleaned))
+
+
 def _pre_route(message: str, is_mentioned: bool, reply_to_bot: bool = False) -> Optional[RouterDecision]:
     cleaned = _message_without_mentions(message)
     if not cleaned:
         if is_mentioned or reply_to_bot:
             return _decision("REACT_EMOJI", "address-only", is_mentioned, "👀")
         return _decision("IGNORE", "empty", is_mentioned, "👍")
+    tiny_cleaned = cleaned.strip(" \t\r\n.,!?:;-_")
+    if len(tiny_cleaned) <= 1:
+        if is_mentioned or reply_to_bot:
+            return _decision("REACT_EMOJI", "tiny ping", is_mentioned, "👀")
+        return _decision("IGNORE", "one-character noise", is_mentioned, "👍")
+    if (is_mentioned or reply_to_bot) and _is_direct_status_question(cleaned):
+        return _decision("FULL_REPLY", "direct club/status question", is_mentioned, "🎯")
     if _is_emoji_only(cleaned):
         return _decision("REACT_EMOJI", "emoji-only", is_mentioned, "😂")
     if _is_short_ack(cleaned):

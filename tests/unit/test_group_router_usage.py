@@ -121,6 +121,46 @@ def test_group_router_pre_routes_emoji_only_without_groq(monkeypatch):
     assert decision.reason == "emoji-only"
 
 
+def test_group_router_pre_routes_persian_short_ack_without_groq(monkeypatch):
+    def _fail_openai(*_args, **_kwargs):
+        raise AssertionError("Groq should not be called for obvious short acknowledgements")
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_fail_openai))
+
+    decision = group_router.route_group_message(
+        message="\u0646\u0647",
+        sender="Mahmoud",
+        vibe="playful",
+        is_mentioned=False,
+        sender_checked_in=False,
+        recent_messages=[],
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "REACT_EMOJI"
+    assert decision.reason == "short acknowledgement"
+
+
+def test_group_router_pre_routes_one_character_noise_without_groq(monkeypatch):
+    def _fail_openai(*_args, **_kwargs):
+        raise AssertionError("Groq should not be called for one-character noise")
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_fail_openai))
+
+    decision = group_router.route_group_message(
+        message="\u0628",
+        sender="Mahmoud",
+        vibe="playful",
+        is_mentioned=False,
+        sender_checked_in=False,
+        recent_messages=[],
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "IGNORE"
+    assert decision.reason == "one-character noise"
+
+
 def test_group_router_pre_routes_direct_status_question_without_groq(monkeypatch):
     def _fail_openai(*_args, **_kwargs):
         raise AssertionError("Groq should not be called for obvious status question")
