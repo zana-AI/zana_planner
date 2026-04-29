@@ -2,18 +2,37 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../api/client';
 import type { AdminClubSetupSummary } from '../../types';
 
+type ClubContextDraft = {
+  description: string;
+  club_goal: string;
+  vibe: string;
+  checkin_what_counts: string;
+};
+
 interface ClubsTelegramSetupTabProps {
   highlightClubId?: string | null;
   onError: (message: string) => void;
+}
+
+function contextDraftFromClub(club: AdminClubSetupSummary): ClubContextDraft {
+  return {
+    description: club.description || '',
+    club_goal: club.club_goal || '',
+    vibe: club.vibe || '',
+    checkin_what_counts: club.checkin_what_counts || '',
+  };
 }
 
 export function ClubsTelegramSetupTab({ highlightClubId, onError }: ClubsTelegramSetupTabProps) {
   const [clubs, setClubs] = useState<AdminClubSetupSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [savingByClub, setSavingByClub] = useState<Record<string, boolean>>({});
+  const [savingContextByClub, setSavingContextByClub] = useState<Record<string, boolean>>({});
   const [linksByClub, setLinksByClub] = useState<Record<string, string>>({});
+  const [contextByClub, setContextByClub] = useState<Record<string, ClubContextDraft>>({});
   const [status, setStatus] = useState<'pending' | 'ready' | 'all'>(highlightClubId ? 'all' : 'pending');
   const [savedClubId, setSavedClubId] = useState<string | null>(null);
+  const [savedContextClubId, setSavedContextClubId] = useState<string | null>(null);
 
   const fetchClubs = async () => {
     setLoading(true);
@@ -25,6 +44,15 @@ export function ClubsTelegramSetupTab({ highlightClubId, onError }: ClubsTelegra
         response.clubs.forEach((club) => {
           if (!(club.club_id in next)) {
             next[club.club_id] = club.telegram_invite_link || '';
+          }
+        });
+        return next;
+      });
+      setContextByClub((prev) => {
+        const next = { ...prev };
+        response.clubs.forEach((club) => {
+          if (!(club.club_id in next)) {
+            next[club.club_id] = contextDraftFromClub(club);
           }
         });
         return next;
@@ -69,6 +97,38 @@ export function ClubsTelegramSetupTab({ highlightClubId, onError }: ClubsTelegra
       onError(err instanceof Error ? err.message : 'Failed to save Telegram link.');
     } finally {
       setSavingByClub((prev) => ({ ...prev, [club.club_id]: false }));
+    }
+  };
+
+  const updateContextDraft = (clubId: string, field: keyof ClubContextDraft, value: string) => {
+    setContextByClub((prev) => ({
+      ...prev,
+      [clubId]: {
+        ...(prev[clubId] || { description: '', club_goal: '', vibe: '', checkin_what_counts: '' }),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveContext = async (club: AdminClubSetupSummary) => {
+    const draft = contextByClub[club.club_id] || contextDraftFromClub(club);
+    setSavingContextByClub((prev) => ({ ...prev, [club.club_id]: true }));
+    setSavedContextClubId(null);
+    try {
+      const updated = await apiClient.updateAdminClubContext(club.club_id, {
+        description: draft.description.trim(),
+        club_goal: draft.club_goal.trim(),
+        vibe: draft.vibe.trim(),
+        checkin_what_counts: draft.checkin_what_counts.trim(),
+      });
+      setClubs((prev) => prev.map((item) => (item.club_id === updated.club_id ? updated : item)));
+      setContextByClub((prev) => ({ ...prev, [updated.club_id]: contextDraftFromClub(updated) }));
+      setSavedContextClubId(updated.club_id);
+    } catch (err) {
+      console.error('Failed to save club context:', err);
+      onError(err instanceof Error ? err.message : 'Failed to save club context.');
+    } finally {
+      setSavingContextByClub((prev) => ({ ...prev, [club.club_id]: false }));
     }
   };
 
@@ -145,6 +205,72 @@ export function ClubsTelegramSetupTab({ highlightClubId, onError }: ClubsTelegra
             {savedClubId === club.club_id ? (
               <div className="admin-club-success">Saved. Creator notification queued.</div>
             ) : null}
+
+            <details className="admin-club-context" open={club.club_id === highlightClubId}>
+              <summary>Club context</summary>
+              <div className="admin-club-context-grid">
+                <label>
+                  <span>Description</span>
+                  <textarea
+                    value={(contextByClub[club.club_id] || contextDraftFromClub(club)).description}
+                    onChange={(event) => updateContextDraft(club.club_id, 'description', event.target.value)}
+                    rows={3}
+                    placeholder="Who is this club for, and what brings members together?"
+                  />
+                </label>
+                <label>
+                  <span>Goal</span>
+                  <textarea
+                    value={(contextByClub[club.club_id] || contextDraftFromClub(club)).club_goal}
+                    onChange={(event) => updateContextDraft(club.club_id, 'club_goal', event.target.value)}
+                    rows={3}
+                    placeholder="What should Xaana help this club create in members' lives?"
+                  />
+                </label>
+                <label>
+                  <span>Vibe</span>
+                  <textarea
+                    value={(contextByClub[club.club_id] || contextDraftFromClub(club)).vibe}
+                    onChange={(event) => updateContextDraft(club.club_id, 'vibe', event.target.value)}
+                    rows={2}
+                    placeholder="Warm, direct, playful, strict, gentle..."
+                  />
+                </label>
+                <label>
+                  <span>What counts as check-in</span>
+                  <textarea
+                    value={(contextByClub[club.club_id] || contextDraftFromClub(club)).checkin_what_counts}
+                    onChange={(event) => updateContextDraft(club.club_id, 'checkin_what_counts', event.target.value)}
+                    rows={2}
+                    placeholder="Define the concrete action members should report."
+                  />
+                </label>
+              </div>
+
+              <div className="admin-club-context-hint">
+                <div>Example club context:</div>
+                <ul>
+                  <li>A small mutual-aid club where members help each other keep one weekly promise that benefits someone beyond themselves.</li>
+                  <li>The goal is to turn good intentions into visible acts of care: calls, donations, volunteering, mentoring, or checking on someone.</li>
+                  <li>Xaana should sound warm, practical, and gently accountable: celebrate tiny acts, ask clear follow-up questions, and avoid guilt.</li>
+                  <li>A check-in counts when a member reports one concrete action they took for another person or community this week.</li>
+                </ul>
+              </div>
+
+              <div className="admin-club-context-actions">
+                <button
+                  type="button"
+                  className="admin-select-all-btn"
+                  disabled={!!savingContextByClub[club.club_id]}
+                  onClick={() => saveContext(club)}
+                >
+                  {savingContextByClub[club.club_id] ? 'Saving...' : 'Save context'}
+                </button>
+                {savedContextClubId === club.club_id ? (
+                  <span className="admin-club-success">Context saved.</span>
+                ) : null}
+              </div>
+            </details>
           </article>
         ))}
       </div>

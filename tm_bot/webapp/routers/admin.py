@@ -12,6 +12,7 @@ import shutil
 import threading
 import asyncio
 import html
+import time
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Literal
@@ -23,14 +24,15 @@ from ..schemas import (
     BroadcastResponse, BotTokenResponse, ConversationResponse, ConversationMessage,
     GenerateTemplateRequest, CreatePromiseForUserRequest, DayReminder,
     RunTestsRequest, TestRunResponse, TestReportResponse,
-    AdminClubSetupResponse, AdminClubSetupSummary, UpdateClubTelegramRequest
+    AdminClubSetupResponse, AdminClubSetupSummary, UpdateClubTelegramRequest,
+    UpdateClubContextRequest, AdminLLMBackendTestRequest
 )
 from repositories.templates_repo import TemplatesRepository
 from repositories.promises_repo import PromisesRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.broadcasts_repo import BroadcastsRepository
 from repositories.bot_tokens_repo import BotTokensRepository
-from repositories.clubs_repo import ensure_club_telegram_columns
+from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns
 from repositories.reminders_repo import RemindersRepository
 from services.reminder_dispatch import ReminderDispatchService
 from services.name_variant_service import guess_name_variants
@@ -40,6 +42,8 @@ from utils.admin_utils import is_admin
 from utils.logger import get_logger
 from ..notifications import send_club_telegram_ready_notification
 from llms.llm_env_utils import load_llm_env
+from llms.llm_model_config import MODEL_CONFIGS, FALLBACK_MODELS, MODEL_PRICING, needs_global_location
+from llms.providers.factory import create_provider_adapter
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -141,7 +145,126 @@ def _admin_club_setup_from_row(row: Dict[str, Any]) -> AdminClubSetupSummary:
         created_at_utc=str(row["created_at_utc"]) if row.get("created_at_utc") else None,
         telegram_requested_at_utc=str(row["telegram_requested_at_utc"]) if row.get("telegram_requested_at_utc") else None,
         telegram_ready_at_utc=str(row["telegram_ready_at_utc"]) if row.get("telegram_ready_at_utc") else None,
+        description=str(row["description"]) if row.get("description") else None,
+        club_goal=str(row["club_goal"]) if row.get("club_goal") else None,
+        vibe=str(row["vibe"]) if row.get("vibe") else None,
+        checkin_what_counts=str(row["checkin_what_counts"]) if row.get("checkin_what_counts") else None,
     )
+
+
+def _mask_llm_error(exc: Exception) -> str:
+    """Return an admin-useful error string without leaking credential values."""
+    message = str(exc or type(exc).__name__).strip() or type(exc).__name__
+    secret_values = [
+        os.getenv("OPENAI_API_KEY", ""),
+        os.getenv("DEEPSEEK_API_KEY", ""),
+        os.getenv("GROQ_API_KEY", ""),
+        os.getenv("GCP_CREDENTIALS_B64", ""),
+    ]
+    for secret in secret_values:
+        if secret and len(secret) >= 8:
+            message = message.replace(secret, "[masked]")
+    message = re.sub(r"sk-[A-Za-z0-9_\-]{8,}", "sk-[masked]", message)
+    message = re.sub(r"AIza[A-Za-z0-9_\-]{8,}", "AIza[masked]", message)
+    return message[:700]
+
+
+def _llm_credential_status() -> Dict[str, bool]:
+    return {
+        "gemini": bool(os.getenv("GCP_PROJECT_ID") and os.getenv("GCP_CREDENTIALS_B64") and os.getenv("GCP_LOCATION", "us-central1")),
+        "openai": bool(os.getenv("OPENAI_API_KEY")),
+        "deepseek": bool(os.getenv("DEEPSEEK_API_KEY")),
+        "groq": bool(os.getenv("GROQ_API_KEY")),
+    }
+
+
+def _provider_model_catalog() -> Dict[str, Dict[str, List[str]]]:
+    catalog: Dict[str, Dict[str, List[str]]] = {}
+    for provider, role_models in MODEL_CONFIGS.items():
+        known_models = {
+            role_models.router,
+            role_models.planner,
+            role_models.responder,
+            FALLBACK_MODELS.get(provider, ""),
+        }
+        for model_name in MODEL_PRICING:
+            if provider == "gemini" and model_name.startswith("gemini-"):
+                known_models.add(model_name)
+            elif provider == "openai" and model_name.startswith("gpt-"):
+                known_models.add(model_name)
+            elif provider == "deepseek" and model_name.startswith("deepseek-"):
+                known_models.add(model_name)
+            elif provider == "groq" and not (
+                model_name.startswith("gemini-")
+                or model_name.startswith("gpt-")
+                or model_name.startswith("deepseek-")
+            ):
+                known_models.add(model_name)
+        catalog[provider] = {
+            "router": [role_models.router],
+            "planner": [role_models.planner],
+            "responder": [role_models.responder],
+            "known": sorted(model for model in known_models if model),
+        }
+    return catalog
+
+
+def _load_llm_cfg_for_admin() -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    try:
+        return load_llm_env(), None
+    except Exception as exc:
+        logger.warning("Admin LLM config inspection failed: %s", exc)
+        return None, _mask_llm_error(exc)
+
+
+def _llm_base_config(cfg: Dict[str, Any], provider: str, model: str) -> Dict[str, Any]:
+    temperatures = {
+        "router": float(cfg.get("LLM_ROUTER_TEMPERATURE", 0.2)),
+        "planner": float(cfg.get("LLM_PLANNER_TEMPERATURE", 0.2)),
+        "responder": float(cfg.get("LLM_RESPONDER_TEMPERATURE", 0.7)),
+    }
+    llm_location = cfg.get("GCP_LLM_LOCATION") or cfg.get("GCP_LOCATION")
+    if provider == "gemini" and needs_global_location(model):
+        llm_location = "global"
+    return {
+        "project_id": cfg.get("GCP_PROJECT_ID"),
+        "llm_location": llm_location,
+        "request_timeout_seconds": min(float(cfg.get("LLM_REQUEST_TIMEOUT_SECONDS", 30.0)), 30.0),
+        "max_retries": 1,
+        "include_thoughts": False,
+        "thinking_level": None,
+        "planner_response_schema": None,
+        "temperatures": temperatures,
+        "feature_policy": "safe",
+        "model_name": model,
+        "openai_model": model,
+        "deepseek_model": model,
+        "groq_model": model,
+        "openai_api_key": cfg.get("OPENAI_API_KEY", ""),
+        "deepseek_api_key": cfg.get("DEEPSEEK_API_KEY", ""),
+        "deepseek_base_url": cfg.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+        "groq_api_key": cfg.get("GROQ_API_KEY", ""),
+        "groq_base_url": cfg.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+        "groq_plan_tier": cfg.get("GROQ_PLAN_TIER", "free"),
+    }
+
+
+def _message_preview(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()[:500]
+    if isinstance(content, list):
+        parts: List[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "\n".join(parts).strip()[:500]
+    if isinstance(content, dict) and isinstance(content.get("text"), str):
+        return str(content["text"]).strip()[:500]
+    return str(content).strip()[:500]
 
 
 class _ConversationExportSanitizer:
@@ -417,6 +540,10 @@ async def list_club_telegram_setup(
                         c.owner_user_id,
                         COALESCE(NULLIF(u.display_name, ''), NULLIF(u.first_name, ''), NULLIF(u.username, '')) AS owner_name,
                         c.name,
+                        c.description,
+                        c.club_goal,
+                        c.vibe,
+                        c.checkin_what_counts,
                         c.visibility,
                         c.telegram_status,
                         c.telegram_invite_link,
@@ -454,6 +581,59 @@ async def list_club_telegram_setup(
     except Exception as e:
         logger.exception(f"Error listing club Telegram setup queue: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to load club setup queue: {str(e)}")
+
+
+@router.patch("/clubs/{club_id}/context", response_model=AdminClubSetupSummary)
+async def update_club_context(
+    request: Request,
+    club_id: str,
+    payload: UpdateClubContextRequest,
+    admin_id: int = Depends(get_admin_user),
+):
+    """Persist admin-provided context that Xaana uses in club group responses."""
+    field_names = {"description", "club_goal", "vibe", "checkin_what_counts"}
+    provided = field_names.intersection(getattr(payload, "model_fields_set", set()))
+    if not provided:
+        raise HTTPException(status_code=400, detail="Provide at least one club context field")
+
+    values: Dict[str, str] = {}
+    for field_name in field_names:
+        if field_name not in provided:
+            continue
+        raw_value = getattr(payload, field_name)
+        values[field_name] = "" if raw_value is None else str(raw_value).strip()
+
+    try:
+        club = ClubsRepository().get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        ClubsRepository().update_club_context(
+            club_id=club_id,
+            description=values.get("description") if "description" in values else None,
+            club_goal=values.get("club_goal") if "club_goal" in values else None,
+            vibe=values.get("vibe") if "vibe" in values else None,
+            checkin_what_counts=values.get("checkin_what_counts") if "checkin_what_counts" in values else None,
+        )
+
+        if "club_goal" in values:
+            try:
+                from memory.club_memory import club_memory_upsert_fact
+                root_dir = getattr(request.app.state, "root_dir", None) or os.getenv("ROOT_DIR") or os.getcwd()
+                club_memory_upsert_fact(root_dir, club_id, "club_goal", values["club_goal"])
+            except Exception as memory_error:
+                logger.warning("Failed to sync club_goal memory for club %s: %s", club_id, memory_error)
+
+        setup = await list_club_telegram_setup(status="all", admin_id=admin_id)
+        updated = next((club_summary for club_summary in setup.clubs if club_summary.club_id == club_id), None)
+        if not updated:
+            raise RuntimeError("Club context updated but could not be reloaded")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating club context for {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update club context: {str(e)}")
 
 
 @router.post("/clubs/{club_id}/telegram-link", response_model=AdminClubSetupSummary)
@@ -636,6 +816,136 @@ async def get_llm_usage(
     except Exception as e:
         logger.exception(f"Error computing llm usage: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to compute llm usage: {str(e)}")
+
+
+@router.get("/llm-backends")
+async def get_llm_backends(
+    admin_id: int = Depends(get_admin_user),
+):
+    """
+    Read-only inventory of coded LLM providers, configured role models, and credential availability.
+    Never returns secret values.
+    """
+    cfg, config_error = _load_llm_cfg_for_admin()
+    credentials = _llm_credential_status()
+    provider_models = {
+        provider: role_models.as_dict()
+        for provider, role_models in MODEL_CONFIGS.items()
+    }
+
+    active_provider = None
+    requested_provider = None
+    role_models: Dict[str, Optional[str]] = {"router": None, "planner": None, "responder": None}
+    fallback: Dict[str, Any] = {
+        "enabled": False,
+        "provider": None,
+        "models": {},
+    }
+    if cfg:
+        active_provider = cfg.get("LLM_PROVIDER")
+        requested_provider = cfg.get("LLM_PROVIDER_REQUESTED")
+        role_models = {
+            "router": cfg.get("LLM_ROUTER_MODEL"),
+            "planner": cfg.get("LLM_PLANNER_MODEL"),
+            "responder": cfg.get("LLM_RESPONDER_MODEL"),
+        }
+        fallback = {
+            "enabled": bool(cfg.get("LLM_FALLBACK_ENABLED")),
+            "provider": cfg.get("LLM_FALLBACK_PROVIDER"),
+            "models": {
+                "gemini": cfg.get("LLM_FALLBACK_GEMINI_MODEL"),
+                "openai": cfg.get("LLM_FALLBACK_OPENAI_MODEL"),
+                "deepseek": cfg.get("LLM_FALLBACK_DEEPSEEK_MODEL"),
+                "groq": cfg.get("LLM_FALLBACK_GROQ_MODEL"),
+            },
+        }
+
+    return {
+        "prototype": True,
+        "read_only": True,
+        "active_provider": active_provider,
+        "requested_provider": requested_provider,
+        "role_models": role_models,
+        "available_providers": sorted(MODEL_CONFIGS.keys()),
+        "credentials": credentials,
+        "provider_models": provider_models,
+        "model_catalog": _provider_model_catalog(),
+        "fallback": fallback,
+        "config_error": config_error,
+    }
+
+
+@router.post("/llm-backends/test")
+async def test_llm_backend(
+    payload: AdminLLMBackendTestRequest,
+    admin_id: int = Depends(get_admin_user),
+):
+    """
+    Smoke-test a temporary provider/model instance. Does not alter live bot routing or config.
+    """
+    provider = payload.provider.strip().lower()
+    role = payload.role.strip().lower()
+    model = payload.model.strip()
+    catalog = _provider_model_catalog()
+    if provider not in catalog:
+        raise HTTPException(status_code=400, detail="Unsupported LLM provider")
+    if model not in set(catalog[provider]["known"]):
+        raise HTTPException(status_code=400, detail="Unsupported model for this prototype")
+    if not _llm_credential_status().get(provider):
+        raise HTTPException(status_code=400, detail=f"{provider} credentials are not configured")
+
+    previous_provider = os.environ.get("LLM_PROVIDER")
+    previous_google_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    try:
+        os.environ["LLM_PROVIDER"] = provider
+        cfg = load_llm_env()
+        cfg["LLM_PROVIDER"] = provider
+
+        def _invoke_smoke() -> Dict[str, Any]:
+            adapter = create_provider_adapter(cfg)
+            role_model = adapter.build_role_model(
+                role,
+                _llm_base_config(cfg, provider, model),
+            )
+            messages = [
+                SystemMessage(content="You are an LLM backend connectivity smoke test. Reply briefly."),
+                HumanMessage(content="Reply with OK and the word backend."),
+            ]
+            started = time.perf_counter()
+            result = role_model.invoke(messages)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            return {
+                "status": "ok",
+                "provider": provider,
+                "model": model,
+                "role": role,
+                "latency_ms": latency_ms,
+                "response_preview": _message_preview(getattr(result, "content", result)),
+            }
+
+        return await asyncio.to_thread(_invoke_smoke)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("LLM backend smoke test failed for %s/%s/%s: %s", provider, model, role, e)
+        return {
+            "status": "error",
+            "provider": provider,
+            "model": model,
+            "role": role,
+            "latency_ms": None,
+            "response_preview": "",
+            "error": _mask_llm_error(e),
+        }
+    finally:
+        if previous_provider is None:
+            os.environ.pop("LLM_PROVIDER", None)
+        else:
+            os.environ["LLM_PROVIDER"] = previous_provider
+        if previous_google_credentials is None:
+            os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+        else:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = previous_google_credentials
 
 
 @router.post("/traces/{trace_id}/flag")

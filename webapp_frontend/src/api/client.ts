@@ -65,6 +65,39 @@ export interface AdminLLMUsageResponse {
   langfuse_url?: string | null;
 }
 
+export interface AdminLLMBackendsResponse {
+  prototype: boolean;
+  read_only: boolean;
+  active_provider?: string | null;
+  requested_provider?: string | null;
+  role_models: Record<'router' | 'planner' | 'responder', string | null>;
+  available_providers: string[];
+  credentials: Record<string, boolean>;
+  provider_models: Record<string, Record<'router' | 'planner' | 'responder', string>>;
+  model_catalog: Record<string, {
+    router: string[];
+    planner: string[];
+    responder: string[];
+    known: string[];
+  }>;
+  fallback: {
+    enabled: boolean;
+    provider?: string | null;
+    models: Record<string, string | null>;
+  };
+  config_error?: string | null;
+}
+
+export interface AdminLLMBackendTestResponse {
+  status: 'ok' | 'error';
+  provider: string;
+  model: string;
+  role: 'router' | 'planner' | 'responder';
+  latency_ms?: number | null;
+  response_preview: string;
+  error?: string;
+}
+
 /**
  * API client for the Zana Web App backend.
  * All requests include Telegram initData for authentication.
@@ -547,6 +580,21 @@ class ApiClient {
     });
   }
 
+  async updateAdminClubContext(
+    clubId: string,
+    body: {
+      description?: string | null;
+      club_goal?: string | null;
+      vibe?: string | null;
+      checkin_what_counts?: string | null;
+    },
+  ): Promise<AdminClubSetupSummary> {
+    return this.request<AdminClubSetupSummary>(`/admin/clubs/${clubId}/context`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
   async removeMyClub(clubId: string): Promise<{ status: string; club_id: string; message: string }> {
     return this.request<{ status: string; club_id: string; message: string }>(`/clubs/${clubId}`, {
       method: 'DELETE',
@@ -788,6 +836,21 @@ class ApiClient {
    */
   async getAdminLLMUsage(hours: number = 24): Promise<AdminLLMUsageResponse> {
     return this.request<AdminLLMUsageResponse>(`/admin/llm-usage?hours=${hours}`);
+  }
+
+  async getAdminLLMBackends(): Promise<AdminLLMBackendsResponse> {
+    return this.request<AdminLLMBackendsResponse>('/admin/llm-backends');
+  }
+
+  async testAdminLLMBackend(request: {
+    provider: string;
+    model: string;
+    role: 'router' | 'planner' | 'responder';
+  }): Promise<AdminLLMBackendTestResponse> {
+    return this.request<AdminLLMBackendTestResponse>('/admin/llm-backends/test', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   }
 
   /**

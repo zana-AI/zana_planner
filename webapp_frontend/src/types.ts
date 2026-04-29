@@ -217,6 +217,10 @@ export interface AdminClubSetupSummary extends ClubSummary {
   created_at_utc?: string;
   telegram_requested_at_utc?: string;
   telegram_ready_at_utc?: string;
+  description?: string;
+  club_goal?: string;
+  vibe?: string;
+  checkin_what_counts?: string;
 }
 
 export interface AdminClubSetupResponse {

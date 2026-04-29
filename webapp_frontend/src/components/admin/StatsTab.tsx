@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiClient, type AdminLLMUsageResponse } from '../../api/client';
+import {
+  apiClient,
+  type AdminLLMBackendTestResponse,
+  type AdminLLMBackendsResponse,
+  type AdminLLMUsageResponse,
+} from '../../api/client';
 
 interface StatsTabProps {
   stats: { total_users: number; active_users: number; total_promises: number } | null;
@@ -14,6 +19,9 @@ const WINDOW_OPTIONS: Array<{ label: string; hours: number }> = [
   { label: '7d', hours: 24 * 7 },
   { label: '30d', hours: 24 * 30 },
 ];
+
+const LLM_ROLES = ['router', 'planner', 'responder'] as const;
+type LLMRole = (typeof LLM_ROLES)[number];
 
 function formatTokens(n: number): string {
   if (!n) return '0';
@@ -163,6 +171,155 @@ function LLMUsageSection() {
   );
 }
 
+function LLMBackendsSection() {
+  const [data, setData] = useState<AdminLLMBackendsResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [testingKey, setTestingKey] = useState<string>('');
+  const [testResults, setTestResults] = useState<Record<string, AdminLLMBackendTestResponse>>({});
+
+  const loadBackends = () => {
+    setLoading(true);
+    setError('');
+    apiClient
+      .getAdminLLMBackends()
+      .then(setData)
+      .catch((err) => setError(err?.message || 'Failed to load LLM backends'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadBackends();
+  }, []);
+
+  const testBackend = async (provider: string, role: LLMRole, model: string) => {
+    const key = `${provider}:${role}`;
+    setTestingKey(key);
+    setTestResults((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      const result = await apiClient.testAdminLLMBackend({ provider, model, role });
+      setTestResults((prev) => ({ ...prev, [key]: result }));
+    } catch (err) {
+      setTestResults((prev) => ({
+        ...prev,
+        [key]: {
+          status: 'error',
+          provider,
+          model,
+          role,
+          response_preview: '',
+          error: err instanceof Error ? err.message : 'Smoke test failed',
+        },
+      }));
+    } finally {
+      setTestingKey('');
+    }
+  };
+
+  return (
+    <div className="admin-llm-backends">
+      <div className="admin-llm-usage-header">
+        <div>
+          <h3>LLM Backends</h3>
+          <p className="admin-llm-backends-note">
+            Prototype/read-only: smoke tests do not change Xaana behavior, environment, or stored configuration.
+          </p>
+        </div>
+        <button type="button" className="admin-llm-backends-refresh" onClick={loadBackends} disabled={loading}>
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
+
+      {loading && <div className="admin-llm-usage-loading">Loading backends...</div>}
+      {!loading && error && <div className="admin-llm-usage-error">{error}</div>}
+
+      {!loading && data && (
+        <>
+          <div className="admin-llm-backends-summary">
+            <span>Active: {data.active_provider || 'not configured'}</span>
+            <span>Requested: {data.requested_provider || 'default'}</span>
+            <span>
+              Fallback:{' '}
+              {data.fallback.enabled
+                ? `${data.fallback.provider || 'configured'} responder ${data.fallback.models.responder || 'default'}`
+                : 'disabled'}
+            </span>
+          </div>
+
+          {data.config_error ? <div className="admin-llm-usage-error">{data.config_error}</div> : null}
+
+          <div className="admin-llm-backends-grid">
+            {data.available_providers.map((provider) => {
+              const hasCredentials = !!data.credentials[provider];
+              const roleModels = data.provider_models[provider] || {};
+              return (
+                <article key={provider} className="admin-llm-backend-card">
+                  <div className="admin-llm-backend-card-header">
+                    <h4>{provider}</h4>
+                    <span className={`admin-llm-backend-credential ${hasCredentials ? 'ready' : 'missing'}`}>
+                      {hasCredentials ? 'Credentials available' : 'Credentials missing'}
+                    </span>
+                  </div>
+
+                  <div className="admin-llm-backend-roles">
+                    {LLM_ROLES.map((role) => {
+                      const model = roleModels[role] || data.role_models[role] || '';
+                      const knownModels = data.model_catalog[provider]?.known || [];
+                      const supported = !!model && knownModels.includes(model);
+                      const key = `${provider}:${role}`;
+                      const result = testResults[key];
+                      const disabled = !hasCredentials || !supported || testingKey === key;
+                      return (
+                        <div key={role} className="admin-llm-backend-role">
+                          <div>
+                            <div className="admin-llm-backend-role-name">{role}</div>
+                            <div className="admin-llm-backend-model" title={model || 'No model configured'}>
+                              {model ? shortModel(model) : 'No model configured'}
+                            </div>
+                            {!supported && model ? (
+                              <div className="admin-llm-backend-warning">Unsupported by local model catalog</div>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            className="admin-select-all-btn admin-llm-backend-test-btn"
+                            disabled={disabled}
+                            onClick={() => testBackend(provider, role, model)}
+                            title={
+                              !hasCredentials
+                                ? 'Credentials are not configured'
+                                : !supported
+                                  ? 'Model is not supported by the local catalog'
+                                  : 'Run a read-only smoke test'
+                            }
+                          >
+                            {testingKey === key ? 'Testing...' : 'Test'}
+                          </button>
+                          {result ? (
+                            <div className={`admin-llm-backend-result ${result.status}`}>
+                              {result.status === 'ok'
+                                ? `OK in ${result.latency_ms ?? '?'} ms: ${result.response_preview || 'No preview'}`
+                                : result.error || 'Smoke test failed'}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function StatsTab({ stats, loadingStats, statsError, onRetry }: StatsTabProps) {
   if (loadingStats) {
     return (
@@ -216,6 +373,7 @@ export function StatsTab({ stats, loadingStats, statsError, onRetry }: StatsTabP
       </div>
 
       <LLMUsageSection />
+      <LLMBackendsSection />
     </div>
   );
 }

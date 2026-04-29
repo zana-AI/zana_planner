@@ -182,6 +182,10 @@ class AdminClubSetupSummary(ClubSummary):
     created_at_utc: Optional[str] = None
     telegram_requested_at_utc: Optional[str] = None
     telegram_ready_at_utc: Optional[str] = None
+    description: Optional[str] = None
+    club_goal: Optional[str] = None
+    vibe: Optional[str] = None
+    checkin_what_counts: Optional[str] = None
 
 
 class AdminClubSetupResponse(BaseModel):
@@ -193,6 +197,21 @@ class AdminClubSetupResponse(BaseModel):
 class UpdateClubTelegramRequest(BaseModel):
     """Admin request to attach a Telegram invite link to a club."""
     telegram_invite_link: str = Field(..., min_length=8, max_length=512)
+
+
+class UpdateClubContextRequest(BaseModel):
+    """Admin request to update bot-facing club context."""
+    description: Optional[str] = Field(default=None, max_length=1000)
+    club_goal: Optional[str] = Field(default=None, max_length=1500)
+    vibe: Optional[str] = Field(default=None, max_length=500)
+    checkin_what_counts: Optional[str] = Field(default=None, max_length=700)
+
+
+class AdminLLMBackendTestRequest(BaseModel):
+    """Request to smoke-test a configured LLM backend/model."""
+    provider: Literal["gemini", "openai", "deepseek", "groq"]
+    model: str = Field(..., min_length=2, max_length=160)
+    role: Literal["router", "planner", "responder"] = "responder"
 
 
 # Auth
