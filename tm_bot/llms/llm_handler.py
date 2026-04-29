@@ -2705,6 +2705,7 @@ class LLMHandler:
             target_text = str(group_context.get("target_text") or "").strip()
             recent_messages = group_context.get("recent_messages") or []
             member_status = group_context.get("member_status") or []
+            recent_checkins = group_context.get("recent_checkins")
             is_proactive = bool(group_context.get("proactive"))
             is_short_reply = bool(group_context.get("short_reply"))
 
@@ -2743,6 +2744,38 @@ class LLMHandler:
                 pending_str = ", ".join(pending) if pending else "everyone"
                 context_lines.append(f"Club member aliases: {', '.join(member_alias_lines)}")
                 context_lines.append(f"Today's check-ins ({len(done)}/{len(member_status)}): checked in: {done_str} | not yet: {pending_str}")
+
+            if isinstance(recent_checkins, dict):
+                entries = recent_checkins.get("entries") or []
+                try:
+                    recent_days = int(recent_checkins.get("days") or 7)
+                except (TypeError, ValueError):
+                    recent_days = 7
+                by_date: Dict[str, List[str]] = {}
+                if isinstance(entries, list):
+                    for item in entries[:80]:
+                        if not isinstance(item, dict):
+                            continue
+                        checkin_date = str(item.get("date") or "").strip()
+                        name = str(item.get("name") or "").strip()
+                        if not checkin_date or not name:
+                            continue
+                        names = by_date.setdefault(checkin_date, [])
+                        if name not in names:
+                            names.append(name)
+                if by_date:
+                    recent_parts = []
+                    for checkin_date in sorted(by_date.keys(), reverse=True)[:recent_days]:
+                        names = by_date[checkin_date][:12]
+                        overflow = len(by_date[checkin_date]) - len(names)
+                        suffix = f" +{overflow} more" if overflow > 0 else ""
+                        recent_parts.append(f"{checkin_date}: {', '.join(names)}{suffix}")
+                    context_lines.append(
+                        f"Recent check-ins (last {recent_days} days, club-scoped): "
+                        + " | ".join(recent_parts)
+                    )
+                else:
+                    context_lines.append(f"Recent check-ins (last {recent_days} days, club-scoped): none recorded")
 
             recent_lines: List[str] = []
             recent_texts: List[str] = []
@@ -2843,6 +2876,7 @@ class LLMHandler:
                 "Transcript fidelity: when quoting what someone shared (a game result, a workout),",
                 "report only what is literally written. Do not interpret scores or invent outcomes.",
                 "Check-in status: answer questions about who checked in ONLY from the club context data.",
+                "Recent check-ins: answer only from Today's check-ins and Recent check-ins above. If the question asks outside the provided recent window, say the available window is limited.",
                 "Membership/name questions: answer from Club member aliases ONLY. If a queried name or alias appears there, say yes; if not, say it is not in the club context.",
                 "You may list club member display names when directly asked in this group, but do not share any private data beyond the names and check-in status shown in club context.",
                 "Do not use or mention private user data, private promises, private memories, or DM history.",

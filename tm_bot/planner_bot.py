@@ -882,20 +882,40 @@ class PlannerBot:
         except Exception:
             return ""
 
+    def _get_recent_club_checkin_context(self, club_id: str, days: int = 7) -> dict:
+        """Return compact, club-scoped recent check-ins for group LLM context."""
+        if not club_id:
+            return {}
+        try:
+            from services.club_reminder_service import _display_name
+            rows = ClubsRepository().get_recent_checkins(club_id, days=days)
+            entries = []
+            for row in rows:
+                checkin_date = row.get("checkin_date")
+                entries.append({
+                    "name": _display_name(row),
+                    "non_latin_name": (row.get("non_latin_name") or "").strip(),
+                    "latin_name": (row.get("latin_name") or "").strip(),
+                    "date": str(checkin_date) if checkin_date else "",
+                    "count": int(row.get("checkin_count") or 1),
+                })
+            return {"days": days, "entries": entries}
+        except Exception as exc:
+            logger.debug("_get_recent_club_checkin_context failed for club %s: %s", club_id, exc)
+            return {}
+
     def _get_today_checkin_status(self, club_id: str) -> list[dict]:
         """
         Return today's check-in status for every active club member.
         Each entry: {"name": str, "status": "done" | "pending"}
         """
-        from repositories.actions_repo import ActionsRepository
         from services.club_reminder_service import _display_name
         try:
             clubs_repo = ClubsRepository()
             raw_members = clubs_repo.get_club_members_promises(club_id)
             if not raw_members:
                 return []
-            promise_uuid = next((m.get("promise_uuid") for m in raw_members if m.get("promise_uuid")), None)
-            checked_in = ActionsRepository().get_today_checkins(promise_uuid) if promise_uuid else set()
+            checked_in = clubs_repo.get_today_club_checkins(club_id)
             return [
                 {
                     "name": _display_name(m),
@@ -989,6 +1009,7 @@ class PlannerBot:
 
         if member_status is None:
             member_status = self._get_today_checkin_status(club.get("club_id", ""))
+        recent_checkins = self._get_recent_club_checkin_context(club.get("club_id", ""), days=7)
 
         processing_msg = await self._reply_to_group_message(ctx, _ct(club.get("club_language"), "thinking"), parse_mode=None)
         response_text = await asyncio.to_thread(
@@ -1006,6 +1027,7 @@ class PlannerBot:
                 "target_text": target_text,
                 "recent_messages": self._get_recent_group_messages(ctx),
                 "member_status": member_status,
+                "recent_checkins": recent_checkins,
                 "sender_name": sender_name,
                 "sender_checked_in": sender_checked_in,
                 "short_reply": short_reply,

@@ -578,6 +578,32 @@ def test_group_safe_prompt_allows_one_checkin_nudge_for_fresh_completion():
     assert "Avoid repetitive check-in nudges" in system_prompt
 
 
+def test_group_safe_prompt_includes_recent_club_checkins_as_ground_truth():
+    system_prompt = _capture_group_safe_prompt(
+        "Who checked in recently?",
+        {
+            "recent_messages": [{"sender_name": "Homa", "text": "@xaana_bot who checked in recently?"}],
+            "member_status": [
+                {"name": "Homa", "status": "done"},
+                {"name": "Javad", "status": "pending"},
+            ],
+            "recent_checkins": {
+                "days": 7,
+                "entries": [
+                    {"name": "Homa", "date": "2026-02-20", "count": 1},
+                    {"name": "Javad", "date": "2026-02-19", "count": 1},
+                    {"name": "Homa", "date": "2026-02-19", "count": 1},
+                ],
+            },
+        },
+    )
+
+    assert "Recent check-ins (last 7 days, club-scoped):" in system_prompt
+    assert "2026-02-20: Homa" in system_prompt
+    assert "2026-02-19: Javad, Homa" in system_prompt
+    assert "Recent check-ins: answer only from Today's check-ins and Recent check-ins above" in system_prompt
+
+
 def _build_strict_handler_for_contract() -> LLMHandler:
     # Build a minimal handler instance without running __init__ heavy setup.
     handler = object.__new__(LLMHandler)

@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import text
 from db.postgres_db import get_db_session, utc_now_iso
@@ -476,3 +476,82 @@ class ClubsRepository:
                 {"club_id": club_id},
             ).mappings().fetchall()
             return [dict(row) for row in rows]
+
+    def get_recent_checkins(self, club_id: str, days: int = 7, limit: int = 120) -> List[Dict]:
+        """
+        Return recent club check-ins scoped strictly to this club.
+
+        Privacy guarantee: rows must match all three boundaries:
+        active club member, promise shared to this club, and action owned by that
+        member. This prevents a group query from seeing private actions or
+        promises that were not shared into the club.
+        """
+        try:
+            safe_days = max(1, min(int(days or 7), 31))
+        except (TypeError, ValueError):
+            safe_days = 7
+        try:
+            safe_limit = max(1, min(int(limit or 120), 300))
+        except (TypeError, ValueError):
+            safe_limit = 120
+
+        since_date = (datetime.utcnow().date() - timedelta(days=safe_days - 1)).isoformat()
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT
+                        cm.user_id,
+                        u.first_name,
+                        u.username,
+                        u.non_latin_name,
+                        u.latin_name,
+                        DATE(a.at_utc) AS checkin_date,
+                        MAX(a.at_utc) AS last_at_utc,
+                        COUNT(*) AS checkin_count
+                    FROM club_members cm
+                    JOIN users u
+                        ON u.user_id = cm.user_id
+                    JOIN promise_club_shares pcs
+                        ON pcs.club_id = cm.club_id
+                    JOIN actions a
+                        ON a.user_id = cm.user_id
+                       AND a.promise_uuid = pcs.promise_uuid
+                       AND a.action_type = 'club_checkin'
+                       AND DATE(a.at_utc) >= :since_date
+                    WHERE cm.club_id = :club_id
+                      AND cm.status = 'active'
+                    GROUP BY
+                        cm.user_id,
+                        u.first_name,
+                        u.username,
+                        u.non_latin_name,
+                        u.latin_name,
+                        DATE(a.at_utc)
+                    ORDER BY checkin_date DESC, last_at_utc DESC
+                    LIMIT :limit;
+                """),
+                {"club_id": club_id, "since_date": since_date, "limit": safe_limit},
+            ).mappings().fetchall()
+            return [dict(row) for row in rows]
+
+    def get_today_club_checkins(self, club_id: str) -> set[str]:
+        """Return active member user_ids that checked in today for this club only."""
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT DISTINCT a.user_id
+                    FROM club_members cm
+                    JOIN promise_club_shares pcs
+                        ON pcs.club_id = cm.club_id
+                    JOIN actions a
+                        ON a.user_id = cm.user_id
+                       AND a.promise_uuid = pcs.promise_uuid
+                       AND a.action_type = 'club_checkin'
+                       AND DATE(a.at_utc) = :today
+                    WHERE cm.club_id = :club_id
+                      AND cm.status = 'active';
+                """),
+                {"club_id": club_id, "today": today},
+            ).fetchall()
+        return {str(row[0]) for row in rows}
