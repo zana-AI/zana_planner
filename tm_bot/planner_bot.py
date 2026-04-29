@@ -948,6 +948,7 @@ class PlannerBot:
             return [
                 {
                     "name": _display_name(m),
+                    "username": (m.get("username") or "").strip(),
                     "non_latin_name": (m.get("non_latin_name") or "").strip(),
                     "latin_name": (m.get("latin_name") or "").strip(),
                     "status": "done" if str(m["user_id"]) in checked_in else "pending",
