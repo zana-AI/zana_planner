@@ -230,6 +230,96 @@ def _resolve_group_reply_language(
     return None
 
 
+def _normalize_group_text(text: str) -> str:
+    lowered = str(text or "").strip().lower()
+    lowered = lowered.replace("check-in", "checkin").replace("check in", "checkin")
+    lowered = lowered.replace("چک این", "چکاین").replace("چک‌این", "چکاین")
+    return lowered
+
+
+def _looks_like_completion_evidence(text: str) -> bool:
+    normalized = _normalize_group_text(text)
+    if not normalized:
+        return False
+    keywords = (
+        "i did it",
+        "done",
+        "completed",
+        "played",
+        "workout",
+        "result",
+        "score",
+        "streak",
+        "cheenva.com",
+        "انجام داد",
+        "بازی کردم",
+        "موفق",
+        "چکاین کردم",
+    )
+    return any(k in normalized for k in keywords)
+
+
+def _asks_for_checkin_status(text: str) -> bool:
+    normalized = _normalize_group_text(text)
+    if not normalized:
+        return False
+    keywords = (
+        "who checked",
+        "who checkin",
+        "how many checked",
+        "checkin status",
+        "چند نفر",
+        "کی چکاین",
+        "چکاین کی",
+        "آمار",
+        "وضع آمار",
+        "وضعیت چکاین",
+    )
+    return any(k in normalized for k in keywords)
+
+
+def _contains_checkin_nudge(text: str) -> bool:
+    normalized = _normalize_group_text(text)
+    if not normalized:
+        return False
+    keywords = (
+        "checkin button",
+        "tap checkin",
+        "daily reminder",
+        "یادآور",
+        "دکمه چکاین",
+        "چکاین بزن",
+    )
+    return any(k in normalized for k in keywords)
+
+
+def _is_group_address_only(text: str) -> bool:
+    normalized = _normalize_group_text(text)
+    if not normalized:
+        return True
+    if normalized == "the user addressed you in the group.":
+        return True
+    mention_stripped = re.sub(r"@(?:xaana|zana)(?:_[a-z0-9]+)?", "", normalized)
+    mention_stripped = re.sub(r"[\\s،,.!؟?]+", "", mention_stripped)
+    return not mention_stripped
+
+
+def _extract_latest_sender_message(recent_messages: List[dict], sender_name: str) -> str:
+    sender = str(sender_name or "").strip().lower()
+    if not sender:
+        return ""
+    for item in reversed(list(recent_messages or [])):
+        if not isinstance(item, dict):
+            continue
+        msg_sender = str(item.get("sender_name") or "").strip().lower()
+        if msg_sender != sender:
+            continue
+        text = str(item.get("text") or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def _has_disallowed_script_for_language(text: str, user_language: Optional[str]) -> bool:
     lang = (user_language or "").strip().lower()
     if lang != "fa":
@@ -2669,6 +2759,27 @@ class LLMHandler:
 
             sender_name = str(group_context.get("sender_name") or "").strip()
             sender_checked_in = bool(group_context.get("sender_checked_in"))
+            latest_sender_text = _extract_latest_sender_message(recent_messages, sender_name)
+            current_turn_text = latest_sender_text or user_message
+            is_address_only_turn = _is_group_address_only(current_turn_text)
+            sender_shared_completion = _looks_like_completion_evidence(current_turn_text)
+            sender_asked_checkin_status = _asks_for_checkin_status(current_turn_text)
+            should_nudge_checkin_button = (
+                (not sender_checked_in)
+                and (sender_shared_completion or sender_asked_checkin_status)
+                and (not is_proactive)
+                and (not is_short_reply)
+            )
+            recent_bot_nudges = 0
+            for item in reversed(list(recent_messages or [])[-16:]):
+                if not isinstance(item, dict):
+                    continue
+                msg_sender = str(item.get("sender_name") or "").strip().lower()
+                if not msg_sender or not any(token in msg_sender for token in ("xaana", "zana", "bot")):
+                    continue
+                if _contains_checkin_nudge(str(item.get("text") or "")):
+                    recent_bot_nudges += 1
+            suppress_nudge_due_to_repetition = recent_bot_nudges >= 1
 
             effective_language = _resolve_group_reply_language(user_language, user_message, recent_texts)
             if effective_language:
@@ -2696,10 +2807,19 @@ class LLMHandler:
                 "  a photo description, a workout share, a game result, a simple 'I did it!' — celebrate it",
                 "  warmly and genuinely. Recognise the effort. Engage with the social energy (challenges,",
                 "  taunts, streaks).",
-                *(["- This member has NOT checked in yet today. Gently remind them to tap the check-in button",
-                   "  in the daily reminder so it gets recorded — but do NOT claim you logged it yourself."]
-                  if not sender_checked_in else
-                  ["- This member has already checked in today. Just celebrate — do NOT mention the check-in button."]),
+                *(["- This member has NOT checked in yet today and this turn includes a fresh completion update",
+                   "  or a check-in-status question. You may add ONE gentle check-in reminder (button/daily reminder).",
+                   "  If bot reminders were already repeated recently, skip the reminder and focus on acknowledgment/help."]
+                  if should_nudge_checkin_button and not suppress_nudge_due_to_repetition else
+                  ["- Do NOT add a check-in reminder in this turn unless the member asks about check-in logging",
+                   "  or shares a fresh completion update right now."]),
+                *(["- This member has already checked in today. Just celebrate - do NOT mention the check-in button."]
+                  if sender_checked_in else []),
+                "- Avoid repetitive check-in nudges across consecutive turns; one reminder is enough.",
+                "- Do NOT recite the full 'not yet checked in' member list unless explicitly asked for status/count.",
+                *(["- This is only an address/ping without content. Reply briefly and naturally,",
+                   "  and do NOT add check-in reminders or check-in stats in this turn."]
+                  if is_address_only_turn else []),
                 *(["- You noticed this activity proactively (the member didn't ask you anything).",
                    "  Keep your reaction short, warm, and natural — 1-2 sentences max. Don't over-explain."]
                   if is_proactive else []),

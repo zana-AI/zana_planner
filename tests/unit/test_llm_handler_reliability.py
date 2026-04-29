@@ -14,8 +14,10 @@ from llms.llm_handler import (  # noqa: E402
     _extract_failed_generation,
     _has_disallowed_script_for_language,
     _is_fallback_eligible_error,
+    _is_group_address_only,
     _is_tool_choice_mismatch_error,
     _language_script_guard_instruction,
+    _looks_like_completion_evidence,
     _resolve_group_reply_language,
     _resolve_fallback_provider,
     _resolve_fallback_role_providers,
@@ -505,6 +507,75 @@ def test_group_safe_prompt_uses_effective_persian_language():
     assert result == "\u0628\u0627\u0634\u0647"
     assert "Reply in Persian/Farsi" in system_prompt
     assert "Reply in English" not in system_prompt
+
+
+def test_group_address_only_detection_handles_bot_mentions():
+    assert _is_group_address_only("@xaana_bot") is True
+    assert _is_group_address_only("@zana_bot?") is True
+    assert _is_group_address_only("@xaana_bot I played today") is False
+
+
+def test_group_completion_detection_is_specific_enough():
+    assert _looks_like_completion_evidence("cheenva.com") is True
+    assert _looks_like_completion_evidence("I played today") is True
+    assert _looks_like_completion_evidence("I messaged you earlier") is False
+
+
+def _capture_group_safe_prompt(user_message: str, group_context: dict, user_language: str = "en") -> str:
+    class _CaptureModel:
+        def __init__(self):
+            self.messages = None
+
+        def invoke(self, messages, **_kwargs):
+            self.messages = messages
+            return AIMessage(content="ok")
+
+    model = _CaptureModel()
+    handler = object.__new__(LLMHandler)
+    handler.responder_model = model
+    handler.chat_model = model
+    handler._fallback_chain_model_specs = []
+    handler._fallback_responder_model = None
+    handler._fallback_label = None
+
+    handler.get_response_group_safe(
+        user_message,
+        group_context,
+        user_language,
+    )
+
+    return model.messages[0].content
+
+
+def test_group_safe_prompt_suppresses_checkin_nudge_for_bare_mention():
+    system_prompt = _capture_group_safe_prompt(
+        "The user addressed you in the group.",
+        {
+            "sender_name": "Homa",
+            "sender_checked_in": False,
+            "recent_messages": [{"sender_name": "Homa", "text": "@xaana_bot"}],
+            "member_status": [{"name": "Homa", "status": "pending"}],
+        },
+    )
+
+    assert "Do NOT add a check-in reminder" in system_prompt
+    assert "only an address/ping without content" in system_prompt
+    assert "You may add ONE gentle check-in reminder" not in system_prompt
+
+
+def test_group_safe_prompt_allows_one_checkin_nudge_for_fresh_completion():
+    system_prompt = _capture_group_safe_prompt(
+        "I played today",
+        {
+            "sender_name": "Javad",
+            "sender_checked_in": False,
+            "recent_messages": [{"sender_name": "Javad", "text": "I played today"}],
+            "member_status": [{"name": "Javad", "status": "pending"}],
+        },
+    )
+
+    assert "You may add ONE gentle check-in reminder" in system_prompt
+    assert "Avoid repetitive check-in nudges" in system_prompt
 
 
 def _build_strict_handler_for_contract() -> LLMHandler:
