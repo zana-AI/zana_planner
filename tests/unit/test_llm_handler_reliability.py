@@ -604,6 +604,90 @@ def test_group_safe_prompt_includes_recent_club_checkins_as_ground_truth():
     assert "Recent check-ins: answer only from Today's check-ins and Recent check-ins above" in system_prompt
 
 
+def test_group_safe_prompt_suppresses_greeting_in_active_conversation():
+    system_prompt = _capture_group_safe_prompt(
+        "are you sure?",
+        {
+            "conversation_state": "active",
+            "recent_messages": [{"sender_name": "Xaana", "text": "Two people checked in.", "is_bot": True}],
+            "member_status": [],
+        },
+    )
+
+    assert "Do NOT open with hello/salam/greetings" in system_prompt
+
+
+def test_group_safe_prompt_allows_brief_greeting_in_cold_conversation():
+    system_prompt = _capture_group_safe_prompt(
+        "are you there?",
+        {"conversation_state": "cold", "recent_messages": [], "member_status": []},
+    )
+
+    assert "A very brief greeting is allowed only if it feels natural" in system_prompt
+
+
+def test_group_safe_prompt_includes_focused_reply_context_before_transcript():
+    system_prompt = _capture_group_safe_prompt(
+        "what do you mean?",
+        {
+            "reply_context": {
+                "reply_to_sender_name": "Xaana",
+                "reply_to_text": "Only Homa and Sepideh checked in today.",
+                "reply_to_is_bot": True,
+            },
+            "recent_messages": [{"sender_name": "Javad", "text": "what do you mean?"}],
+            "member_status": [],
+        },
+    )
+
+    assert "Focused reply context (primary if present):" in system_prompt
+    assert "Current message replies to Xaana: Only Homa and Sepideh checked in today." in system_prompt
+    assert system_prompt.index("Focused reply context") < system_prompt.index("Recent group transcript")
+
+
+def test_group_safe_short_reply_prompt_forbids_status_spam():
+    system_prompt = _capture_group_safe_prompt(
+        "funny bot",
+        {
+            "short_reply": True,
+            "response_mode": "SHORT_REPLY",
+            "recent_messages": [{"sender_name": "Homa", "text": "funny bot"}],
+            "member_status": [{"name": "Homa", "status": "done"}],
+        },
+    )
+
+    assert "SHORT_REPLY means one concise line" in system_prompt
+    assert "Do not include check-in stats" in system_prompt
+
+
+def test_group_safe_script_guard_falls_back_if_retry_still_bad():
+    class _BadScriptModel:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, messages, **_kwargs):
+            self.calls += 1
+            return AIMessage(content="\u4eca\u5929 checked in")
+
+    model = _BadScriptModel()
+    handler = object.__new__(LLMHandler)
+    handler.responder_model = model
+    handler.chat_model = model
+    handler._fallback_chain_model_specs = []
+    handler._fallback_responder_model = None
+    handler._fallback_label = None
+
+    result = handler.get_response_group_safe(
+        "\u0633\u0644\u0627\u0645",
+        {"recent_messages": [], "member_status": []},
+        "fa",
+    )
+
+    assert model.calls == 2
+    assert "\u4eca\u5929" not in result
+    assert result.startswith("\u0628\u0631\u0627\u06cc")
+
+
 def _build_strict_handler_for_contract() -> LLMHandler:
     # Build a minimal handler instance without running __init__ heavy setup.
     handler = object.__new__(LLMHandler)

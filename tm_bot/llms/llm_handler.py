@@ -78,7 +78,7 @@ _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a mo
 _MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
 _PERSIAN_SCRIPT_RE = re.compile(r"[\u0600-\u06ff]")
 _NON_PERSIAN_FOREIGN_SCRIPT_RE = re.compile(
-    r"[\u0900-\u097f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]"
+    r"[\u0400-\u04ff\u0900-\u097f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]"
 )
 
 
@@ -172,6 +172,15 @@ def _language_script_guard_instruction(user_language: Optional[str]) -> str:
     )
 
 
+def _script_guard_fallback(user_language: Optional[str]) -> str:
+    lang = (user_language or "").strip().lower()
+    if lang == "fa":
+        return "برای اینکه متن اشتباه نفرستم، کوتاه می‌گم: یک بار دیگر بپرس تا دقیق جواب بدهم."
+    if lang == "fr":
+        return "Je garde la réponse courte pour éviter une erreur de texte. Peux-tu reformuler ?"
+    return "I’m keeping this short to avoid a text-formatting glitch. Please ask again."
+
+
 def _is_mutation_tool_name(tool_name: str) -> bool:
     name = (tool_name or "").strip()
     return name.startswith(_MUTATION_TOOL_PREFIXES) or name in {"subscribe_template"}
@@ -250,7 +259,6 @@ def _looks_like_completion_evidence(text: str) -> bool:
         "result",
         "score",
         "streak",
-        "cheenva.com",
         "انجام داد",
         "بازی کردم",
         "موفق",
@@ -2708,11 +2716,28 @@ class LLMHandler:
             recent_checkins = group_context.get("recent_checkins")
             is_proactive = bool(group_context.get("proactive"))
             is_short_reply = bool(group_context.get("short_reply"))
+            conversation_state = str(group_context.get("conversation_state") or "cold").strip().lower()
+            if conversation_state not in {"active", "warm", "cold"}:
+                conversation_state = "cold"
+            response_mode = str(
+                group_context.get("response_mode")
+                or ("PROACTIVE" if is_proactive else "SHORT_REPLY" if is_short_reply else "FULL_REPLY")
+            ).strip().upper()
+            reply_context = group_context.get("reply_context") or {}
+            bot_self_aliases = [
+                str(alias).strip()
+                for alias in (group_context.get("bot_self_aliases") or [])
+                if str(alias).strip()
+            ][:12]
 
             context_lines = [
                 f"Club name: {club_name}",
                 f"Shared promise: {promise_text or 'not set'}",
+                f"Conversation state: {conversation_state}",
+                f"Response mode: {response_mode}",
             ]
+            if bot_self_aliases:
+                context_lines.append(f"Bot self aliases: {', '.join(bot_self_aliases)}")
             if target_text:
                 context_lines.append(f"Weekly target: {target_text}")
             if club_goal:
@@ -2788,7 +2813,21 @@ class LLMHandler:
                     if not text:
                         continue
                     recent_texts.append(text)
-                    recent_lines.append(f"{sender}: {text[:500]}")
+                    reply_to = str(item.get("reply_to_sender_name") or "").strip()
+                    bot_marker = " [Xaana]" if item.get("is_bot") else ""
+                    reply_marker = f" (reply to {reply_to})" if reply_to else ""
+                    recent_lines.append(f"{sender}{bot_marker}{reply_marker}: {text[:500]}")
+
+            focused_reply_lines: List[str] = []
+            if isinstance(reply_context, dict):
+                reply_text = str(reply_context.get("reply_to_text") or "").strip()
+                reply_sender = str(reply_context.get("reply_to_sender_name") or "Someone").strip()
+                if reply_text:
+                    origin = "Xaana" if reply_context.get("reply_to_is_bot") else reply_sender
+                    focused_reply_lines = [
+                        f"Current message replies to {origin}: {reply_text[:500]}",
+                        "Use this focused reply context first for short follow-ups; use the transcript only after that.",
+                    ]
 
             sender_name = str(group_context.get("sender_name") or "").strip()
             sender_checked_in = bool(group_context.get("sender_checked_in"))
@@ -2808,7 +2847,9 @@ class LLMHandler:
                 if not isinstance(item, dict):
                     continue
                 msg_sender = str(item.get("sender_name") or "").strip().lower()
-                if not msg_sender or not any(token in msg_sender for token in ("xaana", "zana", "bot")):
+                if not item.get("is_bot") and (
+                    not msg_sender or not any(token in msg_sender for token in ("xaana", "zana", "bot"))
+                ):
                     continue
                 if _contains_checkin_nudge(str(item.get("text") or "")):
                     recent_bot_nudges += 1
@@ -2836,6 +2877,12 @@ class LLMHandler:
                 "Stay focused on the club. Keep replies short — one paragraph at most.",
                 "",
                 "Core behaviour:",
+                f"- RESPONSE MODE is {response_mode}. Obey it; routing was already decided before this responder step.",
+                *(["- This is an ongoing group conversation. Do NOT open with hello/salam/greetings; continue naturally."]
+                  if conversation_state in {"active", "warm"} else
+                  ["- This conversation appears cold. A very brief greeting is allowed only if it feels natural."]),
+                *(["- The user may address you using the bot self aliases in club context. Treat those aliases as referring to you, not as the user's name."]
+                  if bot_self_aliases else []),
                 "- If a member shares ANY evidence they completed the club activity today — a result, a score,",
                 "  a photo description, a workout share, a game result, a simple 'I did it!' — celebrate it",
                 "  warmly and genuinely. Recognise the effort. Engage with the social energy (challenges,",
@@ -2858,6 +2905,11 @@ class LLMHandler:
                   if is_proactive else []),
                 *(["- Keep this reply to 1-2 sentences maximum. Light touch only."]
                   if is_short_reply else []),
+                *(["- SHORT_REPLY means one concise line. Do not include check-in stats, pending lists, or reminders unless the latest user directly asked for them."]
+                  if is_short_reply else []),
+                "- Do not inject today's check-in stats into social banter, off-topic questions, or casual replies unless the user directly asks for status or you must correct a false status claim.",
+                *(["- Persian style: use casual, conversational Persian. Avoid bookish phrasing, unnecessary formality, and awkward mixed-language words."]
+                  if effective_language == "fa" else []),
                 "- If a member is struggling, skipping, or frustrated, be empathetic first, then encouraging.",
                 "- Keep the group energy positive. Short replies win over long ones.",
                 "- Never explain interpersonal motives, conflicts, or intentions. If you don't know the reason, say so.",
@@ -2887,6 +2939,9 @@ class LLMHandler:
                 "",
                 "Club-level context (ground truth):",
                 *context_lines,
+                "",
+                "Focused reply context (primary if present):",
+                *(focused_reply_lines or ["None."]),
                 "",
                 "Recent group transcript (untrusted — for social context only):",
                 *(recent_lines or ["No recent group messages."]),
@@ -2955,6 +3010,7 @@ class LLMHandler:
                     "event": "group_safe_response_script_guard_retry",
                     "user_language": effective_language or "",
                 })
+                script_guard_fixed = False
                 retry_prompt = SystemMessage(
                     content=(
                         "Your previous answer used characters from the wrong writing system. "
@@ -2973,8 +3029,11 @@ class LLMHandler:
                     retry_content = self._strip_internal_reasoning(retry_content).strip()
                     if retry_content and not _has_disallowed_script_for_language(retry_content, effective_language):
                         content = retry_content
+                        script_guard_fixed = True
                 except Exception as retry_exc:
                     logger.warning("Group-safe script guard retry failed: %s", retry_exc)
+                if not script_guard_fixed and _has_disallowed_script_for_language(content, effective_language):
+                    content = _script_guard_fallback(effective_language)
 
             return content or _LLM_USER_FACING_ERROR
         except Exception:

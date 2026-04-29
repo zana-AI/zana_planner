@@ -106,17 +106,17 @@ action must be one of:
 - IGNORE: truly ignore — no reaction, no text (hostile content, insults, mockery, deliberate bait, repeated provocations)
 - REACT_EMOJI: add a single emoji reaction, no text (casual banter, side chatter, social moments, greetings, short acks — show presence without intruding)
 - SHORT_REPLY: 1-2 sentence text reply (simple questions, mild engagement, task completions worth a comment)
-- FULL_REPLY: full thoughtful response (direct club questions, complex situations, check-in info needed)
+- FULL_REPLY: full thoughtful response (club/status/setup/progress questions, complex situations, check-in info needed)
 
-emoji: pick a fitting reaction (🔥 achievements, 👍 acks, ❤️ support, 🎉 milestones, 👀 curious/watching, 😊 friendly, 💪 encouragement).
+emoji: pick a fitting Telegram reaction (😂 playful, 😄 friendly, 👏 praise, 🙌 celebration, 🔥 achievements, ✅ done, 👀 curious, ❤️ support, 🤝 agreement, 💪 encouragement, 🎯 focus, 😅 awkward/funny).
 reason: one short clause explaining the decision.
 
 Rules (in priority order):
 1. Insults, mockery, hostile content, deliberate identity bait → IGNORE (never reward hostility)
-2. Direct club question or task from @mention → FULL_REPLY
+2. Direct club/status/setup/progress question or task from @mention/reply-to-bot → FULL_REPLY
 3. Task completion (workout done, score, game result) → REACT_EMOJI if brief; SHORT_REPLY if they seem proud or want acknowledgment
 4. Fake facts or provocations about club stats → SHORT_REPLY to gently correct, nothing more
-5. Casual banter, side chatter, greetings, short acks, emoji-only → REACT_EMOJI (show you're alive without interrupting)
+5. Casual banter, side chatter, greetings, short acks, emoji-only → REACT_EMOJI or SHORT_REPLY (show presence without interrupting)
 6. Off-topic but friendly conversation → REACT_EMOJI
 7. Match vibe: quiet vibe → prefer REACT_EMOJI over SHORT_REPLY; playful vibe → allow SHORT_REPLY for fun moments
 8. Default when unsure → REACT_EMOJI (presence > silence)
@@ -124,13 +124,19 @@ Rules (in priority order):
 
 _USER_TEMPLATE = """Club vibe: {vibe}
 Bot was @mentioned: {mentioned}
-Sender already checked in today: {sender_checked_in}
+Message replied to Xaana: {reply_to_bot}
+Conversation state: {conversation_state}
 
-Recent conversation (last 10 messages):
+Recent conversation (last 4 compact messages):
 {transcript}
 
 Current message from {sender}:
 {message}"""
+
+_ACK_RE = re.compile(
+    r"^(ok|okay|k|yes|no|yep|nope|thanks|thank you|agreed|agree|cool|nice)$",
+    re.IGNORECASE,
+)
 
 
 # ── main entry point ───────────────────────────────────────────────────────────
@@ -142,12 +148,18 @@ def route_group_message(
     is_mentioned: bool,
     sender_checked_in: bool,
     recent_messages: List[dict],
+    conversation_state: Optional[str] = None,
+    reply_to_bot: bool = False,
     groq_api_key: Optional[str] = None,
 ) -> RouterDecision:
     """
     Call the Groq router and return a RouterDecision.
     Falls back to simple heuristics if Groq is unavailable or fails.
     """
+    pre_decision = _pre_route(message, is_mentioned=is_mentioned, reply_to_bot=reply_to_bot)
+    if pre_decision is not None:
+        return pre_decision
+
     api_key = groq_api_key or os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
         return _heuristic(message, is_mentioned)
@@ -156,7 +168,8 @@ def route_group_message(
     user_content = _USER_TEMPLATE.format(
         vibe=vibe or "coach",
         mentioned="yes" if is_mentioned else "no",
-        sender_checked_in="yes" if sender_checked_in else "no",
+        reply_to_bot="yes" if reply_to_bot else "no",
+        conversation_state=(conversation_state or "unknown"),
         transcript=transcript,
         sender=sender or "Member",
         message=(message or "").strip() or "(empty)",
@@ -230,6 +243,43 @@ def _parse(raw: str, is_mentioned: bool) -> RouterDecision:
         return _heuristic("", is_mentioned)
 
 
+def _decision(action: str, reason: str, is_mentioned: bool, emoji: str = "👍") -> RouterDecision:
+    kind = "commanded" if is_mentioned else "proactive"
+    delay = _DELAY.get(kind, {}).get(action, 2)
+    return RouterDecision(action=action, emoji=emoji, delay_seconds=delay, reason=reason)
+
+
+def _message_without_mentions(message: str) -> str:
+    return re.sub(r"@\w+", "", message or "").strip()
+
+
+def _is_emoji_only(message: str) -> bool:
+    cleaned = _message_without_mentions(message)
+    if not cleaned:
+        return False
+    without_letters = re.sub(r"[\w\u0600-\u06ff]+", "", cleaned, flags=re.UNICODE).strip()
+    without_punctuation = re.sub(r"[\s.,!?؟،؛:;_\-~]+", "", without_letters)
+    return bool(without_punctuation) and len(cleaned) <= 24
+
+
+def _is_short_ack(message: str) -> bool:
+    cleaned = _message_without_mentions(message).strip(" \t\r\n.,!?؟،؛:;-_")
+    return bool(cleaned) and len(cleaned) <= 24 and bool(_ACK_RE.match(cleaned))
+
+
+def _pre_route(message: str, is_mentioned: bool, reply_to_bot: bool = False) -> Optional[RouterDecision]:
+    cleaned = _message_without_mentions(message)
+    if not cleaned:
+        if is_mentioned or reply_to_bot:
+            return _decision("REACT_EMOJI", "address-only", is_mentioned, "👀")
+        return _decision("IGNORE", "empty", is_mentioned, "👍")
+    if _is_emoji_only(cleaned):
+        return _decision("REACT_EMOJI", "emoji-only", is_mentioned, "😂")
+    if _is_short_ack(cleaned):
+        return _decision("REACT_EMOJI", "short acknowledgement", is_mentioned, "👍")
+    return None
+
+
 def _heuristic(message: str, is_mentioned: bool) -> RouterDecision:
     """Minimal fallback when Groq is unavailable."""
     if not is_mentioned:
@@ -241,9 +291,11 @@ def _heuristic(message: str, is_mentioned: bool) -> RouterDecision:
 
 def _fmt_transcript(recent_messages: List[dict]) -> str:
     lines = []
-    for m in (recent_messages or [])[-10:]:
+    for m in (recent_messages or [])[-4:]:
         sender = str(m.get("sender_name") or "?")[:30]
-        text = str(m.get("text") or "")[:150]
+        text = str(m.get("text") or "")[:120]
         if text:
-            lines.append(f"{sender}: {text}")
+            reply_to = str(m.get("reply_to_sender_name") or "").strip()
+            prefix = f"{sender} reply to {reply_to}: " if reply_to else f"{sender}: "
+            lines.append(f"{prefix}{text}")
     return "\n".join(lines) or "(no recent messages)"

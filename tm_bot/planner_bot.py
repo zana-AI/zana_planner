@@ -5,10 +5,12 @@ The web app runs as a separate process; this module runs the Telegram (or other 
 """
 import asyncio
 import os
+import re
 import subprocess
 import sys
 import threading
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from typing import Optional
 from unittest.mock import Mock
 
@@ -46,6 +48,10 @@ from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_column
 
 logger = get_logger(__name__)
 CLUB_TELEGRAM_CONFIRM_PREFIX = "clubtg_confirm:"
+_GROUP_ACTIVE_SECONDS = 10 * 60
+_GROUP_WARM_SECONDS = 60 * 60
+_DEFAULT_BOT_SELF_ALIASES = ("xaana", "zana", "زانا")
+_BOT_ALIAS_ENV = "XAANA_BOT_ALIASES"
 
 # ── club UI short labels (en/fa only — long messages go through the LLM) ──────
 _CLUB_LABELS: dict[str, dict[str, str]] = {
@@ -285,6 +291,13 @@ class PlannerBot:
             message_id = msg.message_id if msg else None
             if update.effective_chat:
                 metadata["chat_type"] = getattr(update.effective_chat, "type", None)
+            if update.effective_user:
+                metadata["sender_name"] = (
+                    getattr(update.effective_user, "first_name", None)
+                    or getattr(update.effective_user, "username", None)
+                    or getattr(update.effective_user, "full_name", None)
+                    or "Someone"
+                )
 
             if getattr(msg, "new_chat_members", None):
                 input_type = "new_chat_members"
@@ -526,9 +539,15 @@ class PlannerBot:
         if ctx.input_type != "text" or not (ctx.raw_text or "").strip():
             return
 
-        is_mentioned = await self._message_addresses_bot(ctx)
-        is_completion = self._is_task_completion(ctx.raw_text or "")
-
+        bot_self_aliases = await self._get_bot_self_aliases(ctx)
+        is_mentioned = await self._message_addresses_bot(ctx, bot_self_aliases=bot_self_aliases)
+        router_message = await self._clean_group_user_message(
+            ctx,
+            bot_self_aliases=bot_self_aliases,
+            fallback_text=False,
+        )
+        conversation_state = self._get_group_conversation_state(ctx)
+        reply_context = self._get_group_reply_context(ctx)
         club = self._get_club_for_group_chat(ctx.chat_id)
         vibe = (club or {}).get("club_vibe") or "coach"
         club_id = (club or {}).get("club_id", "")
@@ -550,12 +569,14 @@ class PlannerBot:
         # Call Groq router for every text message — it decides IGNORE/REACT_EMOJI/SHORT_REPLY/FULL_REPLY
         decision: RouterDecision = await asyncio.to_thread(
             route_group_message,
-            ctx.raw_text or "",
+            router_message,
             sender_name,
             vibe,
             is_mentioned,
             sender_checked_in,
             self._get_recent_group_messages(ctx),
+            conversation_state,
+            bool(reply_context.get("reply_to_is_bot")),
         )
         logger.debug("group_router: %s → %s (%s)", sender_name, decision.action, decision.reason)
 
@@ -579,12 +600,18 @@ class PlannerBot:
                 member_status=member_status,
                 sender_checked_in=sender_checked_in,
                 short_reply=(decision.action == "SHORT_REPLY"),
+                conversation_state=conversation_state,
+                reply_context=reply_context,
+                bot_self_aliases=bot_self_aliases,
             )
         else:
             await self._handle_group_task_completion(
                 ctx,
                 member_status=member_status,
                 sender_checked_in=sender_checked_in,
+                conversation_state=conversation_state,
+                reply_context=reply_context,
+                bot_self_aliases=bot_self_aliases,
             )
 
     async def _welcome_group_members(self, ctx: InputContext) -> None:
@@ -649,7 +676,8 @@ class PlannerBot:
         if not message:
             # Fallback to simple template if LLM fails
             message = f"Welcome {names_str}! 👋 This group is connected to {club['club_name']} on Xaana. Use /club to see the shared promise."
-        await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text=message, parse_mode=None)
+        sent = await ctx.platform_context.bot.send_message(chat_id=ctx.chat_id, text=message, parse_mode=None)
+        self._record_group_bot_message(ctx, message, sent_message=sent)
 
     async def _reply_with_group_club_summary(self, ctx: InputContext) -> None:
         from services.club_reminder_service import (
@@ -712,6 +740,7 @@ class PlannerBot:
             parse_mode=None,
             reply_markup=keyboard,
         )
+        self._record_group_bot_message(ctx, message, sent_message=sent)
         if keyboard and sent:
             try:
                 bot_data = ctx.platform_context.bot_data
@@ -944,6 +973,9 @@ class PlannerBot:
         ctx: InputContext,
         member_status: list | None = None,
         sender_checked_in: bool = False,
+        conversation_state: str = "cold",
+        reply_context: dict | None = None,
+        bot_self_aliases: list[str] | None = None,
     ) -> None:
         """React proactively when a member shares a task completion without @mentioning the bot."""
         club = self._get_club_for_group_chat(ctx.chat_id)
@@ -978,6 +1010,10 @@ class PlannerBot:
                 "sender_name": sender_name,
                 "sender_checked_in": sender_checked_in,
                 "proactive": True,
+                "conversation_state": conversation_state,
+                "reply_context": reply_context or {},
+                "bot_self_aliases": bot_self_aliases or [],
+                "response_mode": "PROACTIVE",
             },
             club.get("club_language"),
         )
@@ -991,6 +1027,9 @@ class PlannerBot:
         member_status: list | None = None,
         sender_checked_in: bool = False,
         short_reply: bool = False,
+        conversation_state: str = "cold",
+        reply_context: dict | None = None,
+        bot_self_aliases: list[str] | None = None,
     ) -> None:
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
@@ -1000,7 +1039,7 @@ class PlannerBot:
             return
 
         sender_name = ctx.metadata.get("sender_name") or ""
-        user_message = await self._clean_group_user_message(ctx)
+        user_message = await self._clean_group_user_message(ctx, bot_self_aliases=bot_self_aliases)
         target_text = ""
         if club.get("target_count_per_week") is not None:
             target = float(club["target_count_per_week"])
@@ -1011,7 +1050,12 @@ class PlannerBot:
             member_status = self._get_today_checkin_status(club.get("club_id", ""))
         recent_checkins = self._get_recent_club_checkin_context(club.get("club_id", ""), days=7)
 
-        processing_msg = await self._reply_to_group_message(ctx, _ct(club.get("club_language"), "thinking"), parse_mode=None)
+        processing_msg = await self._reply_to_group_message(
+            ctx,
+            _ct(club.get("club_language"), "thinking"),
+            parse_mode=None,
+            record_history=False,
+        )
         response_text = await asyncio.to_thread(
             self.llm_handler.get_response_group_safe,
             user_message,
@@ -1031,6 +1075,10 @@ class PlannerBot:
                 "sender_name": sender_name,
                 "sender_checked_in": sender_checked_in,
                 "short_reply": short_reply,
+                "conversation_state": conversation_state,
+                "reply_context": reply_context or {},
+                "bot_self_aliases": bot_self_aliases or [],
+                "response_mode": "SHORT_REPLY" if short_reply else "FULL_REPLY",
             },
             club.get("club_language"),
         )
@@ -1039,6 +1087,7 @@ class PlannerBot:
         if processing_msg:
             try:
                 await processing_msg.edit_text(text=response_text, parse_mode=None)
+                self._record_group_bot_message(ctx, response_text, sent_message=processing_msg)
                 return
             except Exception as e:
                 logger.debug("Could not edit group processing reply: %s", e)
@@ -1046,19 +1095,31 @@ class PlannerBot:
         await self._reply_to_group_message(ctx, response_text, parse_mode=None)
 
     async def _reply_to_group_message(self, ctx: InputContext, text: str, **kwargs):
+        record_history = bool(kwargs.pop("record_history", True))
         message = getattr(ctx.platform_update, "effective_message", None)
         if message:
             try:
-                return await message.reply_text(text=text, **kwargs)
+                sent = await message.reply_text(text=text, **kwargs)
+                if record_history:
+                    self._record_group_bot_message(ctx, text, sent_message=sent)
+                return sent
             except Exception as e:
                 logger.debug("Could not reply to group message directly: %s", e)
 
         bot = getattr(ctx.platform_context, "bot", None)
         if not bot:
             return None
-        return await bot.send_message(chat_id=ctx.chat_id, text=text, **kwargs)
+        sent = await bot.send_message(chat_id=ctx.chat_id, text=text, **kwargs)
+        if record_history:
+            self._record_group_bot_message(ctx, text, sent_message=sent)
+        return sent
 
-    async def _clean_group_user_message(self, ctx: InputContext) -> str:
+    async def _clean_group_user_message(
+        self,
+        ctx: InputContext,
+        bot_self_aliases: list[str] | None = None,
+        fallback_text: bool = True,
+    ) -> str:
         message = getattr(ctx.platform_update, "effective_message", None)
         text_value = (
             getattr(message, "text", None)
@@ -1070,17 +1131,42 @@ class PlannerBot:
         cleaned = str(text_value or "").strip()
         if username:
             cleaned = cleaned.replace(f"@{username}", "").replace(f"@{username.lower()}", "")
+        cleaned = self._strip_bot_self_references(cleaned, bot_self_aliases or await self._get_bot_self_aliases(ctx))
 
         command = (ctx.command or "").split("@", 1)[0].lower()
         if command:
             cleaned = cleaned.replace(f"/{ctx.command}", "", 1).strip()
 
-        return cleaned.strip() or "The user addressed you in the group."
+        cleaned = cleaned.strip()
+        if cleaned:
+            return cleaned
+        return "The user addressed you in the group." if fallback_text else ""
+
+    def _message_timestamp_utc(self, message) -> str:
+        value = getattr(message, "date", None)
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc).isoformat()
+        return datetime.now(timezone.utc).isoformat()
+
+    def _append_group_history(self, chat_id: int, entry: dict) -> None:
+        if not chat_id:
+            return
+        history = self._group_chat_history[chat_id]
+        message_id = entry.get("message_id")
+        if message_id is not None:
+            for idx, existing in enumerate(history):
+                if existing.get("message_id") == message_id:
+                    history[idx] = {**existing, **entry}
+                    return
+        history.append(entry)
 
     def _record_group_visible_message(self, ctx: InputContext) -> None:
         if not ctx.chat_id or not ctx.raw_text:
             return
 
+        message = getattr(ctx.platform_update, "effective_message", None)
         sender = getattr(ctx.platform_update, "effective_user", None)
         sender_name = (
             getattr(sender, "first_name", None)
@@ -1092,17 +1178,151 @@ class PlannerBot:
         if not text_value:
             return
 
-        self._group_chat_history[ctx.chat_id].append({
+        reply_context = self._get_group_reply_context(ctx)
+        self._append_group_history(ctx.chat_id, {
+            "message_id": ctx.message_id,
+            "sender_user_id": getattr(sender, "id", None),
             "sender_name": str(sender_name).strip()[:80] or "Someone",
             "text": text_value[:800],
+            "created_at_utc": self._message_timestamp_utc(message),
+            "is_bot": False,
+            "reply_to_message_id": reply_context.get("reply_to_message_id"),
+            "reply_to_sender_name": reply_context.get("reply_to_sender_name"),
+            "reply_to_text": reply_context.get("reply_to_text"),
+            "reply_to_is_bot": reply_context.get("reply_to_is_bot", False),
         })
 
-    def _get_recent_group_messages(self, ctx: InputContext) -> list[dict[str, str]]:
+    def _record_group_bot_message(self, ctx: InputContext, text: str, sent_message=None) -> None:
+        if not ctx.chat_id or not text:
+            return
+        bot = getattr(ctx.platform_context, "bot", None)
+        sender_name = (
+            getattr(bot, "first_name", None)
+            or getattr(bot, "username", None)
+            or "Xaana"
+        )
+        reply_context = self._get_group_reply_context(ctx)
+        self._append_group_history(ctx.chat_id, {
+            "message_id": getattr(sent_message, "message_id", None),
+            "sender_user_id": getattr(bot, "id", None),
+            "sender_name": str(sender_name).strip()[:80] or "Xaana",
+            "text": str(text or "").strip()[:800],
+            "created_at_utc": self._message_timestamp_utc(sent_message),
+            "is_bot": True,
+            "reply_to_message_id": ctx.message_id,
+            "reply_to_sender_name": ctx.metadata.get("sender_name") or reply_context.get("reply_to_sender_name"),
+            "reply_to_text": (ctx.raw_text or "")[:500],
+            "reply_to_is_bot": False,
+        })
+
+    def _get_recent_group_messages(self, ctx: InputContext) -> list[dict]:
         if not ctx.chat_id:
             return []
         return list(self._group_chat_history.get(ctx.chat_id, []))[-16:]
 
-    async def _message_addresses_bot(self, ctx: InputContext) -> bool:
+    def _get_group_conversation_state(self, ctx: InputContext) -> str:
+        if not ctx.chat_id:
+            return "cold"
+        now = datetime.now(timezone.utc)
+        for item in reversed(list(self._group_chat_history.get(ctx.chat_id, []))):
+            if (
+                ctx.message_id is not None
+                and item.get("message_id") == ctx.message_id
+                and not item.get("is_bot")
+            ):
+                continue
+            raw_ts = item.get("created_at_utc")
+            try:
+                ts = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+            age = (now - ts.astimezone(timezone.utc)).total_seconds()
+            if age <= _GROUP_ACTIVE_SECONDS:
+                return "active"
+            if age <= _GROUP_WARM_SECONDS:
+                return "warm"
+            return "cold"
+        return "cold"
+
+    def _get_group_reply_context(self, ctx: InputContext) -> dict:
+        message = getattr(ctx.platform_update, "effective_message", None)
+        reply_to_message = getattr(message, "reply_to_message", None)
+        if not reply_to_message:
+            return {}
+        reply_id = getattr(reply_to_message, "message_id", None)
+        reply_author = getattr(reply_to_message, "from_user", None)
+        reply_text = (
+            getattr(reply_to_message, "text", None)
+            or getattr(reply_to_message, "caption", None)
+            or ""
+        )
+        history_match = None
+        if reply_id is not None:
+            for item in reversed(list(self._group_chat_history.get(ctx.chat_id, []))):
+                if item.get("message_id") == reply_id:
+                    history_match = item
+                    break
+        sender_name = (
+            getattr(reply_author, "first_name", None)
+            or getattr(reply_author, "username", None)
+            or getattr(reply_author, "full_name", None)
+            or (history_match or {}).get("sender_name")
+            or "Someone"
+        )
+        return {
+            "reply_to_message_id": reply_id,
+            "reply_to_sender_name": str(sender_name).strip()[:80] or "Someone",
+            "reply_to_text": (reply_text or (history_match or {}).get("text") or "")[:500],
+            "reply_to_is_bot": bool(getattr(reply_author, "is_bot", False) or (history_match or {}).get("is_bot")),
+        }
+
+    async def _get_bot_self_aliases(self, ctx: InputContext) -> list[str]:
+        username, _bot_id = await self._resolve_bot_identity(ctx)
+        aliases = {alias.strip().lstrip("@") for alias in _DEFAULT_BOT_SELF_ALIASES if alias.strip()}
+        if username:
+            aliases.add(username.strip().lstrip("@").lower())
+        bot = getattr(ctx.platform_context, "bot", None)
+        for value in (
+            getattr(bot, "username", None),
+            getattr(bot, "first_name", None),
+            getattr(bot, "name", None),
+        ):
+            if value:
+                aliases.add(str(value).strip().lstrip("@").lower())
+        for value in (os.getenv(_BOT_ALIAS_ENV, "") or "").split(","):
+            if value.strip():
+                aliases.add(value.strip().lstrip("@").lower())
+        return sorted(aliases, key=len, reverse=True)
+
+    @staticmethod
+    def _text_has_bot_self_reference(text: str, aliases: list[str]) -> bool:
+        haystack = str(text or "")
+        for alias in aliases:
+            if not alias:
+                continue
+            pattern = rf"(?i)(^|[\s,.:;!?،؛؟])@?{re.escape(alias)}(?=$|[\s,.:;!?،؛؟])"
+            if re.search(pattern, haystack):
+                return True
+        return False
+
+    @staticmethod
+    def _strip_bot_self_references(text: str, aliases: list[str]) -> str:
+        cleaned = str(text or "")
+        for alias in aliases:
+            if not alias:
+                continue
+            pattern = rf"(?i)(^|[\s,.:;!?،؛؟])@?{re.escape(alias)}(?=$|[\s,.:;!?،؛؟])"
+            cleaned = re.sub(pattern, r"\1", cleaned)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        return cleaned.strip(" \t\r\n,.:;!?،؛؟")
+
+    async def _message_addresses_bot(
+        self,
+        ctx: InputContext,
+        bot_self_aliases: list[str] | None = None,
+    ) -> bool:
         message = getattr(ctx.platform_update, "effective_message", None)
         if not message:
             return False
@@ -1110,11 +1330,13 @@ class PlannerBot:
         text_value = (getattr(message, "text", None) or getattr(message, "caption", None) or ctx.raw_text or "")
         entities = list(getattr(message, "entities", None) or getattr(message, "caption_entities", None) or [])
         reply_to_message = getattr(message, "reply_to_message", None)
+        bot_self_aliases = bot_self_aliases or await self._get_bot_self_aliases(ctx)
 
         needs_bot_identity = bool(
             "@" in text_value
             or entities
             or reply_to_message
+            or self._text_has_bot_self_reference(text_value, bot_self_aliases)
         )
         if not needs_bot_identity:
             return False
@@ -1123,11 +1345,18 @@ class PlannerBot:
 
         if username and f"@{username}" in text_value.lower():
             return True
+        if self._text_has_bot_self_reference(text_value, bot_self_aliases):
+            return True
 
         if reply_to_message:
             reply_author = getattr(reply_to_message, "from_user", None)
             if bot_id and getattr(reply_author, "id", None) == bot_id:
                 return True
+            reply_id = getattr(reply_to_message, "message_id", None)
+            if reply_id is not None:
+                for item in reversed(list(self._group_chat_history.get(ctx.chat_id, []))):
+                    if item.get("message_id") == reply_id:
+                        return bool(item.get("is_bot"))
 
         for entity in entities:
             entity_type = getattr(entity, "type", None)

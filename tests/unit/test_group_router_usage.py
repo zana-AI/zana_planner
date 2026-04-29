@@ -99,3 +99,63 @@ def test_group_router_logs_failed_attempts_without_breaking_heuristic(monkeypatc
     assert all(row["role"] == "group_router" for row in logged)
     assert all(row["success"] is False for row in logged)
     assert all(row["error_type"] == "RuntimeError" for row in logged)
+
+
+def test_group_router_pre_routes_emoji_only_without_groq(monkeypatch):
+    def _fail_openai(*_args, **_kwargs):
+        raise AssertionError("Groq should not be called for obvious emoji-only input")
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_fail_openai))
+
+    decision = group_router.route_group_message(
+        message="😂😂",
+        sender="Homa",
+        vibe="playful",
+        is_mentioned=False,
+        sender_checked_in=False,
+        recent_messages=[],
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "REACT_EMOJI"
+    assert decision.reason == "emoji-only"
+
+
+def test_group_router_pre_routes_direct_status_question_without_groq(monkeypatch):
+    def _fail_openai(*_args, **_kwargs):
+        raise AssertionError("Groq should not be called for obvious status question")
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_fail_openai))
+
+    decision = group_router.route_group_message(
+        message="who checked in today?",
+        sender="Javad",
+        vibe="coach",
+        is_mentioned=True,
+        sender_checked_in=False,
+        recent_messages=[],
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "FULL_REPLY"
+    assert decision.reason == "direct club/status question"
+
+
+def test_group_router_pre_routes_address_only_mention_as_reaction(monkeypatch):
+    def _fail_openai(*_args, **_kwargs):
+        raise AssertionError("Groq should not be called for address-only mention")
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_fail_openai))
+
+    decision = group_router.route_group_message(
+        message="",
+        sender="Mahmoud",
+        vibe="playful",
+        is_mentioned=True,
+        sender_checked_in=False,
+        recent_messages=[],
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "REACT_EMOJI"
+    assert decision.reason == "address-only"
