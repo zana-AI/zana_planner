@@ -1162,6 +1162,7 @@ class MessageHandlers:
                         steps = payload.get("steps", [])
                         plan_message_to_send = self._format_plan_for_user(steps)
                 
+                user_lang_code = user_lang.value if user_lang else "en"
                 llm_response = self.llm_handler.get_response_api(
                     user_message, str(user_id), 
                     user_language=user_lang_code,
