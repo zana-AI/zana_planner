@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { useSearchParams } from 'react-router-dom';
@@ -10,7 +10,7 @@ import type { PdfHighlight } from '../types';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export function PdfReaderPage() {
-  const { initData, isReady, isTelegramMiniApp } = useTelegramWebApp();
+  const { initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
 
@@ -18,16 +18,17 @@ export function PdfReaderPage() {
   const [pdfUrl, setPdfUrl] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [progressRatio, setProgressRatio] = useState(0);
-  const [savedRatio, setSavedRatio] = useState(0);
   const [highlights, setHighlights] = useState<PdfHighlight[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState('');
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState(0);
   const [scale, setScale] = useState(1);
   const [rendering, setRendering] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedText, setSelectedText] = useState('');
@@ -35,18 +36,117 @@ export function PdfReaderPage() {
   const [color, setColor] = useState('#ffe066');
   const blobUrlRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const resumeRatioRef = useRef(0);
+  const pendingScrollFractionRef = useRef<number | null>(null);
+  const progressRatioRef = useRef(0);
+  const savedRatioRef = useRef(0);
+  const contentIdRef = useRef(contentId);
+  const canLoadApiRef = useRef(false);
+  const autoSaveTimeoutRef = useRef<number | null>(null);
+  const isSavingProgressRef = useRef(false);
+  const queuedProgressRef = useRef<number | null>(null);
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchStartScaleRef = useRef(1);
 
   const canOpen = Boolean(contentId);
   const authData = initData || getDevInitData();
   const hasBrowserToken = typeof window !== 'undefined' && !!localStorage.getItem('telegram_auth_token');
   const canLoadApi = isReady && (!!authData || hasBrowserToken);
+  contentIdRef.current = contentId;
+  canLoadApiRef.current = canLoadApi;
 
   useEffect(() => {
     if (authData) {
       apiClient.setInitData(authData);
     }
   }, [authData]);
+
+  const clampRatio = (ratio: number) => Math.max(0, Math.min(1, ratio));
+
+  const syncProgress = async (nextRatio = progressRatioRef.current) => {
+    const activeContentId = contentIdRef.current;
+    if (!activeContentId || !canLoadApiRef.current) return;
+    const boundedRatio = clampRatio(nextRatio);
+    if (Math.abs(boundedRatio - savedRatioRef.current) < 0.002) {
+      setSyncStatus('saved');
+      return;
+    }
+
+    if (isSavingProgressRef.current) {
+      queuedProgressRef.current = boundedRatio;
+      setSyncStatus('pending');
+      return;
+    }
+
+    isSavingProgressRef.current = true;
+    setSaving(true);
+    setSyncStatus('saving');
+    setError('');
+    try {
+      await apiClient.postConsumeEvent({
+        content_id: activeContentId,
+        start_position: savedRatioRef.current,
+        end_position: boundedRatio,
+        position_unit: 'ratio',
+        client: 'web_pdf_reader_auto',
+      });
+      savedRatioRef.current = boundedRatio;
+      setSyncStatus('saved');
+    } catch (err) {
+      setSyncStatus('error');
+      if (err instanceof ApiError) {
+        setError(err.message || 'Failed to sync reading progress');
+      } else {
+        setError('Failed to sync reading progress');
+      }
+    } finally {
+      isSavingProgressRef.current = false;
+      setSaving(false);
+    }
+
+    const queuedRatio = queuedProgressRef.current;
+    queuedProgressRef.current = null;
+    if (queuedRatio != null && Math.abs(queuedRatio - savedRatioRef.current) >= 0.002) {
+      window.setTimeout(() => {
+        void syncProgress(queuedRatio);
+      }, 150);
+    }
+  };
+
+  const scheduleProgressSync = (nextRatio: number) => {
+    if (!contentId || !canLoadApi || loading) return;
+    const boundedRatio = clampRatio(nextRatio);
+    if (Math.abs(boundedRatio - savedRatioRef.current) < 0.002) {
+      setSyncStatus('saved');
+      return;
+    }
+    setSyncStatus('pending');
+    if (autoSaveTimeoutRef.current != null) {
+      window.clearTimeout(autoSaveTimeoutRef.current);
+    }
+    autoSaveTimeoutRef.current = window.setTimeout(() => {
+      autoSaveTimeoutRef.current = null;
+      void syncProgress(boundedRatio);
+    }, 1200);
+  };
+
+  const updateProgressFromReader = (nextPageNumber = pageNumber) => {
+    if (!pageCount) return;
+    const shell = shellRef.current;
+    const maxScroll = shell ? Math.max(0, shell.scrollHeight - shell.clientHeight) : 0;
+    const pageScrollRatio = maxScroll > 0 && shell ? shell.scrollTop / maxScroll : 0;
+    const nextRatio = pageCount > 1
+      ? ((nextPageNumber - 1) + pageScrollRatio) / pageCount
+      : pageScrollRatio;
+    setProgressRatio(clampRatio(nextRatio));
+  };
+
+  const getTouchDistance = (touches: ReactTouchEvent<HTMLDivElement>['touches']) => {
+    if (touches.length < 2) return 0;
+    const [a, b] = [touches[0], touches[1]];
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  };
 
   const load = async () => {
     if (!canOpen || !canLoadApi) return;
@@ -69,10 +169,12 @@ export function PdfReaderPage() {
       }
       setExpiresAt(open.expires_at);
       const ratio = Number(open.last_position ?? open.progress_ratio ?? 0);
-      const boundedRatio = Math.max(0, Math.min(1, ratio));
+      const boundedRatio = clampRatio(ratio);
       resumeRatioRef.current = boundedRatio;
+      progressRatioRef.current = boundedRatio;
+      savedRatioRef.current = boundedRatio;
       setProgressRatio(boundedRatio);
-      setSavedRatio(boundedRatio);
+      setSyncStatus('saved');
 
       const h = await apiClient.getPdfHighlights(contentId, open.asset_id);
       setHighlights(h.items || []);
@@ -97,11 +199,52 @@ export function PdfReaderPage() {
   }, [contentId, canLoadApi, isReady, isTelegramMiniApp, authData, hasBrowserToken]);
 
   useEffect(() => {
+    const flushProgress = () => {
+      if (autoSaveTimeoutRef.current != null) {
+        window.clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
+      }
+      if (Math.abs(progressRatioRef.current - savedRatioRef.current) >= 0.002) {
+        void syncProgress(progressRatioRef.current);
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushProgress();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', flushProgress);
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', flushProgress);
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
       }
+      if (autoSaveTimeoutRef.current != null) {
+        window.clearTimeout(autoSaveTimeoutRef.current);
+      }
+      if (Math.abs(progressRatioRef.current - savedRatioRef.current) >= 0.002) {
+        void syncProgress(progressRatioRef.current);
+      }
     };
+  }, []);
+
+  useEffect(() => {
+    progressRatioRef.current = progressRatio;
+    if (!loading && pageCount > 0) {
+      scheduleProgressSync(progressRatio);
+    }
+  }, [progressRatio, loading, pageCount]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
 
   useEffect(() => {
@@ -122,13 +265,18 @@ export function PdfReaderPage() {
           return;
         }
         loadedDoc = doc;
-        const initialPage = doc.numPages > 1
-          ? Math.round(resumeRatioRef.current * (doc.numPages - 1)) + 1
-          : 1;
+        const scaledProgress = resumeRatioRef.current * doc.numPages;
+        const initialPageIndex = doc.numPages > 1
+          ? Math.min(doc.numPages - 1, Math.floor(scaledProgress))
+          : 0;
+        const initialScrollFraction = resumeRatioRef.current >= 0.999
+          ? 1
+          : scaledProgress - initialPageIndex;
+        pendingScrollFractionRef.current = clampRatio(initialScrollFraction);
         setPdfDoc(doc);
         setPageCount(doc.numPages);
-        setPageNumber(Math.min(Math.max(initialPage, 1), doc.numPages));
-        setPageIndex(Math.max(0, Math.min(initialPage - 1, doc.numPages - 1)));
+        setPageNumber(initialPageIndex + 1);
+        setPageIndex(initialPageIndex);
       })
       .catch(() => {
         if (!cancelled) {
@@ -172,6 +320,17 @@ export function PdfReaderPage() {
         context.clearRect(0, 0, viewport.width, viewport.height);
         renderTask = page.render({ canvas, canvasContext: context, viewport });
         await renderTask.promise;
+        const pendingScrollFraction = pendingScrollFractionRef.current;
+        if (!cancelled && pendingScrollFraction != null && shellRef.current) {
+          pendingScrollFractionRef.current = null;
+          window.requestAnimationFrame(() => {
+            const shell = shellRef.current;
+            if (!shell) return;
+            const maxScroll = Math.max(0, shell.scrollHeight - shell.clientHeight);
+            shell.scrollTop = maxScroll * pendingScrollFraction;
+            updateProgressFromReader(pageNumber);
+          });
+        }
       } catch (err) {
         if (!cancelled && !(err instanceof Error && err.name === 'RenderingCancelledException')) {
           setError('Failed to render PDF page');
@@ -197,43 +356,72 @@ export function PdfReaderPage() {
     if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleTimeString();
   }, [expiresAt]);
+  const syncLabel = useMemo(() => {
+    if (saving || syncStatus === 'saving') return 'Syncing...';
+    if (syncStatus === 'pending') return 'Sync queued';
+    if (syncStatus === 'error') return 'Sync failed';
+    if (syncStatus === 'saved') return `Synced at ${progressPct}%`;
+    return 'Tracking automatically';
+  }, [progressPct, saving, syncStatus]);
 
-  const saveProgress = async () => {
-    if (!contentId || saving) return;
-    setSaving(true);
-    setError('');
+  const toggleFullscreen = async () => {
+    const nextFullscreen = !isFullscreen;
+    setIsFullscreen(nextFullscreen);
+    if (nextFullscreen) {
+      expand();
+    }
     try {
-      await apiClient.postConsumeEvent({
-        content_id: contentId,
-        start_position: savedRatio,
-        end_position: progressRatio,
-        position_unit: 'ratio',
-        client: 'web_pdf_reader',
-      });
-      setSavedRatio(progressRatio);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message || 'Failed to save progress');
-      } else {
-        setError('Failed to save progress');
+      if (nextFullscreen && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      } else if (!nextFullscreen && document.fullscreenElement) {
+        await document.exitFullscreen();
       }
-    } finally {
-      setSaving(false);
+    } catch {
+      // Telegram iOS may reject the Fullscreen API; the fixed CSS reader still works.
     }
   };
 
   const goToPage = (nextPage: number) => {
     if (!pageCount) return;
     const bounded = Math.min(Math.max(nextPage, 1), pageCount);
+    if (shellRef.current) {
+      shellRef.current.scrollTop = 0;
+    }
+    pendingScrollFractionRef.current = 0;
     setPageNumber(bounded);
     setPageIndex(bounded - 1);
-    if (pageCount > 1) {
-      setProgressRatio((bounded - 1) / (pageCount - 1));
-    }
+    setProgressRatio(clampRatio((bounded - 1) / pageCount));
   };
 
   const zoomBy = (delta: number) => {
     setScale((current) => Math.min(2.5, Math.max(0.65, Number((current + delta).toFixed(2)))));
+  };
+
+  const handleReaderScroll = () => {
+    updateProgressFromReader();
+  };
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length === 2) {
+      pinchStartDistanceRef.current = getTouchDistance(event.touches);
+      pinchStartScaleRef.current = scale;
+    }
+  };
+
+  const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 2 || !pinchStartDistanceRef.current) return;
+    event.preventDefault();
+    const nextDistance = getTouchDistance(event.touches);
+    if (!nextDistance) return;
+    const nextScale = pinchStartScaleRef.current * (nextDistance / pinchStartDistanceRef.current);
+    setScale(Math.min(3, Math.max(0.55, Number(nextScale.toFixed(2)))));
+  };
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length < 2) {
+      pinchStartDistanceRef.current = null;
+      pinchStartScaleRef.current = scale;
+    }
   };
 
   const createHighlight = async () => {
@@ -281,7 +469,7 @@ export function PdfReaderPage() {
   }
 
   return (
-    <div className="pdf-reader-page">
+    <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}`}>
       <section className="pdf-reader-viewer">
         <div className="pdf-reader-toolbar">
           <button
@@ -319,17 +507,33 @@ export function PdfReaderPage() {
           <button
             className="pdf-reader-icon-btn"
             onClick={() => zoomBy(0.15)}
-            disabled={scale >= 2.5}
+            disabled={scale >= 3}
             title="Zoom in"
             type="button"
           >
             <ZoomIn size={18} />
           </button>
+          <button
+            className="pdf-reader-icon-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen reader'}
+            type="button"
+          >
+            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
         </div>
         {loading ? (
           <div style={{ padding: 16, color: 'rgba(255,255,255,0.8)' }}>Loading PDF…</div>
         ) : pdfUrl ? (
-          <div className="pdf-reader-canvas-shell">
+          <div
+            ref={shellRef}
+            className="pdf-reader-canvas-shell"
+            onScroll={handleReaderScroll}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+          >
             <canvas ref={canvasRef} className="pdf-reader-canvas" />
             {rendering && <div className="pdf-reader-rendering">Rendering...</div>}
           </div>
@@ -343,21 +547,21 @@ export function PdfReaderPage() {
         {expiresLabel && <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>URL expires at {expiresLabel}</p>}
         {error && <p style={{ margin: 0, color: '#ff6b6b', fontSize: 13 }}>{error}</p>}
 
-        <label style={{ fontSize: 13 }}>
-          Progress: {progressPct}%
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={progressPct}
-            onChange={(e) => setProgressRatio(Number(e.target.value) / 100)}
-            style={{ width: '100%' }}
-          />
-        </label>
-        <button onClick={saveProgress} disabled={saving} style={{ padding: '8px 10px' }}>
-          {saving ? 'Saving…' : 'Save Progress'}
-        </button>
+        <div className="pdf-reader-progress-card" aria-live="polite">
+          <div className="pdf-reader-progress-row">
+            <span>Reading progress</span>
+            <strong>{progressPct}%</strong>
+          </div>
+          <div className="pdf-reader-progress-track">
+            <div className="pdf-reader-progress-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+          <div className={`pdf-reader-sync-status pdf-reader-sync-status--${syncStatus}`}>
+            {syncLabel}
+          </div>
+          <div className="pdf-reader-sync-note">
+            Xaana saves progress automatically as you read.
+          </div>
+        </div>
 
         <hr style={{ borderColor: 'rgba(255,255,255,0.12)', width: '100%' }} />
 
