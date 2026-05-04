@@ -95,8 +95,8 @@ The codebase has been refactored into a clean, layered architecture:
 Migrate both **production** and **staging** PostgreSQL databases in a single command.
 
 The script reads credentials from the server's env files automatically:
-- `/opt/zana-config/.env.prod` → `DATABASE_URL_PROD`
-- `/opt/zana-config/.env.staging` → `DATABASE_URL_STAGING`
+- Production env file → `DATABASE_URL_PROD`
+- Staging env file → `DATABASE_URL_STAGING`
 
 ```bash
 # Migrate both DBs (default)
