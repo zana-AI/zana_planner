@@ -2262,6 +2262,8 @@ Generate the calendar links now:"""
         club_name = state["club_name"]
         promise_uuid = state.get("promise_uuid")
         promise_text = state.get("promise_text")
+        language = state.get("language")
+        timezone_name = state.get("timezone")
 
         member = next((m for m in members if m["user_id"] == user_id), None)
         if not member:
@@ -2294,10 +2296,20 @@ Generate the calendar links now:"""
                         m["status"] = "done"
                     elif m.get("status") == "done":
                         m["status"] = None
+                    try:
+                        m["streak"] = actions_repo.get_checkin_streak(int(m["user_id"]), promise_uuid)
+                    except Exception:
+                        pass
             except Exception as exc:
                 logger.warning("[ClubCheckin] Failed to persist action for user %s: %s", user_id, exc)
 
-        new_text = build_club_reminder_message(club_name, members, promise_text=promise_text)
+        new_text = build_club_reminder_message(
+            club_name,
+            members,
+            promise_text=promise_text,
+            language=language,
+            timezone=timezone_name,
+        )
         if new_text:
             try:
                 await query.edit_message_text(text=new_text, reply_markup=query.message.reply_markup)

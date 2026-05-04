@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 
 import pandas as pd
@@ -112,7 +112,7 @@ class ActionsRepository:
         ps = [a for a in actions if (a.promise_id or "").strip().upper() == pid]
         return max(ps, key=lambda a: a.at) if ps else None
 
-    def append_club_checkin(self, user_id: int, promise_uuid: str) -> None:
+    def append_club_checkin(self, user_id: int, promise_uuid: str, notes: str | None = None) -> None:
         """Record a club check-in for today (idempotent — replaces any existing one)."""
         user = str(user_id)
         now_dt = datetime.utcnow()
@@ -136,7 +136,7 @@ class ActionsRepository:
                         action_type, time_spent_hours, at_utc, notes
                     ) VALUES (
                         :action_uuid, :user_id, :promise_uuid, '',
-                        'club_checkin', 0.0, :at_utc, NULL
+                        'club_checkin', 0.0, :at_utc, :notes
                     );
                 """),
                 {
@@ -144,6 +144,7 @@ class ActionsRepository:
                     "user_id": user,
                     "promise_uuid": promise_uuid,
                     "at_utc": at_utc,
+                    "notes": notes,
                 },
             )
 
@@ -178,9 +179,20 @@ class ActionsRepository:
             ).fetchall()
         return {str(row[0]) for row in rows}
 
-    def get_checkin_streak(self, user_id: int, promise_uuid: str) -> int:
-        """Count consecutive days (ending today or yesterday) with a club_checkin action."""
-        from datetime import date, timedelta
+    def get_checkin_streak(
+        self,
+        user_id: int,
+        promise_uuid: str,
+        freeze_budget: int = 2,
+        reference_date: date | datetime | str | None = None,
+    ) -> int:
+        """
+        Count check-in days in the current streak, bridging up to freeze_budget missed days.
+
+        Missed days preserve a streak but never increase it. Today is not treated as
+        missed yet, so a streak ending yesterday still displays intact before today's
+        member check-in happens.
+        """
         user = str(user_id)
         with get_db_session() as session:
             rows = session.execute(
@@ -198,23 +210,49 @@ class ActionsRepository:
         if not rows:
             return 0
 
+        if isinstance(reference_date, datetime):
+            today = reference_date.date()
+        elif isinstance(reference_date, date):
+            today = reference_date
+        elif isinstance(reference_date, str):
+            today = date.fromisoformat(reference_date[:10])
+        else:
+            today = datetime.utcnow().date()
+
         dates = []
         for row in rows:
             d = row[0]
+            if isinstance(d, datetime):
+                d = d.date()
             if isinstance(d, str):
                 d = date.fromisoformat(d)
-            dates.append(d)
+            if d <= today:
+                dates.append(d)
 
-        today = datetime.utcnow().date()
-        if dates[0] < today - timedelta(days=1):
-            return 0  # Streak broken — most recent was more than yesterday
+        dates = sorted(set(dates), reverse=True)
+        if not dates:
+            return 0
 
+        try:
+            freezes_remaining = max(0, int(freeze_budget))
+        except (TypeError, ValueError):
+            freezes_remaining = 2
+
+        latest = dates[0]
+        initial_missed_days = max(0, (today - latest).days - 1)
+        if initial_missed_days > freezes_remaining:
+            return 0
+
+        freezes_remaining -= initial_missed_days
         streak = 1
+        previous = latest
         for i in range(1, len(dates)):
-            if dates[i] == dates[i - 1] - timedelta(days=1):
-                streak += 1
-            else:
+            missed_days = max(0, (previous - dates[i]).days - 1)
+            if missed_days > freezes_remaining:
                 break
+            freezes_remaining -= missed_days
+            streak += 1
+            previous = dates[i]
         return streak
 
     def get_actions_df(self, user_id: int) -> pd.DataFrame:

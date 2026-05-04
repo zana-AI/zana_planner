@@ -35,18 +35,72 @@ logger = get_logger(__name__)
 # Full format: "club_checkin:{club_id}:{action}"  (action = done | skip)
 CLUB_CHECKIN_PREFIX = "club_checkin:"
 
+_NON_LATIN_LANGUAGE_CODES = {"fa", "ar", "ur", "ps"}
+_WEEKDAYS_BY_LANGUAGE = {
+    "en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
+    "fr": ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"),
+    "fa": (
+        "\u062f\u0648\u0634\u0646\u0628\u0647",
+        "\u0633\u0647\u200c\u0634\u0646\u0628\u0647",
+        "\u0686\u0647\u0627\u0631\u0634\u0646\u0628\u0647",
+        "\u067e\u0646\u062c\u0634\u0646\u0628\u0647",
+        "\u062c\u0645\u0639\u0647",
+        "\u0634\u0646\u0628\u0647",
+        "\u06cc\u06a9\u0634\u0646\u0628\u0647",
+    ),
+    "ar": (
+        "\u0627\u0644\u0627\u062b\u0646\u064a\u0646",
+        "\u0627\u0644\u062b\u0644\u0627\u062b\u0627\u0621",
+        "\u0627\u0644\u0623\u0631\u0628\u0639\u0627\u0621",
+        "\u0627\u0644\u062e\u0645\u064a\u0633",
+        "\u0627\u0644\u062c\u0645\u0639\u0629",
+        "\u0627\u0644\u0633\u0628\u062a",
+        "\u0627\u0644\u0623\u062d\u062f",
+    ),
+}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _display_name(member: dict) -> str:
-    """Return the best display name for a club member, combining both scripts when available."""
+def _language_code(language: str | None) -> str:
+    return (language or "en").strip().lower().split("-", 1)[0] or "en"
+
+
+def _prefers_non_latin(language: str | None) -> bool:
+    return _language_code(language) in _NON_LATIN_LANGUAGE_CODES
+
+
+def _localized_weekday(
+    now_utc: datetime | None = None,
+    timezone: str | None = None,
+    language: str | None = None,
+) -> str:
+    """Return the weekday name in the club's display language and timezone."""
+    tz_name = (timezone or "UTC").strip() or "UTC"
+    try:
+        tz = ZoneInfo(tz_name if tz_name != "DEFAULT" else "UTC")
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
+
+    now = now_utc or datetime.utcnow()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=ZoneInfo("UTC"))
+    local_now = now.astimezone(tz)
+    weekdays = _WEEKDAYS_BY_LANGUAGE.get(_language_code(language), _WEEKDAYS_BY_LANGUAGE["en"])
+    return weekdays[local_now.weekday()]
+
+
+def _display_name(member: dict, language: str | None = None) -> str:
+    """Return the best display name for a club member, using one script per group."""
     non_latin = (member.get("non_latin_name") or "").strip()
     latin = (member.get("latin_name") or "").strip()
-    if non_latin and latin:
-        return f"{non_latin} / {latin}"
-    primary = non_latin or latin or (member.get("first_name") or "").strip()
+    if _prefers_non_latin(language):
+        primary = non_latin or latin
+    else:
+        primary = latin or non_latin
+    primary = primary or (member.get("first_name") or member.get("name") or "").strip()
     username = (member.get("username") or "").strip()
     return primary or (f"@{username}" if username else "Member")
 
@@ -87,6 +141,9 @@ def build_club_reminder_message(
     club_name: str,
     members: list[dict],
     promise_text: str | None = None,
+    language: str | None = None,
+    now_utc: datetime | None = None,
+    timezone: str | None = None,
 ) -> Optional[str]:
     """
     Compose the check-in reminder text for a club group chat.
@@ -96,7 +153,7 @@ def build_club_reminder_message(
         name         str
         promise_text str | None  (fallback if promise_text arg not given)
         status       None | 'done' | 'skip'
-        streak       int   (consecutive done-days before today, 0 if none)
+        streak       int   final freeze-aware streak count for display
 
     Returns None if there is no promise and no members.
     """
@@ -110,7 +167,8 @@ def build_club_reminder_message(
     total = len(members)
     done_count = sum(1 for m in members if m.get("status") == "done")
 
-    lines: list[str] = [f"🎯 {club_name} · check-in", ""]
+    weekday = _localized_weekday(now_utc=now_utc, timezone=timezone, language=language)
+    lines: list[str] = [f"🎯 {club_name} · {weekday} · check-in", ""]
 
     if shared_promise:
         lines.append(shared_promise.replace("_", " "))
@@ -121,8 +179,7 @@ def build_club_reminder_message(
         name = member["name"]
         streak = int(member.get("streak", 0))
         if status == "done":
-            new_streak = streak + 1
-            streak_label = f" 🔥{new_streak}" if new_streak > 1 else ""
+            streak_label = f" 🔥{streak}" if streak > 1 else ""
             lines.append(f"✅ {name}{streak_label}")
         elif status == "skip":
             lines.append(f"❌ {name}")
@@ -187,6 +244,7 @@ class ClubReminderService:
             chat_id = club.get("telegram_chat_id")
             owner_user_id = str(club.get("owner_user_id") or "")
             reminder_time = str(club.get("reminder_time") or "21:00")
+            language = str(club.get("language") or "en")
 
             # Already sent today?
             if bot_data["club_reminder_sent"].get(club_id) == today_str:
@@ -218,6 +276,7 @@ class ClubReminderService:
             promise_uuid = next(
                 (m.get("promise_uuid") for m in raw_members if m.get("promise_uuid")), None
             )
+            checked_in_today = self.actions_repo.get_today_checkins(promise_uuid) if promise_uuid else set()
 
             # Build member state with streak pre-loaded from DB
             members = []
@@ -231,13 +290,20 @@ class ClubReminderService:
                         pass
                 members.append({
                     "user_id": uid,
-                    "name": _display_name(m),
+                    "name": _display_name(m, language),
                     "promise_text": m.get("promise_text"),
-                    "status": None,
+                    "status": "done" if str(uid) in checked_in_today else None,
                     "streak": streak,
                 })
 
-            message = build_club_reminder_message(club_name, members, promise_text=promise_text)
+            message = build_club_reminder_message(
+                club_name,
+                members,
+                promise_text=promise_text,
+                language=language,
+                now_utc=now,
+                timezone=owner_tz,
+            )
             if message is None:
                 logger.info("[ClubReminder] Club %s has no promise — skipping", club_id)
                 continue
@@ -257,6 +323,8 @@ class ClubReminderService:
                     "club_name": club_name,
                     "promise_text": promise_text,
                     "promise_uuid": promise_uuid,
+                    "language": language,
+                    "timezone": owner_tz,
                     "members": members,
                 }
                 bot_data["club_reminder_sent"][club_id] = today_str

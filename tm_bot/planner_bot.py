@@ -35,6 +35,7 @@ from llms.llm_handler import LLMHandler
 from llms.group_router import route_group_message, budget_allows, RouterDecision
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
+from services.club_activity_detection import detect_activity_evidence
 from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
 from handlers.messages_store import initialize_message_store, get_user_language
@@ -561,17 +562,27 @@ class PlannerBot:
         club = self._get_club_for_group_chat(ctx.chat_id)
         vibe = (club or {}).get("club_vibe") or "coach"
         club_id = (club or {}).get("club_id", "")
+        club_language = (club or {}).get("club_language")
         ptb_context = getattr(ctx, "platform_context", None)
         bot_data = getattr(ptb_context, "bot_data", {}) if ptb_context else {}
 
-        # Fetch member status once — used by router and LLM
-        member_status = self._get_today_checkin_status(club_id) if club else []
+        # Soft check-ins become DB ground truth before router/LLM context is built.
+        if club:
+            await self._maybe_record_group_activity_checkin(ctx, club, bot_data)
+
+        member_status = self._get_today_checkin_status(club_id, club_language) if club else []
         sender_name = ctx.metadata.get("sender_name") or ""
         sender_checked_in = any(
-            m.get("status") == "done" and sender_name and (
-                m.get("name") == sender_name
-                or (m.get("non_latin_name") and m["non_latin_name"] == sender_name)
-                or (m.get("latin_name") and m["latin_name"] == sender_name)
+            m.get("status") == "done" and (
+                str(m.get("user_id") or "") == str(ctx.user_id)
+                or (
+                    sender_name
+                    and (
+                        m.get("name") == sender_name
+                        or (m.get("non_latin_name") and m["non_latin_name"] == sender_name)
+                        or (m.get("latin_name") and m["latin_name"] == sender_name)
+                    )
+                )
             )
             for m in member_status
         )
@@ -694,6 +705,7 @@ class PlannerBot:
             build_club_reminder_message,
             create_club_checkin_keyboard,
             _display_name,
+            _owner_timezone,
         )
         from repositories.actions_repo import ActionsRepository
 
@@ -706,6 +718,8 @@ class PlannerBot:
 
         club_id = club["club_id"]
         club_name = club["club_name"]
+        language = club.get("club_language")
+        timezone_name = _owner_timezone(str(club.get("owner_user_id") or ""))
 
         clubs_repo = ClubsRepository()
         actions_repo = ActionsRepository()
@@ -732,13 +746,19 @@ class PlannerBot:
             status = "done" if str(uid) in checked_in_today else None
             members.append({
                 "user_id": uid,
-                "name": _display_name(m),
+                "name": _display_name(m, language),
                 "promise_text": m.get("promise_text"),
                 "status": status,
                 "streak": streak,
             })
 
-        message = build_club_reminder_message(club_name, members, promise_text=promise_text)
+        message = build_club_reminder_message(
+            club_name,
+            members,
+            promise_text=promise_text,
+            language=language,
+            timezone=timezone_name,
+        )
         if not message:
             await self._reply_to_group_message(ctx, f"{club_name} — no promise set yet.", parse_mode=None)
             return
@@ -761,6 +781,8 @@ class PlannerBot:
                     "club_name": club_name,
                     "promise_text": promise_text,
                     "promise_uuid": promise_uuid,
+                    "language": language,
+                    "timezone": timezone_name,
                     "members": members,
                 }
             except Exception:
@@ -879,6 +901,123 @@ class PlannerBot:
         combined = re.compile("|".join(patterns), re.IGNORECASE | re.UNICODE)
         return bool(combined.search(text))
 
+    async def _maybe_record_group_activity_checkin(self, ctx: InputContext, club: dict, bot_data: dict) -> bool:
+        """Auto-count high-confidence group activity evidence as today's club check-in."""
+        evidence = detect_activity_evidence(
+            ctx.raw_text or "",
+            what_counts=club.get("club_checkin_what_counts"),
+            promise_text=club.get("promise_text"),
+        )
+        if not evidence.matched:
+            return False
+        if not ctx.user_id or not club.get("club_id"):
+            return False
+
+        from repositories.actions_repo import ActionsRepository
+
+        club_id = str(club["club_id"])
+        clubs_repo = ClubsRepository()
+        try:
+            raw_members = clubs_repo.get_club_members_promises(club_id)
+        except Exception as exc:
+            logger.debug("soft_checkin: could not load club members for %s: %s", club_id, exc)
+            return False
+
+        member_row = next((m for m in raw_members if str(m.get("user_id")) == str(ctx.user_id)), None)
+        if not member_row:
+            return False
+
+        promise_uuid = next((m.get("promise_uuid") for m in raw_members if m.get("promise_uuid")), None)
+        if not promise_uuid:
+            return False
+
+        actions_repo = ActionsRepository()
+        try:
+            checked_in = clubs_repo.get_today_club_checkins(club_id)
+            if str(ctx.user_id) not in checked_in:
+                notes = f"source=group_activity_evidence;reason={evidence.reason[:120]}"
+                actions_repo.append_club_checkin(ctx.user_id, promise_uuid, notes=notes)
+                logger.info(
+                    "soft_checkin: recorded user %s in club %s (%s, %.2f)",
+                    ctx.user_id,
+                    club_id,
+                    evidence.reason,
+                    evidence.confidence,
+                )
+            await self._refresh_group_checkin_cards(ctx, club, bot_data, promise_uuid)
+            return True
+        except Exception as exc:
+            logger.warning("soft_checkin: failed for user %s club %s: %s", ctx.user_id, club_id, exc)
+            return False
+
+    async def _refresh_group_checkin_cards(
+        self,
+        ctx: InputContext,
+        club: dict,
+        bot_data: dict,
+        promise_uuid: str,
+    ) -> None:
+        """Best-effort refresh of any live check-in cards cached in bot_data."""
+        if not bot_data or "club_checkins" not in bot_data:
+            return
+
+        from repositories.actions_repo import ActionsRepository
+        from services.club_reminder_service import (
+            build_club_reminder_message,
+            create_club_checkin_keyboard,
+            _owner_timezone,
+        )
+
+        club_id = str(club.get("club_id") or "")
+        if not club_id:
+            return
+
+        actions_repo = ActionsRepository()
+        checked_in = actions_repo.get_today_checkins(promise_uuid)
+        language = club.get("club_language")
+        timezone_name = _owner_timezone(str(club.get("owner_user_id") or ""))
+        bot = getattr(ctx.platform_context, "bot", None)
+
+        for state_key, state in list(bot_data.get("club_checkins", {}).items()):
+            if str(state.get("club_id") or "") != club_id:
+                continue
+            if isinstance(state_key, tuple) and state_key and state_key[0] != ctx.chat_id:
+                continue
+
+            members = state.get("members") or []
+            for member in members:
+                uid = str(member.get("user_id"))
+                if uid in checked_in:
+                    member["status"] = "done"
+                elif member.get("status") == "done":
+                    member["status"] = None
+                try:
+                    member["streak"] = actions_repo.get_checkin_streak(int(member["user_id"]), promise_uuid)
+                except Exception:
+                    pass
+
+            state["language"] = state.get("language") or language
+            state["timezone"] = state.get("timezone") or timezone_name
+            new_text = build_club_reminder_message(
+                state.get("club_name") or club.get("club_name") or "Club",
+                members,
+                promise_text=state.get("promise_text") or club.get("promise_text"),
+                language=state.get("language"),
+                timezone=state.get("timezone"),
+            )
+            if not bot or not new_text or not isinstance(state_key, tuple) or len(state_key) != 2:
+                continue
+            try:
+                await bot.edit_message_text(
+                    chat_id=state_key[0],
+                    message_id=state_key[1],
+                    text=new_text,
+                    parse_mode=None,
+                    reply_markup=create_club_checkin_keyboard(club_id),
+                )
+            except Exception as exc:
+                logger.debug("soft_checkin: could not refresh check-in card %s: %s", state_key, exc)
+
     async def _maybe_capture_onboarding_reply(self, ctx: InputContext, ptb_context) -> bool:
         """
         If this user has a pending club onboarding free-text question, capture
@@ -921,7 +1060,7 @@ class PlannerBot:
         except Exception:
             return ""
 
-    def _get_recent_club_checkin_context(self, club_id: str, days: int = 7) -> dict:
+    def _get_recent_club_checkin_context(self, club_id: str, days: int = 7, language: str | None = None) -> dict:
         """Return compact, club-scoped recent check-ins for group LLM context."""
         if not club_id:
             return {}
@@ -932,7 +1071,7 @@ class PlannerBot:
             for row in rows:
                 checkin_date = row.get("checkin_date")
                 entries.append({
-                    "name": _display_name(row),
+                    "name": _display_name(row, language),
                     "non_latin_name": (row.get("non_latin_name") or "").strip(),
                     "latin_name": (row.get("latin_name") or "").strip(),
                     "date": str(checkin_date) if checkin_date else "",
@@ -943,10 +1082,10 @@ class PlannerBot:
             logger.debug("_get_recent_club_checkin_context failed for club %s: %s", club_id, exc)
             return {}
 
-    def _get_today_checkin_status(self, club_id: str) -> list[dict]:
+    def _get_today_checkin_status(self, club_id: str, language: str | None = None) -> list[dict]:
         """
         Return today's check-in status for every active club member.
-        Each entry: {"name": str, "status": "done" | "pending"}
+        Each entry: {"user_id": str, "name": str, "status": "done" | "pending"}
         """
         from services.club_reminder_service import _display_name
         try:
@@ -957,7 +1096,8 @@ class PlannerBot:
             checked_in = clubs_repo.get_today_club_checkins(club_id)
             return [
                 {
-                    "name": _display_name(m),
+                    "user_id": str(m["user_id"]),
+                    "name": _display_name(m, language),
                     "username": (m.get("username") or "").strip(),
                     "non_latin_name": (m.get("non_latin_name") or "").strip(),
                     "latin_name": (m.get("latin_name") or "").strip(),
@@ -1001,7 +1141,7 @@ class PlannerBot:
             target_text = f"{int(t) if t.is_integer() else t} times/week"
 
         if member_status is None:
-            member_status = self._get_today_checkin_status(club.get("club_id", ""))
+            member_status = self._get_today_checkin_status(club.get("club_id", ""), club.get("club_language"))
 
         response = await asyncio.to_thread(
             self.llm_handler.get_response_group_safe,
@@ -1058,8 +1198,12 @@ class PlannerBot:
             target_text = f"{target_text} times/week"
 
         if member_status is None:
-            member_status = self._get_today_checkin_status(club.get("club_id", ""))
-        recent_checkins = self._get_recent_club_checkin_context(club.get("club_id", ""), days=7)
+            member_status = self._get_today_checkin_status(club.get("club_id", ""), club.get("club_language"))
+        recent_checkins = self._get_recent_club_checkin_context(
+            club.get("club_id", ""),
+            days=7,
+            language=club.get("club_language"),
+        )
 
         processing_msg = await self._reply_to_group_message(
             ctx,
@@ -1472,6 +1616,7 @@ class PlannerBot:
                 text("""
                     SELECT
                         c.club_id,
+                        c.owner_user_id,
                         c.name AS club_name,
                         c.description AS club_description,
                         c.vibe AS club_vibe,
