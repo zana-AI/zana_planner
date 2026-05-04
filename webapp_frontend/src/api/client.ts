@@ -308,8 +308,9 @@ class ApiClient {
   /**
    * Record a consumption segment.
    */
-  async postConsumeEvent(body: ConsumeEventRequest): Promise<{ progress_ratio: number; status: string }> {
+  async postConsumeEvent(body: ConsumeEventRequest, options: RequestInit = {}): Promise<{ progress_ratio: number; status: string }> {
     return this.request<{ progress_ratio: number; status: string }>('/consume-event', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(body),
     });

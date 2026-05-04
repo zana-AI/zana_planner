@@ -63,8 +63,37 @@ class ContentProgressService:
         """
         user_id = str(user_id)
         content_id = str(content_id)
-        if end_position <= start_position:
-            return {"progress_ratio": 0.0, "status": "saved", "skipped": "end <= start"}
+        is_pdf_checkpoint = position_unit == "ratio" and (client or "").startswith("web_pdf_reader")
+        if position_unit == "ratio":
+            start_position = max(0.0, min(1.0, start_position))
+            end_position = max(0.0, min(1.0, end_position))
+
+        if position_unit not in {"seconds", "ratio"}:
+            return {"progress_ratio": 0.0, "status": "saved", "skipped": "invalid position_unit"}
+
+        content = self._repo.get_content_by_id(content_id)
+        if not content:
+            return {"progress_ratio": 0.0, "status": "saved", "skipped": "content not found"}
+
+        # PDF reader progress is a resume checkpoint as well as consumption telemetry.
+        # Page jumps can be smaller than the generic segment threshold, especially in
+        # long PDFs, but they still must update user_content.last_position.
+        if is_pdf_checkpoint and (
+            end_position <= start_position or (end_position - start_position) < MIN_SEGMENT_RATIO
+        ):
+            self._repo.add_user_content(user_id, content_id)
+            status = "completed" if end_position >= COMPLETED_THRESHOLD else "in_progress"
+            now = _now()
+            self._repo.update_user_content_progress(
+                user_id=user_id,
+                content_id=content_id,
+                last_position=end_position,
+                position_unit=position_unit,
+                progress_ratio=end_position,
+                status=status,
+                completed_at=now if status == "completed" else None,
+            )
+            return {"progress_ratio": end_position, "status": status, "checkpoint": True}
 
         if position_unit == "seconds":
             if (end_position - start_position) < MIN_SEGMENT_SECONDS:
@@ -72,12 +101,6 @@ class ContentProgressService:
         elif position_unit == "ratio":
             if (end_position - start_position) < MIN_SEGMENT_RATIO:
                 return {"progress_ratio": 0.0, "status": "saved", "skipped": "segment too short (ratio)"}
-        else:
-            return {"progress_ratio": 0.0, "status": "saved", "skipped": "invalid position_unit"}
-
-        content = self._repo.get_content_by_id(content_id)
-        if not content:
-            return {"progress_ratio": 0.0, "status": "saved", "skipped": "content not found"}
 
         duration_or_1 = content.get("duration_seconds") or content.get("estimated_read_seconds")
         if duration_or_1 is None:

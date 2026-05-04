@@ -68,6 +68,7 @@ body.modal-open {
   min-height: 100dvh;
   padding: 0;
   background: #05070e;
+  overflow: hidden;
 }
 
 .pdf-reader-page--fullscreen .pdf-reader-viewer {
@@ -83,6 +84,35 @@ body.modal-open {
 
 .pdf-reader-page--fullscreen .pdf-reader-canvas-shell {
   height: calc(100dvh - 45px);
+}
+
+.pdf-reader-page--fullscreen .pdf-reader-toolbar {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  z-index: 4;
+  border: 1px solid rgba(237, 243, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(5, 7, 14, 0.72);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.pdf-reader-page--fullscreen .pdf-reader-canvas-shell {
+  height: 100dvh;
+  background: #05070e;
+}
+
+.pdf-reader-page--chrome-hidden .pdf-reader-toolbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-12px);
+}
+
+.pdf-reader-page--chrome-hidden .pdf-reader-fullscreen-toast {
+  opacity: 0.72;
 }
 
 .pdf-reader-viewer,
@@ -170,6 +200,24 @@ body.modal-open {
   font-size: 12px;
   font-weight: 700;
   padding: 6px 9px;
+}
+
+.pdf-reader-fullscreen-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 3;
+  border: 1px solid rgba(237, 243, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(5, 7, 14, 0.72);
+  color: rgba(237, 243, 255, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  padding: 7px 11px;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
 .pdf-reader-empty {

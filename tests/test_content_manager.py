@@ -5,7 +5,7 @@ completion calculation, and short-segment filtering.
 import pytest
 
 from utils.url_utils import canonicalize_url
-from services.content_progress_service import map_to_bucket_indices
+from services.content_progress_service import ContentProgressService, map_to_bucket_indices
 
 
 # --- URL canonicalization ---
@@ -112,3 +112,36 @@ def test_short_segment_ratio_rejected():
     MIN_SEGMENT_RATIO = 0.01
     assert (0.005 - 0.0) < MIN_SEGMENT_RATIO   # 0.5% rejected
     assert (0.05 - 0.02) >= MIN_SEGMENT_RATIO  # 3% accepted
+
+
+@pytest.mark.unit
+def test_pdf_reader_checkpoint_updates_last_position_for_small_jump():
+    class FakeRepo:
+        def __init__(self):
+            self.updated = None
+
+        def get_content_by_id(self, content_id):
+            return {"id": content_id, "content_type": "pdf"}
+
+        def add_user_content(self, user_id, content_id):
+            return "uc-1"
+
+        def update_user_content_progress(self, **kwargs):
+            self.updated = kwargs
+
+    repo = FakeRepo()
+    service = ContentProgressService(content_repo=repo)
+
+    result = service.record_consumption(
+        user_id="7",
+        content_id="content-1",
+        start_position=0.101,
+        end_position=0.105,
+        position_unit="ratio",
+        client="web_pdf_reader_checkpoint",
+    )
+
+    assert result["checkpoint"] is True
+    assert result["progress_ratio"] == 0.105
+    assert repo.updated["last_position"] == 0.105
+    assert repo.updated["progress_ratio"] == 0.105

@@ -32,6 +32,8 @@ export interface TelegramWebApp {
   isClosingConfirmationEnabled: boolean;
   ready: () => void;
   expand: () => void;
+  requestFullscreen?: () => void;
+  exitFullscreen?: () => void;
   close: () => void;
   openTelegramLink: (url: string) => void;
   MainButton: {

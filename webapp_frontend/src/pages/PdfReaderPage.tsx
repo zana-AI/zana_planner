@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
-import { ChevronLeft, ChevronRight, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { useSearchParams } from 'react-router-dom';
@@ -10,7 +10,7 @@ import type { PdfHighlight } from '../types';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export function PdfReaderPage() {
-  const { initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
+  const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
 
@@ -29,6 +29,7 @@ export function PdfReaderPage() {
   const [scale, setScale] = useState(1);
   const [rendering, setRendering] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
 
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedText, setSelectedText] = useState('');
@@ -48,6 +49,7 @@ export function PdfReaderPage() {
   const queuedProgressRef = useRef<number | null>(null);
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartScaleRef = useRef(1);
+  const fullscreenChromeTimeoutRef = useRef<number | null>(null);
 
   const canOpen = Boolean(contentId);
   const authData = initData || getDevInitData();
@@ -64,7 +66,7 @@ export function PdfReaderPage() {
 
   const clampRatio = (ratio: number) => Math.max(0, Math.min(1, ratio));
 
-  const syncProgress = async (nextRatio = progressRatioRef.current) => {
+  const syncProgress = async (nextRatio = progressRatioRef.current, keepalive = false) => {
     const activeContentId = contentIdRef.current;
     if (!activeContentId || !canLoadApiRef.current) return;
     const boundedRatio = clampRatio(nextRatio);
@@ -89,8 +91,8 @@ export function PdfReaderPage() {
         start_position: savedRatioRef.current,
         end_position: boundedRatio,
         position_unit: 'ratio',
-        client: 'web_pdf_reader_auto',
-      });
+        client: keepalive ? 'web_pdf_reader_checkpoint' : 'web_pdf_reader_auto',
+      }, keepalive ? { keepalive: true } : {});
       savedRatioRef.current = boundedRatio;
       setSyncStatus('saved');
     } catch (err) {
@@ -109,7 +111,7 @@ export function PdfReaderPage() {
     queuedProgressRef.current = null;
     if (queuedRatio != null && Math.abs(queuedRatio - savedRatioRef.current) >= 0.002) {
       window.setTimeout(() => {
-        void syncProgress(queuedRatio);
+        void syncProgress(queuedRatio, keepalive);
       }, 150);
     }
   };
@@ -205,7 +207,7 @@ export function PdfReaderPage() {
         autoSaveTimeoutRef.current = null;
       }
       if (Math.abs(progressRatioRef.current - savedRatioRef.current) >= 0.002) {
-        void syncProgress(progressRatioRef.current);
+        void syncProgress(progressRatioRef.current, true);
       }
     };
     const handleVisibilityChange = () => {
@@ -225,7 +227,7 @@ export function PdfReaderPage() {
         window.clearTimeout(autoSaveTimeoutRef.current);
       }
       if (Math.abs(progressRatioRef.current - savedRatioRef.current) >= 0.002) {
-        void syncProgress(progressRatioRef.current);
+        void syncProgress(progressRatioRef.current, true);
       }
     };
   }, []);
@@ -246,6 +248,32 @@ export function PdfReaderPage() {
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      setFullscreenControlsVisible(true);
+      if (fullscreenChromeTimeoutRef.current != null) {
+        window.clearTimeout(fullscreenChromeTimeoutRef.current);
+        fullscreenChromeTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (fullscreenChromeTimeoutRef.current != null) {
+      window.clearTimeout(fullscreenChromeTimeoutRef.current);
+    }
+    fullscreenChromeTimeoutRef.current = window.setTimeout(() => {
+      setFullscreenControlsVisible(false);
+      fullscreenChromeTimeoutRef.current = null;
+    }, 2200);
+
+    return () => {
+      if (fullscreenChromeTimeoutRef.current != null) {
+        window.clearTimeout(fullscreenChromeTimeoutRef.current);
+        fullscreenChromeTimeoutRef.current = null;
+      }
+    };
+  }, [isFullscreen, fullscreenControlsVisible, pageNumber, scale]);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,33 +392,63 @@ export function PdfReaderPage() {
     return 'Tracking automatically';
   }, [progressPct, saving, syncStatus]);
 
-  const toggleFullscreen = async () => {
-    const nextFullscreen = !isFullscreen;
-    setIsFullscreen(nextFullscreen);
-    if (nextFullscreen) {
-      expand();
+  const enterFullscreen = async () => {
+    setIsFullscreen(true);
+    setFullscreenControlsVisible(true);
+    expand();
+    try {
+      webApp?.requestFullscreen?.();
+    } catch {
+      // Telegram fullscreen is best-effort across client versions.
     }
     try {
-      if (nextFullscreen && document.documentElement.requestFullscreen) {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
         await document.documentElement.requestFullscreen();
-      } else if (!nextFullscreen && document.fullscreenElement) {
+      }
+    } catch {
+      // Telegram iOS may reject the browser Fullscreen API; CSS reader mode still fills the viewport.
+    }
+  };
+
+  const exitFullscreen = async () => {
+    setIsFullscreen(false);
+    setFullscreenControlsVisible(true);
+    try {
+      webApp?.exitFullscreen?.();
+    } catch {
+      // Ignore unsupported Telegram fullscreen exit.
+    }
+    try {
+      if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
     } catch {
-      // Telegram iOS may reject the Fullscreen API; the fixed CSS reader still works.
+      // Ignore unsupported browser fullscreen exit.
     }
+  };
+
+  const revealFullscreenControls = () => {
+    if (!isFullscreen) return;
+    setFullscreenControlsVisible(true);
   };
 
   const goToPage = (nextPage: number) => {
     if (!pageCount) return;
     const bounded = Math.min(Math.max(nextPage, 1), pageCount);
+    const nextRatio = clampRatio((bounded - 1) / pageCount);
     if (shellRef.current) {
       shellRef.current.scrollTop = 0;
     }
+    if (autoSaveTimeoutRef.current != null) {
+      window.clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
+    }
     pendingScrollFractionRef.current = 0;
+    progressRatioRef.current = nextRatio;
     setPageNumber(bounded);
     setPageIndex(bounded - 1);
-    setProgressRatio(clampRatio((bounded - 1) / pageCount));
+    setProgressRatio(nextRatio);
+    void syncProgress(nextRatio);
   };
 
   const zoomBy = (delta: number) => {
@@ -469,7 +527,7 @@ export function PdfReaderPage() {
   }
 
   return (
-    <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}`}>
+    <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}${isFullscreen && !fullscreenControlsVisible ? ' pdf-reader-page--chrome-hidden' : ''}`}>
       <section className="pdf-reader-viewer">
         <div className="pdf-reader-toolbar">
           <button
@@ -515,11 +573,11 @@ export function PdfReaderPage() {
           </button>
           <button
             className="pdf-reader-icon-btn"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen reader'}
+            onClick={isFullscreen ? exitFullscreen : enterFullscreen}
+            title={isFullscreen ? 'Exit reader mode' : 'Reader fullscreen'}
             type="button"
           >
-            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            {isFullscreen ? <X size={18} /> : <Maximize2 size={18} />}
           </button>
         </div>
         {loading ? (
@@ -533,9 +591,15 @@ export function PdfReaderPage() {
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
+            onClick={revealFullscreenControls}
           >
             <canvas ref={canvasRef} className="pdf-reader-canvas" />
             {rendering && <div className="pdf-reader-rendering">Rendering...</div>}
+            {isFullscreen && (
+              <div className="pdf-reader-fullscreen-toast">
+                Tap to show controls
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ padding: 16, color: '#ff6b6b' }}>PDF URL unavailable.</div>
