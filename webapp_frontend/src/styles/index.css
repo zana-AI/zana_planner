@@ -63,12 +63,21 @@ body.modal-open {
 .pdf-reader-page--fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 2147483000;
   display: block;
   min-height: 100dvh;
   padding: 0;
   background: #05070e;
   overflow: hidden;
+}
+
+body.pdf-reader-fullscreen-active {
+  overflow: hidden;
+}
+
+body.pdf-reader-fullscreen-active .app-shell-header,
+body.pdf-reader-fullscreen-active .ui-bottom-nav {
+  display: none !important;
 }
 
 .pdf-reader-page--fullscreen .pdf-reader-viewer {
@@ -218,6 +227,31 @@ body.modal-open {
   padding: 7px 11px;
   pointer-events: none;
   transition: opacity 0.2s ease;
+}
+
+.pdf-reader-page-zone {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 30vw;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pdf-reader-page-zone:disabled {
+  pointer-events: none;
+}
+
+.pdf-reader-page-zone--prev {
+  left: 0;
+}
+
+.pdf-reader-page-zone--next {
+  right: 0;
 }
 
 .pdf-reader-empty {

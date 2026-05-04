@@ -50,6 +50,7 @@ export function PdfReaderPage() {
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartScaleRef = useRef(1);
   const fullscreenChromeTimeoutRef = useRef<number | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
 
   const canOpen = Boolean(contentId);
   const authData = initData || getDevInitData();
@@ -251,6 +252,7 @@ export function PdfReaderPage() {
 
   useEffect(() => {
     if (!isFullscreen) {
+      document.body.classList.remove('pdf-reader-fullscreen-active');
       setFullscreenControlsVisible(true);
       if (fullscreenChromeTimeoutRef.current != null) {
         window.clearTimeout(fullscreenChromeTimeoutRef.current);
@@ -259,6 +261,7 @@ export function PdfReaderPage() {
       return;
     }
 
+    document.body.classList.add('pdf-reader-fullscreen-active');
     if (fullscreenChromeTimeoutRef.current != null) {
       window.clearTimeout(fullscreenChromeTimeoutRef.current);
     }
@@ -268,6 +271,7 @@ export function PdfReaderPage() {
     }, 2200);
 
     return () => {
+      document.body.classList.remove('pdf-reader-fullscreen-active');
       if (fullscreenChromeTimeoutRef.current != null) {
         window.clearTimeout(fullscreenChromeTimeoutRef.current);
         fullscreenChromeTimeoutRef.current = null;
@@ -451,6 +455,11 @@ export function PdfReaderPage() {
     void syncProgress(nextRatio);
   };
 
+  const turnFullscreenPage = (direction: -1 | 1) => {
+    revealFullscreenControls();
+    goToPage(pageNumber + direction);
+  };
+
   const zoomBy = (delta: number) => {
     setScale((current) => Math.min(2.5, Math.max(0.65, Number((current + delta).toFixed(2)))));
   };
@@ -463,6 +472,12 @@ export function PdfReaderPage() {
     if (event.touches.length === 2) {
       pinchStartDistanceRef.current = getTouchDistance(event.touches);
       pinchStartScaleRef.current = scale;
+      touchStartRef.current = null;
+      return;
+    }
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY, at: Date.now() };
     }
   };
 
@@ -479,6 +494,21 @@ export function PdfReaderPage() {
     if (event.touches.length < 2) {
       pinchStartDistanceRef.current = null;
       pinchStartScaleRef.current = scale;
+    }
+    if (!isFullscreen || event.changedTouches.length === 0 || !touchStartRef.current) {
+      touchStartRef.current = null;
+      return;
+    }
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    const elapsed = Date.now() - touchStartRef.current.at;
+    touchStartRef.current = null;
+    if (elapsed > 700 || Math.abs(dx) < 55 || Math.abs(dy) > 80) return;
+    if (dx < 0) {
+      turnFullscreenPage(1);
+    } else {
+      turnFullscreenPage(-1);
     }
   };
 
@@ -596,9 +626,31 @@ export function PdfReaderPage() {
             <canvas ref={canvasRef} className="pdf-reader-canvas" />
             {rendering && <div className="pdf-reader-rendering">Rendering...</div>}
             {isFullscreen && (
-              <div className="pdf-reader-fullscreen-toast">
-                Tap to show controls
-              </div>
+              <>
+                <button
+                  className="pdf-reader-page-zone pdf-reader-page-zone--prev"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    turnFullscreenPage(-1);
+                  }}
+                  disabled={pageNumber <= 1}
+                  type="button"
+                  aria-label="Previous page"
+                />
+                <button
+                  className="pdf-reader-page-zone pdf-reader-page-zone--next"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    turnFullscreenPage(1);
+                  }}
+                  disabled={pageNumber >= pageCount}
+                  type="button"
+                  aria-label="Next page"
+                />
+                <div className="pdf-reader-fullscreen-toast">
+                  Tap edges to turn page
+                </div>
+              </>
             )}
           </div>
         ) : (
