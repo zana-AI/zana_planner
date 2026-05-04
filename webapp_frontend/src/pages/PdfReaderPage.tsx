@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
+import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { PdfHighlight } from '../types';
 
 export function PdfReaderPage() {
+  const { initData, isReady, isTelegramMiniApp } = useTelegramWebApp();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
 
@@ -24,9 +26,18 @@ export function PdfReaderPage() {
   const blobUrlRef = useRef<string | null>(null);
 
   const canOpen = Boolean(contentId);
+  const authData = initData || getDevInitData();
+  const hasBrowserToken = typeof window !== 'undefined' && !!localStorage.getItem('telegram_auth_token');
+  const canLoadApi = isReady && (!!authData || hasBrowserToken);
+
+  useEffect(() => {
+    if (authData) {
+      apiClient.setInitData(authData);
+    }
+  }, [authData]);
 
   const load = async () => {
-    if (!canOpen) return;
+    if (!canOpen || !canLoadApi) return;
     setLoading(true);
     setError('');
     try {
@@ -63,8 +74,13 @@ export function PdfReaderPage() {
   };
 
   useEffect(() => {
+    if (isReady && isTelegramMiniApp && !authData && !hasBrowserToken) {
+      setLoading(false);
+      setError('Telegram did not provide authentication data. Please reopen this from the bot button.');
+      return;
+    }
     load();
-  }, [contentId]);
+  }, [contentId, canLoadApi, isReady, isTelegramMiniApp, authData, hasBrowserToken]);
 
   useEffect(() => {
     return () => {
