@@ -25,6 +25,7 @@ export function PdfReaderPage() {
 
   const [assetId, setAssetId] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const [expiresAt, setExpiresAt] = useState('');
   const [progressRatio, setProgressRatio] = useState(0);
   const [highlights, setHighlights] = useState<PdfHighlight[]>([]);
@@ -47,7 +48,6 @@ export function PdfReaderPage() {
   const [selectedText, setSelectedText] = useState('');
   const [note, setNote] = useState('');
   const [color, setColor] = useState('#ffe066');
-  const blobUrlRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pageFrameRef = useRef<HTMLDivElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
@@ -228,21 +228,14 @@ export function PdfReaderPage() {
     if (!canOpen || !canLoadApi) return;
     setLoading(true);
     setError('');
+    setPdfUrl('');
+    setPdfBytes(null);
     try {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
       const open = await apiClient.getPdfOpen(contentId);
       setAssetId(open.asset_id);
-      if (open.pdf_url.startsWith('/api/')) {
-        const blob = await apiClient.fetchPdfBlob(open.pdf_url);
-        const objectUrl = URL.createObjectURL(blob);
-        blobUrlRef.current = objectUrl;
-        setPdfUrl(objectUrl);
-      } else {
-        setPdfUrl(open.pdf_url);
-      }
+      setPdfUrl(open.pdf_url);
+      const blob = await apiClient.fetchPdfBlob(open.pdf_url);
+      setPdfBytes(new Uint8Array(await blob.arrayBuffer()));
       setExpiresAt(open.expires_at);
       const ratio = Number(open.last_position ?? open.progress_ratio ?? 0);
       const boundedRatio = clampRatio(ratio);
@@ -294,9 +287,6 @@ export function PdfReaderPage() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', flushProgress);
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-      }
       if (autoSaveTimeoutRef.current != null) {
         window.clearTimeout(autoSaveTimeoutRef.current);
       }
@@ -381,7 +371,7 @@ export function PdfReaderPage() {
   useEffect(() => {
     let cancelled = false;
     let loadedDoc: pdfjsLib.PDFDocumentProxy | null = null;
-    if (!pdfUrl) {
+    if (!pdfBytes) {
       setPdfDoc(null);
       setPageCount(0);
       setPageNumber(1);
@@ -389,7 +379,13 @@ export function PdfReaderPage() {
     }
 
     setRendering(true);
-    pdfjsLib.getDocument(pdfUrl).promise
+    pdfjsLib.getDocument({
+      data: pdfBytes.slice(),
+      disableAutoFetch: true,
+      disableRange: true,
+      disableStream: true,
+      useSystemFonts: true,
+    }).promise
       .then((doc) => {
         if (cancelled) {
           doc.destroy();
@@ -424,7 +420,7 @@ export function PdfReaderPage() {
       cancelled = true;
       loadedDoc?.destroy();
     };
-  }, [pdfUrl]);
+  }, [pdfBytes]);
 
   useEffect(() => {
     let cancelled = false;
