@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
@@ -411,6 +411,10 @@ export function PdfReaderPage() {
       disableAutoFetch: true,
       disableRange: true,
       disableStream: true,
+      isImageDecoderSupported: false,
+      isOffscreenCanvasSupported: false,
+      useWasm: false,
+      useWorkerFetch: false,
       useSystemFonts: true,
     }).promise
       .then((doc) => {
