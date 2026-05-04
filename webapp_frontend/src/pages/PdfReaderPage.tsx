@@ -167,47 +167,22 @@ export function PdfReaderPage() {
   }
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr minmax(300px, 360px)',
-        gap: 16,
-        padding: 16,
-        minHeight: 'calc(100vh - 72px)',
-      }}
-    >
-      <section
-        style={{
-          border: '1px solid rgba(255,255,255,0.16)',
-          borderRadius: 12,
-          background: 'rgba(0,0,0,0.25)',
-          overflow: 'hidden',
-        }}
-      >
+    <div className="pdf-reader-page">
+      <section className="pdf-reader-viewer">
         {loading ? (
           <div style={{ padding: 16, color: 'rgba(255,255,255,0.8)' }}>Loading PDF…</div>
         ) : pdfUrl ? (
           <iframe
             title="PDF Reader"
             src={pdfUrl}
-            style={{ width: '100%', height: 'calc(100vh - 120px)', border: 'none', background: '#1f1f1f' }}
+            className="pdf-reader-frame"
           />
         ) : (
           <div style={{ padding: 16, color: '#ff6b6b' }}>PDF URL unavailable.</div>
         )}
       </section>
 
-      <aside
-        style={{
-          border: '1px solid rgba(255,255,255,0.16)',
-          borderRadius: 12,
-          background: 'rgba(255,255,255,0.06)',
-          padding: 12,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}
-      >
+      <aside className="pdf-reader-tools">
         <h2 style={{ margin: 0, fontSize: 16 }}>PDF Sync</h2>
         {expiresLabel && <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>URL expires at {expiresLabel}</p>}
         {error && <p style={{ margin: 0, color: '#ff6b6b', fontSize: 13 }}>{error}</p>}

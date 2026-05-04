@@ -50,6 +50,80 @@ body.modal-open {
   min-height: 100vh;
 }
 
+/* PDF reader */
+.pdf-reader-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+  min-height: calc(100vh - 72px);
+  padding: 16px;
+  padding-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
+}
+
+.pdf-reader-viewer,
+.pdf-reader-tools {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+}
+
+.pdf-reader-viewer {
+  min-width: 0;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.pdf-reader-frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 120px);
+  border: 0;
+  background: #1f1f1f;
+}
+
+.pdf-reader-empty {
+  padding: 16px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.pdf-reader-empty--error {
+  color: #ff6b6b;
+}
+
+.pdf-reader-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@media (max-width: 767px) {
+  .pdf-reader-page {
+    display: flex;
+    flex-direction: column;
+    min-height: auto;
+    padding: 10px;
+    padding-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
+  }
+
+  .pdf-reader-viewer {
+    width: 100%;
+    min-height: 58vh;
+    order: 1;
+  }
+
+  .pdf-reader-frame {
+    min-height: 58vh;
+    height: 58vh;
+  }
+
+  .pdf-reader-tools {
+    order: 2;
+    width: 100%;
+  }
+}
+
 /* App container */
 .app {
   min-height: 100vh;
