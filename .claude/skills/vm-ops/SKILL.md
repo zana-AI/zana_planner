@@ -36,7 +36,6 @@ Do **not** run `gcloud auth login` yourself — it requires an interactive brows
 | Thing | Value |
 |---|---|
 | VM | `vm-telegram-bots` (zone `europe-west9-c`) |
-| Public IP | `34.163.204.33` |
 | Domain | `xaana.club` (HTTPS via Let's Encrypt) |
 | Project repo on VM | `/opt/zana-bot` |
 | Env files | `/opt/zana-config/.env.prod`, `/opt/zana-config/.env.staging` |

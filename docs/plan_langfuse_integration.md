@@ -56,7 +56,7 @@ grouped by Telegram chat as a trace.
 The compose file already includes the six services. Steps to bring them up on the VM:
 
 **1. DNS.** In your DNS provider (or GCP Cloud DNS), add an A record:
-   `langfuse.xaana.club` → `34.163.204.33`
+   `langfuse.xaana.club` → `<YOUR_SERVER_IP>`
 
 **2. Create persistent storage directories on the VM:**
 ```

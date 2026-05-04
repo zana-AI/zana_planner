@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Xaana (ZanaAI) is a Telegram bot + Mini App for goal/promise accountability. It runs as a Docker container on a GCP VM (`34.163.204.33`, domain `xaana.club`). The bot handles NLP-driven promise tracking via `python-telegram-bot`, while the web layer serves a React SPA via FastAPI/uvicorn.
+Xaana (ZanaAI) is a Telegram bot + Mini App for goal/promise accountability. It runs as a Docker container on a GCP VM (domain `xaana.club`). The bot handles NLP-driven promise tracking via `python-telegram-bot`, while the web layer serves a React SPA via FastAPI/uvicorn.
 
 ## Architecture
 
