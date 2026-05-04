@@ -192,10 +192,157 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 
 .pdf-reader-canvas {
   display: block;
-  margin: 12px auto;
+  margin: 0;
   max-width: none;
   background: white;
+}
+
+.pdf-reader-page-frame {
+  position: relative;
+  margin: 12px auto;
+  background: white;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  transform-origin: center center;
+}
+
+.pdf-reader-page-frame--turn-next {
+  animation: pdf-page-in-next 220ms ease-out;
+}
+
+.pdf-reader-page-frame--turn-prev {
+  animation: pdf-page-in-prev 220ms ease-out;
+}
+
+.pdf-reader-text-layer,
+.pdf-reader-highlight-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.pdf-reader-text-layer {
+  z-index: 2;
+  overflow: hidden;
+  line-height: 1;
+  opacity: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: transparent;
+}
+
+.pdf-reader-text-layer span,
+.pdf-reader-text-layer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-reader-text-layer ::selection {
+  background: rgba(99, 167, 247, 0.38);
+}
+
+.pdf-reader-highlight-layer {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pdf-reader-highlight-rect {
+  position: absolute;
+  border-radius: 2px;
+  opacity: 0.36;
+  mix-blend-mode: multiply;
+}
+
+.pdf-reader-selection-popover {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 7px;
+  width: min(240px, calc(100% - 16px));
+  border: 1px solid rgba(9, 15, 31, 0.18);
+  border-radius: 10px;
+  background: rgba(9, 15, 31, 0.94);
+  color: var(--text);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  padding: 8px;
+}
+
+.pdf-reader-selection-text {
+  max-height: 48px;
+  overflow: hidden;
+  color: rgba(237, 243, 255, 0.82);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.pdf-reader-selection-popover textarea {
+  width: 100%;
+  border: 1px solid rgba(237, 243, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(237, 243, 255, 0.08);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
+  padding: 6px;
+}
+
+.pdf-reader-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-reader-selection-actions input {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.pdf-reader-selection-actions button {
+  flex: 1;
+  min-height: 28px;
+  border: 1px solid rgba(237, 243, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(237, 243, 255, 0.08);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@keyframes pdf-page-in-next {
+  from {
+    opacity: 0.35;
+    transform: translateX(24px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes pdf-page-in-prev {
+  from {
+    opacity: 0.35;
+    transform: translateX(-24px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdf-reader-page-frame--turn-next,
+  .pdf-reader-page-frame--turn-prev {
+    animation: none;
+  }
 }
 
 .pdf-reader-rendering {
@@ -231,27 +378,35 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 
 .pdf-reader-page-zone {
   position: fixed;
-  top: 0;
-  bottom: 0;
+  top: 50%;
   z-index: 2;
-  width: 30vw;
-  border: 0;
-  background: transparent;
-  opacity: 0;
+  width: 38px;
+  height: 56px;
+  border: 1px solid rgba(237, 243, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(5, 7, 14, 0.48);
+  color: rgba(237, 243, 255, 0.78);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.82;
   cursor: pointer;
+  transform: translateY(-50%);
+  backdrop-filter: blur(10px);
   -webkit-tap-highlight-color: transparent;
 }
 
 .pdf-reader-page-zone:disabled {
-  pointer-events: none;
+  cursor: default;
+  opacity: 0.22;
 }
 
 .pdf-reader-page-zone--prev {
-  left: 0;
+  left: max(8px, env(safe-area-inset-left));
 }
 
 .pdf-reader-page-zone--next {
-  right: 0;
+  right: max(8px, env(safe-area-inset-right));
 }
 
 .pdf-reader-empty {

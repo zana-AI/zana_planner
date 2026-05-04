@@ -5,9 +5,18 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { PdfHighlight } from '../types';
+import type { PdfHighlight, PdfHighlightRect } from '../types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+interface SelectionDraft {
+  text: string;
+  rects: PdfHighlightRect[];
+  left: number;
+  top: number;
+  note: string;
+  color: string;
+}
 
 export function PdfReaderPage() {
   const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
@@ -30,6 +39,9 @@ export function PdfReaderPage() {
   const [rendering, setRendering] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
+  const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
+  const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
+  const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
 
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedText, setSelectedText] = useState('');
@@ -37,6 +49,8 @@ export function PdfReaderPage() {
   const [color, setColor] = useState('#ffe066');
   const blobUrlRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pageFrameRef = useRef<HTMLDivElement | null>(null);
+  const textLayerRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const resumeRatioRef = useRef(0);
   const pendingScrollFractionRef = useRef<number | null>(null);
@@ -151,6 +165,65 @@ export function PdfReaderPage() {
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   };
 
+  const clearNativeSelection = () => {
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+    }
+  };
+
+  const captureTextSelection = () => {
+    const selection = window.getSelection();
+    const pageFrame = pageFrameRef.current;
+    const textLayer = textLayerRef.current;
+    if (!selection || selection.rangeCount === 0 || !pageFrame || !textLayer) return;
+
+    const text = selection.toString().trim();
+    if (!text) {
+      setSelectionDraft(null);
+      return;
+    }
+
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (
+      (anchorNode && !textLayer.contains(anchorNode)) ||
+      (focusNode && !textLayer.contains(focusNode))
+    ) {
+      return;
+    }
+
+    const pageBox = pageFrame.getBoundingClientRect();
+    if (pageBox.width <= 0 || pageBox.height <= 0) return;
+    const rangeRects = Array.from(selection.getRangeAt(0).getClientRects());
+    const rects = rangeRects
+      .map((rect) => {
+        const left = Math.max(rect.left, pageBox.left);
+        const right = Math.min(rect.right, pageBox.right);
+        const top = Math.max(rect.top, pageBox.top);
+        const bottom = Math.min(rect.bottom, pageBox.bottom);
+        if (right - left < 2 || bottom - top < 2) return null;
+        return {
+          x: clampRatio((left - pageBox.left) / pageBox.width),
+          y: clampRatio((top - pageBox.top) / pageBox.height),
+          width: clampRatio((right - left) / pageBox.width),
+          height: clampRatio((bottom - top) / pageBox.height),
+        };
+      })
+      .filter((rect): rect is PdfHighlightRect => Boolean(rect));
+
+    if (rects.length === 0) return;
+    const firstRect = rects[0];
+    setSelectionDraft({
+      text,
+      rects,
+      left: Math.min(pageBox.width - 180, Math.max(8, firstRect.x * pageBox.width)),
+      top: Math.max(8, firstRect.y * pageBox.height - 48),
+      note: '',
+      color,
+    });
+  };
+
   const load = async () => {
     if (!canOpen || !canLoadApi) return;
     setLoading(true);
@@ -239,6 +312,32 @@ export function PdfReaderPage() {
       scheduleProgressSync(progressRatio);
     }
   }, [progressRatio, loading, pageCount]);
+
+  useEffect(() => {
+    let selectionTimer: number | null = null;
+    const handleSelectionChange = () => {
+      if (selectionTimer != null) {
+        window.clearTimeout(selectionTimer);
+      }
+      selectionTimer = window.setTimeout(() => {
+        captureTextSelection();
+        selectionTimer = null;
+      }, 180);
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      if (selectionTimer != null) {
+        window.clearTimeout(selectionTimer);
+      }
+    };
+  }, [pageNumber, scale, color]);
+
+  useEffect(() => {
+    if (!pageTurnDirection) return;
+    const timeout = window.setTimeout(() => setPageTurnDirection(null), 240);
+    return () => window.clearTimeout(timeout);
+  }, [pageTurnDirection, pageNumber]);
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -330,15 +429,18 @@ export function PdfReaderPage() {
   useEffect(() => {
     let cancelled = false;
     let renderTask: pdfjsLib.RenderTask | null = null;
+    let textLayer: pdfjsLib.TextLayer | null = null;
 
     async function renderPage() {
-      if (!pdfDoc || !canvasRef.current) return;
+      if (!pdfDoc || !canvasRef.current || !textLayerRef.current) return;
       setRendering(true);
+      setSelectionDraft(null);
       try {
         const page = await pdfDoc.getPage(pageNumber);
         if (cancelled) return;
         const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
+        const textLayerDiv = textLayerRef.current;
         const context = canvas.getContext('2d');
         if (!context) return;
 
@@ -347,11 +449,19 @@ export function PdfReaderPage() {
         canvas.height = Math.floor(viewport.height * outputScale);
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
+        setPageSize({ width: viewport.width, height: viewport.height });
+        textLayerDiv.replaceChildren();
 
         context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
         context.clearRect(0, 0, viewport.width, viewport.height);
         renderTask = page.render({ canvas, canvasContext: context, viewport });
-        await renderTask.promise;
+        const textContent = page.streamTextContent();
+        textLayer = new pdfjsLib.TextLayer({
+          textContentSource: textContent,
+          container: textLayerDiv,
+          viewport,
+        });
+        await Promise.all([renderTask.promise, textLayer.render()]);
         const pendingScrollFraction = pendingScrollFractionRef.current;
         if (!cancelled && pendingScrollFraction != null && shellRef.current) {
           pendingScrollFractionRef.current = null;
@@ -378,6 +488,7 @@ export function PdfReaderPage() {
     return () => {
       cancelled = true;
       renderTask?.cancel();
+      textLayer?.cancel();
     };
   }, [pdfDoc, pageNumber, scale]);
 
@@ -439,7 +550,9 @@ export function PdfReaderPage() {
   const goToPage = (nextPage: number) => {
     if (!pageCount) return;
     const bounded = Math.min(Math.max(nextPage, 1), pageCount);
+    if (bounded === pageNumber) return;
     const nextRatio = clampRatio((bounded - 1) / pageCount);
+    setPageTurnDirection(bounded > pageNumber ? 'next' : 'prev');
     if (shellRef.current) {
       shellRef.current.scrollTop = 0;
     }
@@ -449,6 +562,8 @@ export function PdfReaderPage() {
     }
     pendingScrollFractionRef.current = 0;
     progressRatioRef.current = nextRatio;
+    setSelectionDraft(null);
+    clearNativeSelection();
     setPageNumber(bounded);
     setPageIndex(bounded - 1);
     setProgressRatio(nextRatio);
@@ -533,6 +648,33 @@ export function PdfReaderPage() {
         setError(err.message || 'Failed to create highlight');
       } else {
         setError('Failed to create highlight');
+      }
+    }
+  };
+
+  const saveSelectionHighlight = async () => {
+    if (!contentId || !assetId || !selectionDraft) return;
+    setError('');
+    try {
+      await apiClient.createPdfHighlight(contentId, {
+        asset_id: assetId,
+        page_index: pageNumber - 1,
+        rects: selectionDraft.rects,
+        selected_text: selectionDraft.text,
+        note: selectionDraft.note || undefined,
+        color: selectionDraft.color,
+      });
+      setSelectedText('');
+      setNote('');
+      setSelectionDraft(null);
+      clearNativeSelection();
+      const h = await apiClient.getPdfHighlights(contentId, assetId);
+      setHighlights(h.items || []);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message || 'Failed to save selected highlight');
+      } else {
+        setError('Failed to save selected highlight');
       }
     }
   };
@@ -623,7 +765,72 @@ export function PdfReaderPage() {
             onTouchCancel={handleTouchEnd}
             onClick={revealFullscreenControls}
           >
-            <canvas ref={canvasRef} className="pdf-reader-canvas" />
+            <div
+              ref={pageFrameRef}
+              className={[
+                'pdf-reader-page-frame',
+                pageTurnDirection ? `pdf-reader-page-frame--turn-${pageTurnDirection}` : '',
+              ].join(' ')}
+              style={pageSize.width && pageSize.height ? { width: pageSize.width, height: pageSize.height } : undefined}
+            >
+              <canvas ref={canvasRef} className="pdf-reader-canvas" />
+              <div ref={textLayerRef} className="pdf-reader-text-layer textLayer" />
+              <div className="pdf-reader-highlight-layer" aria-hidden="true">
+                {highlights
+                  .filter((highlight) => highlight.page_index === pageNumber - 1)
+                  .flatMap((highlight) =>
+                    (highlight.rects_json || []).map((rect, rectIndex) => (
+                      <div
+                        key={`${highlight.id}-${rectIndex}`}
+                        className="pdf-reader-highlight-rect"
+                        style={{
+                          left: `${rect.x * 100}%`,
+                          top: `${rect.y * 100}%`,
+                          width: `${rect.width * 100}%`,
+                          height: `${rect.height * 100}%`,
+                          backgroundColor: highlight.color || '#ffe066',
+                        }}
+                      />
+                    )),
+                  )}
+              </div>
+              {selectionDraft && (
+                <div
+                  className="pdf-reader-selection-popover"
+                  style={{ left: selectionDraft.left, top: selectionDraft.top }}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onTouchStart={(event) => event.stopPropagation()}
+                >
+                  <div className="pdf-reader-selection-text">{selectionDraft.text}</div>
+                  <textarea
+                    value={selectionDraft.note}
+                    onChange={(event) => setSelectionDraft((draft) => draft ? { ...draft, note: event.target.value } : draft)}
+                    placeholder="Add note (optional)"
+                    rows={2}
+                  />
+                  <div className="pdf-reader-selection-actions">
+                    <input
+                      aria-label="Highlight color"
+                      type="color"
+                      value={selectionDraft.color}
+                      onChange={(event) => setSelectionDraft((draft) => draft ? { ...draft, color: event.target.value } : draft)}
+                    />
+                    <button type="button" onClick={saveSelectionHighlight}>
+                      Highlight
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectionDraft(null);
+                        clearNativeSelection();
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             {rendering && <div className="pdf-reader-rendering">Rendering...</div>}
             {isFullscreen && (
               <>
@@ -636,7 +843,9 @@ export function PdfReaderPage() {
                   disabled={pageNumber <= 1}
                   type="button"
                   aria-label="Previous page"
-                />
+                >
+                  <ChevronLeft size={18} />
+                </button>
                 <button
                   className="pdf-reader-page-zone pdf-reader-page-zone--next"
                   onClick={(event) => {
@@ -646,7 +855,9 @@ export function PdfReaderPage() {
                   disabled={pageNumber >= pageCount}
                   type="button"
                   aria-label="Next page"
-                />
+                >
+                  <ChevronRight size={18} />
+                </button>
                 <div className="pdf-reader-fullscreen-toast">
                   Tap edges to turn page
                 </div>
