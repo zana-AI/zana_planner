@@ -68,3 +68,26 @@ def test_local_mode_upload_and_resolve(monkeypatch, tmp_path):
     resolved = svc.resolve_local_storage_uri(uri)
     assert resolved.exists()
     assert resolved.read_bytes() == b"hello-pdf"
+
+
+def test_local_default_uses_root_dir(monkeypatch, tmp_path):
+    monkeypatch.delenv("OBJECT_STORAGE_BUCKET", raising=False)
+    monkeypatch.delenv("OBJECT_STORAGE_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("OBJECT_STORAGE_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("OBJECT_STORAGE_LOCAL_DIR", raising=False)
+    monkeypatch.delenv("PDF_LOCAL_STORAGE_DIR", raising=False)
+    monkeypatch.setenv("ROOT_DIR", str(tmp_path / "users"))
+
+    svc = ObjectStorageService()
+    assert svc.local_dir == (tmp_path / "users" / "_content_assets" / "pdf").resolve()
+
+
+def test_local_path_traversal_rejected(monkeypatch, tmp_path):
+    monkeypatch.delenv("OBJECT_STORAGE_BUCKET", raising=False)
+    monkeypatch.delenv("OBJECT_STORAGE_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("OBJECT_STORAGE_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.setenv("OBJECT_STORAGE_LOCAL_DIR", str(tmp_path / "pdf-store"))
+
+    svc = ObjectStorageService()
+    with pytest.raises(ValueError):
+        svc.resolve_local_storage_uri("local://../outside.pdf")

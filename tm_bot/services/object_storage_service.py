@@ -20,9 +20,7 @@ class ObjectStorageService:
         self.access_key = (os.getenv("OBJECT_STORAGE_ACCESS_KEY_ID") or "").strip()
         self.secret_key = (os.getenv("OBJECT_STORAGE_SECRET_ACCESS_KEY") or "").strip()
         self.presign_ttl = int(os.getenv("OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS") or "600")
-        self.local_dir = Path(
-            (os.getenv("OBJECT_STORAGE_LOCAL_DIR") or os.getenv("PDF_LOCAL_STORAGE_DIR") or "./data/pdf_assets").strip()
-        ).resolve()
+        self.local_dir = self._default_local_dir()
 
         self._client = None
         if self.mode == "s3":
@@ -106,9 +104,24 @@ class ObjectStorageService:
     def _resolve_local_key_to_path(self, key: str) -> Path:
         normalized = key.strip("/").replace("\\", "/")
         candidate = (self.local_dir / normalized).resolve()
-        if not str(candidate).startswith(str(self.local_dir)):
+        try:
+            if os.path.commonpath([str(candidate), str(self.local_dir)]) != str(self.local_dir):
+                raise ValueError("Invalid object key path traversal")
+        except ValueError:
             raise ValueError("Invalid object key path traversal")
         return candidate
+
+    @staticmethod
+    def _default_local_dir() -> Path:
+        configured = os.getenv("OBJECT_STORAGE_LOCAL_DIR") or os.getenv("PDF_LOCAL_STORAGE_DIR")
+        if configured and configured.strip():
+            return Path(configured.strip()).resolve()
+
+        root_dir = os.getenv("ROOT_DIR")
+        if root_dir and root_dir.strip():
+            return (Path(root_dir.strip()) / "_content_assets" / "pdf").resolve()
+
+        return (Path.cwd() / "USERS_DATA_DIR" / "_content_assets" / "pdf").resolve()
 
     @staticmethod
     def _parse_storage_uri(storage_uri: str) -> Tuple[str, str]:

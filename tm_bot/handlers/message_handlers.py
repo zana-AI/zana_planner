@@ -9,6 +9,7 @@ import html
 import json
 import re
 import hashlib
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -1350,7 +1351,7 @@ class MessageHandlers:
         self.content_repo.add_user_content(str(user_id), content_id)
 
         previous_asset = self.content_repo.get_latest_content_asset(content_id, asset_type="pdf_source")
-        object_key = f"pdf/{user_id}/{content_id}/{datetime.utcnow().strftime('%Y%m%dT%H%M%S')}_{checksum[:12]}.pdf"
+        object_key = f"pdf/{content_id}/{uuid.uuid4().hex}_{checksum[:12]}.pdf"
         storage_uri, size_bytes = storage.upload_pdf_bytes(object_key, payload)
         new_asset_id = self.content_repo.add_content_asset(
             content_id=content_id,
