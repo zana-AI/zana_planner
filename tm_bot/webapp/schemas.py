@@ -523,6 +523,32 @@ class UpdateUserContentRequest(BaseModel):
     rating: Optional[int] = None
 
 
+class HighlightRect(BaseModel):
+    """Normalized rectangle on a PDF page."""
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class CreateHighlightRequest(BaseModel):
+    """Create PDF highlight request."""
+    asset_id: str
+    page_index: int = Field(..., ge=0)
+    rects: List[HighlightRect] = Field(default_factory=list, max_length=200)
+    selected_text: Optional[str] = Field(default=None, max_length=8000)
+    note: Optional[str] = Field(default=None, max_length=8000)
+    color: Optional[str] = Field(default=None, max_length=32)
+
+
+class UpdateHighlightRequest(BaseModel):
+    """Update PDF highlight request."""
+    rects: Optional[List[HighlightRect]] = Field(default=None, max_length=200)
+    selected_text: Optional[str] = Field(default=None, max_length=8000)
+    note: Optional[str] = Field(default=None, max_length=8000)
+    color: Optional[str] = Field(default=None, max_length=32)
+
+
 class AnalyzeContentRequest(BaseModel):
     """Request model for enqueueing content analysis."""
     force_rebuild: Optional[bool] = False

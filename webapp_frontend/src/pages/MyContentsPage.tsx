@@ -53,6 +53,16 @@ function getInternalYouTubeWatchUrl(item: UserContentWithDetails): string | null
   return `/youtube-watch?video_id=${encodeURIComponent(videoId)}`;
 }
 
+function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
+  const provider = (item.provider || '').toLowerCase();
+  const mime = String(item.metadata_json?.['mime_type'] || '').toLowerCase();
+  const isPdf = provider === 'telegram_pdf' || mime === 'application/pdf';
+  if (!isPdf) return null;
+  const contentId = item.content_id || item.id;
+  if (!contentId) return null;
+  return `/pdf-reader?content_id=${encodeURIComponent(contentId)}`;
+}
+
 export function MyContentsPage() {
   const [addUrl, setAddUrl] = useState('');
   const [adding, setAdding] = useState(false);
@@ -194,6 +204,12 @@ export function MyContentsPage() {
                       key={item.user_content_id || item.content_id || item.id}
                       item={item}
                       onClick={() => {
+                        const pdfReaderUrl = getInternalPdfReaderUrl(item);
+                        if (pdfReaderUrl) {
+                          window.location.assign(pdfReaderUrl);
+                          return;
+                        }
+
                         const youtubeWatchUrl = getInternalYouTubeWatchUrl(item);
                         if (youtubeWatchUrl) {
                           window.location.assign(youtubeWatchUrl);

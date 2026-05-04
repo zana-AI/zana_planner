@@ -516,6 +516,54 @@ export interface MyContentsResponse {
   count: number;
 }
 
+export interface PdfOpenResponse {
+  content_id: string;
+  asset_id: string;
+  pdf_url: string;
+  expires_at: string;
+  last_position?: number;
+  progress_ratio: number;
+}
+
+export interface PdfHighlightRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PdfHighlight {
+  id: string;
+  user_id: string;
+  content_id: string;
+  asset_id: string;
+  page_index: number;
+  rects_json: PdfHighlightRect[];
+  selected_text?: string;
+  note?: string;
+  color?: string;
+  created_at: string;
+  updated_at: string;
+  copied_from_highlight_id?: string;
+  migration_status?: string;
+}
+
+export interface CreatePdfHighlightRequest {
+  asset_id: string;
+  page_index: number;
+  rects: PdfHighlightRect[];
+  selected_text?: string;
+  note?: string;
+  color?: string;
+}
+
+export interface UpdatePdfHighlightRequest {
+  rects?: PdfHighlightRect[];
+  selected_text?: string;
+  note?: string;
+  color?: string;
+}
+
 // Focus Timer / Pomodoro types
 export interface FocusSession {
   session_id: string;

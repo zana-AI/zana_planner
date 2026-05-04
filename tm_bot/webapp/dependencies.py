@@ -2,17 +2,16 @@
 Shared dependencies for FastAPI routes.
 """
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from fastapi import HTTPException, Header, Depends, Request
 from webapp.auth import validate_telegram_init_data, extract_user_id
-from repositories.auth_session_repo import AuthSessionRepository
-from services.reports import ReportsService
-from repositories.promises_repo import PromisesRepository
-from repositories.actions_repo import ActionsRepository
-from repositories.settings_repo import SettingsRepository
 from utils.admin_utils import is_admin
 from utils.logger import get_logger
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from services.reports import ReportsService
+    from repositories.settings_repo import SettingsRepository
 
 logger = get_logger(__name__)
 
@@ -101,15 +100,21 @@ async def get_admin_user(
     return user_id
 
 
-def get_reports_service(request: Request, user_id: int = Depends(get_current_user)) -> ReportsService:
+def get_reports_service(request: Request, user_id: int = Depends(get_current_user)) -> "ReportsService":
     """Get ReportsService instance for a user."""
+    from services.reports import ReportsService
+    from repositories.promises_repo import PromisesRepository
+    from repositories.actions_repo import ActionsRepository
+
     promises_repo = PromisesRepository()
     actions_repo = ActionsRepository()
     return ReportsService(promises_repo, actions_repo)
 
 
-def get_settings_repo(request: Request) -> SettingsRepository:
+def get_settings_repo(request: Request) -> "SettingsRepository":
     """Get SettingsRepository instance."""
+    from repositories.settings_repo import SettingsRepository
+
     return SettingsRepository()
 
 

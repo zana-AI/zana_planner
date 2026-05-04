@@ -33,6 +33,10 @@ import type {
   MyContentsResponse,
   HeatmapData,
   ConsumeEventRequest,
+  PdfOpenResponse,
+  PdfHighlight,
+  CreatePdfHighlightRequest,
+  UpdatePdfHighlightRequest,
   FollowGraphData
 } from '../types';
 
@@ -106,6 +110,24 @@ class ApiClient {
   public initData: string = '';  // Made public for TestsTab to access
   private authToken: string | null = null;
 
+  private buildAuthHeaders(existing: Record<string, string> = {}): Record<string, string> {
+    const headers: Record<string, string> = { ...existing };
+    const token = this.authToken || localStorage.getItem('telegram_auth_token');
+    const isTelegramMiniApp = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
+
+    if (isTelegramMiniApp && this.initData) {
+      headers['X-Telegram-Init-Data'] = this.initData;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      if (!this.authToken) {
+        this.authToken = token;
+      }
+    } else if (this.initData) {
+      headers['X-Telegram-Init-Data'] = this.initData;
+    }
+    return headers;
+  }
+
   /**
    * Set the Telegram initData for authentication (Telegram Mini App).
    * Should be called once when the app initializes.
@@ -153,28 +175,10 @@ class ApiClient {
   ): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
     
-    const headers: Record<string, string> = {
+    const headers: Record<string, string> = this.buildAuthHeaders({
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
-    };
-
-    const token = this.authToken || localStorage.getItem('telegram_auth_token');
-    const isTelegramMiniApp = typeof window !== 'undefined' && !!window.Telegram?.WebApp;
-
-    // In Telegram Mini App mode, initData is the source of truth and should not be
-    // shadowed by any stale browser session token present in localStorage.
-    if (isTelegramMiniApp && this.initData) {
-      headers['X-Telegram-Init-Data'] = this.initData;
-    } else if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-      // Update internal state if loaded from localStorage
-      if (!this.authToken) {
-        this.authToken = token;
-      }
-    } else if (this.initData) {
-      // Fall back to Telegram Mini App initData (e.g. development mode with dev_init_data)
-      headers['X-Telegram-Init-Data'] = this.initData;
-    }
+    });
 
     const response = await fetch(url, {
       ...options,
@@ -206,6 +210,25 @@ class ApiClient {
     }
 
     return response.json();
+  }
+
+  async fetchPdfBlob(pdfUrl: string): Promise<Blob> {
+    const isApiPath = pdfUrl.startsWith('/api/');
+    const headers = isApiPath ? this.buildAuthHeaders() : {};
+    const response = await fetch(pdfUrl, { method: 'GET', headers });
+    if (!response.ok) {
+      let errorMessage = `HTTP error ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData?.detail) {
+          errorMessage = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+        }
+      } catch {
+        // keep default HTTP error message
+      }
+      throw new ApiError(response.status, errorMessage);
+    }
+    return response.blob();
   }
 
   /**
@@ -307,6 +330,60 @@ class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+  }
+
+  /**
+   * Open PDF content (latest asset + signed URL + resume fields).
+   */
+  async getPdfOpen(contentId: string): Promise<PdfOpenResponse> {
+    return this.request<PdfOpenResponse>(`/content/${encodeURIComponent(contentId)}/pdf`);
+  }
+
+  /**
+   * List highlights for a PDF content version.
+   */
+  async getPdfHighlights(contentId: string, assetId?: string): Promise<{ asset_id: string; items: PdfHighlight[]; count: number }> {
+    const q = assetId ? `?asset_id=${encodeURIComponent(assetId)}` : '';
+    return this.request<{ asset_id: string; items: PdfHighlight[]; count: number }>(
+      `/content/${encodeURIComponent(contentId)}/highlights${q}`
+    );
+  }
+
+  /**
+   * Create one PDF highlight.
+   */
+  async createPdfHighlight(contentId: string, body: CreatePdfHighlightRequest): Promise<{ highlight_id: string; created: boolean }> {
+    return this.request<{ highlight_id: string; created: boolean }>(`/content/${encodeURIComponent(contentId)}/highlights`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Update one PDF highlight.
+   */
+  async updatePdfHighlight(
+    contentId: string,
+    highlightId: string,
+    body: UpdatePdfHighlightRequest,
+  ): Promise<{ highlight_id: string; updated: boolean }> {
+    return this.request<{ highlight_id: string; updated: boolean }>(
+      `/content/${encodeURIComponent(contentId)}/highlights/${encodeURIComponent(highlightId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }
+    );
+  }
+
+  /**
+   * Delete one PDF highlight.
+   */
+  async deletePdfHighlight(contentId: string, highlightId: string): Promise<{ highlight_id: string; deleted: boolean }> {
+    return this.request<{ highlight_id: string; deleted: boolean }>(
+      `/content/${encodeURIComponent(contentId)}/highlights/${encodeURIComponent(highlightId)}`,
+      { method: 'DELETE' }
+    );
   }
 
   /**

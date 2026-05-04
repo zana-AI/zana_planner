@@ -310,6 +310,12 @@ class PlannerBot:
                 metadata["pinned_message"] = msg.pinned_message
             elif getattr(msg, "voice", None):
                 input_type = "voice"
+            elif (
+                getattr(msg, "document", None)
+                and getattr(msg.document, "mime_type", None)
+                and (msg.document.mime_type or "").lower() == "application/pdf"
+            ):
+                input_type = "pdf_document"
             elif getattr(msg, "photo", None) or (
                 getattr(msg, "document", None)
                 and getattr(msg.document, "mime_type", None)
@@ -432,6 +438,7 @@ class PlannerBot:
                 "text",
                 "voice",
                 "image",
+                "pdf_document",
                 "location",
                 "poll",
                 "new_chat_members",
@@ -469,6 +476,9 @@ class PlannerBot:
                 return
             if ctx.input_type == "image":
                 await self.message_handlers.on_image(update, context)
+                return
+            if ctx.input_type == "pdf_document":
+                await self.message_handlers.on_pdf_document(update, context)
                 return
             if ctx.input_type == "location":
                 await self.message_handlers.on_location_shared(update, context)
@@ -1934,6 +1944,12 @@ class PlannerBot:
         self.application.add_handler(
             MessageHandler(
                 filters.PHOTO | (filters.Document.MimeType("image/")),
+                self.dispatch,
+            )
+        )
+        self.application.add_handler(
+            MessageHandler(
+                filters.Document.MimeType("application/pdf"),
                 self.dispatch,
             )
         )

@@ -1,45 +1,71 @@
 """
 Content consumption manager API: resolve URL, user library, consume events, heatmap.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi.responses import FileResponse
 from ..dependencies import get_current_user
 from ..schemas import (
     ResolveContentRequest,
     AddUserContentRequest,
     ConsumeEventRequest,
     UpdateUserContentRequest,
+    CreateHighlightRequest,
+    UpdateHighlightRequest,
     AnalyzeContentRequest,
     AskContentRequest,
     CreateQuizRequest,
     SubmitQuizRequest,
 )
-from services.content_resolve_service import ContentResolveService
-from services.content_progress_service import ContentProgressService
-from services.learning_pipeline.embedding_service import VectorStoreUnavailableError
-from services.learning_pipeline.service import LearningPipelineService
-from repositories.content_repo import ContentRepository
 from utils.logger import get_logger
+from datetime import datetime, timedelta, timezone
+
+if TYPE_CHECKING:
+    from services.content_resolve_service import ContentResolveService
+    from services.content_progress_service import ContentProgressService
+    from services.learning_pipeline.service import LearningPipelineService
+    from services.object_storage_service import ObjectStorageService
+    from repositories.content_repo import ContentRepository
+
+try:
+    from services.learning_pipeline.embedding_service import VectorStoreUnavailableError
+except Exception:  # pragma: no cover - fallback for partial environments
+    class VectorStoreUnavailableError(Exception):
+        pass
 
 router = APIRouter(prefix="/api", tags=["content"])
 logger = get_logger(__name__)
 
 
-def get_content_repo() -> ContentRepository:
+def get_content_repo() -> "ContentRepository":
+    from repositories.content_repo import ContentRepository
+
     return ContentRepository()
 
 
-def get_resolve_service() -> ContentResolveService:
+def get_resolve_service() -> "ContentResolveService":
+    from services.content_resolve_service import ContentResolveService
+
     return ContentResolveService(content_repo=get_content_repo())
 
 
-def get_progress_service() -> ContentProgressService:
+def get_progress_service() -> "ContentProgressService":
+    from services.content_progress_service import ContentProgressService
+
     return ContentProgressService(content_repo=get_content_repo())
 
 
-def get_learning_service() -> LearningPipelineService:
+def get_learning_service() -> "LearningPipelineService":
+    from services.learning_pipeline.service import LearningPipelineService
+
     return LearningPipelineService()
+
+
+def get_object_storage_service() -> "ObjectStorageService":
+    from services.object_storage_service import ObjectStorageService
+
+    return ObjectStorageService()
 
 
 @router.post("/content/resolve")
@@ -149,6 +175,195 @@ async def update_user_content(
         rating=body.rating,
     )
     return {"content_id": content_id, "updated": True}
+
+
+@router.get("/content/{content_id}/pdf")
+async def get_pdf_content_open(
+    content_id: str,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Return latest PDF asset + signed URL + resume fields for a user's content item.
+    """
+    uid = str(user_id)
+    repo = get_content_repo()
+    uc = repo.get_user_content(uid, content_id)
+    if not uc:
+        raise HTTPException(status_code=404, detail="User content not found")
+
+    asset = repo.get_latest_content_asset(content_id, asset_type="pdf_source")
+    if not asset:
+        raise HTTPException(status_code=404, detail="PDF asset not found")
+
+    storage_uri = asset.get("storage_uri")
+    if not storage_uri:
+        raise HTTPException(status_code=500, detail="Invalid PDF asset storage URI")
+
+    storage = get_object_storage_service()
+    if str(storage_uri).startswith("local://"):
+        pdf_url = storage.build_local_file_url(content_id=content_id, asset_id=str(asset["id"]))
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=storage.presign_ttl)).isoformat()
+    else:
+        try:
+            pdf_url, expires_at = storage.build_signed_get_url(str(storage_uri))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        except Exception as exc:
+            logger.exception("pdf signed url generation failed: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to create signed URL")
+
+    return {
+        "content_id": content_id,
+        "asset_id": asset["id"],
+        "pdf_url": pdf_url,
+        "expires_at": expires_at,
+        "last_position": uc.get("last_position"),
+        "progress_ratio": uc.get("progress_ratio") if uc.get("progress_ratio") is not None else 0.0,
+    }
+
+
+@router.get("/content/{content_id}/pdf/file")
+async def get_pdf_content_file(
+    content_id: str,
+    asset_id: Optional[str] = None,
+    user_id: int = Depends(get_current_user),
+):
+    """
+    Stream a locally stored PDF file for an owned content item.
+    Used for local-storage MVP fallback when S3/object storage is unavailable.
+    """
+    uid = str(user_id)
+    repo = get_content_repo()
+    uc = repo.get_user_content(uid, content_id)
+    if not uc:
+        raise HTTPException(status_code=404, detail="User content not found")
+
+    resolved_asset_id = asset_id
+    if not resolved_asset_id:
+        latest_asset = repo.get_latest_content_asset(content_id, asset_type="pdf_source")
+        if not latest_asset:
+            raise HTTPException(status_code=404, detail="PDF asset not found")
+        resolved_asset_id = str(latest_asset["id"])
+
+    asset = repo.get_content_asset(content_id=content_id, asset_id=str(resolved_asset_id))
+    if not asset:
+        raise HTTPException(status_code=404, detail="PDF asset not found")
+
+    storage_uri = str(asset.get("storage_uri") or "")
+    if not storage_uri.startswith("local://"):
+        raise HTTPException(status_code=400, detail="PDF file endpoint only supports local storage")
+
+    storage = get_object_storage_service()
+    try:
+        path = storage.resolve_local_storage_uri(storage_uri)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="PDF file missing on server")
+
+    return FileResponse(
+        path=str(path),
+        media_type="application/pdf",
+        filename=f"{content_id}.pdf",
+    )
+
+
+@router.get("/content/{content_id}/highlights")
+async def get_pdf_highlights(
+    content_id: str,
+    asset_id: Optional[str] = None,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """List highlights for a user/content and asset version."""
+    uid = str(user_id)
+    repo = get_content_repo()
+    uc = repo.get_user_content(uid, content_id)
+    if not uc:
+        raise HTTPException(status_code=404, detail="User content not found")
+
+    resolved_asset_id = asset_id
+    if not resolved_asset_id:
+        latest_asset = repo.get_latest_content_asset(content_id, asset_type="pdf_source")
+        if not latest_asset:
+            raise HTTPException(status_code=404, detail="PDF asset not found")
+        resolved_asset_id = str(latest_asset["id"])
+
+    asset = repo.get_content_asset(content_id=content_id, asset_id=str(resolved_asset_id))
+    if not asset:
+        raise HTTPException(status_code=404, detail="PDF asset not found")
+
+    items = repo.list_highlights(uid, content_id, str(resolved_asset_id))
+    return {"asset_id": str(resolved_asset_id), "items": items, "count": len(items)}
+
+
+@router.post("/content/{content_id}/highlights")
+async def create_pdf_highlight(
+    content_id: str,
+    body: CreateHighlightRequest,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Create one PDF highlight on a given asset version."""
+    uid = str(user_id)
+    repo = get_content_repo()
+    uc = repo.get_user_content(uid, content_id)
+    if not uc:
+        raise HTTPException(status_code=404, detail="User content not found")
+    asset = repo.get_content_asset(content_id=content_id, asset_id=body.asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="PDF asset not found")
+
+    highlight_id = repo.create_highlight(
+        user_id=uid,
+        content_id=content_id,
+        asset_id=body.asset_id,
+        page_index=int(body.page_index),
+        rects=[r.model_dump() for r in body.rects],
+        selected_text=body.selected_text,
+        note=body.note,
+        color=body.color,
+    )
+    return {"highlight_id": highlight_id, "created": True}
+
+
+@router.patch("/content/{content_id}/highlights/{highlight_id}")
+async def update_pdf_highlight(
+    content_id: str,
+    highlight_id: str,
+    body: UpdateHighlightRequest,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Update a PDF highlight owned by the caller."""
+    uid = str(user_id)
+    repo = get_content_repo()
+    existing = repo.get_highlight(uid, content_id, highlight_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    updated = repo.update_highlight(
+        user_id=uid,
+        content_id=content_id,
+        highlight_id=highlight_id,
+        rects=[r.model_dump() for r in body.rects] if body.rects is not None else None,
+        selected_text=body.selected_text,
+        note=body.note,
+        color=body.color,
+    )
+    return {"highlight_id": highlight_id, "updated": bool(updated)}
+
+
+@router.delete("/content/{content_id}/highlights/{highlight_id}")
+async def delete_pdf_highlight(
+    content_id: str,
+    highlight_id: str,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Delete a PDF highlight owned by the caller."""
+    uid = str(user_id)
+    repo = get_content_repo()
+    deleted = repo.delete_highlight(uid, content_id, highlight_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    return {"highlight_id": highlight_id, "deleted": True}
 
 
 @router.post("/content/{content_id}/analyze")

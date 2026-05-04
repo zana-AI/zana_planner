@@ -404,3 +404,305 @@ class ContentRepository:
             return None
         buckets = row["buckets"] if isinstance(row["buckets"], list) else json.loads(row["buckets"]) if isinstance(row["buckets"], str) else []
         return {"bucket_count": int(row["bucket_count"]), "buckets": buckets}
+
+    def add_content_asset(
+        self,
+        content_id: str,
+        asset_type: str,
+        storage_uri: str,
+        size_bytes: Optional[int] = None,
+        checksum: Optional[str] = None,
+    ) -> str:
+        """Insert content_asset row and return asset id."""
+        asset_id = str(uuid.uuid4())
+        now = _now()
+        with get_db_session() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO content_asset (id, content_id, asset_type, storage_uri, size_bytes, checksum, created_at)
+                    VALUES (:id, :content_id, :asset_type, :storage_uri, :size_bytes, :checksum, :created_at)
+                    """
+                ),
+                {
+                    "id": asset_id,
+                    "content_id": str(content_id),
+                    "asset_type": str(asset_type),
+                    "storage_uri": str(storage_uri),
+                    "size_bytes": size_bytes,
+                    "checksum": checksum,
+                    "created_at": now,
+                },
+            )
+        return asset_id
+
+    def get_content_asset(self, content_id: str, asset_id: str) -> Optional[Dict[str, Any]]:
+        """Return a single content_asset by id and content_id."""
+        with get_db_session() as session:
+            row = session.execute(
+                text(
+                    """
+                    SELECT id, content_id, asset_type, storage_uri, size_bytes, checksum, created_at
+                    FROM content_asset
+                    WHERE id = :asset_id AND content_id = :content_id
+                    LIMIT 1
+                    """
+                ),
+                {"asset_id": str(asset_id), "content_id": str(content_id)},
+            ).mappings().fetchone()
+        return dict(row) if row else None
+
+    def get_latest_content_asset(self, content_id: str, asset_type: str) -> Optional[Dict[str, Any]]:
+        """Return latest content_asset for a given content and asset_type."""
+        with get_db_session() as session:
+            row = session.execute(
+                text(
+                    """
+                    SELECT id, content_id, asset_type, storage_uri, size_bytes, checksum, created_at
+                    FROM content_asset
+                    WHERE content_id = :content_id AND asset_type = :asset_type
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"content_id": str(content_id), "asset_type": str(asset_type)},
+            ).mappings().fetchone()
+        return dict(row) if row else None
+
+    def list_content_assets(self, content_id: str, asset_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List content_asset rows for a content item."""
+        with get_db_session() as session:
+            if asset_type:
+                rows = session.execute(
+                    text(
+                        """
+                        SELECT id, content_id, asset_type, storage_uri, size_bytes, checksum, created_at
+                        FROM content_asset
+                        WHERE content_id = :content_id AND asset_type = :asset_type
+                        ORDER BY created_at DESC
+                        """
+                    ),
+                    {"content_id": str(content_id), "asset_type": str(asset_type)},
+                ).mappings().fetchall()
+            else:
+                rows = session.execute(
+                    text(
+                        """
+                        SELECT id, content_id, asset_type, storage_uri, size_bytes, checksum, created_at
+                        FROM content_asset
+                        WHERE content_id = :content_id
+                        ORDER BY created_at DESC
+                        """
+                    ),
+                    {"content_id": str(content_id)},
+                ).mappings().fetchall()
+        return [dict(r) for r in rows]
+
+    def create_highlight(
+        self,
+        user_id: str,
+        content_id: str,
+        asset_id: str,
+        page_index: int,
+        rects: List[Dict[str, Any]],
+        selected_text: Optional[str] = None,
+        note: Optional[str] = None,
+        color: Optional[str] = None,
+        copied_from_highlight_id: Optional[str] = None,
+        migration_status: Optional[str] = None,
+    ) -> str:
+        """Insert content highlight and return id."""
+        highlight_id = str(uuid.uuid4())
+        now = _now()
+        with get_db_session() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO content_highlight (
+                        id, user_id, content_id, asset_id, page_index, rects_json, selected_text,
+                        note, color, created_at, updated_at, copied_from_highlight_id, migration_status
+                    ) VALUES (
+                        :id, :user_id, :content_id, :asset_id, :page_index, CAST(:rects_json AS jsonb), :selected_text,
+                        :note, :color, :created_at, :updated_at, :copied_from_highlight_id, :migration_status
+                    )
+                    """
+                ),
+                {
+                    "id": highlight_id,
+                    "user_id": str(user_id),
+                    "content_id": str(content_id),
+                    "asset_id": str(asset_id),
+                    "page_index": int(page_index),
+                    "rects_json": json.dumps(rects or []),
+                    "selected_text": selected_text,
+                    "note": note,
+                    "color": color,
+                    "created_at": now,
+                    "updated_at": now,
+                    "copied_from_highlight_id": copied_from_highlight_id,
+                    "migration_status": migration_status,
+                },
+            )
+        return highlight_id
+
+    def list_highlights(self, user_id: str, content_id: str, asset_id: str) -> List[Dict[str, Any]]:
+        """Return highlights for one user/content/version."""
+        with get_db_session() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT id, user_id, content_id, asset_id, page_index, rects_json, selected_text,
+                           note, color, created_at, updated_at, copied_from_highlight_id, migration_status
+                    FROM content_highlight
+                    WHERE user_id = :user_id AND content_id = :content_id AND asset_id = :asset_id
+                    ORDER BY page_index ASC, created_at ASC
+                    """
+                ),
+                {"user_id": str(user_id), "content_id": str(content_id), "asset_id": str(asset_id)},
+            ).mappings().fetchall()
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            rects = item.get("rects_json")
+            item["rects_json"] = rects if isinstance(rects, list) else json.loads(rects) if isinstance(rects, str) else []
+            out.append(item)
+        return out
+
+    def get_highlight(self, user_id: str, content_id: str, highlight_id: str) -> Optional[Dict[str, Any]]:
+        """Return a highlight owned by user for content."""
+        with get_db_session() as session:
+            row = session.execute(
+                text(
+                    """
+                    SELECT id, user_id, content_id, asset_id, page_index, rects_json, selected_text,
+                           note, color, created_at, updated_at, copied_from_highlight_id, migration_status
+                    FROM content_highlight
+                    WHERE user_id = :user_id AND content_id = :content_id AND id = :highlight_id
+                    LIMIT 1
+                    """
+                ),
+                {"user_id": str(user_id), "content_id": str(content_id), "highlight_id": str(highlight_id)},
+            ).mappings().fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        rects = item.get("rects_json")
+        item["rects_json"] = rects if isinstance(rects, list) else json.loads(rects) if isinstance(rects, str) else []
+        return item
+
+    def update_highlight(
+        self,
+        user_id: str,
+        content_id: str,
+        highlight_id: str,
+        rects: Optional[List[Dict[str, Any]]] = None,
+        selected_text: Optional[str] = None,
+        note: Optional[str] = None,
+        color: Optional[str] = None,
+    ) -> bool:
+        """Update mutable highlight fields; returns True if row updated."""
+        now = _now()
+        with get_db_session() as session:
+            result = session.execute(
+                text(
+                    """
+                    UPDATE content_highlight
+                    SET rects_json = COALESCE(CAST(:rects_json AS jsonb), rects_json),
+                        selected_text = COALESCE(:selected_text, selected_text),
+                        note = COALESCE(:note, note),
+                        color = COALESCE(:color, color),
+                        updated_at = :updated_at
+                    WHERE user_id = :user_id AND content_id = :content_id AND id = :highlight_id
+                    """
+                ),
+                {
+                    "user_id": str(user_id),
+                    "content_id": str(content_id),
+                    "highlight_id": str(highlight_id),
+                    "rects_json": json.dumps(rects) if rects is not None else None,
+                    "selected_text": selected_text,
+                    "note": note,
+                    "color": color,
+                    "updated_at": now,
+                },
+            )
+            return bool(result.rowcount and result.rowcount > 0)
+
+    def delete_highlight(self, user_id: str, content_id: str, highlight_id: str) -> bool:
+        """Delete user-owned highlight; returns True if row deleted."""
+        with get_db_session() as session:
+            result = session.execute(
+                text(
+                    """
+                    DELETE FROM content_highlight
+                    WHERE user_id = :user_id AND content_id = :content_id AND id = :highlight_id
+                    """
+                ),
+                {"user_id": str(user_id), "content_id": str(content_id), "highlight_id": str(highlight_id)},
+            )
+            return bool(result.rowcount and result.rowcount > 0)
+
+    def copy_highlights_to_asset(
+        self,
+        user_id: str,
+        content_id: str,
+        from_asset_id: str,
+        to_asset_id: str,
+        max_page_index: Optional[int] = None,
+    ) -> Dict[str, int]:
+        """
+        Copy highlights from one asset to another with same anchors.
+        If max_page_index is provided, only pages <= max_page_index are copied.
+        """
+        now = _now()
+        copied = 0
+        skipped = 0
+        with get_db_session() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT id, page_index, rects_json, selected_text, note, color
+                    FROM content_highlight
+                    WHERE user_id = :user_id AND content_id = :content_id AND asset_id = :asset_id
+                    ORDER BY created_at ASC
+                    """
+                ),
+                {"user_id": str(user_id), "content_id": str(content_id), "asset_id": str(from_asset_id)},
+            ).mappings().fetchall()
+
+            for row in rows:
+                page_index = int(row["page_index"])
+                if max_page_index is not None and page_index > int(max_page_index):
+                    skipped += 1
+                    continue
+                rects = row["rects_json"] if isinstance(row["rects_json"], list) else []
+                session.execute(
+                    text(
+                        """
+                        INSERT INTO content_highlight (
+                            id, user_id, content_id, asset_id, page_index, rects_json, selected_text,
+                            note, color, created_at, updated_at, copied_from_highlight_id, migration_status
+                        ) VALUES (
+                            :id, :user_id, :content_id, :asset_id, :page_index, CAST(:rects_json AS jsonb), :selected_text,
+                            :note, :color, :created_at, :updated_at, :copied_from_highlight_id, :migration_status
+                        )
+                        """
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "user_id": str(user_id),
+                        "content_id": str(content_id),
+                        "asset_id": str(to_asset_id),
+                        "page_index": page_index,
+                        "rects_json": json.dumps(rects),
+                        "selected_text": row.get("selected_text"),
+                        "note": row.get("note"),
+                        "color": row.get("color"),
+                        "created_at": now,
+                        "updated_at": now,
+                        "copied_from_highlight_id": str(row["id"]),
+                        "migration_status": "copied",
+                    },
+                )
+                copied += 1
+        return {"copied": copied, "skipped": skipped}

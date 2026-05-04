@@ -8,6 +8,7 @@ import os
 import html
 import json
 import re
+import hashlib
 from datetime import datetime
 from typing import Optional
 
@@ -21,8 +22,10 @@ from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
 from services.content_service import ContentService
 from services.content_resolve_service import ContentResolveService
+from services.object_storage_service import ObjectStorageService
 from services.inbound_message_queue import InboundBatch, InboundMessageQueue, QueuedInboundMessage
 from services.response_service import ResponseService
+from repositories.content_repo import ContentRepository
 from platforms.interfaces import IResponseService
 from llms.llm_handler import LLMHandler
 from utils.time_utils import get_week_range
@@ -67,6 +70,8 @@ class MessageHandlers:
         self.voice_service = VoiceService()
         self.content_service = ContentService()
         self.content_resolve_service = ContentResolveService()
+        self.content_repo = ContentRepository()
+        self.object_storage_service = ObjectStorageService()
         try:
             # ImageService has heavier/optional deps; import lazily to avoid import-time failures.
             from services.image_service import ImageService  # noqa: WPS433
@@ -141,6 +146,25 @@ class MessageHandlers:
             f"Captions: {captions}\n\n"
             "What do you want to do?"
         )
+
+    @staticmethod
+    def _normalize_pdf_name(name: Optional[str]) -> str:
+        raw = (name or "document.pdf").strip().lower()
+        if raw.endswith(".pdf"):
+            raw = raw[:-4]
+        raw = re.sub(r"[^a-z0-9._-]+", "-", raw).strip("-._")
+        return raw or "document"
+
+    @staticmethod
+    def _count_pdf_pages(payload: bytes) -> Optional[int]:
+        try:
+            from io import BytesIO
+            from pypdf import PdfReader
+
+            reader = PdfReader(BytesIO(payload))
+            return int(len(reader.pages))
+        except Exception:
+            return None
     
     def _update_user_info(self, user_id: int, user) -> None:
         """Extract and update user info (first_name, username, last_seen) from Telegram user object."""
@@ -1252,6 +1276,146 @@ class MessageHandlers:
                     os.remove(path)
             except Exception as e:
                 logger.warning(f"Failed to delete temp image file {path}: {e}")
+
+    async def on_pdf_document(self, update: Update, context: CallbackContext):
+        """Handle Telegram PDF upload, create a new PDF asset version, and send reader link."""
+        user_id = update.effective_user.id
+        user_lang = get_user_language(update.effective_user)
+        msg = update.effective_message
+        doc = getattr(msg, "document", None)
+        if not doc:
+            return
+
+        if (doc.mime_type or "").lower() != "application/pdf":
+            await self.response_service.reply_text(
+                update,
+                "This document is not a PDF. Please upload a .pdf file.",
+                user_id=user_id,
+            )
+            return
+
+        storage = self.object_storage_service
+        if not storage.is_configured:
+            await self.response_service.reply_text(
+                update,
+                "PDF storage is not configured yet. Please contact admin.",
+                user_id=user_id,
+            )
+            return
+
+        telegram_file = await context.bot.get_file(doc.file_id)
+        payload = bytes(await telegram_file.download_as_bytearray())
+        if not payload:
+            await self.response_service.reply_text(
+                update,
+                "I could not download that PDF. Please try again.",
+                user_id=user_id,
+            )
+            return
+
+        checksum = hashlib.sha256(payload).hexdigest()
+        page_count = self._count_pdf_pages(payload)
+        normalized_name = self._normalize_pdf_name(getattr(doc, "file_name", None))
+        canonical_url = f"telegram://pdf/{user_id}/{normalized_name}"
+        original_url = f"telegram://file/{doc.file_id}"
+
+        existing = self.content_repo.get_content_by_canonical_url(canonical_url)
+        existing_meta = existing.get("metadata_json") if existing and isinstance(existing.get("metadata_json"), dict) else {}
+        metadata = {
+            **(existing_meta or {}),
+            "source": "telegram",
+            "file_name": doc.file_name,
+            "mime_type": doc.mime_type,
+            "file_unique_id": doc.file_unique_id,
+            "latest_file_id": doc.file_id,
+            "latest_checksum": checksum,
+            "page_count": page_count,
+        }
+
+        content_id = self.content_repo.upsert_content(
+            canonical_url=canonical_url,
+            original_url=original_url,
+            provider="telegram_pdf",
+            content_type="text",
+            title=doc.file_name or f"{normalized_name}.pdf",
+            description=None,
+            author_channel="telegram",
+            language=None,
+            published_at=None,
+            duration_seconds=None,
+            estimated_read_seconds=(page_count * 120) if page_count else None,
+            thumbnail_url=None,
+            metadata_json=metadata,
+        )
+        self.content_repo.add_user_content(str(user_id), content_id)
+
+        previous_asset = self.content_repo.get_latest_content_asset(content_id, asset_type="pdf_source")
+        object_key = f"pdf/{user_id}/{content_id}/{datetime.utcnow().strftime('%Y%m%dT%H%M%S')}_{checksum[:12]}.pdf"
+        storage_uri, size_bytes = storage.upload_pdf_bytes(object_key, payload)
+        new_asset_id = self.content_repo.add_content_asset(
+            content_id=content_id,
+            asset_type="pdf_source",
+            storage_uri=storage_uri,
+            size_bytes=size_bytes,
+            checksum=checksum,
+        )
+
+        copied_result = {"copied": 0, "skipped": 0}
+        migration_status = "copied"
+        if previous_asset and str(previous_asset.get("id")) != str(new_asset_id):
+            max_page_index = (page_count - 1) if page_count and page_count > 0 else None
+            copied_result = self.content_repo.copy_highlights_to_asset(
+                user_id=str(user_id),
+                content_id=content_id,
+                from_asset_id=str(previous_asset["id"]),
+                to_asset_id=str(new_asset_id),
+                max_page_index=max_page_index,
+            )
+            if copied_result.get("skipped", 0) > 0:
+                migration_status = "partial"
+
+        metadata["latest_asset_id"] = new_asset_id
+        metadata["highlight_migration_status"] = migration_status
+        self.content_repo.upsert_content(
+            canonical_url=canonical_url,
+            original_url=original_url,
+            provider="telegram_pdf",
+            content_type="text",
+            title=doc.file_name or f"{normalized_name}.pdf",
+            description=None,
+            author_channel="telegram",
+            language=None,
+            published_at=None,
+            duration_seconds=None,
+            estimated_read_seconds=(page_count * 120) if page_count else None,
+            thumbnail_url=None,
+            metadata_json=metadata,
+        )
+
+        keyboard_rows = []
+        if self.miniapp_url:
+            reader_url = f"{self.miniapp_url}/pdf-reader?content_id={content_id}"
+            keyboard_rows.append([InlineKeyboardButton("📄 Open PDF Reader", web_app=WebAppInfo(url=reader_url))])
+
+        summary_lines = [
+            "🆕 PDF added to your contents",
+            "",
+            f"Title: {doc.file_name or 'PDF document'}",
+        ]
+        if page_count:
+            summary_lines.append(f"Pages: {page_count}")
+        if copied_result.get("copied", 0) > 0:
+            summary_lines.append(f"Copied highlights: {copied_result['copied']}")
+        if copied_result.get("skipped", 0) > 0:
+            summary_lines.append(f"Skipped highlights: {copied_result['skipped']} (page mismatch)")
+
+        await self.response_service.send_message(
+            context,
+            chat_id=update.effective_chat.id,
+            text="\n".join(summary_lines),
+            user_id=user_id,
+            reply_markup=InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None,
+        )
 
     async def on_poll_created(self, update: Update, context: CallbackContext):
         poll = update.effective_message.poll

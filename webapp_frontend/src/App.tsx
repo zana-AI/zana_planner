@@ -11,6 +11,7 @@ import { UserDetailPage } from './pages/UserDetailPage';
 import { ClubDetailPage } from './pages/ClubDetailPage';
 import { FocusPage } from './pages/FocusPage';
 import { MyContentsPage } from './pages/MyContentsPage';
+import { PdfReaderPage } from './pages/PdfReaderPage';
 import { DevAdminLoginPage } from './pages/DevAdminLoginPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
@@ -183,6 +184,17 @@ function App() {
               <Navigate to="/" replace />
             )
           } 
+        />
+
+        <Route
+          path="/pdf-reader"
+          element={
+            isAuthenticated ? (
+              <PdfReaderPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
         />
         
         {/* Home Page - shown when not authenticated */}
