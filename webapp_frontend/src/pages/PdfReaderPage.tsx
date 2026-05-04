@@ -18,6 +18,13 @@ interface SelectionDraft {
   color: string;
 }
 
+interface ViewportAnchor {
+  xRatio: number;
+  yRatio: number;
+  viewportX: number;
+  viewportY: number;
+}
+
 export function PdfReaderPage() {
   const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
   const [params] = useSearchParams();
@@ -54,6 +61,7 @@ export function PdfReaderPage() {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const resumeRatioRef = useRef(0);
   const pendingScrollFractionRef = useRef<number | null>(null);
+  const pendingViewportAnchorRef = useRef<ViewportAnchor | null>(null);
   const progressRatioRef = useRef(0);
   const savedRatioRef = useRef(0);
   const contentIdRef = useRef(contentId);
@@ -163,6 +171,25 @@ export function PdfReaderPage() {
     if (touches.length < 2) return 0;
     const [a, b] = [touches[0], touches[1]];
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  };
+
+  const captureViewportAnchor = (clientX?: number, clientY?: number): ViewportAnchor | null => {
+    const shell = shellRef.current;
+    const pageFrame = pageFrameRef.current;
+    if (!shell || !pageFrame) return null;
+
+    const shellBox = shell.getBoundingClientRect();
+    const pageBox = pageFrame.getBoundingClientRect();
+    if (pageBox.width <= 0 || pageBox.height <= 0) return null;
+
+    const anchorClientX = clientX ?? shellBox.left + shell.clientWidth / 2;
+    const anchorClientY = clientY ?? shellBox.top + shell.clientHeight / 2;
+    return {
+      xRatio: clampRatio((anchorClientX - pageBox.left) / pageBox.width),
+      yRatio: clampRatio((anchorClientY - pageBox.top) / pageBox.height),
+      viewportX: anchorClientX - shellBox.left,
+      viewportY: anchorClientY - shellBox.top,
+    };
   };
 
   const clearNativeSelection = () => {
@@ -458,6 +485,23 @@ export function PdfReaderPage() {
           viewport,
         });
         await Promise.all([renderTask.promise, textLayer.render()]);
+        const pendingViewportAnchor = pendingViewportAnchorRef.current;
+        if (!cancelled && pendingViewportAnchor && shellRef.current && pageFrameRef.current) {
+          pendingViewportAnchorRef.current = null;
+          window.requestAnimationFrame(() => {
+            const shell = shellRef.current;
+            const pageFrame = pageFrameRef.current;
+            if (!shell || !pageFrame) return;
+            const maxScrollLeft = Math.max(0, shell.scrollWidth - shell.clientWidth);
+            const maxScrollTop = Math.max(0, shell.scrollHeight - shell.clientHeight);
+            const nextScrollLeft = pageFrame.offsetLeft + (pendingViewportAnchor.xRatio * pageFrame.offsetWidth) - pendingViewportAnchor.viewportX;
+            const nextScrollTop = pageFrame.offsetTop + (pendingViewportAnchor.yRatio * pageFrame.offsetHeight) - pendingViewportAnchor.viewportY;
+            shell.scrollLeft = Math.max(0, Math.min(maxScrollLeft, nextScrollLeft));
+            shell.scrollTop = Math.max(0, Math.min(maxScrollTop, nextScrollTop));
+            updateProgressFromReader(pageNumber);
+          });
+          return;
+        }
         const pendingScrollFraction = pendingScrollFractionRef.current;
         if (!cancelled && pendingScrollFraction != null && shellRef.current) {
           pendingScrollFractionRef.current = null;
@@ -572,6 +616,7 @@ export function PdfReaderPage() {
   };
 
   const zoomBy = (delta: number) => {
+    pendingViewportAnchorRef.current = captureViewportAnchor();
     setScale((current) => Math.min(2.5, Math.max(0.65, Number((current + delta).toFixed(2)))));
   };
 
@@ -597,6 +642,11 @@ export function PdfReaderPage() {
     event.preventDefault();
     const nextDistance = getTouchDistance(event.touches);
     if (!nextDistance) return;
+    const [a, b] = [event.touches[0], event.touches[1]];
+    pendingViewportAnchorRef.current = captureViewportAnchor(
+      (a.clientX + b.clientX) / 2,
+      (a.clientY + b.clientY) / 2,
+    );
     const nextScale = pinchStartScaleRef.current * (nextDistance / pinchStartDistanceRef.current);
     setScale(Math.min(3, Math.max(0.55, Number(nextScale.toFixed(2)))));
   };
