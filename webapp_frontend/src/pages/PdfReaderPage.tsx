@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { PdfHighlight } from '../types';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export function PdfReaderPage() {
   const { initData, isReady, isTelegramMiniApp } = useTelegramWebApp();
@@ -18,12 +23,19 @@ export function PdfReaderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageCount, setPageCount] = useState(0);
+  const [scale, setScale] = useState(1);
+  const [rendering, setRendering] = useState(false);
 
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedText, setSelectedText] = useState('');
   const [note, setNote] = useState('');
   const [color, setColor] = useState('#ffe066');
   const blobUrlRef = useRef<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const resumeRatioRef = useRef(0);
 
   const canOpen = Boolean(contentId);
   const authData = initData || getDevInitData();
@@ -57,8 +69,10 @@ export function PdfReaderPage() {
       }
       setExpiresAt(open.expires_at);
       const ratio = Number(open.last_position ?? open.progress_ratio ?? 0);
-      setProgressRatio(Math.max(0, Math.min(1, ratio)));
-      setSavedRatio(Math.max(0, Math.min(1, ratio)));
+      const boundedRatio = Math.max(0, Math.min(1, ratio));
+      resumeRatioRef.current = boundedRatio;
+      setProgressRatio(boundedRatio);
+      setSavedRatio(boundedRatio);
 
       const h = await apiClient.getPdfHighlights(contentId, open.asset_id);
       setHighlights(h.items || []);
@@ -90,6 +104,92 @@ export function PdfReaderPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    let loadedDoc: pdfjsLib.PDFDocumentProxy | null = null;
+    if (!pdfUrl) {
+      setPdfDoc(null);
+      setPageCount(0);
+      setPageNumber(1);
+      return;
+    }
+
+    setRendering(true);
+    pdfjsLib.getDocument(pdfUrl).promise
+      .then((doc) => {
+        if (cancelled) {
+          doc.destroy();
+          return;
+        }
+        loadedDoc = doc;
+        const initialPage = doc.numPages > 1
+          ? Math.round(resumeRatioRef.current * (doc.numPages - 1)) + 1
+          : 1;
+        setPdfDoc(doc);
+        setPageCount(doc.numPages);
+        setPageNumber(Math.min(Math.max(initialPage, 1), doc.numPages));
+        setPageIndex(Math.max(0, Math.min(initialPage - 1, doc.numPages - 1)));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError('Failed to render PDF');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRendering(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      loadedDoc?.destroy();
+    };
+  }, [pdfUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let renderTask: pdfjsLib.RenderTask | null = null;
+
+    async function renderPage() {
+      if (!pdfDoc || !canvasRef.current) return;
+      setRendering(true);
+      try {
+        const page = await pdfDoc.getPage(pageNumber);
+        if (cancelled) return;
+        const viewport = page.getViewport({ scale });
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+
+        context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+        context.clearRect(0, 0, viewport.width, viewport.height);
+        renderTask = page.render({ canvas, canvasContext: context, viewport });
+        await renderTask.promise;
+      } catch (err) {
+        if (!cancelled && !(err instanceof Error && err.name === 'RenderingCancelledException')) {
+          setError('Failed to render PDF page');
+        }
+      } finally {
+        if (!cancelled) {
+          setRendering(false);
+        }
+      }
+    }
+
+    renderPage();
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+    };
+  }, [pdfDoc, pageNumber, scale]);
+
   const progressPct = useMemo(() => Math.round(progressRatio * 100), [progressRatio]);
   const expiresLabel = useMemo(() => {
     if (!expiresAt) return '';
@@ -120,6 +220,20 @@ export function PdfReaderPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const goToPage = (nextPage: number) => {
+    if (!pageCount) return;
+    const bounded = Math.min(Math.max(nextPage, 1), pageCount);
+    setPageNumber(bounded);
+    setPageIndex(bounded - 1);
+    if (pageCount > 1) {
+      setProgressRatio((bounded - 1) / (pageCount - 1));
+    }
+  };
+
+  const zoomBy = (delta: number) => {
+    setScale((current) => Math.min(2.5, Math.max(0.65, Number((current + delta).toFixed(2)))));
   };
 
   const createHighlight = async () => {
@@ -169,14 +283,56 @@ export function PdfReaderPage() {
   return (
     <div className="pdf-reader-page">
       <section className="pdf-reader-viewer">
+        <div className="pdf-reader-toolbar">
+          <button
+            className="pdf-reader-icon-btn"
+            onClick={() => goToPage(pageNumber - 1)}
+            disabled={!pageCount || pageNumber <= 1}
+            title="Previous page"
+            type="button"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <div className="pdf-reader-page-count">
+            {pageCount ? `${pageNumber} / ${pageCount}` : '0 / 0'}
+          </div>
+          <button
+            className="pdf-reader-icon-btn"
+            onClick={() => goToPage(pageNumber + 1)}
+            disabled={!pageCount || pageNumber >= pageCount}
+            title="Next page"
+            type="button"
+          >
+            <ChevronRight size={18} />
+          </button>
+          <div className="pdf-reader-toolbar-spacer" />
+          <button
+            className="pdf-reader-icon-btn"
+            onClick={() => zoomBy(-0.15)}
+            disabled={scale <= 0.65}
+            title="Zoom out"
+            type="button"
+          >
+            <ZoomOut size={18} />
+          </button>
+          <div className="pdf-reader-zoom">{Math.round(scale * 100)}%</div>
+          <button
+            className="pdf-reader-icon-btn"
+            onClick={() => zoomBy(0.15)}
+            disabled={scale >= 2.5}
+            title="Zoom in"
+            type="button"
+          >
+            <ZoomIn size={18} />
+          </button>
+        </div>
         {loading ? (
           <div style={{ padding: 16, color: 'rgba(255,255,255,0.8)' }}>Loading PDF…</div>
         ) : pdfUrl ? (
-          <iframe
-            title="PDF Reader"
-            src={pdfUrl}
-            className="pdf-reader-frame"
-          />
+          <div className="pdf-reader-canvas-shell">
+            <canvas ref={canvasRef} className="pdf-reader-canvas" />
+            {rendering && <div className="pdf-reader-rendering">Rendering...</div>}
+          </div>
         ) : (
           <div style={{ padding: 16, color: '#ff6b6b' }}>PDF URL unavailable.</div>
         )}
