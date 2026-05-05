@@ -17,6 +17,8 @@ MIN_SEGMENT_RATIO = 0.01
 # Progress >= this ratio marks content as completed
 COMPLETED_THRESHOLD = 0.95
 DEFAULT_BUCKET_COUNT = 120
+PDF_CHECKPOINT_CLIENT = "web_pdf_reader_checkpoint"
+PDF_READ_CLIENT = "web_pdf_reader_read"
 
 
 def _now() -> str:
@@ -37,6 +39,34 @@ def map_to_bucket_indices(start: float, end: float, duration_or_1: float, bucket
     if start_idx > end_idx:
         start_idx, end_idx = end_idx, start_idx
     return list(range(start_idx, end_idx + 1))
+
+
+def map_ratio_to_bucket_indices_exclusive(start: float, end: float, bucket_count: int) -> List[int]:
+    """
+    Return bucket indices for a ratio interval using [start, end) semantics.
+    This is used for PDF read-coverage buckets where clients send exact bucket
+    boundaries, e.g. 0/120 -> 1/120 should mark only bucket 0.
+    """
+    if bucket_count <= 0:
+        return []
+    start = max(0.0, min(1.0, start))
+    end = max(0.0, min(1.0, end))
+    if end <= start:
+        return []
+    start_idx = int(math.floor(start * bucket_count))
+    end_idx = int(math.ceil(end * bucket_count) - 1)
+    start_idx = max(0, min(start_idx, bucket_count - 1))
+    end_idx = max(0, min(end_idx, bucket_count - 1))
+    if start_idx > end_idx:
+        return []
+    return list(range(start_idx, end_idx + 1))
+
+
+def _progress_ratio_from_buckets(buckets: List[int]) -> float:
+    if not buckets:
+        return 0.0
+    non_zero = sum(1 for b in buckets if (b or 0) > 0)
+    return min(1.0, non_zero / len(buckets))
 
 
 class ContentProgressService:
@@ -63,7 +93,8 @@ class ContentProgressService:
         """
         user_id = str(user_id)
         content_id = str(content_id)
-        is_pdf_checkpoint = position_unit == "ratio" and (client or "").startswith("web_pdf_reader")
+        is_pdf_checkpoint = position_unit == "ratio" and client == PDF_CHECKPOINT_CLIENT
+        is_pdf_read = position_unit == "ratio" and client == PDF_READ_CLIENT
         if position_unit == "ratio":
             start_position = max(0.0, min(1.0, start_position))
             end_position = max(0.0, min(1.0, end_position))
@@ -75,32 +106,31 @@ class ContentProgressService:
         if not content:
             return {"progress_ratio": 0.0, "status": "saved", "skipped": "content not found"}
 
-        # PDF reader progress is a resume checkpoint as well as consumption telemetry.
-        # Page jumps can be smaller than the generic segment threshold, especially in
-        # long PDFs, but they still must update user_content.last_position.
-        if is_pdf_checkpoint and (
-            end_position <= start_position or (end_position - start_position) < MIN_SEGMENT_RATIO
-        ):
+        # PDF resume checkpoints are not read coverage. They update where the
+        # user left off, but never color heatmap buckets or inflate progress.
+        if is_pdf_checkpoint:
             self._repo.add_user_content(user_id, content_id)
-            status = "completed" if end_position >= COMPLETED_THRESHOLD else "in_progress"
-            now = _now()
             self._repo.update_user_content_progress(
                 user_id=user_id,
                 content_id=content_id,
                 last_position=end_position,
                 position_unit=position_unit,
-                progress_ratio=end_position,
-                status=status,
-                completed_at=now if status == "completed" else None,
             )
-            return {"progress_ratio": end_position, "status": status, "checkpoint": True}
+            heatmap = self._repo.get_heatmap(user_id, content_id) if hasattr(self._repo, "get_heatmap") else None
+            buckets = list((heatmap or {}).get("buckets") or [])
+            progress_ratio = _progress_ratio_from_buckets(buckets)
+            status = "completed" if progress_ratio >= COMPLETED_THRESHOLD else "in_progress" if progress_ratio > 0 else "saved"
+            return {"progress_ratio": progress_ratio, "status": status, "checkpoint": True}
 
         if position_unit == "seconds":
             if (end_position - start_position) < MIN_SEGMENT_SECONDS:
                 return {"progress_ratio": 0.0, "status": "saved", "skipped": "segment too short (seconds)"}
-        elif position_unit == "ratio":
+        elif position_unit == "ratio" and not is_pdf_read:
             if (end_position - start_position) < MIN_SEGMENT_RATIO:
                 return {"progress_ratio": 0.0, "status": "saved", "skipped": "segment too short (ratio)"}
+        elif is_pdf_read:
+            if end_position <= start_position:
+                return {"progress_ratio": 0.0, "status": "saved", "skipped": "empty pdf read segment"}
 
         duration_or_1 = content.get("duration_seconds") or content.get("estimated_read_seconds")
         if duration_or_1 is None:
@@ -132,7 +162,11 @@ class ContentProgressService:
         buckets = list(rollup.get("buckets") or [])
         if len(buckets) != rollup.get("bucket_count", DEFAULT_BUCKET_COUNT):
             buckets = [0] * (rollup.get("bucket_count") or DEFAULT_BUCKET_COUNT)
-        indices = map_to_bucket_indices(start_position, end_position, duration_or_1, len(buckets))
+        indices = (
+            map_ratio_to_bucket_indices_exclusive(start_position, end_position, len(buckets))
+            if is_pdf_read
+            else map_to_bucket_indices(start_position, end_position, duration_or_1, len(buckets))
+        )
         for i in indices:
             if 0 <= i < len(buckets):
                 buckets[i] = (buckets[i] or 0) + 1
@@ -140,8 +174,7 @@ class ContentProgressService:
         self._repo.update_rollup_buckets(user_id, content_id, buckets, now)
 
         # Progress ratio = fraction of buckets with count > 0
-        non_zero = sum(1 for b in buckets if (b or 0) > 0)
-        progress_ratio = min(1.0, non_zero / len(buckets)) if buckets else 0.0
+        progress_ratio = _progress_ratio_from_buckets(buckets)
 
         # Determine status: saved -> in_progress, then completed when progress >= threshold
         current_status = "in_progress"
@@ -151,8 +184,8 @@ class ContentProgressService:
         self._repo.update_user_content_progress(
             user_id=user_id,
             content_id=content_id,
-            last_position=end_position,
-            position_unit=position_unit,
+            last_position=None if is_pdf_read else end_position,
+            position_unit=None if is_pdf_read else position_unit,
             progress_ratio=progress_ratio,
             status=current_status,
             completed_at=now if current_status == "completed" else None,

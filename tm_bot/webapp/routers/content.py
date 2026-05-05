@@ -102,16 +102,32 @@ async def add_user_content(
 @router.get("/my-contents")
 async def get_my_contents(
     status: Optional[str] = None,
+    q: Optional[str] = None,
+    content_type: Optional[str] = None,
+    sort: Optional[str] = None,
     cursor: Optional[str] = None,
     limit: int = 20,
     user_id: int = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Paginated list of user's content with content + user_content + rollup buckets."""
     repo = get_content_repo()
-    rows = repo.get_user_contents(str(user_id), status=status, cursor=cursor, limit=limit)
+    safe_limit = max(1, min(int(limit or 20), 100))
+    resolved_status = None if status in (None, "", "all") else status
+    resolved_type = None if content_type in (None, "", "all") else content_type
+    rows = repo.get_user_contents(
+        str(user_id),
+        status=resolved_status,
+        cursor=cursor,
+        limit=safe_limit + 1,
+        q=q,
+        content_type=resolved_type,
+        sort=sort,
+    )
+    has_next = len(rows) > safe_limit
+    visible_rows = rows[:safe_limit]
     # Normalize for JSON: ensure buckets is list, metadata_json is dict
     items: List[Dict[str, Any]] = []
-    for r in rows:
+    for r in visible_rows:
         item = dict(r)
         if "buckets" in item and item["buckets"] is not None:
             b = item["buckets"]
@@ -120,7 +136,21 @@ async def get_my_contents(
             m = item["metadata_json"]
             item["metadata_json"] = m if isinstance(m, dict) else {}
         items.append(item)
-    return {"items": items, "count": len(items)}
+    next_cursor = None
+    if has_next and visible_rows:
+        current_offset = 0
+        if cursor and cursor.startswith("offset:"):
+            try:
+                current_offset = max(0, int(cursor.split(":", 1)[1]))
+            except (TypeError, ValueError):
+                current_offset = 0
+        next_cursor = f"offset:{current_offset + len(visible_rows)}"
+    return {
+        "items": items,
+        "count": len(items),
+        "next_cursor": next_cursor,
+        "facets": repo.get_user_content_facets(str(user_id), q=q),
+    }
 
 
 @router.post("/consume-event")
@@ -212,13 +242,22 @@ async def get_pdf_content_open(
             logger.exception("pdf signed url generation failed: %s", exc)
             raise HTTPException(status_code=500, detail="Failed to create signed URL")
 
+    heatmap = repo.get_heatmap(uid, content_id)
+    buckets = list((heatmap or {}).get("buckets") or [])
+    bucket_count = int((heatmap or {}).get("bucket_count") or len(buckets) or 0)
+    read_progress_ratio = (
+        min(1.0, sum(1 for b in buckets if (b or 0) > 0) / bucket_count)
+        if bucket_count > 0
+        else 0.0
+    )
+
     return {
         "content_id": content_id,
         "asset_id": asset["id"],
         "pdf_url": pdf_url,
         "expires_at": expires_at,
         "last_position": uc.get("last_position"),
-        "progress_ratio": uc.get("progress_ratio") if uc.get("progress_ratio") is not None else 0.0,
+        "progress_ratio": read_progress_ratio,
     }
 
 

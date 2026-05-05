@@ -5,7 +5,11 @@ completion calculation, and short-segment filtering.
 import pytest
 
 from utils.url_utils import canonicalize_url
-from services.content_progress_service import ContentProgressService, map_to_bucket_indices
+from services.content_progress_service import (
+    ContentProgressService,
+    map_ratio_to_bucket_indices_exclusive,
+    map_to_bucket_indices,
+)
 
 
 # --- URL canonicalization ---
@@ -86,6 +90,12 @@ def test_map_to_bucket_indices_empty_duration():
     assert map_to_bucket_indices(0, 1, -1, 120) == []
 
 
+@pytest.mark.unit
+def test_map_ratio_to_bucket_indices_exclusive_marks_exact_pdf_bucket():
+    assert map_ratio_to_bucket_indices_exclusive(0 / 120, 1 / 120, 120) == [0]
+    assert map_ratio_to_bucket_indices_exclusive(5 / 120, 8 / 120, 120) == [5, 6, 7]
+
+
 # --- Completion calculation (progress_ratio from buckets) ---
 
 @pytest.mark.unit
@@ -129,6 +139,9 @@ def test_pdf_reader_checkpoint_updates_last_position_for_small_jump():
         def update_user_content_progress(self, **kwargs):
             self.updated = kwargs
 
+        def get_heatmap(self, user_id, content_id):
+            return {"bucket_count": 120, "buckets": [0] * 120}
+
     repo = FakeRepo()
     service = ContentProgressService(content_repo=repo)
 
@@ -142,6 +155,52 @@ def test_pdf_reader_checkpoint_updates_last_position_for_small_jump():
     )
 
     assert result["checkpoint"] is True
-    assert result["progress_ratio"] == 0.105
+    assert result["progress_ratio"] == 0.0
     assert repo.updated["last_position"] == 0.105
-    assert repo.updated["progress_ratio"] == 0.105
+    assert repo.updated.get("progress_ratio") is None
+
+
+@pytest.mark.unit
+def test_pdf_reader_read_allows_single_bucket_segment_without_moving_resume():
+    class FakeRepo:
+        def __init__(self):
+            self.updated = None
+            self.event = None
+            self.buckets = [0] * 120
+
+        def get_content_by_id(self, content_id):
+            return {"id": content_id, "content_type": "pdf"}
+
+        def add_user_content(self, user_id, content_id):
+            return "uc-1"
+
+        def insert_consumption_event(self, **kwargs):
+            self.event = kwargs
+            return "event-1"
+
+        def get_or_create_rollup(self, user_id, content_id, bucket_count=120):
+            return {"bucket_count": 120, "buckets": self.buckets}
+
+        def update_rollup_buckets(self, user_id, content_id, buckets, updated_at):
+            self.buckets = buckets
+
+        def update_user_content_progress(self, **kwargs):
+            self.updated = kwargs
+
+    repo = FakeRepo()
+    service = ContentProgressService(content_repo=repo)
+
+    result = service.record_consumption(
+        user_id="7",
+        content_id="content-1",
+        start_position=5 / 120,
+        end_position=6 / 120,
+        position_unit="ratio",
+        client="web_pdf_reader_read",
+    )
+
+    assert result["status"] == "in_progress"
+    assert repo.buckets[5] == 1
+    assert sum(1 for value in repo.buckets if value) == 1
+    assert repo.updated["last_position"] is None
+    assert repo.updated["progress_ratio"] == pytest.approx(1 / 120)

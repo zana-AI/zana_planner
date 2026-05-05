@@ -1,12 +1,11 @@
-/**
- * Content card: thumbnail, title, provider/type badges, duration/read-time, heatmap bar.
- */
+import { CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw } from 'lucide-react';
 import { HeatmapBar } from './HeatmapBar';
 import type { UserContentWithDetails } from '../types';
 
 interface ContentCardProps {
   item: UserContentWithDetails;
   onClick?: () => void;
+  onStatusChange?: (status: 'saved' | 'in_progress' | 'completed') => void;
 }
 
 function formatDuration(seconds: number | null | undefined): string {
@@ -21,139 +20,106 @@ function formatDuration(seconds: number | null | undefined): string {
   return s ? `${m}:${s.toString().padStart(2, '0')}` : `${m}m`;
 }
 
-export function ContentCard({ item, onClick }: ContentCardProps) {
+function getDisplayType(item: UserContentWithDetails): 'pdf' | 'video' | 'audio' | 'text' | 'other' {
+  const provider = (item.provider || '').toLowerCase();
+  const mime = String(item.metadata_json?.['mime_type'] || '').toLowerCase();
+  if (provider === 'telegram_pdf' || mime === 'application/pdf') return 'pdf';
+  return (item.content_type || 'other') as 'video' | 'audio' | 'text' | 'other';
+}
+
+function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
+  if (type === 'video') return <Play size={17} />;
+  if (type === 'audio') return <Headphones size={17} />;
+  return <FileText size={17} />;
+}
+
+export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps) {
   const title = item.title || 'Untitled';
-  const provider = (item.provider || 'other').toLowerCase();
-  const contentType = (item.content_type || 'other').toLowerCase();
+  const provider = (item.provider || 'other').replace(/_/g, ' ');
+  const displayType = getDisplayType(item);
   const durationSeconds = item.duration_seconds ?? item.estimated_read_seconds;
   const durationLabel = durationSeconds != null
-    ? contentType === 'text'
+    ? displayType === 'text' || displayType === 'pdf'
       ? `~${formatDuration(durationSeconds)} read`
       : formatDuration(durationSeconds)
     : '';
-  const thumbnailUrl = item.thumbnail_url;
+  const progressRatio = Math.max(0, Math.min(1, Number(item.progress_ratio || 0)));
+  const markerRatio = item.position_unit === 'ratio' && typeof item.last_position === 'number'
+    ? item.last_position
+    : null;
   const buckets = item.buckets ?? [];
   const bucketCount = item.bucket_count ?? 120;
+  const source = item.author_channel || provider;
+
+  const secondaryStatus = item.status === 'completed'
+    ? { label: 'Resume', icon: <RotateCcw size={15} />, value: 'in_progress' as const }
+    : { label: 'Done', icon: <CheckCircle2 size={15} />, value: 'completed' as const };
 
   return (
     <article
+      className="content-card"
       onClick={onClick}
       role={onClick ? 'button' : undefined}
-      style={{
-        background: 'rgba(255,255,255,0.06)',
-        borderRadius: 12,
-        overflow: 'hidden',
-        border: '1px solid rgba(255,255,255,0.1)',
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'transform 0.2s, box-shadow 0.2s',
-      }}
-      onMouseEnter={(e) => {
-        if (onClick) {
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
         }
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = '';
-        e.currentTarget.style.boxShadow = '';
-      }}
     >
-      <div style={{ aspectRatio: '16/9', position: 'relative', background: 'rgba(0,0,0,0.3)' }}>
-        {thumbnailUrl ? (
-          <img
-            src={thumbnailUrl}
-            alt=""
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-          />
+      <div className="content-card-media" aria-hidden="true">
+        {item.thumbnail_url ? (
+          <img src={item.thumbnail_url} alt="" />
         ) : (
-          <div
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: '2rem',
-            }}
-          >
-            {contentType === 'video' ? '▶' : contentType === 'audio' ? '🎧' : '📄'}
+          <div className="content-card-media-fallback">
+            <TypeIcon type={displayType} />
           </div>
         )}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 6,
-            left: 6,
-            display: 'flex',
-            gap: 4,
-            flexWrap: 'wrap',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              background: 'rgba(0,0,0,0.7)',
-              color: '#fff',
-              padding: '2px 6px',
-              borderRadius: 4,
-            }}
-          >
-            {provider}
-          </span>
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              background: 'rgba(0,0,0,0.5)',
-              color: 'rgba(255,255,255,0.9)',
-              padding: '2px 6px',
-              borderRadius: 4,
-            }}
-          >
-            {contentType}
-          </span>
-          {durationLabel && (
-            <span
-              style={{
-                fontSize: 10,
-                background: 'rgba(0,0,0,0.6)',
-                color: 'rgba(255,255,255,0.9)',
-                padding: '2px 6px',
-                borderRadius: 4,
-              }}
-            >
-              {durationLabel}
-            </span>
-          )}
-        </div>
       </div>
-      <div style={{ padding: '10px 12px' }}>
-        <h3
-          style={{
-            margin: 0,
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#fff',
-            lineHeight: 1.3,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {title}
-        </h3>
-        <div style={{ marginTop: 8 }}>
-          <HeatmapBar data={{ bucket_count: bucketCount, buckets }} />
+
+      <div className="content-card-body">
+        <div className="content-card-meta-row">
+          <span className={`content-card-type content-card-type--${displayType}`}>
+            <TypeIcon type={displayType} />
+            {displayType}
+          </span>
+          <span className="content-card-status">{item.status.replace('_', ' ')}</span>
         </div>
+        <h3 className="content-card-title">{title}</h3>
+        <div className="content-card-subtitle">
+          <span>{source}</span>
+          {durationLabel && <span>{durationLabel}</span>}
+          <span>{Math.round(progressRatio * 100)}% read</span>
+        </div>
+        <HeatmapBar
+          data={{ bucket_count: bucketCount, buckets }}
+          markerRatio={markerRatio}
+          ariaLabel="Read coverage timeline"
+          className="content-card-timeline"
+        />
+      </div>
+
+      <div className="content-card-actions" onClick={(event) => event.stopPropagation()}>
+        <button className="content-card-action" type="button" onClick={onClick} title="Open">
+          <ExternalLink size={15} />
+          <span>Open</span>
+        </button>
+        {onStatusChange && (
+          <button
+            className="content-card-action"
+            type="button"
+            onClick={() => onStatusChange(secondaryStatus.value)}
+            title={secondaryStatus.label}
+          >
+            {secondaryStatus.icon}
+            <span>{secondaryStatus.label}</span>
+          </button>
+        )}
+        <button className="content-card-icon-action" type="button" title="More">
+          <MoreHorizontal size={16} />
+        </button>
       </div>
     </article>
   );

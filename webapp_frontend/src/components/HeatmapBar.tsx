@@ -1,5 +1,5 @@
 /**
- * Thin horizontal heatmap bar: one slice per bucket, opacity = intensity (watch frequency).
+ * Thin horizontal coverage bar: one slice per bucket, opacity = read/watch intensity.
  */
 import type { HeatmapData } from '../types';
 
@@ -11,9 +11,18 @@ interface HeatmapBarProps {
   bucketCount?: number;
   className?: string;
   style?: React.CSSProperties;
+  markerRatio?: number | null;
+  ariaLabel?: string;
 }
 
-export function HeatmapBar({ data, bucketCount = DEFAULT_BUCKET_COUNT, className, style }: HeatmapBarProps) {
+export function HeatmapBar({
+  data,
+  bucketCount = DEFAULT_BUCKET_COUNT,
+  className,
+  style,
+  markerRatio,
+  ariaLabel = 'Read coverage timeline',
+}: HeatmapBarProps) {
   const buckets: number[] = Array.isArray(data)
     ? data
     : (data?.buckets ?? []);
@@ -27,7 +36,7 @@ export function HeatmapBar({ data, bucketCount = DEFAULT_BUCKET_COUNT, className
     <div
       className={className}
       style={{
-        display: 'flex',
+        position: 'relative',
         width: '100%',
         height: BAR_HEIGHT,
         borderRadius: 2,
@@ -36,20 +45,38 @@ export function HeatmapBar({ data, bucketCount = DEFAULT_BUCKET_COUNT, className
         ...style,
       }}
       role="img"
-      aria-label="Watch progress heatmap"
+      aria-label={ariaLabel}
     >
-      {arr.map((value, i) => (
+      <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+        {arr.map((value, i) => (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              minWidth: 1,
+              backgroundColor: 'var(--tg-theme-button-color, #2481cc)',
+              opacity: value > 0 ? Math.min(1, 0.2 + (value / max) * 0.8) : 0,
+              transition: 'opacity 0.15s ease',
+            }}
+          />
+        ))}
+      </div>
+      {markerRatio != null && Number.isFinite(markerRatio) && (
         <div
-          key={i}
+          aria-hidden="true"
           style={{
-            flex: 1,
-            minWidth: 1,
-            backgroundColor: 'var(--tg-theme-button-color, #2481cc)',
-            opacity: value > 0 ? Math.min(1, 0.2 + (value / max) * 0.8) : 0,
-            transition: 'opacity 0.15s ease',
+            position: 'absolute',
+            top: -2,
+            bottom: -2,
+            left: `${Math.max(0, Math.min(1, markerRatio)) * 100}%`,
+            width: 2,
+            borderRadius: 2,
+            background: '#fff',
+            boxShadow: '0 0 0 1px rgba(5,7,14,0.7)',
+            transform: 'translateX(-1px)',
           }}
         />
-      ))}
+      )}
     </div>
   );
 }

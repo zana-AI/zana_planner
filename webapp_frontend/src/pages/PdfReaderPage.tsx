@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
-import { ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
+import { HeatmapBar } from '../components/HeatmapBar';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { PdfHighlight, PdfHighlightRect } from '../types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+const PDF_READ_BUCKET_COUNT = 120;
+const PDF_READ_DWELL_SECONDS = 15;
 
 interface SelectionDraft {
   text: string;
@@ -35,6 +39,9 @@ export function PdfReaderPage() {
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const [expiresAt, setExpiresAt] = useState('');
   const [progressRatio, setProgressRatio] = useState(0);
+  const [resumeRatio, setResumeRatio] = useState(0);
+  const [coverageBuckets, setCoverageBuckets] = useState<number[]>(() => Array(PDF_READ_BUCKET_COUNT).fill(0));
+  const [coverageBucketCount, setCoverageBucketCount] = useState(PDF_READ_BUCKET_COUNT);
   const [highlights, setHighlights] = useState<PdfHighlight[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -50,10 +57,8 @@ export function PdfReaderPage() {
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
   const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
+  const [highlightsOpen, setHighlightsOpen] = useState(false);
 
-  const [pageIndex, setPageIndex] = useState(0);
-  const [selectedText, setSelectedText] = useState('');
-  const [note, setNote] = useState('');
   const [color, setColor] = useState('#ffe066');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pageFrameRef = useRef<HTMLDivElement | null>(null);
@@ -64,6 +69,9 @@ export function PdfReaderPage() {
   const pendingViewportAnchorRef = useRef<ViewportAnchor | null>(null);
   const progressRatioRef = useRef(0);
   const savedRatioRef = useRef(0);
+  const coverageBucketsRef = useRef<number[]>(Array(PDF_READ_BUCKET_COUNT).fill(0));
+  const dwellSecondsRef = useRef<number[]>(Array(PDF_READ_BUCKET_COUNT).fill(0));
+  const readSyncInFlightRef = useRef(false);
   const contentIdRef = useRef(contentId);
   const canLoadApiRef = useRef(false);
   const autoSaveTimeoutRef = useRef<number | null>(null);
@@ -88,6 +96,38 @@ export function PdfReaderPage() {
   }, [authData]);
 
   const clampRatio = (ratio: number) => Math.max(0, Math.min(1, ratio));
+  const computeCoverageRatio = (buckets: number[]) => {
+    if (!buckets.length) return 0;
+    return buckets.filter((value) => (value || 0) > 0).length / buckets.length;
+  };
+
+  const normalizeBuckets = (buckets: number[] | undefined, count = PDF_READ_BUCKET_COUNT) => {
+    return Array.from({ length: count }, (_, index) => buckets?.[index] ?? 0);
+  };
+
+  const mapRatioRangeToBuckets = (start: number, end: number, count: number) => {
+    const boundedStart = clampRatio(start);
+    const boundedEnd = clampRatio(end);
+    if (boundedEnd <= boundedStart || count <= 0) return [];
+    const startIndex = Math.max(0, Math.min(count - 1, Math.floor(boundedStart * count)));
+    const endIndex = Math.max(0, Math.min(count - 1, Math.ceil(boundedEnd * count) - 1));
+    if (startIndex > endIndex) return [];
+    return Array.from({ length: endIndex - startIndex + 1 }, (_, offset) => startIndex + offset);
+  };
+
+  const groupContiguousBuckets = (indices: number[]) => {
+    const sorted = Array.from(new Set(indices)).sort((a, b) => a - b);
+    const groups: Array<{ start: number; end: number }> = [];
+    sorted.forEach((index) => {
+      const last = groups[groups.length - 1];
+      if (last && index === last.end + 1) {
+        last.end = index;
+      } else {
+        groups.push({ start: index, end: index });
+      }
+    });
+    return groups;
+  };
 
   const syncProgress = async (nextRatio = progressRatioRef.current, keepalive = false) => {
     const activeContentId = contentIdRef.current;
@@ -114,7 +154,7 @@ export function PdfReaderPage() {
         start_position: savedRatioRef.current,
         end_position: boundedRatio,
         position_unit: 'ratio',
-        client: keepalive ? 'web_pdf_reader_checkpoint' : 'web_pdf_reader_auto',
+        client: 'web_pdf_reader_checkpoint',
       }, keepalive ? { keepalive: true } : {});
       savedRatioRef.current = boundedRatio;
       setSyncStatus('saved');
@@ -164,7 +204,9 @@ export function PdfReaderPage() {
     const nextRatio = pageCount > 1
       ? ((nextPageNumber - 1) + pageScrollRatio) / pageCount
       : pageScrollRatio;
-    setProgressRatio(clampRatio(nextRatio));
+    const boundedRatio = clampRatio(nextRatio);
+    progressRatioRef.current = boundedRatio;
+    setResumeRatio(boundedRatio);
   };
 
   const getTouchDistance = (touches: ReactTouchEvent<HTMLDivElement>['touches']) => {
@@ -264,13 +306,23 @@ export function PdfReaderPage() {
       const blob = await apiClient.fetchPdfBlob(open.pdf_url);
       setPdfBytes(new Uint8Array(await blob.arrayBuffer()));
       setExpiresAt(open.expires_at);
-      const ratio = Number(open.last_position ?? open.progress_ratio ?? 0);
-      const boundedRatio = clampRatio(ratio);
-      resumeRatioRef.current = boundedRatio;
-      progressRatioRef.current = boundedRatio;
-      savedRatioRef.current = boundedRatio;
-      setProgressRatio(boundedRatio);
+      const resume = Number(open.last_position ?? 0);
+      const boundedResume = clampRatio(resume);
+      resumeRatioRef.current = boundedResume;
+      progressRatioRef.current = boundedResume;
+      savedRatioRef.current = boundedResume;
+      setResumeRatio(boundedResume);
+      setProgressRatio(clampRatio(Number(open.progress_ratio ?? 0)));
       setSyncStatus('saved');
+
+      const heatmap = await apiClient.getContentHeatmap(contentId);
+      const bucketCount = heatmap.bucket_count || PDF_READ_BUCKET_COUNT;
+      const normalizedBuckets = normalizeBuckets(heatmap.buckets, bucketCount);
+      coverageBucketsRef.current = normalizedBuckets;
+      dwellSecondsRef.current = Array(bucketCount).fill(0);
+      setCoverageBucketCount(bucketCount);
+      setCoverageBuckets(normalizedBuckets);
+      setProgressRatio(computeCoverageRatio(normalizedBuckets));
 
       const h = await apiClient.getPdfHighlights(contentId, open.asset_id);
       setHighlights(h.items || []);
@@ -324,11 +376,10 @@ export function PdfReaderPage() {
   }, []);
 
   useEffect(() => {
-    progressRatioRef.current = progressRatio;
     if (!loading && pageCount > 0) {
-      scheduleProgressSync(progressRatio);
+      scheduleProgressSync(resumeRatio);
     }
-  }, [progressRatio, loading, pageCount]);
+  }, [resumeRatio, loading, pageCount]);
 
   useEffect(() => {
     let selectionTimer: number | null = null;
@@ -434,7 +485,6 @@ export function PdfReaderPage() {
         setPdfDoc(doc);
         setPageCount(doc.numPages);
         setPageNumber(initialPageIndex + 1);
-        setPageIndex(initialPageIndex);
       })
       .catch(() => {
         if (!cancelled) {
@@ -536,6 +586,99 @@ export function PdfReaderPage() {
     };
   }, [pdfDoc, pageNumber, scale]);
 
+  const getVisibleReadRange = () => {
+    const shell = shellRef.current;
+    const pageFrame = pageFrameRef.current;
+    if (!shell || !pageFrame || !pageCount) return null;
+    const shellBox = shell.getBoundingClientRect();
+    const pageBox = pageFrame.getBoundingClientRect();
+    if (pageBox.height <= 0) return null;
+
+    const visibleTop = Math.max(shellBox.top, pageBox.top);
+    const visibleBottom = Math.min(shellBox.bottom, pageBox.bottom);
+    if (visibleBottom - visibleTop < 24) return null;
+
+    const pageStart = clampRatio((visibleTop - pageBox.top) / pageBox.height);
+    const pageEnd = clampRatio((visibleBottom - pageBox.top) / pageBox.height);
+    const start = ((pageNumber - 1) + pageStart) / pageCount;
+    const end = ((pageNumber - 1) + pageEnd) / pageCount;
+    return { start: clampRatio(start), end: clampRatio(end) };
+  };
+
+  const syncReadBuckets = async (indices: number[]) => {
+    if (!contentId || !canLoadApi || indices.length === 0) return;
+    const groups = groupContiguousBuckets(indices);
+    readSyncInFlightRef.current = true;
+    try {
+      for (const group of groups) {
+        const response = await apiClient.postConsumeEvent({
+          content_id: contentId,
+          start_position: group.start / coverageBucketCount,
+          end_position: (group.end + 1) / coverageBucketCount,
+          position_unit: 'ratio',
+          client: 'web_pdf_reader_read',
+        });
+        if (typeof response.progress_ratio === 'number') {
+          setProgressRatio((current) => Math.max(current, response.progress_ratio));
+        }
+      }
+      setSyncStatus('saved');
+    } catch (err) {
+      setSyncStatus('error');
+      if (err instanceof ApiError) {
+        setError(err.message || 'Failed to sync read coverage');
+      } else {
+        setError('Failed to sync read coverage');
+      }
+    } finally {
+      readSyncInFlightRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (!pdfDoc || loading || !pageCount || coverageBucketCount <= 0) return;
+    const interval = window.setInterval(() => {
+      if (
+        document.visibilityState === 'hidden' ||
+        rendering ||
+        pinchStartDistanceRef.current != null ||
+        pageTurnDirection
+      ) {
+        return;
+      }
+      const visibleRange = getVisibleReadRange();
+      if (!visibleRange) return;
+      const visibleBuckets = mapRatioRangeToBuckets(visibleRange.start, visibleRange.end, coverageBucketCount);
+      if (visibleBuckets.length === 0) return;
+
+      const dwell = dwellSecondsRef.current.length === coverageBucketCount
+        ? [...dwellSecondsRef.current]
+        : Array(coverageBucketCount).fill(0);
+      const currentBuckets = coverageBucketsRef.current.length === coverageBucketCount
+        ? [...coverageBucketsRef.current]
+        : normalizeBuckets(coverageBucketsRef.current, coverageBucketCount);
+      const newlyQualified: number[] = [];
+
+      visibleBuckets.forEach((bucketIndex) => {
+        dwell[bucketIndex] = (dwell[bucketIndex] || 0) + 1;
+        if (dwell[bucketIndex] >= PDF_READ_DWELL_SECONDS && !(currentBuckets[bucketIndex] > 0)) {
+          currentBuckets[bucketIndex] = 1;
+          newlyQualified.push(bucketIndex);
+        }
+      });
+
+      dwellSecondsRef.current = dwell;
+      if (newlyQualified.length > 0) {
+        coverageBucketsRef.current = currentBuckets;
+        setCoverageBuckets(currentBuckets);
+        setProgressRatio(computeCoverageRatio(currentBuckets));
+        void syncReadBuckets(newlyQualified);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [coverageBucketCount, loading, pageCount, pageNumber, pageTurnDirection, pdfDoc, rendering, scale]);
+
   const progressPct = useMemo(() => Math.round(progressRatio * 100), [progressRatio]);
   const expiresLabel = useMemo(() => {
     if (!expiresAt) return '';
@@ -544,12 +687,23 @@ export function PdfReaderPage() {
     return d.toLocaleTimeString();
   }, [expiresAt]);
   const syncLabel = useMemo(() => {
-    if (saving || syncStatus === 'saving') return 'Syncing...';
-    if (syncStatus === 'pending') return 'Sync queued';
-    if (syncStatus === 'error') return 'Sync failed';
-    if (syncStatus === 'saved') return `Synced at ${progressPct}%`;
-    return 'Tracking automatically';
-  }, [progressPct, saving, syncStatus]);
+    if (saving || syncStatus === 'saving') return 'Saving position...';
+    if (syncStatus === 'pending') return 'Position queued';
+    if (syncStatus === 'error') return 'Position sync failed';
+    if (syncStatus === 'saved') return `Position saved at ${Math.round(resumeRatio * 100)}%`;
+    return 'Tracking read coverage';
+  }, [resumeRatio, saving, syncStatus]);
+  const highlightGroups = useMemo(() => {
+    const byPage = new Map<number, PdfHighlight[]>();
+    [...highlights]
+      .sort((a, b) => a.page_index - b.page_index || (a.created_at || '').localeCompare(b.created_at || ''))
+      .forEach((highlight) => {
+        const group = byPage.get(highlight.page_index) || [];
+        group.push(highlight);
+        byPage.set(highlight.page_index, group);
+      });
+    return Array.from(byPage.entries()).map(([pageIndex, items]) => ({ pageIndex, items }));
+  }, [highlights]);
 
   const enterFullscreen = async () => {
     setIsFullscreen(true);
@@ -609,14 +763,23 @@ export function PdfReaderPage() {
     setSelectionDraft(null);
     clearNativeSelection();
     setPageNumber(bounded);
-    setPageIndex(bounded - 1);
-    setProgressRatio(nextRatio);
+    setResumeRatio(nextRatio);
     void syncProgress(nextRatio);
   };
 
   const turnFullscreenPage = (direction: -1 | 1) => {
     revealFullscreenControls();
     goToPage(pageNumber + direction);
+  };
+
+  const fitToWidth = () => {
+    const shell = shellRef.current;
+    if (!shell || !pageSize.width || !scale) return;
+    const unscaledWidth = pageSize.width / scale;
+    if (unscaledWidth <= 0) return;
+    pendingViewportAnchorRef.current = captureViewportAnchor();
+    const nextScale = (shell.clientWidth - 28) / unscaledWidth;
+    setScale(Math.min(3, Math.max(0.55, Number(nextScale.toFixed(2)))));
   };
 
   const zoomBy = (delta: number) => {
@@ -677,31 +840,6 @@ export function PdfReaderPage() {
     }
   };
 
-  const createHighlight = async () => {
-    if (!contentId || !assetId) return;
-    setError('');
-    try {
-      await apiClient.createPdfHighlight(contentId, {
-        asset_id: assetId,
-        page_index: Math.max(0, pageIndex),
-        rects: [{ x: 0, y: 0, width: 1, height: 0.05 }],
-        selected_text: selectedText || undefined,
-        note: note || undefined,
-        color,
-      });
-      setSelectedText('');
-      setNote('');
-      const h = await apiClient.getPdfHighlights(contentId, assetId);
-      setHighlights(h.items || []);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message || 'Failed to create highlight');
-      } else {
-        setError('Failed to create highlight');
-      }
-    }
-  };
-
   const saveSelectionHighlight = async () => {
     if (!contentId || !assetId || !selectionDraft) return;
     setError('');
@@ -714,8 +852,6 @@ export function PdfReaderPage() {
         note: selectionDraft.note || undefined,
         color: selectionDraft.color,
       });
-      setSelectedText('');
-      setNote('');
       setSelectionDraft(null);
       clearNativeSelection();
       const h = await apiClient.getPdfHighlights(contentId, assetId);
@@ -745,65 +881,63 @@ export function PdfReaderPage() {
   };
 
   if (!canOpen) {
-    return <div style={{ padding: 16, color: '#ff6b6b' }}>Missing content_id query param.</div>;
+    return <div className="pdf-reader-empty pdf-reader-empty--error">Missing content_id query param.</div>;
   }
 
   return (
     <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}${isFullscreen && !fullscreenControlsVisible ? ' pdf-reader-page--chrome-hidden' : ''}`}>
       <section className="pdf-reader-viewer">
         <div className="pdf-reader-toolbar">
-          <button
-            className="pdf-reader-icon-btn"
-            onClick={() => goToPage(pageNumber - 1)}
-            disabled={!pageCount || pageNumber <= 1}
-            title="Previous page"
-            type="button"
-          >
+          <button className="pdf-reader-icon-btn" onClick={() => window.history.back()} title="Back to library" type="button">
+            <ArrowLeft size={18} />
+          </button>
+          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber - 1)} disabled={!pageCount || pageNumber <= 1} title="Previous page" type="button">
             <ChevronLeft size={18} />
           </button>
-          <div className="pdf-reader-page-count">
-            {pageCount ? `${pageNumber} / ${pageCount}` : '0 / 0'}
-          </div>
-          <button
-            className="pdf-reader-icon-btn"
-            onClick={() => goToPage(pageNumber + 1)}
-            disabled={!pageCount || pageNumber >= pageCount}
-            title="Next page"
-            type="button"
-          >
+          <label className="pdf-reader-page-count" title="Jump to page">
+            <input type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
+            <span>/ {pageCount || 0}</span>
+          </label>
+          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber + 1)} disabled={!pageCount || pageNumber >= pageCount} title="Next page" type="button">
             <ChevronRight size={18} />
           </button>
           <div className="pdf-reader-toolbar-spacer" />
-          <button
-            className="pdf-reader-icon-btn"
-            onClick={() => zoomBy(-0.15)}
-            disabled={scale <= 0.65}
-            title="Zoom out"
-            type="button"
-          >
+          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.15)} disabled={scale <= 0.65} title="Zoom out" type="button">
             <ZoomOut size={18} />
           </button>
           <div className="pdf-reader-zoom">{Math.round(scale * 100)}%</div>
-          <button
-            className="pdf-reader-icon-btn"
-            onClick={() => zoomBy(0.15)}
-            disabled={scale >= 3}
-            title="Zoom in"
-            type="button"
-          >
+          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(0.15)} disabled={scale >= 3} title="Zoom in" type="button">
             <ZoomIn size={18} />
           </button>
-          <button
-            className="pdf-reader-icon-btn"
-            onClick={isFullscreen ? exitFullscreen : enterFullscreen}
-            title={isFullscreen ? 'Exit reader mode' : 'Reader fullscreen'}
-            type="button"
-          >
+          <button className="pdf-reader-icon-btn" onClick={fitToWidth} disabled={!pageSize.width} title="Fit width" type="button">
+            <ScanLine size={18} />
+          </button>
+          <button className="pdf-reader-icon-btn pdf-reader-icon-btn--with-badge" onClick={() => setHighlightsOpen((open) => !open)} title="Highlights" type="button">
+            <PanelRight size={18} />
+            {highlights.length > 0 && <span>{highlights.length}</span>}
+          </button>
+          <button className="pdf-reader-icon-btn" onClick={isFullscreen ? exitFullscreen : enterFullscreen} title={isFullscreen ? 'Exit reader mode' : 'Reader fullscreen'} type="button">
             {isFullscreen ? <X size={18} /> : <Maximize2 size={18} />}
           </button>
+          <button className="pdf-reader-icon-btn" title="More" type="button">
+            <MoreHorizontal size={18} />
+          </button>
+        </div>
+        <div className="pdf-reader-timeline-panel">
+          <HeatmapBar
+            data={{ bucket_count: coverageBucketCount, buckets: coverageBuckets }}
+            markerRatio={resumeRatio}
+            ariaLabel="PDF read coverage timeline"
+            className="pdf-reader-timeline"
+          />
+          <div className="pdf-reader-timeline-meta">
+            <span>{progressPct}% read</span>
+            <span>{syncLabel}</span>
+          </div>
+          {error && <div className="pdf-reader-inline-error">{error}</div>}
         </div>
         {loading ? (
-          <div style={{ padding: 16, color: 'rgba(255,255,255,0.8)' }}>Loading PDF…</div>
+          <div className="pdf-reader-empty">Loading PDF...</div>
         ) : pdfUrl ? (
           <div
             ref={shellRef}
@@ -915,76 +1049,45 @@ export function PdfReaderPage() {
             )}
           </div>
         ) : (
-          <div style={{ padding: 16, color: '#ff6b6b' }}>PDF URL unavailable.</div>
+          <div className="pdf-reader-empty pdf-reader-empty--error">PDF URL unavailable.</div>
         )}
       </section>
 
-      <aside className="pdf-reader-tools">
-        <h2 style={{ margin: 0, fontSize: 16 }}>PDF Sync</h2>
-        {expiresLabel && <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>URL expires at {expiresLabel}</p>}
-        {error && <p style={{ margin: 0, color: '#ff6b6b', fontSize: 13 }}>{error}</p>}
-
-        <div className="pdf-reader-progress-card" aria-live="polite">
-          <div className="pdf-reader-progress-row">
-            <span>Reading progress</span>
-            <strong>{progressPct}%</strong>
-          </div>
-          <div className="pdf-reader-progress-track">
-            <div className="pdf-reader-progress-fill" style={{ width: `${progressPct}%` }} />
-          </div>
-          <div className={`pdf-reader-sync-status pdf-reader-sync-status--${syncStatus}`}>
-            {syncLabel}
-          </div>
-          <div className="pdf-reader-sync-note">
-            Xaana saves progress automatically as you read.
-          </div>
-        </div>
-
-        <hr style={{ borderColor: 'rgba(255,255,255,0.12)', width: '100%' }} />
-
-        <h3 style={{ margin: 0, fontSize: 14 }}>Add Highlight</h3>
-        <label style={{ fontSize: 12 }}>
-          Page index
-          <input
-            type="number"
-            min={0}
-            value={pageIndex}
-            onChange={(e) => setPageIndex(Number(e.target.value || 0))}
-            style={{ width: '100%', padding: 6 }}
-          />
-        </label>
-        <label style={{ fontSize: 12 }}>
-          Selected text
-          <textarea value={selectedText} onChange={(e) => setSelectedText(e.target.value)} rows={3} style={{ width: '100%' }} />
-        </label>
-        <label style={{ fontSize: 12 }}>
-          Note
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} style={{ width: '100%' }} />
-        </label>
-        <label style={{ fontSize: 12 }}>
-          Color
-          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} style={{ width: '100%' }} />
-        </label>
-        <button onClick={createHighlight} style={{ padding: '8px 10px' }}>
-          Save Highlight
-        </button>
-
-        <hr style={{ borderColor: 'rgba(255,255,255,0.12)', width: '100%' }} />
-        <h3 style={{ margin: 0, fontSize: 14 }}>Highlights ({highlights.length})</h3>
-        <div style={{ overflowY: 'auto', maxHeight: '35vh', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {highlights.map((h) => (
-            <div key={h.id} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: 8 }}>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>Page {h.page_index}</div>
-              {h.selected_text && <div style={{ fontSize: 12, marginTop: 4 }}>{h.selected_text}</div>}
-              {h.note && <div style={{ fontSize: 12, marginTop: 4, color: 'rgba(255,255,255,0.75)' }}>{h.note}</div>}
-              <button onClick={() => deleteHighlight(h.id)} style={{ marginTop: 6, fontSize: 12 }}>
-                Delete
-              </button>
+      {highlightsOpen && (
+        <aside className="pdf-reader-highlights-drawer" aria-label="PDF highlights">
+          <header>
+            <div>
+              <h2>Highlights</h2>
+              <p>{highlights.length} saved {expiresLabel ? `- URL expires ${expiresLabel}` : ''}</p>
             </div>
-          ))}
-          {highlights.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>No highlights yet.</div>}
-        </div>
-      </aside>
+            <button className="pdf-reader-icon-btn" type="button" onClick={() => setHighlightsOpen(false)} title="Close highlights">
+              <X size={18} />
+            </button>
+          </header>
+          <div className="pdf-reader-highlights-list">
+            {highlightGroups.map((group) => (
+              <section key={group.pageIndex} className="pdf-reader-highlight-group">
+                <h3>Page {group.pageIndex + 1}</h3>
+                {group.items.map((h) => (
+                  <article key={h.id} className="pdf-reader-highlight-card">
+                    <button type="button" onClick={() => goToPage(h.page_index + 1)}>
+                      <FileText size={14} />
+                      <span>Open page</span>
+                    </button>
+                    {h.selected_text && <p>{h.selected_text}</p>}
+                    {h.note && <p className="pdf-reader-highlight-note">{h.note}</p>}
+                    <button className="pdf-reader-highlight-delete" onClick={() => deleteHighlight(h.id)} type="button">
+                      <Trash2 size={14} />
+                      Delete
+                    </button>
+                  </article>
+                ))}
+              </section>
+            ))}
+            {highlights.length === 0 && <div className="pdf-reader-empty">Select text in the PDF to save a highlight.</div>}
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

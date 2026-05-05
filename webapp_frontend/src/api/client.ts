@@ -322,11 +322,19 @@ class ApiClient {
   /**
    * Get paginated list of user's content (my-contents).
    */
-  async getMyContents(status?: string, cursor?: string, limit?: number): Promise<MyContentsResponse> {
+  async getMyContents(
+    status?: string,
+    cursor?: string,
+    limit?: number,
+    filters: { q?: string; content_type?: string; sort?: string } = {},
+  ): Promise<MyContentsResponse> {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (cursor) params.set('cursor', cursor);
     if (limit != null) params.set('limit', String(limit));
+    if (filters.q) params.set('q', filters.q);
+    if (filters.content_type) params.set('content_type', filters.content_type);
+    if (filters.sort) params.set('sort', filters.sort);
     const q = params.toString() ? `?${params.toString()}` : '';
     return this.request<MyContentsResponse>(`/my-contents${q}`);
   }

@@ -521,6 +521,11 @@ export interface HeatmapData {
   buckets: number[];
 }
 
+export interface MyContentsFacets {
+  status?: Record<string, number>;
+  content_type?: Record<string, number>;
+}
+
 export interface ConsumeEventRequest {
   content_id: string;
   start_position: number;
@@ -534,6 +539,8 @@ export interface ConsumeEventRequest {
 export interface MyContentsResponse {
   items: UserContentWithDetails[];
   count: number;
+  next_cursor?: string | null;
+  facets?: MyContentsFacets;
 }
 
 export interface PdfOpenResponse {

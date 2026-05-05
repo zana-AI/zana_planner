@@ -170,92 +170,131 @@ class ContentRepository:
         status: Optional[str] = None,
         cursor: Optional[str] = None,
         limit: int = 20,
+        q: Optional[str] = None,
+        content_type: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return list of joined content + user_content + rollup (cursor = added_at or last_interaction_at)."""
-        with get_db_session() as session:
-            if status:
-                if cursor:
-                    rows = session.execute(
-                        text("""
-                            SELECT c.id AS content_id, c.canonical_url, c.original_url, c.provider, c.content_type,
-                                   c.title, c.description, c.author_channel, c.language, c.published_at,
-                                   c.duration_seconds, c.estimated_read_seconds, c.thumbnail_url, c.metadata_json,
-                                   uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
-                                   uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
-                                   uc.total_consumed_seconds, uc.notes, uc.rating,
-                                   r.bucket_count, r.buckets
-                            FROM user_content uc
-                            JOIN content c ON c.id = uc.content_id
-                            LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
-                            WHERE uc.user_id = :user_id AND uc.status = :status
-                              AND (uc.last_interaction_at IS NOT NULL AND uc.last_interaction_at < :cursor
-                                   OR uc.last_interaction_at IS NULL AND uc.added_at < :cursor)
-                            ORDER BY uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC
-                            LIMIT :limit
-                        """),
-                        {"user_id": user_id, "status": status, "cursor": cursor, "limit": limit},
-                    ).mappings().fetchall()
-                else:
-                    rows = session.execute(
-                        text("""
-                            SELECT c.id AS content_id, c.canonical_url, c.original_url, c.provider, c.content_type,
-                                   c.title, c.description, c.author_channel, c.language, c.published_at,
-                                   c.duration_seconds, c.estimated_read_seconds, c.thumbnail_url, c.metadata_json,
-                                   uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
-                                   uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
-                                   uc.total_consumed_seconds, uc.notes, uc.rating,
-                                   r.bucket_count, r.buckets
-                            FROM user_content uc
-                            JOIN content c ON c.id = uc.content_id
-                            LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
-                            WHERE uc.user_id = :user_id AND uc.status = :status
-                            ORDER BY uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC
-                            LIMIT :limit
-                        """),
-                        {"user_id": user_id, "status": status, "limit": limit},
-                    ).mappings().fetchall()
+        """Return joined content + user_content + rollup rows for the library."""
+        params: Dict[str, Any] = {"user_id": user_id, "limit": max(1, min(int(limit or 20), 101))}
+        conditions = ["uc.user_id = :user_id"]
+        if status and status != "all":
+            conditions.append("uc.status = :status")
+            params["status"] = status
+        if content_type and content_type != "all":
+            if content_type == "pdf":
+                conditions.append(
+                    "(LOWER(c.content_type) = 'pdf' OR LOWER(c.provider) = 'telegram_pdf' OR LOWER(COALESCE(c.metadata_json->>'mime_type', '')) = 'application/pdf')"
+                )
             else:
-                if cursor:
-                    rows = session.execute(
-                        text("""
-                            SELECT c.id AS content_id, c.canonical_url, c.original_url, c.provider, c.content_type,
-                                   c.title, c.description, c.author_channel, c.language, c.published_at,
-                                   c.duration_seconds, c.estimated_read_seconds, c.thumbnail_url, c.metadata_json,
-                                   uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
-                                   uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
-                                   uc.total_consumed_seconds, uc.notes, uc.rating,
-                                   r.bucket_count, r.buckets
-                            FROM user_content uc
-                            JOIN content c ON c.id = uc.content_id
-                            LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
-                            WHERE uc.user_id = :user_id
-                              AND (uc.last_interaction_at IS NOT NULL AND uc.last_interaction_at < :cursor
-                                   OR uc.last_interaction_at IS NULL AND uc.added_at < :cursor)
-                            ORDER BY uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC
-                            LIMIT :limit
-                        """),
-                        {"user_id": user_id, "cursor": cursor, "limit": limit},
-                    ).mappings().fetchall()
-                else:
-                    rows = session.execute(
-                        text("""
-                            SELECT c.id AS content_id, c.canonical_url, c.original_url, c.provider, c.content_type,
-                                   c.title, c.description, c.author_channel, c.language, c.published_at,
-                                   c.duration_seconds, c.estimated_read_seconds, c.thumbnail_url, c.metadata_json,
-                                   uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
-                                   uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
-                                   uc.total_consumed_seconds, uc.notes, uc.rating,
-                                   r.bucket_count, r.buckets
-                            FROM user_content uc
-                            JOIN content c ON c.id = uc.content_id
-                            LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
-                            WHERE uc.user_id = :user_id
-                            ORDER BY uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC
-                            LIMIT :limit
-                        """),
-                        {"user_id": user_id, "limit": limit},
-                    ).mappings().fetchall()
+                conditions.append("c.content_type = :content_type")
+                params["content_type"] = content_type
+        if q and q.strip():
+            params["q"] = f"%{q.strip()}%"
+            conditions.append(
+                """
+                (
+                    c.title ILIKE :q
+                    OR c.description ILIKE :q
+                    OR c.author_channel ILIKE :q
+                    OR c.provider ILIKE :q
+                    OR c.original_url ILIKE :q
+                    OR c.canonical_url ILIKE :q
+                )
+                """
+            )
+        offset = 0
+        if cursor and cursor.startswith("offset:"):
+            try:
+                offset = max(0, int(cursor.split(":", 1)[1]))
+            except (TypeError, ValueError):
+                offset = 0
+        elif cursor:
+            conditions.append(
+                """
+                (
+                    uc.last_interaction_at IS NOT NULL AND uc.last_interaction_at < :cursor
+                    OR uc.last_interaction_at IS NULL AND uc.added_at < :cursor
+                )
+                """
+            )
+            params["cursor"] = cursor
+        params["offset"] = offset
+
+        sort_key = sort or "recent"
+        order_by = {
+            "added": "uc.added_at DESC",
+            "title": "LOWER(COALESCE(c.title, '')) ASC, uc.added_at DESC",
+            "progress": "uc.progress_ratio DESC NULLS LAST, uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC",
+            "recent": "uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC",
+        }.get(sort_key, "uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC")
+
+        with get_db_session() as session:
+            rows = session.execute(
+                text(f"""
+                    SELECT c.id AS content_id, c.canonical_url, c.original_url, c.provider, c.content_type,
+                           c.title, c.description, c.author_channel, c.language, c.published_at,
+                           c.duration_seconds, c.estimated_read_seconds, c.thumbnail_url, c.metadata_json,
+                           uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
+                           uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
+                           uc.total_consumed_seconds, uc.notes, uc.rating,
+                           r.bucket_count, r.buckets
+                    FROM user_content uc
+                    JOIN content c ON c.id = uc.content_id
+                    LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
+                    WHERE {" AND ".join(conditions)}
+                    ORDER BY {order_by}
+                    LIMIT :limit
+                    OFFSET :offset
+                """),
+                params,
+            ).mappings().fetchall()
         return [dict(r) for r in rows]
+
+    def get_user_content_facets(self, user_id: str, q: Optional[str] = None) -> Dict[str, Dict[str, int]]:
+        """Return lightweight facet counts for the user's library."""
+        params: Dict[str, Any] = {"user_id": user_id}
+        where = ["uc.user_id = :user_id"]
+        if q and q.strip():
+            params["q"] = f"%{q.strip()}%"
+            where.append(
+                """
+                (
+                    c.title ILIKE :q
+                    OR c.description ILIKE :q
+                    OR c.author_channel ILIKE :q
+                    OR c.provider ILIKE :q
+                    OR c.original_url ILIKE :q
+                    OR c.canonical_url ILIKE :q
+                )
+                """
+            )
+        with get_db_session() as session:
+            rows = session.execute(
+                text(f"""
+                    SELECT uc.status, c.content_type, c.provider, c.metadata_json
+                    FROM user_content uc
+                    JOIN content c ON c.id = uc.content_id
+                    WHERE {" AND ".join(where)}
+                """),
+                params,
+            ).mappings().fetchall()
+
+        status_counts: Dict[str, int] = {}
+        type_counts: Dict[str, int] = {}
+        for row in rows:
+            status_value = str(row.get("status") or "saved")
+            status_counts[status_value] = status_counts.get(status_value, 0) + 1
+            metadata = row.get("metadata_json")
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except Exception:
+                    metadata = {}
+            mime = str((metadata or {}).get("mime_type") or "").lower() if isinstance(metadata, dict) else ""
+            provider = str(row.get("provider") or "").lower()
+            type_value = "pdf" if provider == "telegram_pdf" or mime == "application/pdf" else str(row.get("content_type") or "other")
+            type_counts[type_value] = type_counts.get(type_value, 0) + 1
+        return {"status": status_counts, "content_type": type_counts}
 
     def update_user_content_progress(
         self,

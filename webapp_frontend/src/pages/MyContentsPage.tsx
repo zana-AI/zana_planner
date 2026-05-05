@@ -1,14 +1,33 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
-import type { UserContentWithDetails, MyContentsResponse } from '../types';
+import type { MyContentsFacets, UserContentWithDetails } from '../types';
 
-type StatusFilter = 'in_progress' | 'saved' | 'completed' | '';
+type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed';
+type TypeFilter = 'all' | 'pdf' | 'video' | 'audio' | 'text';
+type SortKey = 'recent' | 'added' | 'title' | 'progress';
 
-const SECTION_STATUSES: { key: StatusFilter; label: string }[] = [
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'in_progress', label: 'Continue' },
+  { key: 'all', label: 'All' },
   { key: 'saved', label: 'Saved' },
   { key: 'completed', label: 'Completed' },
+];
+
+const TYPE_FILTERS: { key: TypeFilter; label: string }[] = [
+  { key: 'all', label: 'All types' },
+  { key: 'pdf', label: 'PDFs' },
+  { key: 'video', label: 'Videos' },
+  { key: 'audio', label: 'Audio' },
+  { key: 'text', label: 'Articles' },
+];
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'recent', label: 'Recently read' },
+  { key: 'added', label: 'Recently added' },
+  { key: 'progress', label: 'Most progress' },
+  { key: 'title', label: 'Title A-Z' },
 ];
 
 function extractYouTubeVideoId(rawUrl: string | null | undefined): string | null {
@@ -28,8 +47,7 @@ function extractYouTubeVideoId(rawUrl: string | null | undefined): string | null
 
   try {
     const parsed = new URL(urlText);
-    const hostname = parsed.hostname.toLowerCase();
-    if (hostname.includes('youtube.com')) {
+    if (parsed.hostname.toLowerCase().includes('youtube.com')) {
       const v = parsed.searchParams.get('v');
       if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
     }
@@ -67,44 +85,61 @@ export function MyContentsPage() {
   const [addUrl, setAddUrl] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
-  const [sections, setSections] = useState<Record<StatusFilter, UserContentWithDetails[]>>({
-    in_progress: [],
-    saved: [],
-    completed: [],
-    '': [],
-  });
+  const [items, setItems] = useState<UserContentWithDetails[]>([]);
+  const [facets, setFacets] = useState<MyContentsFacets>({});
+  const [status, setStatus] = useState<StatusFilter>('in_progress');
+  const [contentType, setContentType] = useState<TypeFilter>('all');
+  const [sort, setSort] = useState<SortKey>('recent');
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedQuery(query.trim()), 220);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
+
+  const loadContents = useCallback(async (cursor?: string | null) => {
+    const isMore = Boolean(cursor);
+    if (isMore) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setNextCursor(null);
+    }
     setError('');
     try {
-      const [inProgressRes, savedRes, completedRes] = await Promise.all([
-        apiClient.getMyContents('in_progress'),
-        apiClient.getMyContents('saved'),
-        apiClient.getMyContents('completed'),
-      ]);
-      setSections({
-        in_progress: inProgressRes.items,
-        saved: savedRes.items,
-        completed: completedRes.items,
-        '': [],
-      });
+      const response = await apiClient.getMyContents(
+        status === 'all' ? undefined : status,
+        cursor || undefined,
+        30,
+        {
+          q: debouncedQuery || undefined,
+          content_type: contentType === 'all' ? undefined : contentType,
+          sort,
+        },
+      );
+      setItems((prev) => (isMore ? [...prev, ...response.items] : response.items));
+      setNextCursor(response.next_cursor || null);
+      setFacets(response.facets || {});
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message || 'Failed to load contents');
+        setError(err.message || 'Failed to load library');
       } else {
-        setError('Failed to load contents');
+        setError('Failed to load library');
       }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, []);
+  }, [contentType, debouncedQuery, sort, status]);
 
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    void loadContents();
+  }, [loadContents]);
 
   const handleAddContent = async () => {
     const url = addUrl.trim();
@@ -117,7 +152,10 @@ export function MyContentsPage() {
       if (!contentId) throw new Error('No content id returned');
       await apiClient.addUserContent(contentId);
       setAddUrl('');
-      await fetchAll();
+      setStatus('saved');
+      if (status === 'saved') {
+        await loadContents();
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setAddError(err.message || 'Failed to add content');
@@ -129,109 +167,169 @@ export function MyContentsPage() {
     }
   };
 
+  const openItem = (item: UserContentWithDetails) => {
+    const pdfReaderUrl = getInternalPdfReaderUrl(item);
+    if (pdfReaderUrl) {
+      window.location.assign(pdfReaderUrl);
+      return;
+    }
+
+    const youtubeWatchUrl = getInternalYouTubeWatchUrl(item);
+    if (youtubeWatchUrl) {
+      window.location.assign(youtubeWatchUrl);
+      return;
+    }
+
+    const url = item.original_url || item.canonical_url;
+    if (url) window.open(url, '_blank');
+  };
+
+  const updateStatus = async (item: UserContentWithDetails, nextStatus: 'saved' | 'in_progress' | 'completed') => {
+    const contentId = item.content_id || item.id;
+    if (!contentId) return;
+    setError('');
+    setItems((prev) => prev.map((existing) => (
+      (existing.content_id || existing.id) === contentId ? { ...existing, status: nextStatus } : existing
+    )));
+    try {
+      await apiClient.updateUserContent(contentId, { status: nextStatus });
+      await loadContents();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message || 'Failed to update content');
+      } else {
+        setError('Failed to update content');
+      }
+      await loadContents();
+    }
+  };
+
+  const activeFilterCount = useMemo(() => {
+    return [status !== 'in_progress', contentType !== 'all', Boolean(debouncedQuery)].filter(Boolean).length;
+  }, [contentType, debouncedQuery, status]);
+
+  const resetFilters = () => {
+    setStatus('in_progress');
+    setContentType('all');
+    setQuery('');
+    setSort('recent');
+  };
+
   return (
-    <div
-      style={{
-        padding: '1rem',
-        paddingBottom: 'calc(var(--bottom-nav-height) + 32px + env(safe-area-inset-bottom))',
-        maxWidth: 1200,
-        margin: '0 auto',
-      }}
-    >
-      <div style={{ marginBottom: '1.5rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          type="url"
-          placeholder="Paste URL (YouTube, article, podcast...)"
-          value={addUrl}
-          onChange={(e) => setAddUrl(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAddContent()}
-          style={{
-            flex: 1,
-            minWidth: 200,
-            padding: '10px 12px',
-            borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.2)',
-            background: 'rgba(255,255,255,0.08)',
-            color: '#fff',
-            fontSize: 14,
-          }}
-        />
-        <button
-          onClick={handleAddContent}
-          disabled={adding || !addUrl.trim()}
-          style={{
-            padding: '10px 20px',
-            borderRadius: 8,
-            border: 'none',
-            background: 'var(--tg-theme-button-color, #2481cc)',
-            color: 'var(--tg-theme-button-text-color, #fff)',
-            fontWeight: 600,
-            cursor: adding ? 'wait' : 'pointer',
-          }}
-        >
-          {adding ? 'Adding...' : 'Add'}
-        </button>
-      </div>
-      {addError && (
-        <p style={{ color: '#ff6b6b', fontSize: 14, margin: '0 0 1rem' }}>{addError}</p>
-      )}
+    <main className="content-library-page">
+      <section className="content-library-command">
+        <div className="content-library-add">
+          <input
+            type="url"
+            placeholder="Paste a PDF, YouTube, article, or podcast URL"
+            value={addUrl}
+            onChange={(e) => setAddUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddContent()}
+          />
+          <button type="button" onClick={handleAddContent} disabled={adding || !addUrl.trim()}>
+            <Plus size={16} />
+            <span>{adding ? 'Adding' : 'Add'}</span>
+          </button>
+        </div>
+        {addError && <div className="content-library-error">{addError}</div>}
 
-      {loading && (
-        <p style={{ color: 'rgba(255,255,255,0.7)' }}>Loading...</p>
-      )}
-      {error && !loading && (
-        <p style={{ color: '#ff6b6b' }}>{error}</p>
-      )}
-      {!loading && !error && (
+        <div className="content-library-search-row">
+          <label className="content-library-search">
+            <Search size={16} />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search your library"
+            />
+          </label>
+          <label className="content-library-sort">
+            <span>Sort</span>
+            <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="content-library-filters" aria-label="Library status filters">
+          {STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter.key}
+              type="button"
+              className={status === filter.key ? 'is-active' : ''}
+              onClick={() => setStatus(filter.key)}
+            >
+              {filter.label}
+              {filter.key !== 'all' && facets.status?.[filter.key] != null && (
+                <span>{facets.status[filter.key]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="content-library-type-row">
+          <Filter size={15} />
+          <div className="content-library-type-chips">
+            {TYPE_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                className={contentType === filter.key ? 'is-active' : ''}
+                onClick={() => setContentType(filter.key)}
+              >
+                {filter.label}
+                {filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
+                  <span>{facets.content_type[filter.key]}</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {activeFilterCount > 0 && (
+            <button className="content-library-clear" type="button" onClick={resetFilters}>
+              Clear
+            </button>
+          )}
+        </div>
+      </section>
+
+      {error && <div className="content-library-error">{error}</div>}
+
+      {loading ? (
+        <div className="content-library-state">Loading library...</div>
+      ) : items.length > 0 ? (
         <>
-          {SECTION_STATUSES.map(({ key, label }) => {
-            const items = sections[key] ?? [];
-            if (items.length === 0) return null;
-            return (
-              <section key={key} style={{ marginBottom: '2rem' }}>
-                <h2 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem', color: 'rgba(255,255,255,0.9)' }}>
-                  {label}
-                </h2>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                    gap: 16,
-                  }}
-                >
-                  {items.map((item) => (
-                    <ContentCard
-                      key={item.user_content_id || item.content_id || item.id}
-                      item={item}
-                      onClick={() => {
-                        const pdfReaderUrl = getInternalPdfReaderUrl(item);
-                        if (pdfReaderUrl) {
-                          window.location.assign(pdfReaderUrl);
-                          return;
-                        }
-
-                        const youtubeWatchUrl = getInternalYouTubeWatchUrl(item);
-                        if (youtubeWatchUrl) {
-                          window.location.assign(youtubeWatchUrl);
-                          return;
-                        }
-
-                        const url = item.original_url || item.canonical_url;
-                        if (url) window.open(url, '_blank');
-                      }}
-                    />
-                  ))}
-                </div>
-              </section>
-            );
-          })}
-          {SECTION_STATUSES.every(({ key }) => (sections[key] ?? []).length === 0) && (
-            <p style={{ color: 'rgba(255,255,255,0.6)' }}>
-              No content yet. Paste a URL above to add a video, article, or podcast.
-            </p>
+          <section className="content-library-grid" aria-label="Library items">
+            {items.map((item) => (
+              <ContentCard
+                key={item.user_content_id || item.content_id || item.id}
+                item={item}
+                onClick={() => openItem(item)}
+                onStatusChange={(nextStatus) => updateStatus(item, nextStatus)}
+              />
+            ))}
+          </section>
+          {nextCursor && (
+            <button
+              className="content-library-load-more"
+              type="button"
+              disabled={loadingMore}
+              onClick={() => loadContents(nextCursor)}
+            >
+              {loadingMore ? 'Loading...' : 'Load more'}
+            </button>
           )}
         </>
+      ) : (
+        <section className="content-library-empty">
+          <h2>No content here yet</h2>
+          <p>Paste a link above, or clear filters to broaden the library.</p>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={resetFilters}>Clear filters</button>
+          )}
+        </section>
       )}
-    </div>
+    </main>
   );
 }
