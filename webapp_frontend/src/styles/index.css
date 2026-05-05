@@ -6007,6 +6007,12 @@ textarea.modal-input {
   border-top: 1px solid var(--border);
 }
 
+.admin-llm-tab .admin-llm-usage:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 .admin-llm-usage-header {
   display: flex;
   align-items: center;
@@ -6215,6 +6221,44 @@ textarea.modal-input {
   margin-top: 2px;
   color: #fbbf24;
   font-size: 11px;
+}
+
+.admin-llm-rate-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.admin-llm-rate-details span {
+  border: 1px solid rgba(232, 238, 252, 0.1);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+  padding: 3px 7px;
+}
+
+.admin-llm-rate-status {
+  font-weight: 800;
+}
+
+.admin-llm-rate-status.blocked {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+}
+
+.admin-llm-rate-status.observed {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+  color: #bfdbfe;
+}
+
+.admin-llm-rate-status.unknown {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
 }
 
 .admin-llm-backend-test-btn {

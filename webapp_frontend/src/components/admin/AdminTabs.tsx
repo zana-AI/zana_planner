@@ -1,5 +1,6 @@
 export type TabType =
   | 'stats'
+  | 'llm'
   | 'followgraph'
   | 'compose'
   | 'scheduled'
@@ -29,6 +30,7 @@ export function AdminTabs({ activeTab, onTabChange, scheduledCount }: AdminTabsP
       label: 'Overview',
       items: [
         { key: 'stats', label: 'Metrics' },
+        { key: 'llm', label: 'LLM' },
         { key: 'followgraph', label: 'Follow Graph' },
         { key: 'users', label: 'Users' },
       ],

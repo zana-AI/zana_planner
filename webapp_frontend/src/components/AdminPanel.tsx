@@ -7,6 +7,7 @@ import {
   AdminTabs,
   type TabType,
   StatsTab,
+  LLMTab,
   BroadcastTab,
   ScheduledTab,
   TemplatesTab,
@@ -30,7 +31,9 @@ export function AdminPanel() {
   const [searchQuery, setSearchQuery] = useState('');
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
-  const initialTab: TabType = searchParams.get('tab') === 'clubs' ? 'clubs' : 'stats';
+  const initialTabParam = searchParams.get('tab');
+  const initialTab: TabType =
+    initialTabParam === 'clubs' ? 'clubs' : initialTabParam === 'llm' ? 'llm' : 'stats';
   const highlightedClubId = searchParams.get('club_id');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [stats, setStats] = useState<{ total_users: number; active_users: number; total_promises: number } | null>(null);
@@ -225,6 +228,10 @@ export function AdminPanel() {
           statsError={statsError}
           onRetry={handleRetryStats}
         />
+      )}
+
+      {activeTab === 'llm' && (
+        <LLMTab />
       )}
 
       {activeTab === 'compose' && (

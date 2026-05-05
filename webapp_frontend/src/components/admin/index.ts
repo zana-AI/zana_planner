@@ -1,6 +1,7 @@
 // Re-exports for admin components
 export { AdminTabs, type TabType } from './AdminTabs';
 export { StatsTab } from './StatsTab';
+export { LLMTab } from './LLMTab';
 export { BroadcastTab } from './BroadcastTab';
 export { ScheduledTab } from './ScheduledTab';
 export { TemplatesTab } from './TemplatesTab';

@@ -70,6 +70,24 @@ export interface AdminLLMUsageResponse {
   langfuse_url?: string | null;
 }
 
+export interface AdminLLMRateLimitState {
+  limit_requests?: number | null;
+  limit_tokens?: number | null;
+  remaining_requests?: number | null;
+  remaining_tokens?: number | null;
+  reset_requests_at?: string | null;
+  reset_tokens_at?: string | null;
+  blocked_until?: string | null;
+  last_seen_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface AdminLLMRateLimitInfo {
+  status: 'blocked' | 'observed' | 'unknown';
+  observed: AdminLLMRateLimitState;
+  announced: Record<string, number | null>;
+}
+
 export interface AdminLLMBackendsResponse {
   prototype: boolean;
   read_only: boolean;
@@ -85,6 +103,7 @@ export interface AdminLLMBackendsResponse {
     responder: string[];
     known: string[];
   }>;
+  rate_limits: Record<string, Record<string, AdminLLMRateLimitInfo>>;
   fallback: {
     enabled: boolean;
     provider?: string | null;
@@ -101,6 +120,7 @@ export interface AdminLLMBackendTestResponse {
   latency_ms?: number | null;
   response_preview: string;
   error?: string;
+  rate_limit?: AdminLLMRateLimitInfo;
 }
 
 /**

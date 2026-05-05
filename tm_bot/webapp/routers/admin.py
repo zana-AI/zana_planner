@@ -43,6 +43,7 @@ from utils.logger import get_logger
 from ..notifications import send_club_telegram_ready_notification
 from llms.llm_env_utils import load_llm_env
 from llms.llm_model_config import MODEL_CONFIGS, FALLBACK_MODELS, MODEL_PRICING, needs_global_location
+from llms.model_policy import get_announced_rate_limit, snapshot
 from llms.providers.factory import create_provider_adapter
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
@@ -207,6 +208,36 @@ def _provider_model_catalog() -> Dict[str, Dict[str, List[str]]]:
             "known": sorted(model for model in known_models if model),
         }
     return catalog
+
+
+def _llm_rate_limit_state(catalog: Dict[str, Dict[str, List[str]]]) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Return non-secret, best-effort rate-limit state for the admin panel."""
+    plan_tier = os.getenv("GROQ_PLAN_TIER", "free")
+    rate_limits: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for provider, model_groups in catalog.items():
+        provider_limits: Dict[str, Dict[str, Any]] = {}
+        for model in model_groups.get("known", []):
+            state = snapshot(provider, model)
+            announced = get_announced_rate_limit(provider, model, plan_tier=plan_tier)
+            is_blocked = bool(state.get("blocked_until"))
+            has_observed_limits = any(
+                state.get(key) is not None
+                for key in (
+                    "limit_requests",
+                    "limit_tokens",
+                    "remaining_requests",
+                    "remaining_tokens",
+                    "reset_requests_at",
+                    "reset_tokens_at",
+                )
+            )
+            provider_limits[model] = {
+                "status": "blocked" if is_blocked else ("observed" if has_observed_limits else "unknown"),
+                "observed": state,
+                "announced": announced,
+            }
+        rate_limits[provider] = provider_limits
+    return rate_limits
 
 
 def _load_llm_cfg_for_admin() -> tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -832,6 +863,7 @@ async def get_llm_backends(
         provider: role_models.as_dict()
         for provider, role_models in MODEL_CONFIGS.items()
     }
+    catalog = _provider_model_catalog()
 
     active_provider = None
     requested_provider = None
@@ -869,7 +901,8 @@ async def get_llm_backends(
         "available_providers": sorted(MODEL_CONFIGS.keys()),
         "credentials": credentials,
         "provider_models": provider_models,
-        "model_catalog": _provider_model_catalog(),
+        "model_catalog": catalog,
+        "rate_limits": _llm_rate_limit_state(catalog),
         "fallback": fallback,
         "config_error": config_error,
     }
@@ -921,6 +954,7 @@ async def test_llm_backend(
                 "role": role,
                 "latency_ms": latency_ms,
                 "response_preview": _message_preview(getattr(result, "content", result)),
+                "rate_limit": _llm_rate_limit_state({provider: {"known": [model]}}).get(provider, {}).get(model),
             }
 
         return await asyncio.to_thread(_invoke_smoke)
@@ -936,6 +970,7 @@ async def test_llm_backend(
             "latency_ms": None,
             "response_preview": "",
             "error": _mask_llm_error(e),
+            "rate_limit": _llm_rate_limit_state({provider: {"known": [model]}}).get(provider, {}).get(model),
         }
     finally:
         if previous_provider is None:
