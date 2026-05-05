@@ -128,6 +128,14 @@ class UpdateClubSettingsRequest(BaseModel):
     language: Optional[str] = Field(default=None, min_length=2, max_length=10)
 
 
+class UpdateClubContextRequest(BaseModel):
+    """Request to update bot-facing club context."""
+    description: Optional[str] = Field(default=None, max_length=1000)
+    club_goal: Optional[str] = Field(default=None, max_length=1500)
+    vibe: Optional[str] = Field(default=None, max_length=500)
+    checkin_what_counts: Optional[str] = Field(default=None, max_length=700)
+
+
 class CreateClubRequest(BaseModel):
     """Minimal request model for creating a club with one shared promise."""
     name: str = Field(..., min_length=2, max_length=80)
@@ -160,6 +168,10 @@ class ClubSummary(BaseModel):
     target_count_per_week: Optional[float] = None
     reminder_time: Optional[str] = None
     language: Optional[str] = None
+    description: Optional[str] = None
+    club_goal: Optional[str] = None
+    vibe: Optional[str] = None
+    checkin_what_counts: Optional[str] = None
 
 
 class ClubsResponse(BaseModel):
@@ -173,6 +185,16 @@ class ClubActionResponse(BaseModel):
     status: str
     club_id: str
     message: str
+
+
+class ClubContextIngestResponse(BaseModel):
+    """Response after Xaana extracts structured club context from freeform input."""
+    club: ClubSummary
+    extracted: UpdateClubContextRequest
+    follow_up_questions: List[str] = Field(default_factory=list)
+    used_llm: bool = False
+    image_count: int = 0
+    image_error: Optional[str] = None
 
 
 class AdminClubSetupSummary(ClubSummary):
@@ -197,14 +219,6 @@ class AdminClubSetupResponse(BaseModel):
 class UpdateClubTelegramRequest(BaseModel):
     """Admin request to attach a Telegram invite link to a club."""
     telegram_invite_link: str = Field(..., min_length=8, max_length=512)
-
-
-class UpdateClubContextRequest(BaseModel):
-    """Admin request to update bot-facing club context."""
-    description: Optional[str] = Field(default=None, max_length=1000)
-    club_goal: Optional[str] = Field(default=None, max_length=1500)
-    vibe: Optional[str] = Field(default=None, max_length=500)
-    checkin_what_counts: Optional[str] = Field(default=None, max_length=700)
 
 
 class AdminLLMBackendTestRequest(BaseModel):

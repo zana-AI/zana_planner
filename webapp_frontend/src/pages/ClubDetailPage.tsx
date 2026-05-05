@@ -29,6 +29,15 @@ export function ClubDetailPage() {
   const [editingSettings, setEditingSettings] = useState(false);
   const [editReminderTime, setEditReminderTime] = useState('');
   const [editLanguage, setEditLanguage] = useState('en');
+  const [editDescription, setEditDescription] = useState('');
+  const [editGoal, setEditGoal] = useState('');
+  const [editVibe, setEditVibe] = useState('');
+  const [editCheckinCounts, setEditCheckinCounts] = useState('');
+  const [contextNote, setContextNote] = useState('');
+  const [contextFiles, setContextFiles] = useState<File[]>([]);
+  const [contextFileKey, setContextFileKey] = useState(0);
+  const [contextQuestions, setContextQuestions] = useState<string[]>([]);
+  const [contextNotice, setContextNotice] = useState('');
   const [botUsername, setBotUsername] = useState('');
 
   useEffect(() => {
@@ -157,6 +166,65 @@ export function ClubDetailPage() {
     } catch (err) {
       hapticFeedback('error');
       setError(err instanceof ApiError ? err.message : 'Failed to save settings.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleEditContext = () => {
+    if (!club) return;
+    setEditDescription(club.description || '');
+    setEditGoal(club.club_goal || '');
+    setEditVibe(club.vibe || '');
+    setEditCheckinCounts(club.checkin_what_counts || '');
+  };
+
+  const handleSaveContext = async () => {
+    if (!club) return;
+    setBusy(true);
+    setError('');
+    try {
+      const updated = await apiClient.updateClubContext(club.club_id, {
+        description: editDescription.trim(),
+        club_goal: editGoal.trim(),
+        vibe: editVibe.trim(),
+        checkin_what_counts: editCheckinCounts.trim(),
+      });
+      setClub(updated);
+      hapticFeedback('success');
+    } catch (err) {
+      hapticFeedback('error');
+      setError(err instanceof ApiError ? err.message : 'Failed to save club context.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleIngestContext = async () => {
+    if (!club) return;
+    if (!contextNote.trim() && contextFiles.length === 0) {
+      setError('Add a note or image first.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setContextNotice('');
+    setContextQuestions([]);
+    try {
+      const response = await apiClient.ingestClubContext(club.club_id, {
+        notes: contextNote,
+        files: contextFiles,
+      });
+      setClub(response.club);
+      setContextNote('');
+      setContextFiles([]);
+      setContextFileKey((value) => value + 1);
+      setContextQuestions(response.follow_up_questions || []);
+      setContextNotice(response.image_error || (response.used_llm ? 'Xaana extracted the club context.' : 'Xaana saved a first pass.'));
+      hapticFeedback('success');
+    } catch (err) {
+      hapticFeedback('error');
+      setError(err instanceof ApiError ? err.message : 'Failed to extract club context.');
     } finally {
       setBusy(false);
     }
@@ -318,6 +386,108 @@ export function ClubDetailPage() {
               ) : (
                 <p className="club-detail-promise">{club.reminder_time ?? '21:00'} daily · {LANG_LABELS[club.language ?? 'en'] ?? club.language ?? 'English'}</p>
               )}
+            </div>
+          )}
+
+          {/* Club context (admin only) */}
+          {isAdmin && (
+            <div className="club-detail-section">
+              <span className="club-detail-label">Tell Xaana about this club</span>
+              <div className="club-detail-edit-form">
+                <textarea
+                  className="club-detail-edit-input club-detail-edit-textarea club-detail-context-note"
+                  value={contextNote}
+                  onChange={(e) => setContextNote(e.target.value)}
+                  maxLength={5000}
+                  rows={5}
+                  placeholder="Paste anything: rules, examples, audience, vibe, goals, what counts as done..."
+                />
+                <input
+                  key={contextFileKey}
+                  className="club-detail-file-input"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => setContextFiles(Array.from(e.target.files || []))}
+                  disabled={busy}
+                />
+                {contextFiles.length > 0 ? (
+                  <div className="club-detail-file-list">
+                    {contextFiles.slice(0, 4).map((file) => (
+                      <span key={`${file.name}-${file.size}`}>{file.name}</span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="club-detail-edit-buttons">
+                  <button
+                    type="button"
+                    className="modal-button modal-button-primary"
+                    onClick={handleIngestContext}
+                    disabled={busy || (!contextNote.trim() && contextFiles.length === 0)}
+                  >
+                    {busy ? 'Reading...' : 'Let Xaana read it'}
+                  </button>
+                </div>
+                {contextNotice ? <p className="club-detail-hint">{contextNotice}</p> : null}
+                {contextQuestions.length > 0 ? (
+                  <div className="club-detail-context-questions">
+                    {contextQuestions.map((question) => (
+                      <p key={question}>{question}</p>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="club-detail-context-list">
+                {club.description ? <p><strong>Description</strong>{club.description}</p> : null}
+                {club.club_goal ? <p><strong>Goal</strong>{club.club_goal}</p> : null}
+                {club.vibe ? <p><strong>Vibe</strong>{club.vibe}</p> : null}
+                {club.checkin_what_counts ? <p><strong>Check-in</strong>{club.checkin_what_counts}</p> : null}
+                {!club.description && !club.club_goal && !club.vibe && !club.checkin_what_counts ? (
+                  <p className="club-detail-empty">No Xaana context yet.</p>
+                ) : null}
+              </div>
+
+              <details className="club-detail-advanced-context">
+                <summary onClick={handleEditContext}>Advanced fields</summary>
+                <div className="club-detail-edit-form">
+                  <label className="club-detail-field-label">Description</label>
+                  <textarea
+                    className="club-detail-edit-input club-detail-edit-textarea"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    maxLength={1000}
+                    rows={3}
+                  />
+                  <label className="club-detail-field-label">Goal</label>
+                  <textarea
+                    className="club-detail-edit-input club-detail-edit-textarea"
+                    value={editGoal}
+                    onChange={(e) => setEditGoal(e.target.value)}
+                    maxLength={1500}
+                    rows={4}
+                  />
+                  <label className="club-detail-field-label">Vibe</label>
+                  <textarea
+                    className="club-detail-edit-input club-detail-edit-textarea"
+                    value={editVibe}
+                    onChange={(e) => setEditVibe(e.target.value)}
+                    maxLength={500}
+                    rows={2}
+                  />
+                  <label className="club-detail-field-label">What counts as a check-in</label>
+                  <textarea
+                    className="club-detail-edit-input club-detail-edit-textarea"
+                    value={editCheckinCounts}
+                    onChange={(e) => setEditCheckinCounts(e.target.value)}
+                    maxLength={700}
+                    rows={2}
+                  />
+                  <div className="club-detail-edit-buttons">
+                    <button type="button" className="modal-button modal-button-primary" onClick={handleSaveContext} disabled={busy}>{busy ? 'Saving...' : 'Save fields'}</button>
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 

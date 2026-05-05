@@ -3,25 +3,29 @@ Community-related endpoints (suggestions, public promises, follows).
 """
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 import asyncio
+import json
 import os
+import tempfile
 import uuid
 
 import httpx
 
-from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from fastapi import APIRouter, HTTPException, Query, Depends, Request, UploadFile, File, Form
 from sqlalchemy import text
 from ..dependencies import get_current_user
 from ..schemas import (
     AddClubPromiseRequest,
     ClubActionResponse,
+    ClubContextIngestResponse,
     ClubMemberSummary,
     CreateClubRequest,
     ClubsResponse,
     ClubSummary,
     CreateSuggestionRequest,
     PublicPromiseBadge,
+    UpdateClubContextRequest,
     UpdateClubPromiseRequest,
     UpdateClubSettingsRequest,
 )
@@ -43,6 +47,9 @@ from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["community"])
 logger = get_logger(__name__)
+
+
+CLUB_CONTEXT_FIELDS = {"description", "club_goal", "vibe", "checkin_what_counts"}
 
 
 def _generate_club_promise_id(user_id: int) -> str:
@@ -164,7 +171,11 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     p.text AS promise_text,
                     pi.target_value AS target_count_per_week,
                     c.reminder_time,
-                    c.language
+                    c.language,
+                    c.description,
+                    c.club_goal,
+                    c.vibe,
+                    c.checkin_what_counts
                 FROM clubs c
                 INNER JOIN club_members cm
                     ON cm.club_id = c.club_id
@@ -238,6 +249,10 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             target_count_per_week=float(row["target_count_per_week"]) if row["target_count_per_week"] is not None else None,
             reminder_time=str(row["reminder_time"]) if row["reminder_time"] else None,
             language=str(row["language"]) if row["language"] else None,
+            description=str(row["description"]) if row["description"] else None,
+            club_goal=str(row["club_goal"]) if row["club_goal"] else None,
+            vibe=str(row["vibe"]) if row["vibe"] else None,
+            checkin_what_counts=str(row["checkin_what_counts"]) if row["checkin_what_counts"] else None,
         )
         for row in rows
     ]
@@ -261,6 +276,179 @@ async def _is_club_admin(user_id: int, club: dict, bot_token: str) -> bool:
     except Exception:
         pass
     return False
+
+
+def _clean_context_value(value: object, max_length: int) -> str:
+    text_value = "" if value is None else str(value).strip()
+    return text_value[:max_length]
+
+
+def _first_matching_sentence(source: str, needles: tuple[str, ...]) -> str:
+    import re
+
+    for sentence in re.split(r"(?<=[.!?؟])\s+|\n+", source):
+        candidate = sentence.strip(" -•\t")
+        if not candidate:
+            continue
+        lowered = candidate.lower()
+        if any(needle in lowered for needle in needles):
+            return candidate
+    return ""
+
+
+def _heuristic_club_context_extract(
+    *,
+    source_text: str,
+    club: dict,
+    current: dict,
+) -> tuple[dict, list[str]]:
+    compact = " ".join(source_text.split())
+    promise_text = str(club.get("promise_text") or "").strip()
+    name = str(club.get("name") or "").strip()
+
+    description = _first_matching_sentence(compact, ("for ", "members", "people", "group", "club", "collective"))
+    if not description:
+        description = compact[:420]
+
+    goal = _first_matching_sentence(compact, ("goal", "aim", "target", "purpose", "help", "build", "become", "create"))
+    if not goal and promise_text:
+        goal = f"Help members follow through on: {promise_text}"
+    elif not goal and name:
+        goal = f"Help members stay accountable to {name}."
+
+    vibe = _first_matching_sentence(compact, ("vibe", "tone", "strict", "gentle", "playful", "warm", "direct", "friendly"))
+    checkin = _first_matching_sentence(compact, ("check-in", "checkin", "counts", "done", "report", "valid", "complete"))
+    if not checkin and promise_text:
+        checkin = f"A check-in counts when a member reports progress on: {promise_text}"
+
+    extracted = {
+        "description": _clean_context_value(description or current.get("description"), 1000),
+        "club_goal": _clean_context_value(goal or current.get("club_goal"), 1500),
+        "vibe": _clean_context_value(vibe or current.get("vibe"), 500),
+        "checkin_what_counts": _clean_context_value(checkin or current.get("checkin_what_counts"), 700),
+    }
+    followups = []
+    if not extracted["checkin_what_counts"]:
+        followups.append("What should count as a valid check-in?")
+    if not extracted["vibe"]:
+        followups.append("What tone should Xaana use with this group?")
+    return extracted, followups
+
+
+def _parse_context_json(content: str) -> dict:
+    text_value = str(content or "").strip()
+    if text_value.startswith("```"):
+        text_value = text_value.strip("`")
+        if text_value.lower().startswith("json"):
+            text_value = text_value[4:].strip()
+    start = text_value.find("{")
+    end = text_value.rfind("}")
+    if start >= 0 and end > start:
+        text_value = text_value[start:end + 1]
+    return json.loads(text_value)
+
+
+def _llm_club_context_extract(
+    *,
+    source_text: str,
+    club: dict,
+    current: dict,
+) -> tuple[Optional[dict], list[str]]:
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_openai import ChatOpenAI
+        from llms.llm_env_utils import load_llm_env
+
+        cfg = load_llm_env()
+        chat_model = None
+        if cfg.get("GCP_PROJECT_ID"):
+            chat_model = ChatGoogleGenerativeAI(
+                model=cfg.get("LLM_RESPONDER_MODEL") or cfg.get("GCP_GEMINI_MODEL"),
+                project=cfg["GCP_PROJECT_ID"],
+                location=cfg.get("GCP_LLM_LOCATION", cfg["GCP_LOCATION"]),
+                temperature=0.2,
+            )
+        elif cfg.get("OPENAI_API_KEY"):
+            chat_model = ChatOpenAI(
+                openai_api_key=cfg["OPENAI_API_KEY"],
+                model=cfg.get("LLM_OPENAI_RESPONDER_MODEL") or "gpt-4o-mini",
+                temperature=0.2,
+            )
+        if chat_model is None:
+            return None, []
+
+        prompt_payload = {
+            "club": {
+                "name": club.get("name"),
+                "promise_text": club.get("promise_text"),
+                "target_count_per_week": club.get("target_count_per_week"),
+            },
+            "current_context": current,
+            "owner_material": source_text[:12000],
+        }
+        messages = [
+            SystemMessage(content=(
+                "You extract concise club context for Xaana, an accountability coach in Telegram groups. "
+                "Return only JSON with keys: description, club_goal, vibe, checkin_what_counts, follow_up_questions. "
+                "Keep each field short, practical, and useful for future group replies. "
+                "If source material is ambiguous, preserve existing context and ask at most 3 follow-up questions."
+            )),
+            HumanMessage(content=json.dumps(prompt_payload, ensure_ascii=False)),
+        ]
+        response = chat_model.invoke(messages)
+        payload = _parse_context_json(getattr(response, "content", response))
+        extracted = {
+            "description": _clean_context_value(payload.get("description") or current.get("description"), 1000),
+            "club_goal": _clean_context_value(payload.get("club_goal") or current.get("club_goal"), 1500),
+            "vibe": _clean_context_value(payload.get("vibe") or current.get("vibe"), 500),
+            "checkin_what_counts": _clean_context_value(payload.get("checkin_what_counts") or current.get("checkin_what_counts"), 700),
+        }
+        questions = payload.get("follow_up_questions") or []
+        followups = [str(item).strip()[:180] for item in questions if str(item).strip()][:3]
+        return extracted, followups
+    except Exception as exc:
+        logger.info("Club context LLM extraction unavailable, using heuristic fallback: %s", exc)
+        return None, []
+
+
+async def _extract_uploaded_image_text(files: List[UploadFile]) -> tuple[list[str], Optional[str]]:
+    if not files:
+        return [], None
+    try:
+        from services.image_service import ImageService
+        image_service = ImageService()
+    except Exception as exc:
+        return [], f"Image extraction unavailable: {exc}"
+
+    extracted: list[str] = []
+    for upload in files[:4]:
+        content_type = (upload.content_type or "").lower()
+        if not content_type.startswith("image/"):
+            continue
+        suffix = os.path.splitext(upload.filename or "")[1] or ".jpg"
+        tmp_path = ""
+        try:
+            data = await upload.read()
+            if len(data) > 8 * 1024 * 1024:
+                extracted.append(f"Image {upload.filename or ''} skipped: file is larger than 8MB.")
+                continue
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(data)
+                tmp_path = tmp.name
+            analysis = await asyncio.to_thread(image_service.parse_image, tmp_path)
+            text_value = image_service.extract_text_for_processing(analysis)
+            if text_value:
+                extracted.append(f"Image {upload.filename or 'upload'}:\n{text_value}")
+        except Exception as exc:
+            extracted.append(f"Image {upload.filename or 'upload'} could not be read: {exc}")
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+    return extracted, None
 
 
 @router.get("/clubs", response_model=ClubsResponse)
@@ -378,6 +566,149 @@ async def update_club_settings(
     except Exception as e:
         logger.exception(f"Error updating club settings {club_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update club: {str(e)}")
+
+
+@router.put("/clubs/{club_id}/context", response_model=ClubSummary)
+async def update_club_context(
+    request: Request,
+    club_id: str,
+    body: UpdateClubContextRequest,
+    user_id: int = Depends(get_current_user),
+):
+    """Update bot-facing club context. Only club owners or Telegram group admins may call this."""
+    fields_set = getattr(body, "model_fields_set", None) or getattr(body, "__fields_set__", set())
+    provided = CLUB_CONTEXT_FIELDS.intersection(fields_set)
+    if not provided:
+        raise HTTPException(status_code=400, detail="Provide at least one club context field")
+
+    try:
+        clubs_repo = ClubsRepository()
+        club = clubs_repo.get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if not await _is_club_admin(user_id, club, request.app.state.bot_token):
+            raise HTTPException(status_code=403, detail="Only club admins can update club context")
+
+        values: dict[str, str] = {}
+        for field_name in CLUB_CONTEXT_FIELDS:
+            if field_name in provided:
+                raw_value = getattr(body, field_name)
+                values[field_name] = "" if raw_value is None else str(raw_value).strip()
+
+        clubs_repo.update_club_context(
+            club_id=club_id,
+            description=values.get("description") if "description" in values else None,
+            club_goal=values.get("club_goal") if "club_goal" in values else None,
+            vibe=values.get("vibe") if "vibe" in values else None,
+            checkin_what_counts=values.get("checkin_what_counts") if "checkin_what_counts" in values else None,
+        )
+
+        if "club_goal" in values:
+            try:
+                from memory.club_memory import club_memory_upsert_fact
+                root_dir = getattr(request.app.state, "root_dir", None) or os.getenv("ROOT_DIR") or os.getcwd()
+                club_memory_upsert_fact(root_dir, club_id, "club_goal", values["club_goal"])
+            except Exception as memory_error:
+                logger.warning("Failed to sync club_goal memory for club %s: %s", club_id, memory_error)
+
+        clubs = _list_user_clubs(user_id)
+        updated = next((c for c in clubs if c.club_id == club_id), None)
+        if not updated:
+            raise RuntimeError("Club context updated but could not be reloaded")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating club context {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update club context: {str(e)}")
+
+
+@router.post("/clubs/{club_id}/context/ingest", response_model=ClubContextIngestResponse)
+async def ingest_club_context(
+    request: Request,
+    club_id: str,
+    notes: str = Form(default=""),
+    files: Optional[List[UploadFile]] = File(default=None),
+    user_id: int = Depends(get_current_user),
+):
+    """Extract bot-facing club context from natural owner notes and optional images."""
+    notes = (notes or "").strip()
+    uploads = files or []
+    if not notes and not uploads:
+        raise HTTPException(status_code=400, detail="Add notes or images first")
+
+    try:
+        clubs_repo = ClubsRepository()
+        club = clubs_repo.get_club(club_id)
+        if not club or str(club.get("status") or "active") != "active":
+            raise HTTPException(status_code=404, detail="Club not found")
+
+        if not await _is_club_admin(user_id, club, request.app.state.bot_token):
+            raise HTTPException(status_code=403, detail="Only club admins can update club context")
+
+        current = {
+            "description": str(club.get("description") or ""),
+            "club_goal": str(club.get("club_goal") or ""),
+            "vibe": str(club.get("vibe") or ""),
+            "checkin_what_counts": str(club.get("checkin_what_counts") or ""),
+        }
+        image_parts, image_error = await _extract_uploaded_image_text(uploads)
+        source_parts = []
+        if notes:
+            source_parts.append(f"Owner notes:\n{notes}")
+        source_parts.extend(image_parts)
+        source_text = "\n\n".join(source_parts).strip()
+        if not source_text:
+            raise HTTPException(status_code=400, detail=image_error or "No readable context found")
+
+        extracted, followups = _llm_club_context_extract(
+            source_text=source_text,
+            club=club,
+            current=current,
+        )
+        used_llm = extracted is not None
+        if extracted is None:
+            extracted, followups = _heuristic_club_context_extract(
+                source_text=source_text,
+                club=club,
+                current=current,
+            )
+
+        clubs_repo.update_club_context(
+            club_id=club_id,
+            description=extracted.get("description"),
+            club_goal=extracted.get("club_goal"),
+            vibe=extracted.get("vibe"),
+            checkin_what_counts=extracted.get("checkin_what_counts"),
+        )
+
+        try:
+            from memory.club_memory import club_memory_upsert_fact, club_memory_write
+            root_dir = getattr(request.app.state, "root_dir", None) or os.getenv("ROOT_DIR") or os.getcwd()
+            if extracted.get("club_goal") is not None:
+                club_memory_upsert_fact(root_dir, club_id, "club_goal", extracted["club_goal"])
+            club_memory_write(f"Owner-provided context source:\n{source_text[:4000]}", root_dir, club_id)
+        except Exception as memory_error:
+            logger.warning("Failed to sync ingested club context memory for club %s: %s", club_id, memory_error)
+
+        clubs = _list_user_clubs(user_id)
+        updated = next((c for c in clubs if c.club_id == club_id), None)
+        if not updated:
+            raise RuntimeError("Club context ingested but could not be reloaded")
+        return ClubContextIngestResponse(
+            club=updated,
+            extracted=UpdateClubContextRequest(**extracted),
+            follow_up_questions=followups,
+            used_llm=used_llm,
+            image_count=len(uploads),
+            image_error=image_error,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error ingesting club context {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to ingest club context: {str(e)}")
 
 
 @router.post("/clubs/{club_id}/promises", response_model=ClubSummary)

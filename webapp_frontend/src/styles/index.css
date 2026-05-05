@@ -5709,6 +5709,39 @@ textarea.modal-input {
   box-sizing: border-box;
 }
 
+.club-detail-edit-textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.club-detail-context-note {
+  min-height: 116px;
+}
+
+.club-detail-file-input {
+  width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.club-detail-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.club-detail-file-list span {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .club-detail-edit-buttons {
   display: flex;
   gap: 8px;
@@ -5816,6 +5849,60 @@ textarea.modal-input {
   color: var(--muted);
   font-size: 13px;
   font-style: italic;
+}
+
+.club-detail-context-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.club-detail-context-list p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.club-detail-context-list strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.club-detail-context-questions {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.club-detail-context-questions p {
+  margin: 0;
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.club-detail-advanced-context {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.club-detail-advanced-context summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.club-detail-advanced-context[open] summary {
+  margin-bottom: 10px;
 }
 
 @media (max-width: 640px) {

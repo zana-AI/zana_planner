@@ -5,6 +5,7 @@ import type {
   PublicActivityResponse,
   ClubSummary,
   ClubsResponse,
+  ClubContextIngestResponse,
   CreateClubRequest,
   AdminClubSetupResponse,
   AdminClubSetupSummary,
@@ -687,6 +688,48 @@ class ApiClient {
       method: 'PUT',
       body: JSON.stringify(body),
     });
+  }
+
+  async updateClubContext(
+    clubId: string,
+    body: {
+      description?: string | null;
+      club_goal?: string | null;
+      vibe?: string | null;
+      checkin_what_counts?: string | null;
+    },
+  ): Promise<ClubSummary> {
+    return this.request<ClubSummary>(`/clubs/${clubId}/context`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async ingestClubContext(
+    clubId: string,
+    body: { notes: string; files?: File[] },
+  ): Promise<ClubContextIngestResponse> {
+    const form = new FormData();
+    form.append('notes', body.notes || '');
+    (body.files || []).forEach((file) => form.append('files', file));
+
+    const response = await fetch(`${API_BASE}/clubs/${clubId}/context/ingest`, {
+      method: 'POST',
+      headers: this.buildAuthHeaders(),
+      body: form,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const message = typeof errorData.detail === 'string'
+        ? errorData.detail
+        : errorData.detail
+          ? JSON.stringify(errorData.detail)
+          : `HTTP error ${response.status}`;
+      throw new ApiError(response.status, message);
+    }
+
+    return response.json();
   }
 
   async updateClubPromise(

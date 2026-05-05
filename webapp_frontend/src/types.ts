@@ -206,11 +206,29 @@ export interface ClubSummary {
   target_count_per_week?: number;
   reminder_time?: string;
   language?: string;
+  description?: string;
+  club_goal?: string;
+  vibe?: string;
+  checkin_what_counts?: string;
 }
 
 export interface ClubsResponse {
   clubs: ClubSummary[];
   total: number;
+}
+
+export interface ClubContextIngestResponse {
+  club: ClubSummary;
+  extracted: {
+    description?: string | null;
+    club_goal?: string | null;
+    vibe?: string | null;
+    checkin_what_counts?: string | null;
+  };
+  follow_up_questions: string[];
+  used_llm: boolean;
+  image_count: number;
+  image_error?: string | null;
 }
 
 export interface AdminClubSetupSummary extends ClubSummary {
