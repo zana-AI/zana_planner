@@ -7,8 +7,12 @@
   --bg: #090f1f;
   --panel: #0f1832;
   --card: #121f3f;
+  --surface: rgba(237, 243, 255, 0.06);
+  --surface-hover: rgba(237, 243, 255, 0.09);
+  --surface-strong: rgba(237, 243, 255, 0.12);
   --text: #edf3ff;
   --muted: rgba(237, 243, 255, 0.68);
+  --text-secondary: rgba(237, 243, 255, 0.72);
   --border: rgba(237, 243, 255, 0.12);
   --accent: #63a7f7;
   --accent-hover: #80bcff;
@@ -48,6 +52,27 @@ body.modal-open {
 
 #root {
   min-height: 100vh;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+textarea,
+select {
+  background-color: var(--surface);
+  color: var(--text);
+  caret-color: var(--text);
+  color-scheme: dark;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])::placeholder,
+textarea::placeholder {
+  color: var(--text-subtle, rgba(237, 243, 255, 0.52));
+  opacity: 1;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+textarea:focus,
+select:focus {
+  background-color: var(--surface-hover);
 }
 
 /* PDF reader */
@@ -5703,10 +5728,16 @@ textarea.modal-input {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface, #fff);
-  color: var(--text, #000);
+  background: var(--surface);
+  color: var(--text);
   font-size: 14px;
   box-sizing: border-box;
+}
+
+.club-detail-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-hover);
 }
 
 .club-detail-edit-textarea {
