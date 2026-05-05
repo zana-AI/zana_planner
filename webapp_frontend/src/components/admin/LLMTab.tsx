@@ -53,6 +53,16 @@ function rateLimitLabel(rateLimit?: AdminLLMRateLimitInfo): string {
   return Object.keys(rateLimit.announced || {}).length ? 'Published' : 'Unknown';
 }
 
+function resultSummary(result: AdminLLMBackendTestResponse): string {
+  if (result.parallel_count && result.parallel_count > 1) {
+    return `${result.successes ?? 0}/${result.parallel_count} OK in ${result.latency_ms ?? '?'} ms`;
+  }
+  if (result.status === 'ok') {
+    return `OK in ${result.latency_ms ?? '?'} ms: ${result.response_preview || 'No preview'}`;
+  }
+  return result.error || 'Smoke test failed';
+}
+
 function RateLimitDetails({ rateLimit }: { rateLimit?: AdminLLMRateLimitInfo }) {
   const observed = rateLimit?.observed;
   const announced = rateLimit?.announced || {};
@@ -223,6 +233,7 @@ function LLMBackendsSection() {
   const [error, setError] = useState<string>('');
   const [testingKey, setTestingKey] = useState<string>('');
   const [testResults, setTestResults] = useState<Record<string, AdminLLMBackendTestResponse>>({});
+  const [parallelCounts, setParallelCounts] = useState<Record<string, number>>({});
 
   const loadBackends = () => {
     setLoading(true);
@@ -238,7 +249,7 @@ function LLMBackendsSection() {
     loadBackends();
   }, []);
 
-  const testBackend = async (provider: string, role: LLMRole, model: string) => {
+  const testBackend = async (provider: string, role: LLMRole, model: string, parallelCount = 1) => {
     const key = `${provider}:${role}`;
     setTestingKey(key);
     setTestResults((prev) => {
@@ -247,7 +258,12 @@ function LLMBackendsSection() {
       return next;
     });
     try {
-      const result = await apiClient.testAdminLLMBackend({ provider, model, role });
+      const result = await apiClient.testAdminLLMBackend({
+        provider,
+        model,
+        role,
+        parallel_count: Math.max(1, Math.min(50, Math.floor(parallelCount || 1))),
+      });
       setTestResults((prev) => ({ ...prev, [key]: result }));
       const rateLimit = result.rate_limit;
       if (rateLimit) {
@@ -335,6 +351,7 @@ function LLMBackendsSection() {
                       const key = `${provider}:${role}`;
                       const result = testResults[key];
                       const disabled = !hasCredentials || !supported || testingKey === key;
+                      const parallelCount = parallelCounts[key] ?? 5;
                       const rateLimit = model ? data.rate_limits[provider]?.[model] : undefined;
                       return (
                         <div key={role} className="admin-llm-backend-role">
@@ -348,26 +365,68 @@ function LLMBackendsSection() {
                             ) : null}
                             <RateLimitDetails rateLimit={rateLimit} />
                           </div>
-                          <button
-                            type="button"
-                            className="admin-select-all-btn admin-llm-backend-test-btn"
-                            disabled={disabled}
-                            onClick={() => testBackend(provider, role, model)}
-                            title={
-                              !hasCredentials
-                                ? 'Credentials are not configured'
-                                : !supported
-                                  ? 'Model is not supported by the local catalog'
-                                  : 'Run a read-only smoke test'
-                            }
-                          >
-                            {testingKey === key ? 'Testing...' : 'Test'}
-                          </button>
+                          <div className="admin-llm-backend-actions">
+                            <button
+                              type="button"
+                              className="admin-select-all-btn admin-llm-backend-test-btn"
+                              disabled={disabled}
+                              onClick={() => testBackend(provider, role, model)}
+                              title={
+                                !hasCredentials
+                                  ? 'Credentials are not configured'
+                                  : !supported
+                                    ? 'Model is not supported by the local catalog'
+                                    : 'Run one read-only smoke test'
+                              }
+                            >
+                              {testingKey === key ? 'Testing...' : 'Test'}
+                            </button>
+                            <div className="admin-llm-parallel-control">
+                              <input
+                                type="number"
+                                min={1}
+                                max={50}
+                                value={parallelCount}
+                                disabled={disabled}
+                                onChange={(event) => {
+                                  const value = Number(event.target.value);
+                                  setParallelCounts((prev) => ({
+                                    ...prev,
+                                    [key]: Number.isFinite(value)
+                                      ? Math.max(1, Math.min(50, Math.floor(value)))
+                                      : 1,
+                                  }));
+                                }}
+                                title="Parallel request count"
+                              />
+                              <button
+                                type="button"
+                                className="admin-select-all-btn admin-llm-backend-test-btn"
+                                disabled={disabled}
+                                onClick={() => testBackend(provider, role, model, parallelCount)}
+                                title="Run N read-only smoke tests in parallel"
+                              >
+                                Run N
+                              </button>
+                            </div>
+                          </div>
                           {result ? (
                             <div className={`admin-llm-backend-result ${result.status}`}>
-                              {result.status === 'ok'
-                                ? `OK in ${result.latency_ms ?? '?'} ms: ${result.response_preview || 'No preview'}`
-                                : result.error || 'Smoke test failed'}
+                              <div>{resultSummary(result)}</div>
+                              {result.error ? <div>{result.error}</div> : null}
+                              {result.attempts?.length ? (
+                                <div className="admin-llm-attempts">
+                                  {result.attempts.map((attempt) => (
+                                    <span
+                                      key={attempt.attempt}
+                                      className={`admin-llm-attempt ${attempt.status}`}
+                                      title={attempt.error || attempt.response_preview || ''}
+                                    >
+                                      #{attempt.attempt}: {attempt.status === 'ok' ? `${attempt.latency_ms} ms` : attempt.error || 'error'}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>

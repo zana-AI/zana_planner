@@ -114,12 +114,17 @@ export interface AdminLLMBackendsResponse {
 
 export interface AdminLLMBackendTestResponse {
   status: 'ok' | 'error';
+  attempt?: number;
   provider: string;
   model: string;
   role: 'router' | 'planner' | 'responder';
+  parallel_count?: number;
+  successes?: number;
+  failures?: number;
   latency_ms?: number | null;
   response_preview: string;
   error?: string;
+  attempts?: AdminLLMBackendTestResponse[];
   rate_limit?: AdminLLMRateLimitInfo;
 }
 
@@ -987,6 +992,7 @@ class ApiClient {
     provider: string;
     model: string;
     role: 'router' | 'planner' | 'responder';
+    parallel_count?: number;
   }): Promise<AdminLLMBackendTestResponse> {
     return this.request<AdminLLMBackendTestResponse>('/admin/llm-backends/test', {
       method: 'POST',

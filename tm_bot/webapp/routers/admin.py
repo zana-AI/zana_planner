@@ -919,6 +919,7 @@ async def test_llm_backend(
     provider = payload.provider.strip().lower()
     role = payload.role.strip().lower()
     model = payload.model.strip()
+    parallel_count = int(payload.parallel_count or 1)
     catalog = _provider_model_catalog()
     if provider not in catalog:
         raise HTTPException(status_code=400, detail="Unsupported LLM provider")
@@ -934,7 +935,7 @@ async def test_llm_backend(
         cfg = load_llm_env()
         cfg["LLM_PROVIDER"] = provider
 
-        def _invoke_smoke() -> Dict[str, Any]:
+        def _invoke_smoke(attempt: int = 1) -> Dict[str, Any]:
             adapter = create_provider_adapter(cfg)
             role_model = adapter.build_role_model(
                 role,
@@ -949,6 +950,7 @@ async def test_llm_backend(
             latency_ms = int((time.perf_counter() - started) * 1000)
             return {
                 "status": "ok",
+                "attempt": attempt,
                 "provider": provider,
                 "model": model,
                 "role": role,
@@ -957,7 +959,59 @@ async def test_llm_backend(
                 "rate_limit": _llm_rate_limit_state({provider: {"known": [model]}}).get(provider, {}).get(model),
             }
 
-        return await asyncio.to_thread(_invoke_smoke)
+        if parallel_count == 1:
+            return await asyncio.to_thread(_invoke_smoke)
+
+        async def _invoke_parallel_attempt(attempt: int) -> Dict[str, Any]:
+            try:
+                return await asyncio.to_thread(_invoke_smoke, attempt)
+            except Exception as exc:
+                logger.warning(
+                    "Parallel LLM backend smoke test attempt %s failed for %s/%s/%s: %s",
+                    attempt,
+                    provider,
+                    model,
+                    role,
+                    exc,
+                )
+                return {
+                    "status": "error",
+                    "attempt": attempt,
+                    "provider": provider,
+                    "model": model,
+                    "role": role,
+                    "latency_ms": None,
+                    "response_preview": "",
+                    "error": _mask_llm_error(exc),
+                    "rate_limit": _llm_rate_limit_state({provider: {"known": [model]}}).get(provider, {}).get(model),
+                }
+
+        started = time.perf_counter()
+        attempts = await asyncio.gather(
+            *(_invoke_parallel_attempt(i) for i in range(1, parallel_count + 1))
+        )
+        total_latency_ms = int((time.perf_counter() - started) * 1000)
+        failures = [attempt for attempt in attempts if attempt.get("status") != "ok"]
+        successes = parallel_count - len(failures)
+        return {
+            "status": "ok" if not failures else "error",
+            "provider": provider,
+            "model": model,
+            "role": role,
+            "parallel_count": parallel_count,
+            "successes": successes,
+            "failures": len(failures),
+            "latency_ms": total_latency_ms,
+            "response_preview": f"{successes}/{parallel_count} requests succeeded",
+            "error": "; ".join(
+                dict.fromkeys(
+                    str(attempt.get("error") or "request failed")
+                    for attempt in failures[:5]
+                )
+            ) if failures else None,
+            "attempts": attempts,
+            "rate_limit": _llm_rate_limit_state({provider: {"known": [model]}}).get(provider, {}).get(model),
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -967,6 +1021,9 @@ async def test_llm_backend(
             "provider": provider,
             "model": model,
             "role": role,
+            "parallel_count": parallel_count,
+            "successes": 0,
+            "failures": parallel_count,
             "latency_ms": None,
             "response_preview": "",
             "error": _mask_llm_error(e),

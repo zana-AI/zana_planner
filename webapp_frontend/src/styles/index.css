@@ -6265,6 +6265,35 @@ textarea.modal-input {
   min-width: 64px;
 }
 
+.admin-llm-backend-actions {
+  align-items: flex-end;
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.admin-llm-parallel-control {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.admin-llm-parallel-control input {
+  background: rgba(15, 23, 48, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  min-height: 30px;
+  padding: 4px 6px;
+  width: 56px;
+}
+
+.admin-llm-parallel-control input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .admin-llm-backend-result {
   grid-column: 1 / -1;
   border-radius: 8px;
@@ -6280,6 +6309,32 @@ textarea.modal-input {
 
 .admin-llm-backend-result.error {
   background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+}
+
+.admin-llm-attempts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.admin-llm-attempt {
+  border: 1px solid rgba(232, 238, 252, 0.1);
+  border-radius: 999px;
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-llm-attempt.ok {
+  color: #bbf7d0;
+}
+
+.admin-llm-attempt.error {
   color: #fecaca;
 }
 
