@@ -89,12 +89,13 @@ class RouteDecision(BaseModel):
         max_length=500,
     )
 
-    needs_live_data: bool = Field(
-        default=False,
+    needs_live_data: Optional[bool] = Field(
+        default=None,
         description=(
             "True when the message requires current/live internet data: today's news, live prices, "
             "recent events, current weather, latest software/API versions, or any time-sensitive fact "
-            "that model training data cannot reliably answer. Default false."
+            "that model training data cannot reliably answer. False when the answer comes from the "
+            "user's own data (promises, actions, settings). Omit only if genuinely uncertain."
         ),
     )
 

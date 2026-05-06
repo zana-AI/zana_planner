@@ -1161,43 +1161,6 @@ def _parse_route_decision(payload: Any) -> RouteDecision:
     raise ValueError("Could not parse router output into RouteDecision JSON")
 
 
-def _heuristic_needs_live_data(text: str) -> bool:
-    """
-    Lightweight safety-net: returns True when the message contains obvious signals
-    that live/current internet data is needed, regardless of what the router LLM said.
-    Covers Persian, Arabic, French, and English patterns.
-    """
-    t = text.lower()
-    patterns = [
-        # Explicit search/internet requests (any language)
-        "search", "google", "internet", "look up", "look it up", "find out",
-        "جستجو", "سرچ", "اینترنت", "گوگل",
-        "ابحث", "إنترنت",
-        "cherche", "recherche", "internet",
-        # Time-sensitive anchors
-        "today", "tonight", "right now", "this week", "this month", "just now",
-        "امروز", "امشب", "الان", "الآن", "این هفته", "همین الان",
-        "اليوم", "الآن", "هذا الأسبوع",
-        "aujourd'hui", "ce soir", "maintenant",
-        # Score / result / match queries
-        "result", "score", "winner", "who won", "final score",
-        "نتیجه", "نتایج", "برنده", "گل", "امتیاز",
-        "نتيجة", "الفائز",
-        "résultat", "score",
-        # News / latest / current
-        "latest", "current", "news", "update", "breaking",
-        "آخرین", "اخبار", "جدیدترین",
-        "أخبار", "آخر",
-        "dernières", "actualité",
-        # Weather / price / live data
-        "weather", "price", "rate", "forecast", "stock",
-        "آب و هوا", "قیمت", "نرخ",
-        "الطقس", "السعر",
-        "météo", "prix",
-    ]
-    return any(p in t for p in patterns)
-
-
 def _heuristic_route_decision_from_text(user_text: str) -> RouteDecision:
     """
     Deterministic fallback router used when structured route parsing fails.
@@ -2528,12 +2491,16 @@ def create_routed_plan_execute_graph(
 
         # Live-data gate: only activate if the live responder is configured and the
         # per-user daily budget hasn't been exhausted.
-        wants_live = bool(getattr(route_decision, "needs_live_data", False)) if route_decision else False
-        # Safety-net: if the router LLM missed obvious live-data signals, override.
-        if not wants_live and live_responder_model is not None:
-            user_text_for_heuristic = _normalize_model_output_text(getattr(user_msg, "content", "") or "")
-            if _heuristic_needs_live_data(user_text_for_heuristic):
-                wants_live = True
+        _router_live = getattr(route_decision, "needs_live_data", None) if route_decision else None
+        if _router_live is True:
+            wants_live = True
+        elif _router_live is False:
+            wants_live = False
+        else:
+            # Router didn't specify — fall back to: is it a question?
+            # Questions almost always need an answer the bot doesn't have internally.
+            _raw = str(getattr(user_msg, "content", "") or "")
+            wants_live = live_responder_model is not None and ("?" in _raw or "؟" in _raw)
         live_data_ok = False
         if wants_live and live_responder_model is not None:
             from llms.tool_wrappers import _current_user_id
