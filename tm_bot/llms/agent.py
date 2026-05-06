@@ -381,6 +381,7 @@ class AgentState(TypedDict):
     mode: Optional[str]  # "operator", "strategist", "social", "engagement"
     route_confidence: Optional[str]  # "high", "medium", "low"
     route_reason: Optional[str]  # Short label for telemetry
+    live_data_requested: Optional[bool]  # True when router flagged needs_live_data and gate allowed it
     # Explicit tracking of executed actions for response validation
     executed_actions: Optional[List[Dict[str, Any]]]  # List of {"tool_name": str, "args": dict, "result": str, "success": bool}
     # Batch confirmation queue — mutations accumulated during plan execution, confirmed sequentially
@@ -2396,6 +2397,7 @@ def create_routed_plan_execute_graph(
     emit_plan: bool = False,
     max_iterations: int = 6,
     progress_getter: Optional[Callable[[], Optional[Callable[[str, dict], None]]]] = None,
+    live_responder_model: Optional[Runnable] = None,
 ):
     """
     Build a LangGraph app with routing: router → mode-specific planner → executor.
@@ -2486,7 +2488,26 @@ def create_routed_plan_execute_graph(
         mode = route_decision.mode if route_decision else "operator"
         confidence = route_decision.confidence if route_decision else "low"
         reason = route_decision.reason if route_decision else "fallback"
-        
+
+        # Live-data gate: only activate if the live responder is configured and the
+        # per-user daily budget hasn't been exhausted.
+        wants_live = bool(getattr(route_decision, "needs_live_data", False)) if route_decision else False
+        live_data_ok = False
+        if wants_live and live_responder_model is not None:
+            from llms.tool_wrappers import _current_user_id
+            from llms.user_call_gate import check_live_data
+            _uid = _current_user_id.get() or "unknown"
+            _live_allowed, _live_used = check_live_data(_uid)
+            if _live_allowed:
+                live_data_ok = True
+            else:
+                logger.warning({
+                    "event": "live_data_gate_blocked",
+                    "user_id": _uid,
+                    "used_today": _live_used,
+                    "reason": reason,
+                })
+
         _emit(
             progress_getter,
             "route",
@@ -2494,14 +2515,16 @@ def create_routed_plan_execute_graph(
                 "mode": mode,
                 "confidence": confidence,
                 "reason": reason,
+                "live_data": live_data_ok,
             },
         )
-        
+
         return {
             **state,
             "mode": mode,
             "route_confidence": confidence,
             "route_reason": reason,
+            "live_data_requested": live_data_ok,
         }
     
     # Reuse planner and executor logic, but make them mode-aware
@@ -3084,7 +3107,26 @@ def create_routed_plan_execute_graph(
     
     def executor(state: AgentState) -> AgentState:
         mode = state.get("mode") or "operator"
-        
+
+        # Pick active responder: xAI with live search when the router flagged live data
+        # and the gate allowed it; otherwise use the primary responder.
+        _use_live = bool(state.get("live_data_requested")) and live_responder_model is not None
+
+        def _invoke_responder(messages, label: str):
+            """Invoke live responder if requested, fall back to primary on error."""
+            if _use_live:
+                try:
+                    _track_llm_call(f"live_{label}", "live_responder_model")
+                    return _invoke_model(live_responder_model, messages)
+                except Exception as _live_exc:
+                    logger.warning({
+                        "event": "live_responder_fallback",
+                        "label": label,
+                        "reason": str(_live_exc)[:200],
+                    })
+            _track_llm_call(label, "responder_model")
+            return _invoke_model(responder_model, messages)
+
         # Engagement mode: respond conversationally with no responder-level tools.
         if mode == "engagement":
             system_msg = _get_system_message_for_response(mode)
@@ -3095,10 +3137,9 @@ def create_routed_plan_execute_graph(
                 "Never reveal internal analysis or thinking steps; give only the final user-facing text. "
                 "Do not call or imitate tools."
             )
-            _track_llm_call("responder_engagement", "responder_model")
-            result = _invoke_model(
-                responder_model,
+            result = _invoke_responder(
                 _build_responder_messages(state, engagement_hint, system_msg),
+                "responder_engagement",
             )
             return {
                 **state,
@@ -3131,8 +3172,7 @@ def create_routed_plan_execute_graph(
                 )
                 system_msg = _get_system_message_for_response(mode)
                 messages_to_send = _build_responder_messages(state, hint, system_msg)
-                _track_llm_call("routed_responder_error", "responder_model")
-                result = _invoke_model(responder_model, messages_to_send)
+                result = _invoke_responder(messages_to_send, "routed_responder_error")
             else:
                 default_hint = (
                     "RESPONSE GUIDELINES:\n"
@@ -3156,8 +3196,7 @@ def create_routed_plan_execute_graph(
                 default_hint += _execution_truth_hint(executed_actions, MUTATION_PREFIXES)
                 system_msg = _get_system_message_for_response(mode)
                 messages_to_send = _build_responder_messages(state, default_hint, system_msg)
-                _track_llm_call("routed_responder_default", "responder_model")
-                result = _invoke_model(responder_model, messages_to_send)
+                result = _invoke_responder(messages_to_send, "routed_responder_default")
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -3174,8 +3213,7 @@ def create_routed_plan_execute_graph(
                 "conversation and tool-result summary. Do not mention internal loop details."
             )
             validated_messages = _build_responder_messages(state, max_iter_hint, system_msg)
-            _track_llm_call("routed_responder_max_iter", "responder_model")
-            result = _invoke_model(responder_model, validated_messages)
+            result = _invoke_responder(validated_messages, "routed_responder_max_iter")
             return {
                 **state,
                 "messages": state["messages"] + [result],
@@ -3271,8 +3309,7 @@ def create_routed_plan_execute_graph(
                 hint = hint + failure_hint
             system_msg = _get_system_message_for_response(mode)
             messages_to_send = _build_responder_messages(state, hint, system_msg)
-            _track_llm_call("routed_responder_respond_step", "responder_model")
-            result = _invoke_model(responder_model, messages_to_send)
+            result = _invoke_responder(messages_to_send, "routed_responder_respond_step")
             return {
                 **state,
                 "messages": state["messages"] + [result],

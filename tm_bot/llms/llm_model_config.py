@@ -41,6 +41,11 @@ MODEL_CONFIGS = {
         planner="llama-3.3-70b-versatile",
         responder="llama-3.3-70b-versatile",
     ),
+    "xai": RoleModels(
+        router="grok-4.3",
+        planner="grok-4.3",
+        responder="grok-4.3",
+    ),
 }
 
 # Cross-provider fallback defaults.
@@ -49,6 +54,7 @@ FALLBACK_MODELS = {
     "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
     "groq": "llama-3.3-70b-versatile",
+    "xai": "grok-4.3",
 }
 
 # Some Gemini models are global-only.
@@ -76,6 +82,9 @@ MODEL_PRICING: Dict[str, Tuple[float, float]] = {
     "gpt-4o": (2.50, 10.00),
     # DeepSeek
     "deepseek-chat": (0.27, 1.10),
+    # xAI
+    "grok-4.3": (1.25, 2.50),
+    "grok-4-1-fast-non-reasoning": (0.20, 0.50),
 }
 
 
@@ -97,6 +106,8 @@ def normalize_provider_name(provider: str | None) -> str:
         return "deepseek"
     if raw == "groq":
         return "groq"
+    if raw in {"xai", "grok"}:
+        return "xai"
     if raw == "auto":
         return "auto"
     return raw

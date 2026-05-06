@@ -34,6 +34,7 @@ def test_resolve_fallback_provider_autoswitches_to_gemini_when_openai_key_missin
         has_deepseek_key=False,
         has_gemini_creds=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert provider == "gemini"
     assert reason == "openai_key_missing"
@@ -48,6 +49,7 @@ def test_resolve_fallback_provider_keeps_openai_when_key_present():
         has_deepseek_key=False,
         has_gemini_creds=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert provider == "openai"
     assert reason is None
@@ -62,6 +64,7 @@ def test_resolve_fallback_provider_autoselects_deepseek_when_openai_key_missing_
         has_deepseek_key=True,
         has_gemini_creds=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert provider == "deepseek"
     assert reason == "openai_key_missing"
@@ -76,6 +79,7 @@ def test_resolve_fallback_provider_disabled_returns_none():
         has_deepseek_key=False,
         has_gemini_creds=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert provider is None
     assert reason is None
@@ -96,6 +100,7 @@ def test_resolve_fallback_role_providers_deepseek_prefers_gemini_for_structured_
         has_openai_key=True,
         has_deepseek_key=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert providers == {
         "router": "gemini",
@@ -111,6 +116,7 @@ def test_resolve_fallback_role_providers_deepseek_uses_openai_when_gemini_unavai
         has_openai_key=True,
         has_deepseek_key=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert providers == {
         "router": "openai",
@@ -126,6 +132,7 @@ def test_resolve_fallback_role_providers_deepseek_falls_back_to_deepseek_when_on
         has_openai_key=False,
         has_deepseek_key=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert providers == {
         "router": "deepseek",
@@ -141,6 +148,7 @@ def test_resolve_fallback_role_providers_gemini_requires_gemini_credentials():
         has_openai_key=True,
         has_deepseek_key=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert providers is None
 
@@ -154,6 +162,7 @@ def test_resolve_fallback_provider_autoselects_groq_when_openai_missing_and_groq
         has_deepseek_key=False,
         has_gemini_creds=True,
         has_groq_key=True,
+        has_xai_key=False,
     )
     assert provider == "groq"
     assert reason == "openai_key_missing"
@@ -166,6 +175,7 @@ def test_resolve_fallback_role_providers_groq_requires_key():
         has_openai_key=True,
         has_deepseek_key=True,
         has_groq_key=False,
+        has_xai_key=False,
     )
     assert providers is None
 
@@ -177,11 +187,43 @@ def test_resolve_fallback_role_providers_groq_when_available():
         has_openai_key=False,
         has_deepseek_key=False,
         has_groq_key=True,
+        has_xai_key=False,
     )
     assert providers == {
         "router": "groq",
         "planner": "groq",
         "responder": "groq",
+    }
+
+
+def test_resolve_fallback_provider_accepts_grok_alias_for_xai():
+    provider, reason = _resolve_fallback_provider(
+        fallback_enabled=True,
+        requested_fallback="grok",
+        primary_provider="openai",
+        has_openai_key=True,
+        has_deepseek_key=False,
+        has_gemini_creds=False,
+        has_groq_key=False,
+        has_xai_key=True,
+    )
+    assert provider == "xai"
+    assert reason is None
+
+
+def test_resolve_fallback_role_providers_xai_when_available():
+    providers = _resolve_fallback_role_providers(
+        "xai",
+        has_gemini_creds=False,
+        has_openai_key=False,
+        has_deepseek_key=False,
+        has_groq_key=False,
+        has_xai_key=True,
+    )
+    assert providers == {
+        "router": "xai",
+        "planner": "xai",
+        "responder": "xai",
     }
 
 
@@ -192,6 +234,7 @@ def test_resolve_fallback_role_providers_deepseek_avoids_groq_when_specified():
         has_openai_key=False,
         has_deepseek_key=True,
         has_groq_key=True,
+        has_xai_key=False,
         avoid_providers={"groq"},
     )
     assert providers == {
@@ -209,8 +252,22 @@ def test_build_fallback_provider_chain_keeps_preferred_then_adds_other_available
         has_openai_key=False,
         has_deepseek_key=True,
         has_groq_key=True,
+        has_xai_key=False,
     )
     assert chain == ["groq", "deepseek"]
+
+
+def test_build_fallback_provider_chain_includes_xai_when_available():
+    chain = _build_fallback_provider_chain(
+        primary_provider="openai",
+        preferred_provider="xai",
+        has_gemini_creds=False,
+        has_openai_key=True,
+        has_deepseek_key=False,
+        has_groq_key=False,
+        has_xai_key=True,
+    )
+    assert chain == ["xai"]
 
 
 def test_get_preblocked_primary_roles_returns_blocked_roles():
@@ -469,7 +526,15 @@ def test_limited_tool_guidance_does_not_reference_unavailable_planner_tools():
     assert "search_promises" not in guidance
     assert "time_spent" not in guidance
     assert "memory_write" in guidance
-    assert "web tools" in guidance
+    assert "web_search/web_fetch" in guidance
+
+
+def test_web_tool_guidance_requires_live_data_lookup_for_recent_facts():
+    guidance = "\n".join(_build_tool_usage_guidelines({"web_search", "web_fetch"}))
+
+    assert "live/current facts" in guidance
+    assert "latest/current/today/recent" in guidance
+    assert "search or fetch first" in guidance
 
 
 def test_group_reply_language_uses_persian_for_persian_group_turn_even_when_configured_english():
