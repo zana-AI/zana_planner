@@ -47,10 +47,8 @@ def load_llm_env():
     has_gemini_creds = bool(project_id and creds_b64 and location)
     if llm_provider_requested == "auto":
         # Code-owned default provider precedence:
-        # prefer Gemini for planner/responder quality when configured, then Groq/xAI/OpenAI/DeepSeek.
-        if has_gemini_creds:
-            llm_provider = "gemini"
-        elif groq_key:
+        # Groq first (low latency, no token-quota issues), then xAI, OpenAI, DeepSeek, Gemini.
+        if groq_key:
             llm_provider = "groq"
         elif xai_key:
             llm_provider = "xai"
@@ -58,9 +56,11 @@ def load_llm_env():
             llm_provider = "openai"
         elif deepseek_key:
             llm_provider = "deepseek"
+        elif has_gemini_creds:
+            llm_provider = "gemini"
         else:
             raise ValueError(
-                "No LLM provider credentials found. Set Gemini (GCP_*), Groq (GROQ_API_KEY), xAI/Grok (XAI_API_KEY), OpenAI (OPENAI_API_KEY), or DeepSeek (DEEPSEEK_API_KEY)."
+                "No LLM provider credentials found. Set Groq (GROQ_API_KEY), xAI/Grok (XAI_API_KEY), OpenAI (OPENAI_API_KEY), DeepSeek (DEEPSEEK_API_KEY), or Gemini (GCP_*)."
             )
     elif llm_provider_requested in {"gemini", "google"}:
         llm_provider = "gemini"
