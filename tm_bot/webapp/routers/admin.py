@@ -160,6 +160,8 @@ def _mask_llm_error(exc: Exception) -> str:
         os.getenv("OPENAI_API_KEY", ""),
         os.getenv("DEEPSEEK_API_KEY", ""),
         os.getenv("GROQ_API_KEY", ""),
+        os.getenv("XAI_API_KEY", ""),
+        os.getenv("GROK_API_KEY", ""),
         os.getenv("GCP_CREDENTIALS_B64", ""),
     ]
     for secret in secret_values:
@@ -176,6 +178,7 @@ def _llm_credential_status() -> Dict[str, bool]:
         "openai": bool(os.getenv("OPENAI_API_KEY")),
         "deepseek": bool(os.getenv("DEEPSEEK_API_KEY")),
         "groq": bool(os.getenv("GROQ_API_KEY")),
+        "xai": bool(os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")),
     }
 
 
