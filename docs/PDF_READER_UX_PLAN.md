@@ -80,20 +80,20 @@ Priority is by **user-visible impact first**, then by what unblocks later work.
 **Goal:** Pinch feels continuous, not stepped. Remove gestures that conflict with intentional interactions.
 
 - [x] **Done (2026-05-06):** Removed single-finger swipe-to-change-pages in fullscreen (`PdfReaderPage.tsx` `handleTouchEnd`). Edge buttons (`pdf-reader-page-zone--prev`/`--next`) remain the only page-turn interaction; pinch-zoom preserved. Also dropped the unused `touchStartRef`.
-- [ ] During an active pinch gesture, apply CSS `transform: scale(...)` to the page frame instead of re-rasterizing on every move event.
-- [ ] On gesture end, set the new scale and re-render the canvas + text layer at the final scale.
-- [ ] Preserve viewport anchor across the rasterize step (the existing `pendingViewportAnchorRef` logic already does most of this — extend it).
-- [ ] Add momentum/inertia for pan, or rely on native overflow scroll.
+- [x] **Done (2026-05-06):** During an active pinch gesture, apply CSS `transform: scale(...)` to the page frame instead of re-rasterizing on every move event.
+- [x] **Done (2026-05-06):** On gesture end, commit the final scale and re-render the canvas + text layer once.
+- [x] **Done (2026-05-06):** Preserve the pinch midpoint viewport anchor across the rasterize step using the existing `pendingViewportAnchorRef` flow.
+- [x] **Done (2026-05-06):** Keep native overflow scrolling / `-webkit-overflow-scrolling: touch` for pan momentum instead of adding custom inertia.
 
 ### P5 — Component split (refactor that unblocks future work)
 **Goal:** Make `PdfReaderPage.tsx` testable and changes safer.
 
 Extract from the 1093-line file:
-- [ ] `usePdfDocument` — load + page cache.
-- [ ] `useTextSelection` — selection capture and rect normalization (RTL-aware after P3).
-- [ ] `usePinchZoom` — gesture handling (after P4).
-- [ ] `<HighlightPopover>` — popover component (after P2).
-- [ ] `<HighlightLayer>` — saved-highlight rendering.
+- [x] **Done (2026-05-06):** `usePdfDocument` — PDF.js document creation + initial page/scroll selection.
+- [x] **Done (2026-05-06):** `useTextSelection` — selection capture and RTL-aware rect normalization.
+- [x] **Done (2026-05-06):** `usePinchZoom` — gesture handling and CSS preview scaling.
+- [x] **Done (2026-05-06):** `<HighlightPopover>` — popover component.
+- [x] **Done (2026-05-06):** `<HighlightLayer>` — saved-highlight rendering.
 
 This is the prerequisite for clean implementation of P6.
 

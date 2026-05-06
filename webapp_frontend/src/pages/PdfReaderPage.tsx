@@ -1,168 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { HeatmapBar } from '../components/HeatmapBar';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { PdfHighlight, PdfHighlightRect } from '../types';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+import type { PdfHighlight } from '../types';
+import { HighlightLayer } from './pdfReader/HighlightLayer';
+import { HighlightPopover } from './pdfReader/HighlightPopover';
+import { useHighlightPopover } from './pdfReader/useHighlightPopover';
+import { usePdfDocument } from './pdfReader/usePdfDocument';
+import { usePinchZoom } from './pdfReader/usePinchZoom';
+import { clearNativeSelection, detectTextLayerDirection, useTextSelection } from './pdfReader/useTextSelection';
+import type { ViewportAnchor } from './pdfReader/types';
 
 const PDF_READ_BUCKET_COUNT = 120;
 const PDF_READ_DWELL_SECONDS = 15;
-
-interface SelectionDraft {
-  text: string;
-  rects: PdfHighlightRect[];
-  // Selection's bounding box in page-relative pixels — used to position the
-  // popover after measuring its actual size in a useLayoutEffect.
-  bounds: { top: number; bottom: number; centerX: number };
-  note: string;
-  color: string;
-}
-
-interface PopoverPosition {
-  left: number;
-  top: number;
-  placement: 'above' | 'below';
-}
-
-interface ViewportAnchor {
-  xRatio: number;
-  yRatio: number;
-  viewportX: number;
-  viewportY: number;
-}
-
-type TextDirection = 'ltr' | 'rtl';
-
-interface SelectionClientRect {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-  direction: TextDirection;
-}
-
-const getElementTextDirection = (element: Element | null): TextDirection | null => {
-  if (!(element instanceof HTMLElement)) return null;
-  if (element.dir === 'rtl' || element.getAttribute('dir') === 'rtl') return 'rtl';
-  if (element.dir === 'ltr' || element.getAttribute('dir') === 'ltr') return 'ltr';
-  return null;
-};
-
-const detectTextLayerDirection = (textLayer: HTMLElement): TextDirection => {
-  let rtlWeight = 0;
-  let ltrWeight = 0;
-  textLayer.querySelectorAll<HTMLElement>('span[dir]').forEach((span) => {
-    const direction = getElementTextDirection(span);
-    if (!direction) return;
-    const weight = Math.max(1, span.textContent?.trim().length || 0);
-    if (direction === 'rtl') {
-      rtlWeight += weight;
-    } else {
-      ltrWeight += weight;
-    }
-  });
-  return rtlWeight > ltrWeight ? 'rtl' : 'ltr';
-};
-
-const getSelectionRectDirection = (
-  rect: DOMRect,
-  textLayer: HTMLElement,
-  fallbackDirection: TextDirection,
-): TextDirection => {
-  const centerX = Math.max(0, Math.min(window.innerWidth - 1, (rect.left + rect.right) / 2));
-  const centerY = Math.max(0, Math.min(window.innerHeight - 1, (rect.top + rect.bottom) / 2));
-  const pointElement = document
-    .elementsFromPoint(centerX, centerY)
-    .find((element) => textLayer.contains(element));
-  const pointDirection = getElementTextDirection(pointElement?.closest('[dir]') || null);
-  if (pointDirection) return pointDirection;
-
-  let bestDirection: TextDirection | null = null;
-  let bestOverlap = 0;
-  textLayer.querySelectorAll<HTMLElement>('span[dir]').forEach((span) => {
-    const direction = getElementTextDirection(span);
-    if (!direction) return;
-    const spanBox = span.getBoundingClientRect();
-    const overlapX = Math.max(0, Math.min(rect.right, spanBox.right) - Math.max(rect.left, spanBox.left));
-    const overlapY = Math.max(0, Math.min(rect.bottom, spanBox.bottom) - Math.max(rect.top, spanBox.top));
-    const overlap = overlapX * overlapY;
-    if (overlap > bestOverlap) {
-      bestOverlap = overlap;
-      bestDirection = direction;
-    }
-  });
-  return bestDirection || fallbackDirection;
-};
-
-const sortAndMergeSelectionRects = (rects: SelectionClientRect[], pageDirection: TextDirection) => {
-  const sorted = [...rects].sort((a, b) => {
-    const topDelta = a.top - b.top;
-    if (Math.abs(topDelta) > 2) return topDelta;
-    return pageDirection === 'rtl' ? b.right - a.right : a.left - b.left;
-  });
-  const lines: SelectionClientRect[][] = [];
-
-  for (const rect of sorted) {
-    const rectHeight = rect.bottom - rect.top;
-    const rectCenterY = (rect.top + rect.bottom) / 2;
-    const line = lines.find((candidate) => {
-      const lineTop = Math.min(...candidate.map((item) => item.top));
-      const lineBottom = Math.max(...candidate.map((item) => item.bottom));
-      const lineHeight = lineBottom - lineTop;
-      const lineCenterY = (lineTop + lineBottom) / 2;
-      const overlap = Math.min(rect.bottom, lineBottom) - Math.max(rect.top, lineTop);
-      return (
-        Math.abs(rectCenterY - lineCenterY) <= Math.max(2, Math.min(rectHeight, lineHeight) * 0.6) ||
-        overlap >= Math.min(rectHeight, lineHeight) * 0.45
-      );
-    });
-    if (line) {
-      line.push(rect);
-    } else {
-      lines.push([rect]);
-    }
-  }
-
-  return lines.flatMap((line) => {
-    const directionWeights = line.reduce(
-      (weights, rect) => {
-        weights[rect.direction] += rect.right - rect.left;
-        return weights;
-      },
-      { ltr: 0, rtl: 0 },
-    );
-    const lineDirection: TextDirection = directionWeights.rtl > directionWeights.ltr ? 'rtl' : 'ltr';
-    const lineTop = Math.min(...line.map((rect) => rect.top));
-    const lineBottom = Math.max(...line.map((rect) => rect.bottom));
-    const maxJoinGap = Math.max(4, (lineBottom - lineTop) * 1.5);
-    const ordered = [...line].sort((a, b) =>
-      lineDirection === 'rtl' ? b.right - a.right : a.left - b.left,
-    );
-    const merged: SelectionClientRect[] = [];
-    for (const rect of ordered) {
-      const current = merged[merged.length - 1];
-      if (!current) {
-        merged.push({ ...rect, direction: lineDirection });
-        continue;
-      }
-      const gap = lineDirection === 'rtl' ? current.left - rect.right : rect.left - current.right;
-      if (gap <= maxJoinGap) {
-        current.left = Math.min(current.left, rect.left);
-        current.right = Math.max(current.right, rect.right);
-        current.top = Math.min(current.top, rect.top);
-        current.bottom = Math.max(current.bottom, rect.bottom);
-      } else {
-        merged.push({ ...rect, direction: lineDirection });
-      }
-    }
-    return merged;
-  });
-};
 
 export function PdfReaderPage() {
   const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
@@ -182,16 +35,11 @@ export function PdfReaderPage() {
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState('');
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [pageCount, setPageCount] = useState(0);
   const [scale, setScale] = useState(1);
   const [rendering, setRendering] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
-  const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
-  const [popoverPos, setPopoverPos] = useState<PopoverPosition | null>(null);
   const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
   const [highlightsOpen, setHighlightsOpen] = useState(false);
 
@@ -214,8 +62,6 @@ export function PdfReaderPage() {
   const autoSaveTimeoutRef = useRef<number | null>(null);
   const isSavingProgressRef = useRef(false);
   const queuedProgressRef = useRef<number | null>(null);
-  const pinchStartDistanceRef = useRef<number | null>(null);
-  const pinchStartScaleRef = useRef(1);
   const fullscreenChromeTimeoutRef = useRef<number | null>(null);
 
   const canOpen = Boolean(contentId);
@@ -224,6 +70,55 @@ export function PdfReaderPage() {
   const canLoadApi = isReady && (!!authData || hasBrowserToken);
   contentIdRef.current = contentId;
   canLoadApiRef.current = canLoadApi;
+
+  const {
+    pdfDoc,
+    pageCount,
+    pageNumber,
+    setPageNumber,
+    documentRendering,
+  } = usePdfDocument({
+    pdfBytes,
+    resumeRatioRef,
+    pendingScrollFractionRef,
+    setError,
+  });
+
+  const { selectionDraft, setSelectionDraft } = useTextSelection({
+    pageFrameRef,
+    textLayerRef,
+    pageNumber,
+    scale,
+    color,
+  });
+
+  const popoverPos = useHighlightPopover({
+    selectionDraft,
+    popoverRef,
+    pageFrameRef,
+    shellRef,
+    scale,
+    pageNumber,
+  });
+
+  const {
+    captureViewportAnchor,
+    pinchPreview,
+    clearPinchPreview,
+    isPinchingRef,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+  } = usePinchZoom({
+    scale,
+    setScale,
+    shellRef,
+    pageFrameRef,
+    pendingViewportAnchorRef,
+    setSelectionDraft,
+    clearNativeSelection,
+  });
+  const isRendering = rendering || documentRendering;
 
   useEffect(() => {
     if (authData) {
@@ -345,167 +240,6 @@ export function PdfReaderPage() {
     setResumeRatio(boundedRatio);
   };
 
-  const getTouchDistance = (touches: ReactTouchEvent<HTMLDivElement>['touches']) => {
-    if (touches.length < 2) return 0;
-    const [a, b] = [touches[0], touches[1]];
-    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-  };
-
-  const captureViewportAnchor = (clientX?: number, clientY?: number): ViewportAnchor | null => {
-    const shell = shellRef.current;
-    const pageFrame = pageFrameRef.current;
-    if (!shell || !pageFrame) return null;
-
-    const shellBox = shell.getBoundingClientRect();
-    const pageBox = pageFrame.getBoundingClientRect();
-    if (pageBox.width <= 0 || pageBox.height <= 0) return null;
-
-    const anchorClientX = clientX ?? shellBox.left + shell.clientWidth / 2;
-    const anchorClientY = clientY ?? shellBox.top + shell.clientHeight / 2;
-    return {
-      xRatio: clampRatio((anchorClientX - pageBox.left) / pageBox.width),
-      yRatio: clampRatio((anchorClientY - pageBox.top) / pageBox.height),
-      viewportX: anchorClientX - shellBox.left,
-      viewportY: anchorClientY - shellBox.top,
-    };
-  };
-
-  const clearNativeSelection = () => {
-    const selection = window.getSelection();
-    if (selection) {
-      selection.removeAllRanges();
-    }
-  };
-
-  const captureTextSelection = () => {
-    const selection = window.getSelection();
-    const pageFrame = pageFrameRef.current;
-    const textLayer = textLayerRef.current;
-    if (!selection || selection.rangeCount === 0 || !pageFrame || !textLayer) return;
-
-    const text = selection.toString().trim();
-    if (!text) {
-      setSelectionDraft(null);
-      return;
-    }
-
-    const anchorNode = selection.anchorNode;
-    const focusNode = selection.focusNode;
-    if (
-      (anchorNode && !textLayer.contains(anchorNode)) ||
-      (focusNode && !textLayer.contains(focusNode))
-    ) {
-      return;
-    }
-
-    const pageBox = pageFrame.getBoundingClientRect();
-    if (pageBox.width <= 0 || pageBox.height <= 0) return;
-    const pageDirection = textLayer.dir === 'rtl' ? 'rtl' : 'ltr';
-    const rangeRects = Array.from(selection.getRangeAt(0).getClientRects());
-    const selectionRects = rangeRects
-      .map((rect) => {
-        const left = Math.max(rect.left, pageBox.left);
-        const right = Math.min(rect.right, pageBox.right);
-        const top = Math.max(rect.top, pageBox.top);
-        const bottom = Math.min(rect.bottom, pageBox.bottom);
-        if (right - left < 2 || bottom - top < 2) return null;
-        return {
-          left,
-          right,
-          top,
-          bottom,
-          direction: getSelectionRectDirection(rect, textLayer, pageDirection),
-        };
-      })
-      .filter((rect): rect is SelectionClientRect => Boolean(rect));
-
-    const rects = sortAndMergeSelectionRects(selectionRects, pageDirection).map((rect) => ({
-      x: clampRatio((rect.left - pageBox.left) / pageBox.width),
-      y: clampRatio((rect.top - pageBox.top) / pageBox.height),
-      width: clampRatio((rect.right - rect.left) / pageBox.width),
-      height: clampRatio((rect.bottom - rect.top) / pageBox.height),
-    }));
-
-    if (rects.length === 0) return;
-    // Compute the selection's bounding box in page-relative pixels. Final
-    // popover placement is decided in a useLayoutEffect once the popover
-    // mounts and its real height is known.
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    for (const r of rects) {
-      const x1 = r.x * pageBox.width;
-      const x2 = (r.x + r.width) * pageBox.width;
-      const y1 = r.y * pageBox.height;
-      const y2 = (r.y + r.height) * pageBox.height;
-      if (x1 < minX) minX = x1;
-      if (x2 > maxX) maxX = x2;
-      if (y1 < minY) minY = y1;
-      if (y2 > maxY) maxY = y2;
-    }
-    setSelectionDraft({
-      text,
-      rects,
-      bounds: { top: minY, bottom: maxY, centerX: (minX + maxX) / 2 },
-      note: '',
-      color,
-    });
-  };
-
-  // Position the highlight popover after it mounts so we know its real size.
-  // Decides above-vs-below based on viewport space (not page bounds), centers
-  // horizontally on the selection, and clamps to the visible viewport so the
-  // popover never lands off-screen or covers the selected text.
-  useLayoutEffect(() => {
-    if (!selectionDraft) {
-      setPopoverPos(null);
-      return;
-    }
-    const popover = popoverRef.current;
-    const pageFrame = pageFrameRef.current;
-    const shell = shellRef.current;
-    if (!popover || !pageFrame || !shell) return;
-
-    const measure = () => {
-      const popoverBox = popover.getBoundingClientRect();
-      const pageBox = pageFrame.getBoundingClientRect();
-      const shellBox = shell.getBoundingClientRect();
-      const margin = 8;
-      const gap = 6;
-
-      const selTopClient = pageBox.top + selectionDraft.bounds.top;
-      const selBottomClient = pageBox.top + selectionDraft.bounds.bottom;
-      const selCenterClient = pageBox.left + selectionDraft.bounds.centerX;
-
-      const spaceAbove = selTopClient - shellBox.top;
-      const spaceBelow = shellBox.bottom - selBottomClient;
-      const fitsAbove = spaceAbove >= popoverBox.height + gap + margin;
-      const placement: 'above' | 'below' = fitsAbove ? 'above' : 'below';
-
-      const topClient = placement === 'above'
-        ? selTopClient - popoverBox.height - gap
-        : selBottomClient + gap;
-
-      let leftClient = selCenterClient - popoverBox.width / 2;
-      const minLeft = shellBox.left + margin;
-      const maxLeft = shellBox.right - popoverBox.width - margin;
-      if (maxLeft >= minLeft) {
-        leftClient = Math.max(minLeft, Math.min(maxLeft, leftClient));
-      } else {
-        leftClient = minLeft;
-      }
-
-      setPopoverPos({
-        left: leftClient - pageBox.left,
-        top: topClient - pageBox.top,
-        placement,
-      });
-    };
-
-    measure();
-  }, [selectionDraft, scale, pageNumber]);
-
   const load = async () => {
     if (!canOpen || !canLoadApi) return;
     setLoading(true);
@@ -595,26 +329,6 @@ export function PdfReaderPage() {
   }, [resumeRatio, loading, pageCount]);
 
   useEffect(() => {
-    let selectionTimer: number | null = null;
-    const handleSelectionChange = () => {
-      if (selectionTimer != null) {
-        window.clearTimeout(selectionTimer);
-      }
-      selectionTimer = window.setTimeout(() => {
-        captureTextSelection();
-        selectionTimer = null;
-      }, 180);
-    };
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
-      if (selectionTimer != null) {
-        window.clearTimeout(selectionTimer);
-      }
-    };
-  }, [pageNumber, scale, color]);
-
-  useEffect(() => {
     if (!pageTurnDirection) return;
     const timeout = window.setTimeout(() => setPageTurnDirection(null), 240);
     return () => window.clearTimeout(timeout);
@@ -658,69 +372,6 @@ export function PdfReaderPage() {
       }
     };
   }, [isFullscreen, fullscreenControlsVisible, pageNumber, scale]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let loadedDoc: pdfjsLib.PDFDocumentProxy | null = null;
-    if (!pdfBytes) {
-      setPdfDoc(null);
-      setPageCount(0);
-      setPageNumber(1);
-      return;
-    }
-
-    setRendering(true);
-    pdfjsLib.getDocument({
-      data: pdfBytes.slice(),
-      disableAutoFetch: true,
-      disableRange: true,
-      disableStream: true,
-      isImageDecoderSupported: false,
-      isOffscreenCanvasSupported: false,
-      useWasm: false,
-      useWorkerFetch: false,
-      useSystemFonts: true,
-      // Required for non-Latin scripts (Persian/Arabic/CJK). Without these,
-      // CID-font PDFs render glyphs but selection/copy yields garbled text.
-      // Files are copied to dist/pdfjs/ by vite-plugin-static-copy.
-      cMapUrl: `${import.meta.env.BASE_URL}pdfjs/cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `${import.meta.env.BASE_URL}pdfjs/standard_fonts/`,
-    }).promise
-      .then((doc) => {
-        if (cancelled) {
-          doc.destroy();
-          return;
-        }
-        loadedDoc = doc;
-        const scaledProgress = resumeRatioRef.current * doc.numPages;
-        const initialPageIndex = doc.numPages > 1
-          ? Math.min(doc.numPages - 1, Math.floor(scaledProgress))
-          : 0;
-        const initialScrollFraction = resumeRatioRef.current >= 0.999
-          ? 1
-          : scaledProgress - initialPageIndex;
-        pendingScrollFractionRef.current = clampRatio(initialScrollFraction);
-        setPdfDoc(doc);
-        setPageCount(doc.numPages);
-        setPageNumber(initialPageIndex + 1);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError('Failed to render PDF');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setRendering(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      loadedDoc?.destroy();
-    };
-  }, [pdfBytes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -769,6 +420,9 @@ export function PdfReaderPage() {
         const textDirection = detectTextLayerDirection(textLayerDiv);
         textLayerDiv.dir = textDirection;
         textLayerDiv.dataset.textDirection = textDirection;
+        const finishRenderPreview = () => {
+          window.requestAnimationFrame(() => clearPinchPreview());
+        };
         const pendingViewportAnchor = pendingViewportAnchorRef.current;
         if (!cancelled && pendingViewportAnchor && shellRef.current && pageFrameRef.current) {
           pendingViewportAnchorRef.current = null;
@@ -783,6 +437,7 @@ export function PdfReaderPage() {
             shell.scrollLeft = Math.max(0, Math.min(maxScrollLeft, nextScrollLeft));
             shell.scrollTop = Math.max(0, Math.min(maxScrollTop, nextScrollTop));
             updateProgressFromReader(pageNumber);
+            clearPinchPreview();
           });
           return;
         }
@@ -795,8 +450,11 @@ export function PdfReaderPage() {
             const maxScroll = Math.max(0, shell.scrollHeight - shell.clientHeight);
             shell.scrollTop = maxScroll * pendingScrollFraction;
             updateProgressFromReader(pageNumber);
+            clearPinchPreview();
           });
+          return;
         }
+        finishRenderPreview();
       } catch (err) {
         if (!cancelled && !(err instanceof Error && err.name === 'RenderingCancelledException')) {
           setError('Failed to render PDF page');
@@ -814,7 +472,7 @@ export function PdfReaderPage() {
       renderTask?.cancel();
       textLayer?.cancel();
     };
-  }, [pdfDoc, pageNumber, scale]);
+  }, [clearPinchPreview, pdfDoc, pageNumber, scale]);
 
   const getVisibleReadRange = () => {
     const shell = shellRef.current;
@@ -870,8 +528,8 @@ export function PdfReaderPage() {
     const interval = window.setInterval(() => {
       if (
         document.visibilityState === 'hidden' ||
-        rendering ||
-        pinchStartDistanceRef.current != null ||
+        isRendering ||
+        isPinchingRef.current ||
         pageTurnDirection
       ) {
         return;
@@ -907,7 +565,7 @@ export function PdfReaderPage() {
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [coverageBucketCount, loading, pageCount, pageNumber, pageTurnDirection, pdfDoc, rendering, scale]);
+  }, [coverageBucketCount, isPinchingRef, isRendering, loading, pageCount, pageNumber, pageTurnDirection, pdfDoc, scale]);
 
   const progressPct = useMemo(() => Math.round(progressRatio * 100), [progressRatio]);
   const expiresLabel = useMemo(() => {
@@ -1021,34 +679,6 @@ export function PdfReaderPage() {
     updateProgressFromReader();
   };
 
-  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
-    if (event.touches.length === 2) {
-      pinchStartDistanceRef.current = getTouchDistance(event.touches);
-      pinchStartScaleRef.current = scale;
-    }
-  };
-
-  const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
-    if (event.touches.length !== 2 || !pinchStartDistanceRef.current) return;
-    event.preventDefault();
-    const nextDistance = getTouchDistance(event.touches);
-    if (!nextDistance) return;
-    const [a, b] = [event.touches[0], event.touches[1]];
-    pendingViewportAnchorRef.current = captureViewportAnchor(
-      (a.clientX + b.clientX) / 2,
-      (a.clientY + b.clientY) / 2,
-    );
-    const nextScale = pinchStartScaleRef.current * (nextDistance / pinchStartDistanceRef.current);
-    setScale(Math.min(3, Math.max(0.55, Number(nextScale.toFixed(2)))));
-  };
-
-  const handleTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
-    if (event.touches.length < 2) {
-      pinchStartDistanceRef.current = null;
-      pinchStartScaleRef.current = scale;
-    }
-  };
-
   const saveSelectionHighlight = async () => {
     if (!contentId || !assetId || !selectionDraft) return;
     setError('');
@@ -1088,6 +718,16 @@ export function PdfReaderPage() {
       }
     }
   };
+
+  const pageFrameStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!pageSize.width || !pageSize.height) return undefined;
+    const style: CSSProperties = { width: pageSize.width, height: pageSize.height };
+    if (pinchPreview) {
+      style.transform = `scale(${pinchPreview.scale})`;
+      style.transformOrigin = `${pinchPreview.originX}% ${pinchPreview.originY}%`;
+    }
+    return style;
+  }, [pageSize.height, pageSize.width, pinchPreview]);
 
   if (!canOpen) {
     return <div className="pdf-reader-empty pdf-reader-empty--error">Missing content_id query param.</div>;
@@ -1162,77 +802,30 @@ export function PdfReaderPage() {
               ref={pageFrameRef}
               className={[
                 'pdf-reader-page-frame',
+                pinchPreview ? 'pdf-reader-page-frame--pinching' : '',
                 pageTurnDirection ? `pdf-reader-page-frame--turn-${pageTurnDirection}` : '',
-              ].join(' ')}
-              style={pageSize.width && pageSize.height ? { width: pageSize.width, height: pageSize.height } : undefined}
+              ].filter(Boolean).join(' ')}
+              style={pageFrameStyle}
             >
               <canvas ref={canvasRef} className="pdf-reader-canvas" />
               <div ref={textLayerRef} className="pdf-reader-text-layer textLayer" />
-              <div className="pdf-reader-highlight-layer" aria-hidden="true">
-                {highlights
-                  .filter((highlight) => highlight.page_index === pageNumber - 1)
-                  .flatMap((highlight) =>
-                    (highlight.rects_json || []).map((rect, rectIndex) => (
-                      <div
-                        key={`${highlight.id}-${rectIndex}`}
-                        className="pdf-reader-highlight-rect"
-                        style={{
-                          left: `${rect.x * 100}%`,
-                          top: `${rect.y * 100}%`,
-                          width: `${rect.width * 100}%`,
-                          height: `${rect.height * 100}%`,
-                          backgroundColor: highlight.color || '#ffe066',
-                        }}
-                      />
-                    )),
-                  )}
-              </div>
+              <HighlightLayer highlights={highlights} pageIndex={pageNumber - 1} />
               {selectionDraft && (
-                <div
-                  ref={popoverRef}
-                  className={[
-                    'pdf-reader-selection-popover',
-                    popoverPos ? `pdf-reader-selection-popover--${popoverPos.placement}` : '',
-                  ].filter(Boolean).join(' ')}
-                  style={{
-                    left: popoverPos ? popoverPos.left : 0,
-                    top: popoverPos ? popoverPos.top : 0,
-                    visibility: popoverPos ? 'visible' : 'hidden',
+                <HighlightPopover
+                  draft={selectionDraft}
+                  popoverPos={popoverPos}
+                  popoverRef={popoverRef}
+                  onNoteChange={(note) => setSelectionDraft((draft) => draft ? { ...draft, note } : draft)}
+                  onColorChange={(nextColor) => setSelectionDraft((draft) => draft ? { ...draft, color: nextColor } : draft)}
+                  onSave={saveSelectionHighlight}
+                  onCancel={() => {
+                    setSelectionDraft(null);
+                    clearNativeSelection();
                   }}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onTouchStart={(event) => event.stopPropagation()}
-                >
-                  <div className="pdf-reader-selection-text">{selectionDraft.text}</div>
-                  <textarea
-                    value={selectionDraft.note}
-                    onChange={(event) => setSelectionDraft((draft) => draft ? { ...draft, note: event.target.value } : draft)}
-                    placeholder="Add note (optional)"
-                    rows={2}
-                  />
-                  <div className="pdf-reader-selection-actions">
-                    <input
-                      aria-label="Highlight color"
-                      type="color"
-                      value={selectionDraft.color}
-                      onChange={(event) => setSelectionDraft((draft) => draft ? { ...draft, color: event.target.value } : draft)}
-                    />
-                    <button type="button" onClick={saveSelectionHighlight}>
-                      Highlight
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectionDraft(null);
-                        clearNativeSelection();
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+                />
               )}
             </div>
-            {rendering && <div className="pdf-reader-rendering">Rendering...</div>}
+            {isRendering && <div className="pdf-reader-rendering">Rendering...</div>}
             {isFullscreen && (
               <>
                 <button

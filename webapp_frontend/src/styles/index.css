@@ -230,6 +230,10 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   transform-origin: center center;
 }
 
+.pdf-reader-page-frame--pinching {
+  will-change: transform;
+}
+
 .pdf-reader-page-frame--turn-next {
   animation: pdf-page-in-next 220ms ease-out;
 }
