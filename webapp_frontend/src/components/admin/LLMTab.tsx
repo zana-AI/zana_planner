@@ -330,21 +330,22 @@ function LLMBackendsSection() {
 
           {data.config_error ? <div className="admin-llm-usage-error">{data.config_error}</div> : null}
 
-          <div className="admin-llm-backends-grid">
+          <div className="admin-llm-backends-table-wrap">
+            <table className="admin-llm-backends-table">
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>Role</th>
+                  <th>Model</th>
+                  <th>Limits</th>
+                  <th>Smoke test</th>
+                </tr>
+              </thead>
+              <tbody>
             {data.available_providers.map((provider) => {
               const hasCredentials = !!data.credentials[provider];
               const roleModels = data.provider_models[provider] || {};
-              return (
-                <article key={provider} className="admin-llm-backend-card">
-                  <div className="admin-llm-backend-card-header">
-                    <h4>{provider}</h4>
-                    <span className={`admin-llm-backend-credential ${hasCredentials ? 'ready' : 'missing'}`}>
-                      {hasCredentials ? 'Credentials available' : 'Credentials missing'}
-                    </span>
-                  </div>
-
-                  <div className="admin-llm-backend-roles">
-                    {LLM_ROLES.map((role) => {
+              return LLM_ROLES.map((role, roleIndex) => {
                       const model = roleModels[role] || data.role_models[role] || '';
                       const knownModels = data.model_catalog[provider]?.known || [];
                       const supported = !!model && knownModels.includes(model);
@@ -354,17 +355,30 @@ function LLMBackendsSection() {
                       const parallelCount = parallelCounts[key] ?? 5;
                       const rateLimit = model ? data.rate_limits[provider]?.[model] : undefined;
                       return (
-                        <div key={role} className="admin-llm-backend-role">
-                          <div>
-                            <div className="admin-llm-backend-role-name">{role}</div>
+                        <tr key={`${provider}:${role}`} className={roleIndex === 0 ? 'admin-llm-provider-start' : undefined}>
+                          {roleIndex === 0 ? (
+                            <td className="admin-llm-provider-cell" rowSpan={LLM_ROLES.length}>
+                              <div className="admin-llm-provider-name">{provider}</div>
+                              <span className={`admin-llm-backend-credential ${hasCredentials ? 'ready' : 'missing'}`}>
+                                {hasCredentials ? 'Credentials available' : 'Credentials missing'}
+                              </span>
+                            </td>
+                          ) : null}
+                          <td>
+                            <span className="admin-llm-backend-role-name">{role}</span>
+                          </td>
+                          <td>
                             <div className="admin-llm-backend-model" title={model || 'No model configured'}>
                               {model ? shortModel(model) : 'No model configured'}
                             </div>
                             {!supported && model ? (
                               <div className="admin-llm-backend-warning">Unsupported by local model catalog</div>
                             ) : null}
+                          </td>
+                          <td>
                             <RateLimitDetails rateLimit={rateLimit} />
-                          </div>
+                          </td>
+                          <td>
                           <div className="admin-llm-backend-actions">
                             <button
                               type="button"
@@ -429,13 +443,13 @@ function LLMBackendsSection() {
                               ) : null}
                             </div>
                           ) : null}
-                        </div>
+                          </td>
+                        </tr>
                       );
-                    })}
-                  </div>
-                </article>
-              );
+                    });
             })}
+              </tbody>
+            </table>
           </div>
         </>
       )}

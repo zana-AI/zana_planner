@@ -6794,35 +6794,65 @@ textarea.modal-input {
   padding: 5px 9px;
 }
 
-.admin-llm-backends-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
-}
-
-.admin-llm-backend-card {
+.admin-llm-backends-table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-12);
   background: rgba(15, 23, 48, 0.6);
-  padding: 12px;
 }
 
-.admin-llm-backend-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+.admin-llm-backends-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
 }
 
-.admin-llm-backend-card-header h4 {
-  margin: 0;
+.admin-llm-backends-table th,
+.admin-llm-backends-table td {
+  border-bottom: 1px solid rgba(232, 238, 252, 0.08);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-llm-backends-table th {
+  background: rgba(15, 23, 48, 0.5);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-llm-backends-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-llm-backends-table tbody tr.admin-llm-provider-start td {
+  border-top: 1px solid rgba(232, 238, 252, 0.14);
+}
+
+.admin-llm-backends-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.admin-llm-provider-cell {
+  min-width: 160px;
+  width: 180px;
+}
+
+.admin-llm-provider-name {
+  margin-bottom: 8px;
   color: var(--text);
   font-size: 15px;
+  font-weight: 800;
   text-transform: capitalize;
 }
 
 .admin-llm-backend-credential {
+  display: inline-flex;
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 11px;
@@ -6843,20 +6873,6 @@ textarea.modal-input {
   color: #fca5a5;
 }
 
-.admin-llm-backend-roles {
-  display: grid;
-  gap: 8px;
-}
-
-.admin-llm-backend-role {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  border-top: 1px solid rgba(232, 238, 252, 0.08);
-  padding-top: 8px;
-}
-
 .admin-llm-backend-role-name {
   color: var(--text-muted);
   font-size: 11px;
@@ -6865,6 +6881,7 @@ textarea.modal-input {
 }
 
 .admin-llm-backend-model {
+  max-width: 260px;
   overflow: hidden;
   color: var(--text);
   font-size: 13px;
@@ -6882,7 +6899,7 @@ textarea.modal-input {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 6px;
+  max-width: 360px;
 }
 
 .admin-llm-rate-details span {
@@ -6921,10 +6938,10 @@ textarea.modal-input {
 }
 
 .admin-llm-backend-actions {
-  align-items: flex-end;
-  display: grid;
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  justify-items: end;
 }
 
 .admin-llm-parallel-control {
@@ -6950,10 +6967,10 @@ textarea.modal-input {
 }
 
 .admin-llm-backend-result {
-  grid-column: 1 / -1;
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.45;
+  margin-top: 8px;
   padding: 8px;
 }
 
