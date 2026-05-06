@@ -69,9 +69,9 @@ Priority is by **user-visible impact first**, then by what unblocks later work.
 ### P3 — RTL (Persian / Arabic) text selection
 **Goal:** Selecting words and lines in Persian/Arabic feels native.
 
-- [ ] Detect RTL per page using `textContent.items[].dir` from PDF.js (or per-span `direction` attribute on the text-layer divs).
-- [ ] Fix rect normalization in `captureSelection` so right-anchored multi-line selections produce the correct rect order and bounding box.
-- [ ] CSS audit: review `direction`, `text-align`, and `transform-origin` on text-layer spans for RTL pages.
+- [x] **P3.1 done (2026-05-06):** Detect RTL per rendered page from PDF.js `span[dir]` output and set `dir` / `data-text-direction` on the text-layer container.
+- [x] **P3.2 done (2026-05-06):** Selection capture now records DOM range rect direction, groups rects by visual line, orders RTL line fragments right-to-left, and saves merged normalized rects in the existing 0-1 schema.
+- [x] **P3.3 done (2026-05-06):** CSS audit/fix: added the minimal PDF.js v5 text-layer transform/font-size rules that were missing locally, plus page/span `direction` and `unicode-bidi: isolate` handling. Kept PDF.js's `transform-origin: 0% 0%` because the official v5 viewer CSS uses the same origin for all text spans.
 - [ ] Add a smoke test with a Persian PDF fixture (multi-line selection across two RTL lines).
 
 **Open question:** Should the toolbar/UI flip RTL when the document is RTL, or only the text layer? See architectural questions below.
