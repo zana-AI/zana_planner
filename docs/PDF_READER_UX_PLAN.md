@@ -60,6 +60,12 @@ Priority is by **user-visible impact first**, then by what unblocks later work.
 - [ ] Optional small arrow/caret pointing at the selection rect.
 - [ ] Reconsider fixed 240px width — let it size to content with a max-width.
 
+### P2.5 — Safe-area handling for landscape on iPhone (added 2026-05-06)
+**Goal:** The page-turn buttons must not sit under the camera/Dynamic Island in landscape orientation on iPhone 13+.
+
+- [x] **Done (2026-05-06):** Added `viewport-fit=cover` to the viewport meta tag in `index.html:5`. The PDF reader's CSS already used `env(safe-area-inset-*)` for page-zone buttons, toolbar, and fullscreen toast — those env values were resolving to 0 because viewport-fit was missing. Now correctly resolves on iPhone 13+ in both landscape orientations.
+- [ ] **Verify on device** (manual): test iPhone 13/14/15 in landscape, both rotations (notch left vs notch right). Smoke-check that nav buttons and toolbar inset away from the camera area.
+
 ### P3 — RTL (Persian / Arabic) text selection
 **Goal:** Selecting words and lines in Persian/Arabic feels native.
 
@@ -70,9 +76,10 @@ Priority is by **user-visible impact first**, then by what unblocks later work.
 
 **Open question:** Should the toolbar/UI flip RTL when the document is RTL, or only the text layer? See architectural questions below.
 
-### P4 — Pinch / zoom smoothness
-**Goal:** Pinch feels continuous, not stepped.
+### P4 — Pinch / zoom smoothness & gesture cleanup
+**Goal:** Pinch feels continuous, not stepped. Remove gestures that conflict with intentional interactions.
 
+- [x] **Done (2026-05-06):** Removed single-finger swipe-to-change-pages in fullscreen (`PdfReaderPage.tsx` `handleTouchEnd`). Edge buttons (`pdf-reader-page-zone--prev`/`--next`) remain the only page-turn interaction; pinch-zoom preserved. Also dropped the unused `touchStartRef`.
 - [ ] During an active pinch gesture, apply CSS `transform: scale(...)` to the page frame instead of re-rasterizing on every move event.
 - [ ] On gesture end, set the new scale and re-render the canvas + text layer at the final scale.
 - [ ] Preserve viewport anchor across the rasterize step (the existing `pendingViewportAnchorRef` logic already does most of this — extend it).

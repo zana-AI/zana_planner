@@ -89,7 +89,6 @@ export function PdfReaderPage() {
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartScaleRef = useRef(1);
   const fullscreenChromeTimeoutRef = useRef<number | null>(null);
-  const touchStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
 
   const canOpen = Boolean(contentId);
   const authData = initData || getDevInitData();
@@ -884,12 +883,6 @@ export function PdfReaderPage() {
     if (event.touches.length === 2) {
       pinchStartDistanceRef.current = getTouchDistance(event.touches);
       pinchStartScaleRef.current = scale;
-      touchStartRef.current = null;
-      return;
-    }
-    if (event.touches.length === 1) {
-      const touch = event.touches[0];
-      touchStartRef.current = { x: touch.clientX, y: touch.clientY, at: Date.now() };
     }
   };
 
@@ -911,21 +904,6 @@ export function PdfReaderPage() {
     if (event.touches.length < 2) {
       pinchStartDistanceRef.current = null;
       pinchStartScaleRef.current = scale;
-    }
-    if (!isFullscreen || event.changedTouches.length === 0 || !touchStartRef.current) {
-      touchStartRef.current = null;
-      return;
-    }
-    const touch = event.changedTouches[0];
-    const dx = touch.clientX - touchStartRef.current.x;
-    const dy = touch.clientY - touchStartRef.current.y;
-    const elapsed = Date.now() - touchStartRef.current.at;
-    touchStartRef.current = null;
-    if (elapsed > 700 || Math.abs(dx) < 55 || Math.abs(dy) > 80) return;
-    if (dx < 0) {
-      turnFullscreenPage(1);
-    } else {
-      turnFullscreenPage(-1);
     }
   };
 
