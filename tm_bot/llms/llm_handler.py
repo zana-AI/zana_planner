@@ -210,7 +210,7 @@ def _build_tool_usage_guidelines(
     if "web_search" in names or "web_fetch" in names:
         lines.append(
             "- Use web_search/web_fetch before answering when the latest user message needs live/current facts, "
-            "recent news, prices, schedules, laws, product/API details that may have changed, recommendations, "
+            "recent news, prices, schedules, laws that may have changed, recommendations, "
             "or specific links."
         )
         lines.append("- Do not rely on model memory for latest/current/today/recent facts; search or fetch first.")
