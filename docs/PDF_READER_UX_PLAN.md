@@ -3,7 +3,7 @@
 **Status:** Draft
 **Last updated:** 2026-05-06
 **Owner:** TBD
-**Scope:** `webapp_frontend/src/pages/PdfReaderPage.tsx` and the backend highlight endpoints in `tm_bot/webapp/routers/content.py`.
+**Scope:** PDF reader UX, backend PDF read tracking, PDF content analysis, and the learning features that support shared reading workflows.
 
 This plan captures investigation findings and a prioritized action list for improving the PDF reading experience in the Xaana web app. Priorities are UX-first: visible quality and interaction friction come before architectural cleanup.
 
@@ -110,11 +110,67 @@ This is the prerequisite for clean implementation of P6.
 - [ ] RTL fixture: at least one Persian and one Arabic PDF in `tests/fixtures/`.
 - [ ] Visual regression on a few sample pages (optional — Playwright snapshots).
 
+### P8 — PDF page analysis and estimated reading time
+**Goal:** Replace the fixed "15 seconds per page" assumption with low-cost, page-aware estimates.
+
+- [ ] Add a server-side PDF analyzer that runs when a PDF is uploaded or when `/api/content/{content_id}/analyze` is requested.
+- [ ] Use the existing `pypdf==5.9.0` dependency for v1 text extraction; do not add a paid parser for born-digital PDFs.
+- [ ] For each page, calculate `page_index`, `word_count`, `char_count`, `estimated_read_seconds`, and `text_extractable`.
+- [ ] Store aggregate fields: `page_count`, `total_word_count`, `estimated_read_seconds`, `analysis_method`, `needs_ocr`, and `analyzed_at`.
+- [ ] Persist v1 output as a `content_artifact` with `artifact_type = "pdf_page_metrics"` and update `content.estimated_read_seconds` with the document total.
+- [ ] Default reading speed: `PDF_READING_WPM=220`. Make this configurable later if real usage data shows it is consistently wrong for Persian/Arabic or dense technical material.
+
+**Storage decision:** Use `content_artifact.payload_json` for page metrics in v1. Add a dedicated `content_page_metric` table only if later analytics needs efficient SQL filtering across pages/documents.
+
+### P9 — Adaptive read-progress estimation
+**Goal:** Reading completion should account for actual page density while staying compatible with the current heatmap system.
+
+- [ ] Keep the existing heatmap buckets and progress APIs compatible.
+- [ ] When page metrics exist, weight dwell/completion by each page's `estimated_read_seconds` instead of a global 15-second threshold.
+- [ ] Use bounded per-page completion gates: never less than 8 seconds for text pages, and never more than 90 seconds for one page gate.
+- [ ] Keep 15 seconds as the fallback for pages/documents without analysis metrics.
+- [ ] Expose page metrics in the PDF open response or a nearby metadata endpoint so the reader can make client-side dwell decisions without extra round trips while reading.
+
+### P10 — PDF support in the learning pipeline
+**Goal:** Let uploaded PDFs use the existing summaries, Q&A, embeddings, concepts, and quiz pipeline.
+
+- [ ] Add a `PdfIngestor` under `tm_bot/services/learning_pipeline/ingestors`.
+- [ ] Route PDF content through `PdfIngestor` in the learning worker instead of falling through to blog ingestion.
+- [ ] Convert extracted page text into `SegmentRecord`s with page-aware `section_path` values such as `pdf/page/12`.
+- [ ] If PDF outlines/bookmarks are available, also emit chapter-aware section paths; otherwise support manually defined page ranges later.
+- [ ] Reuse the existing `content_segment`, `content_artifact`, Qdrant, summary, Q&A, quiz, and concept extraction flows.
+- [ ] Cache generated PDF summaries/Q&A seeds in `content_artifact`; do not regenerate costly LLM outputs unless the PDF asset changes or the user explicitly requests refresh.
+
+### P11 — Shared reading and milestone workflows
+**Goal:** Prepare the reader for small-community "we are reading this together" use cases without implementing the whole social layer yet.
+
+- [ ] Research a lightweight reading-group model where a group shares one content item and has milestones defined by chapter, page range, or named section.
+- [ ] Track enough metadata to answer: who is on track, who is behind, what pages/chapters are assigned next, and what discussion scope is active.
+- [ ] Let milestone summaries and Q&A use scoped content ranges, for example "chapter 4", "pages 55-78", or "this week's milestone".
+- [ ] Treat group schema, permissions, invitations, comments, and discussion UI as later product work after page metrics and scoped summaries are stable.
+
+### P12 — External document and summary services research
+**Goal:** Keep default costs low, but know which external services are worth integrating when local extraction is not enough.
+
+- [ ] Default posture: local extraction first, existing Gemini/OpenAI learning pipeline second, external OCR/document parsing only as opt-in fallback when `needs_ocr = true` or layout quality is poor.
+- [ ] Evaluate OCR/document parsing services for scanned PDFs, Persian/Arabic support, privacy/data retention, async job support, SDK complexity, and per-page cost.
+- [ ] Candidate OCR/parsing services:
+  - Google Document AI OCR: about `$1.50 / 1,000 pages`; layout/parser features cost more.
+  - AWS Textract Detect Document Text: example pricing shows `$0.0015/page` for the first 1M pages in US West.
+  - Azure Document Intelligence: keep as a candidate, verify region-specific pay-as-you-go pricing before choosing.
+  - Unstructured: flat pay-as-you-go document processing at about `$0.03/page`, useful when richer structure is worth the extra cost.
+  - Mistral OCR and LlamaParse: research candidates; verify current pricing, privacy posture, and RTL quality before integration.
+- [ ] Candidate summary/Q&A providers:
+  - Gemini Flash/Flash-Lite: preferred low-cost path because the repo already has Gemini integration.
+  - OpenAI small/mini models: keep as fallback through the existing OpenAI gateway.
+  - Claude Haiku: possible later fallback, but not needed for v1 because it adds a new provider.
+- [ ] Do not send uploaded community PDFs to external processors by default. Require an admin/provider config and make the fallback visible in job metadata.
+
 ---
 
 ## Architectural Decisions Pending
 
-These should be settled before P5 and P6 begin, since they shape the refactor:
+These should be settled before the relevant implementation phase begins:
 
 1. **Stay on raw `pdfjs-dist` or move to `react-pdf`?**
    - Raw gives full control over the text layer and highlight overlay (we already have it).
@@ -131,12 +187,22 @@ These should be settled before P5 and P6 begin, since they shape the refactor:
    - Per-document in `localStorage` (simpler, no DB change).
    - **Tentative recommendation:** `localStorage` for v1, server later if cross-device sync becomes a request.
 
+4. **Where do PDF page metrics live?**
+   - `content_artifact.payload_json` (simple, no schema migration, good for v1).
+   - Dedicated `content_page_metric` table (better analytics/querying, more schema work).
+   - **Tentative recommendation:** artifact JSON for v1; migrate only if analytics needs it.
+
+5. **How aggressively should the platform use external PDF services?**
+   - Local-first with external fallback only for scanned/poorly extracted PDFs.
+   - Managed parsing for every PDF.
+   - **Tentative recommendation:** local-first. This keeps cost and privacy risk low for community-uploaded books.
+
 ---
 
 ## Out of Scope (for now)
 
 - PDF annotations beyond highlights (freeform drawing, sticky notes, shapes).
-- OCR for scanned PDFs.
+- Full OCR implementation for scanned PDFs by default. OCR is now a researched fallback path for `needs_ocr` documents, not a baseline reader requirement.
 - PDF editing/saving back.
 - Multi-column layout reflow.
 
