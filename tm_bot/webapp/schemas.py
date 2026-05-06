@@ -223,7 +223,7 @@ class UpdateClubTelegramRequest(BaseModel):
 
 class AdminLLMBackendTestRequest(BaseModel):
     """Request to smoke-test a configured LLM backend/model."""
-    provider: Literal["gemini", "openai", "deepseek", "groq"]
+    provider: Literal["gemini", "openai", "deepseek", "groq", "xai"]
     model: str = Field(..., min_length=2, max_length=160)
     role: Literal["router", "planner", "responder"] = "responder"
     parallel_count: int = Field(default=1, ge=1, le=50)

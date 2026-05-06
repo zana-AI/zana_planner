@@ -274,12 +274,15 @@ def _llm_base_config(cfg: Dict[str, Any], provider: str, model: str) -> Dict[str
         "openai_model": model,
         "deepseek_model": model,
         "groq_model": model,
+        "xai_model": model,
         "openai_api_key": cfg.get("OPENAI_API_KEY", ""),
         "deepseek_api_key": cfg.get("DEEPSEEK_API_KEY", ""),
         "deepseek_base_url": cfg.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         "groq_api_key": cfg.get("GROQ_API_KEY", ""),
         "groq_base_url": cfg.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
         "groq_plan_tier": cfg.get("GROQ_PLAN_TIER", "free"),
+        "xai_api_key": cfg.get("XAI_API_KEY", "") or cfg.get("GROK_API_KEY", ""),
+        "xai_base_url": cfg.get("XAI_BASE_URL", "https://api.x.ai/v1"),
     }
 
 
