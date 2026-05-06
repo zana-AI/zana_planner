@@ -2628,14 +2628,13 @@ class LLMHandler:
             error_type = type(e).__name__
             
             # Check for rate limiting / resource exhausted errors
+            is_quota_exhausted = "resource exhausted" in error_str or error_type == "ResourceExhausted" or "resourceexhausted" in error_type.lower()
             is_rate_limit = (
                 "429" in error_str
-                or "resource exhausted" in error_str
+                or is_quota_exhausted
                 or "rate limit" in error_str
-                or error_type == "ResourceExhausted"
-                or "resourceexhausted" in error_type.lower()
             )
-            
+
             if is_rate_limit:
                 # Log detailed rate limit info
                 recent_calls = [(t, u, ev) for t, u, ev in _llm_call_tracker if call_end - t < 120]
@@ -2654,10 +2653,15 @@ class LLMHandler:
                 # Write debug file for rate limit analysis
                 self._write_rate_limit_debug(safe_user_id, user_message, messages, str(e), recent_calls)
                 
+                user_msg = (
+                    "I'm temporarily unable to reach my AI provider (quota limit). Please try again in a little while."
+                    if is_quota_exhausted
+                    else "I'm receiving too many requests right now. Please wait a moment and try again."
+                )
                 return {
                     "error": "rate_limit",
                     "function_call": "handle_error",
-                    "response_to_user": "I'm receiving too many requests right now. Please wait a moment and try again.",
+                    "response_to_user": user_msg,
                     "executed_by_agent": True,
                 }
             
