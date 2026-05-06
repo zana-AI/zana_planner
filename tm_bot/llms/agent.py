@@ -3112,12 +3112,18 @@ def create_routed_plan_execute_graph(
         # and the gate allowed it; otherwise use the primary responder.
         _use_live = bool(state.get("live_data_requested")) and live_responder_model is not None
 
+        _LIVE_BREVITY = SystemMessage(content=(
+            "IMPORTANT: Reply in 2-4 sentences maximum. "
+            "Lead with the direct answer using the live data you found. "
+            "Do not add background context, history, or lengthy explanations."
+        ))
+
         def _invoke_responder(messages, label: str):
             """Invoke live responder if requested, fall back to primary on error."""
             if _use_live:
                 try:
                     _track_llm_call(f"live_{label}", "live_responder_model")
-                    return _invoke_model(live_responder_model, messages)
+                    return _invoke_model(live_responder_model, list(messages) + [_LIVE_BREVITY])
                 except Exception as _live_exc:
                     logger.warning({
                         "event": "live_responder_fallback",
