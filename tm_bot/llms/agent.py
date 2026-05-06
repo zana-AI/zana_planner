@@ -2976,9 +2976,18 @@ def create_routed_plan_execute_graph(
             # Fallback: just use mode-specific prompt
             pass
         
+        # When xAI live search is active for this turn, the responder handles web lookup
+        # natively — tell the planner not to schedule web_search/web_fetch steps.
+        if state.get("live_data_requested") and live_responder_model is not None:
+            system_parts.append(
+                "LIVE SEARCH NOTE: The responder for this turn has native internet access. "
+                "Do NOT plan web_search or web_fetch tool steps. "
+                "Generate a single 'respond' step and the responder will search and answer directly."
+            )
+
         combined_system_content = "\n\n".join(system_parts)
         messages = [SystemMessage(content=combined_system_content)] + messages
-        
+
         validated_messages = _ensure_messages_have_content(messages)
         _track_llm_call("routed_planner", "planner_model")
         result = _invoke_model(planner_model, validated_messages)
