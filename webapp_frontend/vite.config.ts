@@ -1,10 +1,29 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Ship pdfjs cmaps + standard fonts so non-Latin (Persian/Arabic/CJK)
+    // PDFs get correct glyph→Unicode mapping for selection and rendering.
+    viteStaticCopy({
+      targets: [
+        {
+          src: 'node_modules/pdfjs-dist/cmaps/*',
+          dest: 'pdfjs/cmaps',
+          rename: { stripBase: 3 },
+        },
+        {
+          src: 'node_modules/pdfjs-dist/standard_fonts/*',
+          dest: 'pdfjs/standard_fonts',
+          rename: { stripBase: 3 },
+        },
+      ],
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

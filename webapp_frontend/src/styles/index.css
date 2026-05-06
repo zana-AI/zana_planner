@@ -286,7 +286,9 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   z-index: 5;
   display: grid;
   gap: 7px;
-  width: min(240px, calc(100% - 16px));
+  width: max-content;
+  max-width: min(280px, 92vw);
+  min-width: 200px;
   border: 1px solid rgba(9, 15, 31, 0.18);
   border-radius: 10px;
   background: rgba(9, 15, 31, 0.94);

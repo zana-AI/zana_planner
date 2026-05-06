@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
@@ -16,10 +16,17 @@ const PDF_READ_DWELL_SECONDS = 15;
 interface SelectionDraft {
   text: string;
   rects: PdfHighlightRect[];
-  left: number;
-  top: number;
+  // Selection's bounding box in page-relative pixels — used to position the
+  // popover after measuring its actual size in a useLayoutEffect.
+  bounds: { top: number; bottom: number; centerX: number };
   note: string;
   color: string;
+}
+
+interface PopoverPosition {
+  left: number;
+  top: number;
+  placement: 'above' | 'below';
 }
 
 interface ViewportAnchor {
@@ -56,6 +63,7 @@ export function PdfReaderPage() {
   const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
+  const [popoverPos, setPopoverPos] = useState<PopoverPosition | null>(null);
   const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
   const [highlightsOpen, setHighlightsOpen] = useState(false);
 
@@ -64,6 +72,7 @@ export function PdfReaderPage() {
   const pageFrameRef = useRef<HTMLDivElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const resumeRatioRef = useRef(0);
   const pendingScrollFractionRef = useRef<number | null>(null);
   const pendingViewportAnchorRef = useRef<ViewportAnchor | null>(null);
@@ -282,16 +291,84 @@ export function PdfReaderPage() {
       .filter((rect): rect is PdfHighlightRect => Boolean(rect));
 
     if (rects.length === 0) return;
-    const firstRect = rects[0];
+    // Compute the selection's bounding box in page-relative pixels. Final
+    // popover placement is decided in a useLayoutEffect once the popover
+    // mounts and its real height is known.
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const r of rects) {
+      const x1 = r.x * pageBox.width;
+      const x2 = (r.x + r.width) * pageBox.width;
+      const y1 = r.y * pageBox.height;
+      const y2 = (r.y + r.height) * pageBox.height;
+      if (x1 < minX) minX = x1;
+      if (x2 > maxX) maxX = x2;
+      if (y1 < minY) minY = y1;
+      if (y2 > maxY) maxY = y2;
+    }
     setSelectionDraft({
       text,
       rects,
-      left: Math.min(pageBox.width - 180, Math.max(8, firstRect.x * pageBox.width)),
-      top: Math.max(8, firstRect.y * pageBox.height - 48),
+      bounds: { top: minY, bottom: maxY, centerX: (minX + maxX) / 2 },
       note: '',
       color,
     });
   };
+
+  // Position the highlight popover after it mounts so we know its real size.
+  // Decides above-vs-below based on viewport space (not page bounds), centers
+  // horizontally on the selection, and clamps to the visible viewport so the
+  // popover never lands off-screen or covers the selected text.
+  useLayoutEffect(() => {
+    if (!selectionDraft) {
+      setPopoverPos(null);
+      return;
+    }
+    const popover = popoverRef.current;
+    const pageFrame = pageFrameRef.current;
+    const shell = shellRef.current;
+    if (!popover || !pageFrame || !shell) return;
+
+    const measure = () => {
+      const popoverBox = popover.getBoundingClientRect();
+      const pageBox = pageFrame.getBoundingClientRect();
+      const shellBox = shell.getBoundingClientRect();
+      const margin = 8;
+      const gap = 6;
+
+      const selTopClient = pageBox.top + selectionDraft.bounds.top;
+      const selBottomClient = pageBox.top + selectionDraft.bounds.bottom;
+      const selCenterClient = pageBox.left + selectionDraft.bounds.centerX;
+
+      const spaceAbove = selTopClient - shellBox.top;
+      const spaceBelow = shellBox.bottom - selBottomClient;
+      const fitsAbove = spaceAbove >= popoverBox.height + gap + margin;
+      const placement: 'above' | 'below' = fitsAbove ? 'above' : 'below';
+
+      const topClient = placement === 'above'
+        ? selTopClient - popoverBox.height - gap
+        : selBottomClient + gap;
+
+      let leftClient = selCenterClient - popoverBox.width / 2;
+      const minLeft = shellBox.left + margin;
+      const maxLeft = shellBox.right - popoverBox.width - margin;
+      if (maxLeft >= minLeft) {
+        leftClient = Math.max(minLeft, Math.min(maxLeft, leftClient));
+      } else {
+        leftClient = minLeft;
+      }
+
+      setPopoverPos({
+        left: leftClient - pageBox.left,
+        top: topClient - pageBox.top,
+        placement,
+      });
+    };
+
+    measure();
+  }, [selectionDraft, scale, pageNumber]);
 
   const load = async () => {
     if (!canOpen || !canLoadApi) return;
@@ -467,6 +544,12 @@ export function PdfReaderPage() {
       useWasm: false,
       useWorkerFetch: false,
       useSystemFonts: true,
+      // Required for non-Latin scripts (Persian/Arabic/CJK). Without these,
+      // CID-font PDFs render glyphs but selection/copy yields garbled text.
+      // Files are copied to dist/pdfjs/ by vite-plugin-static-copy.
+      cMapUrl: `${import.meta.env.BASE_URL}pdfjs/cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `${import.meta.env.BASE_URL}pdfjs/standard_fonts/`,
     }).promise
       .then((doc) => {
         if (cancelled) {
@@ -521,7 +604,13 @@ export function PdfReaderPage() {
         const context = canvas.getContext('2d');
         if (!context) return;
 
-        const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+        // Cap canvas backing-store at a fixed pixel budget so high-DPR phones
+        // get sharp text on small pages but very large/zoomed pages don't OOM.
+        const MAX_CANVAS_PIXELS = 16_000_000;
+        const targetDpr = window.devicePixelRatio || 1;
+        const baseArea = viewport.width * viewport.height;
+        const budgetScale = baseArea > 0 ? Math.sqrt(MAX_CANVAS_PIXELS / baseArea) : 3;
+        const outputScale = Math.max(1, Math.min(targetDpr, 3, budgetScale));
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
         canvas.style.width = `${viewport.width}px`;
@@ -980,8 +1069,16 @@ export function PdfReaderPage() {
               </div>
               {selectionDraft && (
                 <div
-                  className="pdf-reader-selection-popover"
-                  style={{ left: selectionDraft.left, top: selectionDraft.top }}
+                  ref={popoverRef}
+                  className={[
+                    'pdf-reader-selection-popover',
+                    popoverPos ? `pdf-reader-selection-popover--${popoverPos.placement}` : '',
+                  ].filter(Boolean).join(' ')}
+                  style={{
+                    left: popoverPos ? popoverPos.left : 0,
+                    top: popoverPos ? popoverPos.top : 0,
+                    visibility: popoverPos ? 'visible' : 'hidden',
+                  }}
                   onMouseDown={(event) => event.stopPropagation()}
                   onTouchStart={(event) => event.stopPropagation()}
                 >
