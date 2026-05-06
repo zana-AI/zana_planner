@@ -3287,34 +3287,36 @@ class LLMHandler:
             )
         )
 
-        def _web_search_tool(query: str, count: Optional[int] = None, freshness: Optional[str] = None) -> str:
-            out = web_search_impl(query=query, count=count, freshness=freshness)
-            return json.dumps(out)
+        _brave_key = os.getenv("BRAVE_SEARCH_API_KEY") or os.getenv("BRAVE_API_KEY")
+        if _brave_key:
+            def _web_search_tool(query: str, count: Optional[int] = None, freshness: Optional[str] = None) -> str:
+                out = web_search_impl(query=query, count=count, freshness=freshness)
+                return json.dumps(out)
 
-        def _web_fetch_tool(url: str, max_chars: Optional[int] = None) -> str:
-            out = web_fetch_impl(url=url, max_chars=max_chars)
-            return json.dumps(out)
+            def _web_fetch_tool(url: str, max_chars: Optional[int] = None) -> str:
+                out = web_fetch_impl(url=url, max_chars=max_chars)
+                return json.dumps(out)
 
-        tools.append(
-            StructuredTool.from_function(
-                func=_web_search_tool,
-                name="web_search",
-                description=(
-                    "Search the web for current information. Use when the user asks factual questions, "
-                    "wants recommendations, or needs up-to-date info you don't have. Returns title, url, snippet per result."
-                ),
+            tools.append(
+                StructuredTool.from_function(
+                    func=_web_search_tool,
+                    name="web_search",
+                    description=(
+                        "Search the web for current information. Use when the user asks factual questions, "
+                        "wants recommendations, or needs up-to-date info you don't have. Returns title, url, snippet per result."
+                    ),
+                )
             )
-        )
-        tools.append(
-            StructuredTool.from_function(
-                func=_web_fetch_tool,
-                name="web_fetch",
-                description=(
-                    "Fetch and read the content of a webpage URL. Use when the user shares a link "
-                    "or when you need to read a specific page found via web_search. Returns title and extracted text."
-                ),
+            tools.append(
+                StructuredTool.from_function(
+                    func=_web_fetch_tool,
+                    name="web_fetch",
+                    description=(
+                        "Fetch and read the content of a webpage URL. Use when the user shares a link "
+                        "or when you need to read a specific page found via web_search. Returns title and extracted text."
+                    ),
+                )
             )
-        )
         return tools
 
     def _run_flush_turn(self, system_prompt: str, user_prompt: str) -> str:
