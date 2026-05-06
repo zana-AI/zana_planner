@@ -6,6 +6,7 @@ if TM_BOT_DIR not in sys.path:
     sys.path.append(TM_BOT_DIR)
 
 from llms.providers.factory import create_provider_adapter  # noqa: E402
+from llms.providers.gemini_adapter import GeminiProviderAdapter  # noqa: E402
 from llms.providers.groq_adapter import GroqProviderAdapter  # noqa: E402
 
 
@@ -31,11 +32,11 @@ def test_create_provider_adapter_auto_uses_groq_when_only_groq_key_present():
     assert isinstance(adapter, GroqProviderAdapter)
 
 
-def test_create_provider_adapter_auto_prefers_groq_over_gcp():
+def test_create_provider_adapter_auto_prefers_gemini_over_groq():
     cfg = {
         "LLM_PROVIDER": "auto",
         "GROQ_API_KEY": "test-key",
         "GCP_PROJECT_ID": "proj-1",
     }
     adapter = create_provider_adapter(cfg)
-    assert isinstance(adapter, GroqProviderAdapter)
+    assert isinstance(adapter, GeminiProviderAdapter)

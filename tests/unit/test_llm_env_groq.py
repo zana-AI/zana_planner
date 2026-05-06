@@ -31,11 +31,11 @@ def test_load_llm_env_groq_returns_expected_config(monkeypatch: pytest.MonkeyPat
     assert cfg["GROQ_BASE_URL"] == "https://api.groq.com/openai/v1"
     assert cfg["GROQ_PLAN_TIER"] == "developer"
     assert cfg["LLM_GROQ_ROUTER_MODEL"] == "openai/gpt-oss-20b"
-    assert cfg["LLM_GROQ_PLANNER_MODEL"] == "openai/gpt-oss-20b"
-    assert cfg["LLM_GROQ_RESPONDER_MODEL"] == "openai/gpt-oss-20b"
+    assert cfg["LLM_GROQ_PLANNER_MODEL"] == "llama-3.3-70b-versatile"
+    assert cfg["LLM_GROQ_RESPONDER_MODEL"] == "llama-3.3-70b-versatile"
 
 
-def test_load_llm_env_auto_prefers_groq_when_groq_and_gcp_exist(monkeypatch: pytest.MonkeyPatch):
+def test_load_llm_env_auto_prefers_gemini_when_groq_and_gcp_exist(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LLM_PROVIDER", "auto")
     monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
     monkeypatch.setenv("GCP_PROJECT_ID", "gcp-project")
@@ -43,12 +43,18 @@ def test_load_llm_env_auto_prefers_groq_when_groq_and_gcp_exist(monkeypatch: pyt
     monkeypatch.setenv("GCP_LOCATION", "us-central1")
 
     cfg = load_llm_env()
-    assert cfg["LLM_PROVIDER"] == "groq"
+    assert cfg["LLM_PROVIDER"] == "gemini"
+    assert cfg["LLM_PROVIDER_LAYER_ENABLED"] is True
+    assert cfg["LLM_PLANNER_MODEL"] == "gemini-2.5-flash"
+    assert cfg["LLM_RESPONDER_MODEL"] == "gemini-2.5-flash"
 
 
 def test_load_llm_env_groq_defaults_enable_provider_layer_and_fallback(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LLM_PROVIDER", "auto")
     monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    monkeypatch.setenv("GCP_PROJECT_ID", "")
+    monkeypatch.setenv("GCP_CREDENTIALS_B64", "")
+    monkeypatch.setenv("GCP_LOCATION", "")
     monkeypatch.setenv("ENV", "")
     monkeypatch.setenv("ENVIRONMENT", "")
     monkeypatch.delenv("LLM_PROVIDER_LAYER_ENABLED", raising=False)

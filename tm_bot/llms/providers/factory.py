@@ -13,10 +13,10 @@ def create_provider_adapter(cfg: Dict[str, Any]) -> ProviderAdapter:
     provider = str(cfg.get("LLM_PROVIDER") or "auto").strip().lower()
 
     if provider == "auto":
-        if cfg.get("GROQ_API_KEY"):
-            provider = "groq"
-        elif cfg.get("GCP_PROJECT_ID"):
+        if cfg.get("GCP_PROJECT_ID"):
             provider = "gemini"
+        elif cfg.get("GROQ_API_KEY"):
+            provider = "groq"
         elif cfg.get("OPENAI_API_KEY"):
             provider = "openai"
         elif cfg.get("DEEPSEEK_API_KEY"):

@@ -41,11 +41,11 @@ def load_llm_env():
     has_gemini_creds = bool(project_id and creds_b64 and location)
     if llm_provider_requested == "auto":
         # Code-owned default provider precedence:
-        # prefer Groq when configured, then Gemini/OpenAI/DeepSeek.
-        if groq_key:
-            llm_provider = "groq"
-        elif has_gemini_creds:
+        # prefer Gemini for planner/responder quality when configured, then Groq/OpenAI/DeepSeek.
+        if has_gemini_creds:
             llm_provider = "gemini"
+        elif groq_key:
+            llm_provider = "groq"
         elif openai_key:
             llm_provider = "openai"
         elif deepseek_key:
@@ -181,10 +181,10 @@ def load_llm_env():
     if gemini_thinking_level not in {None, "minimal", "low", "medium", "high"}:
         gemini_thinking_level = "minimal"
 
-    # Non-Gemini providers rely on the provider-layer adapters.
-    # Keep this code-owned so GROQ_API_KEY alone is enough to run Groq.
+    # Keep this code-owned so provider-specific capabilities such as Gemini planner
+    # response schemas and Groq rate-limit handling are active by default.
     default_provider_layer_enabled = (
-        llm_provider in {"openai", "deepseek", "groq"}
+        llm_provider in {"gemini", "openai", "deepseek", "groq"}
         or env_name in {"staging", "stage", "test", "testing"}
     )
     default_strict_mutation = env_name in {"staging", "stage", "test", "testing"}
