@@ -7,6 +7,8 @@ interface PromiseLogsModalProps {
   promiseText: string;
   isOpen: boolean;
   onClose: () => void;
+  startDate?: string;
+  endDate?: string;
 }
 
 interface LogEntry {
@@ -17,10 +19,25 @@ interface LogEntry {
   notes: string | null;
 }
 
-export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose }: PromiseLogsModalProps) {
+function formatDateRange(startDate?: string, endDate?: string): string {
+  if (!startDate || !endDate) return 'Recent Logs';
+
+  const parseLocalDate = (value: string) => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  return `Logs for ${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
+}
+
+export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose, startDate, endDate }: PromiseLogsModalProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const title = formatDateRange(startDate, endDate);
 
   useModalBodyLock(isOpen);
 
@@ -28,13 +45,18 @@ export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose }: Pr
     if (isOpen && promiseId) {
       fetchLogs();
     }
-  }, [isOpen, promiseId]);
+  }, [isOpen, promiseId, startDate, endDate]);
 
   const fetchLogs = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await apiClient.getPromiseLogs(promiseId, 20);
+      const response = await apiClient.getPromiseLogs(
+        promiseId,
+        startDate || endDate ? 500 : 20,
+        startDate,
+        endDate,
+      );
       setLogs(response.logs);
     } catch (err) {
       console.error('Failed to fetch logs:', err);
@@ -50,7 +72,7 @@ export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose }: Pr
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content promise-logs-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Recent Logs</h2>
+          <h2 className="modal-title">{title}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         

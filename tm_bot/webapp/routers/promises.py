@@ -2,7 +2,7 @@
 Promise-related endpoints.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import re
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -760,12 +760,29 @@ async def get_promise_logs(
     request: Request,
     promise_id: str,
     limit: int = 20,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     user_id: int = Depends(get_current_user)
 ):
     """Get recent logs/actions for a promise."""
     try:
         promises_repo = PromisesRepository()
         actions_repo = ActionsRepository()
+
+        start_date_obj: Optional[date] = None
+        end_date_obj: Optional[date] = None
+        if start_date:
+            try:
+                start_date_obj = date.fromisoformat(start_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid start_date format: {start_date}. Expected YYYY-MM-DD")
+        if end_date:
+            try:
+                end_date_obj = date.fromisoformat(end_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid end_date format: {end_date}. Expected YYYY-MM-DD")
+        if start_date_obj and end_date_obj and start_date_obj > end_date_obj:
+            raise HTTPException(status_code=400, detail="start_date must be <= end_date")
         
         # Verify promise exists and belongs to user
         promise = promises_repo.get_promise(user_id, promise_id)
@@ -778,10 +795,17 @@ async def get_promise_logs(
             a for a in all_actions 
             if (a.promise_id or "").strip().upper() == promise_id.strip().upper()
         ]
+        if start_date_obj or end_date_obj:
+            promise_actions = [
+                a for a in promise_actions
+                if (start_date_obj is None or a.at.date() >= start_date_obj)
+                and (end_date_obj is None or a.at.date() <= end_date_obj)
+            ]
         
         # Sort by date descending and limit
         promise_actions.sort(key=lambda a: a.at, reverse=True)
-        recent_actions = promise_actions[:limit]
+        safe_limit = max(1, min(int(limit or 20), 500))
+        recent_actions = promise_actions[:safe_limit]
         
         # Format response
         logs = []

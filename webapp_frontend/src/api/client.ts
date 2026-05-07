@@ -653,8 +653,16 @@ class ApiClient {
   /**
    * Get recent logs/actions for a promise.
    */
-  async getPromiseLogs(promiseId: string, limit: number = 20): Promise<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; notes: string | null }> }> {
-    return this.request<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; notes: string | null }> }>(`/promises/${promiseId}/logs?limit=${limit}`);
+  async getPromiseLogs(
+    promiseId: string,
+    limit: number = 20,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; notes: string | null }> }> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    return this.request<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; notes: string | null }> }>(`/promises/${promiseId}/logs?${params.toString()}`);
   }
 
   // Admin API methods

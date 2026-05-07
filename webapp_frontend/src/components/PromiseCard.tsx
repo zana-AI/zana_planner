@@ -6,6 +6,7 @@ import { CheckinModal } from './CheckinModal';
 import { WeeklyNoteModal } from './WeeklyNoteModal';
 import { VisibilityConfirmModal } from './VisibilityConfirmModal';
 import { PromiseDeleteConfirmModal } from './PromiseDeleteConfirmModal';
+import { PromiseLogsModal } from './PromiseLogsModal';
 import { InlineCalendar } from './InlineCalendar';
 import { DurationWheelPicker } from './DurationWheelPicker';
 import { formatPromiseText } from '../utils/activityFormat';
@@ -112,6 +113,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     return () => { cancelled = true; };
   }, [id]);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [isCheckinModalOpen, setIsCheckinModalOpen] = useState(false);
   const [isWeeklyNoteModalOpen, setIsWeeklyNoteModalOpen] = useState(false);
   const [showVisibilityConfirm, setShowVisibilityConfirm] = useState(false);
@@ -1231,6 +1233,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       )}
       
       <div className="card-actions">
+        <button
+          className="card-add-session-button"
+          onClick={() => setIsLogsModalOpen(true)}
+          title="View logs for this week"
+        >
+          Logs
+        </button>
         {isCountBased ? (
           <button
             className="card-log-button"
@@ -1290,6 +1299,14 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             onRefresh();
           }
         }}
+      />
+      <PromiseLogsModal
+        promiseId={id}
+        promiseText={text}
+        isOpen={isLogsModalOpen}
+        onClose={() => setIsLogsModalOpen(false)}
+        startDate={weekDays[0]}
+        endDate={weekDays[6]}
       />
       {/* Log + mark-done modal, opened when tapping ✓ Done on a planned session chip */}
       <LogActionModal
