@@ -188,7 +188,7 @@ def main(argv: List[str] = None) -> None:
         _load_env_file(env_path)
 
     project_id = os.getenv("GCP_PROJECT_ID")
-    location = os.getenv("GCP_LOCATION", "us-central1")
+    base_location = os.getenv("GCP_LOCATION", "us-central1")
     model = args.model or os.getenv("GCP_GEMINI_MODEL", "gemini-2.5-flash")
 
     if not project_id:
@@ -197,6 +197,15 @@ def main(argv: List[str] = None) -> None:
 
     _setup_credentials()
 
+    # gemini-3-* models are only available in the "global" endpoint on Vertex AI.
+    # Match the same logic used by llm_model_config.needs_global_location().
+    GLOBAL_ONLY_PREFIXES = ("gemini-3-",)
+    location = (
+        "global"
+        if any(model.startswith(p) for p in GLOBAL_ONLY_PREFIXES)
+        else os.getenv("GCP_LLM_LOCATION") or base_location
+    )
+
     client = genai.Client(vertexai=True, project=project_id, location=location)
 
     print(f"\n{'=' * 64}")
@@ -204,6 +213,8 @@ def main(argv: List[str] = None) -> None:
     print(f"  model    : {model}")
     print(f"  project  : {project_id}")
     print(f"  location : {location}")
+    if location == "global":
+        print(f"  (global forced — gemini-3-* requires it)")
     print(f"  delay    : {args.delay}s between calls")
     print(f"{'=' * 64}\n")
 
