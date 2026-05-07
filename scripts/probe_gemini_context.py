@@ -11,10 +11,16 @@ errors start.  Reads GCP credentials from the same env vars the bot uses:
                          (if absent, falls back to GOOGLE_APPLICATION_CREDENTIALS / ADC)
   GCP_GEMINI_MODEL     - (optional) model override
 
-Usage:
-  python scripts/probe_gemini_context.py
+By default the script loads /opt/zana-config/.env.prod (production).
+Use --env staging to load /opt/zana-config/.env.staging instead.
+You can also point at any file directly with --env-file /path/to/.env.
+
+Usage (on the server, outside the container):
+  python scripts/probe_gemini_context.py                        # prod
+  python scripts/probe_gemini_context.py --env staging          # staging
+  python scripts/probe_gemini_context.py --env-file /my/.env   # custom path
   python scripts/probe_gemini_context.py --model gemini-2.5-flash-lite
-  python scripts/probe_gemini_context.py --model gemini-2.5-flash --delay 3 --stop-on-fail
+  python scripts/probe_gemini_context.py --delay 3 --stop-on-fail
 """
 
 import argparse
@@ -24,13 +30,42 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+_ZANA_CONFIG_DIR = Path("/opt/zana-config")
+_ENV_FILE_MAP = {
+    "prod": _ZANA_CONFIG_DIR / ".env.prod",
+    "production": _ZANA_CONFIG_DIR / ".env.prod",
+    "staging": _ZANA_CONFIG_DIR / ".env.staging",
+    "stage": _ZANA_CONFIG_DIR / ".env.staging",
+}
+
+
+def _load_env_file(path: Path) -> None:
+    try:
+        from dotenv import load_dotenv
+        if path.exists():
+            load_dotenv(dotenv_path=path, override=False)
+            print(f"[setup] Loaded env from {path}")
+        else:
+            print(f"[setup] WARNING: env file not found: {path}")
+    except ImportError:
+        # Fallback: parse key=value lines manually
+        if not path.exists():
+            print(f"[setup] WARNING: env file not found: {path}")
+            return
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+        print(f"[setup] Loaded env from {path} (manual parse)")
 
 try:
     from google import genai
@@ -130,6 +165,10 @@ def _setup_credentials() -> None:
 
 def main(argv: List[str] = None) -> None:
     parser = argparse.ArgumentParser(description="Probe Gemini for context-length / rate-limit failures")
+    parser.add_argument("--env", default="prod", metavar="ENV",
+                        help="Which env file to load: prod (default) or staging")
+    parser.add_argument("--env-file", default=None, metavar="PATH",
+                        help="Explicit path to an env file (overrides --env)")
     parser.add_argument("--model", default=None,
                         help="Model to test (default: GCP_GEMINI_MODEL env var or gemini-2.5-flash)")
     parser.add_argument("--delay", type=float, default=2.0,
@@ -137,6 +176,16 @@ def main(argv: List[str] = None) -> None:
     parser.add_argument("--stop-on-fail", action="store_true",
                         help="Stop probing after the first failure")
     args = parser.parse_args(argv)
+
+    # Load env file before reading any os.getenv values
+    if args.env_file:
+        _load_env_file(Path(args.env_file))
+    else:
+        env_path = _ENV_FILE_MAP.get(args.env.lower())
+        if env_path is None:
+            print(f"ERROR: Unknown --env value '{args.env}'. Use 'prod' or 'staging'.")
+            sys.exit(1)
+        _load_env_file(env_path)
 
     project_id = os.getenv("GCP_PROJECT_ID")
     location = os.getenv("GCP_LOCATION", "us-central1")
