@@ -42,6 +42,7 @@ from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+MAX_VIDEO_ASSIGN_TASKS = 8
 
 
 async def _send_delayed_checkin_reply(
@@ -1944,7 +1945,7 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
             await self._handle_video_create_task(query, user_id, video_id, _url_id)
             return
         rows = []
-        for p in promises[:8]:
+        for p in promises[:MAX_VIDEO_ASSIGN_TASKS]:
             promise_id = str(p.get("id") or "").strip()
             text = str(p.get("text") or promise_id).replace("_", " ")
             if not promise_id:
@@ -2008,6 +2009,11 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         suggested_hours = max(0.1, min(8.0, round(duration_hours, 2)))
         promise_text = f"Watch: {title}"[:80]
         try:
+            before_ids = {
+                str(p.get("id"))
+                for p in (self.plan_keeper.get_promises(user_id) or [])
+                if isinstance(p, dict) and p.get("id")
+            }
             result = self.plan_keeper.add_promise(
                 user_id=user_id,
                 promise_text=promise_text,
@@ -2015,8 +2021,15 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
                 recurring=False,
             )
             created_id = None
+            for p in (self.plan_keeper.get_promises(user_id) or []):
+                if not isinstance(p, dict):
+                    continue
+                pid = str(p.get("id") or "").strip()
+                if pid and pid not in before_ids and pid.upper().startswith("T"):
+                    created_id = pid
+                    break
             m = re.search(r"#([A-Za-z0-9]+)", str(result))
-            if m:
+            if not created_id and m:
                 created_id = m.group(1)
             if created_id:
                 await self._handle_video_assign_pick(query, user_id, video_id, created_id)

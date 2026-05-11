@@ -504,12 +504,26 @@
 
   function getPayload(closedVia) {
     finalizeSegments();
-    var watchedSeconds = 0;
+    var normalized = [];
     segments.forEach(function(seg) {
       if (seg && seg.length >= 2 && isFinite(seg[0]) && isFinite(seg[1])) {
-        watchedSeconds += Math.max(0, seg[1] - seg[0]);
+        var start = Math.min(seg[0], seg[1]);
+        var end = Math.max(seg[0], seg[1]);
+        if (end > start) normalized.push([start, end]);
       }
     });
+    normalized.sort(function(a, b) { return a[0] - b[0]; });
+    var merged = [];
+    normalized.forEach(function(seg) {
+      var last = merged.length ? merged[merged.length - 1] : null;
+      if (!last || seg[0] > last[1]) {
+        merged.push([seg[0], seg[1]]);
+      } else {
+        last[1] = Math.max(last[1], seg[1]);
+      }
+    });
+    var watchedSeconds = 0;
+    merged.forEach(function(seg) { watchedSeconds += (seg[1] - seg[0]); });
     if (watchedSeconds <= 0) {
       watchedSeconds = (Date.now() - openTime) / 1000;
     }
