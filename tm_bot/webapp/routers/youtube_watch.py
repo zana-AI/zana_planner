@@ -141,19 +141,18 @@ async def report_stats(request: Request):
             planner = PlannerAPIAdapter(root_dir=root_dir)
             if planner.get_promise(user_id, promise_id):
                 hours_spent = round(time_spent / 3600.0, 4)
-                if hours_spent > 0:
-                    planner.add_action(
-                        user_id=user_id,
-                        promise_id=promise_id,
-                        time_spent=hours_spent,
-                        notes=f"YouTube watch {video_id}",
-                    )
-                    logger.info(
-                        "youtube report_stats: logged %.4f hours for user_id=%s promise_id=%s",
-                        hours_spent,
-                        user_id,
-                        promise_id,
-                    )
+                planner.add_action(
+                    user_id=user_id,
+                    promise_id=promise_id,
+                    time_spent=hours_spent,
+                    notes=f"YouTube watch {video_id}",
+                )
+                logger.info(
+                    "youtube report_stats: logged %.4f hours for user_id=%s promise_id=%s",
+                    hours_spent,
+                    user_id,
+                    promise_id,
+                )
             else:
                 logger.info("youtube report_stats: skipping unknown promise_id=%s for user_id=%s", promise_id, user_id)
         except Exception as e:
