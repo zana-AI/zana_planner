@@ -1944,6 +1944,14 @@ class MessageHandlers:
                 if "content_urls" not in self.application.bot_data:
                     self.application.bot_data["content_urls"] = {}
                 self.application.bot_data["content_urls"][url_id] = source_url or f"https://youtube.com/watch?v={video_id}"
+                if "youtube_video_context" not in self.application.bot_data:
+                    self.application.bot_data["youtube_video_context"] = {}
+                self.application.bot_data["youtube_video_context"][video_id] = {
+                    "url_id": url_id,
+                    "source_url": source_url or f"https://youtube.com/watch?v={video_id}",
+                    "title": content_info.get("title") or "YouTube Video",
+                    "duration_seconds": content_info.get("duration_seconds"),
+                }
 
                 add_callback_data = (
                     encode_cb("add_content", cid=resolved_content_id)
@@ -1953,6 +1961,12 @@ class MessageHandlers:
                 keyboard_rows = [
                     [InlineKeyboardButton("➕ Add to My Contents", callback_data=add_callback_data)]
                 ]
+                keyboard_rows.append(
+                    [
+                        InlineKeyboardButton("🎯 Assign to Task", callback_data=encode_cb("video_assign_task", vid=video_id, url_id=url_id)),
+                        InlineKeyboardButton("📝 New One-Time Task", callback_data=encode_cb("video_create_task", vid=video_id, url_id=url_id)),
+                    ]
+                )
 
                 if content_info.get("captions_available"):
                     transcript_cb = encode_cb("youtube_transcript", url_id=url_id, vid=video_id)
@@ -1962,6 +1976,10 @@ class MessageHandlers:
 
                 if self.miniapp_url:
                     web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
+                    assigned_map = self.application.bot_data.get("youtube_video_task_assignments") or {}
+                    assigned_pid = assigned_map.get(f"{user_id}:{video_id}")
+                    if assigned_pid:
+                        web_app_url += f"&pid={assigned_pid}"
                     bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
                     if bot_token:
                         try:

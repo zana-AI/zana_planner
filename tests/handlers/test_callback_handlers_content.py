@@ -179,3 +179,60 @@ def test_handle_deploy_promote_prod_dispatches_workflow(monkeypatch):
     assert query.edited == [None]
     assert query.answers and query.answers[-1] == ("Prod promotion started.", False)
     assert sent and "#deploy_prod_requested" in sent[0]["text"]
+
+
+@pytest.mark.handler
+def test_handle_video_assign_pick_updates_watch_url_with_task_pid():
+    pytest.importorskip("telegram")
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    from handlers.callback_handlers import CallbackHandlers
+
+    calls = {}
+
+    class FakeResponseService:
+        async def edit_message_reply_markup(self, query, reply_markup=None, log_conversation=False):
+            calls["edited_markup"] = reply_markup
+            return None
+
+    class FakeMessage:
+        def __init__(self):
+            self.reply_markup = InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("▶️ Watch in Mini App", web_app=WebAppInfo(url="https://xaana.club/youtube-watch?video_id=dQw4w9WgXcQ"))],
+                ]
+            )
+            self.replies = []
+
+        async def reply_text(self, text, **_kwargs):
+            self.replies.append(text)
+            return None
+
+    class FakeQuery:
+        def __init__(self):
+            self.from_user = types.SimpleNamespace(id=42)
+            self.message = FakeMessage()
+            self.answers = []
+
+        async def answer(self, text=None, show_alert=False):
+            self.answers.append((text, show_alert))
+            return None
+
+    callback_handler = CallbackHandlers(
+        plan_keeper=types.SimpleNamespace(
+            settings_service=types.SimpleNamespace(get_user_timezone=lambda _uid: "UTC"),
+            get_promise=lambda _uid, _pid: types.SimpleNamespace(text="Watch_deep_work"),
+        ),
+        application=types.SimpleNamespace(bot_data={}),
+        response_service=FakeResponseService(),
+        miniapp_url="https://xaana.club",
+    )
+
+    query = FakeQuery()
+    asyncio.run(callback_handler._handle_video_assign_pick(query, user_id=42, video_id="dQw4w9WgXcQ", promise_id="T01"))
+
+    updated_btn = calls["edited_markup"].inline_keyboard[0][0]
+    assert "pid=T01" in updated_btn.web_app.url
+    assignments = callback_handler.application.bot_data["youtube_video_task_assignments"]
+    assert assignments["42:dQw4w9WgXcQ"] == "T01"
+    assert query.answers and query.answers[-1][0] == "Linked"

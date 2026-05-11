@@ -143,6 +143,7 @@
   var params = new URLSearchParams(window.location.search);
   var videoId = params.get('video_id') || '';
   var userToken = params.get('ut') || '';
+  var promiseId = params.get('pid') || '';
   var debug = params.get('debug') === '1';
   var baseUrl = window.location.origin;
   var openTime = Date.now();
@@ -503,12 +504,23 @@
 
   function getPayload(closedVia) {
     finalizeSegments();
+    var watchedSeconds = 0;
+    segments.forEach(function(seg) {
+      if (seg && seg.length >= 2 && isFinite(seg[0]) && isFinite(seg[1])) {
+        watchedSeconds += Math.max(0, seg[1] - seg[0]);
+      }
+    });
+    if (watchedSeconds <= 0) {
+      watchedSeconds = (Date.now() - openTime) / 1000;
+    }
     return {
       init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : '',
       user_token: userToken,
       stats: {
         video_id: videoId,
-        time_spent_seconds: (Date.now() - openTime) / 1000,
+        promise_id: promiseId,
+        time_spent_seconds: watchedSeconds,
+        page_open_seconds: (Date.now() - openTime) / 1000,
         segments: segments,
         closed_via: closedVia
       }
