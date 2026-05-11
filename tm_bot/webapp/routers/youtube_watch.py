@@ -14,6 +14,7 @@ from ..youtube_watch_stats import append_stats, format_summary_message, verify_u
 
 router = APIRouter(tags=["youtube_watch"])
 logger = get_logger(__name__)
+MIN_WATCH_SECONDS_FOR_TASK_LOG = 2.0
 
 
 def _get_html_path() -> str:
@@ -136,7 +137,7 @@ async def report_stats(request: Request):
                 )
     except Exception as e:
         logger.debug("youtube report_stats: content manager bridge failed (tables may not exist): %s", e)
-    if promise_id and time_spent >= 2:
+    if promise_id and time_spent >= MIN_WATCH_SECONDS_FOR_TASK_LOG:
         try:
             planner = PlannerAPIAdapter(root_dir=root_dir)
             if planner.get_promise(user_id, promise_id):

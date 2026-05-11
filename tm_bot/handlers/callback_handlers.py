@@ -43,6 +43,8 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 MAX_VIDEO_ASSIGN_TASKS = 8
+MIN_VIDEO_TASK_HOURS = 0.1
+MAX_VIDEO_TASK_HOURS = 8.0
 
 
 async def _send_delayed_checkin_reply(
@@ -217,6 +219,10 @@ class CallbackHandlers:
         """Generate session text."""
         return (f"⏱ *Session for #{sess.promise_id}: {self.plan_keeper.promises_repo.get_promise(sess.user_id, sess.promise_id).text}*"
                 f"\nStarted {sess.started_at.strftime('%H:%M')} | Elapsed: {elapsed}")
+
+    @staticmethod
+    def _display_promise_text(raw_text: Optional[str], fallback: str) -> str:
+        return str(raw_text or fallback).replace("_", " ")
     
     def _session_effective_hours(self, sess) -> float:
         """Calculate effective hours for session."""
@@ -1992,7 +1998,10 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         except Exception as e:
             logger.debug("Could not update watch URL with promise_id: %s", e)
         promise_text = getattr(promise, "text", None) or (promise.get("text") if isinstance(promise, dict) else promise_id)
-        await query.message.reply_text(f"✅ Video linked to *#{promise_id}* ({str(promise_text).replace('_', ' ')}).", parse_mode="Markdown")
+        await query.message.reply_text(
+            f"✅ Video linked to *#{promise_id}* ({self._display_promise_text(promise_text, promise_id)}).",
+            parse_mode="Markdown",
+        )
         await query.answer("Linked")
 
     async def _handle_video_create_task(self, query, user_id: int, video_id: Optional[str], _url_id: Optional[str]) -> None:
@@ -2006,7 +2015,7 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
             duration_hours = float(duration_seconds) / 3600.0 if duration_seconds else 0.25
         except Exception:
             duration_hours = 0.25
-        suggested_hours = max(0.1, min(8.0, round(duration_hours, 2)))
+        suggested_hours = max(MIN_VIDEO_TASK_HOURS, min(MAX_VIDEO_TASK_HOURS, round(duration_hours, 2)))
         promise_text = f"Watch: {title}"[:80]
         try:
             before_ids = {
@@ -2025,6 +2034,7 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
                 if not isinstance(p, dict):
                     continue
                 pid = str(p.get("id") or "").strip()
+                # One-time task IDs are generated with "T" prefix in PlannerAPIAdapter.add_promise.
                 if pid and pid not in before_ids and pid.upper().startswith("T"):
                     created_id = pid
                     break
