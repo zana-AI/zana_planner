@@ -45,6 +45,8 @@ logger = get_logger(__name__)
 MAX_VIDEO_ASSIGN_TASKS = 8
 MIN_VIDEO_TASK_HOURS = 0.1
 MAX_VIDEO_TASK_HOURS = 8.0
+MAX_VIDEO_TASK_TITLE_LEN = 80
+ONE_TIME_TASK_ID_PREFIX = "T"
 
 
 async def _send_delayed_checkin_reply(
@@ -2016,7 +2018,7 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         except Exception:
             duration_hours = 0.25
         suggested_hours = max(MIN_VIDEO_TASK_HOURS, min(MAX_VIDEO_TASK_HOURS, round(duration_hours, 2)))
-        promise_text = f"Watch: {title}"[:80]
+        promise_text = f"Watch: {title}"[:MAX_VIDEO_TASK_TITLE_LEN]
         try:
             before_ids = {
                 str(p.get("id"))
@@ -2035,7 +2037,7 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
                     continue
                 pid = str(p.get("id") or "").strip()
                 # One-time task IDs are generated with "T" prefix in PlannerAPIAdapter.add_promise.
-                if pid and pid not in before_ids and pid.upper().startswith("T"):
+                if pid and pid not in before_ids and pid.upper().startswith(ONE_TIME_TASK_ID_PREFIX):
                     created_id = pid
                     break
             m = re.search(r"#([A-Za-z0-9]+)", str(result))

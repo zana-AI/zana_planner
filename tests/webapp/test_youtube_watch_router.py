@@ -62,7 +62,7 @@ def test_report_stats_logs_time_to_assigned_promise(monkeypatch, tmp_path):
     user_id, promise_id, time_spent, notes = calls["add_action"]
     assert user_id == 42
     assert promise_id == "T01"
-    assert time_spent == pytest.approx(0.05, rel=1e-6)
+    assert time_spent == pytest.approx(180 / 3600.0, rel=1e-6)
     assert "dQw4w9WgXcQ" in (notes or "")
 
 
