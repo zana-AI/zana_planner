@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import Optional
 
+from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
 from ..telegram_init_data import validate_init_data
 from ..youtube_watch_stats import append_stats, format_summary_message, verify_user_token
@@ -59,6 +60,7 @@ async def report_stats(request: Request):
     if not isinstance(stats, dict):
         raise HTTPException(status_code=400, detail="stats must be an object")
     video_id = stats.get("video_id") or ""
+    promise_id = str(stats.get("promise_id") or "").strip()
     time_spent = float(stats.get("time_spent_seconds") or 0)
     segments = stats.get("segments") or []
     if not isinstance(segments, list):
@@ -134,6 +136,28 @@ async def report_stats(request: Request):
                 )
     except Exception as e:
         logger.debug("youtube report_stats: content manager bridge failed (tables may not exist): %s", e)
+    if promise_id and time_spent >= 2:
+        try:
+            planner = PlannerAPIAdapter(root_dir=root_dir)
+            if planner.get_promise(user_id, promise_id):
+                hours_spent = round(time_spent / 3600.0, 4)
+                if hours_spent > 0:
+                    planner.add_action(
+                        user_id=user_id,
+                        promise_id=promise_id,
+                        time_spent=hours_spent,
+                        notes=f"YouTube watch {video_id}",
+                    )
+                    logger.info(
+                        "youtube report_stats: logged %.4f hours for user_id=%s promise_id=%s",
+                        hours_spent,
+                        user_id,
+                        promise_id,
+                    )
+            else:
+                logger.info("youtube report_stats: skipping unknown promise_id=%s for user_id=%s", promise_id, user_id)
+        except Exception as e:
+            logger.warning("youtube report_stats: failed to log time for promise_id=%s: %s", promise_id, e)
     summary = format_summary_message(video_id, time_spent, segments)
 
     try:

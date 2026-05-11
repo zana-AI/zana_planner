@@ -8,12 +8,14 @@ import io
 import json
 import os
 import random
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
 from telegram.ext import CallbackContext
 
 from handlers.messages_store import get_message, get_user_language, Language
@@ -369,6 +371,12 @@ class CallbackHandlers:
             await self._handle_youtube_transcript(query, context, url, user_id, video_id, user_lang)
         elif action == "add_content":
             await self._handle_add_content(query, user_id, cb.get("cid"), cb.get("url_id"), user_lang)
+        elif action == "video_assign_task":
+            await self._handle_video_assign_task(query, user_id, cb.get("vid"), cb.get("url_id"))
+        elif action == "video_assign_pick":
+            await self._handle_video_assign_pick(query, user_id, cb.get("vid"), cb.get("p"))
+        elif action == "video_create_task":
+            await self._handle_video_create_task(query, user_id, cb.get("vid"), cb.get("url_id"))
         elif action == "broadcast_schedule":
             await self._handle_broadcast_schedule(query, context, user_lang)
         elif action == "broadcast_cancel":
@@ -1919,6 +1927,105 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         except Exception as e:
             logger.error(f"Error adding content from callback for user {user_id}: {e}")
             await query.answer("Failed to add this content. Please try again.", show_alert=True)
+
+    def _attach_promise_to_watch_url(self, web_app_url: str, promise_id: str) -> str:
+        parsed = urlparse(web_app_url)
+        params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        params["pid"] = str(promise_id)
+        return urlunparse(parsed._replace(query=urlencode(params)))
+
+    async def _handle_video_assign_task(self, query, user_id: int, video_id: Optional[str], _url_id: Optional[str]) -> None:
+        if not video_id:
+            await query.answer("Video context expired. Please resend the video link.", show_alert=True)
+            return
+        promises = self.plan_keeper.get_promises(user_id) or []
+        if not promises:
+            await query.answer("No tasks found. Creating one now.", show_alert=False)
+            await self._handle_video_create_task(query, user_id, video_id, _url_id)
+            return
+        rows = []
+        for p in promises[:8]:
+            promise_id = str(p.get("id") or "").strip()
+            text = str(p.get("text") or promise_id).replace("_", " ")
+            if not promise_id:
+                continue
+            rows.append([InlineKeyboardButton(f"#{promise_id} · {text[:32]}", callback_data=encode_cb("video_assign_pick", vid=video_id, pid=promise_id))])
+        rows.append([InlineKeyboardButton("📝 New One-Time Task", callback_data=encode_cb("video_create_task", vid=video_id))])
+        await query.message.reply_text(
+            "Choose a task to link this video watch time:",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+        await query.answer("Select a task")
+
+    async def _handle_video_assign_pick(self, query, user_id: int, video_id: Optional[str], promise_id: Optional[str]) -> None:
+        if not video_id or not promise_id:
+            await query.answer("Assignment failed. Please try again.", show_alert=True)
+            return
+        promise = self.plan_keeper.get_promise(user_id, promise_id)
+        if not promise:
+            await query.answer("Task not found.", show_alert=True)
+            return
+        if "youtube_video_task_assignments" not in self.application.bot_data:
+            self.application.bot_data["youtube_video_task_assignments"] = {}
+        self.application.bot_data["youtube_video_task_assignments"][f"{user_id}:{video_id}"] = promise_id
+        try:
+            if query.message and query.message.reply_markup:
+                new_rows = []
+                for row in query.message.reply_markup.inline_keyboard:
+                    new_row = []
+                    for button in row:
+                        if getattr(button, "web_app", None) and getattr(button.web_app, "url", None) and "youtube-watch" in str(button.web_app.url):
+                            new_row.append(
+                                InlineKeyboardButton(
+                                    button.text,
+                                    web_app=WebAppInfo(url=self._attach_promise_to_watch_url(str(button.web_app.url), promise_id)),
+                                )
+                            )
+                        else:
+                            new_row.append(button)
+                    new_rows.append(new_row)
+                await self.response_service.edit_message_reply_markup(
+                    query,
+                    reply_markup=InlineKeyboardMarkup(new_rows),
+                )
+        except Exception as e:
+            logger.debug("Could not update watch URL with promise_id: %s", e)
+        promise_text = getattr(promise, "text", None) or (promise.get("text") if isinstance(promise, dict) else promise_id)
+        await query.message.reply_text(f"✅ Video linked to *#{promise_id}* ({str(promise_text).replace('_', ' ')}).", parse_mode="Markdown")
+        await query.answer("Linked")
+
+    async def _handle_video_create_task(self, query, user_id: int, video_id: Optional[str], _url_id: Optional[str]) -> None:
+        if not video_id:
+            await query.answer("Video context expired. Please resend the video link.", show_alert=True)
+            return
+        context = (self.application.bot_data.get("youtube_video_context") or {}).get(video_id) or {}
+        title = str(context.get("title") or "YouTube video").strip()
+        duration_seconds = context.get("duration_seconds")
+        try:
+            duration_hours = float(duration_seconds) / 3600.0 if duration_seconds else 0.25
+        except Exception:
+            duration_hours = 0.25
+        suggested_hours = max(0.1, min(8.0, round(duration_hours, 2)))
+        promise_text = f"Watch: {title}"[:80]
+        try:
+            result = self.plan_keeper.add_promise(
+                user_id=user_id,
+                promise_text=promise_text,
+                num_hours_promised_per_week=suggested_hours,
+                recurring=False,
+            )
+            created_id = None
+            m = re.search(r"#([A-Za-z0-9]+)", str(result))
+            if m:
+                created_id = m.group(1)
+            if created_id:
+                await self._handle_video_assign_pick(query, user_id, video_id, created_id)
+                return
+            await query.message.reply_text("✅ One-time task created. Please assign it from the list.")
+            await query.answer("Task created")
+        except Exception as e:
+            logger.error("Failed creating one-time task for video: %s", e)
+            await query.answer("Could not create a one-time task.", show_alert=True)
     
     async def _handle_summarize_content(self, query, url: str, user_id: int, user_lang: Language):
         """Handle summarize content request."""
