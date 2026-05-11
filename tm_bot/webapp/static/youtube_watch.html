@@ -524,9 +524,6 @@
     });
     var watchedSeconds = 0;
     merged.forEach(function(seg) { watchedSeconds += (seg[1] - seg[0]); });
-    if (watchedSeconds <= 0) {
-      watchedSeconds = (Date.now() - openTime) / 1000;
-    }
     return {
       init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : '',
       user_token: userToken,
