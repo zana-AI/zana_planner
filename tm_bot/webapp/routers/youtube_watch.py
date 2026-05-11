@@ -15,6 +15,7 @@ from ..youtube_watch_stats import append_stats, format_summary_message, verify_u
 router = APIRouter(tags=["youtube_watch"])
 logger = get_logger(__name__)
 MIN_WATCH_SECONDS_FOR_TASK_LOG = 2.0
+SECONDS_PER_HOUR = 3600.0
 
 
 def _get_html_path() -> str:
@@ -141,7 +142,7 @@ async def report_stats(request: Request):
         try:
             planner = PlannerAPIAdapter(root_dir=root_dir)
             if planner.get_promise(user_id, promise_id):
-                hours_spent = round(time_spent / 3600.0, 4)
+                hours_spent = round(time_spent / SECONDS_PER_HOUR, 4)
                 planner.add_action(
                     user_id=user_id,
                     promise_id=promise_id,
