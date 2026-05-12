@@ -38,7 +38,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_user_content_assigned_promise",
         "user_content",
-        ["assigned_promise_id"],
+        ["user_id", "assigned_promise_id"],
     )
 
 
