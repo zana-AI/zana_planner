@@ -130,24 +130,51 @@ class ContentRepository:
             return None
         return dict(row)
 
-    def add_user_content(self, user_id: str, content_id: str) -> str:
+    def add_user_content(
+        self,
+        user_id: str,
+        content_id: str,
+        assigned_promise_id: Optional[str] = None,
+    ) -> str:
         """Add user_content; returns user_content id (existing or new)."""
         uc_id = str(uuid.uuid4())
         now = _now()
         with get_db_session() as session:
             session.execute(
                 text("""
-                    INSERT INTO user_content (id, user_id, content_id, status, added_at)
-                    VALUES (:id, :user_id, :content_id, 'saved', :added_at)
-                    ON CONFLICT (user_id, content_id) DO NOTHING
+                    INSERT INTO user_content (
+                        id, user_id, content_id, status, added_at,
+                        assigned_promise_id, assigned_at
+                    )
+                    VALUES (
+                        :id, :user_id, :content_id, 'saved', :added_at,
+                        :assigned_promise_id,
+                        CASE WHEN :assigned_promise_id IS NULL THEN NULL ELSE :added_at END
+                    )
+                    ON CONFLICT (user_id, content_id) DO UPDATE SET
+                        assigned_promise_id = COALESCE(EXCLUDED.assigned_promise_id, user_content.assigned_promise_id),
+                        assigned_at = CASE
+                            WHEN EXCLUDED.assigned_promise_id IS NULL THEN user_content.assigned_at
+                            ELSE EXCLUDED.assigned_at
+                        END
                 """),
-                {"id": uc_id, "user_id": user_id, "content_id": content_id, "added_at": now},
+                {
+                    "id": uc_id,
+                    "user_id": user_id,
+                    "content_id": content_id,
+                    "added_at": now,
+                    "assigned_promise_id": assigned_promise_id,
+                },
             )
             row = session.execute(
                 text("SELECT id FROM user_content WHERE user_id = :user_id AND content_id = :content_id"),
                 {"user_id": user_id, "content_id": content_id},
             ).mappings().fetchone()
             return str(row["id"]) if row else uc_id
+
+    def assign_user_content_to_promise(self, user_id: str, content_id: str, promise_id: str) -> str:
+        """Ensure content is saved and linked to a promise/task."""
+        return self.add_user_content(str(user_id), str(content_id), assigned_promise_id=str(promise_id))
 
     def get_user_content(self, user_id: str, content_id: str) -> Optional[Dict[str, Any]]:
         """Return single user_content row (with content) or None."""
@@ -156,7 +183,8 @@ class ContentRepository:
                 text("""
                     SELECT uc.id, uc.user_id, uc.content_id, uc.status, uc.added_at, uc.last_interaction_at,
                            uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
-                           uc.total_consumed_seconds, uc.notes, uc.rating
+                           uc.total_consumed_seconds, uc.notes, uc.rating,
+                           uc.assigned_promise_id, uc.assigned_at
                     FROM user_content uc
                     WHERE uc.user_id = :user_id AND uc.content_id = :content_id
                 """),
@@ -237,6 +265,7 @@ class ContentRepository:
                            uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
                            uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
                            uc.total_consumed_seconds, uc.notes, uc.rating,
+                           uc.assigned_promise_id, uc.assigned_at,
                            r.bucket_count, r.buckets
                     FROM user_content uc
                     JOIN content c ON c.id = uc.content_id

@@ -10,7 +10,7 @@ import os
 import random
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
@@ -19,7 +19,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFi
 from telegram.ext import CallbackContext
 
 from handlers.messages_store import get_message, get_user_language, Language
-from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
 from services.club_reminder_service import (
     CLUB_CHECKIN_PREFIX,
@@ -42,11 +41,17 @@ from utils.bot_utils import BotUtils
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+if TYPE_CHECKING:
+    from services.planner_api_adapter import PlannerAPIAdapter
 MAX_VIDEO_ASSIGN_TASKS = 8
 MIN_VIDEO_TASK_HOURS = 0.1
 MAX_VIDEO_TASK_HOURS = 8.0
 MAX_VIDEO_TASK_TITLE_LEN = 80
 ONE_TIME_TASK_ID_PREFIX = "T"
+MAX_CONTENT_ASSIGN_TASKS = 8
+CONTENT_ASSIGN_ACTION = "cat"
+CONTENT_ASSIGN_PICK_ACTION = "cap"
+CONTENT_CREATE_TASK_ACTION = "cct"
 
 
 async def _send_delayed_checkin_reply(
@@ -105,7 +110,7 @@ def _is_staging_or_test_mode() -> bool:
 class CallbackHandlers:
     """Handles all callback query processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, application, response_service: IResponseService, miniapp_url: str = "https://xaana.club"):
+    def __init__(self, plan_keeper: "PlannerAPIAdapter", application, response_service: IResponseService, miniapp_url: str = "https://xaana.club"):
         self.plan_keeper = plan_keeper
         self.application = application
         self.response_service = response_service
@@ -380,6 +385,12 @@ class CallbackHandlers:
             await self._handle_youtube_transcript(query, context, url, user_id, video_id, user_lang)
         elif action == "add_content":
             await self._handle_add_content(query, user_id, cb.get("cid"), cb.get("url_id"), user_lang)
+        elif action in {CONTENT_ASSIGN_ACTION, "content_assign_task"}:
+            await self._handle_content_assign_task(query, user_id, cb.get("c") or cb.get("cid"), cb.get("url_id"))
+        elif action in {CONTENT_ASSIGN_PICK_ACTION, "content_assign_pick"}:
+            await self._handle_content_assign_pick(query, user_id, cb.get("c") or cb.get("cid"), cb.get("p"))
+        elif action in {CONTENT_CREATE_TASK_ACTION, "content_create_task"}:
+            await self._handle_content_create_task(query, user_id, cb.get("c") or cb.get("cid"), cb.get("url_id"))
         elif action == "video_assign_task":
             await self._handle_video_assign_task(query, user_id, cb.get("vid"), cb.get("url_id"))
         elif action == "video_assign_pick":
@@ -1943,9 +1954,234 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         params["pid"] = str(promise_id)
         return urlunparse(parsed._replace(query=urlencode(params)))
 
+    async def _resolve_content_id_for_callback(
+        self,
+        content_id: Optional[str],
+        url_id: Optional[str],
+    ) -> Optional[str]:
+        if content_id:
+            return str(content_id)
+        if not url_id or "content_urls" not in self.application.bot_data:
+            return None
+        source_url = self.application.bot_data["content_urls"].get(url_id)
+        if not source_url:
+            return None
+        try:
+            from repositories.content_repo import ContentRepository
+            from services.content_resolve_service import ContentResolveService
+
+            resolver = ContentResolveService(content_repo=ContentRepository())
+            resolved = resolver.resolve(source_url)
+            return resolved.get("content_id") or resolved.get("id")
+        except Exception as e:
+            logger.warning("Could not resolve content for assignment url_id=%s: %s", url_id, e)
+            return None
+
+    @staticmethod
+    def _content_title_from_context(context: dict, fallback: str = "content") -> str:
+        title = str((context or {}).get("title") or fallback).strip()
+        return title or fallback
+
+    def _get_content_context(self, content_id: Optional[str], url_id: Optional[str]) -> dict:
+        by_content = self.application.bot_data.get("content_context_by_id") or {}
+        if content_id and str(content_id) in by_content:
+            return by_content[str(content_id)]
+        by_url = self.application.bot_data.get("content_context_by_url_id") or {}
+        if url_id and str(url_id) in by_url:
+            return by_url[str(url_id)]
+        return {}
+
+    def _rank_promises_for_content(self, user_id: int, promises: list, context: dict) -> list:
+        """Rank promise options for content assignment, using LLM JSON if available."""
+        clean = []
+        title = self._content_title_from_context(context, "")
+        content_type = str((context or {}).get("content_type") or (context or {}).get("type") or "").lower()
+        for p in promises or []:
+            if not isinstance(p, dict):
+                continue
+            pid = str(p.get("id") or "").strip()
+            text = str(p.get("text") or "").replace("_", " ").strip()
+            if pid:
+                clean.append({"id": pid, "text": text or pid})
+        if not clean:
+            return []
+
+        llm_handler = (self.application.bot_data or {}).get("llm_handler") if self.application else None
+        if llm_handler and hasattr(llm_handler, "get_response_custom"):
+            try:
+                prompt = (
+                    "Rank these tasks for assigning a newly added content item. "
+                    "Return only JSON: {\"ids\":[\"...\"]}.\n\n"
+                    f"Content type: {content_type or 'unknown'}\n"
+                    f"Content title: {title or 'Untitled'}\n"
+                    f"Tasks: {json.dumps(clean, ensure_ascii=False)}"
+                )
+                raw = llm_handler.get_response_custom(prompt, str(user_id))
+                data = json.loads(str(raw).strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
+                ranked_ids = [str(pid) for pid in data.get("ids", [])]
+                order = {pid: idx for idx, pid in enumerate(ranked_ids)}
+                clean.sort(key=lambda p: (order.get(p["id"], 999), p["id"]))
+                return clean
+            except Exception as e:
+                logger.debug("Content assignment LLM ranking failed: %s", e)
+
+        words = {w for w in re.findall(r"[A-Za-z0-9]+", title.lower()) if len(w) > 2}
+        def score(p):
+            text_words = {w for w in re.findall(r"[A-Za-z0-9]+", p["text"].lower()) if len(w) > 2}
+            overlap = len(words & text_words)
+            return (-overlap, p["id"])
+        return sorted(clean, key=score)
+
+    async def _handle_content_assign_task(
+        self,
+        query,
+        user_id: int,
+        content_id: Optional[str],
+        url_id: Optional[str],
+    ) -> None:
+        resolved_content_id = await self._resolve_content_id_for_callback(content_id, url_id)
+        if not resolved_content_id:
+            await query.answer("Content context expired. Please share it again.", show_alert=True)
+            return
+        promises = self.plan_keeper.get_promises(user_id) or []
+        context = self._get_content_context(resolved_content_id, url_id)
+        if not promises:
+            await query.answer("No tasks found. Creating one now.", show_alert=False)
+            await self._handle_content_create_task(query, user_id, resolved_content_id, url_id)
+            return
+        rows = []
+        for p in self._rank_promises_for_content(user_id, promises, context)[:MAX_CONTENT_ASSIGN_TASKS]:
+            label = f"#{p['id']} - {p['text'][:32]}"
+            rows.append([
+                InlineKeyboardButton(
+                    label,
+                    callback_data=encode_cb(CONTENT_ASSIGN_PICK_ACTION, pid=p["id"], c=resolved_content_id),
+                )
+            ])
+        rows.append([
+            InlineKeyboardButton(
+                "New one-time task",
+                callback_data=encode_cb(CONTENT_CREATE_TASK_ACTION, c=resolved_content_id),
+            )
+        ])
+        await query.message.reply_text(
+            "Best matching tasks for this content:",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+        await query.answer("Select a task")
+
+    async def _handle_content_assign_pick(
+        self,
+        query,
+        user_id: int,
+        content_id: Optional[str],
+        promise_id: Optional[str],
+    ) -> None:
+        if not content_id or not promise_id:
+            await query.answer("Assignment failed. Please try again.", show_alert=True)
+            return
+        promise = self.plan_keeper.get_promise(user_id, promise_id)
+        if not promise:
+            await query.answer("Task not found.", show_alert=True)
+            return
+        try:
+            from repositories.content_repo import ContentRepository
+
+            repo = ContentRepository()
+            repo.assign_user_content_to_promise(str(user_id), str(content_id), str(promise_id))
+        except Exception as e:
+            logger.error("Failed assigning content_id=%s to promise_id=%s: %s", content_id, promise_id, e)
+            await query.answer("Could not link this content.", show_alert=True)
+            return
+
+        try:
+            if query.message and query.message.reply_markup:
+                new_rows = []
+                for row in query.message.reply_markup.inline_keyboard:
+                    new_row = []
+                    for button in row:
+                        if getattr(button, "web_app", None) and getattr(button.web_app, "url", None) and "youtube-watch" in str(button.web_app.url):
+                            new_row.append(
+                                InlineKeyboardButton(
+                                    button.text,
+                                    web_app=WebAppInfo(url=self._attach_promise_to_watch_url(str(button.web_app.url), promise_id)),
+                                )
+                            )
+                        else:
+                            new_row.append(button)
+                    new_rows.append(new_row)
+                await self.response_service.edit_message_reply_markup(query, reply_markup=InlineKeyboardMarkup(new_rows))
+        except Exception as e:
+            logger.debug("Could not update content card buttons after assignment: %s", e)
+
+        promise_text = getattr(promise, "text", None) or (promise.get("text") if isinstance(promise, dict) else promise_id)
+        await query.message.reply_text(
+            f"Content saved and linked to *#{promise_id}* ({self._display_promise_text(promise_text, promise_id)}).",
+            parse_mode="Markdown",
+        )
+        await query.answer("Linked")
+
+    async def _handle_content_create_task(
+        self,
+        query,
+        user_id: int,
+        content_id: Optional[str],
+        url_id: Optional[str],
+    ) -> None:
+        resolved_content_id = await self._resolve_content_id_for_callback(content_id, url_id)
+        if not resolved_content_id:
+            await query.answer("Content context expired. Please share it again.", show_alert=True)
+            return
+        context = self._get_content_context(resolved_content_id, url_id)
+        title = self._content_title_from_context(context, "content")
+        duration_seconds = context.get("duration_seconds") or context.get("estimated_read_seconds")
+        try:
+            duration_hours = float(duration_seconds) / 3600.0 if duration_seconds else 0.25
+        except Exception:
+            duration_hours = 0.25
+        suggested_hours = max(MIN_VIDEO_TASK_HOURS, min(MAX_VIDEO_TASK_HOURS, round(duration_hours, 2)))
+        verb = "Watch" if str(context.get("content_type") or "").lower() == "video" else "Read"
+        promise_text = f"{verb}: {title}"[:MAX_VIDEO_TASK_TITLE_LEN]
+        try:
+            before_ids = {
+                str(p.get("id"))
+                for p in (self.plan_keeper.get_promises(user_id) or [])
+                if isinstance(p, dict) and p.get("id")
+            }
+            result = self.plan_keeper.add_promise(
+                user_id=user_id,
+                promise_text=promise_text,
+                num_hours_promised_per_week=suggested_hours,
+                recurring=False,
+            )
+            created_id = None
+            for p in (self.plan_keeper.get_promises(user_id) or []):
+                if not isinstance(p, dict):
+                    continue
+                pid = str(p.get("id") or "").strip()
+                if pid and pid not in before_ids and pid.upper().startswith(ONE_TIME_TASK_ID_PREFIX):
+                    created_id = pid
+                    break
+            m = re.search(r"#([A-Za-z0-9]+)", str(result))
+            if not created_id and m:
+                created_id = m.group(1)
+            if created_id:
+                await self._handle_content_assign_pick(query, user_id, resolved_content_id, created_id)
+                return
+            await query.message.reply_text("One-time task created. Please assign it from the list.")
+            await query.answer("Task created")
+        except Exception as e:
+            logger.error("Failed creating one-time task for content: %s", e)
+            await query.answer("Could not create a one-time task.", show_alert=True)
+
     async def _handle_video_assign_task(self, query, user_id: int, video_id: Optional[str], _url_id: Optional[str]) -> None:
         if not video_id:
             await query.answer("Video context expired. Please resend the video link.", show_alert=True)
+            return
+        context = (self.application.bot_data.get("youtube_video_context") or {}).get(video_id) or {}
+        content_id = context.get("content_id")
+        if content_id:
+            await self._handle_content_assign_task(query, user_id, str(content_id), _url_id)
             return
         promises = self.plan_keeper.get_promises(user_id) or []
         if not promises:
@@ -1977,6 +2213,15 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         if "youtube_video_task_assignments" not in self.application.bot_data:
             self.application.bot_data["youtube_video_task_assignments"] = {}
         self.application.bot_data["youtube_video_task_assignments"][f"{user_id}:{video_id}"] = promise_id
+        context = (self.application.bot_data.get("youtube_video_context") or {}).get(video_id) or {}
+        content_id = context.get("content_id")
+        if content_id:
+            try:
+                from repositories.content_repo import ContentRepository
+
+                ContentRepository().assign_user_content_to_promise(str(user_id), str(content_id), str(promise_id))
+            except Exception as e:
+                logger.debug("Could not persist video content assignment: %s", e)
         try:
             if query.message and query.message.reply_markup:
                 new_rows = []

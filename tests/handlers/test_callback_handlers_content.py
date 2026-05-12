@@ -236,3 +236,55 @@ def test_handle_video_assign_pick_updates_watch_url_with_task_pid():
     assignments = callback_handler.application.bot_data["youtube_video_task_assignments"]
     assert assignments["42:dQw4w9WgXcQ"] == "T01"
     assert query.answers and query.answers[-1][0] == "Linked"
+
+
+@pytest.mark.handler
+def test_handle_content_assign_pick_saves_content_and_links_promise(monkeypatch):
+    pytest.importorskip("telegram")
+
+    import repositories.content_repo as content_repo_mod
+    from handlers.callback_handlers import CallbackHandlers
+
+    calls = {}
+
+    class FakeContentRepository:
+        def assign_user_content_to_promise(self, user_id, content_id, promise_id):
+            calls["assigned"] = (user_id, content_id, promise_id)
+            return "uc-1"
+
+    monkeypatch.setattr(content_repo_mod, "ContentRepository", FakeContentRepository)
+
+    class FakeMessage:
+        def __init__(self):
+            self.replies = []
+
+        async def reply_text(self, text, **kwargs):
+            self.replies.append((text, kwargs))
+            return None
+
+    class FakeQuery:
+        def __init__(self):
+            self.from_user = types.SimpleNamespace(id=42)
+            self.message = FakeMessage()
+            self.answers = []
+
+        async def answer(self, text=None, show_alert=False):
+            self.answers.append((text, show_alert))
+            return None
+
+    callback_handler = CallbackHandlers(
+        plan_keeper=types.SimpleNamespace(
+            settings_service=types.SimpleNamespace(get_user_timezone=lambda _uid: "UTC"),
+            get_promise=lambda _uid, _pid: types.SimpleNamespace(text="Read paper"),
+        ),
+        application=types.SimpleNamespace(bot_data={}),
+        response_service=types.SimpleNamespace(),
+        miniapp_url="https://xaana.club",
+    )
+
+    query = FakeQuery()
+    asyncio.run(callback_handler._handle_content_assign_pick(query, user_id=42, content_id="content-1", promise_id="T01"))
+
+    assert calls["assigned"] == ("42", "content-1", "T01")
+    assert query.answers[-1][0] == "Linked"
+    assert "Content saved and linked" in query.message.replies[0][0]

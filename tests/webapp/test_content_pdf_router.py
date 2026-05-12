@@ -1,4 +1,5 @@
 import asyncio
+import types
 from pathlib import Path
 
 import httpx
@@ -21,7 +22,21 @@ class FakeRepo:
             "content_id": str(content_id),
             "last_position": 0.25,
             "progress_ratio": 0.25,
+            "assigned_promise_id": None,
         }
+
+    def get_content_by_id(self, content_id):
+        if str(content_id) != "content-1":
+            return None
+        return {
+            "id": "content-1",
+            "title": "Sample PDF",
+            "estimated_read_seconds": 1200,
+            "duration_seconds": None,
+        }
+
+    def get_heatmap(self, user_id, content_id):
+        return {"bucket_count": 4, "buckets": [1, 0, 0, 0]}
 
     def get_latest_content_asset(self, content_id, asset_type):
         if str(content_id) != "content-1" or asset_type != "pdf_source":
@@ -242,3 +257,60 @@ def test_local_pdf_open_and_file(monkeypatch, tmp_path):
     assert file_resp.status_code == 200
     assert file_resp.content == b"%PDF-1.7 local test"
     assert file_resp.headers["content-type"].startswith("application/pdf")
+
+
+def test_consume_event_logs_assigned_content_time_to_promise(monkeypatch, tmp_path):
+    app = FastAPI()
+    app.include_router(content_router.router)
+    app.dependency_overrides[get_current_user] = lambda: 7
+    app.state.root_dir = str(tmp_path)
+
+    class AssignedRepo(FakeRepo):
+        def get_user_content(self, user_id, content_id):
+            row = super().get_user_content(user_id, content_id)
+            if row:
+                row["assigned_promise_id"] = "T01"
+            return row
+
+    class FakeProgress:
+        def record_consumption(self, **kwargs):
+            return {"progress_ratio": 0.5, "status": "in_progress"}
+
+    calls = {}
+
+    class FakePlanner:
+        def __init__(self, root_dir):
+            assert root_dir == str(tmp_path)
+
+        def get_promise(self, user_id, promise_id):
+            return {"id": promise_id}
+
+        def add_action(self, user_id, promise_id, time_spent, notes=None, action_datetime=None):
+            calls["action"] = (user_id, promise_id, time_spent, notes)
+            return "ok"
+
+    monkeypatch.setattr(content_router, "get_content_repo", lambda: AssignedRepo())
+    monkeypatch.setattr(content_router, "get_progress_service", lambda: FakeProgress())
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "services.planner_api_adapter",
+        types.SimpleNamespace(PlannerAPIAdapter=FakePlanner),
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/consume-event",
+        json={
+            "content_id": "content-1",
+            "start_position": 0.0,
+            "end_position": 0.25,
+            "position_unit": "ratio",
+            "client": "web_pdf_reader_read",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls["action"][0] == 7
+    assert calls["action"][1] == "T01"
+    assert calls["action"][2] == 0.0833
+    assert "Sample PDF" in calls["action"][3]

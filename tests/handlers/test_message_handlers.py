@@ -187,8 +187,9 @@ def test_handle_message_youtube_builds_new_content_card_with_add_button(tmp_path
     assert "cid=content-123" in first_button.callback_data
     second_row = sent["reply_markup"].inline_keyboard[1]
     assert len(second_row) == 2
-    assert "a=video_assign_task" in (second_row[0].callback_data or "")
-    assert "a=video_create_task" in (second_row[1].callback_data or "")
+    assert "a=cat" in (second_row[0].callback_data or "")
+    assert "c=content-123" in (second_row[0].callback_data or "")
+    assert "a=cct" in (second_row[1].callback_data or "")
 
 
 @pytest.mark.handler

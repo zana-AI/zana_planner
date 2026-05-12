@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import Optional
 
-from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
 from ..telegram_init_data import validate_init_data
 from ..youtube_watch_stats import append_stats, format_summary_message, verify_user_token
@@ -16,6 +15,7 @@ router = APIRouter(tags=["youtube_watch"])
 logger = get_logger(__name__)
 MIN_WATCH_SECONDS_FOR_TASK_LOG = 2.0
 SECONDS_PER_HOUR = 3600.0
+PlannerAPIAdapter = None
 
 
 def _get_html_path() -> str:
@@ -114,6 +114,13 @@ async def report_stats(request: Request):
         resolved = resolve_svc.resolve(youtube_url)
         content_id = resolved.get("id") or resolved.get("content_id")
         if content_id:
+            if promise_id:
+                try:
+                    from repositories.content_repo import ContentRepository
+
+                    ContentRepository().assign_user_content_to_promise(str(user_id), str(content_id), str(promise_id))
+                except Exception as assign_exc:
+                    logger.debug("youtube report_stats: content assignment bridge failed: %s", assign_exc)
             progress_svc = ContentProgressService()
             if segments:
                 for seg in segments:
@@ -140,6 +147,11 @@ async def report_stats(request: Request):
         logger.debug("youtube report_stats: content manager bridge failed (tables may not exist): %s", e)
     if promise_id and time_spent >= MIN_WATCH_SECONDS_FOR_TASK_LOG:
         try:
+            global PlannerAPIAdapter
+            if PlannerAPIAdapter is None:
+                from services.planner_api_adapter import PlannerAPIAdapter as _PlannerAPIAdapter
+                PlannerAPIAdapter = _PlannerAPIAdapter
+
             planner = PlannerAPIAdapter(root_dir=root_dir)
             if planner.get_promise(user_id, promise_id):
                 hours_spent = round(time_spent / SECONDS_PER_HOUR, 4)

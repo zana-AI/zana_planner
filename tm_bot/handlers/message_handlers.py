@@ -11,7 +11,7 @@ import re
 import hashlib
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.ext import CallbackContext
@@ -19,7 +19,6 @@ from telegram import error as telegram_error
 
 from handlers.messages_store import get_message, get_user_language, Language
 from handlers.translator import translate_text
-from services.planner_api_adapter import PlannerAPIAdapter
 from services.voice_service import VoiceService
 from services.content_service import ContentService
 from services.content_resolve_service import ContentResolveService
@@ -48,6 +47,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 logger = get_logger(__name__)
+if TYPE_CHECKING:
+    from services.planner_api_adapter import PlannerAPIAdapter
 
 
 def _is_staging_or_test_mode() -> bool:
@@ -60,7 +61,7 @@ def _is_staging_or_test_mode() -> bool:
 class MessageHandlers:
     """Handles all message and command processing."""
     
-    def __init__(self, plan_keeper: PlannerAPIAdapter, llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService, miniapp_url: str = "https://xaana.club"):
+    def __init__(self, plan_keeper: "PlannerAPIAdapter", llm_handler: LLMHandler, root_dir: str, application, response_service: IResponseService, miniapp_url: str = "https://xaana.club"):
         self.plan_keeper = plan_keeper
         self.llm_handler = llm_handler
         self.avatar_service = AvatarService(root_dir)
@@ -1393,10 +1394,27 @@ class MessageHandlers:
             metadata_json=metadata,
         )
 
+        content_context = {
+            "content_id": content_id,
+            "title": doc.file_name or f"{normalized_name}.pdf",
+            "content_type": "pdf",
+            "estimated_read_seconds": (page_count * 120) if page_count else None,
+            "page_count": page_count,
+        }
+        if "content_context_by_id" not in self.application.bot_data:
+            self.application.bot_data["content_context_by_id"] = {}
+        self.application.bot_data["content_context_by_id"][str(content_id)] = content_context
+
         keyboard_rows = []
         if self.miniapp_url:
             reader_url = f"{self.miniapp_url}/pdf-reader?content_id={content_id}"
             keyboard_rows.append([InlineKeyboardButton("📄 Open PDF Reader", web_app=WebAppInfo(url=reader_url))])
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton("Assign to Task", callback_data=encode_cb("cat", c=content_id)),
+                InlineKeyboardButton("New One-Time Task", callback_data=encode_cb("cct", c=content_id)),
+            ]
+        )
 
         summary_lines = [
             "🆕 PDF added to your contents",
@@ -1949,9 +1967,26 @@ class MessageHandlers:
                 self.application.bot_data["youtube_video_context"][video_id] = {
                     "url_id": url_id,
                     "source_url": source_url or f"https://youtube.com/watch?v={video_id}",
+                    "content_id": resolved_content_id,
                     "title": content_info.get("title") or "YouTube Video",
                     "duration_seconds": content_info.get("duration_seconds"),
+                    "content_type": "video",
                 }
+                if "content_context_by_url_id" not in self.application.bot_data:
+                    self.application.bot_data["content_context_by_url_id"] = {}
+                content_context = {
+                    "url_id": url_id,
+                    "source_url": source_url or f"https://youtube.com/watch?v={video_id}",
+                    "content_id": resolved_content_id,
+                    "title": content_info.get("title") or "YouTube Video",
+                    "duration_seconds": content_info.get("duration_seconds"),
+                    "content_type": "video",
+                }
+                self.application.bot_data["content_context_by_url_id"][url_id] = content_context
+                if resolved_content_id:
+                    if "content_context_by_id" not in self.application.bot_data:
+                        self.application.bot_data["content_context_by_id"] = {}
+                    self.application.bot_data["content_context_by_id"][str(resolved_content_id)] = content_context
 
                 add_callback_data = (
                     encode_cb("add_content", cid=resolved_content_id)
@@ -1963,8 +1998,22 @@ class MessageHandlers:
                 ]
                 keyboard_rows.append(
                     [
-                        InlineKeyboardButton("🎯 Assign to Task", callback_data=encode_cb("video_assign_task", vid=video_id, url_id=url_id)),
-                        InlineKeyboardButton("📝 New One-Time Task", callback_data=encode_cb("video_create_task", vid=video_id, url_id=url_id)),
+                        InlineKeyboardButton(
+                            "🎯 Assign to Task",
+                            callback_data=(
+                                encode_cb("cat", c=resolved_content_id)
+                                if resolved_content_id
+                                else encode_cb("video_assign_task", vid=video_id, url_id=url_id)
+                            ),
+                        ),
+                        InlineKeyboardButton(
+                            "📝 New One-Time Task",
+                            callback_data=(
+                                encode_cb("cct", c=resolved_content_id)
+                                if resolved_content_id
+                                else encode_cb("video_create_task", vid=video_id, url_id=url_id)
+                            ),
+                        ),
                     ]
                 )
 

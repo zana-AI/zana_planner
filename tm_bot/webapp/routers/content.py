@@ -3,7 +3,7 @@ Content consumption manager API: resolve URL, user library, consume events, heat
 """
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import FileResponse
 from ..dependencies import get_current_user
 from ..schemas import (
@@ -155,6 +155,7 @@ async def get_my_contents(
 
 @router.post("/consume-event")
 async def post_consume_event(
+    request: Request,
     body: ConsumeEventRequest,
     user_id: int = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -170,6 +171,36 @@ async def post_consume_event(
         ended_at=body.ended_at,
         client=body.client,
     )
+    try:
+        repo = get_content_repo()
+        uc = repo.get_user_content(str(user_id), body.content_id)
+        promise_id = str((uc or {}).get("assigned_promise_id") or "").strip()
+        if (
+            promise_id
+            and body.position_unit == "ratio"
+            and body.client == "web_pdf_reader_read"
+            and body.end_position > body.start_position
+        ):
+            content = repo.get_content_by_id(body.content_id) or {}
+            estimated_seconds = content.get("estimated_read_seconds") or content.get("duration_seconds")
+            if estimated_seconds:
+                consumed_seconds = (float(body.end_position) - float(body.start_position)) * float(estimated_seconds)
+                if consumed_seconds >= 2.0:
+                    from services.planner_api_adapter import PlannerAPIAdapter
+
+                    root_dir = getattr(request.app.state, "root_dir", None)
+                    if root_dir:
+                        planner = PlannerAPIAdapter(root_dir=root_dir)
+                        if planner.get_promise(user_id, promise_id):
+                            title = content.get("title") or body.content_id
+                            planner.add_action(
+                                user_id=user_id,
+                                promise_id=promise_id,
+                                time_spent=round(consumed_seconds / 3600.0, 4),
+                                notes=f"Content reading: {title}",
+                            )
+    except Exception as exc:
+        logger.debug("consume-event promise logging skipped: %s", exc)
     return result
 
 
