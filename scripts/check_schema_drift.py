@@ -188,7 +188,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "id", "user_id", "content_id", "status", "added_at",
         "last_interaction_at", "completed_at", "last_position",
         "position_unit", "progress_ratio", "total_consumed_seconds",
-        "notes", "rating",
+        "notes", "rating", "assigned_promise_id", "assigned_at",
     ],
     "content_consumption_event": [
         "id", "user_id", "content_id", "event_type", "start_position",
@@ -274,7 +274,7 @@ MUST_NOT_EXIST: dict[str, list[str]] = {
 }
 
 # Alembic revision id at head
-EXPECTED_ALEMBIC_HEAD = "012_content_learning_pipeline"
+EXPECTED_ALEMBIC_HEAD = "021_uc_promise_assign"
 
 
 # ---------------------------------------------------------------------------
