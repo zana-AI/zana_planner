@@ -76,7 +76,7 @@ _DEBUG_FOOTER_TO_USER = os.getenv("LLM_DEBUG_USER_FOOTER", "0") == "1"
 
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
-_MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_")
+_MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_", "set_", "mark_", "cancel_")
 _PERSIAN_SCRIPT_RE = re.compile(r"[\u0600-\u06ff]")
 _NON_PERSIAN_FOREIGN_SCRIPT_RE = re.compile(
     r"[\u0400-\u04ff\u0900-\u097f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]"
@@ -3218,6 +3218,7 @@ class LLMHandler:
             # Internal helpers that pollute the planner's tool vocabulary.
             "no_op",
             "maybe_ask_profile_question",
+            "set_llm_handler",   # internal wiring, not a user-facing tool
         }
         
         tools = []

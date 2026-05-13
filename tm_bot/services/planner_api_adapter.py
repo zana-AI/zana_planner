@@ -19,6 +19,8 @@ from repositories.distractions_repo import DistractionsRepository
 from repositories.profile_repo import ProfileRepository
 from repositories.follows_repo import FollowsRepository
 from repositories.plan_sessions_repo import PlanSessionsRepository
+from repositories.reminders_repo import RemindersRepository
+from services.reminder_dispatch import ReminderDispatchService
 from db.postgres_db import get_db_session, resolve_promise_uuid
 from services.reports import ReportsService
 from services.template_unlocks import TemplateUnlocksService
@@ -85,6 +87,10 @@ class PlannerAPIAdapter:
 
         # Plan sessions
         self.plan_sessions_repo = PlanSessionsRepository()
+
+        # Reminders (recurring fire-at-time pings tied to a promise)
+        self.reminders_repo = RemindersRepository()
+        self.reminder_dispatch = ReminderDispatchService()
 
     # Promise methods
     def add_promise(
@@ -178,6 +184,153 @@ class PlannerAPIAdapter:
         except Exception as e:
             logger.error(f"create_reminder error: {e}")
             return f"Error creating reminder: {str(e)}"
+
+    def create_recurring_reminder(
+        self,
+        user_id,
+        promise_id: str,
+        weekday: int,
+        time_local: str,
+    ) -> str:
+        """Create a weekly recurring reminder ping for a promise.
+
+        Use when the user wants to be pinged on a specific weekday + time every
+        week ('remind me every Tuesday at 9am about the gym', 'ping me Sundays
+        at 8pm to review the week'). Requires a promise_id.
+
+        Never use for one-off reminders (use create_reminder) or to log time
+        (use log_completed_activity).
+
+        Args:
+            promise_id: Promise ID this reminder is tied to (e.g. 'P10')
+            weekday: 0=Monday ... 6=Sunday (Python convention)
+            time_local: 24-hour local time as 'HH:MM' (e.g. '09:00', '20:30')
+        """
+        try:
+            weekday = int(weekday)
+            if weekday < 0 or weekday > 6:
+                return "weekday must be 0 (Monday) through 6 (Sunday)."
+        except (TypeError, ValueError):
+            return "weekday must be an integer 0-6 (Monday=0)."
+
+        time_str = str(time_local or "").strip()
+        if not time_str or ":" not in time_str:
+            return "time_local must be 'HH:MM' (e.g. '09:00')."
+        if len(time_str.split(":")) == 2:
+            time_str = f"{time_str}:00"
+
+        try:
+            with get_db_session() as session:
+                p_uuid = resolve_promise_uuid(session, str(user_id), promise_id)
+            if not p_uuid:
+                return f"Promise '{promise_id}' not found."
+
+            settings = self.settings_repo.get_settings(int(user_id))
+            tz_raw = getattr(settings, "timezone", None)
+            user_tz = tz_raw if tz_raw and tz_raw != "DEFAULT" else "UTC"
+
+            reminder_id = self.reminders_repo.create_reminder({
+                "promise_uuid": p_uuid,
+                "kind": "fixed_time",
+                "weekday": weekday,
+                "time_local": time_str,
+                "tz": user_tz,
+                "enabled": True,
+            })
+            self.reminder_dispatch.update_next_run_times(int(user_id), p_uuid)
+
+            day_name = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekday]
+            return (
+                f"✅ Recurring reminder set for {promise_id}: every "
+                f"{day_name} at {time_str[:5]} ({user_tz}). id={reminder_id}"
+            )
+        except Exception as e:
+            logger.error(f"create_recurring_reminder error: {e}")
+            return f"Error creating recurring reminder: {str(e)}"
+
+    def cancel_reminder(self, user_id, reminder_id: str) -> str:
+        """Cancel (disable) a recurring reminder by its reminder_id.
+
+        Use when the user wants to stop being pinged about something
+        ('stop reminding me about gym', 'cancel that Tuesday reminder').
+        Get reminder_id from list_reminders or the original create_recurring_reminder
+        response. Does NOT delete past one-off reminders created via create_reminder
+        (those are one-time promises; use delete_promise instead).
+
+        Args:
+            reminder_id: UUID of the reminder to disable
+        """
+        try:
+            ok = self.reminders_repo.update_reminder(
+                str(reminder_id), {"enabled": 0}
+            )
+            if not ok:
+                return f"Reminder '{reminder_id}' not found."
+            return f"✅ Reminder {reminder_id} cancelled."
+        except Exception as e:
+            logger.error(f"cancel_reminder error: {e}")
+            return f"Error cancelling reminder: {str(e)}"
+
+    def mark_session_done(self, user_id, session_id: int) -> str:
+        """Mark a scheduled session as completed.
+
+        Use when the user reports finishing a previously-scheduled session
+        ('I did the gym session', 'finished today's study block'). This will
+        also auto-log time on the linked promise if the session had a
+        planned_duration_min. Get session_id from get_upcoming_sessions or
+        get_plan_sessions.
+
+        Args:
+            session_id: Numeric session ID
+        """
+        return self.update_plan_session_status(user_id, session_id, "done")
+
+    def mark_session_skipped(self, user_id, session_id: int) -> str:
+        """Mark a scheduled session as skipped (no time logged).
+
+        Use when the user couldn't or chose not to do a planned session
+        ('skipped this morning's run', 'didn't make it to the study block').
+        Get session_id from get_upcoming_sessions or get_plan_sessions.
+
+        Args:
+            session_id: Numeric session ID
+        """
+        return self.update_plan_session_status(user_id, session_id, "skipped")
+
+    def set_language(self, user_id, language: str) -> str:
+        """Set the user's preferred reply language.
+
+        Use when the user clearly asks to switch language ('speak Persian',
+        'reply in French', 'switch to English'). Pass a 2-letter code:
+        'en', 'fa', 'fr', 'ru', 'ar'. Never call on ambiguous complaints —
+        only when the desired language is unambiguous.
+
+        Args:
+            language: 2-letter language code (e.g. 'en', 'fa', 'fr')
+        """
+        lang = str(language or "").strip().lower()
+        if lang not in {"en", "fa", "fr", "ru", "ar", "es", "de"}:
+            return f"Unsupported language code '{language}'. Use 'en', 'fa', 'fr', 'ru', 'ar'."
+        return self.update_setting(user_id, "language", lang)
+
+    def set_timezone(self, user_id, timezone: str) -> str:
+        """Set the user's timezone (affects all date/time interpretation).
+
+        Use when the user states their timezone ('I'm in Tehran', 'set my tz
+        to Europe/Paris', 'I'm GMT+1'). Pass an IANA tz name like
+        'Asia/Tehran', 'Europe/Paris', 'America/New_York', 'UTC'.
+
+        Args:
+            timezone: IANA timezone name (e.g. 'Asia/Tehran', 'UTC')
+        """
+        tz = str(timezone or "").strip()
+        if not tz:
+            return "timezone is required (e.g. 'Asia/Tehran', 'UTC')."
+        try:
+            ZoneInfo(tz)
+        except Exception:
+            return f"Unknown timezone '{tz}'. Use an IANA name like 'Asia/Tehran' or 'UTC'."
+        return self.update_setting(user_id, "timezone", tz)
 
     def no_op(self, user_id):
         """No-op method for testing purposes."""

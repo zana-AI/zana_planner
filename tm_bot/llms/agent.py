@@ -1508,7 +1508,7 @@ def create_plan_execute_graph(
 
     required_args_by_tool = {name: _required_args_for_tool(t) for name, t in tool_by_name.items()}
 
-    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_")
+    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_", "set_", "mark_", "cancel_")
 
     # Tools that ALWAYS require user confirmation before execution
     ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "create_reminder", "subscribe_template"}
@@ -2408,7 +2408,7 @@ def create_routed_plan_execute_graph(
     """
     tool_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
     
-    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_")
+    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_", "set_", "mark_", "cancel_")
     ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "create_reminder", "subscribe_template"}
 
     # Tools that require confirmation when intent confidence is NOT high
