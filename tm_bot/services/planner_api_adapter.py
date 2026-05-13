@@ -140,10 +140,10 @@ class PlannerAPIAdapter:
         text: str,
         remind_at: str,
     ) -> str:
-        """Create a one-off reminder for a future moment (no hour budget, no tracking).
+        """Create a one-off reminder for a future date.
 
         Use when the user asks to be reminded, or states a one-off task/deadline
-        with a specific future time. Examples:
+        with a future time. Examples:
             'remind me to call mom tonight'
             'I need to send Kamran the work permits by tomorrow evening'
             'یادم بنداز فردا ساعت ۹ به دکتر زنگ بزنم'
@@ -151,6 +151,10 @@ class PlannerAPIAdapter:
         Never use for ongoing goals the user wants to track time against
         (use add_promise) or for past completed activity (use log_completed_activity).
         This tool does NOT need an existing promise_id.
+
+        Storage note: backed by a one-time promise (no hour budget). The reminder
+        surfaces on the user's dashboard and in the nightly digest on its due date;
+        minute-precise time-of-day pings are not yet wired.
 
         Args:
             text: What to remind the user about (short, user-facing)
@@ -169,7 +173,6 @@ class PlannerAPIAdapter:
                 promise_text=text,
                 num_hours_promised_per_week=0.0,
                 recurring=False,
-                start_date=remind_dt.date(),
                 end_date=remind_dt.date(),
             )
         except Exception as e:
