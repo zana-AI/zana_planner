@@ -7,7 +7,27 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 8px; font-family: system-ui, sans-serif; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+    :root {
+      --watch-safe-top: 0px;
+      --watch-safe-right: 0px;
+      --watch-safe-bottom: 0px;
+      --watch-safe-left: 0px;
+      --player-safe-top: max(10px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px), var(--watch-safe-top));
+      --player-safe-right: max(10px, env(safe-area-inset-right, 0px), var(--tg-safe-area-inset-right, 0px), var(--tg-content-safe-area-inset-right, 0px), var(--watch-safe-right));
+      --player-safe-bottom: max(10px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px), var(--watch-safe-bottom));
+      --player-safe-left: max(10px, env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px), var(--tg-content-safe-area-inset-left, 0px), var(--watch-safe-left));
+      --player-control-rail: clamp(56px, 9vw, 78px);
+      --watch-viewport-height: 100dvh;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: 8px;
+      font-family: system-ui, sans-serif;
+      background: var(--tg-theme-bg-color, #fff);
+      color: var(--tg-theme-text-color, #000);
+    }
     .video-title {
       font-size: 15px;
       font-weight: 600;
@@ -55,18 +75,28 @@
       max-height: 160px;
       overflow: auto;
     }
-    /* Landscape / immersive mode — mobile only */
+    /* Landscape / immersive mode: mobile only */
     /* Desktop fullscreen mode shares the same immersive layout */
     body.landscape,
-    body.desktop-fullscreen { padding: 0; background: #000; overflow: hidden; }
+    body.desktop-fullscreen {
+      min-height: var(--watch-viewport-height);
+      padding: 0;
+      background: #000;
+      overflow: hidden;
+    }
     body.landscape .video-wrap,
     body.desktop-fullscreen .video-wrap {
       position: fixed;
-      inset: 0;
-      width: 100vw;
-      height: 100vh;
+      inset:
+        var(--player-safe-top)
+        calc(var(--player-control-rail) + var(--player-safe-right))
+        var(--player-safe-bottom)
+        var(--player-safe-left);
+      width: auto;
+      height: auto;
       padding-bottom: 0;
       z-index: 10;
+      background: #000;
     }
     body.landscape .video-title,
     body.landscape .progress-container,
@@ -78,28 +108,62 @@
     body.desktop-fullscreen .hint,
     body.desktop-fullscreen .controls,
     body.desktop-fullscreen .debug { display: none; }
-    /* Floating action buttons — appear over the video in immersive modes */
-    .float-btn {
+    /* App controls live outside the iframe so they do not cover YouTube controls. */
+    .immersive-controls {
       display: none;
       position: fixed;
       z-index: 200;
-      padding: 7px 16px;
+      top: var(--player-safe-top);
+      right: var(--player-safe-right);
+      bottom: var(--player-safe-bottom);
+      width: calc(var(--player-control-rail) - 8px);
+      min-width: 48px;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      gap: 10px;
+      pointer-events: none;
+    }
+    body.landscape .immersive-controls,
+    body.desktop-fullscreen .immersive-controls {
+      display: flex;
+    }
+    body.desktop-fullscreen .immersive-controls {
+      justify-content: space-between;
+    }
+    .float-btn {
+      display: none;
+      position: static;
+      width: 100%;
+      min-height: 44px;
+      padding: 0 8px;
       background: rgba(0, 0, 0, 0.55);
       color: #fff;
       border: 1.5px solid rgba(255, 255, 255, 0.45);
-      border-radius: 20px;
-      font-size: 14px;
+      border-radius: 10px;
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       touch-action: manipulation;
+      pointer-events: auto;
+      line-height: 1.1;
+      white-space: normal;
     }
-    #floatDoneBtn { bottom: 14px; right: 14px; }
-    #floatExitBtn { top: 14px; right: 14px; }
+    .float-btn:active { transform: translateY(1px); }
     body.landscape #floatDoneBtn { display: block; }
     body.desktop-fullscreen #floatDoneBtn { display: block; }
     body.desktop-fullscreen #floatExitBtn { display: block; }
+    @media (max-height: 380px) and (orientation: landscape) {
+      :root { --player-control-rail: 54px; }
+      .immersive-controls { gap: 8px; width: 48px; }
+      .float-btn {
+        min-height: 40px;
+        padding: 0 5px;
+        font-size: 12px;
+      }
+    }
     /* Expand / fullscreen toggle button — shown in the controls bar */
     .expand-btn {
       padding: 5px 10px;
@@ -129,14 +193,16 @@
       Track
     </label>
     <span class="hint">Track watched segments (polling fallback).</span>
-    <button id="expandBtn" class="expand-btn" hidden>⛶ Expand</button>
+    <button id="expandBtn" class="expand-btn" hidden>Expand</button>
   </div>
   <pre id="debugLog" class="debug" hidden></pre>
 
-  <!-- Floating Done button: shown over the video in landscape / fullscreen modes -->
-  <button id="floatDoneBtn" class="float-btn">✓ Done</button>
-  <!-- Floating Exit button: shown over the video in desktop fullscreen mode -->
-  <button id="floatExitBtn" class="float-btn">✕ Exit fullscreen</button>
+  <div id="immersiveControls" class="immersive-controls" aria-label="Player controls">
+    <!-- Floating Done button: shown beside the video in landscape / fullscreen modes -->
+    <button id="floatDoneBtn" class="float-btn" title="Done" aria-label="Done">Done</button>
+    <!-- Floating Exit button: shown beside the video in desktop fullscreen mode -->
+    <button id="floatExitBtn" class="float-btn" title="Exit fullscreen" aria-label="Exit fullscreen">Exit</button>
+  </div>
 
   <script>
 (function() {
@@ -189,6 +255,47 @@
   window.addEventListener("unhandledrejection", function(e) {
     dlog("unhandledrejection: " + (e && e.reason ? String(e.reason) : "unknown"));
   });
+
+  function setRootPxVar(name, value) {
+    var n = Number(value);
+    if (!isFinite(n) || n < 0) return;
+    document.documentElement.style.setProperty(name, n + "px");
+  }
+
+  function syncTelegramLayoutVars() {
+    try {
+      if (!window.Telegram || !window.Telegram.WebApp) return;
+      var webApp = window.Telegram.WebApp;
+      if (typeof webApp.viewportHeight === "number" && webApp.viewportHeight > 0) {
+        setRootPxVar("--watch-viewport-height", webApp.viewportHeight);
+      }
+      var safe = webApp.safeAreaInset || {};
+      var contentSafe = webApp.contentSafeAreaInset || {};
+      ["top", "right", "bottom", "left"].forEach(function(side) {
+        var safeValue = Number(safe[side]) || 0;
+        var contentValue = Number(contentSafe[side]) || 0;
+        setRootPxVar("--watch-safe-" + side, Math.max(safeValue, contentValue));
+      });
+    } catch (e) {
+      dlog("layout sync failed: " + e);
+    }
+  }
+
+  function installTelegramLayoutSync() {
+    syncTelegramLayoutVars();
+    try {
+      if (!window.Telegram || !window.Telegram.WebApp || typeof window.Telegram.WebApp.onEvent !== "function") return;
+      var webApp = window.Telegram.WebApp;
+      ["viewportChanged", "safeAreaChanged", "contentSafeAreaChanged", "fullscreenChanged"].forEach(function(eventName) {
+        webApp.onEvent(eventName, function() {
+          syncTelegramLayoutVars();
+          if (eventName === "fullscreenChanged") setTimeout(updateOrientationMode, 0);
+        });
+      });
+    } catch (e) {
+      dlog("layout event install failed: " + e);
+    }
+  }
 
   function requestTelegramFullscreen() {
     try {
@@ -254,6 +361,7 @@
   }
 
   function updateOrientationMode() {
+    syncTelegramLayoutVars();
     // Only apply immersive landscape mode on mobile devices. On desktop the
     // fixed-position overlay covers the window's resize handles and freezes them.
     if (!isMobileDevice) return;
@@ -288,10 +396,17 @@
     }
   }
 
+  installTelegramLayoutSync();
   window.addEventListener("orientationchange", function() {
-    setTimeout(updateOrientationMode, 120);
+    setTimeout(function() {
+      syncTelegramLayoutVars();
+      updateOrientationMode();
+    }, 120);
   });
-  window.addEventListener("resize", updateOrientationMode);
+  window.addEventListener("resize", function() {
+    syncTelegramLayoutVars();
+    updateOrientationMode();
+  });
   updateOrientationMode();
 
   if (!videoId) {
@@ -586,6 +701,7 @@
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
+    syncTelegramLayoutVars();
     setTimeout(updateOrientationMode, 60);
     window.Telegram.WebApp.MainButton.setText('Done').show().onClick(handleDone);
   }
@@ -639,6 +755,7 @@
 
   // Keep desktop-fullscreen class in sync with the browser's actual fullscreen state.
   function onFullscreenChange() {
+    syncTelegramLayoutVars();
     if (!document.fullscreenElement && !document.webkitFullscreenElement) {
       document.body.classList.remove('desktop-fullscreen');
       try {
