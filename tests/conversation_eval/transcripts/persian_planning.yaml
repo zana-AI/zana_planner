@@ -1,0 +1,144 @@
+# -*- coding: utf-8 -*-
+# Regression coverage for the planner facade refactor:
+# - create_reminder routing (not search_promises) for "Reminder X for tonight"
+# - schedule_session routing for future-tense Persian intents
+# - parenthetical-stripping in resolve_datetime survives Persian script
+# - log_completed_activity baseline (rename from add_action)
+# - schedule_session end-to-end with FROM_TOOL placeholder
+name: persian_planning
+description: Persian + mixed-language planning routes to the right facade tool
+tier: 1
+setup:
+  - add_promise:
+      promise_text: Reading
+      num_hours_promised_per_week: 2
+      recurring: true
+  - add_promise:
+      promise_text: Exercise
+      num_hours_promised_per_week: 3
+      recurring: true
+turns:
+  # 1. "Reminder Kamran ... For tonight" — must go to create_reminder, not log/search
+  - user: "Reminder Kamran: send work permits. For tonight."
+    expect_pending_clarification: true
+    execute_pending: true
+    plan:
+      steps:
+        - kind: tool
+          purpose: Resolve datetime for tonight.
+          tool_name: resolve_datetime
+          tool_args:
+            datetime_text: tonight
+        - kind: tool
+          purpose: Create one-off reminder for sending work permits to Kamran.
+          tool_name: create_reminder
+          tool_args:
+            text: send Kamran the work permits
+            remind_at: "FROM_TOOL:resolve_datetime:"
+        - kind: respond
+          purpose: Confirm reminder set.
+          response_hint: Confirm reminder.
+      detected_intent: CREATE_REMINDER
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+
+  # 2. Future-tense Persian: schedule a session, do NOT log
+  - user: "فردا باید ورزش کنم"
+    expect_pending_clarification: true
+    execute_pending: true
+    plan:
+      steps:
+        - kind: tool
+          purpose: Resolve datetime for tomorrow.
+          tool_name: resolve_datetime
+          tool_args:
+            datetime_text: tomorrow
+        - kind: tool
+          purpose: Schedule exercise session for tomorrow.
+          tool_name: schedule_session
+          tool_args:
+            promise_id: P02
+            planned_start: "FROM_TOOL:resolve_datetime:"
+            planned_duration_min: 60
+        - kind: respond
+          purpose: Confirm scheduled session.
+          response_hint: Confirm session scheduled.
+      detected_intent: PLAN_SESSION
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+
+  # 3. Persian parenthetical time — resolver must strip parens, planner translates phrase
+  - user: "فردا میخام برم سینما (ساعت 8 و نیم شب)"
+    expect_pending_clarification: true
+    execute_pending: true
+    plan:
+      steps:
+        - kind: tool
+          purpose: Resolve datetime for tomorrow 8:30pm.
+          tool_name: resolve_datetime
+          tool_args:
+            datetime_text: tomorrow 8:30 PM
+        - kind: tool
+          purpose: Create cinema reminder for tomorrow evening.
+          tool_name: create_reminder
+          tool_args:
+            text: go to the cinema
+            remind_at: "FROM_TOOL:resolve_datetime:"
+        - kind: respond
+          purpose: Confirm reminder set.
+          response_hint: Confirm reminder.
+      detected_intent: CREATE_REMINDER
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+
+  # 4. English log baseline — verifies log_completed_activity routes and confirms
+  - user: "I just did 2 hours of reading"
+    expect_pending_clarification: true
+    execute_pending: true
+    plan:
+      steps:
+        - kind: tool
+          purpose: Log 2 hours of reading on P01.
+          tool_name: log_completed_activity
+          tool_args:
+            promise_id: P01
+            time_spent: 2.0
+        - kind: respond
+          purpose: Confirm logged.
+          response_hint: Confirm time logged.
+      detected_intent: LOG_ACTION
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+
+  # 5. English schedule baseline — covers schedule_session with FROM_TOOL chain
+  - user: "exercise tomorrow at 7pm for 1 hour"
+    expect_pending_clarification: true
+    execute_pending: true
+    plan:
+      steps:
+        - kind: tool
+          purpose: Resolve datetime for tomorrow 7pm.
+          tool_name: resolve_datetime
+          tool_args:
+            datetime_text: tomorrow 7pm
+        - kind: tool
+          purpose: Schedule exercise session for tomorrow evening.
+          tool_name: schedule_session
+          tool_args:
+            promise_id: P02
+            planned_start: "FROM_TOOL:resolve_datetime:"
+            planned_duration_min: 60
+        - kind: respond
+          purpose: Confirm session scheduled.
+          response_hint: Confirm scheduled.
+      detected_intent: PLAN_SESSION
+      intent_confidence: high
+      safety: { requires_confirmation: false }
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 2
+    action_on_promise:
+      promise_id: P01
+      time_spent: 2.0

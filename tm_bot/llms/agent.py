@@ -680,6 +680,83 @@ def _fallback_datetime_text_from_user_text(text: str) -> Optional[str]:
     return source or None
 
 
+_PURPOSE_PREFIX_RE = re.compile(r"^\s*(step\s*\d+\s*[:.\-]\s*|purpose\s*[:\-]\s*)", re.IGNORECASE)
+
+
+def _sanitize_purpose(purpose: Optional[str]) -> str:
+    """Trim and sanitize LLM-authored step purpose for display in confirmation previews."""
+    if not purpose:
+        return ""
+    text = _PURPOSE_PREFIX_RE.sub("", str(purpose)).strip().rstrip(".")
+    return text[:80]
+
+
+def _describe_action(
+    tool_name: str,
+    tool_args: dict,
+    step_purpose: Optional[str] = None,
+) -> str:
+    """Render a short user-facing description of a planned mutation for the confirmation preview.
+
+    Falls back to a sanitized step.purpose when the tool isn't specifically known,
+    only using the generic 'perform the requested action' as a last resort.
+    """
+    tool_args = tool_args or {}
+
+    def _items_count() -> int:
+        items = tool_args.get("items")
+        try:
+            return len(items) if isinstance(items, list) else 0
+        except Exception:
+            return 0
+
+    if tool_name in ("log_completed_activity", "add_action"):
+        promise_id = tool_args.get("promise_id", "a promise")
+        time_spent = tool_args.get("time_spent", "some time")
+        return f"log {time_spent} hour(s) on {promise_id}"
+    if tool_name in ("create_promise", "add_promise"):
+        promise_text = tool_args.get("text", tool_args.get("promise_text", "a promise"))
+        return f"create a new promise: '{promise_text}'"
+    if tool_name == "create_reminder":
+        text = tool_args.get("text", "that")
+        when = tool_args.get("remind_at", "the requested time")
+        return f"set a reminder to '{text}' at {when}"
+    if tool_name == "create_recurring_reminder":
+        return f"set up a weekly reminder for {tool_args.get('promise_id', 'a promise')}"
+    if tool_name == "cancel_reminder":
+        return f"cancel reminder {tool_args.get('reminder_id', '')}".strip()
+    if tool_name in ("schedule_session", "add_plan_session"):
+        promise_id = tool_args.get("promise_id", "a promise")
+        start = tool_args.get("planned_start", "the requested time")
+        return f"schedule a session on {promise_id} at {start}"
+    if tool_name == "mark_session_done":
+        return f"mark session {tool_args.get('session_id', '')} as done".strip()
+    if tool_name == "mark_session_skipped":
+        return f"mark session {tool_args.get('session_id', '')} as skipped".strip()
+    if tool_name == "set_language":
+        return f"set language to {tool_args.get('language', '')}".strip()
+    if tool_name == "set_timezone":
+        return f"set timezone to {tool_args.get('timezone', '')}".strip()
+    if tool_name == "subscribe_template":
+        return f"subscribe to template: '{tool_args.get('template_id', 'a template')}'"
+    if tool_name == "delete_promise":
+        return f"delete promise {tool_args.get('promise_id', 'a promise')}"
+    if tool_name == "update_setting":
+        return f"change {tool_args.get('setting_key', 'a setting')} to {tool_args.get('setting_value', '')}"
+    if tool_name == "schedule_sessions":
+        n = _items_count()
+        return f"schedule {n} future session{'s' if n != 1 else ''}"
+    if tool_name == "log_completed_activities":
+        n = _items_count()
+        return f"log {n} completed activit{'ies' if n != 1 else 'y'}"
+    if tool_name == "create_reminders":
+        n = _items_count()
+        return f"create {n} reminder{'s' if n != 1 else ''}"
+
+    sanitized = _sanitize_purpose(step_purpose)
+    return sanitized or "perform the requested action"
+
+
 def _env_int(name: str, default: int, minimum: int = 0) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -2233,29 +2310,8 @@ def create_plan_execute_graph(
             )
             
             if needs_confirmation:
-                # Build a confirmation question that describes what will happen
-                detected_intent = state.get("detected_intent") or "this action"
-                action_description = f"perform {str(detected_intent).lower()}"
-                if tool_name in ("log_completed_activity", "add_action"):
-                    promise_id = tool_args.get("promise_id", "a promise")
-                    time_spent = tool_args.get("time_spent", "some time")
-                    action_description = f"log {time_spent} hour(s) on {promise_id}"
-                elif tool_name == "create_promise" or tool_name == "add_promise":
-                    promise_text = tool_args.get("text", tool_args.get("promise_text", "a promise"))
-                    action_description = f"create a new promise: '{promise_text}'"
-                elif tool_name == "subscribe_template":
-                    template_id = tool_args.get("template_id", "a template")
-                    action_description = f"subscribe to template: '{template_id}'"
-                elif tool_name == "delete_promise":
-                    promise_id = tool_args.get("promise_id", "a promise")
-                    action_description = f"delete promise {promise_id}"
-                elif tool_name == "update_setting":
-                    setting_key = tool_args.get("setting_key", "a setting")
-                    setting_value = tool_args.get("setting_value", "")
-                    action_description = f"change {setting_key} to {setting_value}"
-                else:
-                    action_description = "perform the requested action"
-                
+                action_description = _describe_action(tool_name, tool_args, step.purpose)
+
                 # Accumulate into batch queue; all pending mutations will be
                 # presented together as a numbered list at the respond step.
                 _batch_item = {
@@ -3486,28 +3542,8 @@ def create_routed_plan_execute_graph(
             )
             
             if needs_confirmation:
-                detected_intent = state.get("detected_intent") or "this action"
-                action_description = f"perform {str(detected_intent).lower()}"
-                if tool_name in ("log_completed_activity", "add_action"):
-                    promise_id = tool_args.get("promise_id", "a promise")
-                    time_spent = tool_args.get("time_spent", "some time")
-                    action_description = f"log {time_spent} hour(s) on {promise_id}"
-                elif tool_name == "create_promise" or tool_name == "add_promise":
-                    promise_text = tool_args.get("text", tool_args.get("promise_text", "a promise"))
-                    action_description = f"create a new promise: '{promise_text}'"
-                elif tool_name == "subscribe_template":
-                    template_id = tool_args.get("template_id", "a template")
-                    action_description = f"subscribe to template: '{template_id}'"
-                elif tool_name == "delete_promise":
-                    promise_id = tool_args.get("promise_id", "a promise")
-                    action_description = f"delete promise {promise_id}"
-                elif tool_name == "update_setting":
-                    setting_key = tool_args.get("setting_key", "a setting")
-                    setting_value = tool_args.get("setting_value", "")
-                    action_description = f"change {setting_key} to {setting_value}"
-                else:
-                    action_description = "perform the requested action"
-                
+                action_description = _describe_action(tool_name, tool_args, step.purpose)
+
                 # Accumulate into batch queue; all pending mutations will be
                 # presented together as a numbered list at the respond step.
                 _batch_item = {

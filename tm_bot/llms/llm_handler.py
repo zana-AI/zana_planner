@@ -1400,7 +1400,8 @@ class LLMHandler:
             "- LOG_ACTION: past-tense, ALREADY-DONE activity ('I did X', 'worked on Y', 'spent Z hours', 'just finished'). Tool: log_completed_activity.\n"
             "- CREATE_PROMISE: a new ONGOING goal the user wants to track time against over weeks ('I want to read 5h/week'). Tool: add_promise.\n"
             "- CREATE_REMINDER: a one-off future task or deadline with no hour budget ('remind me to X tonight', 'I need to send Y tomorrow', 'reminder: …'). Tool: create_reminder.\n"
-            "- PLAN_SESSION: schedule a future time block tied to an existing promise ('gym tomorrow 1hr', 'study session Friday 2h'). Tool: schedule_session.\n"
+            "- PLAN_SESSION: schedule a future block tied to an existing promise ('gym tomorrow 1hr'). Tool: schedule_session.\n"
+            "- PLAN_DAY: user lists 2+ things in one message — use the plural batch tools (schedule_sessions, create_reminders, log_completed_activities).\n"
             "- UPDATE_ACTION / DELETE_ACTION / UPDATE_PROMISE / DELETE_PROMISE: modify or remove existing data\n"
             "- QUERY_PROGRESS: reports, streaks, totals\n"
             "- SETTINGS: language, timezone, notification changes\n"
@@ -1453,13 +1454,6 @@ class LLMHandler:
             "{\"kind\":\"respond\",\"purpose\":\"Confirm reminder set\"}"
             "],\"detected_intent\":\"CREATE_REMINDER\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
 
-            "User: 'Reminder: send Kamran the work permits tonight'\n"
-            "{\"steps\":["
-            "{\"kind\":\"tool\",\"purpose\":\"Resolve datetime\",\"tool_name\":\"resolve_datetime\",\"tool_args\":{\"datetime_text\":\"tonight\"}},"
-            "{\"kind\":\"tool\",\"purpose\":\"Create one-off reminder\",\"tool_name\":\"create_reminder\","
-            "\"tool_args\":{\"text\":\"send Kamran the work permits\",\"remind_at\":\"FROM_TOOL:resolve_datetime:\"}},"
-            "{\"kind\":\"respond\",\"purpose\":\"Confirm reminder set\"}"
-            "],\"detected_intent\":\"CREATE_REMINDER\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
             "User: 'add a promise to drink water 10 minutes a day'\n"
             "{\"steps\":["
             "{\"kind\":\"tool\",\"purpose\":\"Create water drinking promise\",\"tool_name\":\"add_promise\","
@@ -1476,11 +1470,15 @@ class LLMHandler:
             "{\"kind\":\"respond\",\"purpose\":\"Confirm session scheduled\"}"
             "],\"detected_intent\":\"PLAN_SESSION\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
 
-            "User: 'what sessions do I have this week'\n"
+            "User: 'tomorrow: cinema 8:30pm, work on Zana, exercise, call family'\n"
             "{\"steps\":["
-            "{\"kind\":\"tool\",\"purpose\":\"Get upcoming sessions\",\"tool_name\":\"get_upcoming_sessions\",\"tool_args\":{\"days_ahead\":7}},"
-            "{\"kind\":\"respond\",\"purpose\":\"List sessions to user\"}"
-            "],\"detected_intent\":\"PLAN_SESSION\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n"
+            "{\"kind\":\"tool\",\"tool_name\":\"create_reminders\",\"tool_args\":{\"items\":[{\"text\":\"cinema\",\"remind_at\":\"tomorrow 8:30pm\"}]}},"
+            "{\"kind\":\"tool\",\"tool_name\":\"schedule_sessions\",\"tool_args\":{\"items\":["
+            "{\"promise_query\":\"Zana\",\"when\":\"tomorrow 9am\",\"duration_min\":480},"
+            "{\"promise_query\":\"exercise\",\"when\":\"tomorrow 2pm\",\"duration_min\":60},"
+            "{\"promise_query\":\"family\",\"when\":\"tomorrow 7pm\",\"duration_min\":30}]}},"
+            "{\"kind\":\"respond\",\"purpose\":\"Confirm day plan\"}"
+            "],\"detected_intent\":\"PLAN_DAY\",\"intent_confidence\":\"high\"}\n"
         )
         
         # Store base prompt for mode-specific variants
@@ -1494,7 +1492,7 @@ class LLMHandler:
             mode_directive = (
                 "=== MODE: OPERATOR ===\n"
                 "You are in OPERATOR mode: handle transactional actions (promises, actions, settings).\n"
-                "You can use all tools including mutations (add_promise, create_reminder, schedule_session, log_completed_activity, update_setting, etc.).\n"
+                "You can use all tools including mutations (add_promise, create_reminder(s), schedule_session(s), log_completed_activit(y|ies), update_setting, etc.).\n"
                 "Be action-oriented and execute user requests directly.\n\n"
             )
         elif mode == "strategist":
@@ -3219,6 +3217,18 @@ class LLMHandler:
             "no_op",
             "maybe_ask_profile_question",
             "set_llm_handler",   # internal wiring, not a user-facing tool
+            # Async wrappers — the LLM should call the sync method instead.
+            "async_get_settings",
+            "async_save_settings",
+            "async_get_promises",
+            "async_get_promise_report",
+            "async_get_weekly_summary",
+            # Redundant DataFrame variant; get_actions covers the LLM use case.
+            "get_actions_df",
+            # Background content-pipeline helpers; called from non-LLM code paths.
+            "process_shared_link",
+            "estimate_time_for_content",
+            "summarize_content",
         }
         
         tools = []

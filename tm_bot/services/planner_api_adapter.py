@@ -4,6 +4,7 @@ while using the new repository and service layers underneath.
 """
 import asyncio
 import json
+import re
 from datetime import datetime, date
 from typing import List, Dict, Optional, Any, Union
 from zoneinfo import ZoneInfo
@@ -40,6 +41,33 @@ from models.enums import ActionType
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+_PROMISE_ID_PATTERN = re.compile(r"\b([PT]\d{1,5})\b")
+
+
+def _extract_first_promise_id(search_result: str) -> Optional[str]:
+    """Pull the first 'P12'/'T03'-style id out of a search_promises text result."""
+    if not search_result:
+        return None
+    m = _PROMISE_ID_PATTERN.search(str(search_result))
+    return m.group(1) if m else None
+
+
+def _short_item_label(item: Dict[str, Any], default: str, text_key: str = "promise_query") -> str:
+    """Render a brief label for a batch item, used in success/failure summaries."""
+    label = str(item.get(text_key) or item.get("promise") or item.get("text") or default).strip()
+    return label[:40] if label else default
+
+
+def _format_batch_summary(action_noun: str, ok: List[str], failed: List[str], total: int) -> str:
+    """Return a compact human-readable batch result string."""
+    parts = [f"✅ {len(ok)}/{total} {action_noun}"]
+    if ok:
+        parts.append(f" ({', '.join(ok)})")
+    if failed:
+        parts.append(f". Failed: {'; '.join(failed)}")
+    return "".join(parts) + "."
 
 
 class PlannerAPIAdapter:
@@ -102,7 +130,7 @@ class PlannerAPIAdapter:
         start_date: Optional[Union[date, datetime, str]] = None,
         end_date: Optional[Union[date, datetime, str]] = None,
     ):
-        """Add a new promise."""
+        """Create an ongoing tracked goal with a weekly hour budget. Use for 'I want to read 5h/week'."""
         try:
             if user_id is None:
                 raise ValueError("user_id is required and cannot be None")
@@ -271,6 +299,172 @@ class PlannerAPIAdapter:
             logger.error(f"cancel_reminder error: {e}")
             return f"Error cancelling reminder: {str(e)}"
 
+    def schedule_sessions(self, user_id, items: List[Dict[str, Any]]) -> str:
+        """Schedule MULTIPLE future sessions in ONE call. Use when the user lists 2+ activities to plan.
+
+        Each item: {promise_query: str, when: str, duration_min: int, title?: str}.
+        Internally resolves `when` via resolve_datetime, finds promise_id via search_promises,
+        then calls schedule_session. Items that fail (no matching promise / unparseable time)
+        are reported but don't abort the rest.
+
+        Use schedule_session (singular) for a single session.
+
+        Args:
+            items: List of session specs.
+        """
+        if not isinstance(items, list) or not items:
+            return "items must be a non-empty list."
+        if len(items) == 1:
+            it = items[0] or {}
+            return self._schedule_one_session(user_id, it)
+
+        ok, failed = [], []
+        for idx, it in enumerate(items):
+            it = it or {}
+            try:
+                msg = self._schedule_one_session(user_id, it)
+                if str(msg).lstrip().startswith(("✅", "Session", "#")):
+                    ok.append(_short_item_label(it, "session"))
+                else:
+                    failed.append(f"{_short_item_label(it, 'session')} ({msg})")
+            except Exception as e:
+                logger.error(f"schedule_sessions item {idx} error: {e}")
+                failed.append(f"{_short_item_label(it, 'session')} ({e})")
+
+        return _format_batch_summary("sessions scheduled", ok, failed, total=len(items))
+
+    def _schedule_one_session(self, user_id, item: Dict[str, Any]) -> str:
+        promise_query = item.get("promise_query") or item.get("promise") or ""
+        when = item.get("when") or item.get("planned_start") or ""
+        duration_min = item.get("duration_min") or item.get("planned_duration_min")
+        title = item.get("title")
+
+        if not promise_query:
+            return "no promise_query provided."
+        if not when:
+            return "no 'when' provided."
+
+        promise_id = item.get("promise_id") or _extract_first_promise_id(
+            self.search_promises(user_id, str(promise_query))
+        )
+        if not promise_id:
+            return f"no promise matched '{promise_query}'."
+
+        resolved_when = item.get("planned_start") or self.resolve_datetime(user_id, str(when))
+        if resolved_when.lower().startswith(("could not parse", "error")):
+            return resolved_when
+
+        return self.schedule_session(
+            user_id=user_id,
+            promise_id=promise_id,
+            title=title,
+            planned_start=resolved_when,
+            planned_duration_min=duration_min,
+        )
+
+    def log_completed_activities(self, user_id, items: List[Dict[str, Any]]) -> str:
+        """Log MULTIPLE completed activities in ONE call. Use when the user reports 2+ done things.
+
+        Each item: {promise_query: str, time_spent: float, happened_at?: str, notes?: str}.
+        Past-tense only — never for future plans (use schedule_sessions) or reminders.
+        Use log_completed_activity (singular) for a single entry.
+
+        Args:
+            items: List of activity logs.
+        """
+        if not isinstance(items, list) or not items:
+            return "items must be a non-empty list."
+        if len(items) == 1:
+            return self._log_one_activity(user_id, items[0] or {})
+
+        ok, failed = [], []
+        for idx, it in enumerate(items):
+            it = it or {}
+            try:
+                msg = self._log_one_activity(user_id, it)
+                if "logged" in str(msg).lower():
+                    ok.append(_short_item_label(it, "activity"))
+                else:
+                    failed.append(f"{_short_item_label(it, 'activity')} ({msg})")
+            except Exception as e:
+                logger.error(f"log_completed_activities item {idx} error: {e}")
+                failed.append(f"{_short_item_label(it, 'activity')} ({e})")
+
+        return _format_batch_summary("activities logged", ok, failed, total=len(items))
+
+    def _log_one_activity(self, user_id, item: Dict[str, Any]) -> str:
+        promise_query = item.get("promise_query") or item.get("promise") or ""
+        time_spent = item.get("time_spent")
+        happened_at = item.get("happened_at") or item.get("action_datetime")
+        notes = item.get("notes")
+
+        if time_spent is None:
+            return "no time_spent provided."
+
+        promise_id = item.get("promise_id") or _extract_first_promise_id(
+            self.search_promises(user_id, str(promise_query))
+        )
+        if not promise_id:
+            return f"no promise matched '{promise_query}'."
+
+        resolved_when = None
+        if happened_at:
+            resolved_when = self.resolve_datetime(user_id, str(happened_at))
+            if resolved_when.lower().startswith(("could not parse", "error")):
+                return resolved_when
+
+        return self.log_completed_activity(
+            user_id=user_id,
+            promise_id=promise_id,
+            time_spent=time_spent,
+            action_datetime=resolved_when,
+            notes=notes,
+        )
+
+    def create_reminders(self, user_id, items: List[Dict[str, Any]]) -> str:
+        """Create MULTIPLE one-off reminders in ONE call. Use when the user lists 2+ things to remember.
+
+        Each item: {text: str, remind_at: str}.
+        Use create_reminder (singular) for a single reminder.
+
+        Args:
+            items: List of reminder specs.
+        """
+        if not isinstance(items, list) or not items:
+            return "items must be a non-empty list."
+        if len(items) == 1:
+            return self._create_one_reminder(user_id, items[0] or {})
+
+        ok, failed = [], []
+        for idx, it in enumerate(items):
+            it = it or {}
+            try:
+                msg = self._create_one_reminder(user_id, it)
+                if "added successfully" in str(msg).lower() or str(msg).startswith("#"):
+                    ok.append(_short_item_label(it, "reminder", text_key="text"))
+                else:
+                    failed.append(f"{_short_item_label(it, 'reminder', text_key='text')} ({msg})")
+            except Exception as e:
+                logger.error(f"create_reminders item {idx} error: {e}")
+                failed.append(f"{_short_item_label(it, 'reminder', text_key='text')} ({e})")
+
+        return _format_batch_summary("reminders set", ok, failed, total=len(items))
+
+    def _create_one_reminder(self, user_id, item: Dict[str, Any]) -> str:
+        text = item.get("text") or ""
+        remind_at = item.get("remind_at") or item.get("when") or ""
+        if not text:
+            return "no text provided."
+        if not remind_at:
+            return "no remind_at provided."
+
+        resolved = remind_at
+        if not str(remind_at).startswith(("20", "19")):
+            resolved = self.resolve_datetime(user_id, str(remind_at))
+            if resolved.lower().startswith(("could not parse", "error")):
+                return resolved
+        return self.create_reminder(user_id=user_id, text=text, remind_at=resolved)
+
     def mark_session_done(self, user_id, session_id: int) -> str:
         """Mark a scheduled session as completed.
 
@@ -341,7 +535,7 @@ class PlannerAPIAdapter:
         return self.promises_repo.get_promise(user_id, promise_id)
 
     def get_promises(self, user_id) -> List[Dict]:
-        """Get all promises for a user (legacy format)."""
+        """List the user's promises (id, text, weekly hours, dates). Use to look up promise_ids."""
         promises = self.promises_repo.list_promises(user_id)
         return [self._promise_to_dict(p) for p in promises]
     
@@ -350,7 +544,7 @@ class PlannerAPIAdapter:
         return len(self.promises_repo.list_promises(user_id))
 
     def delete_promise(self, user_id, promise_id: str):
-        """Delete a promise."""
+        """Delete a promise by id. Always require user confirmation first."""
         # Check if promise exists first (case-insensitive)
         promise = self.promises_repo.get_promise(user_id, promise_id)
         if not promise:
@@ -407,8 +601,7 @@ class PlannerAPIAdapter:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
     ) -> str:
-        """
-        Update an existing promise (PATCH-style).
+        """Update an existing promise's text, hours/week, recurrence, or dates (only sets fields you pass).
 
         Args:
             promise_id: Promise identifier (case-insensitive).
@@ -417,9 +610,6 @@ class PlannerAPIAdapter:
             recurring: Whether this promise is recurring.
             start_date: Optional new start date.
             end_date: Optional new end date.
-
-        Returns:
-            Human-readable confirmation message.
         """
         promise = self.promises_repo.get_promise(user_id, promise_id)
         if not promise:
@@ -557,7 +747,7 @@ class PlannerAPIAdapter:
         return round(weekly_hours / (promise.hours_per_week + 1e-6), 2)
 
     def get_weekly_report(self, user_id, reference_time: Optional[datetime] = None):
-        """Get weekly report text for a user."""
+        """Get the user's weekly progress report (hours logged vs promised per goal)."""
         if not reference_time:
             reference_time = datetime.now()
         
@@ -637,7 +827,7 @@ class PlannerAPIAdapter:
         return None
 
     def update_setting(self, user_id, setting_key, setting_value):
-        """Update user setting."""
+        """Update a low-level user setting by key/value. Prefer set_language or set_timezone."""
         settings = self.settings_repo.get_settings(user_id)
         
         if setting_key == 'timezone':
@@ -696,7 +886,7 @@ class PlannerAPIAdapter:
 
     # Query and statistics methods
     def search_promises(self, user_id, query: str) -> str:
-        """Search promises by text (case-insensitive substring match)."""
+        """Find a user's promise_id by free-text query. Use when promise_id is unknown."""
         if not query or not query.strip():
             return "Please provide a search term."
         
@@ -1216,7 +1406,7 @@ class PlannerAPIAdapter:
             return f"Error subscribing to template: {str(e)}"
     
     def add_checkin(self, user_id, promise_id: str, action_datetime: Optional[datetime] = None) -> str:
-        """Record a check-in for a promise (count-based templates)."""
+        """Record a yes/no check-in for a count-based promise. Use 'I did it today'-style messages."""
         try:
             # Verify promise exists
             promise = self.promises_repo.get_promise(user_id, promise_id)
@@ -1241,7 +1431,7 @@ class PlannerAPIAdapter:
             return f"Error recording check-in: {str(e)}"
     
     def resolve_datetime(self, user_id, datetime_text: str) -> str:
-        """Resolve a relative date/time phrase (e.g., 'tomorrow at 3pm', 'tonight', 'end of March', 'in 2 months', 'فردا ساعت ۳') to an absolute datetime (ISO format: YYYY-MM-DDTHH:MM:SS)."""
+        """Resolve a date/time phrase ('tomorrow 3pm', 'tonight', 'end of March') to an ISO datetime."""
         try:
             import dateparser
             import re
