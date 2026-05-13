@@ -76,7 +76,7 @@ _DEBUG_FOOTER_TO_USER = os.getenv("LLM_DEBUG_USER_FOOTER", "0") == "1"
 
 # Generic, user-safe LLM failure message (avoid leaking provider internals).
 _LLM_USER_FACING_ERROR = "I'm having trouble right now. Please try again in a moment."
-_MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
+_MUTATION_TOOL_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_")
 _PERSIAN_SCRIPT_RE = re.compile(r"[\u0600-\u06ff]")
 _NON_PERSIAN_FOREIGN_SCRIPT_RE = re.compile(
     r"[\u0400-\u04ff\u0900-\u097f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]"
@@ -199,7 +199,7 @@ def _build_tool_usage_guidelines(
         lines.append("- Use get_tool_help(tool_name) when the signature is not enough.")
     if "search_promises" in names:
         lines.append("- Check the provided promise list first; use search_promises only when the promise_id is missing or ambiguous.")
-    if "add_action" in names or "log_action" in names:
+    if "log_completed_activity" in names or "add_action" in names or "log_action" in names:
         lines.append("- If the user clearly logged work but gave no duration, default time_spent to 1.0 hour.")
     if any(_is_mutation_tool_name(name) for name in names):
         lines.append("- Act directly on clear requests; ask for confirmation before risky or ambiguous mutations.")
@@ -1337,7 +1337,9 @@ class LLMHandler:
             "Help users track their promises (goals) and log time spent on them. "
             "Be encouraging, concise, and action-oriented. "
             "Never reveal internal reasoning or thinking steps; provide only the final user-facing answer. "
-            "When users mention activities, assume they want to log time unless they clearly ask something else. "
+            "Only log time when the user clearly describes completed or past activity. "
+            "Future plans, reminders, intentions, deadlines, tomorrow/today-night requests, "
+            "or \"I should / I need to / remind me\" are not logs. "
             "Use emojis sparingly (✅ for success, 🔥 for streaks, 📊 for reports). "
             "If the user is just chatting, respond warmly without using tools."
         )
@@ -1395,14 +1397,16 @@ class LLMHandler:
 
             "=== INTENT & CONFIDENCE ===\n"
             "Identify the user's primary intent. Key intents (non-exhaustive):\n"
-            "- LOG_ACTION: past-tense activity ('I did X', 'worked on Y', 'spent Z hours')\n"
-            "- CREATE_PROMISE: new goal or one-time reminder ('I want to X tomorrow/next week')\n"
+            "- LOG_ACTION: past-tense, ALREADY-DONE activity ('I did X', 'worked on Y', 'spent Z hours', 'just finished'). Tool: log_completed_activity.\n"
+            "- CREATE_PROMISE: a new ONGOING goal the user wants to track time against over weeks ('I want to read 5h/week'). Tool: add_promise.\n"
+            "- CREATE_REMINDER: a one-off future task or deadline with no hour budget ('remind me to X tonight', 'I need to send Y tomorrow', 'reminder: …'). Tool: create_reminder.\n"
+            "- PLAN_SESSION: schedule a future time block tied to an existing promise ('gym tomorrow 1hr', 'study session Friday 2h'). Tool: schedule_session.\n"
             "- UPDATE_ACTION / DELETE_ACTION / UPDATE_PROMISE / DELETE_PROMISE: modify or remove existing data\n"
             "- QUERY_PROGRESS: reports, streaks, totals\n"
             "- SETTINGS: language, timezone, notification changes\n"
             "- NO_OP/CHAT: casual conversation, no action needed\n"
-            "- PLAN_SESSION: schedule or view a work block for a promise ('gym tomorrow 1hr', 'plan a study session Friday')\n"
             "Use canonical intent prefixes: LOG_, CREATE_, UPDATE_, DELETE_, QUERY_, SETTINGS_, NO_OP, PLAN_.\n"
+            "FUTURE-TENSE RULE: if the message uses future tense or planning language ('will', 'want to', 'should', 'need to', 'going to', 'tonight', 'tomorrow', 'next week', 'remind me', Persian 'فردا'/'باید'/'یادم بنداز') it is NEVER a LOG_ACTION. Choose CREATE_REMINDER (no existing promise) or PLAN_SESSION (existing promise) or CREATE_PROMISE (ongoing goal) instead.\n"
             "Messages ending with '?' or <4 words are usually QUESTIONS, not LOG_ACTION.\n"
             "Set intent_confidence: 'high'=unambiguous action; 'medium'=one likely interpretation; 'low'=<4 words, ends '?', or ambiguous.\n"
             "For HIGH-confidence intents: fill defaults and act directly.\n"
@@ -1421,7 +1425,7 @@ class LLMHandler:
             "- Do NOT call tools directly; just plan which tools to call.\n"
             "- 1–4 steps (max 6); keep 'purpose' short and user-safe.\n"
             "- Only the latest user message can trigger tools; quoted history is context only.\n"
-            "- CRITICAL: For mutation intents (CREATE_PROMISE, LOG_ACTION, ADD_ACTION, UPDATE_*, DELETE_*), you MUST include at least one tool step with kind='tool'. Do not skip tool steps for mutations.\n"
+            "- CRITICAL: For mutation intents (CREATE_PROMISE, CREATE_REMINDER, PLAN_SESSION, LOG_ACTION, UPDATE_*, DELETE_*), you MUST include at least one tool step with kind='tool'. Do not skip tool steps for mutations.\n"
             "- Casual chat: set final_response_if_no_tools, return empty steps.\n"
             "- Never ask for tool-accessible info (timezone, language, promise list).\n"
             "- After mutation tools, add a verify step then a respond step.\n"
@@ -1433,7 +1437,7 @@ class LLMHandler:
             "User: 'I just did 2 hours of sport'\n"
             "{\"steps\":["
             "{\"kind\":\"tool\",\"purpose\":\"Find sport promise\",\"tool_name\":\"search_promises\",\"tool_args\":{\"query\":\"sport\"}},"
-            "{\"kind\":\"tool\",\"purpose\":\"Log time\",\"tool_name\":\"add_action\",\"tool_args\":{\"promise_id\":\"FROM_SEARCH\",\"time_spent\":2.0}},"
+            "{\"kind\":\"tool\",\"purpose\":\"Log completed time\",\"tool_name\":\"log_completed_activity\",\"tool_args\":{\"promise_id\":\"FROM_SEARCH\",\"time_spent\":2.0}},"
             "{\"kind\":\"respond\",\"purpose\":\"Confirm\",\"response_hint\":\"Confirm time logged, show streak if relevant\"}"
             "],\"detected_intent\":\"LOG_ACTION\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
 
@@ -1444,10 +1448,18 @@ class LLMHandler:
             "User: 'I want to call a friend tomorrow'\n"
             "{\"steps\":["
             "{\"kind\":\"tool\",\"purpose\":\"Resolve date\",\"tool_name\":\"resolve_datetime\",\"tool_args\":{\"datetime_text\":\"tomorrow\"}},"
-            "{\"kind\":\"tool\",\"purpose\":\"Create reminder\",\"tool_name\":\"add_promise\","
-            "\"tool_args\":{\"promise_text\":\"call a friend\",\"num_hours_promised_per_week\":0.0,\"recurring\":false,\"end_date\":\"FROM_TOOL:resolve_datetime:\"}},"
+            "{\"kind\":\"tool\",\"purpose\":\"Create one-off reminder\",\"tool_name\":\"create_reminder\","
+            "\"tool_args\":{\"text\":\"call a friend\",\"remind_at\":\"FROM_TOOL:resolve_datetime:\"}},"
             "{\"kind\":\"respond\",\"purpose\":\"Confirm reminder set\"}"
-            "],\"detected_intent\":\"CREATE_PROMISE\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
+            "],\"detected_intent\":\"CREATE_REMINDER\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
+
+            "User: 'Reminder: send Kamran the work permits tonight'\n"
+            "{\"steps\":["
+            "{\"kind\":\"tool\",\"purpose\":\"Resolve datetime\",\"tool_name\":\"resolve_datetime\",\"tool_args\":{\"datetime_text\":\"tonight\"}},"
+            "{\"kind\":\"tool\",\"purpose\":\"Create one-off reminder\",\"tool_name\":\"create_reminder\","
+            "\"tool_args\":{\"text\":\"send Kamran the work permits\",\"remind_at\":\"FROM_TOOL:resolve_datetime:\"}},"
+            "{\"kind\":\"respond\",\"purpose\":\"Confirm reminder set\"}"
+            "],\"detected_intent\":\"CREATE_REMINDER\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
             "User: 'add a promise to drink water 10 minutes a day'\n"
             "{\"steps\":["
             "{\"kind\":\"tool\",\"purpose\":\"Create water drinking promise\",\"tool_name\":\"add_promise\","
@@ -1459,7 +1471,7 @@ class LLMHandler:
             "{\"steps\":["
             "{\"kind\":\"tool\",\"purpose\":\"Find gym promise\",\"tool_name\":\"search_promises\",\"tool_args\":{\"query\":\"gym\"}},"
             "{\"kind\":\"tool\",\"purpose\":\"Resolve datetime\",\"tool_name\":\"resolve_datetime\",\"tool_args\":{\"datetime_text\":\"tomorrow morning\"}},"
-            "{\"kind\":\"tool\",\"purpose\":\"Schedule session\",\"tool_name\":\"add_plan_session\","
+            "{\"kind\":\"tool\",\"purpose\":\"Schedule session\",\"tool_name\":\"schedule_session\","
             "\"tool_args\":{\"promise_id\":\"FROM_SEARCH\",\"planned_start\":\"FROM_TOOL:resolve_datetime:\",\"planned_duration_min\":45}},"
             "{\"kind\":\"respond\",\"purpose\":\"Confirm session scheduled\"}"
             "],\"detected_intent\":\"PLAN_SESSION\",\"intent_confidence\":\"high\",\"safety\":{\"requires_confirmation\":false}}\n\n"
@@ -1482,14 +1494,14 @@ class LLMHandler:
             mode_directive = (
                 "=== MODE: OPERATOR ===\n"
                 "You are in OPERATOR mode: handle transactional actions (promises, actions, settings).\n"
-                "You can use all tools including mutations (add_promise, add_action, update_setting, etc.).\n"
+                "You can use all tools including mutations (add_promise, create_reminder, schedule_session, log_completed_activity, update_setting, etc.).\n"
                 "Be action-oriented and execute user requests directly.\n\n"
             )
         elif mode == "strategist":
             mode_directive = (
                 "=== MODE: STRATEGIST ===\n"
                 "You are in STRATEGIST mode: focus on high-level goals, coaching, and strategic advice.\n"
-                "AVOID mutation tools (add_promise, add_action, update_setting, delete_*).\n"
+                "AVOID mutation tools (add_promise, create_reminder, schedule_session, log_completed_activity, update_setting, delete_*).\n"
                 "Instead, use read-only tools (get_promises, get_weekly_report, get_profile_status) and provide coaching/analysis.\n"
                 "If the user explicitly wants to create/update/delete something, suggest they rephrase or confirm they want to switch to action mode.\n\n"
             )
@@ -3199,6 +3211,13 @@ class LLMHandler:
         EXCLUDED_TOOLS = {
             "query_database",  # SQL tool - complex, rarely needed, adds schema bloat
             "get_db_schema",   # Database schema - on-demand only
+            # Back-compat aliases superseded by user-verb names below; hidden from
+            # the LLM so the planner only sees one canonical tool per intent.
+            "add_action",          # → log_completed_activity
+            "add_plan_session",    # → schedule_session
+            # Internal helpers that pollute the planner's tool vocabulary.
+            "no_op",
+            "maybe_ask_profile_question",
         }
         
         tools = []
@@ -3597,10 +3616,18 @@ class LLMHandler:
                     "a new promise",
                 )
                 action_description = f"create this promise: '{promise_text}'"
-            elif tool_name == "add_action":
+            elif tool_name in ("log_completed_activity", "add_action"):
                 promise_id = _safe_text((tool_args or {}).get("promise_id"), "that promise")
                 time_spent = _safe_text((tool_args or {}).get("time_spent"), "some time")
                 action_description = f"log {time_spent} hour(s) on {promise_id}"
+            elif tool_name == "create_reminder":
+                text = _safe_text((tool_args or {}).get("text"), "that")
+                when = _safe_text((tool_args or {}).get("remind_at"), "the requested time")
+                action_description = f"set a reminder to '{text}' at {when}"
+            elif tool_name in ("schedule_session", "add_plan_session"):
+                promise_id = _safe_text((tool_args or {}).get("promise_id"), "that promise")
+                start = _safe_text((tool_args or {}).get("planned_start"), "the requested time")
+                action_description = f"schedule a session on {promise_id} at {start}"
             elif tool_name == "delete_promise":
                 promise_id = _safe_text((tool_args or {}).get("promise_id"), "that promise")
                 action_description = f"delete promise {promise_id}"

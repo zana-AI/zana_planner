@@ -134,6 +134,48 @@ class PlannerAPIAdapter:
         except (ValueError, FileNotFoundError) as e:
             raise RuntimeError(f"Failed to add promise: {str(e)}")
 
+    def create_reminder(
+        self,
+        user_id,
+        text: str,
+        remind_at: str,
+    ) -> str:
+        """Create a one-off reminder for a future moment (no hour budget, no tracking).
+
+        Use when the user asks to be reminded, or states a one-off task/deadline
+        with a specific future time. Examples:
+            'remind me to call mom tonight'
+            'I need to send Kamran the work permits by tomorrow evening'
+            'یادم بنداز فردا ساعت ۹ به دکتر زنگ بزنم'
+
+        Never use for ongoing goals the user wants to track time against
+        (use add_promise) or for past completed activity (use log_completed_activity).
+        This tool does NOT need an existing promise_id.
+
+        Args:
+            text: What to remind the user about (short, user-facing)
+            remind_at: ISO datetime for the reminder; resolve with resolve_datetime() first
+        """
+        try:
+            remind_dt = self._coerce_datetime_like(remind_at, "remind_at")
+        except ValueError as e:
+            return str(e)
+        if remind_dt is None:
+            return "remind_at is required (call resolve_datetime first)."
+
+        try:
+            return self.add_promise(
+                user_id=user_id,
+                promise_text=text,
+                num_hours_promised_per_week=0.0,
+                recurring=False,
+                start_date=remind_dt.date(),
+                end_date=remind_dt.date(),
+            )
+        except Exception as e:
+            logger.error(f"create_reminder error: {e}")
+            return f"Error creating reminder: {str(e)}"
+
     def no_op(self, user_id):
         """No-op method for testing purposes."""
         return None
@@ -265,7 +307,7 @@ class PlannerAPIAdapter:
         return f"Promise #{promise.id} updated successfully."
 
     # Action methods
-    def add_action(
+    def log_completed_activity(
         self,
         user_id,
         promise_id: str,
@@ -273,14 +315,19 @@ class PlannerAPIAdapter:
         action_datetime: Optional[Union[datetime, str]] = None,
         notes: Optional[str] = None,
     ) -> str:
-        """Add an action.
-        
+        """Log time spent on a promise for an activity the user has ALREADY completed.
+
+        Use ONLY when the user reports something already done in the past
+        (e.g. "I did 2 hours of reading", "just finished a 30-min run").
+        Never use for future plans, reminders, intentions, deadlines, or scheduled work.
+        For future work tied to a promise use schedule_session; for one-off future
+        pings use create_reminder.
+
         Args:
-            user_id: User identifier
             promise_id: Promise ID (e.g., 'P10')
-            time_spent: Hours spent on the activity
-            action_datetime: Optional datetime for the action (defaults to now)
-            notes: Optional notes/description for this action
+            time_spent: Hours already spent on the activity
+            action_datetime: When the activity happened (defaults to now)
+            notes: Optional notes/description for this entry
         """
         # Validate promise exists
         if not self.promises_repo.get_promise(user_id, promise_id):
@@ -313,6 +360,10 @@ class PlannerAPIAdapter:
 
         self.actions_repo.append_action(action)
         return f"Action logged for promise ID '{promise_id}'."
+
+    # Back-compat alias for internal Python callers; not exposed to the LLM
+    # (see EXCLUDED_TOOLS in llm_handler._build_tools).
+    add_action = log_completed_activity
 
     def get_actions(self, user_id):
         """Get all actions for a user (legacy format)."""
@@ -1034,10 +1085,11 @@ class PlannerAPIAdapter:
             return f"Error recording check-in: {str(e)}"
     
     def resolve_datetime(self, user_id, datetime_text: str) -> str:
-        """Resolve a relative date/time phrase (e.g., 'tomorrow at 3pm', 'end of March', 'in 2 months', 'فردا ساعت 3') to an absolute datetime (ISO format: YYYY-MM-DDTHH:MM:SS)."""
+        """Resolve a relative date/time phrase (e.g., 'tomorrow at 3pm', 'tonight', 'end of March', 'in 2 months', 'فردا ساعت ۳') to an absolute datetime (ISO format: YYYY-MM-DDTHH:MM:SS)."""
         try:
             import dateparser
-            
+            import re
+
             settings = self.settings_repo.get_settings(int(user_id))
             tz_raw = getattr(settings, "timezone", None)
             user_tz = tz_raw if tz_raw and tz_raw != "DEFAULT" else "UTC"
@@ -1047,13 +1099,23 @@ class PlannerAPIAdapter:
                 user_tz = "UTC"
                 now_local = datetime.now(ZoneInfo("UTC"))
 
-            # Parse with user-local relative base/timezone.
+            # Normalize: strip parenthetical annotations like "(سه‌شنبه)" or "(Tuesday)"
+            # which dateparser chokes on, and trim stray punctuation/whitespace.
+            normalized = re.sub(r"\([^)]*\)", " ", datetime_text or "")
+            normalized = re.sub(r"\s+", " ", normalized).strip(" .,،؛;:!?")
+            if not normalized:
+                normalized = (datetime_text or "").strip()
+
+            # Parse with user-local relative base/timezone. Bias toward future since
+            # users overwhelmingly schedule forward ("Friday", "tonight", "tomorrow").
             parsed = dateparser.parse(
-                datetime_text,
+                normalized,
+                languages=["en", "fa", "fr", "ar", "ru"],
                 settings={
                     "RELATIVE_BASE": now_local,
                     "TIMEZONE": user_tz,
                     "RETURN_AS_TIMEZONE_AWARE": True,
+                    "PREFER_DATES_FROM": "future",
                 },
             )
             if not parsed:
@@ -1286,7 +1348,7 @@ class PlannerAPIAdapter:
             logger.error(f"get_plan_sessions error: {e}")
             return f"Error fetching sessions: {str(e)}"
 
-    def add_plan_session(
+    def schedule_session(
         self,
         user_id,
         promise_id: str,
@@ -1295,11 +1357,16 @@ class PlannerAPIAdapter:
         planned_duration_min: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> str:
-        """Schedule a work session (time block) for a promise.
+        """Schedule a FUTURE work session (time block) tied to an existing promise.
 
-        Use when the user says they want to work on a promise at a specific time.
+        Use when the user wants to plan doing something in the future for a specific
+        duration against a promise they already track. Requires a promise_id.
         Examples: 'gym tomorrow at 7pm for 1 hour', 'study session Thursday 2h'.
-        The planned_start must be an ISO datetime string; call resolve_datetime() first.
+
+        Never use for past activity (use log_completed_activity) or for one-off
+        reminders with no associated promise (use create_reminder).
+
+        planned_start must be an ISO datetime string; call resolve_datetime() first.
         planned_duration_min is in minutes (e.g. 60 for 1 hour, 30 for 30 minutes).
 
         Args:
@@ -1330,8 +1397,12 @@ class PlannerAPIAdapter:
                 f"'{session_title}' on {start_str} ({dur_str})."
             )
         except Exception as e:
-            logger.error(f"add_plan_session error: {e}")
+            logger.error(f"schedule_session error: {e}")
             return f"Error scheduling session: {str(e)}"
+
+    # Back-compat alias for internal Python callers; not exposed to the LLM
+    # (see EXCLUDED_TOOLS in llm_handler._build_tools).
+    add_plan_session = schedule_session
 
     def update_plan_session_status(
         self,

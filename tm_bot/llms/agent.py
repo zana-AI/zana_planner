@@ -1508,14 +1508,14 @@ def create_plan_execute_graph(
 
     required_args_by_tool = {name: _required_args_for_tool(t) for name, t in tool_by_name.items()}
 
-    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
-    
+    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_")
+
     # Tools that ALWAYS require user confirmation before execution
-    ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "subscribe_template"}
-    
+    ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "create_reminder", "subscribe_template"}
+
     # Tools that require confirmation when intent confidence is NOT high
-    # This catches the "کتاب ؟" case where add_action shouldn't fire on ambiguous input
-    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action", "add_plan_session", "delete_plan_session"}
+    # This catches the "کتاب ؟" case where log_completed_activity shouldn't fire on ambiguous input
+    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"log_completed_activity", "add_action", "delete_promise", "delete_action", "schedule_session", "add_plan_session", "delete_plan_session"}
 
     # Helper functions moved to module level - use the module-level versions
 
@@ -1561,7 +1561,7 @@ def create_plan_execute_graph(
                     "tool_name": "get_promises",
                     "tool_args": {},
                 }
-        if tool_name == "add_action":
+        if tool_name in ("log_completed_activity", "add_action"):
             pid = tool_args.get("promise_id")
             if pid and "get_last_action_on_promise" in tool_by_name:
                 return {
@@ -2236,7 +2236,7 @@ def create_plan_execute_graph(
                 # Build a confirmation question that describes what will happen
                 detected_intent = state.get("detected_intent") or "this action"
                 action_description = f"perform {str(detected_intent).lower()}"
-                if tool_name == "add_action":
+                if tool_name in ("log_completed_activity", "add_action"):
                     promise_id = tool_args.get("promise_id", "a promise")
                     time_spent = tool_args.get("time_spent", "some time")
                     action_description = f"log {time_spent} hour(s) on {promise_id}"
@@ -2408,11 +2408,11 @@ def create_routed_plan_execute_graph(
     """
     tool_by_name = {getattr(t, "name", ""): t for t in tools if getattr(t, "name", "")}
     
-    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_")
-    ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "subscribe_template"}
-    
+    MUTATION_PREFIXES = ("add_", "create_", "update_", "delete_", "log_", "schedule_")
+    ALWAYS_CONFIRM_TOOLS = {"add_promise", "create_promise", "create_reminder", "subscribe_template"}
+
     # Tools that require confirmation when intent confidence is NOT high
-    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"add_action", "delete_promise", "delete_action", "add_plan_session", "delete_plan_session"}
+    CONFIRM_ON_LOW_CONFIDENCE_TOOLS = {"log_completed_activity", "add_action", "delete_promise", "delete_action", "schedule_session", "add_plan_session", "delete_plan_session"}
     
     # Allowed mutation tools per mode
     ALLOWED_MUTATIONS_BY_MODE = {
@@ -2603,7 +2603,7 @@ def create_routed_plan_execute_graph(
                     "tool_name": "get_promises",
                     "tool_args": {},
                 }
-        if tool_name == "add_action":
+        if tool_name in ("log_completed_activity", "add_action"):
             pid = tool_args.get("promise_id")
             if pid and "get_last_action_on_promise" in tool_by_name:
                 return {
@@ -3488,7 +3488,7 @@ def create_routed_plan_execute_graph(
             if needs_confirmation:
                 detected_intent = state.get("detected_intent") or "this action"
                 action_description = f"perform {str(detected_intent).lower()}"
-                if tool_name == "add_action":
+                if tool_name in ("log_completed_activity", "add_action"):
                     promise_id = tool_args.get("promise_id", "a promise")
                     time_spent = tool_args.get("time_spent", "some time")
                     action_description = f"log {time_spent} hour(s) on {promise_id}"
