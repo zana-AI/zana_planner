@@ -17,6 +17,7 @@ from utils.logger import get_logger
 
 # Import all routers
 from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer, youtube_watch, content, plan_sessions
+from .routers import slack as slack_router
 
 logger = get_logger(__name__)
 
@@ -82,7 +83,10 @@ def create_webapp_api(
     delayed_message_service = DelayedMessageService(scheduler)
     app.state.delayed_message_service = delayed_message_service
     app.state.learning_pipeline_worker = LearningPipelineWorker()
-    
+
+    # Shared state dict for Slack club check-ins
+    app.state.slack_state = {"checkins": {}, "reminder_sent": {}}
+
     # Include all routers
     app.include_router(health.router)
     app.include_router(auth.router)
@@ -96,7 +100,8 @@ def create_webapp_api(
     app.include_router(youtube_watch.router)
     app.include_router(content.router)
     app.include_router(plan_sessions.router)
-    
+    app.include_router(slack_router.router)
+
     # Startup event to log registered routes and fetch bot username
     @app.on_event("startup")
     async def startup_event():
@@ -310,6 +315,20 @@ def create_webapp_api(
 
         asyncio.create_task(plan_session_reminder_sweeper())
         logger.info("✓ Started plan session reminder sweeper (checks every 60 seconds)")
+
+        # Start Slack club reminder sweeper (every 15 minutes)
+        try:
+            import os as _os
+            if _os.getenv("SLACK_SIGNING_SECRET") or _os.getenv("SLACK_BOT_TOKEN"):
+                from services.slack_club_reminder_service import run_slack_reminder_loop
+                asyncio.create_task(
+                    run_slack_reminder_loop(lambda: app.state.slack_state)
+                )
+                logger.info("✓ Started Slack club reminder sweeper (checks every 15 minutes)")
+            else:
+                logger.info("[Slack] SLACK_SIGNING_SECRET not set — reminder sweeper not started")
+        except Exception as exc:
+            logger.warning("Failed to start Slack reminder sweeper: %s", exc)
 
         # Start content learning pipeline dispatcher (every 5 seconds when enabled)
         try:
