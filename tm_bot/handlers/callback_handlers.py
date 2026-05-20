@@ -2050,7 +2050,7 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
             await self._handle_content_create_task(query, user_id, resolved_content_id, url_id)
             return
         rows = []
-        for p in self._rank_promises_for_content(user_id, promises, context)[:MAX_CONTENT_ASSIGN_TASKS]:
+        for p in self._rank_promises_for_content(user_id, promises, context)[:3]:
             label = f"#{p['id']} - {p['text'][:32]}"
             rows.append([
                 InlineKeyboardButton(
@@ -2064,6 +2064,13 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
                 callback_data=encode_cb(CONTENT_CREATE_TASK_ACTION, c=resolved_content_id),
             )
         ])
+        if self.miniapp_url:
+            rows.append([
+                InlineKeyboardButton(
+                    "More tasks in Mini App →",
+                    web_app=WebAppInfo(url=f"{self.miniapp_url}/my-contents"),
+                )
+            ])
         await query.message.reply_text(
             "Best matching tasks for this content:",
             reply_markup=InlineKeyboardMarkup(rows),
@@ -2189,13 +2196,20 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
             await self._handle_video_create_task(query, user_id, video_id, _url_id)
             return
         rows = []
-        for p in promises[:MAX_VIDEO_ASSIGN_TASKS]:
+        for p in promises[:3]:
             promise_id = str(p.get("id") or "").strip()
             text = str(p.get("text") or promise_id).replace("_", " ")
             if not promise_id:
                 continue
             rows.append([InlineKeyboardButton(f"#{promise_id} · {text[:32]}", callback_data=encode_cb("video_assign_pick", vid=video_id, pid=promise_id))])
         rows.append([InlineKeyboardButton("📝 New One-Time Task", callback_data=encode_cb("video_create_task", vid=video_id))])
+        if self.miniapp_url:
+            rows.append([
+                InlineKeyboardButton(
+                    "More tasks in Mini App →",
+                    web_app=WebAppInfo(url=f"{self.miniapp_url}/my-contents"),
+                )
+            ])
         await query.message.reply_text(
             "Choose a task to link this video watch time:",
             reply_markup=InlineKeyboardMarkup(rows),
@@ -2680,11 +2694,17 @@ Generate the calendar links now:"""
             except Exception as exc:
                 logger.warning("[ClubCheckin] Failed to persist action for user %s: %s", user_id, exc)
 
+        sent_at = state.get("sent_at_utc")
+        try:
+            now_utc_card = datetime.fromisoformat(sent_at) if sent_at else None
+        except Exception:
+            now_utc_card = None
         new_text = build_club_reminder_message(
             club_name,
             members,
             promise_text=promise_text,
             language=language,
+            now_utc=now_utc_card,
             timezone=timezone_name,
         )
         if new_text:

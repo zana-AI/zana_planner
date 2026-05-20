@@ -784,6 +784,7 @@ class PlannerBot:
                     "language": language,
                     "timezone": timezone_name,
                     "members": members,
+                    "sent_at_utc": datetime.utcnow().isoformat(),
                 }
             except Exception:
                 pass
@@ -934,7 +935,8 @@ class PlannerBot:
         actions_repo = ActionsRepository()
         try:
             checked_in = clubs_repo.get_today_club_checkins(club_id)
-            if str(ctx.user_id) not in checked_in:
+            is_new_checkin = str(ctx.user_id) not in checked_in
+            if is_new_checkin:
                 notes = f"source=group_activity_evidence;reason={evidence.reason[:120]}"
                 actions_repo.append_club_checkin(ctx.user_id, promise_uuid, notes=notes)
                 logger.info(
@@ -944,7 +946,24 @@ class PlannerBot:
                     evidence.reason,
                     evidence.confidence,
                 )
+            has_live_card = any(
+                str(s.get("club_id") or "") == club_id
+                for s in (bot_data.get("club_checkins") or {}).values()
+                if isinstance(s, dict)
+            )
             await self._refresh_group_checkin_cards(ctx, club, bot_data, promise_uuid)
+            if is_new_checkin and not has_live_card:
+                # No reminder card to update — give the user visible feedback
+                try:
+                    sender_name = ctx.metadata.get("sender_name") or "You"
+                    bot = getattr(ctx.platform_context, "bot", None)
+                    if bot:
+                        await bot.send_message(
+                            chat_id=ctx.chat_id,
+                            text=f"✅ {sender_name}, check-in recorded for today! 🔥",
+                        )
+                except Exception as fb_exc:
+                    logger.debug("soft_checkin: feedback reply failed: %s", fb_exc)
             return True
         except Exception as exc:
             logger.warning("soft_checkin: failed for user %s club %s: %s", ctx.user_id, club_id, exc)
@@ -998,11 +1017,17 @@ class PlannerBot:
 
             state["language"] = state.get("language") or language
             state["timezone"] = state.get("timezone") or timezone_name
+            sent_at = state.get("sent_at_utc")
+            try:
+                now_utc_card = datetime.fromisoformat(sent_at) if sent_at else None
+            except Exception:
+                now_utc_card = None
             new_text = build_club_reminder_message(
                 state.get("club_name") or club.get("club_name") or "Club",
                 members,
                 promise_text=state.get("promise_text") or club.get("promise_text"),
                 language=state.get("language"),
+                now_utc=now_utc_card,
                 timezone=state.get("timezone"),
             )
             if not bot or not new_text or not isinstance(state_key, tuple) or len(state_key) != 2:

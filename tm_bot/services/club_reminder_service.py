@@ -326,6 +326,7 @@ class ClubReminderService:
                     "language": language,
                     "timezone": owner_tz,
                     "members": members,
+                    "sent_at_utc": now.isoformat(),
                 }
                 bot_data["club_reminder_sent"][club_id] = today_str
                 logger.info(

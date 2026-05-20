@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 
-from db.postgres_db import get_db_session, utc_now_iso
+from db.postgres_db import get_db_session, utc_now_iso, resolve_promise_uuid
 
 
 def _now() -> str:
@@ -174,7 +174,14 @@ class ContentRepository:
 
     def assign_user_content_to_promise(self, user_id: str, content_id: str, promise_id: str) -> str:
         """Ensure content is saved and linked to a promise/task."""
-        return self.add_user_content(str(user_id), str(content_id), assigned_promise_id=str(promise_id))
+        # FK references promises.promise_uuid — resolve short current_id first
+        promise_uuid = None
+        try:
+            with get_db_session() as session:
+                promise_uuid = resolve_promise_uuid(session, str(user_id), str(promise_id))
+        except Exception:
+            pass
+        return self.add_user_content(str(user_id), str(content_id), assigned_promise_id=promise_uuid or str(promise_id))
 
     def get_user_content(self, user_id: str, content_id: str) -> Optional[Dict[str, Any]]:
         """Return single user_content row (with content) or None."""

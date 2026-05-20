@@ -133,21 +133,20 @@ class MessageHandlers:
 
     def _build_new_content_message(self, info: dict) -> str:
         """Build a clear first-response card for newly detected content."""
-        title = (info.get("title") or "YouTube Video").strip()
+        title = (info.get("title") or "").strip()
         if len(title) > 120:
             title = title[:117] + "..."
-        channel = (info.get("channel") or "Unknown").strip()
-        duration = self._format_seconds(info.get("duration_seconds"))
-        captions = "Yes" if info.get("captions_available") else "No"
-        return (
-            "🆕 New content detected\n\n"
-            "Source: YouTube\n"
-            f"Title: {title}\n"
-            f"Channel: {channel}\n"
-            f"Duration: {duration}\n"
-            f"Captions: {captions}\n\n"
-            "What do you want to do?"
-        )
+        lines = ["🆕 New content detected\n"]
+        if title:
+            lines.append(f"Title: {title}")
+        channel = (info.get("channel") or "").strip()
+        if channel:
+            lines.append(f"Channel: {channel}")
+        duration_secs = info.get("duration_seconds")
+        if duration_secs:
+            lines.append(f"Duration: {self._format_seconds(duration_secs)}")
+        lines.append("\nWhat do you want to do?")
+        return "\n".join(lines)
 
     @staticmethod
     def _normalize_pdf_name(name: Optional[str]) -> str:

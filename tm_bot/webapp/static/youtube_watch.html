@@ -682,13 +682,15 @@
       if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
       return;
     }
+    statsSent = true;
+    // Disable floating button immediately to prevent accidental double-taps
+    if (floatDoneBtn) floatDoneBtn.disabled = true;
     var payload = getPayload('done');
     fetch(baseUrl + '/api/youtube/report_stats', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }).then(function() {
-      statsSent = true;
       dlog("fetch sent: done");
       if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
     }).catch(function() {
