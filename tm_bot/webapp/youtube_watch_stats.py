@@ -89,7 +89,6 @@ def format_summary_message(
     time_str = f"{mins} min {secs} s" if mins else f"{secs} s"
     lines = [
         "📺 YouTube watch summary",
-        f"Video: https://youtu.be/{video_id}",
         f"Time watched: {time_str}",
     ]
     if segments:

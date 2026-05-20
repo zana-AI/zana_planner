@@ -81,8 +81,8 @@ const sortAndMergeSelectionRects = (rects: SelectionClientRect[], pageDirection:
       const lineCenterY = (lineTop + lineBottom) / 2;
       const overlap = Math.min(rect.bottom, lineBottom) - Math.max(rect.top, lineTop);
       return (
-        Math.abs(rectCenterY - lineCenterY) <= Math.max(2, Math.min(rectHeight, lineHeight) * 0.6) ||
-        overlap >= Math.min(rectHeight, lineHeight) * 0.45
+        Math.abs(rectCenterY - lineCenterY) <= Math.max(4, Math.min(rectHeight, lineHeight) * 0.75) ||
+        overlap >= Math.min(rectHeight, lineHeight) * 0.35
       );
     });
     if (line) {
@@ -92,7 +92,7 @@ const sortAndMergeSelectionRects = (rects: SelectionClientRect[], pageDirection:
     }
   }
 
-  return lines.flatMap((line) => {
+  return lines.map((line) => {
     const directionWeights = line.reduce(
       (weights, rect) => {
         weights[rect.direction] += rect.right - rect.left;
@@ -101,30 +101,17 @@ const sortAndMergeSelectionRects = (rects: SelectionClientRect[], pageDirection:
       { ltr: 0, rtl: 0 },
     );
     const lineDirection: TextDirection = directionWeights.rtl > directionWeights.ltr ? 'rtl' : 'ltr';
-    const lineTop = Math.min(...line.map((rect) => rect.top));
-    const lineBottom = Math.max(...line.map((rect) => rect.bottom));
-    const maxJoinGap = Math.max(4, (lineBottom - lineTop) * 1.5);
-    const ordered = [...line].sort((a, b) =>
-      lineDirection === 'rtl' ? b.right - a.right : a.left - b.left,
-    );
-    const merged: SelectionClientRect[] = [];
-    for (const rect of ordered) {
-      const current = merged[merged.length - 1];
-      if (!current) {
-        merged.push({ ...rect, direction: lineDirection });
-        continue;
-      }
-      const gap = lineDirection === 'rtl' ? current.left - rect.right : rect.left - current.right;
-      if (gap <= maxJoinGap) {
-        current.left = Math.min(current.left, rect.left);
-        current.right = Math.max(current.right, rect.right);
-        current.top = Math.min(current.top, rect.top);
-        current.bottom = Math.max(current.bottom, rect.bottom);
-      } else {
-        merged.push({ ...rect, direction: lineDirection });
-      }
-    }
-    return merged;
+    // Collapse the entire line into one bounding-box rectangle.
+    // This avoids multiple fragmented boxes per line, which is especially
+    // problematic for Arabic/Persian PDFs where characters are tightly joined
+    // but pdf.js emits many small per-glyph rects.
+    return {
+      left: Math.min(...line.map((r) => r.left)),
+      right: Math.max(...line.map((r) => r.right)),
+      top: Math.min(...line.map((r) => r.top)),
+      bottom: Math.max(...line.map((r) => r.bottom)),
+      direction: lineDirection,
+    };
   });
 };
 

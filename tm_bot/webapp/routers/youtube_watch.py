@@ -171,14 +171,16 @@ async def report_stats(request: Request):
                 logger.info("youtube report_stats: skipping unknown promise_id=%s for user_id=%s", promise_id, user_id)
         except Exception as e:
             logger.warning("youtube report_stats: failed to log time for promise_id=%s: %s", promise_id, e)
-    summary = format_summary_message(video_id, time_spent, segments)
-
-    try:
-        from telegram import Bot
-        bot = Bot(token=bot_token)
-        await bot.send_message(chat_id=user_id, text=summary)
-        logger.info("youtube report_stats: Telegram message sent to user_id=%s", user_id)
-    except Exception as e:
-        logger.warning("youtube report_stats: Failed to send Telegram message to user_id=%s: %s", user_id, e)
+    if time_spent >= MIN_WATCH_SECONDS_FOR_TASK_LOG:
+        summary = format_summary_message(video_id, time_spent, segments)
+        try:
+            from telegram import Bot
+            bot = Bot(token=bot_token)
+            await bot.send_message(chat_id=user_id, text=summary)
+            logger.info("youtube report_stats: Telegram message sent to user_id=%s", user_id)
+        except Exception as e:
+            logger.warning("youtube report_stats: Failed to send Telegram message to user_id=%s: %s", user_id, e)
+    else:
+        logger.info("youtube report_stats: skipping summary (time_spent=%.1f < %.1f)", time_spent, MIN_WATCH_SECONDS_FOR_TASK_LOG)
 
     return JSONResponse(content={"ok": True})
