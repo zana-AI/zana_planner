@@ -1,132 +1,149 @@
 """
-Repository for managing authentication sessions.
-Stores sessions in memory (can be extended to use SQLite for persistence).
+DB-backed authentication session repository.
+
+Sessions are stored in the `auth_sessions` PostgreSQL table so they survive
+server restarts. The previous in-memory implementation lost all sessions on
+every deployment, breaking PWA / home-screen web app logins.
 """
 
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Optional
+
+from sqlalchemy import text
+
+from db.postgres_db import get_db_session, utc_now_iso, dt_from_utc_iso
 from models.models import AuthSession
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_ISO_FMT = "%Y-%m-%dT%H:%M:%S.%f"
+
+
+def _dt_to_iso(dt: datetime) -> str:
+    return dt.strftime(_ISO_FMT)
+
+
+def _iso_to_dt(s: str) -> datetime:
+    return dt_from_utc_iso(s) or datetime.utcnow()
+
 
 class AuthSessionRepository:
-    """In-memory repository for authentication sessions."""
-    
-    def __init__(self):
-        # Store sessions in memory: {session_token: AuthSession}
-        self._sessions: Dict[str, AuthSession] = {}
-    
+    """PostgreSQL-backed repository for browser authentication sessions."""
+
     def create_session(
         self,
         user_id: int,
         telegram_auth_date: int,
-        expires_in_days: int = 7
+        expires_in_days: int = 90,
+        auth_method: str = "widget",
     ) -> AuthSession:
-        """
-        Create a new authentication session.
-        
-        Args:
-            user_id: Telegram user ID
-            telegram_auth_date: Original auth_date from Telegram
-            expires_in_days: Number of days until expiration (default: 7)
-        
-        Returns:
-            Created AuthSession
-        """
         session_token = str(uuid.uuid4())
-        now = datetime.now()
+        now = datetime.utcnow()
         expires_at = now + timedelta(days=expires_in_days)
-        
-        session = AuthSession(
+
+        with get_db_session() as db:
+            db.execute(
+                text("""
+                    INSERT INTO auth_sessions
+                        (session_token, user_id, created_at, expires_at,
+                         telegram_auth_date, auth_method)
+                    VALUES
+                        (:token, :user_id, :created_at, :expires_at,
+                         :tg_auth_date, :auth_method)
+                    ON CONFLICT (session_token) DO NOTHING;
+                """),
+                {
+                    "token": session_token,
+                    "user_id": str(user_id),
+                    "created_at": _dt_to_iso(now),
+                    "expires_at": _dt_to_iso(expires_at),
+                    "tg_auth_date": telegram_auth_date,
+                    "auth_method": auth_method,
+                },
+            )
+
+        logger.debug("Created auth session for user %s, expires %s", user_id, expires_at.date())
+        return AuthSession(
             session_token=session_token,
             user_id=user_id,
             created_at=now,
             expires_at=expires_at,
-            telegram_auth_date=telegram_auth_date
+            telegram_auth_date=telegram_auth_date,
         )
-        
-        self._sessions[session_token] = session
-        logger.debug(f"Created auth session for user {user_id}, expires at {expires_at}")
-        
-        return session
-    
-    def get_session(self, session_token: str) -> Optional[AuthSession]:
-        """
-        Get a session by token.
-        
-        Args:
-            session_token: Session token
-        
-        Returns:
-            AuthSession if found and not expired, None otherwise
-        """
-        session = self._sessions.get(session_token)
-        
-        if not session:
-            return None
-        
-        # Check if expired
-        if datetime.now() > session.expires_at:
-            # Remove expired session
-            del self._sessions[session_token]
-            logger.debug(f"Session {session_token} expired and removed")
-            return None
-        
-        return session
-    
-    def delete_session(self, session_token: str) -> bool:
-        """
-        Delete a session.
-        
-        Args:
-            session_token: Session token to delete
-        
-        Returns:
-            True if session was deleted, False if not found
-        """
-        if session_token in self._sessions:
-            del self._sessions[session_token]
-            logger.debug(f"Deleted auth session {session_token}")
-            return True
-        return False
-    
-    def cleanup_expired(self) -> int:
-        """
-        Remove all expired sessions.
-        
-        Returns:
-            Number of sessions removed
-        """
-        now = datetime.now()
-        expired_tokens = [
-            token for token, session in self._sessions.items()
-            if now > session.expires_at
-        ]
-        
-        for token in expired_tokens:
-            del self._sessions[token]
-        
-        if expired_tokens:
-            logger.info(f"Cleaned up {len(expired_tokens)} expired auth sessions")
-        
-        return len(expired_tokens)
-    
-    def get_user_sessions(self, user_id: int) -> list[AuthSession]:
-        """
-        Get all active sessions for a user.
-        
-        Args:
-            user_id: User ID
-        
-        Returns:
-            List of active AuthSessions
-        """
-        now = datetime.now()
-        return [
-            session for session in self._sessions.values()
-            if session.user_id == user_id and now <= session.expires_at
-        ]
 
+    def get_session(self, session_token: str) -> Optional[AuthSession]:
+        if not session_token:
+            return None
+        now_iso = utc_now_iso()
+        with get_db_session() as db:
+            row = db.execute(
+                text("""
+                    SELECT user_id, created_at, expires_at, telegram_auth_date
+                    FROM auth_sessions
+                    WHERE session_token = :token
+                      AND expires_at > :now
+                    LIMIT 1;
+                """),
+                {"token": session_token, "now": now_iso},
+            ).mappings().fetchone()
+
+        if not row:
+            return None
+
+        return AuthSession(
+            session_token=session_token,
+            user_id=int(row["user_id"]),
+            created_at=_iso_to_dt(row["created_at"]),
+            expires_at=_iso_to_dt(row["expires_at"]),
+            telegram_auth_date=int(row["telegram_auth_date"] or 0),
+        )
+
+    def delete_session(self, session_token: str) -> bool:
+        if not session_token:
+            return False
+        with get_db_session() as db:
+            result = db.execute(
+                text("DELETE FROM auth_sessions WHERE session_token = :token;"),
+                {"token": session_token},
+            )
+        deleted = (result.rowcount or 0) > 0
+        if deleted:
+            logger.debug("Deleted auth session %s…", session_token[:8])
+        return deleted
+
+    def cleanup_expired(self) -> int:
+        now_iso = utc_now_iso()
+        with get_db_session() as db:
+            result = db.execute(
+                text("DELETE FROM auth_sessions WHERE expires_at <= :now;"),
+                {"now": now_iso},
+            )
+        count = result.rowcount or 0
+        if count:
+            logger.info("Cleaned up %d expired auth session(s)", count)
+        return count
+
+    def get_user_sessions(self, user_id: int) -> list[AuthSession]:
+        now_iso = utc_now_iso()
+        with get_db_session() as db:
+            rows = db.execute(
+                text("""
+                    SELECT session_token, created_at, expires_at, telegram_auth_date
+                    FROM auth_sessions
+                    WHERE user_id = :user_id AND expires_at > :now;
+                """),
+                {"user_id": str(user_id), "now": now_iso},
+            ).mappings().fetchall()
+
+        return [
+            AuthSession(
+                session_token=row["session_token"],
+                user_id=user_id,
+                created_at=_iso_to_dt(row["created_at"]),
+                expires_at=_iso_to_dt(row["expires_at"]),
+                telegram_auth_date=int(row["telegram_auth_date"] or 0),
+            )
+            for row in rows
+        ]

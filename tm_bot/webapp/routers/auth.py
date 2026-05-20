@@ -81,7 +81,8 @@ async def telegram_login(request: Request, login_request: TelegramLoginRequest):
         session = auth_session_repo.create_session(
             user_id=user_id,
             telegram_auth_date=telegram_auth_date,
-            expires_in_days=7
+            expires_in_days=90,
+            auth_method="widget",
         )
         
         return TelegramLoginResponse(

@@ -92,8 +92,9 @@ export function HomePage() {
 
   return (
     <div className="home-page">
-      {/* Mobile: Show Telegram CTAs instead of login widget */}
-      {showLogin && isMobile && (
+      {/* Login section: shown in any browser (phone or desktop) when not authenticated.
+          Never shown inside the Telegram Mini App since initData handles auth there. */}
+      {showLogin && (
         <section className="home-login-section" style={{
           background: 'rgba(11, 16, 32, 0.95)',
           padding: '2rem',
@@ -102,50 +103,29 @@ export function HomePage() {
           borderRadius: '12px',
           textAlign: 'center'
         }}>
-          <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Continue in Telegram</h2>
-          <p style={{ color: '#aaa', marginBottom: '2rem' }}>
-            Open Xaana in Telegram to access your workspace and continue your productivity journey.
+          <h2 style={{ color: '#fff', marginBottom: '0.5rem' }}>Sign in to Xaana</h2>
+          <p style={{ color: '#aaa', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+            Use your Telegram account to continue
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <a
-              href={telegramWebAppLink}
-              className="home-cta-button"
-              style={{ 
-                display: 'inline-block',
-                textDecoration: 'none',
-                padding: '0.75rem 1.5rem'
-              }}
-            >
-              Open in Telegram
-            </a>
-            <a
-              href={telegramBotLink}
-              className="home-cta-button"
-              style={{ 
-                display: 'inline-block',
-                textDecoration: 'none',
-                padding: '0.75rem 1.5rem',
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.2)'
-              }}
-            >
-              Open Bot Chat
-            </a>
-          </div>
-        </section>
-      )}
-      
-      {/* Desktop: Show Telegram Login Widget */}
-      {showLogin && !isMobile && (
-        <section className="home-login-section" style={{
-          background: 'rgba(11, 16, 32, 0.95)',
-          padding: '2rem',
-          margin: '2rem auto',
-          maxWidth: '500px',
-          borderRadius: '12px',
-          textAlign: 'center'
-        }}>
           <TelegramLogin onAuthSuccess={handleAuthSuccess} />
+          {isMobile && (
+            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+                Or open directly in the app
+              </p>
+              <a
+                href={telegramWebAppLink}
+                style={{
+                  display: 'inline-block',
+                  textDecoration: 'none',
+                  color: '#54a0ff',
+                  fontSize: '0.9rem',
+                }}
+              >
+                Open Xaana in Telegram →
+              </a>
+            </div>
+          )}
         </section>
       )}
       
