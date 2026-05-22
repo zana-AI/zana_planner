@@ -171,7 +171,7 @@ jobs:
             export STAGING_TAG="$TAG"
             export STAGING_RUN_ID="$GITHUB_RUN_ID_VALUE"
             export STAGING_ACTOR="$GITHUB_ACTOR_VALUE"
-            python - <<'PY'
+            python3 - <<'PY'
           import json
           import os
           import urllib.parse
