@@ -166,7 +166,7 @@ def test_handle_deploy_promote_prod_dispatches_workflow(monkeypatch):
     monkeypatch.setattr(callback_handler, "_dispatch_github_workflow", fake_dispatch)
 
     query = FakeQuery()
-    asyncio.run(callback_handler._handle_deploy_promote_prod(query, {"rid": "12345", "sha": "abc1234"}))
+    asyncio.run(callback_handler._handle_deploy_promote_prod(query, {"rid": "12345", "sha": "abc1234", "confirm": "1"}))
 
     assert dispatched["repository"] == "acme/zana"
     assert dispatched["workflow_file"] == "deploy-prod.yml"
@@ -179,6 +179,51 @@ def test_handle_deploy_promote_prod_dispatches_workflow(monkeypatch):
     assert query.edited == [None]
     assert query.answers and query.answers[-1] == ("Prod promotion started.", False)
     assert sent and "#deploy_prod_requested" in sent[0]["text"]
+
+
+@pytest.mark.handler
+def test_handle_deploy_promote_prod_requires_second_confirmation(monkeypatch):
+    pytest.importorskip("telegram")
+
+    from handlers.callback_handlers import CallbackHandlers
+
+    edited = []
+    dispatched = {}
+
+    class FakeQuery:
+        def __init__(self):
+            self.from_user = types.SimpleNamespace(id=202, username="admin-user")
+            self.message = types.SimpleNamespace(chat_id=202)
+            self.answers = []
+
+        async def answer(self, text=None, show_alert=False):
+            self.answers.append((text, show_alert))
+            return None
+
+        async def edit_message_reply_markup(self, reply_markup=None):
+            edited.append(reply_markup)
+            return None
+
+    monkeypatch.setenv("GITHUB_DEPLOY_REPOSITORY", "acme/zana")
+    monkeypatch.setenv("GITHUB_DEPLOY_TOKEN", "token-123")
+    monkeypatch.setattr("handlers.callback_handlers.is_admin", lambda _uid: True)
+
+    callback_handler = CallbackHandlers(
+        plan_keeper=types.SimpleNamespace(settings_service=types.SimpleNamespace(get_user_timezone=lambda _uid: "UTC")),
+        application=types.SimpleNamespace(bot=types.SimpleNamespace(send_message=lambda *args, **kwargs: None), bot_data={}),
+        response_service=types.SimpleNamespace(),
+        miniapp_url="https://xaana.club",
+    )
+    monkeypatch.setattr(callback_handler, "_dispatch_github_workflow", lambda *args, **kwargs: dispatched.update({"called": True}))
+
+    query = FakeQuery()
+    asyncio.run(callback_handler._handle_deploy_promote_prod(query, {"rid": "12345", "sha": "abc1234"}))
+
+    assert "called" not in dispatched
+    assert edited
+    confirm_button = edited[-1].inline_keyboard[0][0]
+    assert "confirm=1" in confirm_button.callback_data
+    assert query.answers[-1][1] is True
 
 
 @pytest.mark.handler

@@ -2,6 +2,27 @@ name: Promote staging to prod
 
 on:
   workflow_dispatch:
+    inputs:
+      requested_via:
+        description: How the production promotion was requested
+        required: false
+        default: manual
+      requested_by:
+        description: User or actor that requested production promotion
+        required: false
+        default: unknown
+      source_run_id:
+        description: Source staging workflow run ID
+        required: false
+        default: ""
+      source_sha:
+        description: Source staging commit SHA to promote
+        required: false
+        default: ""
+      source_tag:
+        description: Source staging deployment tag
+        required: false
+        default: ""
 
 permissions:
   id-token: write
@@ -24,10 +45,29 @@ jobs:
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+          REQUESTED_VIA: ${{ github.event.inputs.requested_via }}
+          REQUESTED_BY: ${{ github.event.inputs.requested_by }}
+          SOURCE_RUN_ID: ${{ github.event.inputs.source_run_id }}
+          SOURCE_SHA: ${{ github.event.inputs.source_sha }}
+          SOURCE_TAG: ${{ github.event.inputs.source_tag }}
         run: |
-          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH'" <<'REMOTE_SCRIPT'
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH' '$SOURCE_SHA' '$SOURCE_RUN_ID' '$SOURCE_TAG' '$REQUESTED_BY' '$REQUESTED_VIA'" <<'REMOTE_SCRIPT'
             set -euo pipefail
             PROJECT_PATH="$1"
+            SOURCE_SHA_VALUE="${2:-}"
+            SOURCE_RUN_ID_VALUE="${3:-}"
+            SOURCE_TAG_VALUE="${4:-}"
+            REQUESTED_BY_VALUE="${5:-unknown}"
+            REQUESTED_VIA_VALUE="${6:-manual}"
+
+            echo "[PROD] Promotion requested via: $REQUESTED_VIA_VALUE"
+            echo "[PROD] Promotion requested by: $REQUESTED_BY_VALUE"
+            if [ -n "$SOURCE_RUN_ID_VALUE" ]; then
+              echo "[PROD] Source staging run: $SOURCE_RUN_ID_VALUE"
+            fi
+            if [ -n "$SOURCE_TAG_VALUE" ]; then
+              echo "[PROD] Source staging tag: $SOURCE_TAG_VALUE"
+            fi
 
             echo '[PROD] Preparing log dir and fixing permissions for container user (UID 1002)...'
             if mkdir -p /srv/zana-logs-prod 2>/dev/null; then
@@ -56,6 +96,24 @@ jobs:
             if ! docker images | grep -q 'zana-ai-bot.*staging'; then
               echo '[PROD] ERROR: Staging image not found. Please deploy to staging first.'
               exit 1
+            fi
+
+            if [ -n "$SOURCE_SHA_VALUE" ]; then
+              echo "[PROD] Verifying staging image SHA matches requested source: $SOURCE_SHA_VALUE"
+              STAGING_IMAGE_SHA="$(docker run --rm --entrypoint cat zana-ai-bot:staging /app/VERSION 2>/dev/null || true)"
+              if [ -z "$STAGING_IMAGE_SHA" ]; then
+                echo '[PROD] ERROR: Could not read /app/VERSION from staging image.'
+                exit 1
+              fi
+              if [ "$STAGING_IMAGE_SHA" != "$SOURCE_SHA_VALUE" ] \
+                && [ "${STAGING_IMAGE_SHA#"$SOURCE_SHA_VALUE"}" = "$STAGING_IMAGE_SHA" ] \
+                && [ "${SOURCE_SHA_VALUE#"$STAGING_IMAGE_SHA"}" = "$SOURCE_SHA_VALUE" ]; then
+                echo "[PROD] ERROR: Staging image SHA mismatch. image=$STAGING_IMAGE_SHA requested=$SOURCE_SHA_VALUE"
+                exit 1
+              fi
+              echo "[PROD] OK: staging image SHA verified: $STAGING_IMAGE_SHA"
+            else
+              echo '[PROD] No source_sha input provided; promoting current zana-ai-bot:staging image.'
             fi
 
             echo '[PROD] Tagging zana-ai-bot:staging as zana-ai-bot:prod...'

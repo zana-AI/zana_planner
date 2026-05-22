@@ -11,8 +11,6 @@ import random
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, TYPE_CHECKING
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
@@ -24,6 +22,9 @@ from services.club_reminder_service import (
     CLUB_CHECKIN_PREFIX,
     build_club_reminder_message,
     create_club_checkin_keyboard,
+)
+from services.admin_ops_service import (
+    dispatch_github_workflow,
 )
 from platforms.interfaces import IResponseService
 from models.models import Action
@@ -1163,38 +1164,13 @@ class CallbackHandlers:
         token: str,
         inputs: Optional[dict] = None,
     ) -> None:
-        api_url = (
-            f"https://api.github.com/repos/{repository}/actions/workflows/"
-            f"{workflow_file}/dispatches"
+        dispatch_github_workflow(
+            repository=repository,
+            workflow_file=workflow_file,
+            ref=ref,
+            token=token,
+            inputs=inputs,
         )
-        payload = {"ref": ref}
-        if inputs:
-            payload["inputs"] = inputs
-
-        request = Request(
-            api_url,
-            data=json.dumps(payload).encode("utf-8"),
-            method="POST",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "Content-Type": "application/json",
-            },
-        )
-
-        try:
-            with urlopen(request, timeout=10) as response:
-                status = getattr(response, "status", response.getcode())
-                if status not in {201, 204}:
-                    raise RuntimeError(f"Unexpected GitHub API status: {status}")
-        except HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"GitHub dispatch failed with {e.code}: {body[:400]}"
-            ) from e
-        except URLError as e:
-            raise RuntimeError(f"Could not reach GitHub API: {e}") from e
 
     async def _handle_deploy_promote_prod(self, query, cb: dict) -> None:
         """Allow bot admins to trigger prod promotion workflow from Telegram."""
@@ -1219,6 +1195,24 @@ class CallbackHandlers:
         requested_by = requester if requester else str(user_id)
         source_run_id = str(cb.get("rid") or "").strip()
         source_sha = str(cb.get("sha") or "").strip()
+        source_tag = str(cb.get("tag") or "").strip()
+
+        if str(cb.get("confirm") or "") != "1":
+            confirm_cb = encode_cb(
+                "deploy_promote_prod",
+                rid=source_run_id,
+                sha=source_sha,
+                confirm="1",
+            )
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("Confirm prod deploy", callback_data=confirm_cb),
+            ]])
+            try:
+                await query.edit_message_reply_markup(reply_markup=keyboard)
+            except Exception as e:
+                logger.debug("Could not replace promote keyboard with confirmation: %s", e)
+            await query.answer("Tap confirm to promote this staging build.", show_alert=True)
+            return
 
         inputs = {
             "requested_via": "telegram",
@@ -1228,6 +1222,8 @@ class CallbackHandlers:
             inputs["source_run_id"] = source_run_id
         if source_sha:
             inputs["source_sha"] = source_sha
+        if source_tag:
+            inputs["source_tag"] = source_tag
 
         try:
             await asyncio.to_thread(

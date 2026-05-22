@@ -7,6 +7,7 @@ Supports:
   - Telegram admin alerts -> when bot token and ADMIN_IDS are configured
 """
 import logging
+import json
 import os
 import sys
 from datetime import datetime
@@ -15,6 +16,16 @@ from typing import Dict, Optional, Set
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+
+from services.admin_ops_service import (
+    DEFAULT_DEDUPE_SECONDS,
+    ErrorAlertRateLimiter,
+    build_github_issue_body,
+    build_github_issue_title,
+    build_github_issue_url,
+    error_fingerprint,
+    redact_sensitive_text,
+)
 
 # Try to import Logtail handler
 try:
@@ -120,12 +131,16 @@ class TelegramAdminErrorHandler(logging.Handler):
         admin_ids: Set[int],
         tag: str = "#system_error",
         timeout_seconds: float = 4.0,
+        dedupe_seconds: Optional[int] = None,
     ) -> None:
         super().__init__(level=logging.ERROR)
         self.bot_token = bot_token.strip()
         self.admin_ids = tuple(sorted(admin_ids))
         self.tag = tag
         self.timeout_seconds = timeout_seconds
+        self.rate_limiter = ErrorAlertRateLimiter(
+            DEFAULT_DEDUPE_SECONDS if dedupe_seconds is None else dedupe_seconds
+        )
         self._is_admin_error_handler = True
         self.setFormatter(
             logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -136,9 +151,19 @@ class TelegramAdminErrorHandler(logging.Handler):
             return
 
         try:
-            message = self._build_message(record)
+            fingerprint = error_fingerprint(record)
+            decision = self.rate_limiter.check(fingerprint)
+            if not decision.should_send:
+                return
+            message = self._build_message(
+                record,
+                fingerprint=fingerprint,
+                suppressed_count=decision.suppressed_count,
+            )
+            issue_url = self._build_issue_url(record, fingerprint=fingerprint)
+            reply_markup = self._build_reply_markup(issue_url)
             for admin_id in self.admin_ids:
-                self._send_message(admin_id, message)
+                self._send_message(admin_id, message, reply_markup=reply_markup)
         except Exception as exc:  # pragma: no cover - best effort logging path
             try:
                 sys.stderr.write(f"Failed to send admin error notification: {exc}\n")
@@ -149,27 +174,42 @@ class TelegramAdminErrorHandler(logging.Handler):
     def _html_escape(text: str) -> str:
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    def _build_message(self, record: logging.LogRecord) -> str:
+    def _build_message(
+        self,
+        record: logging.LogRecord,
+        *,
+        fingerprint: Optional[str] = None,
+        suppressed_count: int = 0,
+    ) -> str:
         _OPEN = "<blockquote expandable>"
         _CLOSE = "</blockquote>"
         _MAX = 4096
 
         timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-        error_text = record.getMessage()
+        error_text = redact_sensitive_text(record.getMessage())
 
-        header = "\n".join([
+        header_lines = [
             self.tag,
             f"time={timestamp}",
             f"level={record.levelname}",
             f"logger={record.name}",
-        ])
+        ]
+        if fingerprint:
+            header_lines.append(f"fingerprint={fingerprint}")
+        if suppressed_count:
+            header_lines.append(f"suppressed_since_last={suppressed_count}")
+        header = "\n".join(header_lines)
 
         body_parts = [self._html_escape(error_text)]
 
         if record.exc_info and self.formatter:
             traceback_text = self.formatter.formatException(record.exc_info)
             if traceback_text:
-                body_parts.extend(["", "traceback:", self._html_escape(traceback_text)])
+                body_parts.extend([
+                    "",
+                    "traceback:",
+                    self._html_escape(redact_sensitive_text(traceback_text)),
+                ])
 
         body = "\n".join(body_parts)
 
@@ -181,16 +221,82 @@ class TelegramAdminErrorHandler(logging.Handler):
 
         return f"{header}\n\n{_OPEN}{body}{_CLOSE}"
 
-    def _send_message(self, admin_id: int, text: str) -> None:
-        api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-        payload = urlencode(
+    def _build_issue_plaintext(self, record: logging.LogRecord, *, fingerprint: str) -> str:
+        body_parts = [redact_sensitive_text(record.getMessage())]
+        if record.exc_info and self.formatter:
+            traceback_text = self.formatter.formatException(record.exc_info)
+            if traceback_text:
+                body_parts.extend(["", "traceback:", redact_sensitive_text(traceback_text)])
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        return "\n".join([
+            self.tag,
+            f"time={timestamp}",
+            f"level={record.levelname}",
+            f"logger={record.name}",
+            f"fingerprint={fingerprint}",
+            "",
+            "\n".join(body_parts),
+        ])
+
+    def _build_issue_url(self, record: logging.LogRecord, *, fingerprint: str) -> str:
+        repository = (
+            os.getenv("GITHUB_ISSUE_REPOSITORY")
+            or os.getenv("GITHUB_DEPLOY_REPOSITORY")
+            or os.getenv("GITHUB_REPOSITORY")
+            or "zana-AI/zana_planner"
+        ).strip().strip("/")
+        if "/" not in repository:
+            repository = "zana-AI/zana_planner"
+        plain_message = self._build_issue_plaintext(record, fingerprint=fingerprint)
+        title = build_github_issue_title(
+            fingerprint,
+            record.name,
+            record.getMessage(),
+        )
+        body = build_github_issue_body(
+            fingerprint=fingerprint,
+            admin_message=plain_message,
+            requested_by="telegram-admin",
+        )
+        labels = [
+            label.strip()
+            for label in os.getenv("GITHUB_ISSUE_LABELS", "bug,admin-error").split(",")
+            if label.strip()
+        ]
+        return build_github_issue_url(
+            repository=repository,
+            title=title,
+            body=body,
+            labels=labels,
+        )
+
+    @staticmethod
+    def _build_reply_markup(issue_url: str) -> str:
+        return json.dumps(
             {
-                "chat_id": str(admin_id),
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": "true",
-            }
-        ).encode("utf-8")
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "Create GitHub issue",
+                            "url": issue_url,
+                        }
+                    ]
+                ]
+            },
+            separators=(",", ":"),
+        )
+
+    def _send_message(self, admin_id: int, text: str, reply_markup: Optional[str] = None) -> None:
+        api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        fields = {
+            "chat_id": str(admin_id),
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": "true",
+        }
+        if reply_markup:
+            fields["reply_markup"] = reply_markup
+        payload = urlencode(fields).encode("utf-8")
         request = Request(api_url, data=payload, method="POST")
         with urlopen(request, timeout=self.timeout_seconds):
             pass
@@ -220,7 +326,17 @@ def _build_admin_error_handler(
     if not resolved_token or not admin_ids:
         return None
 
-    return TelegramAdminErrorHandler(resolved_token, admin_ids)
+    raw_dedupe_seconds = os.getenv("ADMIN_ERROR_DEDUPE_SECONDS", str(DEFAULT_DEDUPE_SECONDS))
+    try:
+        dedupe_seconds = int(raw_dedupe_seconds)
+    except ValueError:
+        dedupe_seconds = DEFAULT_DEDUPE_SECONDS
+
+    return TelegramAdminErrorHandler(
+        resolved_token,
+        admin_ids,
+        dedupe_seconds=dedupe_seconds,
+    )
 
 
 def _remove_admin_error_handlers(logger: logging.Logger) -> None:

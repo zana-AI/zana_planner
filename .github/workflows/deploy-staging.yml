@@ -146,9 +146,11 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH'" <<'REMOTE_SCRIPT'
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "bash -s -- '$PROJECT_PATH' '$GITHUB_RUN_ID' '$GITHUB_ACTOR'" <<'REMOTE_SCRIPT'
             set -euo pipefail
             PROJECT_PATH="$1"
+            GITHUB_RUN_ID_VALUE="${2:-}"
+            GITHUB_ACTOR_VALUE="${3:-unknown}"
             cd "$PROJECT_PATH"
             COMMIT_SHA="$(git rev-parse --short HEAD)"
             TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -156,4 +158,74 @@ jobs:
             git tag -a "$TAG" -m "Staging deployment: $(date)" || true
             git push origin "$TAG" || true
             echo "Tagged as: $TAG"
+
+            echo '[STAGING] Notifying Telegram admins...'
+            set +u
+            if [ -f /opt/zana-config/.env.staging ]; then
+              set -a
+              . /opt/zana-config/.env.staging
+              set +a
+            fi
+            set -u
+            export STAGING_COMMIT_SHA="$COMMIT_SHA"
+            export STAGING_TAG="$TAG"
+            export STAGING_RUN_ID="$GITHUB_RUN_ID_VALUE"
+            export STAGING_ACTOR="$GITHUB_ACTOR_VALUE"
+            python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          bot_token = (os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+          admin_ids = [
+              item.strip()
+              for item in (os.getenv("ADMIN_IDS") or "").split(",")
+              if item.strip()
+          ]
+          if not bot_token or not admin_ids:
+              print("[STAGING] Telegram admin notification skipped: missing BOT_TOKEN/ADMIN_IDS")
+              raise SystemExit(0)
+
+          commit_sha = os.getenv("STAGING_COMMIT_SHA", "")
+          tag = os.getenv("STAGING_TAG", "")
+          run_id = os.getenv("STAGING_RUN_ID", "")
+          actor = os.getenv("STAGING_ACTOR", "unknown")
+          callback_data = urllib.parse.urlencode({
+              "a": "deploy_promote_prod",
+              "rid": run_id,
+              "sha": commit_sha,
+          })
+          message = "\n".join([
+              "#staging_deployed",
+              f"sha={commit_sha}",
+              f"tag={tag}",
+              f"run_id={run_id}",
+              f"actor={actor}",
+              "",
+              "Tap Promote to prod, then confirm, to dispatch the production workflow for this staging build.",
+          ])
+          reply_markup = json.dumps({
+              "inline_keyboard": [[
+                  {"text": "Promote to prod", "callback_data": callback_data}
+              ]]
+          }, separators=(",", ":"))
+          for admin_id in admin_ids:
+              payload = urllib.parse.urlencode({
+                  "chat_id": admin_id,
+                  "text": message,
+                  "reply_markup": reply_markup,
+                  "disable_web_page_preview": "true",
+              }).encode("utf-8")
+              req = urllib.request.Request(
+                  f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                  data=payload,
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=8) as response:
+                      print(f"[STAGING] Telegram notification sent to {admin_id}: {response.status}")
+              except Exception as exc:
+                  print(f"[STAGING] Telegram notification failed for {admin_id}: {exc}")
+          PY
           REMOTE_SCRIPT
