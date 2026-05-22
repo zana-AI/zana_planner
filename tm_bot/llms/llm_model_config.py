@@ -37,7 +37,7 @@ MODEL_CONFIGS = {
         responder="deepseek-chat",
     ),
     "groq": RoleModels(
-        router="openai/gpt-oss-20b",
+        router="llama-3.3-70b-versatile",
         planner="llama-3.3-70b-versatile",
         responder="llama-3.3-70b-versatile",
     ),

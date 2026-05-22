@@ -26,6 +26,7 @@ import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from utils.logger import get_logger
@@ -241,6 +242,15 @@ def flag_trace(
         return {"ok": False, "message": f"langfuse score failed: {exc}"}
 
 
+def _langfuse_environment() -> str:
+    raw = (os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or "").strip().lower()
+    if raw in ("production", "prod"):
+        return "production"
+    if raw in ("staging", "stage"):
+        return "staging"
+    return raw or "development"
+
+
 def _send_trace(
     *,
     provider: str,
@@ -265,7 +275,11 @@ def _send_trace(
         rendered_input = [_render_message(m, redact) for m in messages_in]
         rendered_output = _redact(output_text) if redact else output_text
 
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(milliseconds=latency_ms)
+
         trace_name = f"xaana.{role or 'llm'}"
+        environment = _langfuse_environment()
         trace_metadata = {
             "message_id": message_id,
             "provider": provider,
@@ -273,22 +287,32 @@ def _send_trace(
         }
         level = "ERROR" if not success else "DEFAULT"
 
+        # Cost per token in USD (from model pricing table, per 1M tokens).
+        from llms.llm_model_config import MODEL_PRICING
+        pricing = MODEL_PRICING.get(model_name)
+        input_cost = (pricing[0] * input_tokens / 1_000_000) if pricing else None
+        output_cost = (pricing[1] * output_tokens / 1_000_000) if pricing else None
+
         if hasattr(client, "trace"):
             trace = client.trace(
                 name=trace_name,
                 user_id=user_id,
                 session_id=chat_id,
                 metadata=trace_metadata,
+                environment=environment,
             )
             trace.generation(
                 name=role or "llm",
                 model=model_name,
                 input=rendered_input,
                 output=rendered_output,
+                start_time=start_time,
+                end_time=end_time,
                 usage={
                     "input": input_tokens,
                     "output": output_tokens,
                     "total": input_tokens + output_tokens,
+                    **({"input_cost": input_cost, "output_cost": output_cost, "total_cost": (input_cost or 0) + (output_cost or 0)} if pricing else {}),
                 },
                 metadata={"latency_ms": latency_ms, "provider": provider},
                 level=level,
@@ -300,6 +324,8 @@ def _send_trace(
                 model=model_name,
                 input=rendered_input,
                 output=rendered_output,
+                start_time=start_time,
+                end_time=end_time,
                 usage_details={
                     "input": input_tokens,
                     "output": output_tokens,
@@ -315,6 +341,7 @@ def _send_trace(
                         user_id=user_id,
                         session_id=chat_id,
                         metadata=trace_metadata,
+                        environment=environment,
                     )
         else:
             _logger.warning("Langfuse trace API unavailable; tracing disabled")
