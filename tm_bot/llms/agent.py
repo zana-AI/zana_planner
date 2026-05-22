@@ -2166,12 +2166,45 @@ def create_plan_execute_graph(
                 
                 obj = _parse_json_obj(src_text)
                 resolved = (obj or {}).get(src_field) if obj else None
-                
+
+                # Structured resolver output: JSON with a "confidence" field.
+                # Produced by LLM-based resolvers (resolve_datetime, etc.).
+                # High confidence → use resolved value directly.
+                # Low/none → surface clarification question to user.
+                if obj and "confidence" in obj:
+                    confidence = obj.get("confidence", "none")
+                    if confidence == "high":
+                        resolved_value = obj.get("resolved")
+                        if resolved_value not in (None, "", [], {}):
+                            tool_args[arg_name] = resolved_value
+                            continue  # placeholder resolved — move to next arg
+                    # low or none: ask the user
+                    clarification_q = obj.get("clarification") or (
+                        f"I'm not sure about the {arg_name} — could you be more specific?"
+                    )
+                    candidates = obj.get("candidates") or []
+                    pending = {
+                        "reason": "resolver_uncertain",
+                        "tool_name": tool_name,
+                        "missing_fields": [arg_name],
+                        "partial_args": {k: v for k, v in (tool_args or {}).items() if k != arg_name},
+                        "clarification": clarification_q,
+                        "candidates": candidates,
+                        "placeholder": arg_val,
+                    }
+                    return {
+                        **state,
+                        "iteration": new_iteration,
+                        "final_response": clarification_q,
+                        "pending_clarification": pending,
+                        "step_idx": idx + 1,
+                    }
+
                 # If JSON parsing succeeded and field found, use it
                 if resolved not in (None, "", [], {}):
                     tool_args[arg_name] = resolved
                 # If field is empty or JSON parsing failed, use the string output directly
-                # This handles tools like resolve_datetime that return plain strings (e.g., "2026-01-14T00:00:00")
+                # This handles legacy plain-string tool outputs.
                 elif not src_field or not obj:
                     # Tool returned a string (not JSON), use it directly.
                     # Special case: for promise_id, try to extract '#P10'-style IDs from

@@ -3226,6 +3226,8 @@ class LLMHandler:
             "no_op",
             "maybe_ask_profile_question",
             "set_llm_handler",   # internal wiring, not a user-facing tool
+            # Superseded by LLM-based resolver added below.
+            "resolve_datetime",
             # Async wrappers — the LLM should call the sync method instead.
             "async_get_settings",
             "async_save_settings",
@@ -3267,6 +3269,41 @@ class LLMHandler:
                 tools.append(tool)
             except Exception as e:
                 logger.warning(f"Skipping tool {attr_name}: {e}")
+
+        # LLM-based datetime resolver — replaces the dateparser-based adapter method.
+        # Uses self.router_model (llama-3.3-70b on Groq) which understands all user languages.
+        _resolver_model = self.router_model
+
+        def _resolve_datetime_tool(datetime_text: str) -> str:
+            """Resolve a natural-language date/time expression to ISO 8601.
+
+            Returns JSON: {resolved, confidence, candidates?, clarification?}.
+            The executor reads `confidence` — high proceeds, low/none triggers clarification.
+            """
+            from llms.resolvers import resolve_datetime_with_llm
+            user_id = _current_user_id.get()
+            user_tz = "UTC"
+            if user_id:
+                try:
+                    settings = adapter.settings_repo.get_settings(int(user_id))
+                    tz_raw = getattr(settings, "timezone", None)
+                    if tz_raw and tz_raw != "DEFAULT":
+                        user_tz = tz_raw
+                except Exception:
+                    pass
+            return resolve_datetime_with_llm(_resolver_model, datetime_text, user_tz)
+
+        tools.append(
+            StructuredTool.from_function(
+                func=_resolve_datetime_tool,
+                name="resolve_datetime",
+                description=(
+                    "Resolve a natural-language date/time phrase to ISO 8601. "
+                    "Pass the phrase verbatim from the user message. "
+                    "Returns JSON with confidence; executor handles clarification if uncertain."
+                ),
+            )
+        )
 
         root_dir = adapter.root_dir
 
