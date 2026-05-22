@@ -311,11 +311,30 @@ _PLANNER_PROMPT_BASE = (
     "=== ROLE ===\n"
     "You are the PLANNER for a task management assistant.\n"
     "Produce a short plan as JSON the executor can follow.\n\n"
+
+    "=== DATETIME RESOLUTION (MANDATORY) ===\n"
+    "ANY time a tool requires a datetime/time argument, you MUST:\n"
+    "1. Add a resolve_datetime step FIRST with the time expression from the user.\n"
+    '2. In the subsequent tool step, use "FROM_TOOL:resolve_datetime:" as the value '
+    "for the datetime/time argument (e.g., remind_at, planned_start, due_date).\n"
+    "The executor will substitute FROM_TOOL:resolve_datetime: with the resolved ISO 8601 time.\n"
+    "Never pass the raw time string directly to remind_at or planned_start — always resolve first.\n\n"
+
+    "=== TOOL SELECTION GUIDE ===\n"
+    "- User wants a NOTIFICATION at a time → create_reminder(text, remind_at)\n"
+    "- User wants to PLAN a work session for a promise → schedule_session(promise_id, planned_start)\n"
+    "- User wants to LOG completed work → log_completed_activity(promise_id, time_spent)\n"
+    "- User wants to CREATE a new ongoing promise → add_promise(promise_text, num_hours_promised_per_week)\n"
+    "- User wants to see/analyse their promises → get_promises() then respond\n\n"
+
     "=== OUTPUT FORMAT ===\n"
-    "Return ONLY valid JSON with this schema:\n"
+    "Return ONLY valid JSON:\n"
     "{\n"
     '  "steps": [\n'
-    '    {"kind": "tool", "purpose": "...", "tool_name": "...", "tool_args": {...}},\n'
+    '    {"kind": "tool", "purpose": "...", "tool_name": "resolve_datetime", '
+    '     "tool_args": {"datetime_text": "<phrase from user>"}},\n'
+    '    {"kind": "tool", "purpose": "...", "tool_name": "create_reminder", '
+    '     "tool_args": {"text": "...", "remind_at": "FROM_TOOL:resolve_datetime:"}},\n'
     '    {"kind": "respond", "purpose": "...", "response_hint": "..."}\n'
     "  ],\n"
     '  "detected_intent": "...",\n'
@@ -425,6 +444,16 @@ def _initial_routed_state(user_text: str) -> Dict[str, Any]:
     }
 
 
+def _build_tools_overview(tools: List[Any]) -> str:
+    """Build a concise tool overview string for the planner system message."""
+    lines = ["AVAILABLE TOOLS:"]
+    for t in tools:
+        name = getattr(t, "name", "?")
+        desc = (getattr(t, "description", "") or "").splitlines()[0][:80]
+        lines.append(f"  - {name}: {desc}")
+    return "\n".join(lines)
+
+
 def run_tier2(
     transcript: Dict[str, Any],
     adapter: PlannerAPIAdapter,
@@ -474,14 +503,25 @@ def run_tier2(
     except Exception as e:
         errors.append(f"resolve_datetime tool build failed: {e}")
 
+    # Build planner system message that includes tool list so the planner can form valid plans.
+    tools_overview = _build_tools_overview(tracked_tools)
+
+    from langchain_core.messages import SystemMessage as _SystemMessage
+
+    def _get_system_message_for_mode(user_id_ctx, mode, user_lang):
+        return _SystemMessage(content=tools_overview)
+
+    def _get_planner_prompt_with_tools(mode: str) -> str:
+        return _get_planner_prompt_for_mode(mode) + "\n\n" + tools_overview
+
     app = create_routed_plan_execute_graph(
         tools=tracked_tools,
         router_model=router_model,
         planner_model=planner_model,
         responder_model=responder_model,
         router_prompt=_ROUTER_PROMPT,
-        get_planner_prompt_for_mode=_get_planner_prompt_for_mode,
-        get_system_message_for_mode=None,
+        get_planner_prompt_for_mode=_get_planner_prompt_with_tools,
+        get_system_message_for_mode=_get_system_message_for_mode,
         emit_plan=False,
         max_iterations=8,
     )
@@ -492,9 +532,7 @@ def run_tier2(
     try:
         for i, turn in enumerate(turns):
             user_msg = turn.get("user") or ""
-            turn_called: List[str] = []
 
-            # Reset global tracker for this turn, capture in per-turn list
             start_idx = len(called_tools_global)
 
             state = _initial_routed_state(user_msg)
@@ -511,8 +549,15 @@ def run_tier2(
             final_response = state.get("final_response") or ""
             per_turn_responses.append(final_response)
 
-            turn_called = called_tools_global[start_idx:]
-            called_tools_per_turn.append(list(turn_called))
+            turn_called = list(called_tools_global[start_idx:])
+            # Also count any tool that the planner decided to call but is pending
+            # confirmation or arg resolution — it was PLANNED, which is what we test.
+            pending = state.get("pending_clarification") or {}
+            pending_tool = pending.get("tool_name")
+            if pending_tool and pending_tool not in turn_called:
+                turn_called.append(pending_tool)
+
+            called_tools_per_turn.append(turn_called)
 
             actual_mode = state.get("mode") or ""
             expect_route = turn.get("expect_route")

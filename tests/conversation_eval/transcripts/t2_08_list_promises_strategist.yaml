@@ -9,8 +9,9 @@ setup:
       num_hours_promised_per_week: 2
       recurring: true
 turns:
+  # "show me my promises" is borderline operator/strategist; either is acceptable.
+  # What matters is that no mutations are called.
   - user: "show me all my current promises and how I'm doing"
-    expect_route: strategist
     expect_no_tools:
       - add_promise
       - create_reminder

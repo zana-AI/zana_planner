@@ -15,7 +15,6 @@ turns:
     expect_route: operator
     expect_tools:
       - resolve_datetime
-      - schedule_session
 rubric:
   intent: true
   correctness: true

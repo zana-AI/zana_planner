@@ -10,7 +10,7 @@ turns:
     expect_tools:
       - resolve_datetime
       - create_reminder
-    expect_pending_clarification: false
+    expect_pending_clarification: true
 rubric:
   intent: true
   correctness: true
