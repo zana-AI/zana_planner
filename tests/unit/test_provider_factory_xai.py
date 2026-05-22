@@ -45,7 +45,7 @@ def test_create_provider_adapter_auto_uses_xai_when_only_xai_key_present():
     assert isinstance(adapter, XAIProviderAdapter)
 
 
-def test_xai_live_search_uses_responses_web_search_tool(monkeypatch):
+def test_xai_live_search_uses_responses_web_and_x_search_tools(monkeypatch):
     import openai
 
     captured = {}
@@ -86,5 +86,51 @@ def test_xai_live_search_uses_responses_web_search_tool(monkeypatch):
     assert response.content == "live answer"
     assert captured["client_kwargs"]["base_url"] == "https://api.x.ai/v1"
     assert captured["model"] == "grok-4.3"
-    assert captured["tools"] == [{"type": "web_search"}]
+    assert captured["tools"] == [{"type": "web_search"}, {"type": "x_search"}]
     assert "search_parameters" not in captured
+
+
+def test_xai_live_search_passes_x_search_parameters(monkeypatch):
+    import openai
+
+    captured = {}
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(id="resp_123", model=kwargs["model"], output_text="live answer")
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.responses = FakeResponses()
+
+    monkeypatch.setattr(openai, "OpenAI", FakeOpenAI)
+
+    adapter = XAIProviderAdapter({})
+    model = adapter.build_role_model(
+        "responder",
+        {
+            "xai_api_key": "test-key",
+            "xai_base_url": "https://api.x.ai/v1",
+            "xai_model": "grok-4.3",
+            "live_search": True,
+            "x_search_parameters": {
+                "allowed_x_handles": ["xai"],
+                "from_date": "2026-05-01",
+                "enable_video_understanding": True,
+                "ignored": "not forwarded",
+            },
+        },
+    )
+
+    model.invoke([HumanMessage(content="What are people saying about xAI?")])
+
+    assert captured["tools"] == [
+        {"type": "web_search"},
+        {
+            "type": "x_search",
+            "allowed_x_handles": ["xai"],
+            "from_date": "2026-05-01",
+            "enable_video_understanding": True,
+        },
+    ]

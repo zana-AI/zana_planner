@@ -9,8 +9,8 @@ from .base import ProviderAdapter, wrap_model
 from .types import LLMInvokeOptions, NormalizedLLMResult, ProviderCapabilities
 
 
-class _XAIResponsesWebSearchModel:
-    """Minimal xAI Responses API model for native web search turns."""
+class _XAIResponsesLiveSearchModel:
+    """Minimal xAI Responses API model for native web and X search turns."""
 
     def __init__(
         self,
@@ -20,6 +20,8 @@ class _XAIResponsesWebSearchModel:
         model: str,
         timeout: Optional[float],
         max_retries: Optional[int],
+        enable_x_search: bool = True,
+        x_search_parameters: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.model = model
         self.model_name = model
@@ -27,6 +29,8 @@ class _XAIResponsesWebSearchModel:
         self._base_url = (base_url or "https://api.x.ai/v1").rstrip("/")
         self._timeout = timeout
         self._max_retries = max_retries
+        self._enable_x_search = enable_x_search
+        self._x_search_parameters = self._clean_x_search_parameters(x_search_parameters or {})
 
     @staticmethod
     def _message_role(message: BaseMessage) -> str:
@@ -112,6 +116,31 @@ class _XAIResponsesWebSearchModel:
             "total_tokens": input_tokens + output_tokens,
         }
 
+    @staticmethod
+    def _clean_x_search_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
+        allowed_keys = {
+            "allowed_x_handles",
+            "excluded_x_handles",
+            "from_date",
+            "to_date",
+            "enable_image_understanding",
+            "enable_video_understanding",
+        }
+        cleaned = {
+            key: value
+            for key, value in parameters.items()
+            if key in allowed_keys and value not in (None, "", [])
+        }
+        if cleaned.get("allowed_x_handles") and cleaned.get("excluded_x_handles"):
+            raise ValueError("x_search cannot set both allowed_x_handles and excluded_x_handles")
+        return cleaned
+
+    def _tools(self) -> List[Dict[str, Any]]:
+        tools: List[Dict[str, Any]] = [{"type": "web_search"}]
+        if self._enable_x_search:
+            tools.append({"type": "x_search", **self._x_search_parameters})
+        return tools
+
     def invoke(self, messages: Sequence[BaseMessage], **_: Any) -> AIMessage:
         from openai import OpenAI
 
@@ -128,7 +157,7 @@ class _XAIResponsesWebSearchModel:
         response = client.responses.create(
             model=self.model,
             input=self._messages_to_input(messages),
-            tools=[{"type": "web_search"}],
+            tools=self._tools(),
         )
         usage_metadata = self._usage_metadata(response)
         response_metadata = {
@@ -192,12 +221,14 @@ class XAIProviderAdapter(ProviderAdapter):
             max_retries=base_config.get("max_retries"),
         )
         if base_config.get("live_search"):
-            model = _XAIResponsesWebSearchModel(
+            model = _XAIResponsesLiveSearchModel(
                 api_key=kwargs["openai_api_key"],
                 base_url=kwargs["base_url"],
                 model=kwargs["model"],
                 timeout=kwargs["timeout"],
                 max_retries=kwargs["max_retries"],
+                enable_x_search=bool(base_config.get("x_search_enabled", True)),
+                x_search_parameters=base_config.get("x_search_parameters"),
             )
         else:
             model = ChatOpenAI(**kwargs)
