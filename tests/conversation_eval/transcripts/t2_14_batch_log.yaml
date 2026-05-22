@@ -1,0 +1,25 @@
+# Multi-item activity logging: "I did 2h reading and 1h exercise today" — system must
+# detect multiple activities and call at least one log tool (singular or batch form).
+# The key assertion: it does NOT ignore one of the items.
+name: t2_14_batch_log
+description: multi-activity sentence triggers log_completed_activity for each item
+tier: 2
+setup:
+  - add_promise:
+      promise_text: Reading
+      num_hours_promised_per_week: 3
+      recurring: true
+  - add_promise:
+      promise_text: Exercise
+      num_hours_promised_per_week: 3
+      recurring: true
+turns:
+  - user: "I did 2 hours of reading and 1 hour of exercise today"
+    expect_route: operator
+    expect_tools:
+      - log_completed_activity
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 2

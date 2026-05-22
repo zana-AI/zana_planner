@@ -1,0 +1,20 @@
+# Multi-turn clarification resume: "asap" has no resolvable datetime (confidence=none),
+# so the system asks a clarification question (pending_clarification set).
+# Turn 2 provides a specific time — system resumes and calls create_reminder.
+name: t2_13_multiturn_clarification
+description: vague-time reminder triggers clarification, turn-2 answer executes create_reminder
+tier: 2
+turns:
+  - user: "remind me asap to call the dentist"
+    expect_route: operator
+    expect_tools:
+      - resolve_datetime
+    expect_pending_clarification: true
+
+  - user: "tomorrow at 9am"
+    expect_route: operator
+    expect_tools:
+      - create_reminder
+rubric:
+  intent: true
+  correctness: true

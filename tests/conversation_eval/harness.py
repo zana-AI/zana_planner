@@ -535,7 +535,23 @@ def run_tier2(
 
             start_idx = len(called_tools_global)
 
-            state = _initial_routed_state(user_msg)
+            if i == 0:
+                state = _initial_routed_state(user_msg)
+            else:
+                # Carry conversation state across turns: preserve pending_clarification
+                # and message history so multi-turn flows can resume correctly.
+                state = {
+                    **state,
+                    "messages": list(state.get("messages") or []) + [HumanMessage(content=user_msg)],
+                    "iteration": 0,
+                    "plan": None,
+                    "step_idx": 0,
+                    "final_response": None,
+                    "planner_error": None,
+                    "mode": None,
+                    "route_confidence": None,
+                    "route_reason": None,
+                }
 
             try:
                 result = app.invoke(state)

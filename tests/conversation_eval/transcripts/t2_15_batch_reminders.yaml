@@ -1,0 +1,16 @@
+# Multi-reminder message: "Remind me at 8pm to call mom and at 9pm to take vitamins"
+# System must call resolve_datetime and initiate at least one create_reminder.
+# Confirmation is expected because create_reminder is in ALWAYS_CONFIRM_TOOLS.
+name: t2_15_batch_reminders
+description: two-reminder message triggers resolve_datetime and create_reminder
+tier: 2
+turns:
+  - user: "Remind me at 8pm to call mom and at 9pm to take my vitamins"
+    expect_route: operator
+    expect_tools:
+      - resolve_datetime
+      - create_reminder
+    expect_pending_clarification: true
+rubric:
+  intent: true
+  correctness: true
