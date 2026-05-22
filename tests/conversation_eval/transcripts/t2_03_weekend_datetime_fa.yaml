@@ -1,0 +1,16 @@
+# -*- coding: utf-8 -*-
+# "آخر هفته" is Persian for "the weekend" — same resolution as "this weekend".
+# Validates that the LLM resolver handles non-English datetime phrases.
+name: t2_03_weekend_datetime_fa
+description: Persian "آخر هفته" resolves confidently to coming Saturday
+tier: 2
+turns:
+  - user: "آخر هفته یادم بنداز ورزش کنم"
+    expect_route: operator
+    expect_tools:
+      - resolve_datetime
+      - create_reminder
+    expect_pending_clarification: false
+rubric:
+  intent: true
+  correctness: true

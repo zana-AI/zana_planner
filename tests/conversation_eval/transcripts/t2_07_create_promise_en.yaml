@@ -1,0 +1,14 @@
+# Creating a new promise is a transactional mutation → operator mode.
+# add_promise requires confirmation by default, so expect_pending_clarification=true.
+name: t2_07_create_promise_en
+description: English create-promise intent routes to operator and calls add_promise
+tier: 2
+turns:
+  - user: "I want to start running every week, about 3 hours"
+    expect_route: operator
+    expect_tools:
+      - add_promise
+    expect_pending_clarification: true
+rubric:
+  intent: true
+  correctness: true

@@ -1,0 +1,15 @@
+# "this weekend" should resolve with high confidence (coming Saturday at 09:00).
+# No clarification question should be triggered.
+name: t2_02_weekend_datetime_en
+description: this-weekend resolves confidently — create_reminder, no clarification
+tier: 2
+turns:
+  - user: "remind me this weekend to go to the gym"
+    expect_route: operator
+    expect_tools:
+      - resolve_datetime
+      - create_reminder
+    expect_pending_clarification: false
+rubric:
+  intent: true
+  correctness: true

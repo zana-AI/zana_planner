@@ -1,0 +1,21 @@
+# -*- coding: utf-8 -*-
+# "فردا میخام ورزش کنم" = "I want to exercise tomorrow"
+# Future-tense planning → schedule_session, with resolve_datetime for "فردا" (tomorrow).
+# Confirmation should be requested (schedule_session is in CONFIRM_ON_LOW_CONFIDENCE_TOOLS).
+name: t2_11_schedule_session_fa
+description: Persian future-tense exercise plan routes to operator, calls schedule_session
+tier: 2
+setup:
+  - add_promise:
+      promise_text: Exercise
+      num_hours_promised_per_week: 3
+      recurring: true
+turns:
+  - user: "فردا میخام ورزش کنم"
+    expect_route: operator
+    expect_tools:
+      - resolve_datetime
+      - schedule_session
+rubric:
+  intent: true
+  correctness: true

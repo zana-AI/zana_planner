@@ -1,0 +1,21 @@
+# -*- coding: utf-8 -*-
+# Same as t2_09 but in Persian. Validates that the router correctly handles
+# Persian log-activity phrasing without mis-routing to engagement.
+name: t2_10_log_activity_fa
+description: Persian log-activity "امروز یک ساعت کتاب خوندم" routes to operator
+tier: 2
+setup:
+  - add_promise:
+      promise_text: Reading
+      num_hours_promised_per_week: 2
+      recurring: true
+turns:
+  - user: "امروز یک ساعت کتاب خوندم"
+    expect_route: operator
+    expect_tools:
+      - log_completed_activity
+    expect_no_tools:
+      - memory_write
+rubric:
+  intent: true
+  correctness: true

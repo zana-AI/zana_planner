@@ -1,0 +1,22 @@
+# Asking to see or analyse progress is a coaching/analysis intent → strategist mode.
+# Must NOT call mutation tools like add_promise.
+name: t2_08_list_promises_strategist
+description: show-me-my-promises routes to strategist mode, no mutations
+tier: 2
+setup:
+  - add_promise:
+      promise_text: Reading
+      num_hours_promised_per_week: 2
+      recurring: true
+turns:
+  - user: "show me all my current promises and how I'm doing"
+    expect_route: strategist
+    expect_no_tools:
+      - add_promise
+      - create_reminder
+      - log_completed_activity
+rubric:
+  intent: true
+  correctness: true
+  db_final:
+    promises_count: 1

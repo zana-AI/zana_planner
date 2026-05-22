@@ -1,0 +1,12 @@
+# "asap" is genuinely unresolvable to a specific datetime.
+# The resolver must return confidence=none and the bot must ask the user to be specific.
+name: t2_05_asap_clarification
+description: asap produces confidence=none and a clarification question
+tier: 2
+turns:
+  - user: "remind me asap to call the dentist"
+    expect_route: operator
+    expect_pending_clarification: true
+rubric:
+  intent: true
+  correctness: true

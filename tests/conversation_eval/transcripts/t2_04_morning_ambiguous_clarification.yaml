@@ -1,0 +1,12 @@
+# "in the morning" without a day reference is genuinely ambiguous (tomorrow? day after?).
+# The LLM resolver should return confidence=low and the executor should surface a clarification.
+name: t2_04_morning_ambiguous_clarification
+description: Bare "in the morning" triggers a clarification question
+tier: 2
+turns:
+  - user: "remind me in the morning to take my vitamins"
+    expect_route: operator
+    expect_pending_clarification: true
+rubric:
+  intent: true
+  correctness: true

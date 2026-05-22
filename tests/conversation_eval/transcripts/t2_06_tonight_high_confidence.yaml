@@ -1,0 +1,14 @@
+# "tonight at 8pm" is specific — resolver must return confidence=high with no clarification.
+name: t2_06_tonight_high_confidence
+description: tonight-at-8pm resolves at high confidence, no clarification triggered
+tier: 2
+turns:
+  - user: "remind me tonight at 8pm to call my mom"
+    expect_route: operator
+    expect_tools:
+      - resolve_datetime
+      - create_reminder
+    expect_pending_clarification: false
+rubric:
+  intent: true
+  correctness: true

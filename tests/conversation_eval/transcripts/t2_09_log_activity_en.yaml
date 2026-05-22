@@ -1,0 +1,18 @@
+# Logging a completed activity is a transactional mutation → operator mode.
+# The planner should call log_completed_activity (or add_action).
+name: t2_09_log_activity_en
+description: English log-activity routes to operator and calls log_completed_activity
+tier: 2
+setup:
+  - add_promise:
+      promise_text: Exercise
+      num_hours_promised_per_week: 3
+      recurring: true
+turns:
+  - user: "I just finished 45 minutes of exercise"
+    expect_route: operator
+    expect_tools:
+      - log_completed_activity
+rubric:
+  intent: true
+  correctness: true

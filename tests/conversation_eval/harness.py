@@ -1,5 +1,9 @@
 """
 Conversation eval harness: load transcripts, run Tier 1 (graph + mock planner), evaluate rubric.
+
+Tier 1: mock planner, real tools + DB — validates plan-execute logic.
+Tier 2: real router + planner LLMs — validates routing, datetime resolution, clarification flow.
+         Requires GROQ_API_KEY (or another provider key) in the environment.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ if TM_BOT_DIR not in sys.path:
     sys.path.insert(0, TM_BOT_DIR)
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from llms.agent import create_plan_execute_graph
+from llms.agent import create_plan_execute_graph, create_routed_plan_execute_graph
 from llms.tool_wrappers import _current_user_id, _wrap_tool
 from services.planner_api_adapter import PlannerAPIAdapter
 from langchain_core.tools import StructuredTool
@@ -269,3 +273,298 @@ def evaluate_rubric(
     scores["tone"] = True  # Stub: always pass
     scores["follow_up"] = True  # Stub: always pass
     return scores
+
+
+# ---------------------------------------------------------------------------
+# Tier 2 — real router + planner LLMs
+# ---------------------------------------------------------------------------
+
+# Router prompt (mirrors LLMHandler.system_message_router_prompt).
+_ROUTER_PROMPT = (
+    "=== ROLE ===\n"
+    "You are a ROUTER for a task management assistant.\n"
+    "Your job: classify the user's message into one of four agent modes.\n\n"
+    "=== MODES ===\n"
+    "- **operator**: Transactional actions (create/update/delete promises, log actions, change settings). "
+    "Examples: 'I want to call a friend tomorrow', 'log 2 hours on reading', 'delete my gym promise'.\n"
+    "- **strategist**: High-level goals, coaching, advice, progress analysis, strategic planning. "
+    "Examples: 'what should I focus on this week?', 'am I on track with my goals?'\n"
+    "- **social**: Community features (followers, following, feed, public promises).\n"
+    "- **engagement**: Casual chat, humor, thanks, greetings, sharing personal facts.\n\n"
+    "=== ROUTING RULES ===\n"
+    "- If the user wants to DO something (create, log, delete, update, remind) → operator\n"
+    "- If the user wants ADVICE, COACHING, or ANALYSIS → strategist\n"
+    "- 'social' is Xaana's INTERNAL COMMUNITY ONLY (followers, feed, public promises).\n"
+    "- If the user is just CHATTING → engagement\n"
+    "- When in doubt between operator and strategist, prefer operator for concrete actions.\n"
+    "- Set needs_live_data=true ONLY for breaking news, live prices, fact-checking specific recent claims.\n"
+    "- Set needs_live_data=false for coaching, casual chat, or anything from the user's own data.\n\n"
+    "=== OUTPUT ===\n"
+    "Output ONLY valid JSON:\n"
+    '{"mode": "operator"|"strategist"|"social"|"engagement", '
+    '"confidence": "high"|"medium"|"low", '
+    '"reason": "short label", '
+    '"needs_live_data": true|false}\n'
+)
+
+_PLANNER_PROMPT_BASE = (
+    "=== ROLE ===\n"
+    "You are the PLANNER for a task management assistant.\n"
+    "Produce a short plan as JSON the executor can follow.\n\n"
+    "=== OUTPUT FORMAT ===\n"
+    "Return ONLY valid JSON with this schema:\n"
+    "{\n"
+    '  "steps": [\n'
+    '    {"kind": "tool", "purpose": "...", "tool_name": "...", "tool_args": {...}},\n'
+    '    {"kind": "respond", "purpose": "...", "response_hint": "..."}\n'
+    "  ],\n"
+    '  "detected_intent": "...",\n'
+    '  "intent_confidence": "high"|"medium"|"low",\n'
+    '  "safety": {"requires_confirmation": false}\n'
+    "}\n"
+)
+
+
+def _build_tier2_models():
+    """Build real router/planner/responder models from env vars. Returns (router, planner, responder)."""
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if groq_key:
+        from langchain_openai import ChatOpenAI
+        base_url = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+        model_name = "llama-3.3-70b-versatile"
+        router = ChatOpenAI(openai_api_key=groq_key, base_url=base_url, model=model_name, temperature=0.0)
+        planner = ChatOpenAI(openai_api_key=groq_key, base_url=base_url, model=model_name, temperature=0.2)
+        responder = ChatOpenAI(openai_api_key=groq_key, base_url=base_url, model=model_name, temperature=0.3)
+        return router, planner, responder
+
+    openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if openai_key:
+        from langchain_openai import ChatOpenAI
+        model_name = "gpt-4o-mini"
+        router = ChatOpenAI(openai_api_key=openai_key, model=model_name, temperature=0.0)
+        planner = ChatOpenAI(openai_api_key=openai_key, model=model_name, temperature=0.2)
+        responder = ChatOpenAI(openai_api_key=openai_key, model=model_name, temperature=0.3)
+        return router, planner, responder
+
+    raise RuntimeError(
+        "Tier-2 tests require GROQ_API_KEY or OPENAI_API_KEY in environment. "
+        "Add them to .env or export before running."
+    )
+
+
+def _wrap_tracking(tool: Any, called_log: List[str]) -> Any:
+    """Return a copy of tool whose func records its name in called_log on each invocation."""
+    original_fn = tool.func if hasattr(tool, "func") else None
+    if original_fn is None:
+        return tool
+
+    tool_name = getattr(tool, "name", "unknown")
+
+    def _tracked(*args, **kwargs):
+        called_log.append(tool_name)
+        return original_fn(*args, **kwargs)
+
+    return StructuredTool.from_function(
+        func=_tracked,
+        name=tool_name,
+        description=getattr(tool, "description", ""),
+        args_schema=getattr(tool, "args_schema", None),
+    )
+
+
+def _get_planner_prompt_for_mode(mode: str) -> str:
+    if mode == "operator":
+        directive = (
+            "=== MODE: OPERATOR ===\n"
+            "Handle transactional actions. You can use all tools including mutations "
+            "(add_promise, create_reminder, schedule_session, log_completed_activity, etc.).\n\n"
+        )
+    elif mode == "strategist":
+        directive = (
+            "=== MODE: STRATEGIST ===\n"
+            "Focus on coaching and analysis. AVOID mutation tools. "
+            "Use read-only tools (get_promises, get_weekly_report, get_profile_status).\n\n"
+        )
+    elif mode == "social":
+        directive = (
+            "=== MODE: SOCIAL ===\n"
+            "Handle community features (followers, feed, public promises).\n\n"
+        )
+    else:
+        directive = (
+            "=== MODE: ENGAGEMENT ===\n"
+            "Respond with warmth, humor, or encouragement. "
+            "Use memory_write to save personal facts the user shares.\n\n"
+        )
+    return directive + _PLANNER_PROMPT_BASE
+
+
+def _initial_routed_state(user_text: str) -> Dict[str, Any]:
+    return {
+        "messages": [HumanMessage(content=user_text)],
+        "iteration": 0,
+        "plan": None,
+        "step_idx": 0,
+        "final_response": None,
+        "planner_error": None,
+        "pending_meta_by_idx": None,
+        "pending_clarification": None,
+        "tool_retry_counts": {},
+        "tool_call_history": [],
+        "tool_loop_warning_buckets": {},
+        "detected_intent": None,
+        "intent_confidence": None,
+        "safety": None,
+        "mode": None,
+        "route_confidence": None,
+        "route_reason": None,
+        "executed_actions": [],
+    }
+
+
+def run_tier2(
+    transcript: Dict[str, Any],
+    adapter: PlannerAPIAdapter,
+    user_id: int,
+) -> EvalResult:
+    """
+    Run Tier 2 eval: real router + planner LLMs, real tools and DB.
+    Asserts on expect_route (mode) and expect_tools (tool call list) per turn.
+    Requires GROQ_API_KEY or OPENAI_API_KEY in environment.
+    """
+    errors: List[str] = []
+    per_turn_responses: List[str] = []
+    called_tools_per_turn: List[List[str]] = []
+    rubric_scores: Dict[str, bool] = {}
+
+    turns = transcript.get("turns") or []
+    setup = transcript.get("setup") or []
+
+    try:
+        _run_setup(adapter, user_id, setup)
+    except Exception as e:
+        errors.append(f"Setup failed: {e}")
+        return EvalResult(passed=False, per_turn_responses=[], db_final={}, rubric_scores={}, errors=errors)
+
+    try:
+        router_model, planner_model, responder_model = _build_tier2_models()
+    except Exception as e:
+        errors.append(f"Model build failed: {e}")
+        return EvalResult(passed=False, per_turn_responses=[], db_final={}, rubric_scores={}, errors=errors)
+
+    # Build tools with call tracking
+    called_tools_global: List[str] = []
+    raw_tools = build_tools_from_adapter(adapter)
+    tracked_tools = [_wrap_tracking(t, called_tools_global) for t in raw_tools]
+
+    # Add LLM-based resolve_datetime tool
+    try:
+        from llms.resolvers import resolve_datetime_with_llm
+        def _resolve_datetime_tool(datetime_text: str) -> str:
+            called_tools_global.append("resolve_datetime")
+            return resolve_datetime_with_llm(router_model, datetime_text, "UTC")
+        tracked_tools.append(StructuredTool.from_function(
+            func=_resolve_datetime_tool,
+            name="resolve_datetime",
+            description="Resolve a natural-language date/time phrase to ISO 8601.",
+        ))
+    except Exception as e:
+        errors.append(f"resolve_datetime tool build failed: {e}")
+
+    app = create_routed_plan_execute_graph(
+        tools=tracked_tools,
+        router_model=router_model,
+        planner_model=planner_model,
+        responder_model=responder_model,
+        router_prompt=_ROUTER_PROMPT,
+        get_planner_prompt_for_mode=_get_planner_prompt_for_mode,
+        get_system_message_for_mode=None,
+        emit_plan=False,
+        max_iterations=8,
+    )
+
+    token = _current_user_id.set(str(user_id))
+    state: Dict[str, Any] = _initial_routed_state("")
+
+    try:
+        for i, turn in enumerate(turns):
+            user_msg = turn.get("user") or ""
+            turn_called: List[str] = []
+
+            # Reset global tracker for this turn, capture in per-turn list
+            start_idx = len(called_tools_global)
+
+            state = _initial_routed_state(user_msg)
+
+            try:
+                result = app.invoke(state)
+            except Exception as e:
+                errors.append(f"Turn {i + 1} invoke failed: {e}")
+                called_tools_per_turn.append([])
+                per_turn_responses.append("")
+                continue
+
+            state = dict(result)
+            final_response = state.get("final_response") or ""
+            per_turn_responses.append(final_response)
+
+            turn_called = called_tools_global[start_idx:]
+            called_tools_per_turn.append(list(turn_called))
+
+            actual_mode = state.get("mode") or ""
+            expect_route = turn.get("expect_route")
+            if expect_route and actual_mode != expect_route:
+                errors.append(
+                    f"Turn {i + 1}: expected route={expect_route!r} but got {actual_mode!r}"
+                )
+
+            expect_tools = turn.get("expect_tools") or []
+            for tool_name in expect_tools:
+                if tool_name not in turn_called:
+                    errors.append(
+                        f"Turn {i + 1}: expected tool {tool_name!r} to be called but it wasn't. "
+                        f"Called: {turn_called}"
+                    )
+
+            expect_no_tools = turn.get("expect_no_tools") or []
+            for tool_name in expect_no_tools:
+                if tool_name in turn_called:
+                    errors.append(
+                        f"Turn {i + 1}: expected tool {tool_name!r} NOT to be called but it was. "
+                        f"Called: {turn_called}"
+                    )
+
+            expect_pending = turn.get("expect_pending_clarification")
+            actual_pending = bool(state.get("pending_clarification"))
+            if expect_pending is True and not actual_pending:
+                errors.append(f"Turn {i + 1}: expected pending_clarification but none was set.")
+            elif expect_pending is False and actual_pending:
+                errors.append(f"Turn {i + 1}: expected NO pending_clarification but one was set.")
+
+    finally:
+        _current_user_id.reset(token)
+
+    db_final: Dict[str, Any] = {}
+    try:
+        promises = adapter.get_promises(user_id)
+        actions = adapter.get_actions(user_id)
+        db_final["promises"] = promises
+        db_final["actions"] = actions
+    except Exception as e:
+        errors.append(f"DB read failed: {e}")
+
+    rubric_scores = evaluate_rubric(transcript, db_final, per_turn_responses, errors)
+    rubric_scores["routing"] = not any("expected route=" in e for e in errors)
+    rubric_scores["tool_coverage"] = not any("expected tool" in e for e in errors)
+    passed = len(errors) == 0
+
+    return EvalResult(
+        passed=passed,
+        per_turn_responses=per_turn_responses,
+        db_final=db_final,
+        rubric_scores=rubric_scores,
+        errors=errors,
+    )

@@ -1,0 +1,16 @@
+# A factual question about a current real-world event should NOT be routed to operator
+# and must NOT call any mutation tools (add_promise, create_reminder, etc.).
+# The router should set needs_live_data=true. The bot may use engagement or strategist.
+name: t2_12_live_data_question
+description: Current-event question is not routed to operator and causes no mutations
+tier: 2
+turns:
+  - user: "What is the current USD to EUR exchange rate?"
+    expect_no_tools:
+      - add_promise
+      - create_reminder
+      - log_completed_activity
+      - schedule_session
+rubric:
+  intent: true
+  correctness: true
