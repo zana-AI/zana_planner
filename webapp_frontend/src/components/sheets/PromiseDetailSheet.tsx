@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Pencil, Play, Timer } from 'lucide-react';
+import { Clock, Play, Timer } from 'lucide-react';
 import type { PromiseData } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
@@ -16,7 +16,6 @@ interface PromiseDetailSheetProps {
   onCheckin: () => void;
   onSchedule: () => void;
   onFocus: () => void;
-  onEdit?: () => void;
 }
 
 function getStatusClass(progress: number): 'good' | 'warn' | 'bad' | '' {
@@ -36,7 +35,6 @@ export function PromiseDetailSheet({
   onCheckin,
   onSchedule,
   onFocus,
-  onEdit,
 }: PromiseDetailSheetProps) {
   const {
     text,
@@ -120,12 +118,6 @@ export function PromiseDetailSheet({
       ) : null}
 
       <div className="action-row" style={{ marginTop: 16 }}>
-        {onEdit ? (
-          <Button variant="secondary" onClick={onEdit}>
-            <Pencil size={14} />
-            Edit
-          </Button>
-        ) : null}
         <Button variant="secondary" onClick={onLogTime}>
           <Clock size={14} />
           Log

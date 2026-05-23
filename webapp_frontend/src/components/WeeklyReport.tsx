@@ -11,7 +11,6 @@ interface WeeklyReportProps {
   onCreatePromise?: () => void;
   useV2Cards?: boolean;
   onOpenDetail?: (id: string, data: PromiseData) => void;
-  onEditPromise?: (id: string, data: PromiseData) => void;
 }
 
 /**
@@ -63,7 +62,6 @@ export function WeeklyReport({
   onCreatePromise,
   useV2Cards = false,
   onOpenDetail,
-  onEditPromise,
 }: WeeklyReportProps) {
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
@@ -208,7 +206,6 @@ export function WeeklyReport({
                 data={promiseData}
                 weekDays={weekDays}
                 onOpenDetail={() => onOpenDetail(id, promiseData)}
-                onEdit={onEditPromise ? () => onEditPromise(id, promiseData) : undefined}
               />
             ) : (
               <PromiseCard
