@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta, date
 import os
 import tempfile
@@ -22,10 +22,28 @@ class ReportsService:
         self.promises_repo = promises_repo
         self.actions_repo = actions_repo
 
+    @staticmethod
+    def _is_past_week(ref_time: datetime) -> bool:
+        """True when the viewed week ended before today (not the current calendar week)."""
+        if ref_time.tzinfo is not None:
+            ref_time = ref_time.replace(tzinfo=None)
+        week_start, _ = get_week_range(ref_time)
+        week_sunday = week_start.date() + timedelta(days=6)
+        return week_sunday < date.today()
+
+    @staticmethod
+    def _promise_started_by(ref_time: datetime, start_date: Optional[date]) -> bool:
+        """True when the promise had started by the reference week."""
+        return not start_date or start_date <= ref_time.date()
+
     def get_weekly_summary(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
         """Get weekly summary data for a user."""
+        if ref_time.tzinfo is not None:
+            ref_time = ref_time.replace(tzinfo=None)
+
         # Get week boundaries
         week_start, week_end = get_week_range(ref_time)
+        is_past_week = self._is_past_week(ref_time)
         
         # Get all promises
         promises = self.promises_repo.list_promises(user_id)
@@ -33,27 +51,34 @@ class ReportsService:
         # Get actions from this week
         actions = self.actions_repo.list_actions(user_id, since=week_start)
         
-        # Initialize report data (keyed by canonical promise.id from storage)
-        report_data: Dict[str, Any] = {}
         canonical_by_norm: Dict[str, str] = {}
+        all_promise_data: Dict[str, Dict[str, Any]] = {}
         for promise in promises:
-            # Check if promise is active (no start_date = always active, or start date has passed)
-            if not promise.start_date or promise.start_date <= ref_time.date():
-                report_data[promise.id] = {
-                    'text': promise.text.replace('_', ' '),
-                    'hours_promised': promise.hours_per_week,
-                    'hours_spent': 0.0
-                }
-                # Map normalized id -> canonical id (first one wins if duplicates exist)
-                norm = normalize_promise_id(promise.id)
-                canonical_by_norm.setdefault(norm, promise.id)
-        
-        # Accumulate hours for each promise
+            norm = normalize_promise_id(promise.id)
+            canonical_by_norm.setdefault(norm, promise.id)
+            all_promise_data[promise.id] = {
+                'text': promise.text.replace('_', ' '),
+                'hours_promised': promise.hours_per_week,
+                'hours_spent': 0.0,
+            }
+
+        promises_with_activity: set[str] = set()
         for action in actions:
-            if action.at >= week_start and action.at <= week_end:
+            action_at = action.at.replace(tzinfo=None) if action.at.tzinfo else action.at
+            if week_start <= action_at <= week_end:
                 canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
-                if canonical and canonical in report_data:
-                    report_data[canonical]['hours_spent'] += action.time_spent
+                if canonical and canonical in all_promise_data:
+                    all_promise_data[canonical]['hours_spent'] += action.time_spent
+                    if action.time_spent > 0 or action.action in ('checkin', 'club_checkin'):
+                        promises_with_activity.add(canonical)
+
+        report_data: Dict[str, Any] = {}
+        for promise in promises:
+            if is_past_week:
+                if promise.id in promises_with_activity:
+                    report_data[promise.id] = all_promise_data[promise.id]
+            elif self._promise_started_by(ref_time, promise.start_date):
+                report_data[promise.id] = all_promise_data[promise.id]
         
         return report_data
 
@@ -65,7 +90,8 @@ class ReportsService:
         
         # Get week boundaries
         week_start, week_end = get_week_range(ref_time)
-        logger.debug(f"[DEBUG] Week range for {ref_time}: {week_start} to {week_end}")
+        is_past_week = self._is_past_week(ref_time)
+        logger.debug(f"[DEBUG] Week range for {ref_time}: {week_start} to {week_end} (past_week={is_past_week})")
         
         # Get all promises
         promises = self.promises_repo.list_promises(user_id)
@@ -87,55 +113,52 @@ class ReportsService:
                     if instance:
                         instances_by_promise_uuid[promise_uuid] = instance
         
-        # Initialize report data (keyed by canonical promise.id from storage)
-        report_data: Dict[str, Any] = {}
+        # Build metadata for every current promise (start_date filter applied later).
+        all_promise_data: Dict[str, Any] = {}
         canonical_by_norm: Dict[str, str] = {}
         promise_uuid_by_id: Dict[str, str] = {}
         for promise in promises:
-            # Check if promise is active (no start_date = always active, or start date has passed)
-            if not promise.start_date or promise.start_date <= ref_time.date():
-                user = str(user_id)
-                promise_uuid = None
-                instance = None
-                with get_db_session() as session_db:
-                    promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
-                    if promise_uuid:
-                        promise_uuid_by_id[promise.id] = promise_uuid
-                        instance = instances_by_promise_uuid.get(promise_uuid)
-                
-                # Determine metric type and target
-                if instance:
-                    metric_type = instance.get('metric_type', 'hours')
-                    target_value = instance.get('target_value', 0)
-                    target_direction = instance.get('target_direction', 'at_least')
-                    template_kind = instance.get('template_kind', 'commitment')
-                else:
-                    # Legacy promise: hours-based
-                    metric_type = 'hours'
-                    target_value = promise.hours_per_week
-                    target_direction = 'at_least'
-                    template_kind = 'commitment'
-                
-                report_data[promise.id] = {
-                    'text': promise.text.replace('_', ' '),
-                    'hours_promised': promise.hours_per_week,  # Keep for backward compat
-                    'hours_spent': 0.0,  # Will be updated based on metric_type
-                    'sessions': [],  # List of {'date': date, 'hours': float} or {'date': date, 'count': int}
-                    'visibility': getattr(promise, 'visibility', 'private'),
-                    'recurring': bool(promise.recurring),
-                    'metric_type': metric_type,
-                    'target_value': target_value,
-                    'target_direction': target_direction,
-                    'template_kind': template_kind,
-                    'achieved_value': 0.0,  # Will be computed
-                    'start_date': promise.start_date.isoformat() if promise.start_date else None,
-                    'end_date': promise.end_date.isoformat() if promise.end_date else None,
-                }
-                norm = normalize_promise_id(promise.id)
-                canonical_by_norm.setdefault(norm, promise.id)
+            user = str(user_id)
+            promise_uuid = None
+            instance = None
+            with get_db_session() as session_db:
+                promise_uuid = resolve_promise_uuid(session_db, user, promise.id)
+                if promise_uuid:
+                    promise_uuid_by_id[promise.id] = promise_uuid
+                    instance = instances_by_promise_uuid.get(promise_uuid)
+
+            if instance:
+                metric_type = instance.get('metric_type', 'hours')
+                target_value = instance.get('target_value', 0)
+                target_direction = instance.get('target_direction', 'at_least')
+                template_kind = instance.get('template_kind', 'commitment')
+            else:
+                metric_type = 'hours'
+                target_value = promise.hours_per_week
+                target_direction = 'at_least'
+                template_kind = 'commitment'
+
+            all_promise_data[promise.id] = {
+                'text': promise.text.replace('_', ' '),
+                'hours_promised': promise.hours_per_week,
+                'hours_spent': 0.0,
+                'sessions': [],
+                'visibility': getattr(promise, 'visibility', 'private'),
+                'recurring': bool(promise.recurring),
+                'metric_type': metric_type,
+                'target_value': target_value,
+                'target_direction': target_direction,
+                'template_kind': template_kind,
+                'achieved_value': 0.0,
+                'start_date': promise.start_date.isoformat() if promise.start_date else None,
+                'end_date': promise.end_date.isoformat() if promise.end_date else None,
+            }
+            norm = normalize_promise_id(promise.id)
+            canonical_by_norm.setdefault(norm, promise.id)
         
         # Group actions by promise and date
         actions_by_promise_date: Dict[str, Dict[date, Any]] = {}
+        promises_with_action_activity: set[str] = set()
         actions_in_range = 0
         for action in actions:
             # Ensure action.at is naive for comparison
@@ -146,50 +169,80 @@ class ReportsService:
             if week_start <= action_at <= week_end:
                 actions_in_range += 1
                 canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
-                if canonical and canonical in report_data:
-                    action_date = action_at.date()
-                    if canonical not in actions_by_promise_date:
-                        actions_by_promise_date[canonical] = {}
-                    if action_date not in actions_by_promise_date[canonical]:
-                        actions_by_promise_date[canonical][action_date] = {'hours': 0.0, 'count': 0, 'notes': []}
-                    
-                    # Track both hours and count
-                    if action.action == 'log_time':
-                        actions_by_promise_date[canonical][action_date]['hours'] += action.time_spent
-                        # Collect notes if present
-                        if action.notes and action.notes.strip():
-                            actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
-                    elif action.action in ('checkin', 'club_checkin'):
-                        actions_by_promise_date[canonical][action_date]['count'] += 1
-                        # Collect notes if present
-                        if action.notes and action.notes.strip():
-                            actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
-                else:
+                if not canonical or canonical not in all_promise_data:
                     logger.debug(f"[DEBUG] Action for promise {action.promise_id} (normalized: {normalize_promise_id(action.promise_id)}) not matched to canonical promise. Canonical map: {canonical_by_norm}")
+                    continue
+
+                action_date = action_at.date()
+                if canonical not in actions_by_promise_date:
+                    actions_by_promise_date[canonical] = {}
+                if action_date not in actions_by_promise_date[canonical]:
+                    actions_by_promise_date[canonical][action_date] = {'hours': 0.0, 'count': 0, 'notes': []}
+                
+                # Track both hours and count
+                if action.action == 'log_time':
+                    actions_by_promise_date[canonical][action_date]['hours'] += action.time_spent
+                    if action.time_spent > 0:
+                        promises_with_action_activity.add(canonical)
+                    if action.notes and action.notes.strip():
+                        actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
+                elif action.action in ('checkin', 'club_checkin'):
+                    actions_by_promise_date[canonical][action_date]['count'] += 1
+                    promises_with_action_activity.add(canonical)
+                    if action.notes and action.notes.strip():
+                        actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
             else:
                 logger.debug(f"[DEBUG] Action at {action_at} is outside week range {week_start} to {week_end}")
         
         logger.debug(f"[DEBUG] {actions_in_range} actions in week range, grouped into {len(actions_by_promise_date)} promises")
-        
+
+        if is_past_week:
+            report_data = {
+                pid: all_promise_data[pid]
+                for pid in promises_with_action_activity
+            }
+        else:
+            report_data = {
+                promise.id: all_promise_data[promise.id]
+                for promise in promises
+                if self._promise_started_by(ref_time, promise.start_date)
+            }
+
         # Handle budget templates with distraction_events
         distractions_repo = DistractionsRepository()
-        for promise_id, promise_data in report_data.items():
-            if promise_data.get('template_kind') == 'budget' and promise_data.get('metric_type') == 'hours':
-                promise_uuid = promise_uuid_by_id.get(promise_id)
-                if promise_uuid:
-                    instance = instances_by_promise_uuid.get(promise_uuid)
-                    if instance:
-                        # Get distraction events for this week
-                        distraction_data = distractions_repo.get_weekly_distractions(
-                            user_id, week_start, week_end
-                        )
-                        promise_data['achieved_value'] = distraction_data['total_hours']
-                        promise_data['hours_spent'] = distraction_data['total_hours']  # For backward compat
-                        # Create sessions from distraction events (simplified: one session per day with hours)
-                        promise_data['sessions'] = [{'date': week_start.date(), 'hours': distraction_data['total_hours']}]
+        has_budget_promises = any(
+            pdata.get('template_kind') == 'budget' and pdata.get('metric_type') == 'hours'
+            for pdata in all_promise_data.values()
+        )
+        if has_budget_promises:
+            distraction_data = distractions_repo.get_weekly_distractions(
+                user_id, week_start, week_end
+            )
+            budget_hours = distraction_data['total_hours']
+            for promise_id, promise_data in all_promise_data.items():
+                if promise_data.get('template_kind') != 'budget' or promise_data.get('metric_type') != 'hours':
+                    continue
+                promise_data['achieved_value'] = budget_hours
+                promise_data['hours_spent'] = budget_hours
+                promise_data['sessions'] = [{'date': week_start.date(), 'hours': budget_hours}]
+                if is_past_week:
+                    if budget_hours > 0:
+                        report_data[promise_id] = promise_data
+                elif promise_id in report_data:
+                    report_data[promise_id] = promise_data
+
+        if is_past_week:
+            report_data = {
+                pid: pdata for pid, pdata in report_data.items()
+                if pid in promises_with_action_activity
+                or (pdata.get('achieved_value') or 0) > 0
+                or (pdata.get('hours_spent') or 0) > 0
+            }
         
         # Convert to sessions format and accumulate totals
         for promise_id, date_data in actions_by_promise_date.items():
+            if promise_id not in report_data:
+                continue
             promise_data = report_data[promise_id]
             metric_type = promise_data.get('metric_type', 'hours')
             sessions = []
