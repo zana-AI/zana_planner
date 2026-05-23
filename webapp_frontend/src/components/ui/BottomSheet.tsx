@@ -9,6 +9,7 @@ interface BottomSheetProps {
   subtitle?: string;
   children: ReactNode;
   showClose?: boolean;
+  headerActions?: ReactNode;
 }
 
 export function BottomSheet({
@@ -18,6 +19,7 @@ export function BottomSheet({
   subtitle,
   children,
   showClose = true,
+  headerActions,
 }: BottomSheetProps) {
   useModalBodyLock(open);
 
@@ -47,11 +49,14 @@ export function BottomSheet({
             <h3 id="sheet-title">{title}</h3>
             {subtitle ? <p className="sheet-sub">{subtitle}</p> : null}
           </div>
-          {showClose ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close" style={{ width: 32, padding: 0 }}>
-              <X size={18} />
-            </button>
-          ) : null}
+          <div className="sheet-header-actions">
+            {headerActions}
+            {showClose ? (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close" style={{ width: 32, padding: 0 }}>
+                <X size={18} />
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="body">{children}</div>
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Play, Timer } from 'lucide-react';
+import { Clock, Pencil, Timer } from 'lucide-react';
 import type { PromiseData } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
@@ -16,6 +16,7 @@ interface PromiseDetailSheetProps {
   onCheckin: () => void;
   onSchedule: () => void;
   onFocus: () => void;
+  onEdit: () => void;
 }
 
 function getStatusClass(progress: number): 'good' | 'warn' | 'bad' | '' {
@@ -35,6 +36,7 @@ export function PromiseDetailSheet({
   onCheckin,
   onSchedule,
   onFocus,
+  onEdit,
 }: PromiseDetailSheetProps) {
   const {
     text,
@@ -70,7 +72,17 @@ export function PromiseDetailSheet({
   const maxDay = Math.max(...dayValues, 0.001);
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={formatPromiseText(text)} subtitle={`Promise #${promiseId}`}>
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      title={formatPromiseText(text)}
+      subtitle={`Promise #${promiseId}`}
+      headerActions={(
+        <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={onFocus} aria-label="Start focus">
+          <Timer size={18} aria-hidden />
+        </button>
+      )}
+    >
       <section className="overall">
         <div className="row">
           <span className="label">This week</span>
@@ -133,9 +145,9 @@ export function PromiseDetailSheet({
             Schedule
           </Button>
         )}
-        <Button variant="secondary" onClick={onFocus}>
-          <Play size={14} />
-          Focus
+        <Button variant="secondary" onClick={onEdit}>
+          <Pencil size={14} />
+          Edit
         </Button>
       </div>
     </BottomSheet>

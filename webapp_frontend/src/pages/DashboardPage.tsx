@@ -10,6 +10,7 @@ import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
 import { CreatePromiseModal } from '../components/CreatePromiseModal';
 import { CheckinSheet } from '../components/sheets/CheckinSheet';
+import { EditPromiseSheet } from '../components/sheets/EditPromiseSheet';
 import { FocusPickerSheet } from '../components/sheets/FocusPickerSheet';
 import { FocusSheet } from '../components/sheets/FocusSheet';
 import { LogTimeSheet } from '../components/sheets/LogTimeSheet';
@@ -52,6 +53,7 @@ export function DashboardPage() {
   const [showSuggestionsInbox, setShowSuggestionsInbox] = useState(false);
   const [showCreatePromiseModal, setShowCreatePromiseModal] = useState(false);
   const [detailPromise, setDetailPromise] = useState<ActivePromise | null>(null);
+  const [editPromise, setEditPromise] = useState<ActivePromise | null>(null);
   const [logPromise, setLogPromise] = useState<ActivePromise | null>(null);
   const [checkinPromise, setCheckinPromise] = useState<ActivePromise | null>(null);
   const [schedulePromise, setSchedulePromise] = useState<ActivePromise | null>(null);
@@ -60,6 +62,7 @@ export function DashboardPage() {
   const { message: toastMessage, showToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
   const allowLocalMockData = shouldUseLocalMockData();
+  const isLocalMockSession = allowLocalMockData && !(initData || getDevInitData() || localStorage.getItem('telegram_auth_token'));
 
   // Get current week's Monday for comparison
   const getCurrentWeekMonday = useCallback(() => {
@@ -370,6 +373,42 @@ export function DashboardPage() {
     showToast(message);
     handleRefresh();
   }, [handleRefresh, showToast]);
+
+  const handleEditSuccess = useCallback((result: { updates?: Partial<PromiseData>; deleted?: boolean; message: string }) => {
+    showToast(result.message);
+
+    if (!isLocalMockSession) {
+      handleRefresh();
+      return;
+    }
+
+    setReportData((current) => {
+      if (!current || !editPromise) return current;
+      const promises = { ...current.promises };
+      if (result.deleted) {
+        delete promises[editPromise.id];
+      } else if (result.updates) {
+        promises[editPromise.id] = {
+          ...promises[editPromise.id],
+          ...result.updates,
+        };
+      }
+
+      const totals = Object.values(promises).reduce(
+        (acc, promiseData) => ({
+          total_promised: acc.total_promised + (promiseData.target_value ?? promiseData.hours_promised ?? 0),
+          total_spent: acc.total_spent + (promiseData.achieved_value ?? promiseData.hours_spent ?? 0),
+        }),
+        { total_promised: 0, total_spent: 0 },
+      );
+
+      return {
+        ...current,
+        ...totals,
+        promises,
+      };
+    });
+  }, [editPromise, handleRefresh, isLocalMockSession, showToast]);
 
   // Loading state - must come after all hooks
   if (!isReady || loading) {
@@ -709,6 +748,21 @@ export function DashboardPage() {
             setFocusPromise(detailPromise);
             setDetailPromise(null);
           }}
+          onEdit={() => {
+            setEditPromise(detailPromise);
+            setDetailPromise(null);
+          }}
+        />
+      ) : null}
+
+      {editPromise ? (
+        <EditPromiseSheet
+          open
+          promiseId={editPromise.id}
+          data={editPromise.data}
+          mockMode={isLocalMockSession}
+          onClose={() => setEditPromise(null)}
+          onSaved={handleEditSuccess}
         />
       ) : null}
 

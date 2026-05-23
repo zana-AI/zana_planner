@@ -92,6 +92,19 @@
   gap: 8px;
 }
 
+.sheet-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.sheet-icon-action {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
 .sheet h3 {
   margin: 0 0 4px;
   font-size: 18px;
@@ -266,6 +279,25 @@
   outline: none;
   border-color: var(--accent);
 }
+
+.edit-sheet-form { display: grid; gap: 14px; }
+.edit-sheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edit-sheet-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  background: var(--surface);
+}
+.edit-sheet-toggle strong { display: block; font-size: 13px; color: var(--fg); }
+.edit-sheet-toggle span { display: block; margin-top: 2px; font-size: 11px; color: var(--fg-muted); }
+.edit-sheet-toggle input { width: 18px; height: 18px; accent-color: var(--accent); flex: 0 0 auto; }
+.edit-sheet-actions { display: grid; gap: 8px; margin-top: 2px; }
+.edit-sheet-actions-main { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 .lt-quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .lt-quick button {
