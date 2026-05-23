@@ -1,13 +1,20 @@
-﻿import type { HTMLAttributes, KeyboardEvent } from 'react';
+﻿import type { HTMLAttributes, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import type { PromiseData } from '../types';
 import { Badge } from './ui/Badge';
 import { formatPromiseText } from '../utils/activityFormat';
+import {
+  readPromiseCardIdPlacement,
+  type PromiseCardIdPlacement,
+} from './promiseCardIdPlacement';
 
 interface PromiseCardV2Props {
   id: string;
   data: PromiseData;
   weekDays: string[];
   onOpenDetail: () => void;
+  onEdit?: () => void;
+  idPlacement?: PromiseCardIdPlacement;
+  isComparison?: boolean;
 }
 
 function getStatusClass(progress: number): 'good' | 'warn' | 'bad' | '' {
@@ -23,7 +30,19 @@ function getStatusLabel(progress: number): string {
   return 'At risk';
 }
 
-export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV2Props) {
+function PromiseId({ id, className = '' }: { id: string; className?: string }) {
+  return <span className={['pcard-id', className].filter(Boolean).join(' ')}>#{id}</span>;
+}
+
+export function PromiseCardV2({
+  id,
+  data,
+  weekDays,
+  onOpenDetail,
+  onEdit,
+  idPlacement: idPlacementProp,
+  isComparison = false,
+}: PromiseCardV2Props) {
   const {
     text,
     hours_promised,
@@ -34,7 +53,11 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
     template_kind = 'commitment',
     achieved_value = hours_spent,
     recurring = true,
+    visibility = 'private',
   } = data;
+
+  const idPlacement = idPlacementProp ?? readPromiseCardIdPlacement();
+  const isClubPromise = visibility === 'clubs';
 
   const isCountBased = metric_type === 'count';
   const isBudget = template_kind === 'budget';
@@ -42,6 +65,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
   const achieved = achieved_value ?? hours_spent ?? 0;
   const progress = target > 0 ? Math.min(Math.round((achieved / target) * 100), 100) : 0;
   const statusClass = getStatusClass(progress);
+  const statusLabel = getStatusLabel(progress);
 
   const sessionsByDate: Record<string, number> = {};
   sessions.forEach((session) => {
@@ -56,13 +80,52 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
 
   const checkinDays = weekDays.map((date) => (sessionsByDate[date] || 0) > 0);
 
+  const statsLabel = isCountBased
+    ? `${Math.round(achieved)}/${Math.round(target)} check-ins`
+    : `${achieved.toFixed(1)}h / ${target.toFixed(1)}h`;
+
+  let statusBadge: ReactNode = (
+    <Badge variant={statusClass || 'neutral'} showDot>
+      {statusLabel}
+    </Badge>
+  );
+
+  if (idPlacement === 'badge-before') {
+    statusBadge = (
+      <Badge variant={statusClass || 'neutral'} showDot className="pcard-badge-with-id">
+        <PromiseId id={id} />
+        <span className="pcard-badge-sep">·</span>
+        {statusLabel}
+      </Badge>
+    );
+  } else if (idPlacement === 'badge-after') {
+    statusBadge = (
+      <Badge variant={statusClass || 'neutral'} showDot className="pcard-badge-with-id">
+        {statusLabel}
+        <span className="pcard-badge-sep">·</span>
+        <PromiseId id={id} />
+      </Badge>
+    );
+  }
+
+  const handleCardClick = () => {
+    if (isComparison) return;
+    onOpenDetail();
+  };
+
+  const handleEditClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onEdit?.();
+  };
+
   return (
     <article
-      className={['pcard', statusClass].filter(Boolean).join(' ')}
-      onClick={onOpenDetail}
-      role="button"
-      tabIndex={0}
+      className={['pcard', statusClass, isComparison ? 'pcard--comparison' : ''].filter(Boolean).join(' ')}
+      onClick={handleCardClick}
+      role={isComparison ? undefined : 'button'}
+      tabIndex={isComparison ? undefined : 0}
       onKeyDown={(event: KeyboardEvent<HTMLElement>) => {
+        if (isComparison) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onOpenDetail();
@@ -70,10 +133,18 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
       }}
     >
       <DTop>
-        <DTitle dir="auto">{formatPromiseText(text)}</DTitle>
-        <Badge variant={statusClass || 'neutral'} showDot>
-          {getStatusLabel(progress)}
-        </Badge>
+        <DTitle dir="auto">
+          {formatPromiseText(text)}
+          {idPlacement === 'title' ? <PromiseId id={id} className="pcard-id--title" /> : null}
+        </DTitle>
+        <div className="pcard-top-actions">
+          {onEdit && !isClubPromise && !isComparison ? (
+            <button type="button" className="pcard-edit-btn" onClick={handleEditClick}>
+              Edit
+            </button>
+          ) : null}
+          {statusBadge}
+        </div>
       </DTop>
       {isCountBased && recurring ? (
         <DDots aria-hidden="true">
@@ -86,17 +157,15 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
           <DFill style={{ width: `${progress}%` }} />
         </DProgress>
       ) : null}
-      <DRow>
+      <DRow className={idPlacement === 'meta' ? 'row-stats row-stats--with-id' : 'row-stats'}>
+        {idPlacement === 'meta' ? <PromiseId id={id} /> : null}
         <span className="sub" dir="ltr">
-          {isCountBased
-            ? `${Math.round(achieved)}/${Math.round(target)} check-ins`
-            : `${achieved.toFixed(1)}h / ${target.toFixed(1)}h`}
+          {statsLabel}
         </span>
-        <span className="meta" dir="ltr">{progress}%</span>
+        <span className="meta" dir="ltr">
+          {progress}%
+        </span>
       </DRow>
-      <DFootline>
-        <span>#{id}</span>
-      </DFootline>
     </article>
   );
 }
@@ -121,7 +190,4 @@ function DFill(props: HTMLAttributes<HTMLDivElement>) {
 }
 function DRow(props: HTMLAttributes<HTMLDivElement>) {
   return <div className="row" {...props} />;
-}
-function DFootline(props: HTMLAttributes<HTMLDivElement>) {
-  return <div className="footline" {...props} />;
 }

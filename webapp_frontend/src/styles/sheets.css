@@ -228,19 +228,78 @@
 .pcard.good .progress .fill { background: var(--good-500); }
 .pcard.warn .progress .fill { background: var(--warn-500); }
 .pcard.bad  .progress .fill { background: var(--bad-500); }
-.pcard .row { display: flex; justify-content: space-between; align-items: center; }
-.pcard .row .sub { font-size: 11px; color: var(--fg-subtle); }
-.pcard .footline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+.pcard .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pcard .row .sub { font-size: 11px; color: var(--fg-subtle); flex: 1; min-width: 0; }
+.pcard .row-stats--with-id .sub { text-align: center; }
+.pcard .pcard-id {
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--fg-subtle);
-  min-width: 0;
+  flex-shrink: 0;
 }
-.pcard .footline > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.pcard .footline .schedule { color: var(--accent); }
+.pcard .pcard-id--title {
+  margin-left: 6px;
+  font-weight: 600;
+}
+.pcard .pcard-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.pcard-edit-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pcard-edit-btn:hover { background: var(--surface-hover); }
+.pcard-badge-with-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.pcard-badge-with-id .pcard-id {
+  font-size: 10px;
+  color: inherit;
+  opacity: 0.85;
+}
+.pcard-badge-sep { opacity: 0.55; font-size: 10px; }
+.pcard--comparison { cursor: default; }
+.pcard-id-lab {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-12);
+  background: var(--surface);
+}
+.pcard-id-lab-head h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.pcard-id-lab-head p {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.pcard-id-lab-grid {
+  display: grid;
+  gap: 14px;
+}
+.pcard-id-lab-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.pcard-id-lab-item .btn { margin-top: 8px; width: 100%; }
 
 .list { display: grid; gap: 10px; }
 

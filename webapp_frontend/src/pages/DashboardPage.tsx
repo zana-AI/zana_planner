@@ -15,6 +15,8 @@ import { FocusSheet } from '../components/sheets/FocusSheet';
 import { LogTimeSheet } from '../components/sheets/LogTimeSheet';
 import { PromiseDetailSheet } from '../components/sheets/PromiseDetailSheet';
 import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
+import { PromiseEditSheet } from '../components/sheets/PromiseEditSheet';
+import { PromiseCardIdComparison } from '../components/PromiseCardIdComparison';
 import { Toast } from '../components/ui/Toast';
 import { useToast } from '../hooks/useToast';
 import type { PromiseData, WeeklyReportData, PublicUser, UserInfo } from '../types';
@@ -56,7 +58,10 @@ export function DashboardPage() {
   const [schedulePromise, setSchedulePromise] = useState<ActivePromise | null>(null);
   const [focusPickOpen, setFocusPickOpen] = useState(false);
   const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
+  const [editPromise, setEditPromise] = useState<ActivePromise | null>(null);
+  const [idPlacementVersion, setIdPlacementVersion] = useState(0);
   const { message: toastMessage, showToast } = useToast();
+  const showIdComparison = searchParams.get('comparePcardId') === '1';
   const abortRef = useRef<AbortController | null>(null);
 
   // Get current week's Monday for comparison
@@ -342,6 +347,11 @@ export function DashboardPage() {
     setDetailPromise({ id, data });
   }, []);
 
+  const handleEditPromise = useCallback((id: string, data: PromiseData) => {
+    setEditPromise({ id, data });
+    setDetailPromise(null);
+  }, []);
+
   const handleSheetSuccess = useCallback((message: string) => {
     showToast(message);
     handleRefresh();
@@ -403,6 +413,13 @@ export function DashboardPage() {
           </button>
         </div>
 
+        {showIdComparison ? (
+          <PromiseCardIdComparison
+            key={idPlacementVersion}
+            onPick={() => setIdPlacementVersion((v) => v + 1)}
+          />
+        ) : null}
+
         {reportData && reportData.total_promised > 0 && (
           <div className="overall">
             <div className="row">
@@ -445,6 +462,7 @@ export function DashboardPage() {
               hideProgress
               useV2Cards
               onOpenDetail={handleOpenDetail}
+              onEditPromise={handleEditPromise}
               onCreatePromise={isCurrentWeek ? () => setShowCreatePromiseModal(true) : undefined}
             />
           </>
@@ -463,6 +481,7 @@ export function DashboardPage() {
               hideProgress
               useV2Cards
               onOpenDetail={handleOpenDetail}
+              onEditPromise={handleEditPromise}
             />
           </>
         )}
@@ -480,6 +499,7 @@ export function DashboardPage() {
               hideProgress
               useV2Cards
               onOpenDetail={handleOpenDetail}
+              onEditPromise={handleEditPromise}
             />
           </>
         )}
@@ -685,6 +705,20 @@ export function DashboardPage() {
             setFocusPromise(detailPromise);
             setDetailPromise(null);
           }}
+          onEdit={() => {
+            setEditPromise(detailPromise);
+            setDetailPromise(null);
+          }}
+        />
+      ) : null}
+
+      {editPromise ? (
+        <PromiseEditSheet
+          open
+          promiseId={editPromise.id}
+          data={editPromise.data}
+          onClose={() => setEditPromise(null)}
+          onSuccess={handleSheetSuccess}
         />
       ) : null}
 
