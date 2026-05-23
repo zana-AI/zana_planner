@@ -16,6 +16,33 @@ import type { ViewportAnchor } from './pdfReader/types';
 
 const PDF_READ_BUCKET_COUNT = 120;
 const PDF_READ_DWELL_SECONDS = 15;
+const MAX_CANVAS_PIXELS = 16_000_000;
+
+type PageRasterCacheEntry = {
+  scale: number;
+  width: number;
+  height: number;
+  canvas: HTMLCanvasElement;
+};
+
+const getCanvasOutputScale = (viewportWidth: number, viewportHeight: number) => {
+  const targetDpr = window.devicePixelRatio || 1;
+  const baseArea = viewportWidth * viewportHeight;
+  const budgetScale = baseArea > 0 ? Math.sqrt(MAX_CANVAS_PIXELS / baseArea) : 3;
+  return Math.max(1, Math.min(targetDpr, 3, budgetScale));
+};
+
+const applyRasterCacheToCanvas = (target: HTMLCanvasElement, entry: PageRasterCacheEntry) => {
+  target.width = entry.canvas.width;
+  target.height = entry.canvas.height;
+  target.style.width = entry.canvas.style.width;
+  target.style.height = entry.canvas.style.height;
+  const context = target.getContext('2d');
+  if (context) {
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.drawImage(entry.canvas, 0, 0);
+  }
+};
 
 export function PdfReaderPage() {
   const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
@@ -63,6 +90,7 @@ export function PdfReaderPage() {
   const isSavingProgressRef = useRef(false);
   const queuedProgressRef = useRef<number | null>(null);
   const fullscreenChromeTimeoutRef = useRef<number | null>(null);
+  const pageRasterCacheRef = useRef<Map<number, PageRasterCacheEntry>>(new Map());
 
   const canOpen = Boolean(contentId);
   const authData = initData || getDevInitData();
@@ -374,6 +402,56 @@ export function PdfReaderPage() {
   }, [isFullscreen, fullscreenControlsVisible, pageNumber, scale]);
 
   useEffect(() => {
+    pageRasterCacheRef.current.clear();
+  }, [scale]);
+
+  useEffect(() => {
+    if (!pdfDoc || !pageCount || loading) return;
+    const doc = pdfDoc;
+    let cancelled = false;
+
+    async function prefetchPage(targetPage: number) {
+      if (targetPage < 1 || targetPage > pageCount) return;
+      const existing = pageRasterCacheRef.current.get(targetPage);
+      if (existing?.scale === scale) return;
+
+      try {
+        const page = await doc.getPage(targetPage);
+        if (cancelled) return;
+        const viewport = page.getViewport({ scale });
+        const outputScale = getCanvasOutputScale(viewport.width, viewport.height);
+        const offscreen = document.createElement('canvas');
+        offscreen.width = Math.floor(viewport.width * outputScale);
+        offscreen.height = Math.floor(viewport.height * outputScale);
+        offscreen.style.width = `${viewport.width}px`;
+        offscreen.style.height = `${viewport.height}px`;
+        const context = offscreen.getContext('2d');
+        if (!context) return;
+        context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+        context.clearRect(0, 0, viewport.width, viewport.height);
+        const task = page.render({ canvas: offscreen, canvasContext: context, viewport });
+        await task.promise;
+        if (cancelled) return;
+        pageRasterCacheRef.current.set(targetPage, {
+          scale,
+          width: viewport.width,
+          height: viewport.height,
+          canvas: offscreen,
+        });
+      } catch {
+        // Prefetch is best-effort; the active page render handles failures.
+      }
+    }
+
+    void prefetchPage(pageNumber - 1);
+    void prefetchPage(pageNumber + 1);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, pageCount, pageNumber, pdfDoc, scale]);
+
+  useEffect(() => {
     let cancelled = false;
     let renderTask: pdfjsLib.RenderTask | null = null;
     let textLayer: pdfjsLib.TextLayer | null = null;
@@ -386,38 +464,65 @@ export function PdfReaderPage() {
         const page = await pdfDoc.getPage(pageNumber);
         if (cancelled) return;
         const viewport = page.getViewport({ scale });
+        const newWidth = viewport.width;
+        const newHeight = viewport.height;
         const canvas = canvasRef.current;
         const textLayerDiv = textLayerRef.current;
         const context = canvas.getContext('2d');
         if (!context) return;
 
-        // Cap canvas backing-store at a fixed pixel budget so high-DPR phones
-        // get sharp text on small pages but very large/zoomed pages don't OOM.
-        const MAX_CANVAS_PIXELS = 16_000_000;
-        const targetDpr = window.devicePixelRatio || 1;
-        const baseArea = viewport.width * viewport.height;
-        const budgetScale = baseArea > 0 ? Math.sqrt(MAX_CANVAS_PIXELS / baseArea) : 3;
-        const outputScale = Math.max(1, Math.min(targetDpr, 3, budgetScale));
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        setPageSize({ width: viewport.width, height: viewport.height });
-        textLayerDiv.replaceChildren();
-        textLayerDiv.dir = 'ltr';
-        textLayerDiv.dataset.textDirection = 'ltr';
+        const cachedRaster = pageRasterCacheRef.current.get(pageNumber);
+        const cacheMatchesViewport = cachedRaster?.scale === scale
+          && cachedRaster.width === newWidth
+          && cachedRaster.height === newHeight;
+        const outputScale = getCanvasOutputScale(newWidth, newHeight);
+
+        if (!cancelled && cacheMatchesViewport) {
+          applyRasterCacheToCanvas(canvas, cachedRaster);
+          setPageSize({ width: newWidth, height: newHeight });
+        } else {
+          canvas.width = Math.floor(newWidth * outputScale);
+          canvas.height = Math.floor(newHeight * outputScale);
+          canvas.style.width = `${newWidth}px`;
+          canvas.style.height = `${newHeight}px`;
+          setPageSize({ width: newWidth, height: newHeight });
+        }
+
+        const tempTextLayer = document.createElement('div');
+        tempTextLayer.className = textLayerDiv.className;
 
         context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
-        context.clearRect(0, 0, viewport.width, viewport.height);
+        if (!cacheMatchesViewport) {
+          context.clearRect(0, 0, newWidth, newHeight);
+        }
         renderTask = page.render({ canvas, canvasContext: context, viewport });
         const textContent = page.streamTextContent();
         textLayer = new pdfjsLib.TextLayer({
           textContentSource: textContent,
-          container: textLayerDiv,
+          container: tempTextLayer,
           viewport,
         });
         await Promise.all([renderTask.promise, textLayer.render()]);
-        const textDirection = detectTextLayerDirection(textLayerDiv);
+        if (cancelled) return;
+
+        const cacheCanvas = document.createElement('canvas');
+        cacheCanvas.width = canvas.width;
+        cacheCanvas.height = canvas.height;
+        cacheCanvas.style.width = canvas.style.width;
+        cacheCanvas.style.height = canvas.style.height;
+        const cacheContext = cacheCanvas.getContext('2d');
+        if (cacheContext) {
+          cacheContext.drawImage(canvas, 0, 0);
+          pageRasterCacheRef.current.set(pageNumber, {
+            scale,
+            width: newWidth,
+            height: newHeight,
+            canvas: cacheCanvas,
+          });
+        }
+
+        const textDirection = detectTextLayerDirection(tempTextLayer);
+        textLayerDiv.replaceChildren(...Array.from(tempTextLayer.childNodes));
         textLayerDiv.dir = textDirection;
         textLayerDiv.dataset.textDirection = textDirection;
         const finishRenderPreview = () => {
@@ -432,8 +537,8 @@ export function PdfReaderPage() {
             if (!shell || !pageFrame) return;
             const maxScrollLeft = Math.max(0, shell.scrollWidth - shell.clientWidth);
             const maxScrollTop = Math.max(0, shell.scrollHeight - shell.clientHeight);
-            const nextScrollLeft = pageFrame.offsetLeft + (pendingViewportAnchor.xRatio * pageFrame.offsetWidth) - pendingViewportAnchor.viewportX;
-            const nextScrollTop = pageFrame.offsetTop + (pendingViewportAnchor.yRatio * pageFrame.offsetHeight) - pendingViewportAnchor.viewportY;
+            const nextScrollLeft = pageFrame.offsetLeft + (pendingViewportAnchor.xRatio * newWidth) - pendingViewportAnchor.viewportX;
+            const nextScrollTop = pageFrame.offsetTop + (pendingViewportAnchor.yRatio * newHeight) - pendingViewportAnchor.viewportY;
             shell.scrollLeft = Math.max(0, Math.min(maxScrollLeft, nextScrollLeft));
             shell.scrollTop = Math.max(0, Math.min(maxScrollTop, nextScrollTop));
             updateProgressFromReader(pageNumber);

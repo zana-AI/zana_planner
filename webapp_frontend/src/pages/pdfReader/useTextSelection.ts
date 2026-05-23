@@ -216,9 +216,17 @@ export function useTextSelection({
         selectionTimer = null;
       }, 180);
     };
+    const handlePointerUp = () => {
+      // Fast taps often finish before the debounced selectionchange handler runs.
+      window.requestAnimationFrame(() => {
+        captureTextSelection();
+      });
+    };
     document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('pointerup', handlePointerUp);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
+      document.removeEventListener('pointerup', handlePointerUp);
       if (selectionTimer != null) {
         window.clearTimeout(selectionTimer);
       }

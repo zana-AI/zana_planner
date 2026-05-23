@@ -142,7 +142,14 @@ export function usePinchZoom({
       clearPinchPreview();
       return;
     }
-    setScale(() => nextScale);
+    // Let the final CSS-transform preview frame paint, then drop preview before
+    // committing scale so we don't stack transform + re-rendered dimensions.
+    window.requestAnimationFrame(() => {
+      clearPinchPreview();
+      window.requestAnimationFrame(() => {
+        setScale(() => nextScale);
+      });
+    });
   }, [clearPinchPreview, pendingViewportAnchorRef, scale, setScale]);
 
   return {
