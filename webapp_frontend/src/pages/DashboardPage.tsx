@@ -24,7 +24,7 @@ import type { PromiseData, WeeklyReportData, PublicUser, UserInfo } from '../typ
 type ActivePromise = { id: string; data: PromiseData };
 
 function normalizeDateKey(date?: string): string {
-  return (date || '').split('T')[0];
+  return (date || '').split(/[T\s]/)[0];
 }
 
 function toLocalDateKey(date: Date): string {
@@ -279,6 +279,16 @@ export function DashboardPage() {
     };
 
     for (const [id, promiseData] of Object.entries(reportData.promises)) {
+      const endDate = normalizeDateKey(promiseData.end_date);
+      const isOlderPromise = !!endDate && endDate < olderCutoff;
+
+      if (isOlderPromise && promiseData.template_kind !== 'budget') {
+        olderPromises[id] = promiseData;
+        olderPromisesTotalPromised += promiseData.hours_promised || 0;
+        olderPromisesTotalSpent += promiseData.hours_spent || 0;
+        continue;
+      }
+
       // Budget templates (distractions) - separate from regular promises
       if (promiseData.template_kind === 'budget') {
         distractions[id] = promiseData;
@@ -287,18 +297,10 @@ export function DashboardPage() {
         addToCurrentReport(id, promiseData);
       } else if (promiseData.recurring === true) {
         // Recurring promises (recurring === true, non-budget)
-        const endDate = normalizeDateKey(promiseData.end_date);
-        const isOlderPromise = !!endDate && endDate < olderCutoff;
-        if (isOlderPromise) {
-          olderPromises[id] = promiseData;
-          olderPromisesTotalPromised += promiseData.hours_promised || 0;
-          olderPromisesTotalSpent += promiseData.hours_spent || 0;
-        } else {
-          promises[id] = promiseData;
-          promisesTotalPromised += promiseData.hours_promised || 0;
-          promisesTotalSpent += promiseData.hours_spent || 0;
-          addToCurrentReport(id, promiseData);
-        }
+        promises[id] = promiseData;
+        promisesTotalPromised += promiseData.hours_promised || 0;
+        promisesTotalSpent += promiseData.hours_spent || 0;
+        addToCurrentReport(id, promiseData);
       } else {
         // One-time tasks (recurring === false or undefined, non-budget)
         tasks[id] = promiseData;

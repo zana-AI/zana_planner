@@ -70,7 +70,10 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
       }}
     >
       <DTop>
-        <DTitle dir="auto">{formatPromiseText(text)}</DTitle>
+        <DTitle>
+          <span dir="auto">{formatPromiseText(text)}</span>
+          <span className="pid" dir="ltr">#{id}</span>
+        </DTitle>
         <Badge variant={statusClass || 'neutral'} showDot>
           {getStatusLabel(progress)}
         </Badge>
@@ -94,9 +97,6 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
         </span>
         <span className="meta" dir="ltr">{progress}%</span>
       </DRow>
-      <DFootline>
-        <span>#{id}</span>
-      </DFootline>
     </article>
   );
 }
@@ -121,7 +121,4 @@ function DFill(props: HTMLAttributes<HTMLDivElement>) {
 }
 function DRow(props: HTMLAttributes<HTMLDivElement>) {
   return <div className="row" {...props} />;
-}
-function DFootline(props: HTMLAttributes<HTMLDivElement>) {
-  return <div className="footline" {...props} />;
 }

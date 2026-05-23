@@ -258,7 +258,29 @@
 .pcard.warn { border-left: 2px solid var(--warn-500); }
 .pcard.bad  { border-left: 2px solid var(--bad-500); }
 .pcard .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.pcard .title { font-size: 14px; font-weight: 700; color: var(--fg); line-height: 1.3; flex: 1; min-width: 0; }
+.pcard .title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.3;
+  flex: 1;
+  min-width: 0;
+}
+.pcard .title > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcard .title .pid {
+  color: var(--fg-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
 .pcard .meta  { font-size: 11px; color: var(--fg-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pcard .progress { height: 4px; border-radius: var(--r-pill); background: rgba(230, 234, 245, 0.07); overflow: hidden; }
 .pcard .progress .fill { height: 100%; background: var(--accent); border-radius: inherit; transition: width 320ms var(--ease-out); }
@@ -267,17 +289,6 @@
 .pcard.bad  .progress .fill { background: var(--bad-500); }
 .pcard .row { display: flex; justify-content: space-between; align-items: center; }
 .pcard .row .sub { font-size: 11px; color: var(--fg-subtle); }
-.pcard .footline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--fg-subtle);
-  min-width: 0;
-}
-.pcard .footline > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.pcard .footline .schedule { color: var(--accent); }
 
 .list { display: grid; gap: 10px; }
 
