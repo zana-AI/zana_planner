@@ -162,11 +162,32 @@
 
 .profile-menu-v2 button:hover { background: var(--surface); }
 
-.dashboard h2 {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--fg);
-  margin: 18px 0 10px;
+.dashboard.app {
+  display: block;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  padding-bottom: calc(var(--bottom-nav-h) + 72px + env(safe-area-inset-bottom));
+}
+
+.dashboard .dashboard-main {
+  min-width: 0;
+}
+
+.dashboard .overall-actions {
+  margin-top: 4px;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard .overall-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard .empty-state .btn {
+  margin-top: 1rem;
 }
 
 .community-sidebar {
@@ -179,6 +200,14 @@
     gap: 1.5rem;
     align-items: flex-start;
     max-width: 1400px;
+    margin: 0 auto;
+    padding: 1rem 1rem 180px;
+  }
+
+  .dashboard .dashboard-main {
+    flex: 1 1 0;
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .community-sidebar {

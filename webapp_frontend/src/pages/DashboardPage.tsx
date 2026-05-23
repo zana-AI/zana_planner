@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Timer } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
@@ -325,6 +325,12 @@ export function DashboardPage() {
 
   const weekDays = useMemo(() => (reportData ? getWeekDays(reportData.week_start) : []), [reportData]);
 
+  const promiseCount = promisesData ? Object.keys(promisesData.promises).length : 0;
+  const taskCount = tasksData ? Object.keys(tasksData.promises).length : 0;
+  const distractionCount = distractionsPromisesData
+    ? Object.keys(distractionsPromisesData.promises).length
+    : 0;
+
   const focusCandidates = useMemo(() => {
     if (!reportData) return [] as ActivePromise[];
     return Object.entries(reportData.promises)
@@ -375,200 +381,121 @@ export function DashboardPage() {
   const isAuthenticated = !!(initData || getDevInitData() || localStorage.getItem('telegram_auth_token'));
 
   return (
-    <div className="app dashboard" style={{ 
-      padding: '1rem', 
-      paddingBottom: '180px', // Add bottom padding for navigation bar + FocusBar
-      maxWidth: '1400px', 
-      margin: '0 auto',
-      display: 'flex',
-      gap: '1.5rem',
-      alignItems: 'flex-start'
-    }}>
-      {/* Main Content */}
-      <div style={{ 
-        flex: '1 1 0',
-        minWidth: 0 // Allow flex item to shrink below content size
-      }}>
-        {/* Week Navigation Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.5rem',
-          padding: '12px 16px',
-          background: 'rgba(15, 23, 48, 0.5)',
-          border: '1px solid rgba(232, 238, 252, 0.1)',
-          borderRadius: '12px'
-        }}>
+    <div className="dashboard app">
+      <main className="app-shell-main-v2 dashboard-main">
+        <div className="week-strip">
           <button
+            type="button"
             onClick={handlePreviousWeek}
             disabled={loading}
-            style={{
-              padding: '8px 16px',
-              background: 'rgba(232, 238, 252, 0.1)',
-              border: '1px solid rgba(232, 238, 252, 0.2)',
-              borderRadius: '8px',
-              color: 'rgba(232, 238, 252, 0.9)',
-              fontSize: '0.9rem',
-              fontWeight: '600',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s',
-              opacity: loading ? 0.6 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-            onMouseEnter={(e) => {
-              if (!loading) {
-                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.2)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!loading) {
-                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.1)';
-              }
-            }}
+            aria-label="Previous week"
           >
-            Previous
+            <ChevronLeft size={16} aria-hidden />
           </button>
-          
-          <div style={{
-            fontSize: '1rem',
-            fontWeight: '700',
-            color: '#fff',
-            textAlign: 'center'
-          }}>
-            {weekRangeDisplay || 'Loading...'}
-          </div>
-          
+          <div className="range">{weekRangeDisplay || 'Loading...'}</div>
           <button
+            type="button"
             onClick={handleNextWeek}
             disabled={loading || isCurrentWeek}
-            style={{
-              padding: '8px 16px',
-              background: isCurrentWeek ? 'rgba(232, 238, 252, 0.05)' : 'rgba(232, 238, 252, 0.1)',
-              border: '1px solid rgba(232, 238, 252, 0.2)',
-              borderRadius: '8px',
-              color: isCurrentWeek ? 'rgba(232, 238, 252, 0.4)' : 'rgba(232, 238, 252, 0.9)',
-              fontSize: '0.9rem',
-              fontWeight: '600',
-              cursor: (loading || isCurrentWeek) ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s',
-              opacity: (loading || isCurrentWeek) ? 0.6 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-            onMouseEnter={(e) => {
-              if (!loading && !isCurrentWeek) {
-                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.2)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!loading && !isCurrentWeek) {
-                e.currentTarget.style.background = 'rgba(232, 238, 252, 0.1)';
-              }
-            }}
+            aria-label="Next week"
           >
-            Next
+            <ChevronRight size={16} aria-hidden />
           </button>
         </div>
 
         {reportData && reportData.total_promised > 0 && (
-          <div className="dashboard-overall-progress">
-            <div className="dashboard-overall-progress-header">
-              <span>Overall Progress</span>
-              <strong>
-                {Math.round(overallProgress.cappedPct)}% ({overallProgress.cappedTotal.toFixed(1)}h / {reportData.total_promised.toFixed(1)}h)
-              </strong>
+          <div className="overall">
+            <div className="row">
+              <span className="label">Overall progress</span>
+              <span className="sub">
+                {overallProgress.cappedTotal.toFixed(1)}h / {reportData.total_promised.toFixed(1)}h
+              </span>
             </div>
-            <div className="dashboard-overall-progress-track" aria-hidden="true">
-              {overallProgress.spentPct > overallProgress.cappedPct + 0.5 && (
-                <div
-                  className="dashboard-overall-progress-overflow"
-                  style={{ width: `${overallProgress.spentPct}%` }}
-                />
-              )}
-              <div
-                className="dashboard-overall-progress-fill"
-                style={{ width: `${overallProgress.cappedPct}%` }}
-              />
+            <div className="row overall-actions">
+              <span className="value">{Math.round(overallProgress.cappedPct)}%</span>
+              {focusCandidates.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setFocusPickOpen(true)}
+                >
+                  <Timer size={14} aria-hidden />
+                  Start focus
+                </button>
+              ) : null}
             </div>
-          </div>
-        )}
-        
-        {/* Tasks Section - First */}
-        {tasksData && (
-          <div style={{ marginBottom: '2rem' }}>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
-            <WeeklyReport
-              data={tasksData}
-              onRefresh={handleRefresh}
-              hideHeader={true}
-              hideProgress={true}
-              useV2Cards
-              onOpenDetail={handleOpenDetail}
-            />
+            <div className="track" aria-hidden="true">
+              <div className="fill" style={{ width: `${overallProgress.cappedPct}%` }} />
+            </div>
           </div>
         )}
 
-        {/* Promises Section - Second */}
         {(promisesData || (isCurrentWeek && emptyPromisesData)) && (
-          <div style={{ marginBottom: '2rem' }}>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Promises</h2>
+          <>
+            <div className="section-head">
+              <h2>Promises</h2>
+              <span className="meta">
+                {promiseCount > 0 ? `${promiseCount} active` : 'None yet'}
+              </span>
+            </div>
             <WeeklyReport
               data={promisesData || emptyPromisesData!}
               onRefresh={handleRefresh}
-              hideHeader={true}
-              hideProgress={true}
+              hideHeader
+              hideProgress
               useV2Cards
               onOpenDetail={handleOpenDetail}
               onCreatePromise={isCurrentWeek ? () => setShowCreatePromiseModal(true) : undefined}
             />
-          </div>
+          </>
         )}
 
-        {/* Distractions Section - Third */}
-        {distractionsPromisesData && (
-          <div style={{ marginBottom: '2rem' }}>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Distractions</h2>
+        {tasksData && (
+          <>
+            <div className="section-head">
+              <h2>One-time tasks</h2>
+              <span className="meta">{taskCount} this week</span>
+            </div>
             <WeeklyReport
-              data={distractionsPromisesData}
+              data={tasksData}
               onRefresh={handleRefresh}
-              hideHeader={true}
-              hideProgress={true}
+              hideHeader
+              hideProgress
               useV2Cards
               onOpenDetail={handleOpenDetail}
             />
-          </div>
+          </>
         )}
 
-        {/* Empty State */}
+        {distractionsPromisesData && (
+          <>
+            <div className="section-head">
+              <h2>Distractions</h2>
+              <span className="meta">Stay under budget</span>
+            </div>
+            <WeeklyReport
+              data={distractionsPromisesData}
+              onRefresh={handleRefresh}
+              hideHeader
+              hideProgress
+              useV2Cards
+              onOpenDetail={handleOpenDetail}
+            />
+          </>
+        )}
+
         {!loading && !isCurrentWeek && !promisesData && !tasksData && !distractionsPromisesData && (
           <div className="empty-state">
             <h2 className="empty-title">No promises or tasks yet</h2>
             <p className="empty-subtitle">
               Start tracking your promises in the Telegram bot to see your progress here.
             </p>
-            <button
-              onClick={() => navigate('/templates')}
-              style={{
-                marginTop: '1rem',
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#4CAF50',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '1rem',
-                fontWeight: '500'
-              }}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => navigate('/templates')}>
               Explore Promise Library
             </button>
           </div>
         )}
-      </div>
+      </main>
 
       {/* Right Sidebar - Community */}
       <aside style={{
@@ -735,33 +662,31 @@ export function DashboardPage() {
         </button>
       ) : null}
 
-      <PromiseDetailSheet
-        open={!!detailPromise}
-        promiseId={detailPromise?.id ?? ''}
-        data={detailPromise?.data ?? ({} as PromiseData)}
-        weekDays={weekDays}
-        onClose={() => setDetailPromise(null)}
-        onLogTime={() => {
-          if (!detailPromise) return;
-          setLogPromise(detailPromise);
-          setDetailPromise(null);
-        }}
-        onCheckin={() => {
-          if (!detailPromise) return;
-          setCheckinPromise(detailPromise);
-          setDetailPromise(null);
-        }}
-        onSchedule={() => {
-          if (!detailPromise) return;
-          setSchedulePromise(detailPromise);
-          setDetailPromise(null);
-        }}
-        onFocus={() => {
-          if (!detailPromise) return;
-          setFocusPromise(detailPromise);
-          setDetailPromise(null);
-        }}
-      />
+      {detailPromise ? (
+        <PromiseDetailSheet
+          open
+          promiseId={detailPromise.id}
+          data={detailPromise.data}
+          weekDays={weekDays}
+          onClose={() => setDetailPromise(null)}
+          onLogTime={() => {
+            setLogPromise(detailPromise);
+            setDetailPromise(null);
+          }}
+          onCheckin={() => {
+            setCheckinPromise(detailPromise);
+            setDetailPromise(null);
+          }}
+          onSchedule={() => {
+            setSchedulePromise(detailPromise);
+            setDetailPromise(null);
+          }}
+          onFocus={() => {
+            setFocusPromise(detailPromise);
+            setDetailPromise(null);
+          }}
+        />
+      ) : null}
 
       <LogTimeSheet
         open={!!logPromise}

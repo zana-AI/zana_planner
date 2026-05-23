@@ -40,7 +40,7 @@ export function PromiseDetailSheet({
     text,
     hours_promised,
     hours_spent,
-    sessions,
+    sessions = [],
     metric_type = 'hours',
     target_value = hours_promised,
     achieved_value = hours_spent,

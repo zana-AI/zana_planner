@@ -28,7 +28,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
     text,
     hours_promised,
     hours_spent,
-    sessions,
+    sessions = [],
     metric_type = 'hours',
     target_value = hours_promised,
     template_kind = 'commitment',
