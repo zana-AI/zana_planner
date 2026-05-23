@@ -468,8 +468,12 @@ export function PdfReaderPage() {
         const newHeight = viewport.height;
         const canvas = canvasRef.current;
         const textLayerDiv = textLayerRef.current;
+        const pageFrame = pageFrameRef.current;
         const context = canvas.getContext('2d');
         if (!context) return;
+
+        // pdf.js TextLayer CSS uses --total-scale-factor (= --scale-factor * --user-unit).
+        pageFrame?.style.setProperty('--scale-factor', String(scale));
 
         const cachedRaster = pageRasterCacheRef.current.get(pageNumber);
         const cacheMatchesViewport = cachedRaster?.scale === scale
@@ -488,41 +492,43 @@ export function PdfReaderPage() {
           setPageSize({ width: newWidth, height: newHeight });
         }
 
-        const tempTextLayer = document.createElement('div');
-        tempTextLayer.className = textLayerDiv.className;
-
-        context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
-        if (!cacheMatchesViewport) {
-          context.clearRect(0, 0, newWidth, newHeight);
-        }
-        renderTask = page.render({ canvas, canvasContext: context, viewport });
+        textLayerDiv.replaceChildren();
         const textContent = page.streamTextContent();
         textLayer = new pdfjsLib.TextLayer({
           textContentSource: textContent,
-          container: tempTextLayer,
+          container: textLayerDiv,
           viewport,
         });
-        await Promise.all([renderTask.promise, textLayer.render()]);
+
+        const canvasRenderPromise = (async () => {
+          if (cacheMatchesViewport) return;
+          context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+          context.clearRect(0, 0, newWidth, newHeight);
+          renderTask = page.render({ canvas, canvasContext: context, viewport });
+          await renderTask.promise;
+          if (cancelled) return;
+
+          const cacheCanvas = document.createElement('canvas');
+          cacheCanvas.width = canvas.width;
+          cacheCanvas.height = canvas.height;
+          cacheCanvas.style.width = canvas.style.width;
+          cacheCanvas.style.height = canvas.style.height;
+          const cacheContext = cacheCanvas.getContext('2d');
+          if (cacheContext) {
+            cacheContext.drawImage(canvas, 0, 0);
+            pageRasterCacheRef.current.set(pageNumber, {
+              scale,
+              width: newWidth,
+              height: newHeight,
+              canvas: cacheCanvas,
+            });
+          }
+        })();
+
+        await Promise.all([canvasRenderPromise, textLayer.render()]);
         if (cancelled) return;
 
-        const cacheCanvas = document.createElement('canvas');
-        cacheCanvas.width = canvas.width;
-        cacheCanvas.height = canvas.height;
-        cacheCanvas.style.width = canvas.style.width;
-        cacheCanvas.style.height = canvas.style.height;
-        const cacheContext = cacheCanvas.getContext('2d');
-        if (cacheContext) {
-          cacheContext.drawImage(canvas, 0, 0);
-          pageRasterCacheRef.current.set(pageNumber, {
-            scale,
-            width: newWidth,
-            height: newHeight,
-            canvas: cacheCanvas,
-          });
-        }
-
-        const textDirection = detectTextLayerDirection(tempTextLayer);
-        textLayerDiv.replaceChildren(...Array.from(tempTextLayer.childNodes));
+        const textDirection = detectTextLayerDirection(textLayerDiv);
         textLayerDiv.dir = textDirection;
         textLayerDiv.dataset.textDirection = textDirection;
         const finishRenderPreview = () => {

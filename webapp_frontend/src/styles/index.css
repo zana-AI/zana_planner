@@ -228,6 +228,11 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   background: white;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   transform-origin: center center;
+  /* pdf.js text layer expects these (see pdf_viewer.css .page) */
+  --user-unit: 1;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --total-scale-factor: calc(var(--scale-factor, 1) * var(--user-unit));
 }
 
 .pdf-reader-page-frame--pinching {
