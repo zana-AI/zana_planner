@@ -108,6 +108,10 @@ def _get_client() -> Any:
             _logger.warning("langfuse SDK not importable (%s); tracing disabled", exc)
             _client = None
             return None
+        # v3 reads the trace environment from this env var at construction time;
+        # v2 ignores it. This is the version-safe way to tag prod vs staging
+        # (the per-trace `environment=` kwarg does not exist in either SDK's API).
+        os.environ.setdefault("LANGFUSE_TRACING_ENVIRONMENT", _langfuse_environment())
         try:
             _client = Langfuse(
                 host=host,
@@ -163,6 +167,10 @@ def _render_message(m: Any, redact: bool) -> Dict[str, Any]:
 # --- Background dispatcher --------------------------------------------------
 
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="langfuse-trace")
+
+# Surface the first send/flush failure at WARNING so a broken Langfuse is visible
+# in logs instead of vanishing; subsequent failures stay at DEBUG to avoid spam.
+_send_failure_logged = False
 
 
 def trace_generation(
@@ -300,6 +308,7 @@ def _send_trace(
                 session_id=chat_id,
                 metadata=trace_metadata,
                 environment=environment,
+                tags=[environment],
             )
             trace.generation(
                 name=role or "llm",
@@ -319,18 +328,30 @@ def _send_trace(
                 status_message=error_type,
             )
         elif hasattr(client, "start_as_current_generation"):
+            # Langfuse v3 API. NOTE: start_as_current_generation does NOT accept
+            # start_time/end_time (timing is span-managed), and update_current_trace
+            # does NOT accept environment (set at client construction instead).
+            # Passing either raises TypeError, which previously broke all tracing
+            # silently after the SDK was upgraded to v3.
             with client.start_as_current_generation(
                 name=role or "llm",
                 model=model_name,
                 input=rendered_input,
                 output=rendered_output,
-                start_time=start_time,
-                end_time=end_time,
                 usage_details={
                     "input": input_tokens,
                     "output": output_tokens,
                     "total": input_tokens + output_tokens,
                 },
+                cost_details=(
+                    {
+                        "input": input_cost or 0,
+                        "output": output_cost or 0,
+                        "total": (input_cost or 0) + (output_cost or 0),
+                    }
+                    if pricing
+                    else None
+                ),
                 metadata={"latency_ms": latency_ms, "provider": provider},
                 level=level,
                 status_message=error_type,
@@ -341,14 +362,19 @@ def _send_trace(
                         user_id=user_id,
                         session_id=chat_id,
                         metadata=trace_metadata,
-                        environment=environment,
+                        tags=[environment],
                     )
         else:
             _logger.warning("Langfuse trace API unavailable; tracing disabled")
             return
         _flush_client(client)
     except Exception as exc:  # pragma: no cover
-        _logger.debug("Langfuse send failed (%s); ignoring", exc)
+        global _send_failure_logged
+        if not _send_failure_logged:
+            _send_failure_logged = True
+            _logger.warning("Langfuse send failed (%s); further failures logged at debug", exc)
+        else:
+            _logger.debug("Langfuse send failed (%s); ignoring", exc)
 
 
 def _flush_client(client: Any) -> None:
