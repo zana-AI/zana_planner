@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Buttons</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 22px 24px; display: grid; gap: 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button {
+    font-family: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+    border: 1px solid transparent; border-radius: 8px; padding: 0 16px;
+    height: 40px; display: inline-flex; align-items: center; gap: 8px;
+    transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out);
+  }
+  .primary { background: var(--accent); color: var(--fg-on-accent); }
+  .primary:hover { background: var(--accent-hover); }
+  .secondary { background: var(--surface); color: var(--fg); border-color: var(--border-strong); }
+  .secondary:hover { background: var(--surface-hover); }
+  .ghost { background: transparent; color: var(--fg); }
+  .ghost:hover { background: var(--surface); }
+  .destructive { background: transparent; color: #F87171; border-color: rgba(248,113,113,0.32); }
+  .destructive:hover { background: rgba(248,113,113,0.08); }
+  .disabled { background: var(--surface); color: var(--fg-disabled); border-color: var(--border); cursor: not-allowed; }
+  .sm { height: 32px; padding: 0 12px; font-size: 13px; }
+  .lg { height: 48px; padding: 0 20px; font-size: 15px; }
+  .icon-only { width: 40px; padding: 0; justify-content: center; }
+  .meta { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="row">
+    <button class="primary"><i data-lucide="plus" width="16" height="16"></i>New promise</button>
+    <button class="secondary">Cancel</button>
+    <button class="ghost">Skip</button>
+    <button class="destructive"><i data-lucide="trash-2" width="16" height="16"></i>Delete</button>
+    <button class="primary disabled" disabled>Disabled</button>
+  </div>
+  <div class="row">
+    <button class="primary sm">Small</button>
+    <button class="secondary sm">Small</button>
+    <button class="primary">Default</button>
+    <button class="primary lg">Large</button>
+    <button class="secondary icon-only" aria-label="More"><i data-lucide="more-horizontal" width="18" height="18"></i></button>
+  </div>
+</div>
+<script>lucide.createIcons()</script>
+</body></html>

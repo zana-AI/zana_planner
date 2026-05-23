@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Promise card</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .wrap { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; display: grid; gap: 12px;
+  }
+  .card.good { border-left: 2px solid #34D399; }
+  .card.warn { border-left: 2px solid #F4B860; }
+  .card.bad  { border-left: 2px solid #F87171; }
+  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .title { font-size: 15px; font-weight: 700; color: var(--fg); line-height: 1.3; }
+  .meta { font-size: 11px; color: var(--fg-subtle); font-family: var(--font-mono); }
+  .progress { height: 6px; border-radius: 999px; background: rgba(230,234,245,0.08); overflow: hidden; }
+  .fill { height: 100%; background: var(--accent); border-radius: inherit; }
+  .fill.good { background: #34D399; }
+  .fill.warn { background: #F4B860; }
+  .fill.bad  { background: #F87171; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--fg-muted); }
+  .row strong { color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .b { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px; border: 1px solid; font-size: 10px; font-weight: 800; letter-spacing: 0.02em; }
+  .b.good { color: #34D399; border-color: rgba(52,211,153,0.32); }
+  .b.warn { color: #F4B860; border-color: rgba(244,184,96,0.32); }
+  .b.bad  { color: #F87171; border-color: rgba(248,113,113,0.32); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card good">
+    <div class="top"><div class="title">Learn Rust</div><span class="b good">On track</span></div>
+    <div class="progress"><div class="fill good" style="width:67%"></div></div>
+    <div class="row"><span>3 sessions this week</span><strong>4.0h / 6.0h</strong></div>
+  </div>
+  <div class="card warn">
+    <div class="top"><div class="title">Morning run</div><span class="b warn">Behind</span></div>
+    <div class="progress"><div class="fill warn" style="width:33%"></div></div>
+    <div class="row"><span>1 session this week</span><strong>1.0h / 3.0h</strong></div>
+  </div>
+  <div class="card bad">
+    <div class="top"><div class="title">Social media (budget)</div><span class="b bad">Over budget</span></div>
+    <div class="progress"><div class="fill bad" style="width:112%"></div></div>
+    <div class="row"><span>5.6h spent</span><strong>5.6h / 5.0h</strong></div>
+  </div>
+  <div class="card">
+    <div class="top"><div class="title">Write daily journal</div><span class="meta">idle</span></div>
+    <div class="progress"><div class="fill" style="width:0%"></div></div>
+    <div class="row"><span>No sessions yet</span><strong>0.0h / 1.5h</strong></div>
+  </div>
+</div>
+</body></html>

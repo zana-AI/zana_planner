@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Inputs</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 22px 24px; display: grid; gap: 14px; max-width: 660px; }
+  label { font-size: 12px; color: var(--fg-muted); font-weight: 600; display: block; margin-bottom: 6px; }
+  .field {
+    height: 40px; width: 100%; background: var(--surface); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 0 12px;
+    font-family: inherit; font-size: 14px;
+    transition: border-color 160ms var(--ease-out), background 160ms var(--ease-out);
+  }
+  .field::placeholder { color: var(--fg-subtle); }
+  .field:hover { background: var(--surface-hover); }
+  .field:focus { outline: none; border-color: var(--accent); background: var(--surface-hover); }
+  .with-icon { position: relative; }
+  .with-icon .field { padding-left: 36px; }
+  .with-icon i {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--fg-subtle);
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  textarea.field { height: 80px; padding: 10px 12px; resize: vertical; }
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    height: 32px; padding: 0 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: transparent; color: var(--fg-muted);
+    font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip.is-active { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="row">
+    <div>
+      <label>Promise name</label>
+      <input class="field" placeholder="Learn Rust"/>
+    </div>
+    <div>
+      <label>Hours per week</label>
+      <input class="field" type="number" value="6"/>
+    </div>
+  </div>
+  <div>
+    <label>Search</label>
+    <div class="with-icon">
+      <i data-lucide="search" width="16" height="16"></i>
+      <input class="field" placeholder="Search promises"/>
+    </div>
+  </div>
+  <div>
+    <label>Why this matters</label>
+    <textarea class="field" placeholder="A short reason — it helps you stay accountable."></textarea>
+  </div>
+  <div>
+    <label>Category</label>
+    <div class="chip-row">
+      <button class="chip is-active">All</button>
+      <button class="chip">Health</button>
+      <button class="chip">Learning</button>
+      <button class="chip">Career</button>
+      <button class="chip">Creative</button>
+    </div>
+  </div>
+</div>
+<script>lucide.createIcons()</script>
+</body></html>

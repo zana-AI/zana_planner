@@ -10,6 +10,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   leftIcon?: ReactNode;
 }
 
+const variantClass: Record<ButtonVariant, string> = {
+  primary: 'btn-primary',
+  secondary: 'btn-secondary',
+  ghost: 'btn-ghost',
+  danger: 'btn-destructive',
+};
+
 export function Button({
   variant = 'secondary',
   size = 'md',
@@ -20,10 +27,10 @@ export function Button({
   ...props
 }: ButtonProps) {
   const classNames = [
-    'ui-button',
-    `ui-button-${variant}`,
-    `ui-button-${size}`,
-    fullWidth ? 'ui-button-full' : '',
+    'btn',
+    variantClass[variant],
+    size === 'sm' ? 'btn-sm' : '',
+    fullWidth ? 'btn-block' : '',
     className,
   ]
     .filter(Boolean)
@@ -31,8 +38,8 @@ export function Button({
 
   return (
     <button className={classNames} {...props}>
-      {leftIcon ? <span className="ui-button-icon">{leftIcon}</span> : null}
-      <span className="ui-button-label">{children}</span>
+      {leftIcon}
+      {children}
     </button>
   );
 }

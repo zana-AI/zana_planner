@@ -1,13 +1,16 @@
 import { useMemo } from 'react';
-import type { WeeklyReportData } from '../types';
+import type { PromiseData, WeeklyReportData } from '../types';
 import { PromiseCard } from './PromiseCard';
+import { PromiseCardV2 } from './PromiseCardV2';
 
 interface WeeklyReportProps {
   data: WeeklyReportData;
-  onRefresh?: () => void; // Callback to refresh data
-  hideHeader?: boolean; // Hide header when used in dashboard sections
-  hideProgress?: boolean; // Hide progress when a parent renders a combined summary
+  onRefresh?: () => void;
+  hideHeader?: boolean;
+  hideProgress?: boolean;
   onCreatePromise?: () => void;
+  useV2Cards?: boolean;
+  onOpenDetail?: (id: string, data: PromiseData) => void;
 }
 
 /**
@@ -51,7 +54,15 @@ function getWeekDays(weekStart: string): string[] {
 /**
  * WeeklyReport component - displays the full weekly report with header and promise cards
  */
-export function WeeklyReport({ data, onRefresh, hideHeader = false, hideProgress = false, onCreatePromise }: WeeklyReportProps) {
+export function WeeklyReport({
+  data,
+  onRefresh,
+  hideHeader = false,
+  hideProgress = false,
+  onCreatePromise,
+  useV2Cards = false,
+  onOpenDetail,
+}: WeeklyReportProps) {
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
   const dateRange = useMemo(
@@ -186,15 +197,25 @@ export function WeeklyReport({ data, onRefresh, hideHeader = false, hideProgress
       
       {/* Promise Cards or Empty State */}
       {hasPromises ? (
-        <main className="promises-grid">
+        <main className={useV2Cards ? 'list' : 'promises-grid'}>
           {sortedPromises.map(([id, promiseData]) => (
-            <PromiseCard
-              key={id}
-              id={id}
-              data={promiseData}
-              weekDays={weekDays}
-              onRefresh={onRefresh}
-            />
+            useV2Cards && onOpenDetail ? (
+              <PromiseCardV2
+                key={id}
+                id={id}
+                data={promiseData}
+                weekDays={weekDays}
+                onOpenDetail={() => onOpenDetail(id, promiseData)}
+              />
+            ) : (
+              <PromiseCard
+                key={id}
+                id={id}
+                data={promiseData}
+                weekDays={weekDays}
+                onRefresh={onRefresh}
+              />
+            )
           ))}
           {onCreatePromise ? (
             <button className="create-promise-card" type="button" onClick={onCreatePromise}>

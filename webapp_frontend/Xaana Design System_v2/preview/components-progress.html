@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Progress</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 22px 24px; display: grid; gap: 14px; max-width: 640px; }
+  .group { display: grid; gap: 8px; }
+  .label { font-size: 12px; color: var(--fg-muted); display: flex; justify-content: space-between; font-family: var(--font-mono); }
+  .label strong { color: var(--fg); font-weight: 700; }
+  .track { position: relative; height: 8px; border-radius: 999px; background: rgba(230,234,245,0.08); overflow: hidden; }
+  .fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: inherit; }
+  .fill.brand { background: linear-gradient(90deg, #67E8F9, #A78BFA); }
+  .fill.accent { background: var(--accent); }
+  .fill.good { background: #34D399; }
+  .fill.bad  { background: #F87171; }
+  .fill.warn { background: #F4B860; }
+  .track.tall { height: 12px; }
+  .seg { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .day { height: 28px; border-radius: 4px; background: rgba(230,234,245,0.06); position: relative; overflow: hidden; }
+  .day .bar { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="group">
+    <div class="label"><span>Overall progress</span><strong>67% · 12.4h / 18.5h</strong></div>
+    <div class="track tall"><div class="fill brand" style="width:67%"></div></div>
+  </div>
+  <div class="group">
+    <div class="label"><span>Single promise</span><strong>4.0h / 6.0h</strong></div>
+    <div class="track"><div class="fill accent" style="width:67%"></div></div>
+  </div>
+  <div class="group">
+    <div class="label"><span>Week — sessions per day</span><strong>5 / 7 days</strong></div>
+    <div class="seg">
+      <div class="day"><div class="bar" style="height:60%"></div></div>
+      <div class="day"><div class="bar" style="height:90%"></div></div>
+      <div class="day"><div class="bar" style="height:40%"></div></div>
+      <div class="day"></div>
+      <div class="day"><div class="bar" style="height:70%"></div></div>
+      <div class="day"><div class="bar" style="height:50%"></div></div>
+      <div class="day"></div>
+    </div>
+  </div>
+</div>
+</body></html>

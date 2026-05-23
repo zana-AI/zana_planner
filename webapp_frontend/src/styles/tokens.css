@@ -1,58 +1,56 @@
+/* Legacy variable shim — maps production CSS to v2 design tokens */
 :root {
-  /* Typography */
-  --font-family-app: "Manrope", "Inter", "Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-md: 14px;
-  --font-size-lg: 16px;
-  --font-size-xl: 20px;
-  --font-size-2xl: 24px;
+  --font-family-app: var(--font-sans);
+  --font-size-xs: var(--fs-11);
+  --font-size-sm: var(--fs-12);
+  --font-size-md: var(--fs-14);
+  --font-size-lg: var(--fs-15);
+  --font-size-xl: var(--fs-20);
+  --font-size-2xl: var(--fs-24);
 
-  /* Color system - refined dark blue */
-  --bg: #090f1f;
-  --panel: #0f1832;
-  --card: #121f3f;
-  --card-elevated: #15264b;
-  --text: #edf3ff;
-  --text-muted: rgba(237, 243, 255, 0.68);
-  --text-subtle: rgba(237, 243, 255, 0.52);
-  --border: rgba(237, 243, 255, 0.12);
-  --border-strong: rgba(237, 243, 255, 0.2);
-  --accent: #63a7f7;
-  --accent-hover: #80bcff;
-  --accent-soft: rgba(99, 167, 247, 0.18);
-  --accent-soft-border: rgba(99, 167, 247, 0.34);
-  --good: #22c55e;
-  --warn: #f59e0b;
-  --bad: #ef4444;
+  --panel: var(--bg-elevated);
+  --card: var(--surface);
+  --card-elevated: var(--surface-hover);
+  --text: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-subtle: var(--fg-subtle);
+  --accent-soft-border: var(--accent-border);
+  --good: var(--good-500);
+  --warn: var(--warn-500);
+  --bad: var(--bad-500);
 
-  /* Shape */
-  --radius-8: 8px;
-  --radius-12: 12px;
-  --radius-16: 16px;
+  --radius-8: var(--r-8);
+  --radius-12: var(--r-12);
+  --radius-16: var(--r-16);
   --radius-20: 20px;
-  --radius-pill: 999px;
+  --radius-pill: var(--r-pill);
 
-  /* Spacing scale */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
+  --space-1: var(--sp-1);
+  --space-2: var(--sp-2);
+  --space-3: var(--sp-3);
+  --space-4: var(--sp-4);
+  --space-5: var(--sp-5);
+  --space-6: var(--sp-6);
+  --space-8: var(--sp-7);
 
-  /* Elevation */
-  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.22);
-  --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.28);
-  --shadow-strong: 0 12px 32px rgba(0, 0, 0, 0.36);
+  --shadow-soft: var(--shadow-2);
+  --shadow-medium: var(--shadow-3);
+  --shadow-strong: var(--shadow-3);
 
-  /* Component sizing */
-  --button-height-sm: 32px;
-  --button-height-md: 40px;
-  --button-height-lg: 48px;
-  --bottom-nav-height: 64px;
-  --app-max-width: 1200px;
+  --button-height-sm: var(--h-input-sm);
+  --button-height-md: var(--h-input);
+  --button-height-lg: var(--h-input-lg);
+  --bottom-nav-height: var(--bottom-nav-h);
+  --app-max-width: var(--app-max-w);
+
+  --muted: var(--fg-muted);
+  --accent2: var(--violet-500);
+  --surface-strong: var(--surface-hover);
+  --spacing-xs: var(--sp-1);
+  --spacing-sm: 6px;
+  --spacing-md: var(--sp-2);
+  --spacing-lg: var(--sp-3);
+  --spacing-xl: var(--sp-4);
 }
 
 @media (max-width: 767px) {

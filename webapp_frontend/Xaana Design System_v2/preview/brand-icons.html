@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Iconography</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 20px 22px; display: grid; grid-template-columns: repeat(8, 1fr); gap: 14px; }
+  .item { display: grid; gap: 6px; justify-items: center; padding: 10px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .item i { color: var(--fg); }
+  .name { font-size: 10px; color: var(--fg-muted); font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="item"><i data-lucide="target" width="22" height="22"></i><div class="name">target</div></div>
+  <div class="item"><i data-lucide="brain" width="22" height="22"></i><div class="name">brain</div></div>
+  <div class="item"><i data-lucide="bar-chart-2" width="22" height="22"></i><div class="name">bar-chart-2</div></div>
+  <div class="item"><i data-lucide="send" width="22" height="22"></i><div class="name">send</div></div>
+  <div class="item"><i data-lucide="trending-down" width="22" height="22"></i><div class="name">trending-down</div></div>
+  <div class="item"><i data-lucide="mic" width="22" height="22"></i><div class="name">mic</div></div>
+  <div class="item"><i data-lucide="globe" width="22" height="22"></i><div class="name">globe</div></div>
+  <div class="item"><i data-lucide="timer" width="22" height="22"></i><div class="name">timer</div></div>
+  <div class="item"><i data-lucide="bell" width="22" height="22"></i><div class="name">bell</div></div>
+  <div class="item"><i data-lucide="users" width="22" height="22"></i><div class="name">users</div></div>
+  <div class="item"><i data-lucide="settings" width="22" height="22"></i><div class="name">settings</div></div>
+  <div class="item"><i data-lucide="shield" width="22" height="22"></i><div class="name">shield</div></div>
+  <div class="item"><i data-lucide="check" width="22" height="22"></i><div class="name">check</div></div>
+  <div class="item"><i data-lucide="plus" width="22" height="22"></i><div class="name">plus</div></div>
+  <div class="item"><i data-lucide="calendar-check" width="22" height="22"></i><div class="name">calendar-check</div></div>
+  <div class="item"><i data-lucide="compass" width="22" height="22"></i><div class="name">compass</div></div>
+</div>
+<script>lucide.createIcons()</script>
+</body></html>

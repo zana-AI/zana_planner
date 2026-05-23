@@ -1,32 +1,7 @@
 /**
  * Zana Web App Styles
- * Dark theme matching the existing weekly report card design
+ * Legacy component styles. Foundation tokens live in design-system.css + tokens.css.
  */
-
-:root {
-  --bg: #090f1f;
-  --panel: #0f1832;
-  --card: #121f3f;
-  --surface: rgba(237, 243, 255, 0.06);
-  --surface-hover: rgba(237, 243, 255, 0.09);
-  --surface-strong: rgba(237, 243, 255, 0.12);
-  --text: #edf3ff;
-  --muted: rgba(237, 243, 255, 0.68);
-  --text-secondary: rgba(237, 243, 255, 0.72);
-  --border: rgba(237, 243, 255, 0.12);
-  --accent: #63a7f7;
-  --accent-hover: #80bcff;
-  --accent2: #80bcff;
-  --good: #22c55e;
-  --warn: #f59e0b;
-  --bad: #ef4444;
-  /* Spacing variables */
-  --spacing-xs: 4px;
-  --spacing-sm: 6px;
-  --spacing-md: 8px;
-  --spacing-lg: 12px;
-  --spacing-xl: 16px;
-}
 
 /* Reset and base styles */
 *, *::before, *::after {

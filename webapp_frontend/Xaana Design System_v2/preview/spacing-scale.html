@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Spacing</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 20px 22px; display: grid; gap: 12px; }
+  .row { display: grid; grid-template-columns: 78px 1fr 78px; gap: 12px; align-items: center; }
+  .name { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); }
+  .bar { height: 14px; background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: 4px; }
+  .val { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); text-align: right; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="row"><span class="name">--sp-1</span><div class="bar" style="width:4px"></div><span class="val">4px</span></div>
+  <div class="row"><span class="name">--sp-2</span><div class="bar" style="width:8px"></div><span class="val">8px</span></div>
+  <div class="row"><span class="name">--sp-3</span><div class="bar" style="width:12px"></div><span class="val">12px</span></div>
+  <div class="row"><span class="name">--sp-4</span><div class="bar" style="width:16px"></div><span class="val">16px</span></div>
+  <div class="row"><span class="name">--sp-5</span><div class="bar" style="width:20px"></div><span class="val">20px</span></div>
+  <div class="row"><span class="name">--sp-6</span><div class="bar" style="width:24px"></div><span class="val">24px</span></div>
+  <div class="row"><span class="name">--sp-7</span><div class="bar" style="width:32px"></div><span class="val">32px</span></div>
+  <div class="row"><span class="name">--sp-8</span><div class="bar" style="width:40px"></div><span class="val">40px</span></div>
+  <div class="row"><span class="name">--sp-9</span><div class="bar" style="width:56px"></div><span class="val">56px</span></div>
+  <div class="row"><span class="name">--sp-10</span><div class="bar" style="width:80px"></div><span class="val">80px</span></div>
+</div>
+</body></html>

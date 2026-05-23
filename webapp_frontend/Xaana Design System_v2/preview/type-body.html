@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Body, meta, mono</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 22px 24px; display: grid; gap: 16px; }
+  .row { display: grid; grid-template-columns: 88px 1fr; gap: 16px; align-items: baseline; }
+  .meta { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
+  .demo { max-width: 480px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="row"><div class="meta">body · 15/24</div><div class="ds-body demo">Your weekly promises and progress. Stay focused on what matters most this week.</div></div>
+  <div class="row"><div class="meta">body-sm · 13</div><div class="ds-body-sm demo">Body sm — secondary text under inputs and on dense cards.</div></div>
+  <div class="row"><div class="meta">caption · 12</div><div class="ds-caption demo">Updated 2 minutes ago · Mar 4 – Mar 10</div></div>
+  <div class="row"><div class="meta">eyebrow · 11</div><div class="ds-eyebrow">This week</div></div>
+  <div class="row"><div class="meta">mono · 13</div><div class="ds-mono demo">3.5h / 6.0h&nbsp;&nbsp;67%</div></div>
+</div>
+</body></html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Radii</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 22px 24px; display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; }
+  .item { display: grid; gap: 8px; justify-items: center; }
+  .box { width: 84px; height: 64px; background: var(--surface); border: 1px solid var(--border); }
+  .b8  { border-radius: 8px; }
+  .b12 { border-radius: 12px; }
+  .b16 { border-radius: 16px; }
+  .bp  { border-radius: 999px; }
+  .name { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); }
+  .val  { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="item"><div class="box b8"></div><div class="name">--r-8</div><div class="val">8px · inputs, buttons</div></div>
+  <div class="item"><div class="box b12"></div><div class="name">--r-12</div><div class="val">12px · cards</div></div>
+  <div class="item"><div class="box b16"></div><div class="name">--r-16</div><div class="val">16px · hero, modals</div></div>
+  <div class="item"><div class="box bp"></div><div class="name">--r-pill</div><div class="val">999px · chips, toggles</div></div>
+</div>
+</body></html>

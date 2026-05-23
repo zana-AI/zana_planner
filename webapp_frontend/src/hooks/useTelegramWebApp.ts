@@ -48,8 +48,8 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
         // Set theme colors to match our dark theme (only if supported)
         try {
           if (tg.version && parseFloat(tg.version) >= 6.1) {
-            tg.setHeaderColor('#0b1020');
-            tg.setBackgroundColor('#0b1020');
+            tg.setHeaderColor('#0B0F1A');
+            tg.setBackgroundColor('#0B0F1A');
           }
         } catch (e) {
           // Ignore if not supported

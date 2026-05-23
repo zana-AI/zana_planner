@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Brand accent</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 20px 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  .sw { display: flex; gap: 14px; flex-wrap: wrap; }
+  .chip { width: 70px; height: 56px; border-radius: 10px; border: 1px solid var(--border); }
+  .label { margin-top: 8px; font-size: 11px; color: var(--fg-muted); font-weight: 600; }
+  .hex { margin-top: 2px; font-size: 11px; color: var(--fg-subtle); font-family: var(--font-mono); }
+  .grad { height: 56px; border-radius: 10px; background: linear-gradient(135deg,#67E8F9 0%,#A78BFA 100%); }
+  .grad-cap { font-size: 11px; color: var(--fg-subtle); margin-top: 8px; font-family: var(--font-mono); }
+  .ramp-title { font-size: 11px; color: var(--fg-subtle); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 10px 0; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div>
+    <div class="ramp-title">Cyan (primary accent)</div>
+    <div class="sw">
+      <div><div class="chip" style="background:#67E8F9"></div><div class="label">cyan-400</div><div class="hex">#67E8F9</div></div>
+      <div><div class="chip" style="background:#22D3EE"></div><div class="label">cyan-500 ★</div><div class="hex">#22D3EE</div></div>
+      <div><div class="chip" style="background:#0BB7D4"></div><div class="label">cyan-600</div><div class="hex">#0BB7D4</div></div>
+    </div>
+    <div class="ramp-title" style="margin-top:18px">Violet (secondary)</div>
+    <div class="sw">
+      <div><div class="chip" style="background:#C4B5FD"></div><div class="label">violet-400</div><div class="hex">#C4B5FD</div></div>
+      <div><div class="chip" style="background:#A78BFA"></div><div class="label">violet-500</div><div class="hex">#A78BFA</div></div>
+      <div><div class="chip" style="background:#8B5CF6"></div><div class="label">violet-600</div><div class="hex">#8B5CF6</div></div>
+    </div>
+  </div>
+  <div>
+    <div class="ramp-title">Brand gradient</div>
+    <div class="grad"></div>
+    <div class="grad-cap">linear-gradient(135deg, #67E8F9 → #A78BFA)</div>
+    <div style="font-size:12px;color:var(--fg-muted);margin-top:14px;line-height:1.5">
+      The signature gradient from the logo. Reserved for logomark, hero progress fill, and one "moment" per screen.
+    </div>
+  </div>
+</div>
+</body></html>

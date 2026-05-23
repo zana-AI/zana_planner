@@ -1,14 +1,29 @@
 import type { HTMLAttributes } from 'react';
 
-type BadgeVariant = 'neutral' | 'progress' | 'status' | 'privacy' | 'warning' | 'danger';
+type BadgeVariant = 'neutral' | 'good' | 'warn' | 'bad' | 'progress' | 'status' | 'privacy' | 'warning' | 'danger';
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
+  showDot?: boolean;
 }
 
-export function Badge({ variant = 'neutral', className = '', children, ...props }: BadgeProps) {
+const variantClass: Record<string, string> = {
+  neutral: '',
+  good: 'good',
+  warn: 'warn',
+  bad: 'bad',
+  progress: '',
+  status: '',
+  privacy: '',
+  warning: 'warn',
+  danger: 'bad',
+};
+
+export function Badge({ variant = 'neutral', showDot = false, className = '', children, ...props }: BadgeProps) {
+  const pillVariant = variantClass[variant] || '';
   return (
-    <span className={['ui-badge', `ui-badge-${variant}`, className].filter(Boolean).join(' ')} {...props}>
+    <span className={['pill', pillVariant, className].filter(Boolean).join(' ')} {...props}>
+      {showDot ? <span className="dot" aria-hidden="true" /> : null}
       {children}
     </span>
   );

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Logo</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 22px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
+  .mark { display: flex; align-items: center; gap: 16px; }
+  .mark img { display: block; }
+  .name { font-size: 22px; font-weight: 800; letter-spacing: 0.04em; background: linear-gradient(135deg,#67E8F9,#A78BFA); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .row { display: flex; align-items: center; gap: 16px; }
+  .swatch { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div>
+    <div class="mark">
+      <img src="../assets/xaana_icon_dark.png" alt="Xaana mark" width="72" height="72"/>
+      <div>
+        <div class="name">XAANA</div>
+        <div class="swatch">cyan #67E8F9 → violet #A78BFA</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="row" style="margin-bottom:12px">
+      <img src="../assets/xaana_icon_dark.png" alt="" width="24" height="24"/>
+      <img src="../assets/xaana_icon_dark.png" alt="" width="32" height="32"/>
+      <img src="../assets/xaana_icon_dark.png" alt="" width="48" height="48"/>
+      <img src="../assets/xaana_icon_dark.png" alt="" width="64" height="64"/>
+    </div>
+    <div class="swatch">24 · 32 · 48 · 64 px — never recolor the mark.</div>
+  </div>
+</div>
+</body></html>

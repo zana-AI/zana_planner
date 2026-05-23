@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Color palette</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 20px 22px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .sw { width: 78px; }
+  .chip {
+    width: 78px; height: 56px; border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .label { margin-top: 8px; font-size: 11px; color: var(--fg-muted); font-weight: 600; letter-spacing: 0.02em; }
+  .hex { margin-top: 2px; font-size: 11px; color: var(--fg-subtle); font-family: var(--font-mono); }
+  .ramp-title { font-size: 11px; color: var(--fg-subtle); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 10px 0; }
+  .group + .group { margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="group">
+    <div class="ramp-title">Ink (neutrals)</div>
+    <div class="row">
+      <div class="sw"><div class="chip" style="background:#0B0F1A"></div><div class="label">ink-900</div><div class="hex">#0B0F1A</div></div>
+      <div class="sw"><div class="chip" style="background:#10162A"></div><div class="label">ink-850</div><div class="hex">#10162A</div></div>
+      <div class="sw"><div class="chip" style="background:#141C34"></div><div class="label">ink-800</div><div class="hex">#141C34</div></div>
+      <div class="sw"><div class="chip" style="background:#1B2542"></div><div class="label">ink-700</div><div class="hex">#1B2542</div></div>
+      <div class="sw"><div class="chip" style="background:#44527A"></div><div class="label">ink-500</div><div class="hex">#44527A</div></div>
+      <div class="sw"><div class="chip" style="background:#98A3C3"></div><div class="label">ink-300</div><div class="hex">#98A3C3</div></div>
+      <div class="sw"><div class="chip" style="background:#E6EAF5"></div><div class="label">ink-100</div><div class="hex">#E6EAF5</div></div>
+    </div>
+  </div>
+</div>
+</body></html>

@@ -90,8 +90,9 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Navigation />
-      <Routes>
+      <div className="app-shell-v2">
+        <Navigation />
+        <Routes>
         {/* Local development helper - backend must explicitly enable dev auth */}
         <Route path="/dev-admin" element={<DevAdminLoginPage />} />
 
@@ -234,7 +235,8 @@ function App() {
         
         {/* Catch-all: redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </div>
     </BrowserRouter>
   );
 }

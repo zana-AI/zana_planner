@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Badges & chips</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 22px 24px; display: grid; gap: 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .b {
+    display: inline-flex; align-items: center; gap: 6px; height: 22px;
+    padding: 0 8px; border-radius: 999px; border: 1px solid var(--border);
+    font-size: 11px; font-weight: 700; color: var(--fg-muted);
+  }
+  .b .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--fg-muted); }
+  .b.good { color: #34D399; border-color: rgba(52,211,153,0.32); }
+  .b.good .dot { background: #34D399; }
+  .b.warn { color: #F4B860; border-color: rgba(244,184,96,0.32); }
+  .b.warn .dot { background: #F4B860; }
+  .b.bad  { color: #F87171; border-color: rgba(248,113,113,0.32); }
+  .b.bad  .dot { background: #F87171; }
+  .b.accent { color: var(--accent); border-color: var(--accent-border); }
+  .b.accent .dot { background: var(--accent); }
+
+  .eyebrow { font-size: 11px; color: var(--fg-subtle); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+  .group + .group { margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="group">
+    <div class="eyebrow" style="margin-bottom:10px">Status</div>
+    <div class="row">
+      <span class="b good"><span class="dot"></span>On track</span>
+      <span class="b warn"><span class="dot"></span>Needs attention</span>
+      <span class="b bad"><span class="dot"></span>At risk</span>
+      <span class="b"><span class="dot"></span>Idle</span>
+    </div>
+  </div>
+  <div class="group">
+    <div class="eyebrow" style="margin-bottom:10px">Tags</div>
+    <div class="row">
+      <span class="b accent"><i data-lucide="users" width="11" height="11"></i>Club</span>
+      <span class="b"><i data-lucide="eye" width="11" height="11"></i>Public</span>
+      <span class="b"><i data-lucide="lock" width="11" height="11"></i>Private</span>
+      <span class="b"><i data-lucide="repeat" width="11" height="11"></i>Recurring</span>
+      <span class="b"><i data-lucide="check" width="11" height="11"></i>One-time</span>
+    </div>
+  </div>
+</div>
+<script>lucide.createIcons()</script>
+</body></html>

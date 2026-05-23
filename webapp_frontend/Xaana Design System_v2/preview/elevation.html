@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Elevation</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .ex { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-height: 84px; display: flex; flex-direction: column; justify-content: space-between; }
+  .ex.s1 { box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
+  .ex.s2 { box-shadow: 0 4px 14px rgba(0,0,0,0.30); }
+  .ex.s3 { box-shadow: 0 12px 32px rgba(0,0,0,0.40); }
+  .name { font-family: var(--font-mono); font-size: 12px; color: var(--fg); }
+  .usage { font-size: 11px; color: var(--fg-subtle); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="ex s1"><span class="name">--shadow-1</span><span class="usage">Hairline · dividers</span></div>
+  <div class="ex s2"><span class="name">--shadow-2</span><span class="usage">Menus · popovers · modals</span></div>
+  <div class="ex s3"><span class="name">--shadow-3</span><span class="usage">Focus bar · sheets</span></div>
+</div>
+</body></html>

@@ -1,0 +1,227 @@
+/* ==========================================================================
+   Xaana Design System — Foundation Tokens (v2)
+   ========================================================================== */
+
+:root {
+  /* ---- TYPE FAMILIES ----------------------------------------------------- */
+  --font-sans:
+    "Manrope", "Inter", "Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew",
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- TYPE SCALE -------------------------------------------------------- */
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+  --fs-32: 32px;
+  --fs-44: 44px;
+
+  /* ---- LINE HEIGHTS / TRACKING ------------------------------------------ */
+  --lh-tight: 1.12;
+  --lh-snug:  1.32;
+  --lh-body:  1.5;
+  --lh-loose: 1.62;
+  --tracking-tight: -0.02em;
+  --tracking-flat:  -0.005em;
+  --tracking-wide:   0.06em;
+
+  /* ---- WEIGHTS ----------------------------------------------------------- */
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semi:    600;
+  --fw-bold:    700;
+  --fw-black:   800;
+
+  /* ---- CORE PALETTE — NEUTRALS ------------------------------------------ */
+  --ink-950: #07090F;
+  --ink-900: #0B0F1A;
+  --ink-850: #10162A;
+  --ink-800: #141C34;
+  --ink-700: #1B2542;
+  --ink-600: #2A365A;
+  --ink-500: #44527A;
+  --ink-400: #6C7AA0;
+  --ink-300: #98A3C3;
+  --ink-200: #C4CCE2;
+  --ink-100: #E6EAF5;
+  --ink-050: #F4F6FC;
+
+  /* ---- BRAND ACCENTS ---------------------------------------------------- */
+  --cyan-400:   #67E8F9;
+  --cyan-500:   #22D3EE;
+  --cyan-600:   #0BB7D4;
+  --violet-400: #C4B5FD;
+  --violet-500: #A78BFA;
+  --violet-600: #8B5CF6;
+
+  --grad-brand: linear-gradient(135deg, var(--cyan-400) 0%, var(--violet-500) 100%);
+  --grad-brand-soft:
+    linear-gradient(135deg, rgba(103, 232, 249, 0.16) 0%, rgba(167, 139, 250, 0.16) 100%);
+
+  /* ---- SEMANTIC STATUS -------------------------------------------------- */
+  --good-500: #34D399;
+  --warn-500: #F4B860;
+  --bad-500:  #F87171;
+
+  /* ---- SEMANTIC SURFACES ------------------------------------------------ */
+  --bg:                var(--ink-900);
+  --bg-elevated:       var(--ink-850);
+  --surface:           var(--ink-800);
+  --surface-hover:     var(--ink-700);
+  --surface-sunken:    rgba(7, 9, 15, 0.5);
+
+  --border:            rgba(230, 234, 245, 0.08);
+  --border-strong:     rgba(230, 234, 245, 0.14);
+  --border-focus:      var(--cyan-500);
+
+  --fg:                var(--ink-100);
+  --fg-secondary:      var(--ink-200);
+  --fg-muted:          var(--ink-300);
+  --fg-subtle:         var(--ink-400);
+  --fg-disabled:       var(--ink-500);
+  --fg-on-accent:      #07090F;
+
+  --accent:            var(--cyan-500);
+  --accent-hover:      var(--cyan-400);
+  --accent-soft:       rgba(34, 211, 238, 0.12);
+  --accent-soft-hover: rgba(34, 211, 238, 0.20);
+  --accent-border:     rgba(34, 211, 238, 0.32);
+
+  /* ---- RADII ------------------------------------------------------------ */
+  --r-2:  2px;
+  --r-6:  6px;
+  --r-8:  8px;
+  --r-12: 12px;
+  --r-16: 16px;
+  --r-pill: 999px;
+
+  /* ---- SPACING ---------------------------------------------------------- */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-7:  32px;
+  --sp-8:  40px;
+  --sp-9:  56px;
+  --sp-10: 80px;
+
+  /* ---- ELEVATION -------------------------------------------------------- */
+  --shadow-none: none;
+  --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.30);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.40);
+  --ring-focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* ---- COMPONENT SIZING ------------------------------------------------- */
+  --h-input-sm: 32px;
+  --h-input:    40px;
+  --h-input-lg: 48px;
+  --h-tap:      44px;
+  --nav-h:      56px;
+  --bottom-nav-h: 64px;
+  --app-max-w:  1200px;
+
+  /* ---- MOTION ----------------------------------------------------------- */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 260ms;
+}
+
+.ds-h1, .ds-h2, .ds-h3, .ds-h4, .ds-h5,
+.ds-body, .ds-body-sm, .ds-caption, .ds-eyebrow, .ds-mono {
+  font-family: var(--font-sans);
+  color: var(--fg);
+  margin: 0;
+}
+
+.ds-h1 {
+  font-size: clamp(var(--fs-32), 4vw + 1rem, var(--fs-44));
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  font-weight: var(--fw-black);
+}
+
+.ds-h2 {
+  font-size: var(--fs-32);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  font-weight: var(--fw-bold);
+}
+
+.ds-h3 {
+  font-size: var(--fs-24);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-flat);
+  font-weight: var(--fw-bold);
+}
+
+.ds-h4 {
+  font-size: var(--fs-20);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-flat);
+  font-weight: var(--fw-bold);
+}
+
+.ds-h5 {
+  font-size: var(--fs-17);
+  line-height: var(--lh-snug);
+  font-weight: var(--fw-semi);
+}
+
+.ds-body {
+  font-size: var(--fs-15);
+  line-height: var(--lh-body);
+  color: var(--fg-secondary);
+  font-weight: var(--fw-regular);
+}
+
+.ds-body-sm {
+  font-size: var(--fs-13);
+  line-height: var(--lh-body);
+  color: var(--fg-muted);
+}
+
+.ds-caption {
+  font-size: var(--fs-12);
+  line-height: var(--lh-snug);
+  color: var(--fg-muted);
+  font-weight: var(--fw-medium);
+}
+
+.ds-eyebrow {
+  font-size: var(--fs-11);
+  line-height: 1;
+  color: var(--fg-subtle);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.ds-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  letter-spacing: 0;
+}
+
+.ds-tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "ss01" 1;
+}
+
+.ds-page {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

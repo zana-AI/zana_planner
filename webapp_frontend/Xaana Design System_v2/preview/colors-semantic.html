@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Semantic colors</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 20px 22px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .item { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--surface); display: grid; gap: 10px; }
+  .item.good { border-left: 2px solid #34D399; }
+  .item.warn { border-left: 2px solid #F4B860; }
+  .item.bad  { border-left: 2px solid #F87171; }
+  .top { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 999px; }
+  .name { font-size: 13px; font-weight: 700; color: var(--fg); }
+  .hex { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
+  .usage { font-size: 11px; color: var(--fg-muted); line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="row">
+    <div class="item good">
+      <div class="top"><span class="dot" style="background:#34D399"></span><span class="name">Good</span></div>
+      <div class="hex">#34D399 — good-500</div>
+      <div class="usage">On-track promises, completed sessions, success toasts.</div>
+    </div>
+    <div class="item warn">
+      <div class="top"><span class="dot" style="background:#F4B860"></span><span class="name">Warn</span></div>
+      <div class="hex">#F4B860 — warn-500</div>
+      <div class="usage">Needs attention, snooze actions, behind pace.</div>
+    </div>
+    <div class="item bad">
+      <div class="top"><span class="dot" style="background:#F87171"></span><span class="name">Bad</span></div>
+      <div class="hex">#F87171 — bad-500</div>
+      <div class="usage">Risk, destructive actions, distractions over budget.</div>
+    </div>
+  </div>
+  <div style="margin-top:14px;font-size:11px;color:var(--fg-subtle);line-height:1.5">
+    Status appears as a <strong style="color:var(--fg-muted)">2px left rule</strong> or a dot / icon stroke. Never a tinted card background.
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Xaana — Navigation</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+  .card { padding: 20px; display: grid; gap: 16px; }
+  .top {
+    height: 56px; background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 12px; padding: 0 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo { width: 28px; height: 28px; border-radius: 999px;
+    background:
+      radial-gradient(circle at 30% 30%, #67E8F9 0%, transparent 50%),
+      radial-gradient(circle at 70% 70%, #A78BFA 0%, transparent 50%),
+      #141C34;
+    border: 1px solid rgba(167,139,250,0.55);
+  }
+  .title { font-size: 15px; font-weight: 700; }
+  .sub   { font-size: 11px; color: var(--fg-muted); }
+  .spacer { flex: 1; }
+  .btn-sm { height: 32px; padding: 0 12px; border-radius: 8px; background: var(--accent); color: var(--fg-on-accent); border: none; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+  .avatar { width: 32px; height: 32px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; color: var(--fg); font-size: 13px; font-weight: 700; }
+
+  .bottom {
+    height: 64px; background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 12px;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+  }
+  .tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--fg-muted); font-size: 11px; font-weight: 600; }
+  .tab.is-active { color: var(--accent); }
+  .tab i { opacity: 0.85; }
+  .tab.is-active i { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <div class="logo"></div>
+    <div>
+      <div class="title">My week</div>
+      <div class="sub">Your weekly promises and progress</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn-sm">Start focus</button>
+    <div class="avatar">A</div>
+  </div>
+  <div class="bottom">
+    <div class="tab is-active"><i data-lucide="calendar-check" width="22" height="22"></i>My week</div>
+    <div class="tab"><i data-lucide="users" width="22" height="22"></i>Community</div>
+    <div class="tab"><i data-lucide="compass" width="22" height="22"></i>Explore</div>
+  </div>
+</div>
+<script>lucide.createIcons()</script>
+</body></html>

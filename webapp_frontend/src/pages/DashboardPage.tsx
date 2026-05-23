@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
@@ -8,7 +9,29 @@ import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
 import { CreatePromiseModal } from '../components/CreatePromiseModal';
-import type { WeeklyReportData, PublicUser, UserInfo } from '../types';
+import { CheckinSheet } from '../components/sheets/CheckinSheet';
+import { FocusPickerSheet } from '../components/sheets/FocusPickerSheet';
+import { FocusSheet } from '../components/sheets/FocusSheet';
+import { LogTimeSheet } from '../components/sheets/LogTimeSheet';
+import { PromiseDetailSheet } from '../components/sheets/PromiseDetailSheet';
+import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
+import { Toast } from '../components/ui/Toast';
+import { useToast } from '../hooks/useToast';
+import type { PromiseData, WeeklyReportData, PublicUser, UserInfo } from '../types';
+
+type ActivePromise = { id: string; data: PromiseData };
+
+function getWeekDays(weekStart: string): string[] {
+  const [year, month, day] = weekStart.split('-').map(Number);
+  const start = new Date(year, month - 1, day);
+  const days: string[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    days.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`);
+  }
+  return days;
+}
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -27,6 +50,13 @@ export function DashboardPage() {
   const [suggestToUserName, setSuggestToUserName] = useState<string>('');
   const [showSuggestionsInbox, setShowSuggestionsInbox] = useState(false);
   const [showCreatePromiseModal, setShowCreatePromiseModal] = useState(false);
+  const [detailPromise, setDetailPromise] = useState<ActivePromise | null>(null);
+  const [logPromise, setLogPromise] = useState<ActivePromise | null>(null);
+  const [checkinPromise, setCheckinPromise] = useState<ActivePromise | null>(null);
+  const [schedulePromise, setSchedulePromise] = useState<ActivePromise | null>(null);
+  const [focusPickOpen, setFocusPickOpen] = useState(false);
+  const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
+  const { message: toastMessage, showToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
 
   // Get current week's Monday for comparison
@@ -293,6 +323,24 @@ export function DashboardPage() {
     setSearchParams(newParams, { replace: true });
   }, [reportData, isCurrentWeek, searchParams, setSearchParams, getCurrentWeekMonday]);
 
+  const weekDays = useMemo(() => (reportData ? getWeekDays(reportData.week_start) : []), [reportData]);
+
+  const focusCandidates = useMemo(() => {
+    if (!reportData) return [] as ActivePromise[];
+    return Object.entries(reportData.promises)
+      .filter(([, data]) => data.metric_type !== 'count' && (data.hours_promised || 0) > 0)
+      .map(([id, data]) => ({ id, data }));
+  }, [reportData]);
+
+  const handleOpenDetail = useCallback((id: string, data: PromiseData) => {
+    setDetailPromise({ id, data });
+  }, []);
+
+  const handleSheetSuccess = useCallback((message: string) => {
+    showToast(message);
+    handleRefresh();
+  }, [handleRefresh, showToast]);
+
   // Loading state - must come after all hooks
   if (!isReady || loading) {
     return (
@@ -453,7 +501,14 @@ export function DashboardPage() {
         {tasksData && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>One-time Tasks</h2>
-            <WeeklyReport data={tasksData} onRefresh={handleRefresh} hideHeader={true} hideProgress={true} />
+            <WeeklyReport
+              data={tasksData}
+              onRefresh={handleRefresh}
+              hideHeader={true}
+              hideProgress={true}
+              useV2Cards
+              onOpenDetail={handleOpenDetail}
+            />
           </div>
         )}
 
@@ -466,6 +521,8 @@ export function DashboardPage() {
               onRefresh={handleRefresh}
               hideHeader={true}
               hideProgress={true}
+              useV2Cards
+              onOpenDetail={handleOpenDetail}
               onCreatePromise={isCurrentWeek ? () => setShowCreatePromiseModal(true) : undefined}
             />
           </div>
@@ -475,7 +532,14 @@ export function DashboardPage() {
         {distractionsPromisesData && (
           <div style={{ marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: '#fff' }}>Distractions</h2>
-            <WeeklyReport data={distractionsPromisesData} onRefresh={handleRefresh} hideHeader={true} hideProgress={true} />
+            <WeeklyReport
+              data={distractionsPromisesData}
+              onRefresh={handleRefresh}
+              hideHeader={true}
+              hideProgress={true}
+              useV2Cards
+              onOpenDetail={handleOpenDetail}
+            />
           </div>
         )}
 
@@ -664,6 +728,85 @@ export function DashboardPage() {
           }}
         />
       )}
+
+      {isCurrentWeek ? (
+        <button type="button" className="fab" aria-label="Create promise" onClick={() => setShowCreatePromiseModal(true)}>
+          <Plus size={22} />
+        </button>
+      ) : null}
+
+      <PromiseDetailSheet
+        open={!!detailPromise}
+        promiseId={detailPromise?.id ?? ''}
+        data={detailPromise?.data ?? ({} as PromiseData)}
+        weekDays={weekDays}
+        onClose={() => setDetailPromise(null)}
+        onLogTime={() => {
+          if (!detailPromise) return;
+          setLogPromise(detailPromise);
+          setDetailPromise(null);
+        }}
+        onCheckin={() => {
+          if (!detailPromise) return;
+          setCheckinPromise(detailPromise);
+          setDetailPromise(null);
+        }}
+        onSchedule={() => {
+          if (!detailPromise) return;
+          setSchedulePromise(detailPromise);
+          setDetailPromise(null);
+        }}
+        onFocus={() => {
+          if (!detailPromise) return;
+          setFocusPromise(detailPromise);
+          setDetailPromise(null);
+        }}
+      />
+
+      <LogTimeSheet
+        open={!!logPromise}
+        promiseId={logPromise?.id ?? ''}
+        promiseText={logPromise?.data.text ?? ''}
+        onClose={() => setLogPromise(null)}
+        onSuccess={handleSheetSuccess}
+      />
+
+      <CheckinSheet
+        open={!!checkinPromise}
+        promiseId={checkinPromise?.id ?? ''}
+        promiseText={checkinPromise?.data.text ?? ''}
+        onClose={() => setCheckinPromise(null)}
+        onSuccess={handleSheetSuccess}
+      />
+
+      <ScheduleSheet
+        open={!!schedulePromise}
+        promiseId={schedulePromise?.id ?? ''}
+        promiseText={schedulePromise?.data.text ?? ''}
+        weekDays={weekDays}
+        onClose={() => setSchedulePromise(null)}
+        onSuccess={handleSheetSuccess}
+      />
+
+      <FocusPickerSheet
+        open={focusPickOpen}
+        promises={focusCandidates}
+        onClose={() => setFocusPickOpen(false)}
+        onStart={(id, text) => {
+          setFocusPickOpen(false);
+          setFocusPromise({ id, data: { text } as PromiseData });
+        }}
+      />
+
+      <FocusSheet
+        open={!!focusPromise}
+        promiseId={focusPromise?.id ?? ''}
+        promiseText={focusPromise?.data.text ?? ''}
+        onClose={() => setFocusPromise(null)}
+        onComplete={handleSheetSuccess}
+      />
+
+      <Toast message={toastMessage} />
 
       {/* Focus Bar - Global Pomodoro Timer */}
       {isAuthenticated && (
