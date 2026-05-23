@@ -693,6 +693,12 @@ def _sanitize_purpose(purpose: Optional[str]) -> str:
 
 def _format_remind_at(remind_at: str) -> str:
     """Return a human-readable label for an ISO datetime or natural-language string."""
+    _s = str(remind_at).strip()
+    if _s.startswith("{") and "resolved" in _s:
+        try:
+            remind_at = json.loads(_s).get("resolved") or _s
+        except Exception:
+            remind_at = _s
     try:
         from datetime import datetime, timedelta, timezone
         dt = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00"))
@@ -3520,6 +3526,37 @@ def create_routed_plan_execute_graph(
                     continue
                 obj = _parse_json_obj(src_text)
                 resolved = (obj or {}).get(src_field) if obj else None
+
+                # Structured resolver output: JSON with a "confidence" field
+                # (e.g. resolve_datetime). High → use the "resolved" value;
+                # low/none → surface a clarification question to the user.
+                # Without this, the whole JSON blob leaks into the tool arg.
+                if obj and "confidence" in obj:
+                    confidence = obj.get("confidence", "none")
+                    if confidence == "high":
+                        resolved_value = obj.get("resolved")
+                        if resolved_value not in (None, "", [], {}):
+                            tool_args[arg_name] = resolved_value
+                            continue
+                    clarification_q = obj.get("clarification") or (
+                        f"I'm not sure about the {arg_name} — could you be more specific?"
+                    )
+                    return {
+                        **state,
+                        "iteration": new_iteration,
+                        "final_response": clarification_q,
+                        "pending_clarification": {
+                            "reason": "resolver_uncertain",
+                            "tool_name": tool_name,
+                            "missing_fields": [arg_name],
+                            "partial_args": {k: v for k, v in (tool_args or {}).items() if k != arg_name},
+                            "clarification": clarification_q,
+                            "candidates": obj.get("candidates") or [],
+                            "placeholder": arg_val,
+                        },
+                        "step_idx": idx + 1,
+                    }
+
                 if resolved not in (None, "", [], {}):
                     tool_args[arg_name] = resolved
                 elif not src_field or not obj:

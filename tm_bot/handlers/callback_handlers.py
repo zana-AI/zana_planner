@@ -12,8 +12,20 @@ import re
 from datetime import datetime, timedelta, timezone
 
 
+def _unwrap_resolved(value: str) -> str:
+    """If value is a resolver JSON blob ({"resolved": ...}), return the resolved field."""
+    s = str(value).strip()
+    if s.startswith("{") and "resolved" in s:
+        try:
+            return str(json.loads(s).get("resolved") or s)
+        except Exception:
+            return s
+    return s
+
+
 def _format_remind_at(remind_at: str) -> str:
     """Return a human-readable label for an ISO datetime or natural-language string."""
+    remind_at = _unwrap_resolved(remind_at)
     try:
         dt = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00"))
         now = datetime.now(dt.tzinfo or timezone.utc)
@@ -35,6 +47,7 @@ def _format_remind_at(remind_at: str) -> str:
 def _build_gcal_url(title: str, remind_at: str) -> str | None:
     """Build a Google Calendar quick-add URL for a reminder."""
     try:
+        remind_at = _unwrap_resolved(remind_at)
         dt = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00")).replace(tzinfo=None)
         end = dt + timedelta(hours=1)
         dates = f"{dt.strftime('%Y%m%dT%H%M%S')}/{end.strftime('%Y%m%dT%H%M%S')}"
@@ -566,9 +579,21 @@ class CallbackHandlers:
                 if hasattr(self.plan_keeper, tool_name):
                     method = getattr(self.plan_keeper, tool_name)
                     tool_args_with_user = {**tool_args, "user_id": user_id}
-                    method(**tool_args_with_user)
+                    tool_ret = method(**tool_args_with_user)
 
-                    if tool_name in ("add_promise", "create_promise"):
+                    # create_reminder is backed by add_promise and returns a string:
+                    # "#P10 Promise '…' added successfully." on success, or an error
+                    # message otherwise. Treat a missing '#' marker as failure so we
+                    # never show a false "Reminder set" when nothing was created.
+                    reminder_failed = (
+                        tool_name == "create_reminder"
+                        and not str(tool_ret or "").lstrip().startswith("#")
+                    )
+
+                    if reminder_failed:
+                        _step_ok = False
+                        step_result = get_message("error_executing_action", user_lang, error=str(tool_ret))
+                    elif tool_name in ("add_promise", "create_promise"):
                         promise_text = tool_args.get("promise_text") or tool_args.get("text", "promise")
                         step_result = get_message(
                             "promise_created_confirmed",

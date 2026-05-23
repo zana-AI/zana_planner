@@ -1352,7 +1352,10 @@ class LLMHandler:
             
             "=== MODES ===\n"
             "- **operator**: Transactional actions (create/update/delete promises, log actions, change settings). "
-            "Examples: 'I want to call a friend tomorrow', 'log 2 hours on reading', 'delete my gym promise', 'change my timezone'.\n"
+            "Examples: 'I want to call a friend tomorrow', 'log 2 hours on reading', 'delete my gym promise', 'change my timezone'. "
+            "A casually-phrased statement of a future task/intent is STILL operator, even without an explicit 'remind me'. "
+            "This holds in ANY language — e.g. Persian 'امروز برم یه کم گوشت بگیرم عصری کباب کنیم' (a plan to buy meat and cook later → operator), "
+            "'فردا باید به آمیر زنگ بزنم' (call Amir tomorrow → operator); French 'demain je dois appeler un ami' (→ operator).\n"
             "- **strategist**: High-level goals, coaching, advice, progress analysis, strategic planning. "
             "Examples: 'what should I focus on this week?', 'how can I improve my productivity?', 'am I on track with my goals?', 'help me plan my week'.\n"
             "- **social**: Community features (followers, following, feed, public promises, community interactions). "
@@ -1362,6 +1365,7 @@ class LLMHandler:
             
             "=== ROUTING RULES ===\n"
             "- If the user wants to DO something (create, log, delete, update) → operator\n"
+            "- Classify by INTENT, not language or politeness. Detect future-task intent identically in English, Persian, and French; do not downgrade a non-English task to 'engagement' just because it reads as casual conversation.\n"
             "- If the user wants ADVICE, COACHING, or ANALYSIS → strategist\n"
             "- 'social' here means Xaana's INTERNAL COMMUNITY ONLY (followers, following, feed, public promises). "
             "Questions about X/Twitter, Mastodon, or external social platforms are NEVER 'social' mode.\n"
