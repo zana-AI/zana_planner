@@ -32,11 +32,15 @@ Rules:
 - Prefer the near future.
 - "Weekend" / "آخر هفته" / "fin de semaine" = coming {saturday_label}.
 - "Morning" = 09:00, "Evening" / "tonight" = 19:00, "Night" = 21:00.
+- If only a date is given with no time, default to 09:00 for future dates.
 - If confident → return resolved ISO string.
 - If 2-3 equally plausible options → return candidates + a short clarification question.
 - If genuinely ambiguous or meaningless → clarification question only.
 
 Examples (today is {now_str}):
+
+Input: "tomorrow"
+Output: {{"resolved": "{tomorrow_9am}", "confidence": "high"}}
 
 Input: "tomorrow at 7pm"
 Output: {{"resolved": "{tomorrow_7pm}", "confidence": "high"}}

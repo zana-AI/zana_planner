@@ -691,6 +691,27 @@ def _sanitize_purpose(purpose: Optional[str]) -> str:
     return text[:80]
 
 
+def _format_remind_at(remind_at: str) -> str:
+    """Return a human-readable label for an ISO datetime or natural-language string."""
+    try:
+        from datetime import datetime, timedelta, timezone
+        dt = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00"))
+        now = datetime.now(dt.tzinfo or timezone.utc)
+        today = now.date()
+        tomorrow = today + timedelta(days=1)
+        hour, minute = dt.hour, dt.minute
+        period = "AM" if hour < 12 else "PM"
+        display_hour = hour % 12 or 12
+        time_str = f"{display_hour}:{minute:02d} {period}"
+        if dt.date() == today:
+            return f"today at {time_str}"
+        if dt.date() == tomorrow:
+            return f"tomorrow at {time_str}"
+        return dt.strftime("%a, %b %-d") + f" at {time_str}"
+    except Exception:
+        return str(remind_at)
+
+
 def _describe_action(
     tool_name: str,
     tool_args: dict,
@@ -719,7 +740,8 @@ def _describe_action(
         return f"create a new promise: '{promise_text}'"
     if tool_name == "create_reminder":
         text = tool_args.get("text", "that")
-        when = tool_args.get("remind_at", "the requested time")
+        remind_at = tool_args.get("remind_at", "")
+        when = _format_remind_at(remind_at) if remind_at else "the requested time"
         return f"set a reminder to '{text}' at {when}"
     if tool_name == "create_recurring_reminder":
         return f"set up a weekly reminder for {tool_args.get('promise_id', 'a promise')}"

@@ -121,10 +121,10 @@ After running, the script prints a table of row counts per table and a ✓/✗ s
 
 ## �💡 Resolution Suggestions & Future Ideas (2026)
 
-| Idea | Priority | Est. Time |
-| :--- | :--- | :--- |
-| **Agentic Capabilities** | High | 10h |
-| **RAG / Conversation History** | High | 20h |
-| **Telegram Mini App** | Med | 20h |
-| **Offline-first Local Cache** | Low | - |
-| **External Calendar Sync** | Med | 6h |
+| Done | Idea | Priority | Est. Time |
+| :--- | :--- | :--- | :--- |
+| [ ] | **Agentic Capabilities** | High | 10h |
+| [ ] | **RAG / Conversation History** *(almost done)* | High | 20h |
+| [x] | **Telegram Mini App** | Med | 20h |
+| [ ] | **Offline-first Local Cache** | Low | - |
+| [ ] | **External Calendar Sync** | Med | 6h |

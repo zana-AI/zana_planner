@@ -10,6 +10,39 @@ import os
 import random
 import re
 from datetime import datetime, timedelta, timezone
+
+
+def _format_remind_at(remind_at: str) -> str:
+    """Return a human-readable label for an ISO datetime or natural-language string."""
+    try:
+        dt = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00"))
+        now = datetime.now(dt.tzinfo or timezone.utc)
+        today = now.date()
+        tomorrow = today + timedelta(days=1)
+        hour, minute = dt.hour, dt.minute
+        period = "AM" if hour < 12 else "PM"
+        display_hour = hour % 12 or 12
+        time_str = f"{display_hour}:{minute:02d} {period}"
+        if dt.date() == today:
+            return f"today at {time_str}"
+        if dt.date() == tomorrow:
+            return f"tomorrow at {time_str}"
+        return dt.strftime("%a, %b %-d") + f" at {time_str}"
+    except Exception:
+        return str(remind_at)
+
+
+def _build_gcal_url(title: str, remind_at: str) -> str | None:
+    """Build a Google Calendar quick-add URL for a reminder."""
+    try:
+        dt = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00")).replace(tzinfo=None)
+        end = dt + timedelta(hours=1)
+        dates = f"{dt.strftime('%Y%m%dT%H%M%S')}/{end.strftime('%Y%m%dT%H%M%S')}"
+        return "https://calendar.google.com/calendar/render?" + urlencode(
+            {"action": "TEMPLATE", "text": title, "dates": dates}
+        )
+    except Exception:
+        return None
 from typing import Optional, TYPE_CHECKING
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
@@ -545,6 +578,12 @@ class CallbackHandlers:
                     elif tool_name == "subscribe_template":
                         template_id = tool_args.get("template_id", "template")
                         step_result = get_message("template_subscribed_confirmed", user_lang, template_id=template_id)
+                    elif tool_name == "create_reminder":
+                        text = tool_args.get("text", "reminder")
+                        remind_at = tool_args.get("remind_at", "")
+                        when = _format_remind_at(remind_at) if remind_at else ""
+                        time_part = f" — {when}" if when else ""
+                        step_result = f"✅ Reminder set: '{text}'{time_part}"
                     else:
                         step_result = get_message("action_confirmed", user_lang)
                 else:
@@ -605,10 +644,15 @@ class CallbackHandlers:
             return
 
         # No more items — show final result and sync history
+        final_kb = None
+        if tool_name == "create_reminder":
+            cal_url = _build_gcal_url(tool_args.get("text", ""), tool_args.get("remind_at", ""))
+            if cal_url:
+                final_kb = InlineKeyboardMarkup([[InlineKeyboardButton("📅 Add to Calendar", url=cal_url)]])
         try:
-            await query.edit_message_text(step_result)
+            await query.edit_message_text(step_result, reply_markup=final_kb)
         except Exception:
-            await query.message.reply_text(step_result)
+            await query.message.reply_text(step_result, reply_markup=final_kb)
         self._sync_llm_external_turn(
             user_id,
             "yes",
