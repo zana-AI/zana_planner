@@ -21,6 +21,8 @@ export function getMockWeeklyReport(refTime?: string): WeeklyReportData {
     date.setDate(monday.getDate() + index);
     return toLocalDateKey(date);
   });
+  const olderEndDate = new Date(monday);
+  olderEndDate.setDate(monday.getDate() - 3);
 
   return {
     week_start: days[0],
@@ -58,6 +60,19 @@ export function getMockWeeklyReport(refTime?: string): WeeklyReportData {
           { date: days[2], hours: 0.75, count: 1 },
           { date: days[4], hours: 0.75, count: 1 },
         ],
+      },
+      spanish: {
+        text: 'Practice Spanish',
+        hours_promised: 2,
+        hours_spent: 1,
+        target_value: 2,
+        achieved_value: 1,
+        metric_type: 'hours',
+        template_kind: 'commitment',
+        recurring: true,
+        visibility: 'private',
+        end_date: toLocalDateKey(olderEndDate),
+        sessions: [],
       },
       taxes: {
         text: 'Send accountant documents',

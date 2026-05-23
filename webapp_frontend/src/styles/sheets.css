@@ -171,6 +171,30 @@
 
 .section-head h2 { margin: 0; font-size: 13px; font-weight: 700; color: var(--fg); }
 .section-head .meta { font-size: 11px; color: var(--fg-subtle); font-family: var(--font-mono); }
+.section-head--older h2,
+.section-head--older .meta { color: var(--fg-muted); }
+
+.older-promises-toggle {
+  width: fit-content;
+  min-height: 32px;
+  margin: 10px 0 0;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: rgba(230, 234, 245, 0.04);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.older-promises-toggle:hover,
+.older-promises-toggle.is-open {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
 
 .week-strip {
   display: flex;

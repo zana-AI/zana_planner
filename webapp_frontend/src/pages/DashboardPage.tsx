@@ -23,6 +23,14 @@ import type { PromiseData, WeeklyReportData, PublicUser, UserInfo } from '../typ
 
 type ActivePromise = { id: string; data: PromiseData };
 
+function normalizeDateKey(date?: string): string {
+  return (date || '').split('T')[0];
+}
+
+function toLocalDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function getWeekDays(weekStart: string): string[] {
   const [year, month, day] = weekStart.split('-').map(Number);
   const start = new Date(year, month - 1, day);
@@ -59,6 +67,7 @@ export function DashboardPage() {
   const [schedulePromise, setSchedulePromise] = useState<ActivePromise | null>(null);
   const [focusPickOpen, setFocusPickOpen] = useState(false);
   const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
+  const [showOlderPromises, setShowOlderPromises] = useState(false);
   const { message: toastMessage, showToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
   const allowLocalMockData = shouldUseLocalMockData();
@@ -233,22 +242,41 @@ export function DashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    setShowOlderPromises(false);
+  }, [reportData?.week_start]);
+
   // Filter data into promises (recurring, non-budget), tasks (one-time, non-budget), and distractions (budget templates)
   // IMPORTANT: This hook must be called before any conditional returns
-  const { promisesData, tasksData, distractionsPromisesData } = useMemo(() => {
+  const { promisesData, olderPromisesData, tasksData, distractionsPromisesData, currentReportData } = useMemo(() => {
     if (!reportData) {
-      return { promisesData: null, tasksData: null, distractionsPromisesData: null };
+      return { promisesData: null, olderPromisesData: null, tasksData: null, distractionsPromisesData: null, currentReportData: null };
     }
 
     const promises: Record<string, typeof reportData.promises[string]> = {};
+    const olderPromises: Record<string, typeof reportData.promises[string]> = {};
     const tasks: Record<string, typeof reportData.promises[string]> = {};
     const distractions: Record<string, typeof reportData.promises[string]> = {};
+    const currentPromises: Record<string, typeof reportData.promises[string]> = {};
     let promisesTotalPromised = 0;
     let promisesTotalSpent = 0;
+    let olderPromisesTotalPromised = 0;
+    let olderPromisesTotalSpent = 0;
     let tasksTotalPromised = 0;
     let tasksTotalSpent = 0;
     let distractionsTotalPromised = 0;
     let distractionsTotalSpent = 0;
+    let currentTotalPromised = 0;
+    let currentTotalSpent = 0;
+
+    const todayKey = toLocalDateKey(new Date());
+    const olderCutoff = isCurrentWeek ? todayKey : reportData.week_start;
+
+    const addToCurrentReport = (id: string, promiseData: typeof reportData.promises[string]) => {
+      currentPromises[id] = promiseData;
+      currentTotalPromised += promiseData.hours_promised || 0;
+      currentTotalSpent += promiseData.hours_spent || 0;
+    };
 
     for (const [id, promiseData] of Object.entries(reportData.promises)) {
       // Budget templates (distractions) - separate from regular promises
@@ -256,16 +284,27 @@ export function DashboardPage() {
         distractions[id] = promiseData;
         distractionsTotalPromised += promiseData.hours_promised || 0;
         distractionsTotalSpent += promiseData.hours_spent || 0;
+        addToCurrentReport(id, promiseData);
       } else if (promiseData.recurring === true) {
         // Recurring promises (recurring === true, non-budget)
-        promises[id] = promiseData;
-        promisesTotalPromised += promiseData.hours_promised || 0;
-        promisesTotalSpent += promiseData.hours_spent || 0;
+        const endDate = normalizeDateKey(promiseData.end_date);
+        const isOlderPromise = !!endDate && endDate < olderCutoff;
+        if (isOlderPromise) {
+          olderPromises[id] = promiseData;
+          olderPromisesTotalPromised += promiseData.hours_promised || 0;
+          olderPromisesTotalSpent += promiseData.hours_spent || 0;
+        } else {
+          promises[id] = promiseData;
+          promisesTotalPromised += promiseData.hours_promised || 0;
+          promisesTotalSpent += promiseData.hours_spent || 0;
+          addToCurrentReport(id, promiseData);
+        }
       } else {
         // One-time tasks (recurring === false or undefined, non-budget)
         tasks[id] = promiseData;
         tasksTotalPromised += promiseData.hours_promised || 0;
         tasksTotalSpent += promiseData.hours_spent || 0;
+        addToCurrentReport(id, promiseData);
       }
     }
 
@@ -275,6 +314,12 @@ export function DashboardPage() {
         promises,
         total_promised: promisesTotalPromised,
         total_spent: promisesTotalSpent,
+      } : null,
+      olderPromisesData: olderPromisesTotalPromised > 0 || Object.keys(olderPromises).length > 0 ? {
+        ...reportData,
+        promises: olderPromises,
+        total_promised: olderPromisesTotalPromised,
+        total_spent: olderPromisesTotalSpent,
       } : null,
       tasksData: tasksTotalPromised > 0 || Object.keys(tasks).length > 0 ? {
         ...reportData,
@@ -288,8 +333,14 @@ export function DashboardPage() {
         total_promised: distractionsTotalPromised,
         total_spent: distractionsTotalSpent,
       } : null,
+      currentReportData: currentTotalPromised > 0 || Object.keys(currentPromises).length > 0 ? {
+        ...reportData,
+        promises: currentPromises,
+        total_promised: currentTotalPromised,
+        total_spent: currentTotalSpent,
+      } : null,
     };
-  }, [reportData]);
+  }, [isCurrentWeek, reportData]);
 
   const handleRefresh = useCallback(() => {
     const authData = initData || getDevInitData();
@@ -307,23 +358,23 @@ export function DashboardPage() {
   }, [reportData]);
 
   const overallProgress = useMemo(() => {
-    if (!reportData) {
+    if (!currentReportData) {
       return { cappedTotal: 0, cappedPct: 0, spentPct: 0 };
     }
 
-    const cappedTotal = Object.values(reportData.promises).reduce((sum, promiseData) => {
+    const cappedTotal = Object.values(currentReportData.promises).reduce((sum, promiseData) => {
       const achieved = promiseData.achieved_value ?? promiseData.hours_spent;
       const target = promiseData.target_value ?? promiseData.hours_promised;
       return sum + Math.min(Math.max(achieved, 0), Math.max(target, 0));
     }, 0);
 
-    const totalPromised = reportData.total_promised;
+    const totalPromised = currentReportData.total_promised;
     return {
       cappedTotal,
       cappedPct: totalPromised > 0 ? Math.min((cappedTotal / totalPromised) * 100, 100) : 0,
-      spentPct: totalPromised > 0 ? Math.min((reportData.total_spent / totalPromised) * 100, 100) : 0,
+      spentPct: totalPromised > 0 ? Math.min((currentReportData.total_spent / totalPromised) * 100, 100) : 0,
     };
-  }, [reportData]);
+  }, [currentReportData]);
 
   const handlePreviousWeek = useCallback(() => {
     if (!reportData) return;
@@ -353,17 +404,18 @@ export function DashboardPage() {
   const weekDays = useMemo(() => (reportData ? getWeekDays(reportData.week_start) : []), [reportData]);
 
   const promiseCount = promisesData ? Object.keys(promisesData.promises).length : 0;
+  const olderPromiseCount = olderPromisesData ? Object.keys(olderPromisesData.promises).length : 0;
   const taskCount = tasksData ? Object.keys(tasksData.promises).length : 0;
   const distractionCount = distractionsPromisesData
     ? Object.keys(distractionsPromisesData.promises).length
     : 0;
 
   const focusCandidates = useMemo(() => {
-    if (!reportData) return [] as ActivePromise[];
-    return Object.entries(reportData.promises)
+    if (!currentReportData) return [] as ActivePromise[];
+    return Object.entries(currentReportData.promises)
       .filter(([, data]) => data.metric_type !== 'count' && (data.hours_promised || 0) > 0)
       .map(([id, data]) => ({ id, data }));
-  }, [reportData]);
+  }, [currentReportData]);
 
   const handleOpenDetail = useCallback((id: string, data: PromiseData) => {
     setDetailPromise({ id, data });
@@ -442,6 +494,7 @@ export function DashboardPage() {
   
   // Determine if user is authenticated
   const isAuthenticated = !!(initData || getDevInitData() || localStorage.getItem('telegram_auth_token') || allowLocalMockData);
+  const shouldShowOlderPromises = !!olderPromisesData && (showOlderPromises || promiseCount === 0);
 
   return (
     <div className="dashboard app">
@@ -466,12 +519,12 @@ export function DashboardPage() {
           </button>
         </div>
 
-        {reportData && reportData.total_promised > 0 && (
+        {currentReportData && currentReportData.total_promised > 0 && (
           <div className="overall">
             <div className="row">
               <span className="label">Overall progress</span>
               <span className="sub">
-                {overallProgress.cappedTotal.toFixed(1)}h / {reportData.total_promised.toFixed(1)}h
+                {overallProgress.cappedTotal.toFixed(1)}h / {currentReportData.total_promised.toFixed(1)}h
               </span>
             </div>
             <div className="row overall-actions">
@@ -493,7 +546,7 @@ export function DashboardPage() {
           </div>
         )}
 
-        {(promisesData || (isCurrentWeek && emptyPromisesData)) && (
+        {(promisesData || (isCurrentWeek && emptyPromisesData && olderPromiseCount === 0)) && (
           <>
             <div className="section-head">
               <h2>Promises</h2>
@@ -508,10 +561,35 @@ export function DashboardPage() {
               hideProgress
               useV2Cards
               onOpenDetail={handleOpenDetail}
-              onCreatePromise={isCurrentWeek ? () => setShowCreatePromiseModal(true) : undefined}
             />
+            {olderPromiseCount > 0 ? (
+              <button
+                type="button"
+                className={`older-promises-toggle${showOlderPromises ? ' is-open' : ''}`}
+                onClick={() => setShowOlderPromises((value) => !value)}
+              >
+                <span>{showOlderPromises ? 'Hide older promises' : `Show ${olderPromiseCount} older ${olderPromiseCount === 1 ? 'promise' : 'promises'}`}</span>
+              </button>
+            ) : null}
           </>
         )}
+
+        {shouldShowOlderPromises && olderPromisesData ? (
+          <>
+            <div className="section-head section-head--older">
+              <h2>Older promises</h2>
+              <span className="meta">{olderPromiseCount} ended</span>
+            </div>
+            <WeeklyReport
+              data={olderPromisesData}
+              onRefresh={handleRefresh}
+              hideHeader
+              hideProgress
+              useV2Cards
+              onOpenDetail={handleOpenDetail}
+            />
+          </>
+        ) : null}
 
         {tasksData && (
           <>
@@ -547,7 +625,7 @@ export function DashboardPage() {
           </>
         )}
 
-        {!loading && !isCurrentWeek && !promisesData && !tasksData && !distractionsPromisesData && (
+        {!loading && !isCurrentWeek && !promisesData && !olderPromisesData && !tasksData && !distractionsPromisesData && (
           <div className="empty-state">
             <h2 className="empty-title">No promises or tasks yet</h2>
             <p className="empty-subtitle">
