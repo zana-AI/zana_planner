@@ -94,6 +94,7 @@ export interface AppNavItem {
 export interface SessionData {
   date: string;
   hours: number;
+  count?: number;
   notes?: string[];  // Optional array of notes for actions on this date
 }
 

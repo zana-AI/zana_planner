@@ -17,6 +17,7 @@ import { PromiseDetailSheet } from '../components/sheets/PromiseDetailSheet';
 import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
 import { Toast } from '../components/ui/Toast';
 import { useToast } from '../hooks/useToast';
+import { getMockCommunityUsers, getMockWeeklyReport, shouldUseLocalMockData } from '../api/mockData';
 import type { PromiseData, WeeklyReportData, PublicUser, UserInfo } from '../types';
 
 type ActivePromise = { id: string; data: PromiseData };
@@ -58,6 +59,7 @@ export function DashboardPage() {
   const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
   const { message: toastMessage, showToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
+  const allowLocalMockData = shouldUseLocalMockData();
 
   // Get current week's Monday for comparison
   const getCurrentWeekMonday = useCallback(() => {
@@ -99,6 +101,10 @@ export function DashboardPage() {
       if (authData) {
         apiClient.setInitData(authData);
       }
+      if (!authData && !localStorage.getItem('telegram_auth_token') && allowLocalMockData) {
+        setReportData(getMockWeeklyReport(refTime));
+        return;
+      }
       const data = await apiClient.getWeeklyReport(refTime, signal);
       if (signal?.aborted) return;
       setReportData(data);
@@ -109,21 +115,33 @@ export function DashboardPage() {
 
       if (err instanceof ApiError) {
         if (err.status === 401) {
-          setError('Authentication failed. Please log in again.');
           apiClient.clearAuth();
           window.dispatchEvent(new Event('logout'));
-          navigate('/', { replace: true });
+          if (allowLocalMockData) {
+            setReportData(getMockWeeklyReport(refTime));
+          } else {
+            setError('Authentication failed. Please log in again.');
+            navigate('/', { replace: true });
+          }
         } else {
-          setError(err.message);
+          if (allowLocalMockData) {
+            setReportData(getMockWeeklyReport(refTime));
+          } else {
+            setError(err.message);
+          }
         }
       } else {
-        setError('Failed to load your dashboard. Please try again.');
+        if (allowLocalMockData) {
+          setReportData(getMockWeeklyReport(refTime));
+        } else {
+          setError('Failed to load your dashboard. Please try again.');
+        }
       }
       hapticFeedback('error');
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [hapticFeedback, navigate]);
+  }, [allowLocalMockData, hapticFeedback, navigate]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -131,7 +149,7 @@ export function DashboardPage() {
     const authData = initData || getDevInitData();
     const token = localStorage.getItem('telegram_auth_token');
 
-    if (!authData && !token) {
+    if (!authData && !token && !allowLocalMockData) {
       navigate('/', { replace: true });
       return;
     }
@@ -149,7 +167,7 @@ export function DashboardPage() {
     return () => {
       controller.abort();
     };
-  }, [isReady, initData, navigate, fetchReport, currentRefTime]);
+  }, [allowLocalMockData, isReady, initData, navigate, fetchReport, currentRefTime]);
 
   // Fetch userInfo for browser login users
   useEffect(() => {
@@ -170,6 +188,10 @@ export function DashboardPage() {
       setCommunityLoading(true);
       try {
         const authData = initData || getDevInitData();
+        if (!authData && !localStorage.getItem('telegram_auth_token') && allowLocalMockData) {
+          setCommunityUsers(getMockCommunityUsers());
+          return;
+        }
         if (authData) {
           apiClient.setInitData(authData);
         }
@@ -183,16 +205,18 @@ export function DashboardPage() {
         setCommunityUsers(filteredUsers);
       } catch (err) {
         console.error('Failed to fetch community users:', err);
-        // Don't show error, just leave empty
+        if (allowLocalMockData) {
+          setCommunityUsers(getMockCommunityUsers());
+        }
       } finally {
         setCommunityLoading(false);
       }
     };
 
-    if (isReady && (initData || localStorage.getItem('telegram_auth_token'))) {
+    if (isReady && (initData || localStorage.getItem('telegram_auth_token') || allowLocalMockData)) {
       fetchCommunityUsers();
     }
-  }, [isReady, initData, user, userInfo]);
+  }, [allowLocalMockData, isReady, initData, user, userInfo]);
 
   // Expose suggest promise handler globally for UserCard
   useEffect(() => {
@@ -378,7 +402,7 @@ export function DashboardPage() {
   const currentUserId = user?.id?.toString();
   
   // Determine if user is authenticated
-  const isAuthenticated = !!(initData || getDevInitData() || localStorage.getItem('telegram_auth_token'));
+  const isAuthenticated = !!(initData || getDevInitData() || localStorage.getItem('telegram_auth_token') || allowLocalMockData);
 
   return (
     <div className="dashboard app">

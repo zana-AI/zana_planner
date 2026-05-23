@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { ArrowLeft, Library, LogOut, Settings, Shield, Timer } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { shouldUseLocalMockData } from '../api/mockData';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { useTelegramBackButton } from '../hooks/useTelegramBackButton';
 import { useSessionMode } from '../hooks/useSessionMode';
@@ -71,7 +72,7 @@ export function Navigation(_props: NavigationProps) {
 
   const authData = initData || getDevInitData();
   const hasToken = !!localStorage.getItem('telegram_auth_token');
-  const isAuthenticated = !!authData || hasToken;
+  const isAuthenticated = !!authData || hasToken || shouldUseLocalMockData();
 
   const navItems = useMemo<AppNavItem[]>(
     () => [

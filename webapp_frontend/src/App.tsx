@@ -18,13 +18,15 @@ import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
 import { Navigation } from './components/Navigation';
 import { apiClient } from './api/client';
+import { shouldUseLocalMockData } from './api/mockData';
 
 function App() {
   const { initData, isReady } = useTelegramWebApp();
   const [hasSessionToken, setHasSessionToken] = useState(false);
   
   // Automatically detect and set timezone when Mini App loads (only if authenticated)
-  const isAuthenticated = !!initData || !!getDevInitData() || hasSessionToken;
+  const allowLocalMockData = shouldUseLocalMockData();
+  const isAuthenticated = !!initData || !!getDevInitData() || hasSessionToken || allowLocalMockData;
   useTimezoneDetection(isAuthenticated && isReady);
   
   // Check for session token on mount and listen for changes
