@@ -177,3 +177,27 @@ curl https://xaana.club/api/health
 | `ENVIRONMENT` | `production` or `staging` |
 | `ADMIN_IDS` | Comma-separated Telegram user IDs |
 | `QDRANT_URL` | Vector search service |
+
+## Operations & Debugging
+
+**VM access** — the bot runs on GCP VM `vm-telegram-bots` (zone `europe-west9-c`). SSH via gcloud (handles key provisioning):
+
+```bash
+gcloud compute ssh vm-telegram-bots --zone=europe-west9-c --command="sudo docker ps"
+```
+
+Running containers: `zana-prod`, `zana-staging`, `zana-webapp`, `zana-qdrant`, `zana-nginx`, `zana-stats`.
+Compose dir on the VM: `/opt/zana-bot`. Env files: `/opt/zana-config/.env.{prod,staging,langfuse}` (not in the repo).
+
+**Deploy flow**
+- Push to `master` → **staging auto-deploys** (GH Actions `deploy-staging.yml`). The built image is tagged `zana-ai-bot:staging`; `/app/VERSION` holds the commit SHA.
+- **Prod is a manual promotion** (`deploy-prod.yml`, `workflow_dispatch`) that retags the staging image as `zana-ai-bot:prod` and recreates `zana-prod` + `zana-webapp`. It does **not** start the `langfuse` compose profile.
+- Manual prod promote (if `gh` unavailable), from `/opt/zana-bot`:
+  ```bash
+  sudo docker tag zana-ai-bot:prod zana-ai-bot:prod-rollback   # save rollback first
+  sudo docker tag zana-ai-bot:staging zana-ai-bot:prod
+  sudo docker compose up -d --force-recreate --no-build zana-prod
+  ```
+  Rollback: retag `zana-ai-bot:prod-rollback` → `zana-ai-bot:prod` and recreate.
+
+**Observability (Langfuse)** — traces go to **Langfuse Cloud** (`LANGFUSE_HOST=https://cloud.langfuse.com`), SDK **v3**. The self-hosted compose stack (behind the `langfuse` profile) is **not** used. Trace environment is set via `LANGFUSE_TRACING_ENVIRONMENT` (not a per-call kwarg — v3 has no `environment`/`start_time`/`end_time` on the generation API). Send errors are swallowed by design; the first failure now logs at `WARNING` (`grep -i "langfuse" ` in `zana.log`). `auth_check()` validates credentials.
