@@ -7,6 +7,7 @@ import random
 import re
 import time
 from contextvars import ContextVar
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -14,6 +15,11 @@ from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
 
 from utils.logger import get_logger
+from llms.failure_responses import (
+    classify_tool_error,
+    extract_quoted_value,
+    render_failure_response,
+)
 
 logger = get_logger(__name__)
 _DEBUG_ENABLED = os.getenv("LLM_DEBUG", "0") == "1" or os.getenv("ENV", "").lower() == "staging"
@@ -458,12 +464,16 @@ def _last_tool_output_for(messages: List[BaseMessage], tool_name: str) -> Option
     Return the most recent ToolMessage content associated with a tool call of `tool_name`.
     Matches AIMessage.tool_calls[*].id with ToolMessage.tool_call_id.
     """
+    wanted = str(tool_name or "").strip().lower()
+    if not wanted:
+        return None
     try:
         for i in range(len(messages) - 1, -1, -1):
             msg = messages[i]
             if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
                 for call in reversed(msg.tool_calls or []):
-                    if (call or {}).get("name") != tool_name:
+                    call_name = str((call or {}).get("name") or "").strip().lower()
+                    if call_name != wanted:
                         continue
                     call_id = (call or {}).get("id")
                     if not call_id:
@@ -477,6 +487,26 @@ def _last_tool_output_for(messages: List[BaseMessage], tool_name: str) -> Option
     except Exception:
         return None
     return None
+
+
+def _last_tool_args_for(messages: List[BaseMessage], tool_name: str) -> dict:
+    """Return args for the most recent tool call with `tool_name`."""
+    wanted = str(tool_name or "").strip().lower()
+    if not wanted:
+        return {}
+    try:
+        for msg in reversed(messages or []):
+            if not isinstance(msg, AIMessage) or not getattr(msg, "tool_calls", None):
+                continue
+            for call in reversed(msg.tool_calls or []):
+                call_name = str((call or {}).get("name") or "").strip().lower()
+                if call_name != wanted:
+                    continue
+                args = (call or {}).get("args") or {}
+                return dict(args) if isinstance(args, dict) else {}
+    except Exception:
+        return {}
+    return {}
 
 
 def _parse_json_obj(text: Optional[str]) -> Optional[dict]:
@@ -513,6 +543,88 @@ def _last_tool_error(messages: List[BaseMessage]) -> Optional[dict]:
     except Exception:
         return None
     return None
+
+
+def _current_response_language() -> str:
+    try:
+        from llms.tool_wrappers import _current_user_language
+
+        return _current_user_language.get() or "en"
+    except Exception:
+        return "en"
+
+
+def _missing_field_for_failed_source(src_tool: str, arg_name: str, error_class: str) -> str:
+    src = (src_tool or "").strip().lower()
+    if src == "resolve_datetime" or error_class == "time_parse_fail":
+        return "datetime_text"
+    if src == "search_promises" or error_class == "promise_not_found":
+        return "promise_id"
+    return arg_name
+
+
+def _arg_hint_for_field(field_name: str, lang: str) -> str:
+    field = (field_name or "").strip()
+    if (lang or "").lower().startswith("fa"):
+        if field == "datetime_text":
+            return "زمان دقیق‌تر، مثلا «۸:۳۰ شب»"
+        if field == "promise_id":
+            return "اسم یا آی‌دی هدف"
+        return field or "مقدار لازم"
+    if field == "datetime_text":
+        return "a clearer time, like '8:30 PM'"
+    if field == "promise_id":
+        return "the goal name or ID"
+    return field or "the missing value"
+
+
+def _tool_failure_state_for_placeholder(
+    state: dict,
+    *,
+    tool_name: str,
+    tool_args: dict,
+    arg_name: str,
+    placeholder: str,
+    src_tool: str,
+    src_text: str,
+    step_idx: int,
+    iteration: int,
+) -> Optional[dict]:
+    error_class = classify_tool_error(src_text or "")
+    if not error_class:
+        return None
+
+    failed_args = _last_tool_args_for(state.get("messages", []), src_tool)
+    quoted = extract_quoted_value(src_text)
+    phrase = str(failed_args.get("datetime_text") or quoted or "").strip()
+    query = str(failed_args.get("query") or failed_args.get("promise_id") or quoted or "").strip()
+    missing_field = _missing_field_for_failed_source(src_tool, arg_name, error_class)
+    lang = _current_response_language()
+    response = render_failure_response(
+        error_class,
+        lang,
+        phrase=phrase,
+        query=query,
+        arg_hint=_arg_hint_for_field(missing_field, lang),
+    )
+    partial_args = {k: v for k, v in (tool_args or {}).items() if k != arg_name}
+    pending = {
+        "reason": "tool_failure_needs_user_input",
+        "tool_name": tool_name,
+        "missing_fields": [missing_field],
+        "partial_args": partial_args,
+        "failed_step": error_class,
+        "failed_at": src_tool,
+        "placeholder": placeholder,
+    }
+    return {
+        **state,
+        "messages": list(state.get("messages") or []) + [AIMessage(content=response)],
+        "iteration": iteration,
+        "final_response": response,
+        "pending_clarification": pending,
+        "step_idx": step_idx + 1,
+    }
 
 
 def _execution_truth_hint(
@@ -691,31 +803,34 @@ def _sanitize_purpose(purpose: Optional[str]) -> str:
     return text[:80]
 
 
-def _format_remind_at(remind_at: str) -> str:
-    """Return a human-readable label for an ISO datetime or natural-language string."""
-    _s = str(remind_at).strip()
-    if _s.startswith("{") and "resolved" in _s:
+def _format_when_for_preview(value: object, now: Optional[datetime] = None) -> str:
+    """Render ISO datetimes more naturally in confirmation previews."""
+    text = str(value or "").strip()
+    if not text:
+        return "the requested time"
+    if text.startswith("{") and "resolved" in text:
         try:
-            remind_at = json.loads(_s).get("resolved") or _s
+            text = str(json.loads(text).get("resolved") or text)
         except Exception:
-            remind_at = _s
+            pass
     try:
-        from datetime import datetime, timedelta, timezone
-        dt = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00"))
-        now = datetime.now(dt.tzinfo or timezone.utc)
-        today = now.date()
-        tomorrow = today + timedelta(days=1)
-        hour, minute = dt.hour, dt.minute
-        period = "AM" if hour < 12 else "PM"
-        display_hour = hour % 12 or 12
-        time_str = f"{display_hour}:{minute:02d} {period}"
-        if dt.date() == today:
-            return f"today at {time_str}"
-        if dt.date() == tomorrow:
-            return f"tomorrow at {time_str}"
-        return dt.strftime("%a, %b %-d") + f" at {time_str}"
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except Exception:
-        return str(remind_at)
+        return text
+
+    try:
+        base = now or datetime.now(dt.tzinfo)
+        days = (dt.date() - base.date()).days
+        time_part = dt.strftime("%I:%M %p").lstrip("0")
+        if days == 0:
+            return f"today {time_part}"
+        if days == 1:
+            return f"tomorrow {time_part}"
+        if 0 < days < 7:
+            return f"{dt.strftime('%A')} {time_part}"
+        return f"{dt.strftime('%b')} {dt.day}, {time_part}"
+    except Exception:
+        return text
 
 
 def _describe_action(
@@ -746,8 +861,7 @@ def _describe_action(
         return f"create a new promise: '{promise_text}'"
     if tool_name == "create_reminder":
         text = tool_args.get("text", "that")
-        remind_at = tool_args.get("remind_at", "")
-        when = _format_remind_at(remind_at) if remind_at else "the requested time"
+        when = _format_when_for_preview(tool_args.get("remind_at", "the requested time"))
         return f"set a reminder to '{text}' at {when}"
     if tool_name == "create_recurring_reminder":
         return f"set up a weekly reminder for {tool_args.get('promise_id', 'a promise')}"
@@ -755,7 +869,7 @@ def _describe_action(
         return f"cancel reminder {tool_args.get('reminder_id', '')}".strip()
     if tool_name in ("schedule_session", "add_plan_session"):
         promise_id = tool_args.get("promise_id", "a promise")
-        start = tool_args.get("planned_start", "the requested time")
+        start = _format_when_for_preview(tool_args.get("planned_start", "the requested time"))
         return f"schedule a session on {promise_id} at {start}"
     if tool_name == "mark_session_done":
         return f"mark session {tool_args.get('session_id', '')} as done".strip()
@@ -773,16 +887,150 @@ def _describe_action(
         return f"change {tool_args.get('setting_key', 'a setting')} to {tool_args.get('setting_value', '')}"
     if tool_name == "schedule_sessions":
         n = _items_count()
+        if n == 1:
+            item = (tool_args.get("items") or [{}])[0] or {}
+            when = _format_when_for_preview(item.get("planned_start") or item.get("when"))
+            target = item.get("promise_query") or item.get("promise_id") or "a promise"
+            return f"schedule a session on {target} at {when}"
         return f"schedule {n} future session{'s' if n != 1 else ''}"
     if tool_name == "log_completed_activities":
         n = _items_count()
         return f"log {n} completed activit{'ies' if n != 1 else 'y'}"
     if tool_name == "create_reminders":
         n = _items_count()
+        if n == 1:
+            item = (tool_args.get("items") or [{}])[0] or {}
+            text = item.get("text", "that")
+            when = _format_when_for_preview(item.get("remind_at"))
+            return f"set a reminder to '{text}' at {when}"
         return f"create {n} reminder{'s' if n != 1 else ''}"
 
     sanitized = _sanitize_purpose(step_purpose)
     return sanitized or "perform the requested action"
+
+
+def _format_tool_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_format_tool_value(v) for v in value if _format_tool_value(v))
+    if isinstance(value, dict):
+        pairs = []
+        for key, inner in value.items():
+            rendered = _format_tool_value(inner)
+            if rendered:
+                pairs.append(f"{key}: {rendered}")
+        return "; ".join(pairs)
+    return str(value).replace("_", " ").strip()
+
+
+def _safe_tool_detail_items(tool_args: dict) -> List[tuple[str, str]]:
+    """Return non-sensitive fallback details for user-facing confirmation previews."""
+    safe: List[tuple[str, str]] = []
+    for raw_key, raw_value in (tool_args or {}).items():
+        key = str(raw_key or "").strip()
+        if not key or key == "user_id":
+            continue
+        lowered = key.lower()
+        if any(secret in lowered for secret in ("token", "secret", "password", "api_key", "credential")):
+            continue
+        rendered = _format_tool_value(raw_value)
+        if rendered:
+            safe.append((key.replace("_", " ").title(), rendered[:160]))
+    return safe[:6]
+
+
+def _format_action_confirmation_preview(
+    tool_name: str,
+    tool_args: dict,
+    description: Optional[str] = None,
+) -> str:
+    """Render a transparent, user-friendly preview of a deferred API action."""
+    tool_args = tool_args or {}
+    short = description or _describe_action(tool_name, tool_args)
+    lines = [f"Action: {short}"]
+
+    def add(label: str, value: object, *, when: bool = False) -> None:
+        rendered = _format_when_for_preview(value) if when else _format_tool_value(value)
+        if rendered:
+            lines.append(f"- {label}: {rendered}")
+
+    if tool_name in ("create_promise", "add_promise"):
+        add("Type", "tracked promise")
+        add("Title", tool_args.get("promise_text") or tool_args.get("text"))
+        add("Weekly target", f"{tool_args.get('num_hours_promised_per_week')} hour(s)" if tool_args.get("num_hours_promised_per_week") is not None else "")
+        add("Repeats weekly", tool_args.get("recurring", True))
+        add("Start date", tool_args.get("start_date"))
+        add("End date", tool_args.get("end_date"))
+        return "\n".join(lines)
+
+    if tool_name == "create_reminder":
+        add("Type", "one-off reminder, not a weekly promise")
+        add("Reminder text", tool_args.get("text"))
+        add("Reminder time", tool_args.get("remind_at"), when=True)
+        return "\n".join(lines)
+
+    if tool_name == "create_recurring_reminder":
+        add("Type", "weekly reminder ping for an existing promise")
+        add("Promise", tool_args.get("promise_id"))
+        add("Weekday", tool_args.get("weekday"))
+        add("Time", tool_args.get("time_local"))
+        return "\n".join(lines)
+
+    if tool_name in ("log_completed_activity", "add_action"):
+        add("Type", "completed activity log")
+        add("Promise", tool_args.get("promise_id"))
+        add("Time spent", f"{tool_args.get('time_spent')} hour(s)" if tool_args.get("time_spent") is not None else "")
+        add("Notes", tool_args.get("notes"))
+        return "\n".join(lines)
+
+    if tool_name in ("schedule_session", "add_plan_session"):
+        add("Type", "scheduled session")
+        add("Promise", tool_args.get("promise_id"))
+        add("Start", tool_args.get("planned_start"), when=True)
+        add("Duration", f"{tool_args.get('planned_duration_min')} minute(s)" if tool_args.get("planned_duration_min") is not None else "")
+        return "\n".join(lines)
+
+    if tool_name == "delete_promise":
+        add("Type", "delete tracked promise")
+        add("Promise", tool_args.get("promise_id"))
+        return "\n".join(lines)
+
+    if tool_name == "update_setting":
+        add("Type", "settings update")
+        add("Setting", tool_args.get("setting_key"))
+        add("New value", tool_args.get("setting_value"))
+        return "\n".join(lines)
+
+    for label, value in _safe_tool_detail_items(tool_args):
+        add(label, value)
+    return "\n".join(lines)
+
+
+def _format_batch_confirmation_prompt(batch_queue: Sequence[dict]) -> str:
+    items = list(batch_queue or [])
+    if not items:
+        return "Shall I go ahead? Tap Yes or Skip."
+
+    lines = ["Please review before I change anything:"]
+    for idx, item in enumerate(items, start=1):
+        preview = str(item.get("preview") or item.get("description") or item.get("tool_name") or "action")
+        preview_lines = preview.splitlines() or [preview]
+        lines.append("")
+        lines.append(f"{idx}. {preview_lines[0]}")
+        for extra in preview_lines[1:]:
+            lines.append(f"   {extra}")
+
+    if len(items) == 1:
+        lines.append("")
+        lines.append("Shall I go ahead? Tap Yes or Skip.")
+    else:
+        first_description = items[0].get("description") or "the first action"
+        lines.append("")
+        lines.append(f"Starting with #1: {first_description}. Proceed? (1/{len(items)})")
+    return "\n".join(lines)
 
 
 def _env_int(name: str, default: int, minimum: int = 0) -> int:
@@ -2078,24 +2326,19 @@ def create_plan_execute_graph(
             # present them as a numbered list and start sequential Yes/Skip confirmation.
             _batch_q = list(state.get("pending_batch_queue") or [])
             if _batch_q:
-                _lines = ["📋 Here's what I'll do:"]
-                for _i, _item in enumerate(_batch_q):
-                    _lines.append(f"  {_i + 1}. {_item['description'].capitalize()}")
-                _preview = "\n".join(_lines)
                 _first = _batch_q[0]
                 _total = len(_batch_q)
-                if _total == 1:
-                    _confirm_q = f"{_preview}\n\nShall I go ahead? Tap Yes or Skip."
-                else:
-                    _confirm_q = (
-                        f"{_preview}\n\n"
-                        f"Starting with #1: {_first['description']}. Proceed? (1/{_total})"
-                    )
+                _confirm_q = _format_batch_confirmation_prompt(_batch_q)
                 _pending = {
                     "reason": "pre_mutation_confirmation",
                     "tool_name": _first["tool_name"],
                     "tool_args": _first["tool_args"],
                     "description": _first.get("description", ""),
+                    "preview": _first.get("preview") or _format_action_confirmation_preview(
+                        _first["tool_name"],
+                        _first["tool_args"],
+                        _first.get("description", ""),
+                    ),
                     "batch_remaining": _batch_q[1:],
                     "batch_total": _total,
                     "batch_current_idx": 0,
@@ -2191,6 +2434,19 @@ def create_plan_execute_graph(
                 src_text = _last_tool_output_for(state.get("messages", []), src_tool)
                 if not src_text:
                     continue
+                failure_state = _tool_failure_state_for_placeholder(
+                    state,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    arg_name=arg_name,
+                    placeholder=arg_val,
+                    src_tool=src_tool,
+                    src_text=src_text,
+                    step_idx=idx,
+                    iteration=new_iteration,
+                )
+                if failure_state:
+                    return failure_state
                 
                 obj = _parse_json_obj(src_text)
                 resolved = (obj or {}).get(src_field) if obj else None
@@ -2294,6 +2550,20 @@ def create_plan_execute_graph(
                 found_single_match = False
                 last_search_output_text: Optional[str] = None
                 last_search_output_text = _last_tool_output_for(state.get("messages", []), "search_promises")
+                if last_search_output_text:
+                    failure_state = _tool_failure_state_for_placeholder(
+                        state,
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        arg_name="promise_id",
+                        placeholder=str(tool_args.get("promise_id") or "FROM_SEARCH"),
+                        src_tool="search_promises",
+                        src_text=last_search_output_text,
+                        step_idx=idx,
+                        iteration=new_iteration,
+                    )
+                    if failure_state:
+                        return failure_state
                 parsed = _parse_json_obj(last_search_output_text)
                 if parsed and parsed.get("single_match"):
                     promise_id = parsed.get("promise_id")
@@ -2379,6 +2649,7 @@ def create_plan_execute_graph(
                     "tool_name": tool_name,
                     "tool_args": tool_args,  # Already resolved (placeholders filled)
                     "description": action_description,
+                    "preview": _format_action_confirmation_preview(tool_name, tool_args, action_description),
                 }
                 _current_queue = list(state.get("pending_batch_queue") or [])
                 _current_queue.append(_batch_item)
@@ -3390,11 +3661,17 @@ def create_routed_plan_execute_graph(
                         f"{_preview}\n\n"
                         f"Starting with #1: {_first['description']}. Proceed? (1/{_total})"
                     )
+                _confirm_q = _format_batch_confirmation_prompt(_batch_q)
                 _pending = {
                     "reason": "pre_mutation_confirmation",
                     "tool_name": _first["tool_name"],
                     "tool_args": _first["tool_args"],
                     "description": _first.get("description", ""),
+                    "preview": _first.get("preview") or _format_action_confirmation_preview(
+                        _first["tool_name"],
+                        _first["tool_args"],
+                        _first.get("description", ""),
+                    ),
                     "batch_remaining": _batch_q[1:],
                     "batch_total": _total,
                     "batch_current_idx": 0,
@@ -3524,6 +3801,19 @@ def create_routed_plan_execute_graph(
                 src_text = _last_tool_output_for(state.get("messages", []), src_tool)
                 if not src_text:
                     continue
+                failure_state = _tool_failure_state_for_placeholder(
+                    state,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    arg_name=arg_name,
+                    placeholder=arg_val,
+                    src_tool=src_tool,
+                    src_text=src_text,
+                    step_idx=idx,
+                    iteration=new_iteration,
+                )
+                if failure_state:
+                    return failure_state
                 obj = _parse_json_obj(src_text)
                 resolved = (obj or {}).get(src_field) if obj else None
 
@@ -3573,6 +3863,20 @@ def create_routed_plan_execute_graph(
             # FROM_SEARCH handling
             if _is_from_search(tool_args.get("promise_id", "") or ""):
                 last_search_output_text = _last_tool_output_for(state.get("messages", []), "search_promises")
+                if last_search_output_text:
+                    failure_state = _tool_failure_state_for_placeholder(
+                        state,
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        arg_name="promise_id",
+                        placeholder=str(tool_args.get("promise_id") or "FROM_SEARCH"),
+                        src_tool="search_promises",
+                        src_text=last_search_output_text,
+                        step_idx=idx,
+                        iteration=new_iteration,
+                    )
+                    if failure_state:
+                        return failure_state
                 parsed = _parse_json_obj(last_search_output_text)
                 if parsed and parsed.get("single_match"):
                     promise_id = parsed.get("promise_id")
@@ -3642,6 +3946,7 @@ def create_routed_plan_execute_graph(
                     "tool_name": tool_name,
                     "tool_args": tool_args,
                     "description": action_description,
+                    "preview": _format_action_confirmation_preview(tool_name, tool_args, action_description),
                 }
                 _current_queue = list(state.get("pending_batch_queue") or [])
                 _current_queue.append(_batch_item)

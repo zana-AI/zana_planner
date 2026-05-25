@@ -9,7 +9,7 @@ TM_BOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tm_b
 if TM_BOT_DIR not in sys.path:
     sys.path.append(TM_BOT_DIR)
 
-from llms.agent import create_plan_execute_graph  # noqa: E402
+from llms.agent import create_plan_execute_graph, _describe_action  # noqa: E402
 
 
 class FakeModel:
@@ -724,6 +724,65 @@ def test_high_confidence_mutation_still_asks_confirmation():
     assert calls == []
 
 
+def test_confirmation_preview_shows_reminder_details():
+    calls = []
+
+    def _create_reminder(text: str, remind_at: str):
+        calls.append(("create_reminder", text, remind_at))
+        return "ok"
+
+    tools = [
+        StructuredTool.from_function(
+            func=_create_reminder,
+            name="create_reminder",
+            description="Create a one-off reminder.",
+        ),
+    ]
+
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Set reminder.",
+                "tool_name": "create_reminder",
+                "tool_args": {"text": "make BBQ", "remind_at": "2026-05-23T20:00:00+02:00"},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm reminder set."},
+        ]
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+    responder = FakeModel([AIMessage(content="should not be used")])
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="Set reminder for make BBQ at 8pm")],
+            "iteration": 0,
+            "plan": plan["steps"],
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+            "detected_intent": "CREATE_REMINDER",
+            "intent_confidence": "high",
+            "safety": {"requires_confirmation": False},
+        }
+    )
+
+    final_response = result.get("final_response") or ""
+    assert "one-off reminder, not a weekly promise" in final_response
+    assert "Reminder text: make BBQ" in final_response
+    assert "8:00 PM" in final_response
+    assert calls == []
+
+
 def test_safety_requires_confirmation_triggers_ask():
     """Test that safety.requires_confirmation=True triggers confirmation even with high confidence."""
     calls = []
@@ -781,3 +840,93 @@ def test_safety_requires_confirmation_triggers_ask():
     assert pending.get("reason") == "pre_mutation_confirmation"
     # Tool should NOT have been called yet
     assert len(calls) == 0
+
+
+def test_from_tool_failure_diverts_to_friendly_pending_clarification():
+    calls = []
+
+    def _resolve_datetime(datetime_text: str):
+        return f"Could not parse datetime: '{datetime_text}'. Please use a clearer date/time description."
+
+    def _create_reminder(text: str, remind_at: str):
+        calls.append(("create_reminder", text, remind_at))
+        return "created"
+
+    tools = [
+        StructuredTool.from_function(
+            func=_resolve_datetime,
+            name="resolve_datetime",
+            description="Resolve datetime.",
+        ),
+        StructuredTool.from_function(
+            func=_create_reminder,
+            name="create_reminder",
+            description="Create reminder.",
+        ),
+    ]
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Resolve requested time.",
+                "tool_name": "resolve_datetime",
+                "tool_args": {"datetime_text": "فردا ساعت 8 و نیم شب"},
+            },
+            {
+                "kind": "tool",
+                "purpose": "Create reminder.",
+                "tool_name": "create_reminder",
+                "tool_args": {
+                    "text": "رفتن به سینما",
+                    "remind_at": "FROM_TOOL:Resolve_DateTime:",
+                },
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm reminder."},
+        ],
+        "detected_intent": "CREATE_REMINDER",
+        "intent_confidence": "high",
+        "safety": {"requires_confirmation": False},
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+    responder = FakeModel([AIMessage(content="should not be used")])
+
+    app = create_plan_execute_graph(
+        tools=tools,
+        planner_model=planner,
+        responder_model=responder,
+        planner_prompt="Return JSON only.",
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(
+        {
+            "messages": [HumanMessage(content="remind me about cinema tomorrow")],
+            "iteration": 0,
+            "plan": None,
+            "step_idx": 0,
+            "final_response": None,
+            "planner_error": None,
+            "detected_intent": None,
+            "intent_confidence": None,
+            "safety": None,
+        }
+    )
+
+    assert "couldn't read" in (result.get("final_response") or "").lower()
+    pending = result.get("pending_clarification") or {}
+    assert pending.get("reason") == "tool_failure_needs_user_input"
+    assert pending.get("tool_name") == "create_reminder"
+    assert pending.get("missing_fields") == ["datetime_text"]
+    assert pending.get("partial_args") == {"text": "رفتن به سینما"}
+    assert calls == []
+
+
+def test_describe_action_formats_iso_datetime_for_confirmation_preview():
+    description = _describe_action(
+        "create_reminder",
+        {"text": "cinema", "remind_at": "2026-05-15T20:30:00+02:00"},
+    )
+
+    assert "2026-05-15T20:30:00+02:00" not in description
+    assert "8:30 PM" in description

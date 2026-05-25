@@ -130,7 +130,26 @@ class PlannerAPIAdapter:
         start_date: Optional[Union[date, datetime, str]] = None,
         end_date: Optional[Union[date, datetime, str]] = None,
     ):
-        """Create an ongoing tracked goal with a weekly hour budget. Use for 'I want to read 5h/week'."""
+        """Create an ongoing tracked goal the user wants to measure over time.
+
+        Use for commitments/habits with a weekly target, such as:
+            'I want to read 5h/week'
+            'track gym twice a week'
+            'make learning Spanish a weekly promise'
+
+        Do not use for one-off future reminders, deadlines, or "remind me"
+        requests; those belong to create_reminder. Do not use for completed
+        past work; that belongs to log_completed_activity.
+
+        Args:
+            promise_text: Short user-facing goal title.
+            num_hours_promised_per_week: Weekly target hours. Use 0.0 only for
+                check-based tracked habits, not one-off reminders.
+            recurring: True for weekly ongoing promises; False only for
+                time-bounded tracked goals.
+            start_date: Optional tracking start date.
+            end_date: Optional tracking end date.
+        """
         try:
             if user_id is None:
                 raise ValueError("user_id is required and cannot be None")
@@ -1431,7 +1450,7 @@ class PlannerAPIAdapter:
             return f"Error recording check-in: {str(e)}"
     
     def resolve_datetime(self, user_id, datetime_text: str) -> str:
-        """Resolve a date/time phrase ('tomorrow 3pm', 'tonight', 'end of March') to an ISO datetime."""
+        """Resolve a date/time phrase ('tomorrow 3pm') to ISO; translate non-English idioms first."""
         try:
             import dateparser
             import re
