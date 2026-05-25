@@ -59,6 +59,73 @@ def _latest_tool_result_summary(messages) -> str:
     return ""
 
 
+def test_routed_tool_failure_diverts_before_mutation_confirmation():
+    calls = []
+
+    def _resolve_datetime(datetime_text: str):
+        return f"Could not parse datetime: '{datetime_text}'. Please use a clearer date/time description."
+
+    def _create_reminder(text: str, remind_at: str):
+        calls.append(("create_reminder", text, remind_at))
+        return "created"
+
+    tools = [
+        StructuredTool.from_function(func=_resolve_datetime, name="resolve_datetime", description="Resolve datetime."),
+        StructuredTool.from_function(func=_create_reminder, name="create_reminder", description="Create reminder."),
+    ]
+    router = FakeModel(
+        [
+            AIMessage(
+                content=json.dumps(
+                    {"mode": "operator", "confidence": "high", "reason": "transactional_intent"}
+                )
+            )
+        ]
+    )
+    plan = {
+        "steps": [
+            {
+                "kind": "tool",
+                "purpose": "Resolve requested time.",
+                "tool_name": "resolve_datetime",
+                "tool_args": {"datetime_text": "tomorrow 8ish"},
+            },
+            {
+                "kind": "tool",
+                "purpose": "Create reminder.",
+                "tool_name": "create_reminder",
+                "tool_args": {"text": "cinema", "remind_at": "FROM_TOOL:resolve_datetime:"},
+            },
+            {"kind": "respond", "purpose": "Confirm.", "response_hint": "Confirm reminder."},
+        ],
+        "detected_intent": "CREATE_REMINDER",
+        "intent_confidence": "high",
+        "safety": {"requires_confirmation": False},
+    }
+    planner = FakeModel([AIMessage(content=json.dumps(plan))])
+    responder = FakeModel([AIMessage(content="should not be used")])
+
+    app = create_routed_plan_execute_graph(
+        tools=tools,
+        router_model=router,
+        planner_model=planner,
+        responder_model=responder,
+        router_prompt="Output route JSON.",
+        get_planner_prompt_for_mode=lambda _mode: "Output plan JSON.",
+        get_system_message_for_mode=None,
+        emit_plan=False,
+        max_iterations=6,
+    )
+
+    result = app.invoke(_initial_state("remind me about cinema tomorrow 8ish"))
+
+    final_response = (result.get("final_response") or "").lower()
+    assert "couldn't read" in final_response
+    assert "shall i go ahead" not in final_response
+    assert result.get("pending_clarification", {}).get("reason") == "tool_failure_needs_user_input"
+    assert calls == []
+
+
 def test_routed_strategist_query_misplan_recovers_to_read_only_count():
     calls = []
 

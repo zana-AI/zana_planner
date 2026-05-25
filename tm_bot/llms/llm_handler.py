@@ -3665,6 +3665,13 @@ class LLMHandler:
 
         tool_name = str(pending.get("tool_name", "")).strip()
         tool_args = pending.get("tool_args") or pending.get("partial_args") or {}
+        preview = str(pending.get("preview") or "").strip()
+        if preview:
+            return (
+                "Please review before I change anything:\n\n"
+                f"{preview}\n\n"
+                "Shall I go ahead? Tap Yes or Skip below, or reply 'yes'/'confirm'."
+            )
         if tool_name:
             def _safe_text(value: object, fallback: str) -> str:
                 txt = str(value).strip() if value is not None else ""
@@ -3753,18 +3760,42 @@ class LLMHandler:
         pending = pending_clarification or {}
         pending_tool_name = str(pending.get("tool_name", "")).strip().lower()
         pending_reason = str(pending.get("reason", "")).strip().lower()
+        if pending_reason == "tool_failure_needs_user_input":
+            return response_text
+        if pending_reason and pending_reason != "pre_mutation_confirmation":
+            return response_text
         pending_mutation_intent = (
             pending_tool_name.startswith(_MUTATION_TOOL_PREFIXES)
             or pending_reason == "pre_mutation_confirmation"
         )
+        user_text = (user_message or "").strip().lower()
+        bare_confirmation = user_text in {
+            "yes", "y", "ok", "okay", "confirm", "confirmed", "sure",
+            "no", "n", "skip", "cancel", "stop",
+        }
         # Require concrete mutation evidence in this turn (planned-pending or executed calls).
-        # Relying on intent label alone can create confirmation loops (e.g., repeated "yes").
-        mutation_intent = bool(pending_mutation_intent or bool(mutation_actions))
+        # Intent labels are used only when the user did not send a bare confirmation,
+        # which avoids confirmation loops on repeated "yes" replies.
+        mutation_intent = bool(
+            pending_mutation_intent
+            or bool(mutation_actions)
+            or (self._is_mutation_intent(detected_intent) and not bare_confirmation)
+        )
         mutation_happened = bool(successful_mutations)
 
         # Contract: when mutation intent exists, a successful mutation must be evidenced
         # by executed_actions.success. Otherwise force confirmation follow-up.
         if mutation_intent and not mutation_happened:
+            if mutation_actions:
+                return (
+                    "I tried to make that change, but it did not complete successfully. "
+                    "Please try again or adjust the request."
+                )
+            if not pending_mutation_intent:
+                return (
+                    "I could not confirm any change, so I did not update anything. "
+                    "Please confirm the action you want me to take."
+                )
             logger.warning(
                 {
                     "event": "mutation_contract_violation",

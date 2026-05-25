@@ -1644,22 +1644,24 @@ class MessageHandlers:
                                     remaining_after = batch_remaining[1:]
                                     next_idx = batch_current_idx + 1
                                     next_desc = next_item.get("description", next_item.get("tool_name", "next action"))
+                                    next_preview = next_item.get("preview") or next_desc
                                     done_so_far = next_idx
                                     if not remaining_after:
                                         next_q = (
-                                            f"✅ ({done_so_far}/{batch_total}) {success_msg}\n\n"
-                                            f"Last one — {next_desc}. Proceed?"
+                                            f"OK ({done_so_far}/{batch_total}) {success_msg}\n\n"
+                                            f"Last one:\n{next_preview}\n\nProceed?"
                                         )
                                     else:
                                         next_q = (
-                                            f"✅ ({done_so_far}/{batch_total}) {success_msg}\n\n"
-                                            f"Next ({done_so_far + 1}/{batch_total}): {next_desc}. Continue?"
+                                            f"OK ({done_so_far}/{batch_total}) {success_msg}\n\n"
+                                            f"Next ({done_so_far + 1}/{batch_total}):\n{next_preview}\n\nContinue?"
                                         )
                                     new_pending = {
                                         "reason": "pre_mutation_confirmation",
                                         "tool_name": next_item["tool_name"],
                                         "tool_args": next_item["tool_args"],
                                         "description": next_desc,
+                                        "preview": next_preview,
                                         "batch_remaining": remaining_after,
                                         "batch_total": batch_total,
                                         "batch_current_idx": next_idx,
@@ -1757,7 +1759,12 @@ class MessageHandlers:
                         # Continue to normal message handling below
                 
                 # Handle other pending clarification types (missing_fields slot-fill, etc.)
-                elif pending.get("reason") in ("missing_required_args", "ambiguous_promise_id", "unresolved_placeholder"):
+                elif pending.get("reason") in (
+                    "missing_required_args",
+                    "ambiguous_promise_id",
+                    "unresolved_placeholder",
+                    "tool_failure_needs_user_input",
+                ):
                     missing_fields = pending.get("missing_fields") or []
                     partial_args = dict(pending.get("partial_args") or {})
                     original_user_message = pending.get("original_user_message") or ""

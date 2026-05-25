@@ -629,17 +629,18 @@ class CallbackHandlers:
             remaining_after = batch_remaining[1:]
             next_idx = batch_current_idx + 1
             next_desc = next_item.get("description", next_item.get("tool_name", "next action"))
+            next_preview = next_item.get("preview") or next_desc
             done_so_far = next_idx  # items processed including the current one
 
             if not remaining_after:
                 next_q = (
                     f"{_progress_icon} ({done_so_far}/{batch_total}) {step_result}\n\n"
-                    f"Last one — {next_desc}. Proceed?"
+                    f"Last one:\n{next_preview}\n\nProceed?"
                 )
             else:
                 next_q = (
                     f"{_progress_icon} ({done_so_far}/{batch_total}) {step_result}\n\n"
-                    f"Next ({done_so_far + 1}/{batch_total}): {next_desc}. Continue?"
+                    f"Next ({done_so_far + 1}/{batch_total}):\n{next_preview}\n\nContinue?"
                 )
 
             new_pending = {
@@ -647,6 +648,7 @@ class CallbackHandlers:
                 "tool_name": next_item["tool_name"],
                 "tool_args": next_item["tool_args"],
                 "description": next_desc,
+                "preview": next_preview,
                 "batch_remaining": remaining_after,
                 "batch_total": batch_total,
                 "batch_current_idx": next_idx,
