@@ -9,6 +9,7 @@ from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from repositories.instances_repo import InstancesRepository
 from repositories.distractions_repo import DistractionsRepository
+from repositories.plan_sessions_repo import PlanSessionsRepository
 from utils.time_utils import get_week_range
 from utils.promise_id import normalize_promise_id, promise_ids_equal
 from db.postgres_db import resolve_promise_uuid, get_db_session
@@ -277,7 +278,23 @@ class ReportsService:
                 promise_data['hours_spent'] = total_hours
             
             promise_data['sessions'] = sessions
-        
+
+        # Attach planned session counts for all promises in the report
+        uuids = [promise_uuid_by_id[pid] for pid in report_data if pid in promise_uuid_by_id]
+        planned_by_uuid = PlanSessionsRepository().list_planned_by_promise_uuids(uuids, user_id)
+        for promise_id, promise_data in report_data.items():
+            p_uuid = promise_uuid_by_id.get(promise_id)
+            sessions_list = planned_by_uuid.get(p_uuid, []) if p_uuid else []
+            promise_data['planned_sessions_count'] = len(sessions_list)
+            next_s = sessions_list[0] if sessions_list else None
+            if next_s and next_s.get('planned_start'):
+                raw = next_s['planned_start']
+                promise_data['next_session_start'] = (
+                    raw.isoformat() if hasattr(raw, 'isoformat') else str(raw)
+                )
+            else:
+                promise_data['next_session_start'] = None
+
         return report_data
 
     def get_promise_summary(self, user_id: int, promise_id: str, ref_time: datetime) -> Dict[str, Any]:

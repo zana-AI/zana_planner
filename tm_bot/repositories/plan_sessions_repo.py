@@ -237,6 +237,32 @@ class PlanSessionsRepository:
             checklist = self._get_checklist(session, result["id"])
             return {**dict(result), "checklist": checklist}
 
+    def list_planned_by_promise_uuids(self, promise_uuids: List[str], user_id: int) -> dict:
+        """Bulk-fetch all planned sessions for a list of promise_uuids, grouped by promise_uuid."""
+        if not promise_uuids:
+            return {}
+        user = str(user_id)
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT id, promise_uuid, title, status,
+                           planned_start, planned_duration_min, notes, created_at
+                    FROM plan_sessions
+                    WHERE promise_uuid = ANY(:uuids) AND user_id = :user_id
+                      AND status = 'planned'
+                    ORDER BY planned_start NULLS LAST, created_at
+                """),
+                {"uuids": promise_uuids, "user_id": user},
+            ).mappings().fetchall()
+
+        result: dict = {}
+        for r in rows:
+            uuid = r["promise_uuid"]
+            if uuid not in result:
+                result[uuid] = []
+            result[uuid].append(dict(r))
+        return result
+
     def list_upcoming_for_user(self, user_id: int, since_iso: str, until_iso: str) -> List[dict]:
         """List all planned sessions for a user between two ISO datetime strings.
 
