@@ -105,8 +105,15 @@ export interface PromiseData {
   sessions: SessionData[];
   visibility?: string; // "private" | "public"
   recurring?: boolean;
+  metric_type?: 'hours' | 'count';
+  target_value?: number;
+  target_direction?: 'at_least' | 'at_most';
+  template_kind?: 'commitment' | 'budget';
+  achieved_value?: number;
   start_date?: string; // ISO date string (YYYY-MM-DD)
   end_date?: string; // ISO date string (YYYY-MM-DD)
+  planned_sessions_count?: number;
+  next_session_start?: string | null;
 }
 
 export interface WeeklyReportData {

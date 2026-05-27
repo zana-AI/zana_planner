@@ -97,12 +97,18 @@ export function WeeklyReport({
         const aActive = aValue > 0 ? 1 : 0;
         const bActive = bValue > 0 ? 1 : 0;
         if (bActive !== aActive) return bActive - aActive; // active first
-        // within each group keep alphabetical order
         return a[0].localeCompare(b[0]);
       });
       return entries;
     }
-    return entries.sort((a, b) => a[0].localeCompare(b[0]));
+    // Current week: promises with upcoming planned sessions float to the top
+    entries.sort((a, b) => {
+      const aHasSessions = (a[1].planned_sessions_count ?? 0) > 0 ? 1 : 0;
+      const bHasSessions = (b[1].planned_sessions_count ?? 0) > 0 ? 1 : 0;
+      if (bHasSessions !== aHasSessions) return bHasSessions - aHasSessions;
+      return a[0].localeCompare(b[0]);
+    });
+    return entries;
   }, [promises, isPastWeek]);
 
   // Capped total: each promise contributes at most its own target.

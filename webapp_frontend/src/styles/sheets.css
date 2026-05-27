@@ -289,6 +289,13 @@
 .pcard.bad  .progress .fill { background: var(--bad-500); }
 .pcard .row { display: flex; justify-content: space-between; align-items: center; }
 .pcard .row .sub { font-size: 11px; color: var(--fg-subtle); }
+.pcard .row .sessions-chip {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0.85;
+}
 
 .list { display: grid; gap: 10px; }
 
