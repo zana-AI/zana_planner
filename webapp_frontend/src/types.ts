@@ -211,6 +211,7 @@ export interface ClubSummary {
   promise_id?: string;
   promise_uuid?: string;
   promise_text?: string;
+  promise_count?: number;
   target_count_per_week?: number;
   reminder_time?: string;
   language?: string;
@@ -218,6 +219,52 @@ export interface ClubSummary {
   club_goal?: string;
   vibe?: string;
   checkin_what_counts?: string;
+}
+
+export interface ClubLeaderboardPromiseSummary {
+  promise_uuid: string;
+  promise_text: string;
+  metric_type: string;
+  target_value: number;
+}
+
+export interface ClubLeaderboardBreakdown {
+  promise_uuid: string;
+  promise_text: string;
+  metric_type: string;
+  target_value: number;
+  achieved_value: number;
+  active_days: number;
+  duration_hours: number;
+  checkin_count: number;
+  progress_percent: number;
+}
+
+export interface ClubLeaderboardMember {
+  rank: number;
+  user_id: string;
+  first_name?: string;
+  username?: string;
+  avatar_path?: string;
+  score_percent: number;
+  active_days: number;
+  duration_hours: number;
+  checkin_count: number;
+  freeze_streak: number;
+  last_activity_at_utc?: string;
+  breakdown: ClubLeaderboardBreakdown[];
+}
+
+export interface ClubLeaderboardResponse {
+  club_id: string;
+  window: string;
+  window_start: string;
+  window_end: string;
+  member_count: number;
+  promise_count: number;
+  average_score_percent: number;
+  promises: ClubLeaderboardPromiseSummary[];
+  members: ClubLeaderboardMember[];
 }
 
 export interface ClubsResponse {

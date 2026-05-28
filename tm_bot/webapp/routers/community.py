@@ -2,7 +2,8 @@
 Community-related endpoints (suggestions, public promises, follows).
 """
 
-from datetime import datetime
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 import asyncio
 import json
@@ -19,6 +20,10 @@ from ..schemas import (
     AddClubPromiseRequest,
     ClubActionResponse,
     ClubContextIngestResponse,
+    ClubLeaderboardBreakdown,
+    ClubLeaderboardMember,
+    ClubLeaderboardPromiseSummary,
+    ClubLeaderboardResponse,
     ClubMemberSummary,
     CreateClubRequest,
     ClubsResponse,
@@ -50,6 +55,151 @@ logger = get_logger(__name__)
 
 
 CLUB_CONTEXT_FIELDS = {"description", "club_goal", "vibe", "checkin_what_counts"}
+
+
+def _date_key(value: object) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def _calculate_freeze_streak(activity_dates: list[date], today: date, freeze_budget: int = 2) -> int:
+    dates = sorted({d for d in activity_dates if d <= today}, reverse=True)
+    if not dates:
+        return 0
+
+    freezes_remaining = max(0, int(freeze_budget))
+    initial_missed_days = max(0, (today - dates[0]).days - 1)
+    if initial_missed_days > freezes_remaining:
+        return 0
+
+    freezes_remaining -= initial_missed_days
+    streak = 1
+    previous = dates[0]
+    for check_date in dates[1:]:
+        missed_days = max(0, (previous - check_date).days - 1)
+        if missed_days > freezes_remaining:
+            break
+        freezes_remaining -= missed_days
+        streak += 1
+        previous = check_date
+    return streak
+
+
+def _display_name_key(member: dict) -> str:
+    return str(
+        member.get("first_name")
+        or member.get("username")
+        or member.get("user_id")
+        or ""
+    ).lower()
+
+
+def _sort_timestamp_desc(value: Optional[str]) -> float:
+    if not value:
+        return 0.0
+    try:
+        return -datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _rank_club_leaderboard_members(
+    *,
+    members: list[dict],
+    promises: list[dict],
+    actions_by_member_promise: dict[tuple[str, str], dict],
+    today: date,
+    limit: int,
+) -> list[ClubLeaderboardMember]:
+    rows: list[ClubLeaderboardMember] = []
+    name_by_user: dict[str, str] = {}
+
+    for member in members:
+        user_id = str(member["user_id"])
+        name_by_user[user_id] = _display_name_key(member)
+        breakdown: list[ClubLeaderboardBreakdown] = []
+        activity_dates: set[date] = set()
+        last_activity_at_utc: Optional[str] = None
+        total_duration_hours = 0.0
+        total_checkins = 0
+
+        for promise in promises:
+            promise_uuid = str(promise["promise_uuid"])
+            metric_type = str(promise.get("metric_type") or "hours")
+            target_value = float(promise.get("target_value") or (7.0 if metric_type == "count" else 1.0))
+            stats = actions_by_member_promise.get((user_id, promise_uuid), {})
+            activity_days_set = set(stats.get("activity_days") or stats.get("active_days") or [])
+            checkin_days_set = set(stats.get("checkin_days") or stats.get("active_days") or [])
+            duration_hours = float(stats.get("duration_hours") or 0.0)
+            checkin_count = int(stats.get("checkin_count") or 0)
+            last_at = stats.get("last_activity_at_utc")
+
+            activity_dates.update(activity_days_set)
+            total_duration_hours += duration_hours
+            total_checkins += checkin_count
+            if last_at and (not last_activity_at_utc or str(last_at) > last_activity_at_utc):
+                last_activity_at_utc = str(last_at)
+
+            if metric_type == "count":
+                achieved_value = float(len(checkin_days_set))
+                active_days_count = len(checkin_days_set)
+            else:
+                achieved_value = duration_hours
+                active_days_count = len(activity_days_set)
+            progress_percent = min(round((achieved_value / target_value) * 100, 1), 100.0) if target_value > 0 else 0.0
+
+            breakdown.append(
+                ClubLeaderboardBreakdown(
+                    promise_uuid=promise_uuid,
+                    promise_text=str(promise.get("promise_text") or "Club promise"),
+                    metric_type=metric_type,
+                    target_value=target_value,
+                    achieved_value=round(achieved_value, 2),
+                    active_days=active_days_count,
+                    duration_hours=round(duration_hours, 2),
+                    checkin_count=checkin_count,
+                    progress_percent=progress_percent,
+                )
+            )
+
+        score_percent = (
+            round(sum(item.progress_percent for item in breakdown) / len(breakdown), 1)
+            if breakdown
+            else 0.0
+        )
+        rows.append(
+            ClubLeaderboardMember(
+                rank=0,
+                user_id=user_id,
+                first_name=str(member["first_name"]) if member.get("first_name") else None,
+                username=str(member["username"]) if member.get("username") else None,
+                avatar_path=str(member["avatar_path"]) if member.get("avatar_path") else None,
+                score_percent=score_percent,
+                active_days=len(activity_dates),
+                duration_hours=round(total_duration_hours, 2),
+                checkin_count=total_checkins,
+                freeze_streak=_calculate_freeze_streak(list(activity_dates), today),
+                last_activity_at_utc=last_activity_at_utc,
+                breakdown=breakdown,
+            )
+        )
+
+    rows.sort(
+        key=lambda row: (
+            -row.score_percent,
+            _sort_timestamp_desc(row.last_activity_at_utc),
+            -row.freeze_streak,
+            name_by_user.get(row.user_id, ""),
+        )
+    )
+
+    ranked = rows[:limit]
+    for index, row in enumerate(ranked, start=1):
+        row.rank = index
+    return ranked
 
 
 def _generate_club_promise_id(user_id: int) -> str:
@@ -166,6 +316,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     {telegram_invite_select},
                     cm.role,
                     COALESCE(member_counts.member_count, 0) AS member_count,
+                    COALESCE(promise_counts.promise_count, 0) AS promise_count,
                     p.current_id AS promise_id,
                     p.promise_uuid AS promise_uuid,
                     p.text AS promise_text,
@@ -187,6 +338,14 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     WHERE status = 'active'
                     GROUP BY club_id
                 ) member_counts ON member_counts.club_id = c.club_id
+                LEFT JOIN (
+                    SELECT pcs.club_id, COUNT(*) AS promise_count
+                    FROM promise_club_shares pcs
+                    JOIN promises p
+                      ON p.promise_uuid = pcs.promise_uuid
+                     AND p.is_deleted = 0
+                    GROUP BY pcs.club_id
+                ) promise_counts ON promise_counts.club_id = c.club_id
                 LEFT JOIN promise_club_shares pcs ON pcs.club_id = c.club_id
                 LEFT JOIN promises p
                     ON p.promise_uuid = pcs.promise_uuid
@@ -246,6 +405,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             promise_id=str(row["promise_id"]) if row["promise_id"] else None,
             promise_uuid=str(row["promise_uuid"]) if row["promise_uuid"] else None,
             promise_text=str(row["promise_text"]) if row["promise_text"] else None,
+            promise_count=int(row["promise_count"] or 0),
             target_count_per_week=float(row["target_count_per_week"]) if row["target_count_per_week"] is not None else None,
             reminder_time=str(row["reminder_time"]) if row["reminder_time"] else None,
             language=str(row["language"]) if row["language"] else None,
@@ -460,6 +620,176 @@ async def list_my_clubs(user_id: int = Depends(get_current_user)):
     except Exception as e:
         logger.exception(f"Error listing clubs for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to load clubs: {str(e)}")
+
+
+@router.get("/clubs/{club_id}/leaderboard", response_model=ClubLeaderboardResponse)
+async def get_club_leaderboard(
+    club_id: str,
+    window: str = Query(default="rolling_7d", pattern="^rolling_7d$"),
+    limit: int = Query(default=10, ge=1, le=10),
+    user_id: int = Depends(get_current_user),
+):
+    """Return a mixed rolling 7-day leaderboard across active shared club promises."""
+    user = str(user_id)
+    today = datetime.utcnow().date()
+    window_start = today - timedelta(days=6)
+
+    try:
+        with get_db_session() as session:
+            member_check = session.execute(
+                text("""
+                    SELECT 1
+                    FROM club_members cm
+                    JOIN clubs c ON c.club_id = cm.club_id
+                    WHERE cm.club_id = :club_id
+                      AND cm.user_id = :user_id
+                      AND cm.status = 'active'
+                      AND COALESCE(c.status, 'active') = 'active'
+                    LIMIT 1;
+                """),
+                {"club_id": club_id, "user_id": user},
+            ).fetchone()
+            if not member_check:
+                raise HTTPException(status_code=404, detail="Club not found")
+
+            members = [
+                dict(row)
+                for row in session.execute(
+                    text("""
+                        SELECT
+                            cm.user_id,
+                            u.first_name,
+                            u.username,
+                            u.avatar_path
+                        FROM club_members cm
+                        LEFT JOIN users u ON u.user_id = cm.user_id
+                        WHERE cm.club_id = :club_id
+                          AND cm.status = 'active'
+                        ORDER BY cm.joined_at_utc ASC;
+                    """),
+                    {"club_id": club_id},
+                ).mappings().fetchall()
+            ]
+
+            promises = [
+                dict(row)
+                for row in session.execute(
+                    text("""
+                        SELECT
+                            p.promise_uuid,
+                            p.text AS promise_text,
+                            CASE
+                                WHEN pi.metric_type = 'count' THEN 'count'
+                                ELSE 'hours'
+                            END AS metric_type,
+                            CASE
+                                WHEN pi.metric_type = 'count'
+                                    THEN COALESCE(pi.target_value, 7.0)
+                                ELSE COALESCE(pi.target_value, NULLIF(p.hours_per_week, 0), 1.0)
+                            END AS target_value
+                        FROM promise_club_shares pcs
+                        JOIN promises p
+                          ON p.promise_uuid = pcs.promise_uuid
+                         AND p.is_deleted = 0
+                        LEFT JOIN promise_instances pi
+                          ON pi.promise_uuid = p.promise_uuid
+                         AND pi.status = 'active'
+                        WHERE pcs.club_id = :club_id
+                        ORDER BY pcs.created_at_utc ASC;
+                    """),
+                    {"club_id": club_id},
+                ).mappings().fetchall()
+            ]
+
+            action_rows = session.execute(
+                text("""
+                    SELECT
+                        a.user_id,
+                        a.promise_uuid,
+                        a.action_type,
+                        COALESCE(a.time_spent_hours, 0.0) AS time_spent_hours,
+                        DATE(a.at_utc::timestamptz) AS action_date,
+                        a.at_utc AS at_utc
+                    FROM actions a
+                    JOIN club_members cm
+                      ON cm.user_id = a.user_id
+                     AND cm.club_id = :club_id
+                     AND cm.status = 'active'
+                    JOIN promise_club_shares pcs
+                      ON pcs.club_id = cm.club_id
+                     AND pcs.promise_uuid = a.promise_uuid
+                    WHERE DATE(a.at_utc::timestamptz) >= :window_start
+                      AND DATE(a.at_utc::timestamptz) <= :today
+                      AND a.action_type IN ('club_checkin', 'checkin', 'log_time');
+                """),
+                {"club_id": club_id, "window_start": window_start, "today": today},
+            ).mappings().fetchall()
+
+        actions_by_member_promise: dict[tuple[str, str], dict] = defaultdict(
+            lambda: {
+                "activity_days": set(),
+                "checkin_days": set(),
+                "duration_hours": 0.0,
+                "checkin_count": 0,
+                "last_activity_at_utc": None,
+            }
+        )
+        for row in action_rows:
+            key = (str(row["user_id"]), str(row["promise_uuid"]))
+            stats = actions_by_member_promise[key]
+            action_type = str(row["action_type"] or "")
+            if action_type in ("club_checkin", "checkin"):
+                action_date = _date_key(row["action_date"])
+                stats["activity_days"].add(action_date)
+                stats["checkin_days"].add(action_date)
+                stats["checkin_count"] += 1
+            elif action_type == "log_time":
+                hours = float(row["time_spent_hours"] or 0.0)
+                if hours > 0:
+                    stats["duration_hours"] += hours
+                    stats["activity_days"].add(_date_key(row["action_date"]))
+            at_utc = str(row["at_utc"]) if row["at_utc"] else None
+            if at_utc and (not stats["last_activity_at_utc"] or at_utc > stats["last_activity_at_utc"]):
+                stats["last_activity_at_utc"] = at_utc
+
+        all_members = _rank_club_leaderboard_members(
+            members=members,
+            promises=promises,
+            actions_by_member_promise=actions_by_member_promise,
+            today=today,
+            limit=max(len(members), limit),
+        )
+        selected_members = all_members[:limit]
+        average_score = (
+            round(sum(member.score_percent for member in all_members) / len(all_members), 1)
+            if all_members
+            else 0.0
+        )
+
+        return ClubLeaderboardResponse(
+            club_id=club_id,
+            window=window,
+            window_start=window_start.isoformat(),
+            window_end=today.isoformat(),
+            member_count=len(members),
+            promise_count=len(promises),
+            average_score_percent=average_score,
+            promises=[
+                ClubLeaderboardPromiseSummary(
+                    promise_uuid=str(promise["promise_uuid"]),
+                    promise_text=str(promise["promise_text"] or "Club promise"),
+                    metric_type=str(promise["metric_type"] or "hours"),
+                    target_value=float(promise["target_value"] or 1.0),
+                )
+                for promise in promises
+            ],
+            members=selected_members,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error loading club leaderboard for {club_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load club leaderboard: {str(e)}")
 
 
 @router.post("/clubs", response_model=ClubSummary)

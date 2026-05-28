@@ -555,37 +555,37 @@
   margin: 0;
 }
 
-.club-sheet-limit {
-  display: inline-flex;
-  gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  background: rgba(230, 234, 245, 0.04);
-}
-
-.club-sheet-limit button {
-  height: 26px;
-  border: 0;
-  border-radius: var(--r-pill);
-  padding: 0 9px;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
+.club-sheet-window {
+  color: var(--fg-subtle);
   font-size: 11px;
   font-weight: 800;
-  cursor: pointer;
-}
-
-.club-sheet-limit button.is-active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .club-leaderboard {
   display: grid;
   gap: 8px;
   margin-top: 10px;
+}
+
+.club-leaderboard-state {
+  min-height: 56px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.club-leaderboard-state--error {
+  color: var(--bad-500);
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(248, 113, 113, 0.08);
 }
 
 .club-leaderboard-row {

@@ -1,4 +1,4 @@
-import type { ClubSummary, PublicActivityItem, PublicUser, WeeklyReportData } from '../types';
+import type { ClubLeaderboardResponse, ClubSummary, PublicActivityItem, PublicUser, WeeklyReportData } from '../types';
 
 function toLocalDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -177,6 +177,7 @@ export function getMockClubs(): ClubSummary[] {
       promise_id: 'promise-morning-run',
       promise_uuid: 'promise-morning-run',
       promise_text: 'Run at least 3 km before work',
+      promise_count: 1,
       target_count_per_week: 4,
       reminder_time: '07:15',
       language: 'en',
@@ -201,6 +202,7 @@ export function getMockClubs(): ClubSummary[] {
       promise_id: 'promise-deep-work',
       promise_uuid: 'promise-deep-work',
       promise_text: 'Complete one 90-minute focused work block',
+      promise_count: 2,
       target_count_per_week: 5,
       reminder_time: '09:00',
       language: 'en',
@@ -224,6 +226,7 @@ export function getMockClubs(): ClubSummary[] {
       promise_id: 'promise-language-table',
       promise_uuid: 'promise-language-table',
       promise_text: 'Practice a target language for 20 minutes',
+      promise_count: 1,
       target_count_per_week: 3,
       reminder_time: '20:30',
       language: 'fr',
@@ -233,4 +236,95 @@ export function getMockClubs(): ClubSummary[] {
       checkin_what_counts: 'Speaking, listening, reading, or writing practice for 20 minutes.',
     },
   ];
+}
+
+export function getMockClubLeaderboard(clubId: string): ClubLeaderboardResponse {
+  const clubs = getMockClubs();
+  const club = clubs.find((item) => item.club_id === clubId) || clubs[0];
+  const today = new Date();
+  const windowEnd = toLocalDateKey(today);
+  const windowStartDate = new Date(today);
+  windowStartDate.setDate(today.getDate() - 6);
+  const windowStart = toLocalDateKey(windowStartDate);
+
+  const members = club.members.length > 0
+    ? club.members
+    : [{ user_id: 'local-dev-user', first_name: 'You', username: 'local_dev' }];
+  const promises = club.club_id === 'club-deep-work'
+    ? [
+        {
+          promise_uuid: 'promise-deep-work',
+          promise_text: 'Complete one 90-minute focused work block',
+          metric_type: 'count',
+          target_value: 5,
+        },
+        {
+          promise_uuid: 'promise-deep-work-hours',
+          promise_text: 'Log focused work hours',
+          metric_type: 'hours',
+          target_value: 6,
+        },
+      ]
+    : [
+        {
+          promise_uuid: club.promise_uuid || `${club.club_id}-promise`,
+          promise_text: club.promise_text || 'Club promise',
+          metric_type: 'count',
+          target_value: club.target_count_per_week || 7,
+        },
+      ];
+
+  const rows = members.slice(0, Math.min(Math.max(club.member_count, members.length), 10)).map((member, index) => {
+    const primaryTarget = promises[0].target_value;
+    const activeDays = Math.max(0, Math.min(primaryTarget, primaryTarget - index + (index === 0 ? 1 : 0)));
+    const breakdown = promises.map((promise, promiseIndex) => {
+      const achieved = promise.metric_type === 'count'
+        ? Math.max(0, activeDays - promiseIndex)
+        : Math.max(0, 4.5 - index * 0.75);
+      return {
+        promise_uuid: promise.promise_uuid,
+        promise_text: promise.promise_text,
+        metric_type: promise.metric_type,
+        target_value: promise.target_value,
+        achieved_value: achieved,
+        active_days: promise.metric_type === 'count' ? achieved : Math.min(7, Math.ceil(achieved)),
+        duration_hours: promise.metric_type === 'hours' ? achieved : 0,
+        checkin_count: promise.metric_type === 'count' ? achieved : 0,
+        progress_percent: Math.min(Math.round((achieved / promise.target_value) * 100), 100),
+      };
+    });
+    const score = Math.round(breakdown.reduce((sum, item) => sum + item.progress_percent, 0) / breakdown.length);
+    return {
+      rank: 0,
+      user_id: member.user_id,
+      first_name: member.first_name,
+      username: member.username,
+      avatar_path: member.avatar_path,
+      score_percent: score,
+      active_days: breakdown.reduce((sum, item) => sum + item.active_days, 0),
+      duration_hours: breakdown.reduce((sum, item) => sum + item.duration_hours, 0),
+      checkin_count: breakdown.reduce((sum, item) => sum + item.checkin_count, 0),
+      freeze_streak: Math.max(0, 9 - index * 2),
+      last_activity_at_utc: new Date(Date.now() - index * 1000 * 60 * 90).toISOString(),
+      breakdown,
+    };
+  });
+
+  const rankedRows = rows
+    .sort((left, right) => right.score_percent - left.score_percent || (right.last_activity_at_utc || '').localeCompare(left.last_activity_at_utc || ''))
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+
+  return {
+    club_id: club.club_id,
+    window: 'rolling_7d',
+    window_start: windowStart,
+    window_end: windowEnd,
+    member_count: club.member_count,
+    promise_count: promises.length,
+    average_score_percent: rankedRows.length
+      ? Math.round(rankedRows.reduce((sum, row) => sum + row.score_percent, 0) / rankedRows.length)
+      : 0,
+    promises,
+    members: rankedRows,
+  };
 }

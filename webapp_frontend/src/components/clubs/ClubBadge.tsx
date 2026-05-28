@@ -1,6 +1,7 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { ExternalLink, Settings, Shield, Trophy, Users } from 'lucide-react';
-import type { ClubSummary } from '../../types';
+import { apiClient } from '../../api/client';
+import type { ClubLeaderboardMember, ClubLeaderboardResponse, ClubSummary } from '../../types';
 import { Badge } from '../ui/Badge';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
@@ -13,68 +14,62 @@ interface ClubBadgeProps {
   onRemove: (club: ClubSummary) => void;
 }
 
-type LeaderboardMember = ClubSummary['members'][number] & {
-  checkins: number;
-  target: number;
-  progress: number;
-  streak: number;
-};
-
-function seedFromText(value: string): number {
-  return Array.from(value).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-}
-
-function getLeaderboard(club: ClubSummary): LeaderboardMember[] {
-  const target = Math.max(1, club.target_count_per_week || 1);
-  const fallbackNames = ['Sam', 'Iris', 'Noah', 'Mina', 'Leo', 'Yara', 'Owen', 'Zoe', 'Kai', 'Nina'];
-  const members = [...club.members];
-  const desiredCount = Math.min(Math.max(club.member_count, members.length, 1), 10);
-  while (members.length < desiredCount) {
-    const index = members.length;
-    members.push({
-      user_id: `${club.club_id}-member-${index + 1}`,
-      first_name: fallbackNames[index % fallbackNames.length],
-    });
-  }
-
-  return members
-    .slice(0, desiredCount)
-    .map((member, index) => {
-      const seed = seedFromText(`${club.club_id}-${member.user_id}-${index}`);
-      const checkins = Math.min(target, Math.max(0, target - (seed % Math.min(target + 1, 4))));
-      return {
-        ...member,
-        checkins,
-        target,
-        progress: Math.round((checkins / target) * 100),
-        streak: 1 + (seed % 6),
-      };
-    })
-    .sort((left, right) => right.progress - left.progress || right.streak - left.streak);
-}
-
 function getStatus(progress: number): { label: string; variant: 'good' | 'warn' | 'bad' } {
   if (progress >= 70) return { label: 'On track', variant: 'good' };
   if (progress >= 40) return { label: 'Building', variant: 'warn' };
   return { label: 'Needs push', variant: 'bad' };
 }
 
+function formatValue(value: number, metricType: string): string {
+  if (metricType === 'hours') {
+    return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
+  }
+  return String(Math.round(value));
+}
+
+function formatBreakdown(member: ClubLeaderboardMember): string {
+  if (!member.breakdown.length) return 'No activity yet';
+  return member.breakdown
+    .slice(0, 3)
+    .map((item) => `${item.promise_text}: ${formatValue(item.achieved_value, item.metric_type)}/${formatValue(item.target_value, item.metric_type)}`)
+    .join(' | ');
+}
+
 export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: ClubBadgeProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [leaderboardLimit, setLeaderboardLimit] = useState(5);
-  const leaderboard = useMemo(() => getLeaderboard(club), [club]);
-  const shownLeaderboard = leaderboard.slice(0, leaderboardLimit);
-  const target = Math.max(1, club.target_count_per_week || 1);
-  const avgCheckins = leaderboard.length
-    ? leaderboard.reduce((sum, member) => sum + member.checkins, 0) / leaderboard.length
-    : 0;
-  const progress = Math.min(Math.round((avgCheckins / target) * 100), 100);
+  const [leaderboard, setLeaderboard] = useState<ClubLeaderboardResponse | null>(null);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState('');
+  const progress = leaderboard?.average_score_percent ?? 0;
   const status = getStatus(progress);
-  const topMember = leaderboard[0];
+  const topMember = leaderboard?.members[0];
   const telegramReady = !!club.telegram_invite_link && ['ready', 'connected'].includes(club.telegram_status);
 
   const openSheet = () => setSheetOpen(true);
   const closeSheet = () => setSheetOpen(false);
+
+  useEffect(() => {
+    if (!sheetOpen || leaderboard) return;
+    let cancelled = false;
+    setLeaderboardLoading(true);
+    setLeaderboardError('');
+    apiClient.getClubLeaderboard(club.club_id)
+      .then((data) => {
+        if (!cancelled) setLeaderboard(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to load club leaderboard:', err);
+          setLeaderboardError(err instanceof Error ? err.message : 'Failed to load leaderboard.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLeaderboardLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [club.club_id, leaderboard, sheetOpen]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -85,7 +80,7 @@ export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: Club
   return (
     <>
       <article
-        className={`pcard club-badge-card ${status.variant}`}
+        className={['pcard', 'club-badge-card', leaderboard ? status.variant : ''].filter(Boolean).join(' ')}
         role="button"
         tabIndex={0}
         aria-label={`Open ${club.name} club`}
@@ -97,7 +92,9 @@ export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: Club
             <span dir="auto">{club.name}</span>
             <span className="pid" dir="ltr">#{club.visibility}</span>
           </div>
-          <Badge variant={status.variant} showDot>{status.label}</Badge>
+          <Badge variant={leaderboard ? status.variant : 'neutral'} showDot={!!leaderboard}>
+            {leaderboard ? status.label : 'Club'}
+          </Badge>
         </div>
 
         <p className="club-badge-promise">{club.promise_text || 'No shared promise yet'}</p>
@@ -105,16 +102,19 @@ export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: Club
         <div className="club-badge-member-strip">
           <AvatarStack users={club.members} size={24} max={5} />
           <span>{club.member_count} {club.member_count === 1 ? 'member' : 'members'}</span>
+          <span>{club.promise_count || (club.promise_uuid ? 1 : 0)} {(club.promise_count || 0) === 1 ? 'promise' : 'promises'}</span>
           {topMember ? <span>Lead: {topMember.first_name || topMember.username || 'Member'}</span> : null}
         </div>
 
-        <div className="progress" aria-hidden="true">
-          <div className="fill" style={{ width: `${progress}%` }} />
-        </div>
+        {leaderboard ? (
+          <div className="progress" aria-hidden="true">
+            <div className="fill" style={{ width: `${progress}%` }} />
+          </div>
+        ) : null}
 
         <div className="row">
-          <span className="sub" dir="ltr">{avgCheckins.toFixed(1)}/{target} avg check-ins</span>
-          <span className="meta" dir="ltr">{progress}%</span>
+          <span className="sub" dir="ltr">{leaderboard ? `${leaderboard.window_start} - ${leaderboard.window_end}` : 'Open leaderboard'}</span>
+          <span className="meta" dir="ltr">{leaderboard ? `${progress}%` : 'Rolling 7d'}</span>
         </div>
       </article>
 
@@ -137,7 +137,7 @@ export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: Club
         <section className="overall club-sheet-overall">
           <div className="row">
             <span className="label">Club progress</span>
-            <span className="sub">{club.member_count} members</span>
+            <span className="sub">{leaderboard?.member_count ?? club.member_count} members</span>
           </div>
           <div className="row" style={{ marginTop: 2 }}>
             <span className="value">{progress}%</span>
@@ -147,44 +147,39 @@ export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: Club
             <div className="fill" style={{ width: `${progress}%` }} />
           </div>
           <div className="club-sheet-stats">
-            <span><Users size={14} aria-hidden /> {club.member_count}</span>
-            <span><Trophy size={14} aria-hidden /> {avgCheckins.toFixed(1)}/{target} avg</span>
+            <span><Users size={14} aria-hidden /> {leaderboard?.member_count ?? club.member_count}</span>
+            <span><Trophy size={14} aria-hidden /> {leaderboard ? `${leaderboard.average_score_percent}% avg` : 'Loading'}</span>
             <span><Shield size={14} aria-hidden /> {club.role}</span>
           </div>
         </section>
 
         <div className="club-sheet-section-head">
           <p className="ds-eyebrow">Leaderboard</p>
-          <div className="club-sheet-limit" aria-label="Leaderboard size">
-            {[3, 5, 10].map((limit) => (
-              <button
-                type="button"
-                key={limit}
-                className={leaderboardLimit === limit ? 'is-active' : ''}
-                onClick={() => setLeaderboardLimit(limit)}
-              >
-                Top {limit}
-              </button>
-            ))}
-          </div>
+          {leaderboard ? <span className="club-sheet-window">{leaderboard.window_start} - {leaderboard.window_end}</span> : null}
         </div>
 
         <div className="club-leaderboard">
-          {shownLeaderboard.map((member, index) => (
+          {leaderboardLoading ? (
+            <div className="club-leaderboard-state">Loading leaderboard...</div>
+          ) : leaderboardError ? (
+            <div className="club-leaderboard-state club-leaderboard-state--error">{leaderboardError}</div>
+          ) : leaderboard && leaderboard.members.length === 0 ? (
+            <div className="club-leaderboard-state">No leaderboard activity yet.</div>
+          ) : leaderboard?.members.map((member) => (
             <div className="club-leaderboard-row" key={member.user_id}>
-              <span className="club-leaderboard-rank">{index + 1}</span>
+              <span className="club-leaderboard-rank">{member.rank}</span>
               <div className="club-leaderboard-person">
                 <strong>{member.first_name || member.username || 'Member'}</strong>
-                <span>{member.streak} day streak</span>
+                <span>{member.freeze_streak} day streak | {formatBreakdown(member)}</span>
               </div>
               <div className="club-leaderboard-progress">
-                <span>{member.checkins}/{member.target}</span>
+                <span>{member.score_percent}%</span>
                 <div className="club-leaderboard-track" aria-hidden="true">
-                  <div style={{ width: `${member.progress}%` }} />
+                  <div style={{ width: `${member.score_percent}%` }} />
                 </div>
               </div>
             </div>
-          ))}
+          )) || null}
         </div>
 
         <div className="action-row club-sheet-actions">
