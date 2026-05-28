@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Pencil, Timer } from 'lucide-react';
-import type { PromiseData } from '../../types';
+import { Clock, Pencil, Timer, Trash2, Check } from 'lucide-react';
+import type { PromiseData, PlanSession } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
+import { apiClient } from '../../api/client';
 
 interface PromiseDetailSheetProps {
   open: boolean;
@@ -19,11 +20,38 @@ interface PromiseDetailSheetProps {
   onEdit: () => void;
 }
 
-function getStatusClass(progress: number): 'good' | 'warn' | 'bad' | '' {
-  if (progress >= 60) return 'good';
-  if (progress >= 30) return 'warn';
+function toLocalDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function weekExpectedFraction(weekDays: string[]): number {
+  const todayKey = toLocalDateKey(new Date());
+  const idx = weekDays.indexOf(todayKey);
+  return idx >= 0 ? (idx + 1) / 7 : 1.0;
+}
+
+function getStatusClass(progress: number, expectedFraction: number): 'good' | 'warn' | 'bad' | '' {
+  const expected = expectedFraction * 100;
+  if (progress >= expected) return 'good';
+  if (progress >= expected * 0.5) return 'warn';
   if (progress > 0) return 'bad';
   return '';
+}
+
+function formatSessionTime(isoStr: string | null): string {
+  if (!isoStr) return 'No time set';
+  const dt = new Date(isoStr);
+  if (Number.isNaN(dt.getTime())) return 'No time set';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const dtDay = new Date(dt);
+  dtDay.setHours(0, 0, 0, 0);
+  const time = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  if (dtDay.getTime() === today.getTime()) return `Today · ${time}`;
+  if (dtDay.getTime() === tomorrow.getTime()) return `Tomorrow · ${time}`;
+  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + ` · ${time}`;
 }
 
 export function PromiseDetailSheet({
@@ -53,7 +81,39 @@ export function PromiseDetailSheet({
   const target = target_value || hours_promised || 1;
   const achieved = achieved_value ?? hours_spent ?? 0;
   const progress = target > 0 ? Math.min(Math.round((achieved / target) * 100), 100) : 0;
-  const statusClass = getStatusClass(progress);
+  const expectedFraction = weekExpectedFraction(weekDays);
+  const statusClass = getStatusClass(progress, expectedFraction);
+  const statusLabel = statusClass === 'good' ? 'On track' : statusClass === 'warn' ? 'Behind' : 'At risk';
+
+  const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setSessionsLoading(true);
+    apiClient.getPlanSessions(promiseId)
+      .then(data => { if (!cancelled) setPlanSessions(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSessionsLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, promiseId]);
+
+  const upcomingSessions = planSessions.filter(s => s.status === 'planned');
+
+  const handleMarkDone = async (sessionId: number) => {
+    try {
+      await apiClient.updatePlanSessionStatus(sessionId, 'done');
+      setPlanSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'done' as const } : s));
+    } catch {}
+  };
+
+  const handleDelete = async (sessionId: number) => {
+    try {
+      await apiClient.deletePlanSession(sessionId);
+      setPlanSessions(prev => prev.filter(s => s.id !== sessionId));
+    } catch {}
+  };
 
   const dayValues = useMemo(() => {
     const sessionsByDate: Record<string, number> = {};
@@ -95,7 +155,7 @@ export function PromiseDetailSheet({
         <div className="row" style={{ marginTop: 2 }}>
           <span className="value">{progress}%</span>
           <Badge variant={statusClass || 'neutral'} showDot>
-            {statusClass === 'good' ? 'On track' : statusClass === 'warn' ? 'Behind' : 'At risk'}
+            {statusLabel}
           </Badge>
         </div>
         {isCountBased && recurring ? (
@@ -128,6 +188,48 @@ export function PromiseDetailSheet({
           </div>
         </>
       ) : null}
+
+      {/* Planned sessions */}
+      {!sessionsLoading && upcomingSessions.length > 0 && (
+        <>
+          <p className="ds-eyebrow" style={{ marginTop: 16 }}>
+            Scheduled sessions
+          </p>
+          <div className="plan-sessions-list">
+            {upcomingSessions.map(session => (
+              <div key={session.id} className="plan-session-row">
+                <div className="plan-session-info">
+                  <span className="plan-session-title">
+                    {session.title || 'Untitled session'}
+                  </span>
+                  <span className="plan-session-time">
+                    {formatSessionTime(session.planned_start)}
+                    {session.planned_duration_min ? ` · ${session.planned_duration_min} min` : ''}
+                  </span>
+                </div>
+                <div className="plan-session-actions">
+                  <button
+                    type="button"
+                    className="plan-session-btn plan-session-btn--done"
+                    onClick={() => handleMarkDone(session.id)}
+                    aria-label="Mark done"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="plan-session-btn plan-session-btn--delete"
+                    onClick={() => handleDelete(session.id)}
+                    aria-label="Delete session"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="action-row" style={{ marginTop: 16 }}>
         <Button variant="secondary" onClick={onLogTime}>
