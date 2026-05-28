@@ -152,6 +152,56 @@ class ClubMemberSummary(BaseModel):
     avatar_path: Optional[str] = None
 
 
+class ClubLeaderboardPromiseSummary(BaseModel):
+    """A promise included in the club leaderboard."""
+    promise_uuid: str
+    promise_text: str
+    metric_type: str = "hours"
+    target_value: float
+
+
+class ClubLeaderboardBreakdown(BaseModel):
+    """Per-promise contribution for one member's club leaderboard row."""
+    promise_uuid: str
+    promise_text: str
+    metric_type: str = "hours"
+    target_value: float
+    achieved_value: float
+    active_days: int = 0
+    duration_hours: float = 0.0
+    checkin_count: int = 0
+    progress_percent: float
+
+
+class ClubLeaderboardMember(BaseModel):
+    """Ranked member row for a mixed club leaderboard."""
+    rank: int
+    user_id: str
+    first_name: Optional[str] = None
+    username: Optional[str] = None
+    avatar_path: Optional[str] = None
+    score_percent: float
+    active_days: int = 0
+    duration_hours: float = 0.0
+    checkin_count: int = 0
+    freeze_streak: int = 0
+    last_activity_at_utc: Optional[str] = None
+    breakdown: List[ClubLeaderboardBreakdown] = Field(default_factory=list)
+
+
+class ClubLeaderboardResponse(BaseModel):
+    """Leaderboard for one club across all active shared promises."""
+    club_id: str
+    window: str
+    window_start: str
+    window_end: str
+    member_count: int = 0
+    promise_count: int = 0
+    average_score_percent: float = 0.0
+    promises: List[ClubLeaderboardPromiseSummary] = Field(default_factory=list)
+    members: List[ClubLeaderboardMember] = Field(default_factory=list)
+
+
 class ClubSummary(BaseModel):
     """Club summary for the Community page."""
     club_id: str
@@ -165,6 +215,7 @@ class ClubSummary(BaseModel):
     promise_id: Optional[str] = None
     promise_uuid: Optional[str] = None
     promise_text: Optional[str] = None
+    promise_count: Optional[int] = None
     target_count_per_week: Optional[float] = None
     reminder_time: Optional[str] = None
     language: Optional[str] = None

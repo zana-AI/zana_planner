@@ -4,6 +4,7 @@ import type {
   PublicUsersResponse,
   PublicActivityResponse,
   ClubSummary,
+  ClubLeaderboardResponse,
   ClubsResponse,
   ClubContextIngestResponse,
   CreateClubRequest,
@@ -40,7 +41,7 @@ import type {
   UpdatePdfHighlightRequest,
   FollowGraphData
 } from '../types';
-import { getMockClubs, getMockCommunityUsers, getMockPublicActivity, shouldUseLocalMockData } from './mockData';
+import { getMockClubLeaderboard, getMockClubs, getMockCommunityUsers, getMockPublicActivity, shouldUseLocalMockData } from './mockData';
 
 const API_BASE = '/api';
 
@@ -502,6 +503,13 @@ class ApiClient {
     return this.request<ClubsResponse>('/clubs');
   }
 
+  async getClubLeaderboard(clubId: string): Promise<ClubLeaderboardResponse> {
+    if (shouldUseLocalMockData()) {
+      return getMockClubLeaderboard(clubId);
+    }
+    return this.request<ClubLeaderboardResponse>(`/clubs/${clubId}/leaderboard?window=rolling_7d&limit=10`);
+  }
+
   /**
    * Create a minimal Xaana club with one shared promise.
    */
@@ -519,6 +527,7 @@ class ApiClient {
         promise_id: `promise-local-${now}`,
         promise_uuid: `promise-local-${now}`,
         promise_text: request.promise_text,
+        promise_count: 1,
         target_count_per_week: request.target_count_per_week,
         reminder_time: '21:00',
         language: 'en',
