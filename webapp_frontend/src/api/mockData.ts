@@ -1,4 +1,4 @@
-import type { PublicUser, WeeklyReportData } from '../types';
+import type { ClubSummary, PublicActivityItem, PublicUser, WeeklyReportData } from '../types';
 
 function toLocalDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -127,6 +127,110 @@ export function getMockCommunityUsers(): PublicUser[] {
       weekly_activity_count: 3,
       promise_count: 3,
       last_activity_at_utc: new Date(Date.now() - 1000 * 60 * 140).toISOString(),
+    },
+  ];
+}
+
+export function getMockPublicActivity(): PublicActivityItem[] {
+  const users = getMockCommunityUsers();
+  const now = Date.now();
+  return [
+    {
+      activity_id: 'mock-activity-1',
+      action_type: 'club_checkin',
+      action_label: 'checked in for Morning Run Club',
+      duration_minutes: 32,
+      timestamp_utc: new Date(now - 1000 * 60 * 28).toISOString(),
+      promise_id: 'promise-morning-run',
+      promise_text: 'Run at least 3 km before work',
+      actor: users[0],
+    },
+    {
+      activity_id: 'mock-activity-2',
+      action_type: 'focus',
+      action_label: 'finished a deep work block',
+      duration_minutes: 90,
+      timestamp_utc: new Date(now - 1000 * 60 * 74).toISOString(),
+      promise_id: 'promise-deep-work',
+      promise_text: 'Complete one 90-minute focused work block',
+      actor: users[1],
+    },
+  ];
+}
+
+export function getMockClubs(): ClubSummary[] {
+  return [
+    {
+      club_id: 'club-morning-run',
+      name: 'Morning Run Club',
+      visibility: 'private',
+      role: 'owner',
+      member_count: 5,
+      members: [
+        { user_id: 'mock-101', first_name: 'Nora', username: 'nora_keeps_promises' },
+        { user_id: 'mock-102', first_name: 'Amir', username: 'amir_builds' },
+        { user_id: 'mock-103', first_name: 'Leila', username: 'leila_moves' },
+        { user_id: 'mock-104', first_name: 'Jon', username: 'jon_runs' },
+      ],
+      telegram_status: 'connected',
+      telegram_invite_link: 'https://t.me/example_morning_run_club',
+      promise_id: 'promise-morning-run',
+      promise_uuid: 'promise-morning-run',
+      promise_text: 'Run at least 3 km before work',
+      target_count_per_week: 4,
+      reminder_time: '07:15',
+      language: 'en',
+      description: 'A small accountability group for weekday morning runs.',
+      club_goal: 'Build a durable running habit without turning it into a race.',
+      vibe: 'Supportive, practical, low-drama.',
+      checkin_what_counts: 'A run, jog, or walk-run of 3 km or more counts.',
+    },
+    {
+      club_id: 'club-deep-work',
+      name: 'Deep Work Sprint',
+      visibility: 'public',
+      role: 'member',
+      member_count: 8,
+      members: [
+        { user_id: 'mock-105', first_name: 'Maya', username: 'maya_focus' },
+        { user_id: 'mock-106', first_name: 'Theo', username: 'theo_codes' },
+        { user_id: 'mock-107', first_name: 'Sara', username: 'sara_writes' },
+      ],
+      telegram_status: 'ready',
+      telegram_invite_link: 'https://t.me/example_deep_work_sprint',
+      promise_id: 'promise-deep-work',
+      promise_uuid: 'promise-deep-work',
+      promise_text: 'Complete one 90-minute focused work block',
+      target_count_per_week: 5,
+      reminder_time: '09:00',
+      language: 'en',
+      description: 'A weekday focus group for makers, students, and founders.',
+      club_goal: 'Make focused work visible and easier to repeat.',
+      vibe: 'Quiet, serious, kind.',
+      checkin_what_counts: 'A distraction-free 90-minute block with a clear outcome.',
+    },
+    {
+      club_id: 'club-language-table',
+      name: 'Language Table',
+      visibility: 'private',
+      role: 'owner',
+      member_count: 3,
+      members: [
+        { user_id: 'mock-108', first_name: 'Ana', username: 'ana_speaks' },
+        { user_id: 'mock-109', first_name: 'Rami', username: 'rami_words' },
+        { user_id: 'mock-110', first_name: 'Claire', username: 'claire_fr' },
+      ],
+      telegram_status: 'pending_admin_setup',
+      promise_id: 'promise-language-table',
+      promise_uuid: 'promise-language-table',
+      promise_text: 'Practice a target language for 20 minutes',
+      target_count_per_week: 3,
+      reminder_time: '20:30',
+      language: 'fr',
+      description: 'Friends practicing languages with lightweight check-ins.',
+      club_goal: 'Keep daily language practice social and forgiving.',
+      vibe: 'Casual and conversational.',
+      checkin_what_counts: 'Speaking, listening, reading, or writing practice for 20 minutes.',
     },
   ];
 }
