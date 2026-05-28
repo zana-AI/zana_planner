@@ -40,6 +40,7 @@ import type {
   UpdatePdfHighlightRequest,
   FollowGraphData
 } from '../types';
+import { getMockClubs, getMockCommunityUsers, getMockPublicActivity, shouldUseLocalMockData } from './mockData';
 
 const API_BASE = '/api';
 
@@ -135,6 +136,36 @@ export interface AdminLLMBackendTestResponse {
 class ApiClient {
   public initData: string = '';  // Made public for TestsTab to access
   private authToken: string | null = null;
+  private mockClubs: ClubSummary[] | null = null;
+
+  private getLocalMockClubs(): ClubSummary[] {
+    if (!this.mockClubs) {
+      this.mockClubs = getMockClubs();
+    }
+    return this.mockClubs;
+  }
+
+  private updateLocalMockClub(
+    clubId: string,
+    patch: Partial<Record<keyof ClubSummary, ClubSummary[keyof ClubSummary] | null>>,
+  ): ClubSummary {
+    const clubs = this.getLocalMockClubs();
+    const index = clubs.findIndex((club) => club.club_id === clubId);
+    if (index === -1) {
+      throw new ApiError(404, 'Club not found');
+    }
+
+    const normalizedPatch = Object.fromEntries(
+      Object.entries(patch).map(([key, value]) => [key, value === null ? undefined : value]),
+    ) as Partial<ClubSummary>;
+    const updated = { ...clubs[index], ...normalizedPatch };
+    this.mockClubs = [
+      ...clubs.slice(0, index),
+      updated,
+      ...clubs.slice(index + 1),
+    ];
+    return updated;
+  }
 
   private buildAuthHeaders(existing: Record<string, string> = {}): Record<string, string> {
     const headers: Record<string, string> = { ...existing };
@@ -442,6 +473,10 @@ class ApiClient {
    * Get public list of users (authentication required).
    */
   async getPublicUsers(limit: number = 20): Promise<PublicUsersResponse> {
+    if (shouldUseLocalMockData()) {
+      const users = getMockCommunityUsers().slice(0, limit);
+      return { users, total: users.length };
+    }
     return this.request<PublicUsersResponse>(`/public/users?limit=${limit}`);
   }
 
@@ -449,6 +484,10 @@ class ApiClient {
    * Get recent public community activity.
    */
   async getPublicActivity(limit: number = 20): Promise<PublicActivityResponse> {
+    if (shouldUseLocalMockData()) {
+      const items = getMockPublicActivity().slice(0, limit);
+      return { items, total: items.length };
+    }
     return this.request<PublicActivityResponse>(`/public/activity?limit=${limit}`);
   }
 
@@ -456,6 +495,10 @@ class ApiClient {
    * Get clubs where the authenticated user is a member.
    */
   async getMyClubs(): Promise<ClubsResponse> {
+    if (shouldUseLocalMockData()) {
+      const clubs = this.getLocalMockClubs();
+      return { clubs, total: clubs.length };
+    }
     return this.request<ClubsResponse>('/clubs');
   }
 
@@ -463,6 +506,26 @@ class ApiClient {
    * Create a minimal Xaana club with one shared promise.
    */
   async createClub(request: CreateClubRequest): Promise<ClubSummary> {
+    if (shouldUseLocalMockData()) {
+      const now = Date.now();
+      const created: ClubSummary = {
+        club_id: `club-local-${now}`,
+        name: request.name,
+        visibility: request.visibility,
+        role: 'owner',
+        member_count: 1,
+        members: [{ user_id: 'local-dev-user', first_name: 'You', username: 'local_dev' }],
+        telegram_status: 'pending_admin_setup',
+        promise_id: `promise-local-${now}`,
+        promise_uuid: `promise-local-${now}`,
+        promise_text: request.promise_text,
+        target_count_per_week: request.target_count_per_week,
+        reminder_time: '21:00',
+        language: 'en',
+      };
+      this.mockClubs = [created, ...this.getLocalMockClubs()];
+      return created;
+    }
     return this.request<ClubSummary>('/clubs', {
       method: 'POST',
       body: JSON.stringify(request),
@@ -716,6 +779,10 @@ class ApiClient {
   }
 
   async removeMyClub(clubId: string): Promise<{ status: string; club_id: string; message: string }> {
+    if (shouldUseLocalMockData()) {
+      this.mockClubs = this.getLocalMockClubs().filter((club) => club.club_id !== clubId);
+      return { status: 'removed', club_id: clubId, message: 'Club removed from local mock data.' };
+    }
     return this.request<{ status: string; club_id: string; message: string }>(`/clubs/${clubId}`, {
       method: 'DELETE',
     });
@@ -725,6 +792,9 @@ class ApiClient {
     clubId: string,
     body: { reminder_time?: string; language?: string },
   ): Promise<ClubSummary> {
+    if (shouldUseLocalMockData()) {
+      return this.updateLocalMockClub(clubId, body);
+    }
     return this.request<ClubSummary>(`/clubs/${clubId}`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -740,6 +810,9 @@ class ApiClient {
       checkin_what_counts?: string | null;
     },
   ): Promise<ClubSummary> {
+    if (shouldUseLocalMockData()) {
+      return this.updateLocalMockClub(clubId, body);
+    }
     return this.request<ClubSummary>(`/clubs/${clubId}/context`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -750,6 +823,26 @@ class ApiClient {
     clubId: string,
     body: { notes: string; files?: File[] },
   ): Promise<ClubContextIngestResponse> {
+    if (shouldUseLocalMockData()) {
+      const club = await this.updateLocalMockClub(clubId, {
+        description: body.notes || 'Synthetic club context captured from local notes.',
+        club_goal: 'Turn shared intent into visible weekly progress.',
+        vibe: 'Encouraging and direct.',
+        checkin_what_counts: 'A check-in counts when the member reports concrete progress.',
+      });
+      return {
+        club,
+        extracted: {
+          description: club.description,
+          club_goal: club.club_goal,
+          vibe: club.vibe,
+          checkin_what_counts: club.checkin_what_counts,
+        },
+        follow_up_questions: ['Who should Xaana nudge first when the group gets quiet?'],
+        used_llm: false,
+        image_count: body.files?.length || 0,
+      };
+    }
     const form = new FormData();
     form.append('notes', body.notes || '');
     (body.files || []).forEach((file) => form.append('files', file));
@@ -778,6 +871,12 @@ class ApiClient {
     promiseUuid: string,
     body: { promise_text?: string; target_count_per_week?: number },
   ): Promise<ClubSummary> {
+    if (shouldUseLocalMockData()) {
+      return this.updateLocalMockClub(clubId, {
+        promise_text: body.promise_text,
+        target_count_per_week: body.target_count_per_week,
+      });
+    }
     return this.request<ClubSummary>(`/clubs/${clubId}/promises/${promiseUuid}`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -788,6 +887,15 @@ class ApiClient {
     clubId: string,
     promiseUuid: string,
   ): Promise<{ status: string; club_id: string; message: string }> {
+    if (shouldUseLocalMockData()) {
+      await this.updateLocalMockClub(clubId, {
+        promise_id: undefined,
+        promise_uuid: undefined,
+        promise_text: undefined,
+        target_count_per_week: undefined,
+      });
+      return { status: 'deleted', club_id: clubId, message: 'Club promise deleted from local mock data.' };
+    }
     return this.request<{ status: string; club_id: string; message: string }>(
       `/clubs/${clubId}/promises/${promiseUuid}`,
       { method: 'DELETE' },
@@ -795,6 +903,9 @@ class ApiClient {
   }
 
   async syncClubDescription(clubId: string): Promise<{ status: string; club_id: string; message: string }> {
+    if (shouldUseLocalMockData()) {
+      return { status: 'updated', club_id: clubId, message: 'Local mock Telegram description synced.' };
+    }
     return this.request<{ status: string; club_id: string; message: string }>(
       `/clubs/${clubId}/sync-description`,
       { method: 'POST' },

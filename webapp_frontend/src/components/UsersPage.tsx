@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
+import { shouldUseLocalMockData } from '../api/mockData';
 import { ActivityItem } from './community/ActivityItem';
 import { CompactUserChip } from './community/CompactUserChip';
-import { AvatarStack } from './ui/AvatarStack';
+import { ClubBadge } from './clubs/ClubBadge';
 import type { ClubSummary, PublicActivityItem, PublicUser, UserInfo } from '../types';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
@@ -115,7 +116,8 @@ export function UsersPage() {
 
   const authData = initData || getDevInitData();
   const hasToken = !!localStorage.getItem('telegram_auth_token');
-  const isAuthenticated = !!authData || hasToken;
+  const allowLocalMockData = shouldUseLocalMockData();
+  const isAuthenticated = !!authData || hasToken || allowLocalMockData;
 
   useEffect(() => {
     if (authData) {
@@ -304,12 +306,6 @@ export function UsersPage() {
     }
   }, []);
 
-  const handleClubCardKeyDown = useCallback((event: KeyboardEvent<HTMLElement>, club: ClubSummary) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    navigate(`/clubs/${club.club_id}`);
-  }, [navigate]);
-
   if (!isReady) {
     return (
       <div className="users-page">
@@ -379,58 +375,13 @@ export function UsersPage() {
             ) : clubs.length > 0 ? (
               <div className="community-club-grid">
                 {clubs.map((club) => (
-                  <article
-                    className="community-club-card community-club-card-clickable"
+                  <ClubBadge
                     key={club.club_id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Open ${club.name} club details`}
-                    onClick={() => navigate(`/clubs/${club.club_id}`)}
-                    onKeyDown={(event) => handleClubCardKeyDown(event, club)}
-                  >
-                    <div className="community-club-card-header">
-                      <h4>{club.name}</h4>
-                      <span>{club.visibility}</span>
-                    </div>
-                    <p>{club.promise_text || 'No shared promise yet'}</p>
-                    <div className="community-club-meta">
-                      <span className="community-club-members">
-                        <AvatarStack users={club.members} size={24} max={4} />
-                        {club.member_count} {club.member_count === 1 ? 'member' : 'members'}
-                      </span>
-                      {club.target_count_per_week ? <span>{club.target_count_per_week}x/week</span> : null}
-                      {club.telegram_invite_link && ['ready', 'connected'].includes(club.telegram_status) ? (
-                        <a
-                          className="community-club-telegram-link"
-                          href={club.telegram_invite_link}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          Join Telegram
-                        </a>
-                      ) : (
-                        <span>Telegram pending</span>
-                      )}
-                    </div>
-                    {club.role === 'owner' && club.telegram_status !== 'pending_admin_setup' ? null : (
-                      <button
-                        type="button"
-                        className="community-club-remove"
-                        disabled={!!clubBusyById[club.club_id]}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleRemoveClub(club);
-                        }}
-                      >
-                        {clubBusyById[club.club_id]
-                          ? 'Updating...'
-                          : club.role === 'owner'
-                            ? 'Cancel club'
-                            : 'Leave club'}
-                      </button>
-                    )}
-                  </article>
+                    club={club}
+                    busy={!!clubBusyById[club.club_id]}
+                    onOpenSettings={(item) => navigate(`/clubs/${item.club_id}`)}
+                    onRemove={handleRemoveClub}
+                  />
                 ))}
               </div>
             ) : (
