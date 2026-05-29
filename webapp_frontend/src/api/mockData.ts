@@ -246,6 +246,11 @@ export function getMockClubLeaderboard(clubId: string): ClubLeaderboardResponse 
   const windowStartDate = new Date(today);
   windowStartDate.setDate(today.getDate() - 6);
   const windowStart = toLocalDateKey(windowStartDate);
+  const windowDates = Array.from({ length: 7 }, (_, offset) => {
+    const date = new Date(windowStartDate);
+    date.setDate(windowStartDate.getDate() + offset);
+    return toLocalDateKey(date);
+  });
 
   const members = club.members.length > 0
     ? club.members
@@ -294,6 +299,22 @@ export function getMockClubLeaderboard(clubId: string): ClubLeaderboardResponse 
       };
     });
     const score = Math.round(breakdown.reduce((sum, item) => sum + item.progress_percent, 0) / breakdown.length);
+    const dailyActivity = windowDates.map((date, dayIndex) => {
+      const isCountActive = dayIndex >= 7 - activeDays && (index < 2 || (dayIndex + index) % 3 !== 1);
+      const duration = promises.some((promise) => promise.metric_type === 'hours') && dayIndex >= 2
+        ? Math.max(0, 1.2 - index * 0.15 - (dayIndex % 2) * 0.25)
+        : 0;
+      const active = isCountActive || duration > 0;
+      const countScore = isCountActive ? 100 : 0;
+      const durationScore = duration > 0 ? Math.min(Math.round((duration / 1.25) * 100), 100) : 0;
+      return {
+        date,
+        active,
+        checkins: isCountActive ? 1 : 0,
+        duration_hours: Number(duration.toFixed(2)),
+        score_percent: Math.max(countScore, durationScore),
+      };
+    });
     return {
       rank: 0,
       user_id: member.user_id,
@@ -306,6 +327,7 @@ export function getMockClubLeaderboard(clubId: string): ClubLeaderboardResponse 
       checkin_count: breakdown.reduce((sum, item) => sum + item.checkin_count, 0),
       freeze_streak: Math.max(0, 9 - index * 2),
       last_activity_at_utc: new Date(Date.now() - index * 1000 * 60 * 90).toISOString(),
+      daily_activity: dailyActivity,
       breakdown,
     };
   });

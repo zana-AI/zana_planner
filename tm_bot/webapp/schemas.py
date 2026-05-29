@@ -173,6 +173,15 @@ class ClubLeaderboardBreakdown(BaseModel):
     progress_percent: float
 
 
+class ClubLeaderboardDailyActivity(BaseModel):
+    """One day cell in a member's rolling club activity strip."""
+    date: str
+    active: bool = False
+    checkins: int = 0
+    duration_hours: float = 0.0
+    score_percent: float = 0.0
+
+
 class ClubLeaderboardMember(BaseModel):
     """Ranked member row for a mixed club leaderboard."""
     rank: int
@@ -186,6 +195,7 @@ class ClubLeaderboardMember(BaseModel):
     checkin_count: int = 0
     freeze_streak: int = 0
     last_activity_at_utc: Optional[str] = None
+    daily_activity: List[ClubLeaderboardDailyActivity] = Field(default_factory=list)
     breakdown: List[ClubLeaderboardBreakdown] = Field(default_factory=list)
 
 

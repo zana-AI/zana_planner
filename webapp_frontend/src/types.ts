@@ -240,6 +240,14 @@ export interface ClubLeaderboardBreakdown {
   progress_percent: number;
 }
 
+export interface ClubLeaderboardDailyActivity {
+  date: string;
+  active: boolean;
+  checkins: number;
+  duration_hours: number;
+  score_percent: number;
+}
+
 export interface ClubLeaderboardMember {
   rank: number;
   user_id: string;
@@ -252,6 +260,7 @@ export interface ClubLeaderboardMember {
   checkin_count: number;
   freeze_streak: number;
   last_activity_at_utc?: string;
+  daily_activity: ClubLeaderboardDailyActivity[];
   breakdown: ClubLeaderboardBreakdown[];
 }
 

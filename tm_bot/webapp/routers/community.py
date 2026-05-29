@@ -21,6 +21,7 @@ from ..schemas import (
     ClubActionResponse,
     ClubContextIngestResponse,
     ClubLeaderboardBreakdown,
+    ClubLeaderboardDailyActivity,
     ClubLeaderboardMember,
     ClubLeaderboardPromiseSummary,
     ClubLeaderboardResponse,
@@ -116,11 +117,16 @@ def _rank_club_leaderboard_members(
 ) -> list[ClubLeaderboardMember]:
     rows: list[ClubLeaderboardMember] = []
     name_by_user: dict[str, str] = {}
+    window_dates = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
 
     for member in members:
         user_id = str(member["user_id"])
         name_by_user[user_id] = _display_name_key(member)
         breakdown: list[ClubLeaderboardBreakdown] = []
+        daily_totals = {
+            activity_date: {"checkins": 0, "duration_hours": 0.0, "score_sum": 0.0, "score_count": 0}
+            for activity_date in window_dates
+        }
         activity_dates: set[date] = set()
         last_activity_at_utc: Optional[str] = None
         total_duration_hours = 0.0
@@ -133,6 +139,7 @@ def _rank_club_leaderboard_members(
             stats = actions_by_member_promise.get((user_id, promise_uuid), {})
             activity_days_set = set(stats.get("activity_days") or stats.get("active_days") or [])
             checkin_days_set = set(stats.get("checkin_days") or stats.get("active_days") or [])
+            daily_stats = stats.get("daily") or {}
             duration_hours = float(stats.get("duration_hours") or 0.0)
             checkin_count = int(stats.get("checkin_count") or 0)
             last_at = stats.get("last_activity_at_utc")
@@ -150,6 +157,25 @@ def _rank_club_leaderboard_members(
                 achieved_value = duration_hours
                 active_days_count = len(activity_days_set)
             progress_percent = min(round((achieved_value / target_value) * 100, 1), 100.0) if target_value > 0 else 0.0
+
+            for activity_date in window_dates:
+                day_stats = daily_stats.get(activity_date) or daily_stats.get(activity_date.isoformat()) or {}
+                day_checkins = int(day_stats.get("checkins") or (1 if activity_date in checkin_days_set else 0))
+                day_duration_hours = float(day_stats.get("duration_hours") or 0.0)
+                if not daily_stats and metric_type != "count" and activity_date in activity_days_set and len(activity_days_set) == 1:
+                    day_duration_hours = duration_hours
+
+                if metric_type == "count":
+                    day_score = 100.0 if day_checkins > 0 else 0.0
+                else:
+                    daily_target = max(target_value / 7.0, 0.25)
+                    day_score = min(round((day_duration_hours / daily_target) * 100, 1), 100.0)
+
+                totals = daily_totals[activity_date]
+                totals["checkins"] += day_checkins
+                totals["duration_hours"] += day_duration_hours
+                totals["score_sum"] += day_score
+                totals["score_count"] += 1
 
             breakdown.append(
                 ClubLeaderboardBreakdown(
@@ -170,6 +196,20 @@ def _rank_club_leaderboard_members(
             if breakdown
             else 0.0
         )
+        daily_activity = [
+            ClubLeaderboardDailyActivity(
+                date=activity_date.isoformat(),
+                active=totals["checkins"] > 0 or totals["duration_hours"] > 0,
+                checkins=int(totals["checkins"]),
+                duration_hours=round(float(totals["duration_hours"]), 2),
+                score_percent=(
+                    round(float(totals["score_sum"]) / int(totals["score_count"]), 1)
+                    if int(totals["score_count"]) > 0
+                    else 0.0
+                ),
+            )
+            for activity_date, totals in daily_totals.items()
+        ]
         rows.append(
             ClubLeaderboardMember(
                 rank=0,
@@ -183,6 +223,7 @@ def _rank_club_leaderboard_members(
                 checkin_count=total_checkins,
                 freeze_streak=_calculate_freeze_streak(list(activity_dates), today),
                 last_activity_at_utc=last_activity_at_utc,
+                daily_activity=daily_activity,
                 breakdown=breakdown,
             )
         )
@@ -729,6 +770,7 @@ async def get_club_leaderboard(
             lambda: {
                 "activity_days": set(),
                 "checkin_days": set(),
+                "daily": defaultdict(lambda: {"checkins": 0, "duration_hours": 0.0}),
                 "duration_hours": 0.0,
                 "checkin_count": 0,
                 "last_activity_at_utc": None,
@@ -742,12 +784,15 @@ async def get_club_leaderboard(
                 action_date = _date_key(row["action_date"])
                 stats["activity_days"].add(action_date)
                 stats["checkin_days"].add(action_date)
+                stats["daily"][action_date]["checkins"] += 1
                 stats["checkin_count"] += 1
             elif action_type == "log_time":
                 hours = float(row["time_spent_hours"] or 0.0)
                 if hours > 0:
+                    action_date = _date_key(row["action_date"])
                     stats["duration_hours"] += hours
-                    stats["activity_days"].add(_date_key(row["action_date"]))
+                    stats["activity_days"].add(action_date)
+                    stats["daily"][action_date]["duration_hours"] += hours
             at_utc = str(row["at_utc"]) if row["at_utc"] else None
             if at_utc and (not stats["last_activity_at_utc"] or at_utc > stats["last_activity_at_utc"]):
                 stats["last_activity_at_utc"] = at_utc
