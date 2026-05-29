@@ -2,12 +2,15 @@
 Repository for content catalog, user_content, consumption events, and rollup heatmaps.
 """
 import json
+import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 
 from db.postgres_db import get_db_session, utc_now_iso, resolve_promise_uuid
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -173,7 +176,11 @@ class ContentRepository:
             return str(row["id"]) if row else uc_id
 
     def assign_user_content_to_promise(self, user_id: str, content_id: str, promise_id: str) -> str:
-        """Ensure content is saved and linked to a promise/task."""
+        """Ensure content is saved and linked to a promise/task.
+
+        Also creates a watch/read plan_session on the promise for this content
+        (deduped, best-effort) so the consumption shows up in the user's plan.
+        """
         # FK references promises.promise_uuid — resolve short current_id first
         promise_uuid = None
         try:
@@ -181,7 +188,60 @@ class ContentRepository:
                 promise_uuid = resolve_promise_uuid(session, str(user_id), str(promise_id))
         except Exception:
             pass
-        return self.add_user_content(str(user_id), str(content_id), assigned_promise_id=promise_uuid or str(promise_id))
+        uc_id = self.add_user_content(
+            str(user_id), str(content_id), assigned_promise_id=promise_uuid or str(promise_id)
+        )
+        # Session creation is best-effort: never let it break the assignment.
+        if promise_uuid:
+            self._ensure_watch_session(str(user_id), str(content_id), promise_uuid)
+        return uc_id
+
+    # Verb shown in the auto-created session title, keyed by content_type.
+    _SESSION_VERB_BY_TYPE = {
+        "video": "Watch",
+        "youtube": "Watch",
+        "pdf": "Read",
+        "article": "Read",
+        "blog": "Read",
+        "web": "Read",
+        "audio": "Listen",
+        "podcast": "Listen",
+    }
+
+    def _ensure_watch_session(self, user_id: str, content_id: str, promise_uuid: str) -> None:
+        """Create a single watch/read session for this content on the promise."""
+        try:
+            from repositories.plan_sessions_repo import PlanSessionsRepository
+
+            repo = PlanSessionsRepository()
+            if repo.find_for_content(promise_uuid, user_id, content_id):
+                return  # already has a session for this content
+
+            content = self.get_content_by_id(content_id) or {}
+            content_type = (content.get("content_type") or "").lower()
+            verb = self._SESSION_VERB_BY_TYPE.get(content_type, "Review")
+            title = (content.get("title") or content_type or "content").strip()
+            session_title = f"{verb}: {title}"[:200]
+
+            duration_min = None
+            duration_seconds = content.get("duration_seconds") or content.get("estimated_read_seconds")
+            if duration_seconds:
+                try:
+                    duration_min = max(1, round(float(duration_seconds) / 60.0))
+                except (TypeError, ValueError):
+                    duration_min = None
+
+            repo.create(
+                promise_uuid,
+                user_id,
+                {
+                    "title": session_title,
+                    "planned_duration_min": duration_min,
+                    "content_id": content_id,
+                },
+            )
+        except Exception as e:
+            logger.debug("Could not create watch/read session for content %s: %s", content_id, e)
 
     def get_user_content(self, user_id: str, content_id: str) -> Optional[Dict[str, Any]]:
         """Return single user_content row (with content) or None."""

@@ -4,8 +4,11 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from db.postgres_db import get_db_session
+from db.postgres_db import get_db_session, resolve_promise_uuid
+from models.models import Promise
 from repositories.content_repo import ContentRepository
+from repositories.plan_sessions_repo import PlanSessionsRepository
+from repositories.promises_repo import PromisesRepository
 
 pytestmark = [pytest.mark.repo, pytest.mark.requires_postgres]
 
@@ -38,6 +41,59 @@ def test_user_content_roundtrip():
     assert uc2 is not None
     assert uc2.get("notes") == "My note"
     assert uc2.get("rating") == 5
+
+
+def test_assign_content_to_promise_creates_deduped_watch_session():
+    """#54: assigning content to a promise creates one watch/read session, deduped on re-assign."""
+    repo = ContentRepository()
+    user_id = "test-assign-" + uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
+
+    promises_repo = PromisesRepository()
+    promises_repo.upsert_promise(
+        user_id=user_id,
+        promise=Promise(
+            user_id=user_id,
+            id="T54",
+            text="Watch seed",
+            hours_per_week=0.0,
+            recurring=False,
+        ),
+    )
+
+    content_id = repo.upsert_content(
+        canonical_url=f"https://example.com/assign/{suffix}",
+        original_url=f"https://example.com/assign/{suffix}",
+        provider="test",
+        content_type="video",
+        title="Lecture on widgets",
+        duration_seconds=1800,  # 30 min
+    )
+
+    repo.assign_user_content_to_promise(user_id, content_id, "T54")
+
+    with get_db_session() as session:
+        promise_uuid = resolve_promise_uuid(session, user_id, "T54")
+    assert promise_uuid
+
+    sessions_repo = PlanSessionsRepository()
+    linked = [
+        s for s in sessions_repo.list_for_promise(promise_uuid, user_id)
+        if s.get("content_id") == content_id
+    ]
+    assert len(linked) == 1, "exactly one watch session should be created"
+    sess = linked[0]
+    assert sess["title"].startswith("Watch:"), sess["title"]
+    assert sess["planned_duration_min"] == 30
+    assert sess["status"] == "planned"
+
+    # Re-assigning the same content must not create a duplicate session.
+    repo.assign_user_content_to_promise(user_id, content_id, "T54")
+    linked_after = [
+        s for s in sessions_repo.list_for_promise(promise_uuid, user_id)
+        if s.get("content_id") == content_id
+    ]
+    assert len(linked_after) == 1, "re-assign must be deduped"
 
 
 def test_insert_consumption_event():
