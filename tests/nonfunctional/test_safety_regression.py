@@ -62,6 +62,28 @@ def test_add_promise_negative_hours_rejected(tmp_path):
 
 @pytest.mark.nonfunctional
 @pytest.mark.requires_postgres
+def test_create_reminder_is_one_time_not_recurring(tmp_path):
+    """Regression for #63: a one-off reminder must not be stored as a recurring promise.
+
+    The LLM correctly routes "remind me ... tonight" to create_reminder, but the
+    adapter previously persisted it with recurring=True, surfacing it as a weekly
+    promise. It must be a one-time ('T'-prefixed) promise instead.
+    """
+    user_id = unique_user_id()
+    ensure_users_exist(user_id)
+    adapter = PlannerAPIAdapter(str(tmp_path))
+
+    adapter.create_reminder(user_id, text="make BBQ", remind_at="2026-05-30T20:00:00")
+
+    promises = adapter.get_promises(user_id)
+    assert len(promises) == 1
+    p = promises[0]
+    assert bool(p.get("recurring")) is False, "reminder must not be recurring"
+    assert str(p["id"]).startswith("T"), "reminder must be a one-time (T) promise"
+
+
+@pytest.mark.nonfunctional
+@pytest.mark.requires_postgres
 def test_add_action_negative_time_returns_error_no_write(tmp_path):
     """Adapter returns error for negative time_spent and does not append action."""
     user_id = unique_user_id()
