@@ -24,7 +24,7 @@ class PlanSessionsRepository:
             rows = session.execute(
                 text("""
                     SELECT id, promise_uuid, user_id, title, status,
-                           planned_start, planned_duration_min, notes, created_at
+                           planned_start, planned_duration_min, notes, content_id, created_at
                     FROM plan_sessions
                     WHERE promise_uuid = :promise_uuid AND user_id = :user_id
                     ORDER BY planned_start NULLS LAST, created_at
@@ -45,10 +45,10 @@ class PlanSessionsRepository:
             result = session.execute(
                 text("""
                     INSERT INTO plan_sessions
-                        (promise_uuid, user_id, title, status, planned_start, planned_duration_min, notes, created_at)
+                        (promise_uuid, user_id, title, status, planned_start, planned_duration_min, notes, content_id, created_at)
                     VALUES
-                        (:promise_uuid, :user_id, :title, 'planned', :planned_start, :planned_duration_min, :notes, :created_at)
-                    RETURNING id, promise_uuid, user_id, title, status, planned_start, planned_duration_min, notes, created_at
+                        (:promise_uuid, :user_id, :title, 'planned', :planned_start, :planned_duration_min, :notes, :content_id, :created_at)
+                    RETURNING id, promise_uuid, user_id, title, status, planned_start, planned_duration_min, notes, content_id, created_at
                 """),
                 {
                     "promise_uuid": promise_uuid,
@@ -57,6 +57,7 @@ class PlanSessionsRepository:
                     "planned_start": data.get("planned_start"),
                     "planned_duration_min": data.get("planned_duration_min"),
                     "notes": data.get("notes"),
+                    "content_id": data.get("content_id"),
                     "created_at": utc_now_iso(),
                 },
             ).mappings().fetchone()
@@ -77,6 +78,29 @@ class PlanSessionsRepository:
                 )
             checklist = self._get_checklist(session, session_id)
             return {**dict(result), "checklist": checklist}
+
+    def find_for_content(self, promise_uuid: str, user_id: int, content_id: str) -> Optional[dict]:
+        """Return an existing session linking this content to this promise, or None.
+
+        Used to avoid creating duplicate watch/read sessions when content is
+        re-assigned to the same promise.
+        """
+        user = str(user_id)
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT id, promise_uuid, user_id, title, status,
+                           planned_start, planned_duration_min, notes, content_id, created_at
+                    FROM plan_sessions
+                    WHERE promise_uuid = :promise_uuid
+                      AND user_id = :user_id
+                      AND content_id = :content_id
+                    ORDER BY created_at
+                    LIMIT 1
+                """),
+                {"promise_uuid": promise_uuid, "user_id": user, "content_id": content_id},
+            ).mappings().fetchone()
+            return dict(row) if row else None
 
     def get(self, session_id: int, user_id: int) -> Optional[dict]:
         user = str(user_id)
