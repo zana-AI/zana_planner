@@ -225,7 +225,7 @@ class PlannerAPIAdapter:
                 user_id=user_id,
                 promise_text=text,
                 num_hours_promised_per_week=0.0,
-                recurring=True,
+                recurring=False,
                 end_date=remind_dt.date(),
             )
         except Exception as e:
