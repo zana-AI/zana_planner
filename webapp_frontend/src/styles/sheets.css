@@ -373,33 +373,6 @@
   margin: 0;
 }
 
-.club-sheet-limit {
-  display: inline-flex;
-  gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  background: rgba(230, 234, 245, 0.04);
-}
-
-.club-sheet-limit button {
-  height: 26px;
-  border: 0;
-  border-radius: var(--r-pill);
-  padding: 0 9px;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.club-sheet-limit button.is-active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
 .club-leaderboard {
   display: grid;
   gap: 8px;
@@ -408,7 +381,7 @@
 
 .club-leaderboard-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) minmax(92px, 124px);
+  grid-template-columns: 30px minmax(0, 1fr) 102px minmax(76px, 96px);
   align-items: center;
   gap: 10px;
   min-height: 52px;
@@ -452,6 +425,37 @@
   font-weight: 700;
 }
 
+.club-activity-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 10px);
+  gap: 4px;
+  justify-content: end;
+  align-items: center;
+}
+
+.club-activity-cell {
+  width: 10px;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  border: 1px solid rgba(230, 234, 245, 0.1);
+  background: rgba(230, 234, 245, 0.08);
+}
+
+.club-activity-cell.level-2 {
+  background: rgba(20, 184, 166, 0.42);
+  border-color: rgba(45, 212, 191, 0.28);
+}
+
+.club-activity-cell.level-3 {
+  background: rgba(20, 184, 166, 0.7);
+  border-color: rgba(45, 212, 191, 0.42);
+}
+
+.club-activity-cell.level-4 {
+  background: var(--good-500);
+  border-color: rgba(45, 212, 191, 0.72);
+}
+
 .club-leaderboard-progress {
   display: grid;
   gap: 5px;
@@ -473,6 +477,18 @@
   height: 100%;
   border-radius: inherit;
   background: var(--good-500);
+}
+
+@media (max-width: 520px) {
+  .club-leaderboard-row {
+    grid-template-columns: 30px minmax(0, 1fr) minmax(70px, auto);
+  }
+
+  .club-activity-strip {
+    grid-column: 2 / 4;
+    justify-content: start;
+    margin-top: 2px;
+  }
 }
 
 .club-sheet-actions {
@@ -590,7 +606,7 @@
 
 .club-leaderboard-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) minmax(92px, 124px);
+  grid-template-columns: 30px minmax(0, 1fr) 102px minmax(76px, 96px);
   align-items: center;
   gap: 10px;
   min-height: 52px;
@@ -655,6 +671,18 @@
   height: 100%;
   border-radius: inherit;
   background: var(--good-500);
+}
+
+@media (max-width: 520px) {
+  .club-leaderboard-row {
+    grid-template-columns: 30px minmax(0, 1fr) minmax(70px, auto);
+  }
+
+  .club-activity-strip {
+    grid-column: 2 / 4;
+    justify-content: start;
+    margin-top: 2px;
+  }
 }
 
 .club-sheet-actions {

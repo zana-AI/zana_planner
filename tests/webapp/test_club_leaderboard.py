@@ -73,6 +73,8 @@ def test_count_leaderboard_orders_by_rolling_active_days_then_latest_activity():
     assert [row.breakdown[0].achieved_value for row in rows] == [7, 7, 6, 2, 0]
     assert rows[0].score_percent == 100
     assert rows[1].score_percent == 100
+    assert [day.active for day in rows[0].daily_activity] == [True, True, True, True, True, True, True]
+    assert [day.active for day in rows[3].daily_activity] == [True, False, False, True, False, False, False]
 
 
 def test_duplicate_same_day_checkins_count_as_one_active_day():
@@ -82,6 +84,7 @@ def test_duplicate_same_day_checkins_count_as_one_active_day():
         actions_by_member_promise={
             ("u1", "p-count"): {
                 "active_days": {TODAY},
+                "daily": {TODAY: {"checkins": 2, "duration_hours": 0.0}},
                 "checkin_count": 2,
                 "last_activity_at_utc": "2026-05-28T12:00:00+00:00",
             }
@@ -92,6 +95,7 @@ def test_duplicate_same_day_checkins_count_as_one_active_day():
 
     assert rows[0].breakdown[0].achieved_value == 1
     assert rows[0].breakdown[0].checkin_count == 2
+    assert rows[0].daily_activity[-1].checkins == 2
     assert rows[0].score_percent == 14.3
 
 
@@ -138,6 +142,8 @@ def test_duration_promise_uses_logged_hours_over_target():
 
     assert [row.first_name for row in rows] == ["A", "B"]
     assert [row.score_percent for row in rows] == [75, 25]
+    assert rows[0].daily_activity[-1].active is True
+    assert rows[0].daily_activity[-1].duration_hours == 3.0
 
 
 def test_mixed_promises_average_normalized_progress():

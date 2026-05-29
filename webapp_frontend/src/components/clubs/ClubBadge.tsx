@@ -35,6 +35,20 @@ function formatBreakdown(member: ClubLeaderboardMember): string {
     .join(' | ');
 }
 
+function getActivityLevel(score: number): number {
+  if (score >= 90) return 4;
+  if (score >= 60) return 3;
+  if (score > 0) return 2;
+  return 0;
+}
+
+function formatActivityTitle(date: string, checkins: number, durationHours: number): string {
+  const parts = [];
+  if (checkins > 0) parts.push(`${checkins} check-in${checkins === 1 ? '' : 's'}`);
+  if (durationHours > 0) parts.push(`${durationHours.toFixed(durationHours % 1 === 0 ? 0 : 1)}h logged`);
+  return `${date}: ${parts.length ? parts.join(', ') : 'no club activity'}`;
+}
+
 export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: ClubBadgeProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [leaderboard, setLeaderboard] = useState<ClubLeaderboardResponse | null>(null);
@@ -171,6 +185,16 @@ export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: Club
               <div className="club-leaderboard-person">
                 <strong>{member.first_name || member.username || 'Member'}</strong>
                 <span>{member.freeze_streak} day streak | {formatBreakdown(member)}</span>
+              </div>
+              <div className="club-activity-strip" aria-label={`${member.first_name || member.username || 'Member'} activity over the last 7 days`}>
+                {member.daily_activity.map((day) => (
+                  <span
+                    key={day.date}
+                    className={`club-activity-cell level-${getActivityLevel(day.score_percent)}`}
+                    title={formatActivityTitle(day.date, day.checkins, day.duration_hours)}
+                    aria-label={formatActivityTitle(day.date, day.checkins, day.duration_hours)}
+                  />
+                ))}
               </div>
               <div className="club-leaderboard-progress">
                 <span>{member.score_percent}%</span>
