@@ -886,6 +886,51 @@
 }
 
 .sched-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.sched-datetime-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 8px;
+  margin-top: 8px;
+}
+.sched-datetime-row input,
+.sched-reminder-row select {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0 10px;
+  font: inherit;
+}
+.sched-shortcuts,
+.sched-reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.sched-shortcuts button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sched-reminder-row {
+  justify-content: space-between;
+}
+.sched-reminder-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 700;
+}
 .sched-day {
   height: 56px;
   border: 1px solid var(--border);

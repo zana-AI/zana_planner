@@ -1742,6 +1742,16 @@ class PlannerAPIAdapter:
             notes: Optional notes for this session
         """
         try:
+            if planned_start:
+                try:
+                    from datetime import timezone
+
+                    parsed_start = datetime.fromisoformat(str(planned_start).replace("Z", "+00:00"))
+                    if parsed_start.tzinfo is None:
+                        parsed_start = parsed_start.replace(tzinfo=timezone.utc)
+                    planned_start = parsed_start.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                except Exception:
+                    pass
             with get_db_session() as session:
                 p_uuid = resolve_promise_uuid(session, str(user_id), promise_id)
             if not p_uuid:

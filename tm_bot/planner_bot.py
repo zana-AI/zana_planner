@@ -2291,6 +2291,16 @@ class PlannerBot:
         except Exception as exc:
             logger.exception("bootstrap_schedule_existing_users: failed to schedule promise_reminder_tick: %s", exc)
 
+        try:
+            job_scheduler.schedule_repeating(
+                name="plan_session_reminder_tick",
+                callback=self._dispatch_plan_session_reminders,
+                seconds=60,
+            )
+            logger.info("bootstrap_schedule_existing_users: scheduled plan_session_reminder_tick every 60 sec")
+        except Exception as exc:
+            logger.exception("bootstrap_schedule_existing_users: failed to schedule plan_session_reminder_tick: %s", exc)
+
     def run(self) -> None:
         """
         Start the bot. For Telegram this runs polling; for other platforms, their event loop.
@@ -2357,6 +2367,21 @@ class PlannerBot:
                 await bot.send_message(chat_id=user_id, text=msg)
             except Exception as exc:
                 logger.warning("[PromiseReminder] Failed to send to user %s: %s", user_id, exc)
+
+    async def _dispatch_plan_session_reminders(self, context) -> None:
+        """Scheduled callback (every 60 sec): send due planned-session reminders."""
+        bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+        if not bot_token:
+            logger.warning("[PlanSessionReminder] No bot token configured; skipping tick")
+            return
+        try:
+            from services.plan_session_reminder_service import PlanSessionReminderService
+
+            sent = await PlanSessionReminderService().dispatch_due_reminders(bot_token=bot_token)
+            if sent:
+                logger.info("[PlanSessionReminder] Sent %d planned-session reminder(s)", sent)
+        except Exception as exc:
+            logger.exception("[PlanSessionReminder] Tick failed: %s", exc)
 
 
 def main():
