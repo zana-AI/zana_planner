@@ -709,6 +709,8 @@ export interface PlanSession {
   planned_duration_min: number | null;
   notes: string | null;
   created_at: string;
+  reminder_enabled: boolean;
+  reminder_offset_min: number;
   checklist: PlanChecklistItem[];
 }
 
@@ -717,6 +719,8 @@ export interface PlanSessionIn {
   planned_start?: string;
   planned_duration_min?: number;
   notes?: string;
+  reminder_enabled?: boolean;
+  reminder_offset_min?: number;
   checklist?: Array<{ text: string; done?: boolean; position?: number }>;
 }
 

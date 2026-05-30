@@ -6999,7 +6999,20 @@ textarea.modal-input {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(232, 238, 252, 0.08);
+}
+
+.planned-sessions-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .planned-session-entry {
@@ -7061,6 +7074,17 @@ textarea.modal-input {
   font-weight: 700;
   color: var(--accent);
   background: rgba(99, 167, 247, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.planned-session-reminder {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #f8d06b;
+  background: rgba(248, 208, 107, 0.11);
+  border: 1px solid rgba(248, 208, 107, 0.2);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -7143,6 +7167,11 @@ textarea.modal-input {
   grid-column: 1 / -1;
 }
 
+.planned-session-add-form textarea.planned-session-add-title {
+  min-height: 54px;
+  resize: vertical;
+}
+
 .planned-session-add-date {
   box-sizing: border-box;
   min-width: 0;
@@ -7198,6 +7227,48 @@ textarea.modal-input {
 .planned-session-duration-popover .wheel-picker-container {
   margin: 0;
   max-width: none;
+}
+
+.planned-session-quick-row,
+.planned-session-reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.planned-session-quick-row button,
+.planned-session-reminder-row select {
+  min-height: 28px;
+  border: 1px solid rgba(232, 238, 252, 0.16);
+  border-radius: 4px;
+  background: rgba(232, 238, 252, 0.06);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.planned-session-quick-row button {
+  padding: 0 9px;
+  cursor: pointer;
+}
+
+.planned-session-reminder-row {
+  justify-content: space-between;
+}
+
+.planned-session-reminder-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.planned-session-reminder-row select {
+  padding: 0 8px;
 }
 
 .planned-session-add-actions {

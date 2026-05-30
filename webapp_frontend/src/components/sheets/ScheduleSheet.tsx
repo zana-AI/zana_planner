@@ -13,6 +13,22 @@ interface ScheduleSheetProps {
 }
 
 const TIME_SLOTS = ['09:00', '12:00', '15:00', '18:00'];
+const REMINDER_OPTIONS = [
+  { value: 0, label: 'At start' },
+  { value: 5, label: '5m before' },
+  { value: 10, label: '10m before' },
+  { value: 30, label: '30m before' },
+  { value: 60, label: '1h before' },
+];
+
+function todayKey() {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+}
 
 function formatDayLabel(dateKey: string) {
   const date = new Date(`${dateKey}T12:00:00`);
@@ -23,30 +39,37 @@ function formatDayLabel(dateKey: string) {
 }
 
 export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose, onSuccess }: ScheduleSheetProps) {
-  const [selectedDay, setSelectedDay] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(todayKey());
   const [selectedTime, setSelectedTime] = useState('09:00');
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderOffset, setReminderOffset] = useState('10');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const labels = useMemo(() => weekDays.map(formatDayLabel), [weekDays]);
+  const selectableWeekDays = useMemo(() => weekDays.filter(day => day >= todayKey()), [weekDays]);
+  const labels = useMemo(() => selectableWeekDays.map(formatDayLabel), [selectableWeekDays]);
 
   useEffect(() => {
     if (!open) return;
-    setSelectedDay(0);
+    setSelectedDate(todayKey());
     setSelectedTime('09:00');
+    setReminderEnabled(true);
+    setReminderOffset('10');
     setError('');
   }, [open]);
 
   const handleSubmit = async () => {
-    if (!weekDays[selectedDay]) return;
+    if (!selectedDate || !selectedTime) return;
     setIsSubmitting(true);
     setError('');
     try {
-      const plannedStart = `${weekDays[selectedDay]}T${selectedTime}:00`;
+      const plannedStart = new Date(`${selectedDate}T${selectedTime}:00`).toISOString();
       await apiClient.createPlanSession(promiseId, {
         title: 'Planned session',
         planned_start: plannedStart,
         planned_duration_min: 25,
+        reminder_enabled: reminderEnabled,
+        reminder_offset_min: Number(reminderOffset),
       });
       onSuccess('Session scheduled');
       onClose();
@@ -59,20 +82,55 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Schedule session" subtitle={promiseText}>
-      <p className="ds-caption">Pick a day</p>
-      <div className="sched-grid">
+      <p className="ds-caption">Date and time</p>
+      <div className="sched-datetime-row">
+        <input
+          type="date"
+          value={selectedDate}
+          min={todayKey()}
+          onChange={(event) => setSelectedDate(event.target.value)}
+        />
+        <input
+          type="time"
+          value={selectedTime}
+          onChange={(event) => setSelectedTime(event.target.value)}
+        />
+      </div>
+      <div className="sched-shortcuts">
+        <button type="button" onClick={() => setSelectedDate(todayKey())}>Today</button>
+        <button
+          type="button"
+          onClick={() => {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            setSelectedDate([
+              tomorrow.getFullYear(),
+              String(tomorrow.getMonth() + 1).padStart(2, '0'),
+              String(tomorrow.getDate()).padStart(2, '0'),
+            ].join('-'));
+          }}
+        >
+          Tomorrow
+        </button>
+      </div>
+      {labels.length > 0 ? (
+        <>
+          <p className="ds-caption" style={{ marginTop: 12 }}>This week</p>
+          <div className="sched-grid">
         {labels.map((label, index) => (
           <button
-            key={weekDays[index]}
+            key={selectableWeekDays[index]}
             type="button"
-            className={`sched-day${selectedDay === index ? ' is-active' : ''}`}
-            onClick={() => setSelectedDay(index)}
+            className={`sched-day${selectedDate === selectableWeekDays[index] ? ' is-active' : ''}`}
+            onClick={() => setSelectedDate(selectableWeekDays[index])}
           >
             <span>{label.dow}</span>
             <span className="num">{label.num}</span>
           </button>
         ))}
-      </div>
+          </div>
+        </>
+      ) : null}
       <p className="ds-caption" style={{ marginTop: 12 }}>Pick a time</p>
       <div className="time-row">
         {TIME_SLOTS.map((slot) => (
@@ -85,6 +143,25 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
             {slot}
           </button>
         ))}
+      </div>
+      <div className="sched-reminder-row">
+        <label>
+          <input
+            type="checkbox"
+            checked={reminderEnabled}
+            onChange={(event) => setReminderEnabled(event.target.checked)}
+          />
+          Reminder
+        </label>
+        <select
+          value={reminderOffset}
+          disabled={!reminderEnabled}
+          onChange={(event) => setReminderOffset(event.target.value)}
+        >
+          {REMINDER_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
       </div>
       {error ? <p className="ds-caption" style={{ color: 'var(--bad-500)', marginTop: 8 }}>{error}</p> : null}
       <Button variant="primary" fullWidth onClick={handleSubmit} disabled={isSubmitting} style={{ marginTop: 16 }}>

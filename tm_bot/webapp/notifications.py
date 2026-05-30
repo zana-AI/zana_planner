@@ -529,6 +529,7 @@ async def send_plan_session_reminder(
     title: Optional[str],
     planned_start: Optional[str],
     planned_duration_min: Optional[int],
+    reminder_offset_min: int = 10,
 ) -> None:
     """
     Send a Telegram reminder when a planned session is about to start.
@@ -572,6 +573,18 @@ async def send_plan_session_reminder(
             parts.append(f"🕐 {time_str}" + (f"  ·  {dur_str}" if dur_str else ""))
         elif dur_str:
             parts.append(f"⏱ {dur_str}")
+        heading = (
+            f"Reminder: starts in {reminder_offset_min} min"
+            if reminder_offset_min > 0
+            else "Time to focus"
+        )
+        parts = [f"*{heading}*\n\n{session_label}"]
+        if promise_text and promise_text.strip() and promise_text.strip() != session_label:
+            parts.append(f"Promise: {promise_text.strip()}")
+        if time_str:
+            parts.append(f"Start: {time_str}" + (f"  -  {dur_str}" if dur_str else ""))
+        elif dur_str:
+            parts.append(f"Duration: {dur_str}")
         message = "\n".join(parts)
 
         # Build inline keyboard (3 rows)
@@ -581,6 +594,16 @@ async def send_plan_session_reminder(
                     "▶️ Start Focus",
                     callback_data=encode_cb("psess_start", sid=str(plan_session_id), pid=promise_id),
                 )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Done",
+                    callback_data=encode_cb("psess_done", sid=str(plan_session_id)),
+                ),
+                InlineKeyboardButton(
+                    "Skip",
+                    callback_data=encode_cb("psess_skip", sid=str(plan_session_id)),
+                ),
             ],
             [
                 InlineKeyboardButton(

@@ -674,6 +674,8 @@ class PlanSessionIn(BaseModel):
     planned_start: Optional[str] = None
     planned_duration_min: Optional[int] = None
     notes: Optional[str] = None
+    reminder_enabled: bool = True
+    reminder_offset_min: int = Field(default=10, ge=0, le=1440)
     checklist: List[PlanChecklistItemIn] = []
 
 
@@ -686,6 +688,8 @@ class PlanSessionOut(BaseModel):
     planned_duration_min: Optional[int]
     notes: Optional[str]
     created_at: str
+    reminder_enabled: bool = True
+    reminder_offset_min: int = 10
     checklist: List[PlanChecklistItemOut]
 
 
@@ -698,6 +702,8 @@ class PlanSessionUpdate(BaseModel):
     planned_start: Optional[str] = None
     planned_duration_min: Optional[int] = None
     notes: Optional[str] = None
+    reminder_enabled: Optional[bool] = None
+    reminder_offset_min: Optional[int] = Field(default=None, ge=0, le=1440)
 
 
 class ChecklistItemToggle(BaseModel):

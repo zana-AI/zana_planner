@@ -464,6 +464,10 @@ class CallbackHandlers:
         elif action == "psess_del":
             plan_session_id = cb.get("sid")
             await self._handle_plan_session_delete(query, plan_session_id, user_lang)
+        elif action in {"psess_done", "psess_skip"}:
+            plan_session_id = cb.get("sid")
+            status = "done" if action == "psess_done" else "skipped"
+            await self._handle_plan_session_status(query, plan_session_id, status, user_lang)
         elif action == "club_cancel":
             await self._handle_club_cancel(query, cb.get("cid"), user_lang)
         elif action == "club_remind":
@@ -1005,13 +1009,6 @@ class CallbackHandlers:
         user_id = query.from_user.id
         try:
             sess = self.plan_keeper.sessions_service.start(user_id, promise_id)
-            # Mark the plan session as done now that the user is starting it
-            try:
-                self.plan_keeper.plan_sessions_repo.update_status(
-                    int(plan_session_id), user_id, "done"
-                )
-            except Exception:
-                pass  # Non-critical; focus session is already started
             message = get_message("session_started", user_lang, promise_id=promise_id)
             if not message or message == "session_started":
                 message = f"▶️ Focus session started for *#{promise_id}*!\n\nGood luck! 🎯"
@@ -1031,7 +1028,9 @@ class CallbackHandlers:
         try:
             from datetime import datetime, timezone, timedelta
             minutes_int = int(minutes or 60)
-            new_start = (datetime.now(timezone.utc) + timedelta(minutes=minutes_int)).isoformat()
+            new_start = (
+                datetime.now(timezone.utc) + timedelta(minutes=minutes_int)
+            ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
             result = self.plan_keeper.plan_sessions_repo.snooze_plan_session(
                 session_id=int(plan_session_id),
                 user_id=user_id,
@@ -1065,6 +1064,21 @@ class CallbackHandlers:
         except Exception as e:
             logger.error(f"Failed to delete plan_session {plan_session_id}: {e}")
             await query.answer("Failed to delete. Please try from the app.", show_alert=True)
+
+    async def _handle_plan_session_status(self, query, plan_session_id: str, status: str, user_lang: Language):
+        """Handle marking a planned session done or skipped from the reminder."""
+        user_id = query.from_user.id
+        try:
+            result = self.plan_keeper.plan_sessions_repo.update_status(int(plan_session_id), user_id, status)
+            if not result:
+                await query.answer("Session not found.", show_alert=True)
+                return
+            title = result.get("title") or "Session"
+            message = f"Done: {title}" if status == "done" else f"Skipped: {title}"
+            await query.edit_message_text(message, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to update plan_session {plan_session_id} to {status}: {e}")
+            await query.answer("Failed to update session. Please try from the app.", show_alert=True)
 
     @staticmethod
     def _parse_utc_datetime(value: Optional[str]) -> Optional[datetime]:

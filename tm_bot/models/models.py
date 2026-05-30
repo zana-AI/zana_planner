@@ -116,6 +116,8 @@ class PlanSession:
     planned_duration_min: Optional[int] = None
     notes: Optional[str] = None
     created_at: Optional[str] = None
+    reminder_enabled: bool = True
+    reminder_offset_min: int = 10
 
 
 @dataclass

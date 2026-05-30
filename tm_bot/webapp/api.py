@@ -282,6 +282,7 @@ def create_webapp_api(
                             promise_id = ps.get("promise_id") or ""
                             promise_text = ps.get("promise_text") or f"Promise {promise_id}"
 
+                            offset = ps.get("reminder_offset_min")
                             await send_plan_session_reminder(
                                 bot_token=bot_token,
                                 user_id=user_id,
@@ -291,6 +292,7 @@ def create_webapp_api(
                                 title=ps.get("title"),
                                 planned_start=ps.get("planned_start"),
                                 planned_duration_min=ps.get("planned_duration_min"),
+                                reminder_offset_min=int(10 if offset is None else offset),
                             )
                             plan_sessions_repo.mark_plan_session_notified(plan_session_id)
                             logger.info(
@@ -308,7 +310,8 @@ def create_webapp_api(
                     logger.error(f"Error in plan session reminder sweeper: {e}", exc_info=True)
                     await asyncio.sleep(60)  # Wait longer on error
 
-        asyncio.create_task(plan_session_reminder_sweeper())
+        if os.getenv("WEBAPP_PLAN_SESSION_REMINDER_SWEEPER", "0") == "1":
+            asyncio.create_task(plan_session_reminder_sweeper())
         logger.info("✓ Started plan session reminder sweeper (checks every 60 seconds)")
 
         # Start content learning pipeline dispatcher (every 5 seconds when enabled)

@@ -20,6 +20,22 @@ interface PromiseCardProps {
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 type PromiseProgressTone = 'strong' | 'on-track' | 'attention' | 'risk';
+type PlanSessionFormState = {
+  title: string;
+  planned_start: string;
+  planned_duration_min: string;
+  notes: string;
+  reminder_enabled: boolean;
+  reminder_offset_min: string;
+};
+
+const REMINDER_OFFSET_OPTIONS = [
+  { value: 0, label: 'At start' },
+  { value: 5, label: '5m before' },
+  { value: 10, label: '10m before' },
+  { value: 30, label: '30m before' },
+  { value: 60, label: '1h before' },
+];
 
 function formatDateTimeLocal(date: Date): string {
   const year = date.getFullYear();
@@ -30,12 +46,40 @@ function formatDateTimeLocal(date: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+function datetimeLocalFromIso(value: string | null | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 16);
+  return formatDateTimeLocal(date);
+}
+
+function datetimeLocalToIso(value: string): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString();
+}
+
 function roundUpToNextQuarterHour(date: Date): Date {
   const rounded = new Date(date);
   const minutes = rounded.getMinutes();
   const nextMinutes = Math.ceil((minutes + 1) / 15) * 15;
   rounded.setMinutes(nextMinutes, 0, 0);
   return rounded;
+}
+
+function shiftDateTimeLocal(value: string, minutes: number): string {
+  const base = value ? new Date(value) : new Date();
+  if (Number.isNaN(base.getTime())) return value;
+  base.setMinutes(base.getMinutes() + minutes);
+  return formatDateTimeLocal(base);
+}
+
+function reminderLabel(session: PlanSession): string {
+  if (!session.reminder_enabled) return 'No reminder';
+  const offset = session.reminder_offset_min ?? 10;
+  const match = REMINDER_OFFSET_OPTIONS.find(option => option.value === offset);
+  return match ? match.label : `${offset}m before`;
 }
 
 /**
@@ -140,7 +184,14 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [expandedChipId, setExpandedChipId] = useState<number | null>(null);
   // Which session is open for inline editing
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ title: '', planned_start: '', planned_duration_min: '', notes: '' });
+  const [editForm, setEditForm] = useState<PlanSessionFormState>({
+    title: '',
+    planned_start: '',
+    planned_duration_min: '',
+    notes: '',
+    reminder_enabled: true,
+    reminder_offset_min: '10',
+  });
   const [editFormSaving, setEditFormSaving] = useState(false);
   const [activeDurationPicker, setActiveDurationPicker] = useState<'add' | 'edit' | null>(null);
 
@@ -148,12 +199,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     setEditingSessionId(session.id);
     setExpandedChipId(null);
     setActiveDurationPicker(null);
-    const isoStart = session.planned_start ?? '';
     setEditForm({
       title: session.title ?? '',
-      planned_start: isoStart ? isoStart.substring(0, 16) : '', // datetime-local needs YYYY-MM-DDTHH:MM
+      planned_start: datetimeLocalFromIso(session.planned_start),
       planned_duration_min: session.planned_duration_min?.toString() ?? '',
       notes: session.notes ?? '',
+      reminder_enabled: session.reminder_enabled ?? true,
+      reminder_offset_min: String(session.reminder_offset_min ?? 10),
     });
   };
 
@@ -164,9 +216,11 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     try {
       const updated = await apiClient.updatePlanSession(editingSessionId, {
         title: editForm.title || undefined,
-        planned_start: editForm.planned_start || undefined,
+        planned_start: datetimeLocalToIso(editForm.planned_start),
         planned_duration_min: editForm.planned_duration_min ? Number(editForm.planned_duration_min) : undefined,
         notes: editForm.notes || undefined,
+        reminder_enabled: editForm.reminder_enabled,
+        reminder_offset_min: Number(editForm.reminder_offset_min),
       });
       setPlanSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
       setEditingSessionId(null);
@@ -179,7 +233,14 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const [logDoneSessionId, setLogDoneSessionId] = useState<number | null>(null);
   // Inline add-session form
   const [showAddForm, setShowAddForm] = useState(false);
-  const [addForm, setAddForm] = useState({ title: '', planned_start: '', planned_duration_min: '' });
+  const [addForm, setAddForm] = useState<PlanSessionFormState>({
+    title: '',
+    planned_start: '',
+    planned_duration_min: '',
+    notes: '',
+    reminder_enabled: true,
+    reminder_offset_min: '10',
+  });
   const [addFormSaving, setAddFormSaving] = useState(false);
 
   // When user taps "Done" on a chip, open LogActionModal pre-filled with the session data.
@@ -223,11 +284,21 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     try {
       const created = await apiClient.createPlanSession(id, {
         title: addForm.title || undefined,
-        planned_start: addForm.planned_start || undefined,
+        planned_start: datetimeLocalToIso(addForm.planned_start),
         planned_duration_min: addForm.planned_duration_min ? Number(addForm.planned_duration_min) : undefined,
+        notes: addForm.notes || undefined,
+        reminder_enabled: addForm.reminder_enabled,
+        reminder_offset_min: Number(addForm.reminder_offset_min),
       });
       setPlanSessions(prev => [...prev, created]);
-      setAddForm({ title: '', planned_start: '', planned_duration_min: '' });
+      setAddForm({
+        title: '',
+        planned_start: '',
+        planned_duration_min: '',
+        notes: '',
+        reminder_enabled: true,
+        reminder_offset_min: '10',
+      });
       setShowAddForm(false);
       setActiveDurationPicker(null);
     } catch { /* ignore */ } finally {
@@ -236,14 +307,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   };
 
   const getDefaultPlannedStart = () => {
-    const now = new Date();
-    const todayKey = formatDateTimeLocal(now).slice(0, 10);
-    if (weekDays.includes(todayKey)) {
-      return formatDateTimeLocal(roundUpToNextQuarterHour(now));
-    }
-
-    const firstWeekDay = weekDays[0] || todayKey;
-    return `${firstWeekDay}T09:00`;
+    return formatDateTimeLocal(roundUpToNextQuarterHour(new Date()));
   };
 
   const openAddSessionForm = () => {
@@ -251,6 +315,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       title: '',
       planned_start: getDefaultPlannedStart(),
       planned_duration_min: '25',
+      notes: '',
+      reminder_enabled: true,
+      reminder_offset_min: '10',
     });
     setShowAddForm(true);
     setExpandedChipId(null);
@@ -259,7 +326,14 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
 
   const cancelAddSessionForm = () => {
     setShowAddForm(false);
-    setAddForm({ title: '', planned_start: '', planned_duration_min: '' });
+    setAddForm({
+      title: '',
+      planned_start: '',
+      planned_duration_min: '',
+      notes: '',
+      reminder_enabled: true,
+      reminder_offset_min: '10',
+    });
     setActiveDurationPicker(null);
   };
   
@@ -1071,8 +1145,12 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       )}
 
       {/* Planned sessions strip — visible without expanding */}
-      {currentRecurring && (planSessions.filter(s => s.status === 'planned').length > 0 || showAddForm) && (
+      {(planSessions.filter(s => s.status === 'planned').length > 0 || showAddForm) && (
         <div className="planned-sessions-strip">
+          <div className="planned-sessions-strip-header">
+            <span>Planned sessions</span>
+            <span>{planSessions.filter(s => s.status === 'planned').length}</span>
+          </div>
           {planSessions.filter(s => s.status === 'planned').map(session => {
             const timeStr = session.planned_start
               ? new Date(session.planned_start).toLocaleString(undefined, {
@@ -1129,6 +1207,30 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       value={editForm.notes}
                       onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
                     />
+                    <div className="planned-session-quick-row">
+                      <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: getDefaultPlannedStart() }))}>Today</button>
+                      <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 60) }))}>+1h</button>
+                      <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 1440) }))}>Tomorrow</button>
+                    </div>
+                    <div className="planned-session-reminder-row">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={editForm.reminder_enabled}
+                          onChange={e => setEditForm(f => ({ ...f, reminder_enabled: e.target.checked }))}
+                        />
+                        Reminder
+                      </label>
+                      <select
+                        value={editForm.reminder_offset_min}
+                        disabled={!editForm.reminder_enabled}
+                        onChange={e => setEditForm(f => ({ ...f, reminder_offset_min: e.target.value }))}
+                      >
+                        {REMINDER_OFFSET_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="planned-session-add-actions">
                       <button type="submit" className="planned-session-action planned-session-action--done" disabled={editFormSaving}>
                         {editFormSaving ? '…' : 'Save'}
@@ -1150,6 +1252,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       {session.planned_duration_min && (
                         <span className="planned-session-dur">{session.planned_duration_min}m</span>
                       )}
+                      <span className="planned-session-reminder">{reminderLabel(session)}</span>
                     </button>
                     {isOpen && (
                       <div className="planned-session-actions">
@@ -1219,6 +1322,37 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   )}
                 </div>
               </div>
+              <div className="planned-session-quick-row">
+                <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: getDefaultPlannedStart() }))}>Today</button>
+                <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 60) }))}>+1h</button>
+                <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 1440) }))}>Tomorrow</button>
+              </div>
+              <textarea
+                className="planned-session-add-input planned-session-add-title"
+                placeholder="Notes (optional)"
+                value={addForm.notes}
+                onChange={e => setAddForm(f => ({ ...f, notes: e.target.value }))}
+                rows={2}
+              />
+              <div className="planned-session-reminder-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={addForm.reminder_enabled}
+                    onChange={e => setAddForm(f => ({ ...f, reminder_enabled: e.target.checked }))}
+                  />
+                  Reminder
+                </label>
+                <select
+                  value={addForm.reminder_offset_min}
+                  disabled={!addForm.reminder_enabled}
+                  onChange={e => setAddForm(f => ({ ...f, reminder_offset_min: e.target.value }))}
+                >
+                  {REMINDER_OFFSET_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
               <div className="planned-session-add-actions">
                 <button type="submit" className="planned-session-action planned-session-action--done" disabled={addFormSaving}>
                   {addFormSaving ? '…' : 'Save'}
@@ -1257,15 +1391,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             + Log Time
           </button>
         )}
-        {currentRecurring && (
-          <button
-            className="card-add-session-button"
-            onClick={openAddSessionForm}
-            title="Add planned session"
-          >
-            + Add Session
-          </button>
-        )}
+        <button
+          className="card-add-session-button"
+          onClick={openAddSessionForm}
+          title="Add planned session"
+        >
+          + Add Session
+        </button>
         {isBudget && (
           <div className="budget-bar-container">
             <div className="budget-bar">
