@@ -6,14 +6,41 @@ from typing import List, Optional
 
 from sqlalchemy import text
 
-from db.postgres_db import get_db_session, resolve_promise_uuid, utc_now_iso
+from db.postgres_db import get_db_session, get_table_columns, resolve_promise_uuid, utc_now_iso
 
 
-PLAN_SESSION_SELECT = """
-    id, promise_uuid, user_id, title, status, planned_start,
-    planned_duration_min, notes, content_id, created_at, notified_at,
-    reminder_enabled, reminder_offset_min
-"""
+PLAN_SESSION_BASE_COLUMNS = [
+    "id",
+    "promise_uuid",
+    "user_id",
+    "title",
+    "status",
+    "planned_start",
+    "planned_duration_min",
+    "notes",
+    "created_at",
+]
+
+
+def _plan_session_columns(session) -> set[str]:
+    return set(get_table_columns(session, "plan_sessions"))
+
+
+def _plan_session_select(columns: set[str], alias: str = "") -> str:
+    prefix = f"{alias}." if alias else ""
+    parts = [f"{prefix}{column}" for column in PLAN_SESSION_BASE_COLUMNS]
+    optional_columns = {
+        "content_id": "NULL::text",
+        "notified_at": "NULL::text",
+        "reminder_enabled": "1",
+        "reminder_offset_min": "10",
+    }
+    for column, fallback in optional_columns.items():
+        if column in columns:
+            parts.append(f"{prefix}{column}")
+        else:
+            parts.append(f"{fallback} AS {column}")
+    return ", ".join(parts)
 
 
 def _row_to_dict(row) -> dict:
@@ -36,9 +63,10 @@ class PlanSessionsRepository:
     def list_for_promise(self, promise_uuid: str, user_id: int) -> List[dict]:
         user = str(user_id)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
             rows = session.execute(
                 text(f"""
-                    SELECT {PLAN_SESSION_SELECT}
+                    SELECT {_plan_session_select(columns)}
                     FROM plan_sessions
                     WHERE promise_uuid = :promise_uuid AND user_id = :user_id
                     ORDER BY planned_start NULLS LAST, created_at
@@ -58,32 +86,57 @@ class PlanSessionsRepository:
         reminder_enabled = data.get("reminder_enabled", True)
         reminder_offset_min = data.get("reminder_offset_min", 10)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
+            insert_columns = [
+                "promise_uuid",
+                "user_id",
+                "title",
+                "status",
+                "planned_start",
+                "planned_duration_min",
+                "notes",
+                "created_at",
+            ]
+            values = [
+                ":promise_uuid",
+                ":user_id",
+                ":title",
+                "'planned'",
+                ":planned_start",
+                ":planned_duration_min",
+                ":notes",
+                ":created_at",
+            ]
+            params = {
+                "promise_uuid": promise_uuid,
+                "user_id": user,
+                "title": data.get("title"),
+                "planned_start": data.get("planned_start"),
+                "planned_duration_min": data.get("planned_duration_min"),
+                "notes": data.get("notes"),
+                "created_at": utc_now_iso(),
+            }
+            if "content_id" in columns:
+                insert_columns.append("content_id")
+                values.append(":content_id")
+                params["content_id"] = data.get("content_id")
+            if "reminder_enabled" in columns:
+                insert_columns.append("reminder_enabled")
+                values.append(":reminder_enabled")
+                params["reminder_enabled"] = 1 if reminder_enabled else 0
+            if "reminder_offset_min" in columns:
+                insert_columns.append("reminder_offset_min")
+                values.append(":reminder_offset_min")
+                params["reminder_offset_min"] = int(reminder_offset_min)
             result = session.execute(
-                text("""
+                text(f"""
                     INSERT INTO plan_sessions
-                        (promise_uuid, user_id, title, status, planned_start,
-                         planned_duration_min, notes, content_id, created_at,
-                         reminder_enabled, reminder_offset_min)
+                        ({", ".join(insert_columns)})
                     VALUES
-                        (:promise_uuid, :user_id, :title, 'planned', :planned_start,
-                         :planned_duration_min, :notes, :content_id, :created_at,
-                         :reminder_enabled, :reminder_offset_min)
-                    RETURNING id, promise_uuid, user_id, title, status, planned_start,
-                              planned_duration_min, notes, content_id, created_at,
-                              notified_at, reminder_enabled, reminder_offset_min
+                        ({", ".join(values)})
+                    RETURNING {_plan_session_select(columns)}
                 """),
-                {
-                    "promise_uuid": promise_uuid,
-                    "user_id": user,
-                    "title": data.get("title"),
-                    "planned_start": data.get("planned_start"),
-                    "planned_duration_min": data.get("planned_duration_min"),
-                    "notes": data.get("notes"),
-                    "content_id": data.get("content_id"),
-                    "created_at": utc_now_iso(),
-                    "reminder_enabled": 1 if reminder_enabled else 0,
-                    "reminder_offset_min": int(reminder_offset_min),
-                },
+                params,
             ).mappings().fetchone()
 
             session_id = result["id"]
@@ -111,9 +164,12 @@ class PlanSessionsRepository:
         """
         user = str(user_id)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
+            if "content_id" not in columns:
+                return None
             row = session.execute(
                 text(f"""
-                    SELECT {PLAN_SESSION_SELECT}
+                    SELECT {_plan_session_select(columns)}
                     FROM plan_sessions
                     WHERE promise_uuid = :promise_uuid
                       AND user_id = :user_id
@@ -128,9 +184,10 @@ class PlanSessionsRepository:
     def get(self, session_id: int, user_id: int) -> Optional[dict]:
         user = str(user_id)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
             row = session.execute(
                 text(f"""
-                    SELECT {PLAN_SESSION_SELECT}
+                    SELECT {_plan_session_select(columns)}
                     FROM plan_sessions
                     WHERE id = :session_id AND user_id = :user_id
                 """),
@@ -144,11 +201,12 @@ class PlanSessionsRepository:
     def update_status(self, session_id: int, user_id: int, status: str) -> Optional[dict]:
         user = str(user_id)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
             result = session.execute(
                 text(f"""
                     UPDATE plan_sessions SET status = :status
                     WHERE id = :session_id AND user_id = :user_id
-                    RETURNING {PLAN_SESSION_SELECT}
+                    RETURNING {_plan_session_select(columns)}
                 """),
                 {"status": status, "session_id": session_id, "user_id": user},
             ).mappings().fetchone()
@@ -177,21 +235,26 @@ class PlanSessionsRepository:
             "reminder_enabled",
             "reminder_offset_min",
         }
-        fields = {k: v for k, v in data.items() if k in allowed}
-        if not fields:
-            return self.get(session_id, int(user_id))
-        if "reminder_enabled" in fields:
-            fields["reminder_enabled"] = 1 if fields["reminder_enabled"] else 0
-        set_clause = ", ".join(f"{k} = :{k}" for k in fields)
-        if "planned_start" in fields or "reminder_offset_min" in fields or "reminder_enabled" in fields:
-            set_clause += ", notified_at = NULL"
-        params = {**fields, "session_id": session_id, "user_id": user}
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
+            allowed = {field for field in allowed if field in columns}
+            fields = {k: v for k, v in data.items() if k in allowed}
+            if not fields:
+                return self.get(session_id, int(user_id))
+            if "reminder_enabled" in fields:
+                fields["reminder_enabled"] = 1 if fields["reminder_enabled"] else 0
+            set_clause = ", ".join(f"{k} = :{k}" for k in fields)
+            if (
+                "notified_at" in columns
+                and ("planned_start" in fields or "reminder_offset_min" in fields or "reminder_enabled" in fields)
+            ):
+                set_clause += ", notified_at = NULL"
+            params = {**fields, "session_id": session_id, "user_id": user}
             result = session.execute(
                 text(f"""
                     UPDATE plan_sessions SET {set_clause}
                     WHERE id = :session_id AND user_id = :user_id
-                    RETURNING {PLAN_SESSION_SELECT}
+                    RETURNING {_plan_session_select(columns)}
                 """),
                 params,
             ).mappings().fetchone()
@@ -242,21 +305,22 @@ class PlanSessionsRepository:
         max_upper_bound = (now_utc + timedelta(minutes=1440 + lookahead_minutes)).isoformat().replace("+00:00", "Z")
 
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
+            select_columns = _plan_session_select(columns, alias="ps")
+            reminder_enabled_filter = "AND ps.reminder_enabled = 1" if "reminder_enabled" in columns else ""
+            notified_filter = "AND ps.notified_at IS NULL" if "notified_at" in columns else ""
             rows = session.execute(
-                text("""
-                    SELECT ps.id, ps.promise_uuid, ps.user_id, ps.title, ps.status,
-                           ps.planned_start, ps.planned_duration_min, ps.notes, ps.content_id,
-                           ps.created_at, ps.notified_at, ps.reminder_enabled,
-                           ps.reminder_offset_min,
+                text(f"""
+                    SELECT {select_columns},
                            p.current_id AS promise_id, p.text AS promise_text
                     FROM plan_sessions ps
                     LEFT JOIN promises p ON p.promise_uuid = ps.promise_uuid
                     WHERE ps.status = 'planned'
-                      AND ps.reminder_enabled = 1
+                      {reminder_enabled_filter}
                       AND ps.planned_start IS NOT NULL
                       AND ps.planned_start >= :lower_bound
                       AND ps.planned_start <= :max_upper_bound
-                      AND ps.notified_at IS NULL
+                      {notified_filter}
                     ORDER BY ps.planned_start
                 """),
                 {"lower_bound": lower_bound, "max_upper_bound": max_upper_bound},
@@ -299,12 +363,18 @@ class PlanSessionsRepository:
         """Update planned_start and reset notified_at so a new reminder will fire."""
         user = str(user_id)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
+            extra_sets = ""
+            if "notified_at" in columns:
+                extra_sets += ", notified_at = NULL"
+            if "reminder_offset_min" in columns:
+                extra_sets += ", reminder_offset_min = 0"
             result = session.execute(
                 text(f"""
                     UPDATE plan_sessions
-                    SET planned_start = :planned_start, notified_at = NULL, reminder_offset_min = 0
+                    SET planned_start = :planned_start{extra_sets}
                     WHERE id = :session_id AND user_id = :user_id
-                    RETURNING {PLAN_SESSION_SELECT}
+                    RETURNING {_plan_session_select(columns)}
                 """),
                 {"session_id": session_id, "user_id": user, "planned_start": new_planned_start},
             ).mappings().fetchone()
@@ -319,11 +389,10 @@ class PlanSessionsRepository:
             return {}
         user = str(user_id)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
             rows = session.execute(
-                text("""
-                    SELECT id, promise_uuid, title, status,
-                           planned_start, planned_duration_min, notes, content_id,
-                           created_at, notified_at, reminder_enabled, reminder_offset_min
+                text(f"""
+                    SELECT {_plan_session_select(columns)}
                     FROM plan_sessions
                     WHERE promise_uuid = ANY(:uuids) AND user_id = :user_id
                       AND status = 'planned'
@@ -332,13 +401,13 @@ class PlanSessionsRepository:
                 {"uuids": promise_uuids, "user_id": user},
             ).mappings().fetchall()
 
-        result: dict = {}
-        for r in rows:
-            uuid = r["promise_uuid"]
-            if uuid not in result:
-                result[uuid] = []
-            result[uuid].append(_row_to_dict(r))
-        return result
+            result: dict = {}
+            for r in rows:
+                uuid = r["promise_uuid"]
+                if uuid not in result:
+                    result[uuid] = []
+                result[uuid].append(_row_to_dict(r))
+            return result
 
     def list_upcoming_for_user(self, user_id: int, since_iso: str, until_iso: str) -> List[dict]:
         """List all planned sessions for a user between two ISO datetime strings.
@@ -348,12 +417,10 @@ class PlanSessionsRepository:
         """
         user = str(user_id)
         with get_db_session() as session:
+            columns = _plan_session_columns(session)
             rows = session.execute(
-                text("""
-                    SELECT ps.id, ps.promise_uuid, ps.user_id, ps.title, ps.status,
-                           ps.planned_start, ps.planned_duration_min, ps.notes, ps.content_id,
-                           ps.created_at, ps.notified_at, ps.reminder_enabled,
-                           ps.reminder_offset_min,
+                text(f"""
+                    SELECT {_plan_session_select(columns, alias="ps")},
                            p.current_id AS promise_id, p.text AS promise_text
                     FROM plan_sessions ps
                     LEFT JOIN promises p ON p.promise_uuid = ps.promise_uuid

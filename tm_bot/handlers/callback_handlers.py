@@ -1074,8 +1074,8 @@ class CallbackHandlers:
                 await query.answer("Session not found.", show_alert=True)
                 return
             title = result.get("title") or "Session"
-            message = f"Done: {title}" if status == "done" else f"Skipped: {title}"
-            await query.edit_message_text(message, parse_mode="Markdown")
+            message = f"✅ Done: {title}" if status == "done" else f"⏭ Skipped: {title}"
+            await query.edit_message_text(message)
         except Exception as e:
             logger.error(f"Failed to update plan_session {plan_session_id} to {status}: {e}")
             await query.answer("Failed to update session. Please try from the app.", show_alert=True)

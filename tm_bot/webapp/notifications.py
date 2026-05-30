@@ -568,11 +568,6 @@ async def send_plan_session_reminder(
             else:
                 dur_str = f"{m}min"
 
-        parts = [f"⏰ *Time to focus!*\n\n📌 {session_label}"]
-        if time_str:
-            parts.append(f"🕐 {time_str}" + (f"  ·  {dur_str}" if dur_str else ""))
-        elif dur_str:
-            parts.append(f"⏱ {dur_str}")
         heading = (
             f"Reminder: starts in {reminder_offset_min} min"
             if reminder_offset_min > 0
