@@ -1,278 +1,189 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Target, Brain, BarChart2, Send, TrendingDown, Mic, Globe, Timer, Bell, Users } from 'lucide-react';
-import { TelegramLogin } from './TelegramLogin';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, BarChart3, BrainCircuit, CalendarClock, CheckCircle2, MessageCircle, Sparkles, Users } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { AppLogo } from './ui/AppLogo';
+import { TelegramLogin } from './TelegramLogin';
+import { HomeMockupGallery, HomeMockupPreviewStack } from './home/HomeMockups';
 
-// Helper to detect mobile device
 function isMobileDevice(): boolean {
   if (typeof window === 'undefined') return false;
-  
-  // Check user agent
+
   const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
   const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
-  
-  // Check for touch support
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  
-  // Check viewport width (mobile typically < 768px)
   const isSmallViewport = window.innerWidth < 768;
-  
+
   return mobileRegex.test(userAgent) || (hasTouch && isSmallViewport);
 }
 
+const valueCards = [
+  {
+    icon: Users,
+    title: 'Stay close to your people',
+    body: 'Create clubs for routines you want to keep with friends: running, study, deep work, language practice, anything that benefits from being visible.',
+  },
+  {
+    icon: CalendarClock,
+    title: 'Turn intent into a next session',
+    body: 'Promises become scheduled actions, reminders, and check-ins, so the week has a shape before motivation disappears.',
+  },
+  {
+    icon: BrainCircuit,
+    title: 'Let agentic AI keep the thread',
+    body: 'Xaana watches progress, spots drift, suggests the next move, and nudges the right people at the right moment.',
+  },
+  {
+    icon: BarChart3,
+    title: 'See what is actually working',
+    body: 'Weekly progress, club momentum, and simple visualizations show whether your routines are becoming real.',
+  },
+];
+
 export function HomePage() {
   const navigate = useNavigate();
-  const [showLogin, setShowLogin] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [botUsername, setBotUsername] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  
-  // Check if user is already authenticated
+
   useEffect(() => {
     const token = localStorage.getItem('telegram_auth_token');
     const hasInitData = window.Telegram?.WebApp?.initData;
-    
+
     if (token || hasInitData) {
-      // User is authenticated, redirect to dashboard
       setIsAuthenticated(true);
       navigate('/dashboard', { replace: true });
-    } else {
-      // Show login option
-      setIsAuthenticated(false);
-      setShowLogin(true);
+      return;
     }
+
+    setIsAuthenticated(false);
   }, [navigate]);
 
-  // Detect mobile on mount and resize
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(isMobileDevice());
     };
-    
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Fetch bot username for Telegram links
   useEffect(() => {
     const fetchBotUsername = async () => {
       try {
         const response = await fetch('/api/auth/bot-username');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.bot_username) {
-            setBotUsername(data.bot_username.trim());
-          }
-        }
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.bot_username) setBotUsername(data.bot_username.trim());
       } catch (error) {
         console.error('Failed to fetch bot username:', error);
       }
     };
-    
-    if (isMobile) {
-      fetchBotUsername();
-    }
-  }, [isMobile]);
+
+    fetchBotUsername();
+  }, []);
 
   const handleAuthSuccess = (token: string) => {
     apiClient.setAuthToken(token);
     navigate('/dashboard', { replace: true });
   };
 
-  // Build Telegram deep links
   const telegramBotLink = botUsername ? `https://t.me/${botUsername}` : 'https://t.me/zana_planner_bot';
   const telegramWebAppLink = botUsername ? `https://t.me/${botUsername}?startapp=webapp` : 'https://t.me/zana_planner_bot?startapp=webapp';
 
-  // Don't show hero section if authenticated
-  if (isAuthenticated) {
-    return null; // Will redirect to dashboard anyway
-  }
+  if (isAuthenticated) return null;
 
   return (
-    <div className="home-page">
-      {/* Login section: shown in any browser (phone or desktop) when not authenticated.
-          Never shown inside the Telegram Mini App since initData handles auth there. */}
-      {showLogin && (
-        <section className="home-login-section" style={{
-          background: 'rgba(11, 16, 32, 0.95)',
-          padding: '2rem',
-          margin: '2rem auto',
-          maxWidth: '500px',
-          borderRadius: '12px',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ color: '#fff', marginBottom: '0.5rem' }}>Sign in to Xaana</h2>
-          <p style={{ color: '#aaa', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-            Use your Telegram account to continue
+    <main className="home-page home-page-v2">
+      <section className="home-v2-hero" aria-labelledby="home-title">
+        <div className="home-v2-hero-copy">
+          <div className="home-v2-brand-row">
+            <AppLogo size={34} />
+            <span>Xaana</span>
+          </div>
+          <p className="home-v2-eyebrow">Resolutions, kept together</p>
+          <h1 id="home-title">Build routines with friends and an AI that keeps the week moving.</h1>
+          <p className="home-v2-lede">
+            Make a promise, plan the next session, check in with your club, and see progress before motivation fades.
           </p>
-          <TelegramLogin onAuthSuccess={handleAuthSuccess} />
-          {isMobile && (
-            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
-                Or open directly in the app
-              </p>
-              <a
-                href={telegramWebAppLink}
-                style={{
-                  display: 'inline-block',
-                  textDecoration: 'none',
-                  color: '#54a0ff',
-                  fontSize: '0.9rem',
-                }}
-              >
-                Open Xaana in Telegram →
-              </a>
-            </div>
-          )}
-        </section>
-      )}
-      
-      {/* Hero Section - only show when not authenticated */}
-      {!isAuthenticated && (
-        <section className="home-hero">
-          <div className="home-hero-content">
-            <h1 className="home-hero-title">
-              Xaana
-            </h1>
-            <p className="home-hero-subtitle">
-              Your AI-powered assistant for productivity and goal achievement
-            </p>
-            <p className="home-hero-description">
-              Take control of your time, track your promises, and achieve your goals with intelligent insights and personalized recommendations.
-            </p>
-            <a 
-              href={telegramBotLink}
-              className="home-cta-button"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+          <div className="home-v2-actions">
+            <a href={telegramBotLink} className="home-v2-button home-v2-button-primary" target="_blank" rel="noopener noreferrer">
               Start with Xaana
+              <ArrowRight size={18} />
+            </a>
+            <a href="#how-it-works" className="home-v2-button home-v2-button-secondary">
+              See how it works
             </a>
           </div>
-        </section>
-      )}
+          <div className="home-v2-proof" aria-label="Core Xaana workflow">
+            <span><CheckCircle2 size={16} /> Promise</span>
+            <span><CalendarClock size={16} /> Plan</span>
+            <span><MessageCircle size={16} /> Check in</span>
+            <span><Sparkles size={16} /> Adjust</span>
+          </div>
+        </div>
 
-      {/* Three Key Features Section */}
-      <section className="home-features">
-        <h2 className="home-section-title">Why Choose Xaana?</h2>
-        <div className="home-features-grid">
-          <div className="home-feature-card">
-            <div className="home-feature-icon"><Target size={44} strokeWidth={1.5} /></div>
-            <h3 className="home-feature-title">Goal Tracking</h3>
-            <p className="home-feature-description">
-              Track your promises (goals) and log time spent on them. Stay organized and focused on what matters most.
-            </p>
-          </div>
-          
-          <div className="home-feature-card">
-            <div className="home-feature-icon"><Brain size={44} strokeWidth={1.5} /></div>
-            <h3 className="home-feature-title">AI Insights</h3>
-            <p className="home-feature-description">
-              Get personalized recommendations and daily focus areas powered by advanced AI. Know exactly what to work on today.
-            </p>
-          </div>
-          
-          <div className="home-feature-card">
-            <div className="home-feature-icon"><BarChart2 size={44} strokeWidth={1.5} /></div>
-            <h3 className="home-feature-title">Progress Visualization</h3>
-            <p className="home-feature-description">
-              Visualize your progress with weekly reports and detailed analytics. See how you're advancing toward your goals.
-            </p>
-          </div>
+        <div className="home-v2-hero-visual">
+          <HomeMockupPreviewStack />
         </div>
       </section>
 
-      {/* Templates Section */}
-      <section className="home-features">
-        <h2 className="home-section-title">Promise Marketplace</h2>
-        <div className="home-features-grid">
-          <div className="home-feature-card">
-            <div className="home-feature-icon"><Target size={44} strokeWidth={1.5} /></div>
-            <h3 className="home-feature-title">Curated Promises</h3>
-            <p className="home-feature-description">
-              Start with proven promise templates. From fitness goals to language learning, choose promises designed for success.
-            </p>
-          </div>
-          
-          <div className="home-feature-card">
-            <div className="home-feature-icon"><Send size={44} strokeWidth={1.5} /></div>
-            <h3 className="home-feature-title">Promise Suggestions</h3>
-            <p className="home-feature-description">
-              Send a promise idea to a friend, or accept one from your inbox when someone knows what would help.
-            </p>
-          </div>
-          
-          <div className="home-feature-card">
-            <div className="home-feature-icon"><TrendingDown size={44} strokeWidth={1.5} /></div>
-            <h3 className="home-feature-title">Distraction Budgets</h3>
-            <p className="home-feature-description">
-              Set limits on distractions like social media. Track and stay within your weekly time budgets.
-            </p>
-          </div>
+      <section className="home-v2-login" aria-label="Sign in">
+        <div>
+          <h2>Sign in to Xaana</h2>
+          <p>Use Telegram to continue into your routines, clubs, and weekly progress.</p>
         </div>
-      </section>
-
-      {/* Additional Features Section */}
-      <section className="home-additional-features">
-        <h2 className="home-section-title">More Features</h2>
-        <div className="home-additional-grid">
-          <div className="home-additional-item">
-            <span className="home-additional-icon"><Mic size={26} strokeWidth={1.6} /></span>
-            <span className="home-additional-text">Voice &amp; Image Input</span>
-          </div>
-          <div className="home-additional-item">
-            <span className="home-additional-icon"><Globe size={26} strokeWidth={1.6} /></span>
-            <span className="home-additional-text">Multi-language Support</span>
-          </div>
-          <div className="home-additional-item">
-            <span className="home-additional-icon"><Timer size={26} strokeWidth={1.6} /></span>
-            <span className="home-additional-text">Focus Sessions</span>
-          </div>
-          <div className="home-additional-item">
-            <span className="home-additional-icon"><Bell size={26} strokeWidth={1.6} /></span>
-            <span className="home-additional-text">Smart Reminders</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Community Preview Section */}
-      <section className="home-community">
-        <div className="home-community-card">
-          <div className="home-community-icon"><Users size={44} strokeWidth={1.5} /></div>
-          <h3 className="home-community-title">Join the Community</h3>
-          <p className="home-community-description">
-            Connect with other goal-achievers, share your progress, and stay motivated together.
-          </p>
-          <Link 
-            to="/community" 
-            className="home-cta-button"
-            style={{ marginTop: '1rem', display: 'inline-block' }}
-          >
-            View Community
-          </Link>
-        </div>
-      </section>
-
-      {/* Final CTA Section - only show when not authenticated */}
-      {!isAuthenticated && (
-        <section className="home-final-cta">
-          <h2 className="home-cta-title">Ready to Achieve Your Goals?</h2>
-          <p className="home-cta-subtitle">
-            Start your productivity journey with Xaana today
-          </p>
-          <a 
-            href={telegramBotLink}
-            className="home-cta-button home-cta-button-large"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Get Started on Telegram
+        <TelegramLogin onAuthSuccess={handleAuthSuccess} />
+        {isMobile && (
+          <a href={telegramWebAppLink} className="home-v2-telegram-link">
+            Open directly in Telegram
+            <ArrowRight size={16} />
           </a>
-        </section>
-      )}
-    </div>
+        )}
+      </section>
+
+      <section id="how-it-works" className="home-v2-values" aria-labelledby="home-values-title">
+        <div className="home-v2-section-heading">
+          <p className="home-v2-eyebrow">How Xaana helps</p>
+          <h2 id="home-values-title">Less dashboard, more follow-through.</h2>
+          <p>
+            Xaana is built for the gap between deciding something matters and actually repeating it next week.
+          </p>
+        </div>
+        <div className="home-v2-value-grid">
+          {valueCards.map((item) => {
+            const Icon = item.icon;
+            return (
+              <article key={item.title} className="home-v2-value-card">
+                <Icon size={24} />
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="home-v2-showcase" aria-labelledby="home-showcase-title">
+        <div className="home-v2-section-heading">
+          <p className="home-v2-eyebrow">Product moments</p>
+          <h2 id="home-showcase-title">A week you can act on.</h2>
+          <p>
+            The home page uses synthetic app states, not user data, to show the surfaces that matter most now.
+          </p>
+        </div>
+        <HomeMockupGallery />
+      </section>
+
+      <section className="home-v2-final">
+        <h2>Start with one promise and one person.</h2>
+        <p>Xaana helps the routine become visible, social, and easier to keep.</p>
+        <a href={telegramBotLink} className="home-v2-button home-v2-button-primary" target="_blank" rel="noopener noreferrer">
+          Get started on Telegram
+          <ArrowRight size={18} />
+        </a>
+      </section>
+    </main>
   );
 }
-
