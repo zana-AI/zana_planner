@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users, X } from 'lucide-react';
+import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users } from 'lucide-react';
 import type { PromiseData, PlanSession } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
@@ -61,6 +61,23 @@ function formatSessionTime(isoStr: string | null): string {
   return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + ` · ${time}`;
 }
 
+type RecentLog = { datetime: string; date: string; time_spent: number; time_str: string; notes: string | null };
+
+const RECENT_LOGS_LIMIT = 3;
+
+// Format a YYYY-MM-DD log date as Today / Yesterday / "May 31".
+function formatLogDate(dateStr: string): string {
+  const [y, m, d] = (dateStr || '').split('-').map(Number);
+  if (!y || !m || !d) return dateStr || '';
+  const dt = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - dt.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function PromiseDetailSheet({
   open,
   promiseId,
@@ -103,6 +120,9 @@ export function PromiseDetailSheet({
   // Session being edited (opens ScheduleSheet in edit mode) / added to calendar
   const [editSession, setEditSession] = useState<PlanSession | null>(null);
   const [calendarSession, setCalendarSession] = useState<PlanSession | null>(null);
+  // A few recent activity logs (what was actually done on this promise) shown above the
+  // upcoming sessions, so the sheet reads as a short timeline: recently done, then planned.
+  const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
 
   const reloadSessions = useCallback(() => {
     apiClient.getPlanSessions(promiseId)
@@ -118,26 +138,13 @@ export function PromiseDetailSheet({
       .then(data => { if (!cancelled) setPlanSessions(data); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setSessionsLoading(false); });
+    apiClient.getPromiseLogs(promiseId, RECENT_LOGS_LIMIT)
+      .then(res => { if (!cancelled) setRecentLogs(res.logs); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [open, promiseId]);
 
   const upcomingSessions = planSessions.filter(s => s.status === 'planned');
-
-  // A few recent, read-only sessions (done/skipped) to show above the upcoming ones,
-  // so the sheet reads as a short timeline: what happened recently, then what's planned.
-  const RECENT_SESSIONS_LIMIT = 3;
-  const recentSessions = useMemo(
-    () =>
-      planSessions
-        .filter(s => s.status === 'done' || s.status === 'skipped')
-        .sort((a, b) => {
-          const ta = a.planned_start ? new Date(a.planned_start).getTime() : 0;
-          const tb = b.planned_start ? new Date(b.planned_start).getTime() : 0;
-          return tb - ta; // most recent first
-        })
-        .slice(0, RECENT_SESSIONS_LIMIT),
-    [planSessions],
-  );
 
   // Pre-fill values for LogActionModal from the session being marked done
   const doneSession = logDoneSessionId !== null
@@ -273,27 +280,28 @@ export function PromiseDetailSheet({
         </>
       ) : null}
 
-      {/* Recent sessions — read-only history shown above the upcoming ones */}
-      {!sessionsLoading && recentSessions.length > 0 && (
+      {/* Recent logs — what was actually done on this promise (read-only) */}
+      {recentLogs.length > 0 && (
         <>
           <p className="ds-eyebrow" style={{ marginTop: 16 }}>Recent</p>
-          <div className="recent-sessions-list">
-            {recentSessions.map(session => (
-              <div
-                key={session.id}
-                className={`recent-session-row recent-session-row--${session.status}`}
-              >
-                <span className="recent-session-icon" aria-hidden>
-                  {session.status === 'done' ? <Check size={12} /> : <X size={12} />}
-                </span>
-                <span className="recent-session-title">
-                  {session.title || 'Session'}
-                </span>
-                <span className="recent-session-time">
-                  {formatSessionTime(session.planned_start)}
-                </span>
-              </div>
-            ))}
+          <div className="recent-log-list">
+            {recentLogs.map((log, index) => {
+              const note = (log.notes ?? '').trim();
+              const amount = log.time_spent > 0 ? log.time_str : '';
+              return (
+                <div key={`${log.datetime}-${index}`} className="recent-log-row">
+                  <span className="recent-log-icon" aria-hidden>
+                    <Check size={12} />
+                  </span>
+                  <span className="recent-log-title">
+                    {note || (amount ? `${amount} logged` : 'Logged')}
+                  </span>
+                  <span className="recent-log-time">
+                    {note && amount ? `${amount} · ` : ''}{formatLogDate(log.date)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

@@ -724,9 +724,9 @@
 .plan-session-btn--edit:hover  { background: var(--accent);    color: #fff; border-color: transparent; }
 .plan-session-btn--cal:hover   { background: var(--accent);    color: #fff; border-color: transparent; }
 
-/* Recent (past) sessions inside PromiseDetailSheet — read-only, compact rows */
-.recent-sessions-list { display: grid; gap: 4px; margin-top: 8px; }
-.recent-session-row {
+/* Recent activity logs inside PromiseDetailSheet — read-only, compact rows */
+.recent-log-list { display: grid; gap: 4px; margin-top: 8px; }
+.recent-log-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -735,17 +735,16 @@
   background: var(--surface);
   border: 1px solid var(--border);
 }
-.recent-session-icon {
+.recent-log-icon {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
-  color: var(--fg-muted);
+  color: var(--good-500);
 }
-.recent-session-row--done .recent-session-icon { color: var(--good-500); }
-.recent-session-title {
+.recent-log-title {
   flex: 1;
   min-width: 0;
   font-size: 12px;
@@ -755,11 +754,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.recent-session-row--skipped .recent-session-title {
-  color: var(--fg-muted);
-  text-decoration: line-through;
-}
-.recent-session-time { flex-shrink: 0; font-size: 11px; color: var(--fg-muted); }
+.recent-log-time { flex-shrink: 0; font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
 
 /* Add-to-calendar chooser */
 .cal-choose-row { display: grid; gap: 10px; margin-top: 6px; }
