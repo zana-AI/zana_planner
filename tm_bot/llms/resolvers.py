@@ -195,3 +195,118 @@ def resolve_datetime_with_llm(
                 "Could you say it more specifically? (e.g. 'tomorrow at 9am', 'Friday evening')"
             ),
         })
+
+
+# ---------------------------------------------------------------------------
+# Promise resolver
+# ---------------------------------------------------------------------------
+
+_PROMISE_SYSTEM = (
+    "You match a user's activity phrase to one of their existing promises. "
+    "Return ONLY valid JSON. No explanation."
+)
+
+_PROMISE_USER_TEMPLATE = """\
+The user has these promises (id: description):
+{promise_lines}
+
+The user referred to a promise with this phrase:
+"{query}"
+
+Match the phrase to the best promise by MEANING — handle synonyms, typos, paraphrases,
+partial names, and natural sentences (e.g. "cook dinner" -> a cooking promise,
+"phone mom" -> a call-family promise, "coding" -> a programming/robotics promise).
+
+Return ONLY JSON, using promise IDs from the list above:
+- Exactly one promise clearly fits -> {{"resolved": "<promise_id>", "confidence": "high"}}
+- 2-3 plausibly fit, cannot decide -> {{"resolved": null, "confidence": "low", "candidates": ["<id>", "<id>"], "clarification": "Which one - <A> or <B>?"}}
+- None of the promises relate to it -> {{"resolved": null, "confidence": "none"}}
+
+Format examples (illustrative only, not these promises):
+"cooking dinner tonight" -> {{"resolved": "P07", "confidence": "high"}}
+"learn spanish" -> {{"resolved": null, "confidence": "none"}}"""
+
+
+def _promise_id(p: Any) -> str:
+    return str((p.get("id") if isinstance(p, dict) else getattr(p, "id", "")) or "").strip()
+
+
+def _promise_text(p: Any) -> str:
+    return str((p.get("text") if isinstance(p, dict) else getattr(p, "text", "")) or "").strip()
+
+
+def _format_promise_lines(promises: list) -> str:
+    lines = []
+    for p in promises or []:
+        pid = _promise_id(p)
+        if not pid:
+            continue
+        lines.append(f"{pid}: {_promise_text(p).replace('_', ' ')}")
+    return "\n".join(lines)
+
+
+def resolve_promise_with_llm(model: Any, query: str, promises: list) -> str:
+    """Match *query* to one of *promises* by meaning. Returns a JSON string with ``confidence``.
+
+    JSON shape mirrors the datetime resolver so callers can branch on ``confidence``:
+      {"resolved": "P07", "confidence": "high"}
+      {"resolved": null, "confidence": "low", "candidates": [...], "clarification": "..."}
+      {"resolved": null, "confidence": "none"}
+
+    ``resolved`` is always validated against the supplied promise IDs. On any error or an
+    out-of-set id, returns ``confidence=none`` so the caller can fall back gracefully (e.g.
+    to substring search, or to creating a one-time promise).
+    """
+    valid_ids = {pid for pid in (_promise_id(p) for p in (promises or [])) if pid}
+    if not (query or "").strip() or not valid_ids:
+        return json.dumps({"resolved": None, "confidence": "none"})
+
+    try:
+        user_prompt = _PROMISE_USER_TEMPLATE.format(
+            promise_lines=_format_promise_lines(promises), query=query.strip()
+        )
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+
+            messages = [
+                SystemMessage(content=_PROMISE_SYSTEM),
+                HumanMessage(content=user_prompt),
+            ]
+        except ImportError:
+            messages = [
+                {"role": "system", "content": _PROMISE_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ]
+
+        raw = model.invoke(messages)
+        text = (getattr(raw, "content", None) or str(raw) or "").strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+
+        parsed = json.loads(text)
+        confidence = parsed.get("confidence", "none")
+
+        if confidence == "high":
+            resolved = str(parsed.get("resolved") or "").strip()
+            if resolved not in valid_ids:
+                return json.dumps({"resolved": None, "confidence": "none"})
+            return json.dumps({"resolved": resolved, "confidence": "high"})
+
+        if confidence == "low":
+            cands = [str(c).strip() for c in (parsed.get("candidates") or [])]
+            cands = [c for c in cands if c in valid_ids]
+            if not cands:
+                return json.dumps({"resolved": None, "confidence": "none"})
+            out = {"resolved": None, "confidence": "low", "candidates": cands}
+            if parsed.get("clarification"):
+                out["clarification"] = str(parsed["clarification"])
+            return json.dumps(out)
+
+        return json.dumps({"resolved": None, "confidence": "none"})
+
+    except Exception as exc:
+        logger.warning("resolve_promise_with_llm failed (%s); returning none", exc)
+        return json.dumps({"resolved": None, "confidence": "none"})

@@ -307,16 +307,27 @@ class MessageHandlers:
         reason = str(pending.get("reason", "")).strip().lower()
         return reason == "pre_mutation_confirmation"
 
-    def _mutation_confirmation_kb(self, user_lang: Language) -> InlineKeyboardMarkup:
-        """Inline keyboard for mutation confirmation (Yes / Skip)."""
+    def _mutation_confirmation_kb(self, user_lang: Language, pending: Optional[dict] = None) -> InlineKeyboardMarkup:
+        """Inline keyboard for mutation confirmation (Yes / Skip).
+
+        For a scheduled-session confirmation, also offer "track as a one-time promise" so the
+        user can opt out of attaching the session to the matched promise (even when one was found).
+        """
         yes_text = get_message("btn_yes_confirm", user_lang)
         skip_text = get_message("btn_skip_action", user_lang)
-        return InlineKeyboardMarkup(
-            [[
-                InlineKeyboardButton(yes_text, callback_data=encode_cb("mut_confirm", d="yes")),
-                InlineKeyboardButton(skip_text, callback_data=encode_cb("mut_confirm", d="skip")),
-            ]]
-        )
+        rows = [[
+            InlineKeyboardButton(yes_text, callback_data=encode_cb("mut_confirm", d="yes")),
+            InlineKeyboardButton(skip_text, callback_data=encode_cb("mut_confirm", d="skip")),
+        ]]
+        tool_name = str((pending or {}).get("tool_name", "")).strip()
+        if tool_name in ("schedule_session", "add_plan_session"):
+            rows.append([
+                InlineKeyboardButton(
+                    get_message("btn_track_one_time", user_lang),
+                    callback_data=encode_cb("mut_confirm", d="one_time"),
+                ),
+            ])
+        return InlineKeyboardMarkup(rows)
 
     def _sync_llm_external_turn(
         self,
@@ -820,7 +831,7 @@ class MessageHandlers:
                 response_text = llm_response.get("response_to_user", "")
                 formatted_response = self._format_response(response_text, func_call_response)
                 confirmation_kb = (
-                    self._mutation_confirmation_kb(user_lang)
+                    self._mutation_confirmation_kb(user_lang, llm_response.get("pending_clarification"))
                     if self._is_pre_mutation_confirmation(llm_response)
                     else None
                 )
@@ -1665,12 +1676,13 @@ class MessageHandlers:
                                         "batch_remaining": remaining_after,
                                         "batch_total": batch_total,
                                         "batch_current_idx": next_idx,
+                                        "one_time_label": next_item.get("one_time_label"),
                                     }
                                     try:
                                         context.user_data["pending_clarification"] = new_pending
                                     except Exception:
                                         pass
-                                    kb = self._mutation_confirmation_kb(user_lang)
+                                    kb = self._mutation_confirmation_kb(user_lang, new_pending)
                                     await self.response_service.reply_text(
                                         update, next_q,
                                         user_id=user_id,
@@ -1909,7 +1921,7 @@ class MessageHandlers:
                 
                 formatted_response = self._format_response(response_text, func_call_response)
                 confirmation_kb = (
-                    self._mutation_confirmation_kb(user_lang)
+                    self._mutation_confirmation_kb(user_lang, llm_response.get("pending_clarification"))
                     if self._is_pre_mutation_confirmation(llm_response)
                     else None
                 )

@@ -171,6 +171,8 @@ class MessageTemplateStore:
             "btn_no_cancel": "No (cancel)",
             "btn_yes_confirm": "✅ Yes",
             "btn_skip_action": "⏭️ Skip",
+            "btn_track_one_time": "📝 One-time",
+            "one_time_scheduled": "✅ Added as a one-time task and scheduled it.",
             "btn_looks_right": "Looks right ✅ ({time})",
             "btn_adjust": "Adjust…",
             "btn_share_location": "Share location",

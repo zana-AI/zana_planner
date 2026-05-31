@@ -16,16 +16,18 @@ DEFAULT_RESERVE_TOKENS_FLOOR = 2048
 DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
 
 DEFAULT_MEMORY_FLUSH_PROMPT = (
-    "Pre-compaction memory flush. "
-    "Store durable memories now (use memory/YYYY-MM-DD.md; create memory/ if needed). "
-    "IMPORTANT: If the file already exists, APPEND new content only and do not overwrite existing entries. "
-    f"If nothing to store, reply with {SILENT_REPLY_TOKEN}."
+    "Review the conversation above and extract durable, reusable facts about the USER that "
+    "would help in future chats — stable preferences, goals, recurring constraints, personal "
+    "context, and working style. Skip one-off or transient details and anything trivial. "
+    "Today is YYYY-MM-DD. Reply with ONLY concise markdown bullet points, one fact per line, "
+    "no preamble. "
+    f"If there is nothing durable worth storing, reply with exactly {SILENT_REPLY_TOKEN}."
 )
 
 DEFAULT_MEMORY_FLUSH_SYSTEM_PROMPT = (
-    "Pre-compaction memory flush turn. "
-    "The session is near auto-compaction; capture durable memories to disk. "
-    f"You may reply, but usually {SILENT_REPLY_TOKEN} is correct."
+    "You extract durable, long-term memories about the user from a conversation. "
+    "Capture only stable, reusable facts; ignore chit-chat and one-off details. "
+    f"Output the facts as markdown bullets, or reply with {SILENT_REPLY_TOKEN} if there are none."
 )
 
 
@@ -68,7 +70,19 @@ def should_run_memory_flush(
 
     When token count is missing, we use message_count as a proxy: if message_count >= 50 (e.g.),
     treat as "over threshold". Tune the threshold for turn-count proxy as needed.
+
+    Turn-based trigger: when ``entry['flush_every_messages']`` (N) is set, fire every N
+    messages, deduped by ``entry['memory_flush_message_count']`` (the message count at the
+    last flush). This suits a chat bot whose short, frequently-reset sessions never reach the
+    token threshold.
     """
+    interval = int((entry or {}).get("flush_every_messages") or 0)
+    if interval > 0:
+        msg_count = int((entry or {}).get("message_count") or 0)
+        last_flush_at = int((entry or {}).get("memory_flush_message_count") or 0)
+        if msg_count >= interval and (msg_count - last_flush_at) >= interval:
+            return True
+
     total_tokens = 0
     if entry:
         total_tokens = entry.get("total_tokens") or entry.get("estimated_tokens") or 0

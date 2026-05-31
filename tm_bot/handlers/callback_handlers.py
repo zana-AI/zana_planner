@@ -552,6 +552,7 @@ class CallbackHandlers:
         user_id = query.from_user.id
         decision = str((cb or {}).get("d", "")).strip().lower()
         is_confirm = decision in {"yes", "confirm", "y", "1", "true"}
+        is_one_time = decision == "one_time"
 
         pending = (context.user_data or {}).get("pending_clarification") if hasattr(context, "user_data") else None
         if not pending or str(pending.get("reason", "")).strip().lower() != "pre_mutation_confirmation":
@@ -581,7 +582,33 @@ class CallbackHandlers:
 
         # --- Execute or skip the current item ---
         _step_ok = True  # set to False only on unexpected tool error
-        if is_confirm:
+        if is_one_time and tool_name in ("schedule_session", "add_plan_session"):
+            # User opted to track the activity as its own one-time promise instead of
+            # attaching the session to the matched promise. Create a non-recurring promise,
+            # then schedule the session against it.
+            try:
+                label = str(pending.get("one_time_label") or tool_args.get("title") or "One-time task").strip()
+                create_ret = self.plan_keeper.add_promise(
+                    user_id=user_id,
+                    promise_text=label,
+                    num_hours_promised_per_week=0.0,
+                    recurring=False,
+                )
+                m = re.search(r"#([A-Za-z0-9]+)", str(create_ret or ""))
+                new_pid = m.group(1) if m else None
+                if not new_pid:
+                    raise RuntimeError(f"could not create one-time promise: {create_ret}")
+                sched_args = {k: v for k, v in (tool_args or {}).items() if k != "promise_id"}
+                sched_args["promise_id"] = new_pid
+                if not sched_args.get("title"):
+                    sched_args["title"] = label
+                self.plan_keeper.schedule_session(**{**sched_args, "user_id": user_id})
+                step_result = get_message("one_time_scheduled", user_lang)
+            except Exception as e:
+                logger.error("Error creating one-time promise for user %s: %s", user_id, e)
+                step_result = get_message("error_executing_action", user_lang, error=str(e))
+                _step_ok = False
+        elif is_confirm:
             try:
                 if hasattr(self.plan_keeper, tool_name):
                     method = getattr(self.plan_keeper, tool_name)
@@ -659,6 +686,7 @@ class CallbackHandlers:
                 "batch_remaining": remaining_after,
                 "batch_total": batch_total,
                 "batch_current_idx": next_idx,
+                "one_time_label": next_item.get("one_time_label"),
             }
             try:
                 context.user_data["pending_clarification"] = new_pending
@@ -667,10 +695,18 @@ class CallbackHandlers:
 
             yes_text = get_message("btn_yes_confirm", user_lang)
             skip_text = get_message("btn_skip_action", user_lang)
-            kb = InlineKeyboardMarkup([[
+            kb_rows = [[
                 InlineKeyboardButton(yes_text, callback_data=encode_cb("mut_confirm", d="yes")),
                 InlineKeyboardButton(skip_text, callback_data=encode_cb("mut_confirm", d="skip")),
-            ]])
+            ]]
+            if str(next_item.get("tool_name", "")) in ("schedule_session", "add_plan_session"):
+                kb_rows.append([
+                    InlineKeyboardButton(
+                        get_message("btn_track_one_time", user_lang),
+                        callback_data=encode_cb("mut_confirm", d="one_time"),
+                    ),
+                ])
+            kb = InlineKeyboardMarkup(kb_rows)
             try:
                 await query.edit_message_text(next_q, reply_markup=kb)
             except Exception:

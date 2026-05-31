@@ -5,6 +5,7 @@ import os
 import re
 import time
 import ast
+import threading
 from collections import deque
 from contextlib import nullcontext
 from contextvars import ContextVar
@@ -1177,6 +1178,8 @@ class LLMHandler:
             self.parser = JsonOutputParser(pydantic_object=LLMResponse)
             self.max_iterations = max_iterations or int(os.getenv("LLM_MAX_ITERATIONS", "6"))
             self.chat_history: Dict[str, List[BaseMessage]] = {}
+            # Per-user message count at the last memory flush (for the turn-based trigger).
+            self._memory_flush_marks: Dict[str, int] = {}
             self._progress_callback_default = progress_callback
             self._progress_callback: Optional[Callable[[str, dict], None]] = progress_callback
 
@@ -2251,7 +2254,9 @@ class LLMHandler:
             if time.time() - last_active > timeout_seconds:
                 if safe_user_id in getattr(self, "chat_history", {}):
                     self.chat_history[safe_user_id] = []
-            
+                # New session → reset the flush mark so the turn-based trigger restarts.
+                self._memory_flush_marks.pop(safe_user_id, None)
+
             if not hasattr(self, "chat_history_timestamps"):
                 self.chat_history_timestamps = {}
             self.chat_history_timestamps[safe_user_id] = time.time()
@@ -2265,9 +2270,16 @@ class LLMHandler:
                     continue
 
             if is_flush_enabled():
+                msg_count = len(prior_history)
+                try:
+                    flush_every = int(os.getenv("MEMORY_FLUSH_EVERY_MESSAGES", "16"))
+                except Exception:
+                    flush_every = 16
                 entry = {
-                    "message_count": len(prior_history),
+                    "message_count": msg_count,
                     "estimated_tokens": max(0, prior_history_chars // 4),
+                    "flush_every_messages": flush_every,
+                    "memory_flush_message_count": self._memory_flush_marks.get(safe_user_id, 0),
                 }
                 if should_run_memory_flush(
                     entry=entry,
@@ -2275,11 +2287,22 @@ class LLMHandler:
                     reserve_tokens_floor=DEFAULT_RESERVE_TOKENS_FLOOR,
                     soft_threshold_tokens=DEFAULT_MEMORY_FLUSH_SOFT_TOKENS,
                 ):
-                    run_memory_flush(
-                        self.plan_adapter.root_dir,
-                        safe_user_id,
-                        run_flush_llm=self._run_flush_turn,
-                    )
+                    # Mark now so concurrent/next turns don't double-fire, then flush in the
+                    # background (it makes its own LLM call) so the user's reply isn't delayed.
+                    self._memory_flush_marks[safe_user_id] = msg_count
+                    history_snapshot = list(prior_history)
+                    root_dir_for_flush = self.plan_adapter.root_dir
+
+                    def _flush_llm(system_prompt: str, user_prompt: str, _hist=history_snapshot) -> str:
+                        return self._run_flush_turn(system_prompt, user_prompt, history=_hist)
+
+                    def _do_flush() -> None:
+                        try:
+                            run_memory_flush(root_dir_for_flush, safe_user_id, run_flush_llm=_flush_llm)
+                        except Exception as exc:
+                            logger.debug("background memory flush failed for %s: %s", safe_user_id, exc)
+
+                    threading.Thread(target=_do_flush, name=f"memory-flush-{safe_user_id}", daemon=True).start()
 
             memory_recall_context = self._build_memory_recall_context(safe_user_id, user_message)
             if _DEBUG_ENABLED and memory_recall_context:
@@ -3230,8 +3253,9 @@ class LLMHandler:
             "no_op",
             "maybe_ask_profile_question",
             "set_llm_handler",   # internal wiring, not a user-facing tool
-            # Superseded by LLM-based resolver added below.
+            # Superseded by LLM-based resolvers added below.
             "resolve_datetime",
+            "search_promises",
             # Async wrappers — the LLM should call the sync method instead.
             "async_get_settings",
             "async_save_settings",
@@ -3305,6 +3329,73 @@ class LLMHandler:
                     "Resolve a natural-language date/time phrase to ISO 8601. "
                     "Pass the phrase verbatim from the user message. "
                     "Returns JSON with confidence; executor handles clarification if uncertain."
+                ),
+            )
+        )
+
+        # LLM-based promise resolver — replaces the substring-only adapter search_promises.
+        # Matches by meaning (synonyms, typos, natural phrases). Keeps the adapter's output
+        # contract (single_match JSON / "Found N..." list / "No promises found...") so the
+        # FROM_SEARCH plumbing and the no-match -> one-time-promise path are unchanged.
+        def _search_promises_tool(query: str) -> str:
+            """Find a promise by description. Matches semantically (synonyms, typos, phrases)."""
+            no_match = f"No promises found matching '{query}'. Try a different search term."
+            user_id = _current_user_id.get()
+            if not user_id:
+                return no_match
+
+            # Cheap exact path: trust the substring matcher only when it finds a UNIQUE match.
+            substr_out = None
+            try:
+                substr_out = adapter.search_promises(int(user_id), query)
+            except Exception:
+                substr_out = None
+            if isinstance(substr_out, str) and substr_out.strip().startswith("{"):
+                try:
+                    if json.loads(substr_out).get("single_match"):
+                        return substr_out
+                except Exception:
+                    pass
+
+            # Semantic resolve for everything else (synonyms / typos / sentences / ambiguity).
+            try:
+                from llms.resolvers import resolve_promise_with_llm
+                promises = adapter.get_promises(int(user_id)) or []
+                r = json.loads(resolve_promise_with_llm(self.router_model, query, promises))
+                conf = r.get("confidence")
+                by_id = {str(p.get("id")): str(p.get("text") or "").replace("_", " ") for p in promises}
+
+                if conf == "high" and r.get("resolved"):
+                    pid = str(r["resolved"]).strip()
+                    ptext = by_id.get(pid, pid)
+                    return json.dumps({
+                        "single_match": True,
+                        "promise_id": pid,
+                        "promise_text": ptext,
+                        "message": f"Found best match: #{pid} {ptext}",
+                    })
+                if conf == "low" and r.get("candidates"):
+                    cands = [str(c).strip() for c in r["candidates"]]
+                    lines = [f"Found {len(cands)} promise(s) matching '{query}':\n"]
+                    for cid in cands:
+                        lines.append(f"• #{cid} **{by_id.get(cid, cid)}**")
+                    return "\n".join(lines)
+                # confidence == none -> no existing promise (caller may create a one-time promise).
+                return no_match
+            except Exception as exc:
+                logger.warning(f"search_promises semantic resolve failed: {exc}")
+                # Never worse than before: fall back to the substring result.
+                return substr_out if isinstance(substr_out, str) else no_match
+
+        tools.append(
+            StructuredTool.from_function(
+                func=_search_promises_tool,
+                name="search_promises",
+                description=(
+                    "Find a promise by description. Matches by meaning (synonyms, typos, "
+                    "natural phrases). Returns a single match when one fits, a short list when "
+                    "several do, or 'No promises found' when none relate (the activity has no "
+                    "existing promise)."
                 ),
             )
         )
@@ -3399,13 +3490,23 @@ class LLMHandler:
             )
         return tools
 
-    def _run_flush_turn(self, system_prompt: str, user_prompt: str) -> str:
-        """Run one LLM turn (no tools) for pre-compaction memory flush; returns model reply content."""
+    def _run_flush_turn(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        history: Optional[List[BaseMessage]] = None,
+    ) -> str:
+        """Run one LLM turn (no tools) for the memory flush; returns the model reply content.
+
+        The recent conversation ``history`` is included between the system and flush prompts so
+        the model has actual content to extract durable facts from. Without it the flush turn
+        would see only the instruction and reply <silent>.
+        """
         try:
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt),
-            ]
+            messages: List[BaseMessage] = [SystemMessage(content=system_prompt)]
+            if history:
+                messages.extend(history)
+            messages.append(HumanMessage(content=user_prompt))
             response = self.chat_model.invoke(messages)
             return getattr(response, "content", "") or ""
         except Exception as e:
