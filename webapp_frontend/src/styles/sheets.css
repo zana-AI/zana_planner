@@ -724,6 +724,43 @@
 .plan-session-btn--edit:hover  { background: var(--accent);    color: #fff; border-color: transparent; }
 .plan-session-btn--cal:hover   { background: var(--accent);    color: #fff; border-color: transparent; }
 
+/* Recent (past) sessions inside PromiseDetailSheet — read-only, compact rows */
+.recent-sessions-list { display: grid; gap: 4px; margin-top: 8px; }
+.recent-session-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: var(--r-8);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.recent-session-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-muted);
+}
+.recent-session-row--done .recent-session-icon { color: var(--good-500); }
+.recent-session-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-session-row--skipped .recent-session-title {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+.recent-session-time { flex-shrink: 0; font-size: 11px; color: var(--fg-muted); }
+
 /* Add-to-calendar chooser */
 .cal-choose-row { display: grid; gap: 10px; margin-top: 6px; }
 .cal-choose-btn {

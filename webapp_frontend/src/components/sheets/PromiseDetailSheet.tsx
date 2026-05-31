@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users } from 'lucide-react';
+import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users, X } from 'lucide-react';
 import type { PromiseData, PlanSession } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
@@ -122,6 +122,22 @@ export function PromiseDetailSheet({
   }, [open, promiseId]);
 
   const upcomingSessions = planSessions.filter(s => s.status === 'planned');
+
+  // A few recent, read-only sessions (done/skipped) to show above the upcoming ones,
+  // so the sheet reads as a short timeline: what happened recently, then what's planned.
+  const RECENT_SESSIONS_LIMIT = 3;
+  const recentSessions = useMemo(
+    () =>
+      planSessions
+        .filter(s => s.status === 'done' || s.status === 'skipped')
+        .sort((a, b) => {
+          const ta = a.planned_start ? new Date(a.planned_start).getTime() : 0;
+          const tb = b.planned_start ? new Date(b.planned_start).getTime() : 0;
+          return tb - ta; // most recent first
+        })
+        .slice(0, RECENT_SESSIONS_LIMIT),
+    [planSessions],
+  );
 
   // Pre-fill values for LogActionModal from the session being marked done
   const doneSession = logDoneSessionId !== null
@@ -256,6 +272,31 @@ export function PromiseDetailSheet({
           </div>
         </>
       ) : null}
+
+      {/* Recent sessions — read-only history shown above the upcoming ones */}
+      {!sessionsLoading && recentSessions.length > 0 && (
+        <>
+          <p className="ds-eyebrow" style={{ marginTop: 16 }}>Recent</p>
+          <div className="recent-sessions-list">
+            {recentSessions.map(session => (
+              <div
+                key={session.id}
+                className={`recent-session-row recent-session-row--${session.status}`}
+              >
+                <span className="recent-session-icon" aria-hidden>
+                  {session.status === 'done' ? <Check size={12} /> : <X size={12} />}
+                </span>
+                <span className="recent-session-title">
+                  {session.title || 'Session'}
+                </span>
+                <span className="recent-session-time">
+                  {formatSessionTime(session.planned_start)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Planned sessions */}
       {!sessionsLoading && upcomingSessions.length > 0 && (
