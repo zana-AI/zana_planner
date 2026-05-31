@@ -423,6 +423,20 @@ export function DashboardPage() {
     setDetailPromise({ id, data });
   }, []);
 
+  // Deep link from Telegram DM: /dashboard?promise=<id> opens the promise detail sheet.
+  const openPromiseId = searchParams.get('promise');
+  useEffect(() => {
+    if (!openPromiseId || !reportData) return;
+    const promiseData =
+      reportData.promises[openPromiseId]
+      ?? olderPromisesData?.promises[openPromiseId];
+    if (!promiseData) return;
+    setDetailPromise({ id: openPromiseId, data: promiseData });
+    const next = new URLSearchParams(searchParams);
+    next.delete('promise');
+    setSearchParams(next, { replace: true });
+  }, [openPromiseId, reportData, olderPromisesData, searchParams, setSearchParams]);
+
   // Keep the open detail sheet in sync with refreshed report data, so logging
   // a session updates its badge/grids live instead of showing a stale snapshot.
   useEffect(() => {

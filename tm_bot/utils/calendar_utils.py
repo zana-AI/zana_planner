@@ -5,6 +5,59 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from typing import Optional
 
+# Frontend default when the user leaves the title blank.
+_GENERIC_SESSION_TITLES = frozenset({"", "planned session", "focus session", "session"})
+
+
+def _humanize_promise_label(promise_text: Optional[str]) -> str:
+    return (promise_text or "").strip().replace("_", " ")
+
+
+def _session_label_for_calendar(title: Optional[str]) -> str:
+    """Session name for calendar titles; generic placeholders become a short default."""
+    raw = (title or "").strip()
+    if not raw or raw.lower() in _GENERIC_SESSION_TITLES:
+        return "Session"
+    return raw
+
+
+def resolve_calendar_event_title(title: Optional[str], promise_text: Optional[str]) -> str:
+    """
+    Calendar event title: promise name + session name.
+
+    Example: Study_English + "Read ch. 3" → "Study English — Read ch. 3".
+    When the stored session title is the app default ("Planned session"), the session
+    part becomes "Session" so the title is still two-part: "Study English — Session".
+    """
+    promise_display = _humanize_promise_label(promise_text)
+    session_display = _session_label_for_calendar(title)
+
+    if promise_display and session_display:
+        return f"{promise_display} — {session_display}"
+    if promise_display:
+        return promise_display
+    if session_display and session_display != "Session":
+        return session_display
+    return session_display or "Focus session"
+
+
+def calendar_event_description(
+    event_title: str,
+    promise_text: Optional[str],
+    notes: Optional[str] = None,
+) -> str:
+    """Build a Google Calendar / ICS description line."""
+    parts: list[str] = []
+    if notes and str(notes).strip():
+        parts.append(str(notes).strip())
+    promise_display = _humanize_promise_label(promise_text)
+    # Title already embeds the promise when we use resolve_calendar_event_title().
+    if promise_display and promise_display.lower() not in event_title.strip().lower():
+        parts.append(f"Xaana promise: {promise_display}")
+    if not parts:
+        parts.append("Scheduled with Xaana (xaana.club)")
+    return "\n".join(parts)
+
 
 def generate_google_calendar_link(
     title: str,

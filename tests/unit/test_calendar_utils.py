@@ -1,7 +1,28 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from utils.calendar_utils import generate_google_calendar_link, generate_ics, suggest_time_slot
+from utils.calendar_utils import (
+    calendar_event_description,
+    generate_google_calendar_link,
+    generate_ics,
+    resolve_calendar_event_title,
+    suggest_time_slot,
+)
+
+
+@pytest.mark.unit
+def test_resolve_calendar_event_title_combines_promise_and_session():
+    assert resolve_calendar_event_title("Planned session", "Study_English") == "Study English — Session"
+    assert resolve_calendar_event_title("", "Morning_Run") == "Morning Run — Session"
+    assert resolve_calendar_event_title("Read ch. 3", "Study_English") == "Study English — Read ch. 3"
+    assert resolve_calendar_event_title("Read ch. 3", "") == "Read ch. 3"
+
+
+@pytest.mark.unit
+def test_calendar_event_description_skips_redundant_promise_line():
+    desc = calendar_event_description("Study English — Session", "Study_English")
+    assert "Xaana promise" not in desc
+    assert "xaana.club" in desc
 
 
 @pytest.mark.unit
@@ -17,6 +38,21 @@ def test_generate_google_calendar_link_naive_datetime_uses_zulu_suffix():
     assert "calendar.google.com/calendar/render" in url
     assert "text=Test" in url
     assert "dates=20250102T030405Z/20250102T040405Z" in url
+
+
+@pytest.mark.unit
+def test_generate_google_calendar_link_uses_promise_title_not_placeholder():
+    start = datetime(2026, 5, 31, 13, 0, 0, tzinfo=timezone.utc)
+    event_title = resolve_calendar_event_title("Planned session", "Study_English")
+    url = generate_google_calendar_link(
+        title=event_title,
+        start_time=start,
+        duration_hours=0.25,
+        description=calendar_event_description(event_title, "Study_English"),
+    )
+    assert "Study" in url and "English" in url
+    assert "Session" in url or "Session" in event_title
+    assert "Planned" not in url
 
 
 @pytest.mark.unit

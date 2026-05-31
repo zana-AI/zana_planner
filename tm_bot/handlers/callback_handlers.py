@@ -468,6 +468,9 @@ class CallbackHandlers:
             plan_session_id = cb.get("sid")
             status = "done" if action == "psess_done" else "skipped"
             await self._handle_plan_session_status(query, plan_session_id, status, user_lang)
+        elif action == "psess_ics":
+            plan_session_id = cb.get("sid")
+            await self._handle_plan_session_ics(query, plan_session_id, user_lang)
         elif action == "club_cancel":
             await self._handle_club_cancel(query, cb.get("cid"), user_lang)
         elif action == "club_remind":
@@ -1077,6 +1080,75 @@ class CallbackHandlers:
         except Exception as e:
             logger.error(f"Failed to delete plan_session {plan_session_id}: {e}")
             await query.answer("Failed to delete. Please try from the app.", show_alert=True)
+
+    async def _handle_plan_session_ics(self, query, plan_session_id: str, user_lang: Language):
+        """Send a .ics file for a planned session when the user taps ICS in the saved-session DM."""
+        from datetime import datetime, timezone
+        from io import BytesIO
+        from telegram import Bot, InputFile
+        from utils.calendar_utils import (
+            calendar_event_description,
+            generate_ics,
+            resolve_calendar_event_title,
+        )
+        from db.postgres_db import get_db_session
+        from sqlalchemy import text as sql_text
+
+        user_id = query.from_user.id
+        try:
+            plan = self.plan_keeper.plan_sessions_repo.get(int(plan_session_id), user_id)
+            if not plan or not plan.get("planned_start"):
+                if query.message:
+                    await query.message.reply_text("Session not found.")
+                return
+
+            promise_text = ""
+            p_uuid = plan.get("promise_uuid") or ""
+            if p_uuid:
+                with get_db_session() as session:
+                    row = session.execute(
+                        sql_text("SELECT text FROM promises WHERE promise_uuid = :uuid LIMIT 1"),
+                        {"uuid": p_uuid},
+                    ).fetchone()
+                promise_text = (row[0] if row else "") or ""
+            start_dt = datetime.fromisoformat(
+                str(plan["planned_start"]).replace("Z", "+00:00")
+            )
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+
+            duration_min = int(plan.get("planned_duration_min") or 30)
+            event_title = resolve_calendar_event_title(plan.get("title"), promise_text)
+            description = calendar_event_description(
+                event_title, promise_text, plan.get("notes")
+            )
+            reminder_enabled = bool(plan.get("reminder_enabled", True))
+            offset = int(plan.get("reminder_offset_min") or 10)
+            ics_text = generate_ics(
+                title=event_title,
+                start_time=start_dt,
+                duration_hours=duration_min / 60.0,
+                description=description,
+                reminder_minutes_before=offset if reminder_enabled else None,
+            )
+
+            bot_token = self.application.bot.token if self.application and self.application.bot else None
+            if not bot_token:
+                if query.message:
+                    await query.message.reply_text("Could not send calendar file. Try again from the app.")
+                return
+
+            bot = Bot(token=bot_token)
+            ics_bytes = BytesIO(ics_text.encode("utf-8"))
+            await bot.send_document(
+                chat_id=user_id,
+                document=InputFile(ics_bytes, filename="xaana-session.ics"),
+                caption="Tap to add to your phone's calendar",
+            )
+        except Exception as e:
+            logger.error("Failed to send plan_session ICS for %s: %s", plan_session_id, e)
+            if query.message:
+                await query.message.reply_text("Could not send calendar file. Try from the app.")
 
     async def _handle_plan_session_status(self, query, plan_session_id: str, status: str, user_lang: Language):
         """Handle marking a planned session done or skipped from the reminder."""

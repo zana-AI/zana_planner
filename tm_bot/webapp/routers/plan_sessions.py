@@ -3,6 +3,7 @@ Plan session endpoints: Promise → PlanSessions → Checklist.
 """
 
 import asyncio
+import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -26,19 +27,28 @@ router = APIRouter(prefix="/api", tags=["plan_sessions"])
 logger = get_logger(__name__)
 
 
-def _promise_text_for_uuid(promise_uuid: str) -> str:
-    """Look up a promise's text by its internal uuid (for calendar event titles)."""
+def _promise_row_for_uuid(promise_uuid: str) -> tuple[str, str]:
+    """Look up promise text and user-facing current_id by internal uuid."""
     if not promise_uuid:
-        return ""
+        return "", ""
     try:
         with get_db_session() as session:
             row = session.execute(
-                text("SELECT text FROM promises WHERE promise_uuid = :uuid"),
+                text(
+                    "SELECT text, current_id FROM promises WHERE promise_uuid = :uuid LIMIT 1"
+                ),
                 {"uuid": promise_uuid},
             ).fetchone()
-        return (row[0] if row else "") or ""
+        if not row:
+            return "", ""
+        return (row[0] or "") or "", (row[1] or "") or ""
     except Exception:
-        return ""
+        return "", ""
+
+
+def _promise_text_for_uuid(promise_uuid: str) -> str:
+    text_value, _ = _promise_row_for_uuid(promise_uuid)
+    return text_value
 
 
 def _fire_session_saved_dm(
@@ -57,7 +67,8 @@ def _fire_session_saved_dm(
         bot_token = getattr(request.app.state, "bot_token", None)
         if not bot_token:
             return
-        promise_text = _promise_text_for_uuid(session_row.get("promise_uuid"))
+        promise_text, promise_id = _promise_row_for_uuid(session_row.get("promise_uuid"))
+        miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
 
         from ..notifications import send_plan_session_saved_notification
 
@@ -65,13 +76,17 @@ def _fire_session_saved_dm(
             send_plan_session_saved_notification(
                 bot_token=bot_token,
                 user_id=user_id,
+                plan_session_id=int(session_row["id"]),
+                promise_id=promise_id,
                 promise_text=promise_text,
                 title=session_row.get("title"),
+                notes=session_row.get("notes"),
                 planned_start=session_row.get("planned_start"),
                 planned_duration_min=session_row.get("planned_duration_min"),
                 reminder_enabled=bool(session_row.get("reminder_enabled", True)),
                 reminder_offset_min=int(session_row.get("reminder_offset_min") or 10),
                 is_edit=is_edit,
+                miniapp_url=miniapp_url,
             )
         )
     except Exception as e:

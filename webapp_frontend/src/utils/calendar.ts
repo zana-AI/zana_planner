@@ -16,6 +16,41 @@ interface CalendarEvent {
 
 const DEFAULT_DURATION_MIN = 30;
 
+const GENERIC_SESSION_TITLES = new Set(['', 'planned session', 'focus session', 'session']);
+
+function humanizePromiseLabel(promiseText: string): string {
+  return (promiseText || '').trim().replace(/_/g, ' ');
+}
+
+function sessionLabelForCalendar(title: string | undefined | null): string {
+  const raw = (title || '').trim();
+  if (!raw || GENERIC_SESSION_TITLES.has(raw.toLowerCase())) return 'Session';
+  return raw;
+}
+
+/** Calendar title: promise name + session name (e.g. "Study English — Read ch. 3"). */
+export function resolveCalendarEventTitle(title: string | undefined | null, promiseText: string): string {
+  const promiseDisplay = humanizePromiseLabel(promiseText);
+  const sessionDisplay = sessionLabelForCalendar(title);
+  if (promiseDisplay && sessionDisplay) {
+    return `${promiseDisplay} — ${sessionDisplay}`;
+  }
+  if (promiseDisplay) return promiseDisplay;
+  if (sessionDisplay && sessionDisplay !== 'Session') return sessionDisplay;
+  return sessionDisplay || 'Focus session';
+}
+
+function calendarEventDescription(eventTitle: string, promiseText: string, notes?: string | null): string {
+  const parts: string[] = [];
+  if (notes?.trim()) parts.push(notes.trim());
+  const promiseDisplay = (promiseText || '').trim().replace(/_/g, ' ');
+  if (promiseDisplay && !eventTitle.toLowerCase().includes(promiseDisplay.toLowerCase())) {
+    parts.push(`Xaana promise: ${promiseDisplay}`);
+  }
+  if (!parts.length) parts.push('Scheduled with Xaana (xaana.club)');
+  return parts.join('\n');
+}
+
 /** Format a Date as a UTC stamp: YYYYMMDDTHHMMSSZ (RFC 5545 / Google format). */
 function utcStamp(date: Date): string {
   return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
@@ -26,12 +61,16 @@ function eventFromSession(session: PlanSession, promiseText: string): CalendarEv
   if (!session.planned_start) return null;
   const start = new Date(session.planned_start);
   if (Number.isNaN(start.getTime())) return null;
-  const title = (session.title || promiseText || 'Focus session').trim();
+  const title = resolveCalendarEventTitle(session.title, promiseText);
   const durationMin = session.planned_duration_min && session.planned_duration_min > 0
     ? session.planned_duration_min
     : DEFAULT_DURATION_MIN;
-  const descParts = [promiseText ? `Xaana promise: ${promiseText}` : '', session.notes || ''];
-  return { title, start, durationMin, description: descParts.filter(Boolean).join('\n') };
+  return {
+    title,
+    start,
+    durationMin,
+    description: calendarEventDescription(title, promiseText, session.notes),
+  };
 }
 
 /** Google Calendar "template" URL — opens a pre-filled event in Google Calendar. */
