@@ -2,10 +2,12 @@
 Plan session endpoints: Promise → PlanSessions → Checklist.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from sqlalchemy import text
 
 from ..dependencies import get_current_user
 from ..schemas import (
@@ -22,6 +24,58 @@ from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["plan_sessions"])
 logger = get_logger(__name__)
+
+
+def _promise_text_for_uuid(promise_uuid: str) -> str:
+    """Look up a promise's text by its internal uuid (for calendar event titles)."""
+    if not promise_uuid:
+        return ""
+    try:
+        with get_db_session() as session:
+            row = session.execute(
+                text("SELECT text FROM promises WHERE promise_uuid = :uuid"),
+                {"uuid": promise_uuid},
+            ).fetchone()
+        return (row[0] if row else "") or ""
+    except Exception:
+        return ""
+
+
+def _fire_session_saved_dm(
+    request: Request,
+    user_id: int,
+    session_row: dict,
+    is_edit: bool,
+) -> None:
+    """Best-effort: DM the user calendar options after they schedule/edit a session.
+
+    Never raises — calendar delivery must not break the API response.
+    """
+    try:
+        if not session_row or not session_row.get("planned_start"):
+            return
+        bot_token = getattr(request.app.state, "bot_token", None)
+        if not bot_token:
+            return
+        promise_text = _promise_text_for_uuid(session_row.get("promise_uuid"))
+
+        from ..notifications import send_plan_session_saved_notification
+
+        asyncio.create_task(
+            send_plan_session_saved_notification(
+                bot_token=bot_token,
+                user_id=user_id,
+                promise_text=promise_text,
+                title=session_row.get("title"),
+                planned_start=session_row.get("planned_start"),
+                planned_duration_min=session_row.get("planned_duration_min"),
+                reminder_enabled=bool(session_row.get("reminder_enabled", True)),
+                reminder_offset_min=int(session_row.get("reminder_offset_min") or 10),
+                is_edit=is_edit,
+            )
+        )
+    except Exception as e:
+        logger.warning("Could not schedule session-saved DM: %s", e)
 
 
 def _resolve_uuid(user_id: int, promise_id: str) -> str:
@@ -77,10 +131,13 @@ async def list_plan_sessions(
 async def create_plan_session(
     promise_id: str,
     body: PlanSessionIn,
+    request: Request,
     user_id: int = Depends(get_current_user),
 ):
     p_uuid = _resolve_uuid(user_id, promise_id)
-    return PlanSessionsRepository().create(p_uuid, user_id, _session_payload(body.model_dump(), user_id))
+    result = PlanSessionsRepository().create(p_uuid, user_id, _session_payload(body.model_dump(), user_id))
+    _fire_session_saved_dm(request, user_id, result, is_edit=False)
+    return result
 
 
 @router.patch("/plan-sessions/{session_id}/status", response_model=PlanSessionOut)
@@ -123,6 +180,7 @@ async def delete_plan_session(
 async def update_plan_session(
     session_id: int,
     body: PlanSessionUpdate,
+    request: Request,
     user_id: int = Depends(get_current_user),
 ):
     result = PlanSessionsRepository().update(
@@ -132,4 +190,5 @@ async def update_plan_session(
     )
     if not result:
         raise HTTPException(status_code=404, detail="Session not found")
+    _fire_session_saved_dm(request, user_id, result, is_edit=True)
     return result

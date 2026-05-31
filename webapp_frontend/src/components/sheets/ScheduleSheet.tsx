@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../api/client';
+import type { PlanSession } from '../../types';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
 
@@ -10,6 +11,8 @@ interface ScheduleSheetProps {
   weekDays: string[];
   onClose: () => void;
   onSuccess: (message: string) => void;
+  /** When set, the sheet edits this session instead of creating a new one. */
+  editSession?: PlanSession | null;
 }
 
 const TIME_SLOTS = ['07:00', '09:00', '12:00', '15:00', '18:00', '21:00'];
@@ -40,7 +43,20 @@ function formatDayLabel(dateKey: string) {
   };
 }
 
-export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose, onSuccess }: ScheduleSheetProps) {
+/** Split an ISO datetime into local {date: 'YYYY-MM-DD', time: 'HH:MM'} parts. */
+function splitLocalDateTime(iso: string): { date: string; time: string } | null {
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return null;
+  const date = [
+    dt.getFullYear(),
+    String(dt.getMonth() + 1).padStart(2, '0'),
+    String(dt.getDate()).padStart(2, '0'),
+  ].join('-');
+  const time = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+  return { date, time };
+}
+
+export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose, onSuccess, editSession }: ScheduleSheetProps) {
   const [title, setTitle] = useState('');
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [selectedTime, setSelectedTime] = useState('09:00');
@@ -53,16 +69,30 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
   const selectableWeekDays = useMemo(() => weekDays.filter(day => day >= todayKey()), [weekDays]);
   const labels = useMemo(() => selectableWeekDays.map(formatDayLabel), [selectableWeekDays]);
 
+  const isEdit = !!editSession;
+
   useEffect(() => {
     if (!open) return;
-    setTitle('');
-    setSelectedDate(todayKey());
-    setSelectedTime('09:00');
-    setDuration(DEFAULT_DURATION);
-    setReminderEnabled(true);
-    setReminderOffset('10');
+    if (editSession) {
+      setTitle(editSession.title && editSession.title !== 'Planned session' ? editSession.title : '');
+      const parts = editSession.planned_start ? splitLocalDateTime(editSession.planned_start) : null;
+      setSelectedDate(parts?.date ?? todayKey());
+      setSelectedTime(parts?.time ?? '09:00');
+      setDuration(editSession.planned_duration_min && editSession.planned_duration_min > 0
+        ? editSession.planned_duration_min
+        : DEFAULT_DURATION);
+      setReminderEnabled(editSession.reminder_enabled ?? true);
+      setReminderOffset(String(editSession.reminder_offset_min ?? 10));
+    } else {
+      setTitle('');
+      setSelectedDate(todayKey());
+      setSelectedTime('09:00');
+      setDuration(DEFAULT_DURATION);
+      setReminderEnabled(true);
+      setReminderOffset('10');
+    }
     setError('');
-  }, [open]);
+  }, [open, editSession]);
 
   const handleSubmit = async () => {
     if (!selectedDate || !selectedTime) return;
@@ -74,24 +104,30 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
     setError('');
     try {
       const plannedStart = new Date(`${selectedDate}T${selectedTime}:00`).toISOString();
-      await apiClient.createPlanSession(promiseId, {
+      const payload = {
         title: title.trim() || 'Planned session',
         planned_start: plannedStart,
         planned_duration_min: duration,
         reminder_enabled: reminderEnabled,
         reminder_offset_min: Number(reminderOffset),
-      });
-      onSuccess('Session scheduled');
+      };
+      if (editSession) {
+        await apiClient.updatePlanSession(editSession.id, payload);
+        onSuccess('Session updated');
+      } else {
+        await apiClient.createPlanSession(promiseId, payload);
+        onSuccess('Session scheduled');
+      }
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to schedule session');
+      setError(err instanceof Error ? err.message : 'Failed to save session');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Schedule session" subtitle={promiseText}>
+    <BottomSheet open={open} onClose={onClose} title={isEdit ? 'Edit session' : 'Schedule session'} subtitle={promiseText}>
       <p className="ds-caption">Title (optional)</p>
       <input
         type="text"
@@ -195,7 +231,7 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
       </div>
       {error ? <p className="ds-caption" style={{ color: 'var(--bad-500)', marginTop: 8 }}>{error}</p> : null}
       <Button variant="primary" fullWidth onClick={handleSubmit} disabled={isSubmitting} style={{ marginTop: 16 }}>
-        {isSubmitting ? 'Saving…' : 'Schedule session'}
+        {isSubmitting ? 'Saving…' : (isEdit ? 'Save changes' : 'Schedule session')}
       </Button>
     </BottomSheet>
   );

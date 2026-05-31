@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, Pencil, Timer, Trash2, Check, Users } from 'lucide-react';
+import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users } from 'lucide-react';
 import type { PromiseData, PlanSession } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
 import { LogActionModal } from '../LogActionModal';
+import { ScheduleSheet } from './ScheduleSheet';
+import { AddToCalendarSheet } from './AddToCalendarSheet';
 import { apiClient } from '../../api/client';
 
 interface PromiseDetailSheetProps {
@@ -98,6 +100,15 @@ export function PromiseDetailSheet({
   const [sessionsLoading, setSessionsLoading] = useState(false);
   // Session being logged-as-done (opens LogActionModal pre-filled with its data)
   const [logDoneSessionId, setLogDoneSessionId] = useState<number | null>(null);
+  // Session being edited (opens ScheduleSheet in edit mode) / added to calendar
+  const [editSession, setEditSession] = useState<PlanSession | null>(null);
+  const [calendarSession, setCalendarSession] = useState<PlanSession | null>(null);
+
+  const reloadSessions = useCallback(() => {
+    apiClient.getPlanSessions(promiseId)
+      .then(setPlanSessions)
+      .catch(() => {});
+  }, [promiseId]);
 
   useEffect(() => {
     if (!open) return;
@@ -267,6 +278,22 @@ export function PromiseDetailSheet({
                 <div className="plan-session-actions">
                   <button
                     type="button"
+                    className="plan-session-btn plan-session-btn--edit"
+                    onClick={() => setEditSession(session)}
+                    aria-label="Edit session"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="plan-session-btn plan-session-btn--cal"
+                    onClick={() => setCalendarSession(session)}
+                    aria-label="Add to calendar"
+                  >
+                    <CalendarPlus size={14} />
+                  </button>
+                  <button
+                    type="button"
                     className="plan-session-btn plan-session-btn--done"
                     onClick={() => setLogDoneSessionId(session.id)}
                     aria-label="Log and mark done"
@@ -321,6 +348,29 @@ export function PromiseDetailSheet({
         prefillDate={doneSessionPrefill?.date}
         prefillTime={doneSessionPrefill?.time}
         prefillNotes={doneSessionPrefill?.notes}
+      />
+
+      {/* Edit a scheduled session — reuses the schedule sheet in edit mode */}
+      <ScheduleSheet
+        open={editSession !== null}
+        promiseId={promiseId}
+        promiseText={formatPromiseText(text)}
+        weekDays={weekDays}
+        editSession={editSession}
+        onClose={() => setEditSession(null)}
+        onSuccess={() => {
+          setEditSession(null);
+          reloadSessions();
+          onLogged?.();
+        }}
+      />
+
+      {/* Add-to-calendar chooser (Google Calendar / .ics) */}
+      <AddToCalendarSheet
+        open={calendarSession !== null}
+        session={calendarSession}
+        promiseText={formatPromiseText(text)}
+        onClose={() => setCalendarSession(null)}
       />
     </BottomSheet>
   );

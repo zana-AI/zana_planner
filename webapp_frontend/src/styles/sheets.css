@@ -705,7 +705,7 @@
 .plan-session-info { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .plan-session-title { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plan-session-time  { font-size: 11px; color: var(--fg-muted); }
-.plan-session-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.plan-session-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .plan-session-btn {
   width: 28px;
   height: 28px;
@@ -721,6 +721,25 @@
 }
 .plan-session-btn--done:hover  { background: var(--good-500); color: #fff; border-color: transparent; }
 .plan-session-btn--delete:hover { background: var(--bad-500);  color: #fff; border-color: transparent; }
+.plan-session-btn--edit:hover  { background: var(--accent);    color: #fff; border-color: transparent; }
+.plan-session-btn--cal:hover   { background: var(--accent);    color: #fff; border-color: transparent; }
+
+/* Add-to-calendar chooser */
+.cal-choose-row { display: grid; gap: 10px; margin-top: 6px; }
+.cal-choose-btn {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-12, 12px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.cal-choose-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.cal-choose-btn .cal-choose-title { font-size: 14px; font-weight: 600; }
+.cal-choose-btn .cal-choose-sub { font-size: 12px; color: var(--fg-muted); }
 
 
 .field-row { display: grid; gap: 6px; }

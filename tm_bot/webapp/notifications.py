@@ -4,13 +4,15 @@ Helper functions for sending Telegram notifications.
 
 import os
 import html
-from datetime import datetime
+from io import BytesIO
+from datetime import datetime, timezone
 from typing import Optional
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.error import BadRequest, TelegramError
 from telegram.helpers import escape_markdown
 from repositories.settings_repo import SettingsRepository
 from utils.admin_utils import get_admin_ids
+from utils.calendar_utils import generate_google_calendar_link, generate_ics
 from utils.logger import get_logger
 from cbdata import encode_cb, encode_session_cb
 
@@ -654,6 +656,117 @@ async def send_plan_session_reminder(
             exc_info=True,
         )
         raise
+
+
+async def send_plan_session_saved_notification(
+    bot_token: str,
+    user_id: int,
+    promise_text: str,
+    title: Optional[str],
+    planned_start: Optional[str],
+    planned_duration_min: Optional[int],
+    reminder_enabled: bool = True,
+    reminder_offset_min: int = 10,
+    is_edit: bool = False,
+) -> None:
+    """
+    DM the user after they schedule/edit a session in the mini-app, offering
+    one-tap "add to calendar" options: a Google Calendar button plus an
+    attached .ics file (which opens the native add-to-calendar sheet on phones).
+
+    Sending is best-effort — failures never block the API call that triggered it.
+    """
+    try:
+        if not bot_token or not planned_start:
+            return
+
+        # Parse the planned start (stored as UTC ISO, e.g. '...Z')
+        try:
+            start_dt = datetime.fromisoformat(planned_start.replace("Z", "+00:00"))
+        except Exception:
+            logger.warning("Skipping session-saved DM: bad planned_start %r", planned_start)
+            return
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+
+        duration_min = int(planned_duration_min or 30)
+        duration_hours = duration_min / 60.0
+        event_title = (title or promise_text or "Focus session").strip()
+        description = f"Xaana promise: {promise_text}".strip() if promise_text else ""
+
+        # Build calendar artifacts (UTC times; calendar apps localize them).
+        google_url = generate_google_calendar_link(
+            title=event_title,
+            start_time=start_dt,
+            duration_hours=duration_hours,
+            description=description,
+        )
+        ics_text = generate_ics(
+            title=event_title,
+            start_time=start_dt,
+            duration_hours=duration_hours,
+            description=description,
+            reminder_minutes_before=reminder_offset_min if reminder_enabled else None,
+        )
+
+        # Friendly local-time label using the user's timezone.
+        when_label = ""
+        try:
+            from zoneinfo import ZoneInfo
+            settings = SettingsRepository().get_settings(user_id)
+            tz_name = settings.timezone if settings and settings.timezone else "UTC"
+            if tz_name in ("DEFAULT", "DISABLED", "", None):
+                tz_name = "UTC"
+            local_dt = start_dt.astimezone(ZoneInfo(tz_name))
+            when_label = local_dt.strftime("%a %d %b · %H:%M")
+        except Exception:
+            when_label = start_dt.strftime("%a %d %b · %H:%M UTC")
+
+        h, m = divmod(duration_min, 60)
+        dur_label = (f"{h}h {m}min" if h and m else (f"{h}h" if h else f"{m}min"))
+
+        verb = "updated" if is_edit else "scheduled"
+        lines = [f"📅 Session {verb}: {event_title}"]
+        if when_label:
+            lines.append(f"{when_label}  ·  {dur_label}")
+        promise_clean = (promise_text or "").strip()
+        if promise_clean and promise_clean != event_title:
+            lines.append(f"Promise: {promise_clean}")
+        lines.append("")
+        lines.append("Add it to your calendar 👇")
+        message = "\n".join(lines)
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📅 Add to Google Calendar", url=google_url)]
+        ])
+
+        bot = Bot(token=bot_token)
+        await bot.send_message(
+            chat_id=user_id,
+            text=message,
+            reply_markup=keyboard,
+            parse_mode=None,
+        )
+        # The .ics attachment opens the native "add to calendar" sheet on mobile.
+        try:
+            ics_bytes = BytesIO(ics_text.encode("utf-8"))
+            await bot.send_document(
+                chat_id=user_id,
+                document=InputFile(ics_bytes, filename="xaana-session.ics"),
+                caption="Tap to add to your phone's calendar",
+            )
+        except TelegramError as e:
+            logger.warning("Could not send .ics attachment to user %s: %s", user_id, e)
+
+        logger.info("✓ Sent session-saved calendar DM to user %s", user_id)
+    except TelegramError as e:
+        error_msg = str(e).lower()
+        if "blocked" in error_msg or "chat not found" in error_msg or "forbidden" in error_msg:
+            logger.debug("Could not send session-saved DM to user %s: user blocked bot", user_id)
+        else:
+            logger.warning("Error sending session-saved DM to user %s: %s", user_id, e)
+    except Exception as e:
+        logger.warning("Unexpected error sending session-saved DM to user %s: %s", user_id, e)
 
 
 async def send_focus_finished_notification(

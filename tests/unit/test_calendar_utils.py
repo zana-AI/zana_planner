@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
+from utils.calendar_utils import generate_google_calendar_link, generate_ics, suggest_time_slot
 
 
 @pytest.mark.unit
@@ -31,6 +31,48 @@ def test_generate_google_calendar_link_tz_aware_includes_offset():
         timezone="Europe/Paris",
     )
     assert "dates=20250102T030405+0100/20250102T050405+0100" in url
+
+
+@pytest.mark.unit
+def test_generate_ics_naive_datetime_emits_utc_event():
+    start = datetime(2025, 1, 2, 3, 4, 5)  # naive → treated as UTC
+    ics = generate_ics(
+        title="Focus session",
+        start_time=start,
+        duration_hours=0.5,
+        description="Deep work",
+    )
+    assert ics.startswith("BEGIN:VCALENDAR")
+    assert ics.strip().endswith("END:VCALENDAR")
+    assert "\r\n" in ics  # CRLF line endings
+    assert "SUMMARY:Focus session" in ics
+    assert "DTSTART:20250102T030405Z" in ics
+    assert "DTEND:20250102T033405Z" in ics  # +30 min
+    assert "VALARM" not in ics  # no reminder requested
+
+
+@pytest.mark.unit
+def test_generate_ics_tz_aware_converts_to_utc():
+    tz = timezone(timedelta(hours=1))
+    start = datetime(2025, 1, 2, 3, 4, 5, tzinfo=tz)  # 02:04:05 UTC
+    ics = generate_ics(title="Meet", start_time=start, duration_hours=1.0)
+    assert "DTSTART:20250102T020405Z" in ics
+    assert "DTEND:20250102T030405Z" in ics
+
+
+@pytest.mark.unit
+def test_generate_ics_includes_valarm_and_escapes_text():
+    start = datetime(2025, 1, 2, 3, 4, 5)
+    ics = generate_ics(
+        title="A; tricky, title\nwith newline",
+        start_time=start,
+        duration_hours=1.0,
+        reminder_minutes_before=10,
+    )
+    assert "BEGIN:VALARM" in ics
+    assert "TRIGGER:-PT10M" in ics
+    # special chars escaped per RFC 5545
+    assert "SUMMARY:A\\; tricky\\, title\\nwith newline" in ics
 
 
 @pytest.mark.unit
