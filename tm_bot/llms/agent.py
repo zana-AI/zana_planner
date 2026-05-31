@@ -82,6 +82,22 @@ def _parse_from_tool(val: str) -> Optional[tuple]:
     return m.group(1).strip(), m.group(2).strip()
 
 
+# Resolver / read-only lookup tools. Their outputs are what FROM_TOOL: and
+# FROM_SEARCH placeholders consume, so they must always execute *before* any
+# mutation that depends on them can be previewed. They have no side effects and
+# are therefore never gated behind user confirmation — even when the planner sets
+# safety.requires_confirmation. Gating them would (a) prevent placeholder
+# substitution, leaking raw FROM_SEARCH / FROM_TOOL text into the confirmation
+# preview, and (b) clutter that preview with internal lookup steps.
+_RESOLVER_READ_ONLY_TOOLS = frozenset({"resolve_datetime", "search_promises"})
+
+
+def _is_read_only_step(tool_name: str) -> bool:
+    """True for resolver / read-only lookup steps that must never require confirmation."""
+    name = tool_name or ""
+    return name in _RESOLVER_READ_ONLY_TOOLS or name.startswith(("get_", "list_", "search_"))
+
+
 def message_content_to_str(content: Any) -> str:
     """
     Normalize message content to a string.
@@ -790,6 +806,23 @@ def _fallback_datetime_text_from_user_text(text: str) -> Optional[str]:
     """
     source = (text or "").strip()
     return source or None
+
+
+def _one_time_label_from(tool_args: dict, user_text: str) -> str:
+    """Best-effort label for a one-time promise created from a schedule_session confirmation.
+
+    Prefers an explicit session title, then a phrase extracted from the user's message, then a
+    trimmed snippet of it. The user can rename later; the point is to capture the activity rather
+    than attach it to a wrong existing promise.
+    """
+    title = str((tool_args or {}).get("title") or "").strip()
+    if title:
+        return title[:60]
+    extracted = _extract_promise_text_from_user_text(user_text or "")
+    if extracted:
+        return str(extracted)[:60]
+    snippet = " ".join((user_text or "").split())[:60].strip()
+    return snippet or "One-time session"
 
 
 _PURPOSE_PREFIX_RE = re.compile(r"^\s*(step\s*\d+\s*[:.\-]\s*|purpose\s*[:\-]\s*)", re.IGNORECASE)
@@ -2342,6 +2375,7 @@ def create_plan_execute_graph(
                     "batch_remaining": _batch_q[1:],
                     "batch_total": _total,
                     "batch_current_idx": 0,
+                    "one_time_label": _first.get("one_time_label"),
                 }
                 return {
                     **state,
@@ -2633,7 +2667,11 @@ def create_plan_execute_graph(
             
             # Any mutation must be explicitly confirmed by the user.
             # Keep existing non-mutation safety checks as well.
-            needs_confirmation = (
+            # Read-only / resolver steps are never gated: they feed FROM_TOOL /
+            # FROM_SEARCH placeholders and must run before the mutation they feed can
+            # be previewed. Gating them (e.g. via plan-level requires_confirmation)
+            # leaks raw placeholders and internal lookup steps into the preview.
+            needs_confirmation = not _is_read_only_step(tool_name) and (
                 is_mutation_tool or
                 tool_name in ALWAYS_CONFIRM_TOOLS or
                 needs_low_confidence_confirm or
@@ -3675,6 +3713,7 @@ def create_routed_plan_execute_graph(
                     "batch_remaining": _batch_q[1:],
                     "batch_total": _total,
                     "batch_current_idx": 0,
+                    "one_time_label": _first.get("one_time_label"),
                 }
                 return {
                     **state,
@@ -3930,7 +3969,11 @@ def create_routed_plan_execute_graph(
                 intent_confidence in ("low", "medium")
             )
             
-            needs_confirmation = (
+            # Read-only / resolver steps are never gated: they feed FROM_TOOL /
+            # FROM_SEARCH placeholders and must run before the mutation they feed can
+            # be previewed. Gating them (e.g. via plan-level requires_confirmation)
+            # leaks raw placeholders and internal lookup steps into the preview.
+            needs_confirmation = not _is_read_only_step(tool_name) and (
                 is_mutation_tool or
                 tool_name in ALWAYS_CONFIRM_TOOLS or
                 needs_low_confidence_confirm or
@@ -3948,6 +3991,10 @@ def create_routed_plan_execute_graph(
                     "description": action_description,
                     "preview": _format_action_confirmation_preview(tool_name, tool_args, action_description),
                 }
+                # Carry a label so the confirmation can offer "track as a one-time promise"
+                # instead of attaching the session to the matched promise.
+                if tool_name in ("schedule_session", "add_plan_session"):
+                    _batch_item["one_time_label"] = _one_time_label_from(tool_args, user_text)
                 _current_queue = list(state.get("pending_batch_queue") or [])
                 _current_queue.append(_batch_item)
                 return {
