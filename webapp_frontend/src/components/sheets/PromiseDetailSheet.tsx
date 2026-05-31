@@ -5,6 +5,7 @@ import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
+import { LogActionModal } from '../LogActionModal';
 import { apiClient } from '../../api/client';
 
 interface PromiseDetailSheetProps {
@@ -87,6 +88,8 @@ export function PromiseDetailSheet({
 
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  // Session being logged-as-done (opens LogActionModal pre-filled with its data)
+  const [logDoneSessionId, setLogDoneSessionId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -101,11 +104,35 @@ export function PromiseDetailSheet({
 
   const upcomingSessions = planSessions.filter(s => s.status === 'planned');
 
-  const handleMarkDone = async (sessionId: number) => {
+  // Pre-fill values for LogActionModal from the session being marked done
+  const doneSession = logDoneSessionId !== null
+    ? planSessions.find(s => s.id === logDoneSessionId) ?? null
+    : null;
+
+  const doneSessionPrefill = doneSession ? (() => {
+    const durationHours = doneSession.planned_duration_min
+      ? (doneSession.planned_duration_min / 60).toFixed(2).replace(/\.?0+$/, '')
+      : '';
+    const isoStart = doneSession.planned_start;
+    let prefillDate = '';
+    let prefillTime = '';
+    if (isoStart) {
+      const dt = new Date(isoStart);
+      if (!Number.isNaN(dt.getTime())) {
+        prefillDate = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        prefillTime = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+      }
+    }
+    return { hours: durationHours, date: prefillDate, time: prefillTime, notes: doneSession.notes ?? '' };
+  })() : null;
+
+  const handleLogDoneSuccess = async () => {
+    if (logDoneSessionId === null) return;
     try {
-      await apiClient.updatePlanSessionStatus(sessionId, 'done');
-      setPlanSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'done' as const } : s));
+      await apiClient.updatePlanSessionStatus(logDoneSessionId, 'done');
+      setPlanSessions(prev => prev.map(s => s.id === logDoneSessionId ? { ...s, status: 'done' as const } : s));
     } catch {}
+    setLogDoneSessionId(null);
   };
 
   const handleDelete = async (sessionId: number) => {
@@ -211,8 +238,8 @@ export function PromiseDetailSheet({
                   <button
                     type="button"
                     className="plan-session-btn plan-session-btn--done"
-                    onClick={() => handleMarkDone(session.id)}
-                    aria-label="Mark done"
+                    onClick={() => setLogDoneSessionId(session.id)}
+                    aria-label="Log and mark done"
                   >
                     <Check size={14} />
                   </button>
@@ -252,6 +279,19 @@ export function PromiseDetailSheet({
           Edit
         </Button>
       </div>
+
+      {/* Log + mark-done modal, opened when tapping ✓ on a planned session row */}
+      <LogActionModal
+        promiseId={promiseId}
+        promiseText={doneSession ? `${formatPromiseText(text)} — ${doneSession.title || 'Session'}` : formatPromiseText(text)}
+        isOpen={logDoneSessionId !== null}
+        onClose={() => setLogDoneSessionId(null)}
+        onSuccess={handleLogDoneSuccess}
+        prefillHours={doneSessionPrefill?.hours}
+        prefillDate={doneSessionPrefill?.date}
+        prefillTime={doneSessionPrefill?.time}
+        prefillNotes={doneSessionPrefill?.notes}
+      />
     </BottomSheet>
   );
 }
