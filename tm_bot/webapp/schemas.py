@@ -408,6 +408,7 @@ class AdminUser(BaseModel):
     language: Optional[str] = None
     promise_count: Optional[int] = None
     activity_count: Optional[int] = None
+    is_hidden: bool = False
 
 
 class AdminUsersResponse(BaseModel):
@@ -420,6 +421,7 @@ class AdminUserUpdateRequest(BaseModel):
     """Request model for updating curated name fields on a user (admin only)."""
     non_latin_name: Optional[str] = None
     latin_name: Optional[str] = None
+    is_hidden: Optional[bool] = None
 
 
 class CreateBroadcastRequest(BaseModel):

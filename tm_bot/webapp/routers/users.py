@@ -498,6 +498,7 @@ async def get_public_users(
                         GROUP BY user_id
                     ) promise_counts ON u.user_id = promise_counts.user_id
                     WHERE (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
+                      AND COALESCE(u.is_hidden, FALSE) = FALSE
                     ORDER BY activity_count DESC, u.last_seen_utc DESC NULLS LAST
                     LIMIT :limit;
                 """),
@@ -594,6 +595,7 @@ async def get_public_activity(
                     ) activity ON activity.user_id = u.user_id
                     WHERE COALESCE(p_uuid.visibility, p_id.visibility, 'private') = 'public'
                       AND (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
+                      AND COALESCE(u.is_hidden, FALSE) = FALSE
                     ORDER BY a.at_utc DESC
                     LIMIT :limit;
                 """),

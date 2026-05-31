@@ -747,7 +747,7 @@ class ApiClient {
 
   async updateAdminUser(
     userId: string,
-    body: { non_latin_name?: string | null; latin_name?: string | null },
+    body: { non_latin_name?: string | null; latin_name?: string | null; is_hidden?: boolean },
   ): Promise<AdminUser> {
     return this.request<AdminUser>(`/admin/users/${encodeURIComponent(userId)}`, {
       method: 'PATCH',

@@ -1099,6 +1099,7 @@ async def get_admin_users(
                         u.last_seen_utc,
                         u.timezone,
                         u.language,
+                        COALESCE(u.is_hidden, FALSE) as is_hidden,
                         COALESCE(promise_counts.promise_count, 0) as promise_count,
                         COALESCE(activity.activity_count, 0) as activity_count
                     FROM users u
@@ -1136,6 +1137,7 @@ async def get_admin_users(
                     language=row.get("language"),
                     promise_count=row.get("promise_count"),
                     activity_count=row.get("activity_count"),
+                    is_hidden=bool(row.get("is_hidden")),
                 )
             )
 
@@ -1162,6 +1164,8 @@ async def update_admin_user(
             fields["non_latin_name"] = body.non_latin_name.strip() or None
         if body.latin_name is not None:
             fields["latin_name"] = body.latin_name.strip() or None
+        if body.is_hidden is not None:
+            fields["is_hidden"] = bool(body.is_hidden)
 
         if not fields:
             raise HTTPException(status_code=400, detail="No fields provided to update.")
@@ -1176,7 +1180,7 @@ async def update_admin_user(
                     SET {set_clause}, updated_at_utc = :updated_at_utc
                     WHERE user_id = :user_id
                     RETURNING user_id, first_name, last_name, username, non_latin_name, latin_name,
-                              last_seen_utc, timezone, language
+                              last_seen_utc, timezone, language, COALESCE(is_hidden, FALSE) AS is_hidden
                 """),
                 params,
             ).mappings().fetchone()
@@ -1195,6 +1199,7 @@ async def update_admin_user(
             last_seen_utc=result.get("last_seen_utc"),
             timezone=result.get("timezone"),
             language=result.get("language"),
+            is_hidden=bool(result.get("is_hidden")),
         )
 
     except HTTPException:
@@ -1246,7 +1251,7 @@ async def guess_admin_user_name_variants(
                         updated_at_utc = :updated_at_utc
                     WHERE user_id = :user_id
                     RETURNING user_id, first_name, last_name, username, non_latin_name, latin_name,
-                              last_seen_utc, timezone, language
+                              last_seen_utc, timezone, language, COALESCE(is_hidden, FALSE) AS is_hidden
                 """),
                 {
                     "user_id": user_id,
@@ -1268,6 +1273,7 @@ async def guess_admin_user_name_variants(
             last_seen_utc=result.get("last_seen_utc"),
             timezone=result.get("timezone"),
             language=result.get("language"),
+            is_hidden=bool(result.get("is_hidden")),
         )
 
     except HTTPException:

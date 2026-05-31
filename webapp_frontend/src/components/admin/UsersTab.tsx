@@ -20,6 +20,7 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
   const [editState, setEditState] = useState<EditState>({ non_latin_name: '', latin_name: '' });
   const [saving, setSaving] = useState(false);
   const [guessingId, setGuessingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -91,6 +92,24 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
     }
   };
 
+  const toggleHidden = async (user: AdminUser) => {
+    const nextHidden = !user.is_hidden;
+    setTogglingId(user.user_id);
+    onError('');
+    try {
+      const updated = await apiClient.updateAdminUser(user.user_id, { is_hidden: nextHidden });
+      onUsersChange(updated);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        onError(err.message || 'Failed to update community visibility.');
+      } else {
+        onError('Failed to update community visibility.');
+      }
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   const displayName = (u: AdminUser) =>
     [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || u.user_id;
 
@@ -127,14 +146,31 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
               key={user.user_id}
               style={{
                 background: 'rgba(15, 23, 48, 0.7)',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: user.is_hidden ? '1px solid rgba(248,113,113,0.4)' : '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '10px',
                 padding: '0.75rem 1rem',
+                opacity: user.is_hidden ? 0.6 : 1,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                 <div>
                   <span style={{ fontWeight: 600, color: '#e8eeff' }}>{displayName(user)}</span>
+                  {user.is_hidden && (
+                    <span
+                      style={{
+                        marginLeft: '0.5rem',
+                        padding: '0.05rem 0.4rem',
+                        background: 'rgba(248,113,113,0.18)',
+                        border: '1px solid rgba(248,113,113,0.4)',
+                        borderRadius: '6px',
+                        color: '#fca5a5',
+                        fontSize: '0.7rem',
+                        verticalAlign: 'middle',
+                      }}
+                    >
+                      Hidden
+                    </span>
+                  )}
                   {user.username && (
                     <span style={{ marginLeft: '0.5rem', color: 'rgba(232,238,252,0.5)', fontSize: '0.85rem' }}>
                       @{user.username}
@@ -146,6 +182,27 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
                 </div>
                 {!isEditing && (
                   <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => toggleHidden(user)}
+                      disabled={togglingId === user.user_id}
+                      title={user.is_hidden ? 'Show this user in the community again' : 'Hide this user from community discovery & activity'}
+                      style={{
+                        padding: '0.3rem 0.7rem',
+                        background: user.is_hidden ? 'rgba(34,197,94,0.18)' : 'rgba(248,113,113,0.18)',
+                        border: user.is_hidden ? '1px solid rgba(34,197,94,0.4)' : '1px solid rgba(248,113,113,0.4)',
+                        borderRadius: '6px',
+                        color: user.is_hidden ? '#86efac' : '#fca5a5',
+                        cursor: togglingId === user.user_id ? 'not-allowed' : 'pointer',
+                        fontSize: '0.8rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {togglingId === user.user_id
+                        ? 'Saving…'
+                        : user.is_hidden
+                          ? 'Unhide'
+                          : 'Hide from community'}
+                    </button>
                     {(!user.non_latin_name || !user.latin_name) && (
                       <button
                         onClick={() => guessNames(user)}

@@ -332,6 +332,7 @@ export interface AdminUser {
   language?: string;
   promise_count?: number;
   activity_count?: number;
+  is_hidden?: boolean;
 }
 
 export interface AdminUsersResponse {
