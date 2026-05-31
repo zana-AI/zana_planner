@@ -20,6 +20,9 @@ interface PromiseDetailSheetProps {
   onSchedule: () => void;
   onFocus: () => void;
   onEdit: () => void;
+  /** Called after a planned session is logged-as-done, so the parent can
+   *  refetch the weekly report and refresh the badge/grids. */
+  onLogged?: () => void;
 }
 
 function toLocalDateKey(date: Date): string {
@@ -67,6 +70,7 @@ export function PromiseDetailSheet({
   onSchedule,
   onFocus,
   onEdit,
+  onLogged,
 }: PromiseDetailSheetProps) {
   const navigate = useNavigate();
   const {
@@ -141,6 +145,9 @@ export function PromiseDetailSheet({
       setPlanSessions(prev => prev.map(s => s.id === logDoneSessionId ? { ...s, status: 'done' as const } : s));
     } catch {}
     setLogDoneSessionId(null);
+    // Tell the parent to refetch the weekly report so the badge/grids
+    // reflect the freshly logged time.
+    onLogged?.();
   };
 
   const handleGoToClub = async () => {

@@ -423,6 +423,17 @@ export function DashboardPage() {
     setDetailPromise({ id, data });
   }, []);
 
+  // Keep the open detail sheet in sync with refreshed report data, so logging
+  // a session updates its badge/grids live instead of showing a stale snapshot.
+  useEffect(() => {
+    setDetailPromise((current) => {
+      if (!current || !reportData) return current;
+      const fresh = reportData.promises[current.id];
+      if (!fresh || fresh === current.data) return current;
+      return { id: current.id, data: fresh };
+    });
+  }, [reportData]);
+
   const handleSheetSuccess = useCallback((message: string) => {
     showToast(message);
     handleRefresh();
@@ -832,6 +843,7 @@ export function DashboardPage() {
             setEditPromise(detailPromise);
             setDetailPromise(null);
           }}
+          onLogged={handleRefresh}
         />
       ) : null}
 
