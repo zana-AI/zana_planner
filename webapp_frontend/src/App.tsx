@@ -15,6 +15,7 @@ import { PdfReaderPage } from './pages/PdfReaderPage';
 import { DevAdminLoginPage } from './pages/DevAdminLoginPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
+import { HomeScreenshotPage } from './components/home/HomeScreenshotPage';
 import { AdminPanel } from './components/AdminPanel';
 import { Navigation } from './components/Navigation';
 import { apiClient } from './api/client';
@@ -97,6 +98,11 @@ function App() {
         <Routes>
         {/* Local development helper - backend must explicitly enable dev auth */}
         <Route path="/dev-admin" element={<DevAdminLoginPage />} />
+
+        {/* Screenshot-only route for generated home-page mockup assets. */}
+        {import.meta.env.DEV && (
+          <Route path="/__home-screenshots/:screen" element={<HomeScreenshotPage />} />
+        )}
 
         {/* Admin Panel - accessible via /admin */}
         <Route path="/admin" element={<AdminPanel />} />

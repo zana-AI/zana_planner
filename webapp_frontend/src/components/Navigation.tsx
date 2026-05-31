@@ -60,6 +60,7 @@ export function Navigation(_props: NavigationProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const navigationType = useNavigationType();
+  const isScreenshotRoute = location.pathname.startsWith('/__home-screenshots');
   const { initData, user: telegramUser } = useTelegramWebApp();
   const sessionMode = useSessionMode();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -91,7 +92,7 @@ export function Navigation(_props: NavigationProps) {
 
   useEffect(() => {
     const checkAdmin = async () => {
-      if (!isAuthenticated) {
+      if (isScreenshotRoute || !isAuthenticated) {
         setIsAdmin(false);
         return;
       }
@@ -104,7 +105,7 @@ export function Navigation(_props: NavigationProps) {
       }
     };
     checkAdmin();
-  }, [authData, isAuthenticated]);
+  }, [authData, isAuthenticated, isScreenshotRoute]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -157,7 +158,7 @@ export function Navigation(_props: NavigationProps) {
 
   useTelegramBackButton({ enabled: shouldShowBack, onClick: handleBack });
 
-  if (!isAuthenticated || location.pathname === '/') return null;
+  if (!isAuthenticated || location.pathname === '/' || isScreenshotRoute) return null;
 
   const displayName =
     userInfo?.first_name ||
