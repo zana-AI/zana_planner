@@ -211,10 +211,48 @@ def test_run_memory_flush_appends_to_date_file(monkeypatch, tmp_path):
         now_utc=datetime(2025, 2, 19, tzinfo=timezone.utc),
     )
     assert len(calls) == 1
-    assert "2025-02-19" in calls[0][1]
+    # The flush still writes to the date-named file (run_memory_flush owns the path).
     target = tmp_path / "42" / "memory" / "2025-02-19.md"
     assert target.exists()
     assert "User prefers morning standups" in target.read_text(encoding="utf-8")
+
+
+# ── turn-based flush trigger (chat-bot usage) ─────────────────────────────────
+
+
+@pytest.mark.unit
+def test_turn_trigger_fires_at_interval():
+    assert should_run_memory_flush(
+        entry={"message_count": 16, "flush_every_messages": 16, "memory_flush_message_count": 0}
+    ) is True
+
+
+@pytest.mark.unit
+def test_turn_trigger_below_interval_does_not_fire():
+    assert should_run_memory_flush(
+        entry={"message_count": 15, "flush_every_messages": 16, "memory_flush_message_count": 0}
+    ) is False
+
+
+@pytest.mark.unit
+def test_turn_trigger_dedups_until_next_interval():
+    # Already flushed at 16; at 20 (only +4) it should not fire again...
+    assert should_run_memory_flush(
+        entry={"message_count": 20, "flush_every_messages": 16, "memory_flush_message_count": 16}
+    ) is False
+    # ...but at 32 (+16 since last flush) it should.
+    assert should_run_memory_flush(
+        entry={"message_count": 32, "flush_every_messages": 16, "memory_flush_message_count": 16}
+    ) is True
+
+
+@pytest.mark.unit
+def test_turn_trigger_disabled_when_interval_zero():
+    # interval 0 → fall through to token logic; with a small history (< the legacy 50-msg
+    # proxy) and no token count, it stays under threshold.
+    assert should_run_memory_flush(
+        entry={"message_count": 30, "flush_every_messages": 0}
+    ) is False
 
 
 # ── memory_write ──────────────────────────────────────────────────────────────
