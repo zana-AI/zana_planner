@@ -258,7 +258,12 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     const isoStart = doneSession.planned_start;
     const prefillDate = isoStart ? isoStart.split('T')[0] : '';
     const prefillTime = isoStart ? isoStart.substring(11, 16) : '';
-    return { hours: durationHours, date: prefillDate, time: prefillTime, notes: doneSession.notes ?? '' };
+    // The session title (e.g. "fix UI for planned sessions") belongs in the
+    // notes field, not appended to the promise title. Skip the generic defaults.
+    const rawTitle = (doneSession.title ?? '').trim();
+    const titlePart = rawTitle && !['planned session', 'session'].includes(rawTitle.toLowerCase()) ? rawTitle : '';
+    const notesValue = [titlePart, (doneSession.notes ?? '').trim()].filter(Boolean).join('\n');
+    return { hours: durationHours, date: prefillDate, time: prefillTime, notes: notesValue };
   })() : null;
 
   const handleChipDoneLogged = async () => {
@@ -1453,7 +1458,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       {/* Log + mark-done modal, opened when tapping ✓ Done on a planned session chip */}
       <LogActionModal
         promiseId={id}
-        promiseText={doneSession ? `${text} — ${doneSession.title || 'Session'}` : text}
+        promiseText={text}
         isOpen={logDoneSessionId !== null}
         onClose={() => setLogDoneSessionId(null)}
         onSuccess={handleChipDoneLogged}

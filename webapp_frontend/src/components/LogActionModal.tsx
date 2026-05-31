@@ -14,6 +14,16 @@ interface LogActionModalProps {
   prefillNotes?: string;
 }
 
+// Quick-pick durations, stored as decimal hours (the unit logAction expects).
+const DURATION_CHIPS: { label: string; hours: number }[] = [
+  { label: '15m', hours: 0.25 },
+  { label: '30m', hours: 0.5 },
+  { label: '45m', hours: 0.75 },
+  { label: '1h', hours: 1 },
+  { label: '1.5h', hours: 1.5 },
+  { label: '2h', hours: 2 },
+];
+
 export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSuccess, prefillHours, prefillDate, prefillTime, prefillNotes }: LogActionModalProps) {
   const [hours, setHours] = useState(prefillHours ?? '');
   const [date, setDate] = useState(prefillDate ?? '');
@@ -116,17 +126,30 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
 
           <div className="modal-form-group">
             <label htmlFor="hours" className="modal-label">
-              Hours <span className="modal-required">*</span>
+              Duration <span className="modal-required">*</span>
             </label>
+            <div className="sched-chip-row" style={{ marginBottom: 8 }}>
+              {DURATION_CHIPS.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  className={`sched-chip${parseFloat(hours) === chip.hours ? ' is-active' : ''}`}
+                  onClick={() => setHours(String(chip.hours))}
+                  disabled={isSubmitting}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
             <input
               id="hours"
               type="number"
-              step="0.1"
-              min="0.1"
+              step="any"
+              min="0.01"
               value={hours}
               onChange={(e) => setHours(e.target.value)}
               className="modal-input"
-              placeholder="e.g., 2.5"
+              placeholder="or enter hours, e.g. 0.75"
               required
               disabled={isSubmitting}
             />

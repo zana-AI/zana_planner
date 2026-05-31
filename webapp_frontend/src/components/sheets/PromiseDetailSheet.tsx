@@ -127,7 +127,11 @@ export function PromiseDetailSheet({
         prefillTime = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
       }
     }
-    return { hours: durationHours, date: prefillDate, time: prefillTime, notes: doneSession.notes ?? '' };
+    // The session title belongs in notes, not appended to the promise title.
+    const rawTitle = (doneSession.title ?? '').trim();
+    const titlePart = rawTitle && !['planned session', 'session'].includes(rawTitle.toLowerCase()) ? rawTitle : '';
+    const notesValue = [titlePart, (doneSession.notes ?? '').trim()].filter(Boolean).join('\n');
+    return { hours: durationHours, date: prefillDate, time: prefillTime, notes: notesValue };
   })() : null;
 
   const handleLogDoneSuccess = async () => {
@@ -302,7 +306,7 @@ export function PromiseDetailSheet({
       {/* Log + mark-done modal, opened when tapping ✓ on a planned session row */}
       <LogActionModal
         promiseId={promiseId}
-        promiseText={doneSession ? `${formatPromiseText(text)} — ${doneSession.title || 'Session'}` : formatPromiseText(text)}
+        promiseText={formatPromiseText(text)}
         isOpen={logDoneSessionId !== null}
         onClose={() => setLogDoneSessionId(null)}
         onSuccess={handleLogDoneSuccess}
