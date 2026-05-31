@@ -533,7 +533,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     try {
       const { clubs } = await apiClient.getMyClubs();
       const club = clubs.find(c => c.promise_id === id || c.promise_uuid === id);
-      if (club) navigate(`/clubs/${club.club_id}`);
+      if (club) navigate(`/community?club=${club.club_id}`);
     } catch {}
   };
 
@@ -775,8 +775,8 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 </span>
               )}
               {isClubPromise && (
-                <button type="button" className="card-club-badge" title="Go to club" onClick={handleClubBadgeClick}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <button type="button" className="card-club-badge" title="Go to club" onClick={handleClubBadgeClick} aria-label="Go to club">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M16 21v-2a4 4 0 0 0-8 0v2" />
                     <circle cx="12" cy="7" r="4" />
                     <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -784,7 +784,6 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     <path d="M2 21v-2a4 4 0 0 1 3-3.87" />
                     <path d="M8 3.13a4 4 0 0 0 0 7.75" />
                   </svg>
-                  Club
                 </button>
               )}
               <button

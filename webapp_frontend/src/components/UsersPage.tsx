@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { shouldUseLocalMockData } from '../api/mockData';
 import { ActivityItem } from './community/ActivityItem';
@@ -85,6 +85,8 @@ function buildMomentumActivity(users: PublicUser[]): CommunityFeedItem[] {
 
 export function UsersPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openClubId = searchParams.get('club');
   const { user, initData, isReady } = useTelegramWebApp();
   const [discoverUsers, setDiscoverUsers] = useState<PublicUser[]>([]);
   const [activityItems, setActivityItems] = useState<PublicActivityItem[]>([]);
@@ -191,6 +193,7 @@ export function UsersPage() {
       setActivityItems(activityRes.items);
       setDiscoverUsers(usersRes.users.filter((publicUser) => publicUser.user_id !== currentUserId));
       setClubs(clubsRes.clubs);
+      if (openClubId) setSearchParams({}, { replace: true });
     } catch (err) {
       console.error('Failed to fetch community data:', err);
       if (err instanceof ApiError) {
@@ -379,6 +382,7 @@ export function UsersPage() {
                     key={club.club_id}
                     club={club}
                     busy={!!clubBusyById[club.club_id]}
+                    initialOpen={club.club_id === openClubId}
                     onOpenSettings={(item) => navigate(`/clubs/${item.club_id}`)}
                     onRemove={handleRemoveClub}
                   />

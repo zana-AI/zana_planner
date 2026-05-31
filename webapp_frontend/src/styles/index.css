@@ -2136,9 +2136,10 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 .card-club-badge {
   order: 2;
   flex: 0 0 auto;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: var(--radius-pill);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
   border: 1px solid rgba(56, 189, 248, 0.44);
   background:
     linear-gradient(180deg, rgba(125, 211, 252, 0.26), rgba(56, 189, 248, 0.08)),
@@ -2146,10 +2147,8 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   color: #7dd3fc;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
+  justify-content: center;
+  cursor: pointer;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.10),
     0 6px 14px rgba(56, 189, 248, 0.08);

@@ -10,6 +10,7 @@ import { AvatarStack } from '../ui/AvatarStack';
 interface ClubBadgeProps {
   club: ClubSummary;
   busy?: boolean;
+  initialOpen?: boolean;
   onOpenSettings: (club: ClubSummary) => void;
   onRemove: (club: ClubSummary) => void;
 }
@@ -49,8 +50,8 @@ function formatActivityTitle(date: string, checkins: number, durationHours: numb
   return `${date}: ${parts.length ? parts.join(', ') : 'no club activity'}`;
 }
 
-export function ClubBadge({ club, busy = false, onOpenSettings, onRemove }: ClubBadgeProps) {
-  const [sheetOpen, setSheetOpen] = useState(false);
+export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSettings, onRemove }: ClubBadgeProps) {
+  const [sheetOpen, setSheetOpen] = useState(initialOpen);
   const [leaderboard, setLeaderboard] = useState<ClubLeaderboardResponse | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState('');

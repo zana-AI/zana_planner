@@ -143,7 +143,7 @@ export function PromiseDetailSheet({
     try {
       const { clubs } = await apiClient.getMyClubs();
       const club = clubs.find(c => c.promise_id === promiseId || c.promise_uuid === promiseId);
-      if (club) { onClose(); navigate(`/clubs/${club.club_id}`); }
+      if (club) { onClose(); navigate(`/community?club=${club.club_id}`); }
     } catch {}
   };
 
@@ -177,9 +177,16 @@ export function PromiseDetailSheet({
       title={formatPromiseText(text)}
       subtitle={`Promise #${promiseId}`}
       headerActions={(
-        <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={onFocus} aria-label="Start focus">
-          <Timer size={18} aria-hidden />
-        </button>
+        <>
+          {isClubPromise && (
+            <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={handleGoToClub} aria-label="Go to club">
+              <Users size={18} aria-hidden />
+            </button>
+          )}
+          <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={onFocus} aria-label="Start focus">
+            <Timer size={18} aria-hidden />
+          </button>
+        </>
       )}
     >
       <section className="overall">
@@ -290,12 +297,6 @@ export function PromiseDetailSheet({
           <Pencil size={14} />
           Edit
         </Button>
-        {isClubPromise && (
-          <Button variant="secondary" onClick={handleGoToClub}>
-            <Users size={14} />
-            Club
-          </Button>
-        )}
       </div>
 
       {/* Log + mark-done modal, opened when tapping ✓ on a planned session row */}
