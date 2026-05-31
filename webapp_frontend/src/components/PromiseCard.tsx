@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { PromiseData, SessionData, PlanSession } from '../types';
 import { apiClient } from '../api/client';
 import { LogActionModal } from './LogActionModal';
@@ -111,11 +112,12 @@ function calculateProgress(spent: number, promised: number): number {
  * PromiseCard component - displays a single promise with progress visualization
  */
 export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps) {
-  const { 
-    text, 
-    hours_promised, 
-    hours_spent, 
-    sessions, 
+  const navigate = useNavigate();
+  const {
+    text,
+    hours_promised,
+    hours_spent,
+    sessions,
     visibility = 'private',
     recurring = true,
     metric_type = 'hours',
@@ -526,6 +528,15 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     }
   };
   
+  const handleClubBadgeClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const { clubs } = await apiClient.getMyClubs();
+      const club = clubs.find(c => c.promise_id === id || c.promise_uuid === id);
+      if (club) navigate(`/clubs/${club.club_id}`);
+    } catch {}
+  };
+
   const handleEditClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     closeSwipeActions();
@@ -764,7 +775,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 </span>
               )}
               {isClubPromise && (
-                <span className="card-club-badge" title="Club promise">
+                <button type="button" className="card-club-badge" title="Go to club" onClick={handleClubBadgeClick}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M16 21v-2a4 4 0 0 0-8 0v2" />
                     <circle cx="12" cy="7" r="4" />
@@ -774,7 +785,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     <path d="M8 3.13a4 4 0 0 0 0 7.75" />
                   </svg>
                   Club
-                </span>
+                </button>
               )}
               <button
                 className="card-edit-button"

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Pencil, Timer, Trash2, Check } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Clock, Pencil, Timer, Trash2, Check, Users } from 'lucide-react';
 import type { PromiseData, PlanSession } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
@@ -67,6 +68,7 @@ export function PromiseDetailSheet({
   onFocus,
   onEdit,
 }: PromiseDetailSheetProps) {
+  const navigate = useNavigate();
   const {
     text,
     hours_promised,
@@ -76,9 +78,11 @@ export function PromiseDetailSheet({
     target_value = hours_promised,
     achieved_value = hours_spent,
     recurring = true,
+    visibility,
   } = data;
 
   const isCountBased = metric_type === 'count';
+  const isClubPromise = visibility === 'clubs';
   const target = target_value || hours_promised || 1;
   const achieved = achieved_value ?? hours_spent ?? 0;
   const progress = target > 0 ? Math.min(Math.round((achieved / target) * 100), 100) : 0;
@@ -133,6 +137,14 @@ export function PromiseDetailSheet({
       setPlanSessions(prev => prev.map(s => s.id === logDoneSessionId ? { ...s, status: 'done' as const } : s));
     } catch {}
     setLogDoneSessionId(null);
+  };
+
+  const handleGoToClub = async () => {
+    try {
+      const { clubs } = await apiClient.getMyClubs();
+      const club = clubs.find(c => c.promise_id === promiseId || c.promise_uuid === promiseId);
+      if (club) { onClose(); navigate(`/clubs/${club.club_id}`); }
+    } catch {}
   };
 
   const handleDelete = async (sessionId: number) => {
@@ -278,6 +290,12 @@ export function PromiseDetailSheet({
           <Pencil size={14} />
           Edit
         </Button>
+        {isClubPromise && (
+          <Button variant="secondary" onClick={handleGoToClub}>
+            <Users size={14} />
+            Club
+          </Button>
+        )}
       </div>
 
       {/* Log + mark-done modal, opened when tapping ✓ on a planned session row */}
