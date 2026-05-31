@@ -260,18 +260,10 @@ def preping_kb(promise_id: str, snooze_min: int = 30) -> Keyboard:
 def session_running_kb(session_id: str) -> Keyboard:
     """Create keyboard for running session controls."""
     keyboard = Keyboard()
-    row1 = [
+    keyboard.add_row(
         create_button("Pause ⏸️", callback_data=encode_session_cb("session_pause", session_id)),
         create_button("Finish ✅", callback_data=encode_session_cb("session_finish_open", session_id)),
-    ]
-    keyboard.add_row(*row1)
-    
-    row2 = [
-        create_button("+15m", callback_data=encode_session_cb("session_plus", session_id, value=0.25)),
-        create_button("+30m", callback_data=encode_session_cb("session_plus", session_id, value=0.50)),
-        create_button("Snooze 10m", callback_data=encode_session_cb("session_snooze", session_id, m=10)),
-    ]
-    keyboard.add_row(*row2)
+    )
     return keyboard
 
 

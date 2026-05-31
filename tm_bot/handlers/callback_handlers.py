@@ -1009,6 +1009,19 @@ class CallbackHandlers:
         user_id = query.from_user.id
         try:
             sess = self.plan_keeper.sessions_service.start(user_id, promise_id)
+
+            # Wire timer fields from the planned session's duration so the app's
+            # FocusBar can render a countdown. Without these the bar is stuck at 00:00.
+            try:
+                plan = self.plan_keeper.plan_sessions_repo.get(int(plan_session_id), user_id)
+                duration_min = int((plan or {}).get("planned_duration_min") or 25)
+            except Exception:
+                duration_min = 25
+            sess.expected_end_utc = datetime.now() + timedelta(minutes=duration_min)
+            sess.planned_duration_minutes = duration_min
+            sess.timer_kind = "focus"
+            self.plan_keeper.sessions_service.sessions_repo.update_session(sess)
+
             message = get_message("session_started", user_lang, promise_id=promise_id)
             if not message or message == "session_started":
                 message = f"▶️ Focus session started for *#{promise_id}*!\n\nGood luck! 🎯"
