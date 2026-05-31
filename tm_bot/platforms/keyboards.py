@@ -283,14 +283,16 @@ def session_paused_kb(session_id: str) -> Keyboard:
 def session_finish_confirm_kb(session_id: str, proposed_h: float) -> Keyboard:
     """Create keyboard for session finish confirmation."""
     keyboard = Keyboard()
-    buttons = [
+    keyboard.add_row(
         create_button(
             f"Looks right ✅ ({beautify_time(proposed_h)})",
             callback_data=encode_session_cb("session_finish_confirm", session_id, value=proposed_h)
         ),
         create_button("Adjust…", callback_data=encode_session_cb("session_adjust_open", session_id, value=proposed_h)),
-    ]
-    keyboard.add_row(*buttons)
+    )
+    keyboard.add_row(
+        create_button("❌ Discard", callback_data=encode_session_cb("session_abort", session_id)),
+    )
     return keyboard
 
 
