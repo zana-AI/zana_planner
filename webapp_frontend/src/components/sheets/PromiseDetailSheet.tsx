@@ -259,21 +259,21 @@ export function PromiseDetailSheet({
       )}
 
       <div className="action-row" style={{ marginTop: 16 }}>
-        <Button variant="secondary" onClick={onLogTime}>
-          <Clock size={14} />
-          Log
-        </Button>
         {isCountBased ? (
           <Button variant="secondary" onClick={onCheckin}>
-            <Timer size={14} />
+            <Check size={14} />
             Check in
           </Button>
         ) : (
-          <Button variant="secondary" onClick={onSchedule}>
-            <Timer size={14} />
-            Schedule
+          <Button variant="secondary" onClick={onLogTime}>
+            <Clock size={14} />
+            Log
           </Button>
         )}
+        <Button variant="secondary" onClick={onSchedule}>
+          <Timer size={14} />
+          Schedule
+        </Button>
         <Button variant="secondary" onClick={onEdit}>
           <Pencil size={14} />
           Edit

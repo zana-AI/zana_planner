@@ -966,6 +966,52 @@
 }
 .time-row button.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
+.sched-title-input,
+.sched-single-input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0 10px;
+  font: inherit;
+  margin-top: 6px;
+}
+.sched-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sched-chip {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.sched-chip.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.sched-chip-input {
+  min-height: 32px;
+  width: 88px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .activity {
   display: grid;
   gap: 0;

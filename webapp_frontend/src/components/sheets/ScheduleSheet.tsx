@@ -12,7 +12,9 @@ interface ScheduleSheetProps {
   onSuccess: (message: string) => void;
 }
 
-const TIME_SLOTS = ['09:00', '12:00', '15:00', '18:00'];
+const TIME_SLOTS = ['07:00', '09:00', '12:00', '15:00', '18:00', '21:00'];
+const DURATION_PRESETS = [15, 30, 45, 60, 90];
+const DEFAULT_DURATION = 30;
 const REMINDER_OPTIONS = [
   { value: 0, label: 'At start' },
   { value: 5, label: '5m before' },
@@ -39,8 +41,10 @@ function formatDayLabel(dateKey: string) {
 }
 
 export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose, onSuccess }: ScheduleSheetProps) {
+  const [title, setTitle] = useState('');
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [selectedTime, setSelectedTime] = useState('09:00');
+  const [duration, setDuration] = useState<number>(DEFAULT_DURATION);
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [reminderOffset, setReminderOffset] = useState('10');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,8 +55,10 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
 
   useEffect(() => {
     if (!open) return;
+    setTitle('');
     setSelectedDate(todayKey());
     setSelectedTime('09:00');
+    setDuration(DEFAULT_DURATION);
     setReminderEnabled(true);
     setReminderOffset('10');
     setError('');
@@ -60,14 +66,18 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
 
   const handleSubmit = async () => {
     if (!selectedDate || !selectedTime) return;
+    if (!Number.isFinite(duration) || duration <= 0) {
+      setError('Duration must be greater than 0 minutes');
+      return;
+    }
     setIsSubmitting(true);
     setError('');
     try {
       const plannedStart = new Date(`${selectedDate}T${selectedTime}:00`).toISOString();
       await apiClient.createPlanSession(promiseId, {
-        title: 'Planned session',
+        title: title.trim() || 'Planned session',
         planned_start: plannedStart,
-        planned_duration_min: 25,
+        planned_duration_min: duration,
         reminder_enabled: reminderEnabled,
         reminder_offset_min: Number(reminderOffset),
       });
@@ -82,69 +92,89 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Schedule session" subtitle={promiseText}>
-      <p className="ds-caption">Date and time</p>
-      <div className="sched-datetime-row">
-        <input
-          type="date"
-          value={selectedDate}
-          min={todayKey()}
-          onChange={(event) => setSelectedDate(event.target.value)}
-        />
-        <input
-          type="time"
-          value={selectedTime}
-          onChange={(event) => setSelectedTime(event.target.value)}
-        />
-      </div>
-      <div className="sched-shortcuts">
-        <button type="button" onClick={() => setSelectedDate(todayKey())}>Today</button>
-        <button
-          type="button"
-          onClick={() => {
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            setSelectedDate([
-              tomorrow.getFullYear(),
-              String(tomorrow.getMonth() + 1).padStart(2, '0'),
-              String(tomorrow.getDate()).padStart(2, '0'),
-            ].join('-'));
-          }}
-        >
-          Tomorrow
-        </button>
-      </div>
+      <p className="ds-caption">Title (optional)</p>
+      <input
+        type="text"
+        className="sched-title-input"
+        placeholder="Planned session"
+        value={title}
+        onChange={(event) => setTitle(event.target.value)}
+        maxLength={120}
+      />
+
+      <p className="ds-caption" style={{ marginTop: 12 }}>Date</p>
+      <input
+        type="date"
+        className="sched-single-input"
+        value={selectedDate}
+        min={todayKey()}
+        onChange={(event) => setSelectedDate(event.target.value)}
+      />
       {labels.length > 0 ? (
-        <>
-          <p className="ds-caption" style={{ marginTop: 12 }}>This week</p>
-          <div className="sched-grid">
-        {labels.map((label, index) => (
-          <button
-            key={selectableWeekDays[index]}
-            type="button"
-            className={`sched-day${selectedDate === selectableWeekDays[index] ? ' is-active' : ''}`}
-            onClick={() => setSelectedDate(selectableWeekDays[index])}
-          >
-            <span>{label.dow}</span>
-            <span className="num">{label.num}</span>
-          </button>
-        ))}
-          </div>
-        </>
+        <div className="sched-grid" style={{ marginTop: 8 }}>
+          {labels.map((label, index) => (
+            <button
+              key={selectableWeekDays[index]}
+              type="button"
+              className={`sched-day${selectedDate === selectableWeekDays[index] ? ' is-active' : ''}`}
+              onClick={() => setSelectedDate(selectableWeekDays[index])}
+            >
+              <span>{label.dow}</span>
+              <span className="num">{label.num}</span>
+            </button>
+          ))}
+        </div>
       ) : null}
-      <p className="ds-caption" style={{ marginTop: 12 }}>Pick a time</p>
-      <div className="time-row">
+
+      <p className="ds-caption" style={{ marginTop: 12 }}>Time</p>
+      <input
+        type="time"
+        className="sched-single-input"
+        value={selectedTime}
+        onChange={(event) => setSelectedTime(event.target.value)}
+      />
+      <div className="sched-chip-row" style={{ marginTop: 8 }}>
         {TIME_SLOTS.map((slot) => (
           <button
             key={slot}
             type="button"
-            className={selectedTime === slot ? 'is-active' : ''}
+            className={`sched-chip${selectedTime === slot ? ' is-active' : ''}`}
             onClick={() => setSelectedTime(slot)}
           >
             {slot}
           </button>
         ))}
       </div>
-      <div className="sched-reminder-row">
+
+      <p className="ds-caption" style={{ marginTop: 12 }}>Duration</p>
+      <div className="sched-chip-row">
+        {DURATION_PRESETS.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            className={`sched-chip${duration === preset ? ' is-active' : ''}`}
+            onClick={() => setDuration(preset)}
+          >
+            {preset}m
+          </button>
+        ))}
+        <input
+          type="number"
+          className="sched-chip-input"
+          min={1}
+          step={5}
+          placeholder="custom"
+          value={DURATION_PRESETS.includes(duration) ? '' : String(duration)}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            if (Number.isFinite(next) && next > 0) setDuration(next);
+            else if (event.target.value === '') setDuration(DEFAULT_DURATION);
+          }}
+          aria-label="Custom duration in minutes"
+        />
+      </div>
+
+      <div className="sched-reminder-row" style={{ marginTop: 12 }}>
         <label>
           <input
             type="checkbox"
