@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, TelegramError
+from telegram.helpers import escape_markdown
 from repositories.settings_repo import SettingsRepository
 from utils.admin_utils import get_admin_ids
 from utils.logger import get_logger
@@ -573,9 +574,14 @@ async def send_plan_session_reminder(
             if reminder_offset_min > 0
             else "Time to focus"
         )
-        parts = [f"*{heading}*\n\n{session_label}"]
-        if promise_text and promise_text.strip() and promise_text.strip() != session_label:
-            parts.append(f"Promise: {promise_text.strip()}")
+        # User-controlled fields (session title, promise text) must be escaped
+        # before going into a Markdown-parsed message, or an unbalanced '*', '_',
+        # '`' or '[' raises BadRequest("Can't parse entities").
+        safe_label = escape_markdown(session_label, version=1)
+        parts = [f"*{heading}*\n\n{safe_label}"]
+        promise_clean = promise_text.strip() if promise_text else ""
+        if promise_clean and promise_clean != session_label:
+            parts.append(f"Promise: {escape_markdown(promise_clean, version=1)}")
         if time_str:
             parts.append(f"Start: {time_str}" + (f"  -  {dur_str}" if dur_str else ""))
         elif dur_str:
