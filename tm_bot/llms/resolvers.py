@@ -132,6 +132,38 @@ def _build_datetime_prompt(datetime_text: str, now_local: datetime) -> tuple[str
     return _DT_SYSTEM, _DT_USER_TEMPLATE.format(**slots)
 
 
+def _maybe_collapse_today_tomorrow(parsed: dict, now_local: datetime) -> dict:
+    """Resolve the specific "same clock time, today vs tomorrow" ambiguity instead of asking.
+
+    When the resolver is only unsure between the same time today and tomorrow (e.g. "at 6" /
+    "ساعت ۶"), prefer the nearest upcoming instance — today if it hasn't passed yet, else
+    tomorrow. The datetime prompt already says to prefer the near future, but smaller models
+    often punt to a clarification here. Other low-confidence cases ("morning", "next week",
+    tomorrow-vs-day-after) are left untouched so their clarification still happens.
+    """
+    if parsed.get("confidence") != "low":
+        return parsed
+    cands = parsed.get("candidates") or []
+    if len(cands) != 2:
+        return parsed
+    try:
+        a, b = sorted(datetime.fromisoformat(str(c)) for c in cands)
+    except Exception:
+        return parsed
+    if (a.hour, a.minute) != (b.hour, b.minute) or (b - a) != timedelta(days=1):
+        return parsed
+    now_ref = now_local
+    if a.tzinfo is not None and now_ref.tzinfo is None:
+        now_ref = now_ref.replace(tzinfo=a.tzinfo)
+    elif a.tzinfo is None and now_ref.tzinfo is not None:
+        a = a.replace(tzinfo=now_ref.tzinfo)
+        b = b.replace(tzinfo=now_ref.tzinfo)
+    if a.date() != now_ref.date():
+        return parsed  # the earlier option isn't today — keep the clarification
+    target = a if a > now_ref else b
+    return {"resolved": target.isoformat(timespec="seconds"), "confidence": "high"}
+
+
 def resolve_datetime_with_llm(
     model: Any,
     datetime_text: str,
@@ -183,6 +215,8 @@ def resolve_datetime_with_llm(
         if confidence == "high":
             resolved = parsed.get("resolved", "")
             datetime.fromisoformat(str(resolved))  # raises if invalid
+        elif confidence == "low":
+            parsed = _maybe_collapse_today_tomorrow(parsed, now_local)
         return json.dumps(parsed)
 
     except Exception as exc:
