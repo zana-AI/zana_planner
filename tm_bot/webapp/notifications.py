@@ -7,12 +7,17 @@ import html
 from io import BytesIO
 from datetime import datetime, timezone
 from typing import Optional
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
 from telegram.error import BadRequest, TelegramError
 from telegram.helpers import escape_markdown
 from repositories.settings_repo import SettingsRepository
 from utils.admin_utils import get_admin_ids
-from utils.calendar_utils import generate_google_calendar_link, generate_ics
+from utils.calendar_utils import (
+    calendar_event_description,
+    generate_google_calendar_link,
+    generate_ics,
+    resolve_calendar_event_title,
+)
 from utils.logger import get_logger
 from cbdata import encode_cb, encode_session_cb
 
@@ -661,6 +666,8 @@ async def send_plan_session_reminder(
 async def send_plan_session_saved_notification(
     bot_token: str,
     user_id: int,
+    plan_session_id: int,
+    promise_id: str,
     promise_text: str,
     title: Optional[str],
     planned_start: Optional[str],
@@ -668,11 +675,14 @@ async def send_plan_session_saved_notification(
     reminder_enabled: bool = True,
     reminder_offset_min: int = 10,
     is_edit: bool = False,
+    miniapp_url: str = "https://xaana.club",
+    notes: Optional[str] = None,
 ) -> None:
     """
-    DM the user after they schedule/edit a session in the mini-app, offering
-    one-tap "add to calendar" options: a Google Calendar button plus an
-    attached .ics file (which opens the native add-to-calendar sheet on phones).
+    DM the user after they schedule/edit a session in the mini-app.
+
+    One message with: open promise in the app, Google Calendar link, and an
+    on-demand ICS button (sends the .ics file when tapped).
 
     Sending is best-effort — failures never block the API call that triggered it.
     """
@@ -691,22 +701,14 @@ async def send_plan_session_saved_notification(
 
         duration_min = int(planned_duration_min or 30)
         duration_hours = duration_min / 60.0
-        event_title = (title or promise_text or "Focus session").strip()
-        description = f"Xaana promise: {promise_text}".strip() if promise_text else ""
+        event_title = resolve_calendar_event_title(title, promise_text)
+        description = calendar_event_description(event_title, promise_text, notes)
 
-        # Build calendar artifacts (UTC times; calendar apps localize them).
         google_url = generate_google_calendar_link(
             title=event_title,
             start_time=start_dt,
             duration_hours=duration_hours,
             description=description,
-        )
-        ics_text = generate_ics(
-            title=event_title,
-            start_time=start_dt,
-            duration_hours=duration_hours,
-            description=description,
-            reminder_minutes_before=reminder_offset_min if reminder_enabled else None,
         )
 
         # Friendly local-time label using the user's timezone.
@@ -729,15 +731,30 @@ async def send_plan_session_saved_notification(
         lines = [f"📅 Session {verb}: {event_title}"]
         if when_label:
             lines.append(f"{when_label}  ·  {dur_label}")
-        promise_clean = (promise_text or "").strip()
-        if promise_clean and promise_clean != event_title:
+        promise_clean = (promise_text or "").strip().replace("_", " ")
+        if promise_clean and promise_clean.lower() != event_title.lower():
             lines.append(f"Promise: {promise_clean}")
-        lines.append("")
-        lines.append("Add it to your calendar 👇")
         message = "\n".join(lines)
 
+        app_base = (miniapp_url or "https://xaana.club").rstrip("/")
+        app_url = f"{app_base}/dashboard"
+        if promise_id:
+            app_url = f"{app_url}?promise={promise_id}"
+
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📅 Add to Google Calendar", url=google_url)]
+            [
+                InlineKeyboardButton(
+                    "📱 See session in app",
+                    web_app=WebAppInfo(url=app_url),
+                )
+            ],
+            [
+                InlineKeyboardButton("📅 Google Calendar", url=google_url),
+                InlineKeyboardButton(
+                    "📎 ICS file",
+                    callback_data=encode_cb("psess_ics", sid=str(plan_session_id)),
+                ),
+            ],
         ])
 
         bot = Bot(token=bot_token)
@@ -747,16 +764,6 @@ async def send_plan_session_saved_notification(
             reply_markup=keyboard,
             parse_mode=None,
         )
-        # The .ics attachment opens the native "add to calendar" sheet on mobile.
-        try:
-            ics_bytes = BytesIO(ics_text.encode("utf-8"))
-            await bot.send_document(
-                chat_id=user_id,
-                document=InputFile(ics_bytes, filename="xaana-session.ics"),
-                caption="Tap to add to your phone's calendar",
-            )
-        except TelegramError as e:
-            logger.warning("Could not send .ics attachment to user %s: %s", user_id, e)
 
         logger.info("✓ Sent session-saved calendar DM to user %s", user_id)
     except TelegramError as e:
