@@ -555,3 +555,102 @@ class ClubsRepository:
                 {"club_id": club_id, "today": today},
             ).fetchall()
         return {str(row[0]) for row in rows}
+
+    # ------------------------------------------------------------------
+    # Slack support
+    # ------------------------------------------------------------------
+
+    def _ensure_slack_columns(self, session) -> None:
+        """Best-effort runtime guard for deployments where migration 022 hasn't run."""
+        for ddl in (
+            "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS slack_status TEXT DEFAULT 'not_connected'",
+            "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS slack_workspace_id TEXT",
+            "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS slack_channel_id TEXT",
+            "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS slack_bot_token TEXT",
+            "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS slack_team_name TEXT",
+            "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS slack_channel_name TEXT",
+            "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS slack_connected_at_utc TEXT",
+        ):
+            session.execute(text(ddl))
+
+    def get_active_clubs_with_slack(self) -> List[Dict]:
+        """Return all clubs that have a confirmed Slack channel connected."""
+        with get_db_session() as session:
+            self._ensure_slack_columns(session)
+            rows = session.execute(
+                text("""
+                    SELECT
+                        club_id,
+                        owner_user_id,
+                        name,
+                        slack_channel_id,
+                        slack_bot_token,
+                        COALESCE(reminder_time, '21:00') AS reminder_time,
+                        language
+                    FROM clubs
+                    WHERE slack_status = 'ready'
+                      AND NULLIF(trim(COALESCE(slack_channel_id, '')), '') IS NOT NULL
+                      AND NULLIF(trim(COALESCE(slack_bot_token, '')), '') IS NOT NULL
+                      AND COALESCE(status, 'active') = 'active'
+                    ORDER BY created_at_utc ASC;
+                """),
+            ).mappings().fetchall()
+            return [dict(row) for row in rows]
+
+    def connect_slack(
+        self,
+        club_id: str,
+        workspace_id: str,
+        team_name: str,
+        bot_token: str,
+        channel_id: str,
+        channel_name: str,
+    ) -> None:
+        """Persist Slack OAuth credentials for a club and mark it ready."""
+        now = utc_now_iso()
+        with get_db_session() as session:
+            self._ensure_slack_columns(session)
+            session.execute(
+                text("""
+                    UPDATE clubs SET
+                        slack_status            = 'ready',
+                        slack_workspace_id      = :workspace_id,
+                        slack_team_name         = :team_name,
+                        slack_bot_token         = :bot_token,
+                        slack_channel_id        = :channel_id,
+                        slack_channel_name      = :channel_name,
+                        slack_connected_at_utc  = :now,
+                        updated_at_utc          = :now
+                    WHERE club_id = :club_id;
+                """),
+                {
+                    "club_id": club_id,
+                    "workspace_id": workspace_id,
+                    "team_name": team_name,
+                    "bot_token": bot_token,
+                    "channel_id": channel_id,
+                    "channel_name": channel_name,
+                    "now": now,
+                },
+            )
+
+    def disconnect_slack(self, club_id: str) -> None:
+        """Remove Slack credentials from a club."""
+        now = utc_now_iso()
+        with get_db_session() as session:
+            self._ensure_slack_columns(session)
+            session.execute(
+                text("""
+                    UPDATE clubs SET
+                        slack_status            = 'not_connected',
+                        slack_workspace_id      = NULL,
+                        slack_team_name         = NULL,
+                        slack_bot_token         = NULL,
+                        slack_channel_id        = NULL,
+                        slack_channel_name      = NULL,
+                        slack_connected_at_utc  = NULL,
+                        updated_at_utc          = :now
+                    WHERE club_id = :club_id;
+                """),
+                {"club_id": club_id, "now": now},
+            )
