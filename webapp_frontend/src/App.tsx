@@ -12,6 +12,8 @@ import { ClubDetailPage } from './pages/ClubDetailPage';
 import { FocusPage } from './pages/FocusPage';
 import { MyContentsPage } from './pages/MyContentsPage';
 import { PdfReaderPage } from './pages/PdfReaderPage';
+import { ChallengesPage } from './pages/ChallengesPage';
+import { ChallengePlayPage } from './pages/ChallengePlayPage';
 import { DevAdminLoginPage } from './pages/DevAdminLoginPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
@@ -143,6 +145,28 @@ function App() {
           }
         />
         
+        {/* Challenges (interactive challenge engine) */}
+        <Route
+          path="/challenges"
+          element={
+            isAuthenticated ? (
+              <ChallengesPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="/challenges/:challengeId"
+          element={
+            isAuthenticated ? (
+              <ChallengePlayPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+
         {/* Templates Pages */}
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/templates/:templateId" element={<TemplateDetailPage />} />

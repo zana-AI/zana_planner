@@ -27,6 +27,12 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
   if (pathname === '/templates') {
     return { title: 'Explore', subtitle: 'Promise library and marketplace' };
   }
+  if (pathname === '/challenges') {
+    return { title: 'Challenges', subtitle: 'Join a challenge and play' };
+  }
+  if (pathname.startsWith('/challenges/')) {
+    return { title: 'Challenge', showBack: true, fallbackRoute: '/challenges' };
+  }
   if (pathname === '/my-contents') {
     return { title: 'My Contents', subtitle: 'Saved videos, articles, and podcasts', showBack: true, fallbackRoute: '/templates' };
   }
@@ -79,7 +85,7 @@ export function Navigation(_props: NavigationProps) {
     () => [
       { key: 'today', label: 'My Week', to: '/dashboard' },
       { key: 'community', label: 'Community', to: '/community' },
-      { key: 'explore', label: 'Explore', to: '/templates' },
+      { key: 'explore', label: 'Challenges', to: '/challenges' },
     ],
     [],
   );
@@ -167,7 +173,6 @@ export function Navigation(_props: NavigationProps) {
     userInfo?.user_id?.toString() ||
     'User';
   const displayInitial = displayName.charAt(0).toUpperCase();
-  const isExploreActive = location.pathname.startsWith('/templates') || location.pathname === '/my-contents';
 
   return (
     <>
@@ -219,15 +224,7 @@ export function Navigation(_props: NavigationProps) {
           ) : null}
         </div>
       </header>
-      {!isAdminRoute ? (
-        <BottomNav
-          items={navItems.map((item) =>
-            item.key === 'explore'
-              ? { ...item, to: isExploreActive ? location.pathname : item.to }
-              : item,
-          )}
-        />
-      ) : null}
+      {!isAdminRoute ? <BottomNav items={navItems} /> : null}
     </>
   );
 }
