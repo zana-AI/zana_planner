@@ -231,7 +231,7 @@ export function ChallengePlayPage() {
         </div>
         <button
           type="button"
-          onClick={() => navigate('/challenges')}
+          onClick={() => navigate(challengeId ? `/challenges/${challengeId}` : '/challenges')}
           style={{
             width: '100%',
             marginTop: 14,
