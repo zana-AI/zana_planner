@@ -20,10 +20,8 @@ export function TemplatesPage() {
   const { hapticFeedback } = useTelegramWebApp();
   const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
   const [challenges, setChallenges] = useState<ChallengeSummary[]>([]);
-  const [allCategories, setAllCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [templateUsers, setTemplateUsers] = useState<Record<string, TemplateUser[]>>({});
 
   useEffect(() => {
@@ -31,13 +29,8 @@ export function TemplatesPage() {
       setLoading(true);
       setError('');
       try {
-        const response = await apiClient.getTemplates(selectedCategory || undefined);
+        const response = await apiClient.getTemplates();
         setTemplates(response.templates);
-        setAllCategories((prev) => {
-          const next = new Set(prev);
-          response.templates.forEach((template) => next.add(template.category));
-          return Array.from(next).sort((a, b) => a.localeCompare(b));
-        });
         hapticFeedback('success');
       } catch (err) {
         console.error('Failed to load templates:', err);
@@ -48,7 +41,7 @@ export function TemplatesPage() {
       }
     };
     loadTemplates();
-  }, [selectedCategory, hapticFeedback]);
+  }, [hapticFeedback]);
 
   useEffect(() => {
     let active = true;
@@ -81,12 +74,6 @@ export function TemplatesPage() {
       loadTemplateUsers();
     }
   }, [templates]);
-
-  const categories = allCategories;
-  const formatCategoryLabel = (category: string) =>
-    category
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (match) => match.toUpperCase());
 
   if (loading) {
     return (
@@ -213,28 +200,26 @@ export function TemplatesPage() {
         </section>
       ) : null}
 
-      {categories.length > 0 ? (
-        <div className="category-filters">
-          <button className={`category-filter ${selectedCategory === '' ? 'active' : ''}`} onClick={() => setSelectedCategory('')}>
-            All
-          </button>
-          {categories.map((category) => (
-            <button
-              key={category}
-              className={`category-filter ${selectedCategory === category ? 'active' : ''}`}
-              onClick={() => setSelectedCategory(category)}
-            >
-              {formatCategoryLabel(category)}
-            </button>
-          ))}
-        </div>
+      {templates.length > 0 ? (
+        <h2
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: 0.3,
+            textTransform: 'uppercase',
+            color: 'var(--color-text-secondary, #8A94A6)',
+            margin: '8px 0 10px',
+          }}
+        >
+          Quick-start habits
+        </h2>
       ) : null}
 
       <main className="templates-grid">
         {templates.length === 0 ? (
           <div className="empty-state">
-            <h2 className="empty-title">No promises found in library</h2>
-            <p className="empty-subtitle">Try selecting a different category</p>
+            <h2 className="empty-title">No habits yet</h2>
+            <p className="empty-subtitle">Check back soon for ready-made habits to start.</p>
           </div>
         ) : (
           templates.map((template) => (
@@ -252,13 +237,10 @@ export function TemplatesPage() {
                 <h3 className="template-title">{template.title}</h3>
               </div>
               {template.description ? <p className="template-why">{template.description}</p> : null}
-              <div className="template-meta">
-                <span className="template-category">{template.category.replace('_', ' ')}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="template-metric">
-                    {template.target_value} {template.metric_type === 'hours' ? 'hrs' : 'times'}/week
-                  </span>
-                </div>
+              <div className="template-meta" style={{ justifyContent: 'flex-end' }}>
+                <span className="template-metric">
+                  {template.target_value} {template.metric_type === 'hours' ? 'hrs' : 'times'}/week
+                </span>
               </div>
               {(templateUsers[template.template_id] ?? []).length > 0 && (
                 <div className="template-card-users">

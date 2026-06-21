@@ -9,6 +9,7 @@ See docs/CHALLENGES_DESIGN.md.
 from __future__ import annotations
 
 import json
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -572,7 +573,11 @@ class ChallengesRepository:
         }
         if activity_type == "multiple_choice":
             options = _decode_options(row["options"]) or []
-            item["options"] = options  # already includes the correct answer; client must not know which
+            # Shuffle per request so the correct answer's position never leaks,
+            # regardless of how options were stored (grading is by text, not index).
+            options = list(options)
+            random.shuffle(options)
+            item["options"] = options  # includes the correct answer; client must not know which
         else:
             item["back"] = row["back"]  # flashcards reveal the answer client-side
         return item
