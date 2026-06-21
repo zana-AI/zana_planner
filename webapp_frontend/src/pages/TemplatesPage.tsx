@@ -224,10 +224,6 @@ export function TemplatesPage() {
         ) : (
           templates.map((template) => {
             const users = templateUsers[template.template_id] ?? [];
-            const metricLabel =
-              template.metric_type === 'hours'
-                ? `${template.target_value} hrs/week`
-                : `${template.target_value}×/week`;
             return (
               <div key={template.template_id} className="template-card" onClick={() => navigate(`/templates/${template.template_id}`)}>
                 <div className="template-header">
@@ -241,19 +237,14 @@ export function TemplatesPage() {
                   <h3 className="template-title">{template.title}</h3>
                 </div>
                 {template.description ? <p className="template-why">{template.description}</p> : null}
-                <div className="template-meta" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  {users.length > 0 ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <AvatarStack users={users} size={18} max={3} />
-                      <span style={{ fontSize: 12, color: 'var(--color-text-secondary, #8A94A6)' }}>
-                        {users.length === 1 ? '1 doing this' : `${users.length} doing this`}
-                      </span>
+                {users.length > 0 && (
+                  <div className="template-meta" style={{ alignItems: 'center', gap: 6 }}>
+                    <AvatarStack users={users} size={18} max={3} />
+                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary, #8A94A6)' }}>
+                      {users.length === 1 ? '1 doing this' : `${users.length} doing this`}
                     </span>
-                  ) : (
-                    <span />
-                  )}
-                  <span className="template-metric">{metricLabel}</span>
-                </div>
+                  </div>
+                )}
               </div>
             );
           })

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Bookmark, Globe, Lock } from 'lucide-react';
+import { Bookmark } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { TemplateDetail } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
@@ -93,34 +93,31 @@ export function TemplateDetailPage() {
             </span>
             <div>
               <h2 className="template-detail-title">{template.title}</h2>
-              <span className="template-detail-subtle">
-                {template.target_value} {template.metric_type === 'hours' ? 'hours' : 'times'} a week
-              </span>
             </div>
           </div>
 
           {template.description ? <p className="template-detail-description">{template.description}</p> : null}
 
           {/* Visibility — the only choice; everything else uses sensible defaults. */}
-          <div className="card-recurring-section" style={{ marginTop: 12 }}>
-            <div className="card-recurring-info">
-              <span className="card-recurring-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="card-setting-row" style={{ marginTop: 12 }}>
+            <div className="card-setting-info">
+              <span className="card-setting-title">Public visibility</span>
+              <span className="card-setting-subtitle">
                 {visibility === 'public'
-                  ? <><Globe size={14} style={{ opacity: 0.8 }} /> Visible to community</>
-                  : <><Lock size={14} style={{ opacity: 0.7 }} /> Private (only you)</>
-                }
-              </span>
-              <span className="card-recurring-subtitle">
-                {visibility === 'public'
-                  ? 'Others can see your progress and be inspired.'
-                  : 'Your progress is hidden from other users.'}
+                  ? 'Visible to community — others can be inspired.'
+                  : 'Only visible to you.'}
               </span>
             </div>
             <button
-              className={`card-recurring-toggle-button ${visibility === 'public' ? 'active' : ''}`}
-              onClick={() => setVisibility((v) => v === 'public' ? 'private' : 'public')}
+              type="button"
+              className={`card-switch${visibility === 'public' ? ' card-switch--on' : ''}`}
+              onClick={() => setVisibility((v) => (v === 'public' ? 'private' : 'public'))}
+              aria-pressed={visibility === 'public'}
             >
-              {visibility === 'public' ? 'Make private' : 'Make public'}
+              <span className="card-switch-track" aria-hidden="true">
+                <span className="card-switch-thumb" />
+              </span>
+              <span className="card-switch-label">{visibility === 'public' ? 'Public' : 'Private'}</span>
             </button>
           </div>
 
