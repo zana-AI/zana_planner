@@ -178,7 +178,7 @@ export function ChallengePlayPage() {
                 </span>
                 {e.name}
               </span>
-              <span style={{ fontSize: 13, color: textSecondary }}>{e.correct} correct</span>
+              <span style={{ fontSize: 13, color: textSecondary }}>{e.score_percent}% · {e.streak}🔥</span>
             </div>
           ))}
         </div>

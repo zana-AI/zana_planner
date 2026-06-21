@@ -165,7 +165,11 @@ def _rank_club_leaderboard_members(
                 if not daily_stats and metric_type != "count" and activity_date in activity_days_set and len(activity_days_set) == 1:
                     day_duration_hours = duration_hours
 
-                if metric_type == "count":
+                day_scored = day_stats.get("score")
+                if day_scored is not None:
+                    # Non-binary scored check-in (challenge daily quiz) — rank by how well.
+                    day_score = min(max(float(day_scored), 0.0), 100.0)
+                elif metric_type == "count":
                     day_score = 100.0 if day_checkins > 0 else 0.0
                 else:
                     daily_target = max(target_value / 7.0, 0.25)
@@ -749,6 +753,7 @@ async def get_club_leaderboard(
                         a.promise_uuid,
                         a.action_type,
                         COALESCE(a.time_spent_hours, 0.0) AS time_spent_hours,
+                        a.score AS score,
                         DATE(a.at_utc::timestamptz) AS action_date,
                         a.at_utc AS at_utc
                     FROM actions a
@@ -770,7 +775,7 @@ async def get_club_leaderboard(
             lambda: {
                 "activity_days": set(),
                 "checkin_days": set(),
-                "daily": defaultdict(lambda: {"checkins": 0, "duration_hours": 0.0}),
+                "daily": defaultdict(lambda: {"checkins": 0, "duration_hours": 0.0, "score": None}),
                 "duration_hours": 0.0,
                 "checkin_count": 0,
                 "last_activity_at_utc": None,
@@ -786,6 +791,10 @@ async def get_club_leaderboard(
                 stats["checkin_days"].add(action_date)
                 stats["daily"][action_date]["checkins"] += 1
                 stats["checkin_count"] += 1
+                if row["score"] is not None:
+                    # Non-binary scored check-in (e.g. a challenge daily quiz): the day's
+                    # score is the quiz result, not just "did you show up".
+                    stats["daily"][action_date]["score"] = float(row["score"])
             elif action_type == "log_time":
                 hours = float(row["time_spent_hours"] or 0.0)
                 if hours > 0:

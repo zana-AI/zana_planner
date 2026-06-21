@@ -142,8 +142,9 @@ export interface ChallengeLeaderboardEntry {
   rank: number;
   user_id: string;
   name: string;
-  correct: number;
-  attempts: number;
+  score_percent: number;
+  streak: number;
+  active_days: number;
 }
 
 // API Response types
@@ -170,6 +171,16 @@ export interface PromiseData {
   end_date?: string; // ISO date string (YYYY-MM-DD)
   planned_sessions_count?: number;
   next_session_start?: string | null;
+  daily_activity?: PromiseDailyActivity | null;
+}
+
+// Challenge quiz attached to a promise, surfaced on the My Week badge.
+export interface PromiseDailyActivity {
+  type: 'quiz';
+  challenge_id: string;
+  deck_id?: string | null;
+  status: 'due' | 'done';
+  score?: number | null;
 }
 
 export interface WeeklyReportData {

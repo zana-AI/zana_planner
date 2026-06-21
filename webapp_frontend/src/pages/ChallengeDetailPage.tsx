@@ -128,8 +128,17 @@ export function ChallengeDetailPage() {
       {hasDueDeck ? (
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
             hapticFeedback('light');
+            // Subscribe on first play so the challenge becomes a promise on My Week
+            // (and the user is eligible for daily reminders) before they finish a deck.
+            if (!challenge.joined) {
+              try {
+                await apiClient.joinChallenge(challenge.challenge_id);
+              } catch (err) {
+                console.error('Subscribe failed:', err);
+              }
+            }
             navigate(`/challenges/${challenge.challenge_id}/play`);
           }}
           style={{
@@ -205,7 +214,7 @@ export function ChallengeDetailPage() {
                   {e.name}
                 </span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: textSecondary }}>
-                  {e.correct} correct
+                  {e.score_percent}% · {e.streak}🔥
                 </span>
               </div>
             ))}

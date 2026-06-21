@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bookmark } from 'lucide-react';
+import { Bookmark, Users, Layers } from 'lucide-react';
 import { apiClient } from '../api/client';
-import type { PromiseTemplate } from '../types';
+import type { PromiseTemplate, ChallengeSummary } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { Emoji } from '../components/ui/Emoji';
 import { AvatarStack } from '../components/ui/AvatarStack';
@@ -10,10 +10,16 @@ import type { AvatarStackUser } from '../components/ui/AvatarStack';
 
 type TemplateUser = AvatarStackUser;
 
+const CHALLENGE_ACTIVITY_LABEL: Record<string, string> = {
+  flashcard: 'Flashcards',
+  multiple_choice: 'Quiz',
+};
+
 export function TemplatesPage() {
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
   const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
+  const [challenges, setChallenges] = useState<ChallengeSummary[]>([]);
   const [allCategories, setAllCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -43,6 +49,19 @@ export function TemplatesPage() {
     };
     loadTemplates();
   }, [selectedCategory, hapticFeedback]);
+
+  useEffect(() => {
+    let active = true;
+    apiClient
+      .listChallenges()
+      .then((data) => {
+        if (active) setChallenges(data);
+      })
+      .catch((err) => console.error('Failed to load challenges:', err));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const loadTemplateUsers = async () => {
@@ -97,6 +116,103 @@ export function TemplatesPage() {
 
   return (
     <div className="app">
+      {challenges.length > 0 ? (
+        <section style={{ padding: '4px 0 8px' }}>
+          <h2
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              letterSpacing: 0.3,
+              textTransform: 'uppercase',
+              color: 'var(--color-text-secondary, #8A94A6)',
+              margin: '0 0 10px',
+            }}
+          >
+            Challenges
+          </h2>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {challenges.map((c) => (
+              <button
+                key={c.challenge_id}
+                type="button"
+                onClick={() => {
+                  hapticFeedback('light');
+                  navigate(`/challenges/${c.challenge_id}`);
+                }}
+                style={{
+                  textAlign: 'left',
+                  border: '1px solid var(--color-border, #1E2740)',
+                  background: 'var(--color-surface, #131A2B)',
+                  borderRadius: 14,
+                  padding: 14,
+                  color: 'var(--color-text-primary, #E6EAF2)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.25 }}>{c.title}</div>
+                    <div style={{ fontSize: 13, color: 'var(--color-text-secondary, #8A94A6)', marginTop: 2 }}>
+                      by {c.host_name}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: 0.3,
+                      textTransform: 'uppercase',
+                      color: '#0B0F1A',
+                      background: c.activity_type === 'multiple_choice' ? '#7FB2F0' : '#5DCAA5',
+                      borderRadius: 999,
+                      padding: '4px 10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Layers size={12} />
+                    {CHALLENGE_ACTIVITY_LABEL[c.activity_type] ?? c.activity_type}
+                  </span>
+                </div>
+                {c.description ? (
+                  <div style={{ fontSize: 13.5, color: 'var(--color-text-secondary, #B6BECC)', lineHeight: 1.45 }}>
+                    {c.description}
+                  </div>
+                ) : null}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 13,
+                      color: 'var(--color-text-secondary, #8A94A6)',
+                    }}
+                  >
+                    <Users size={14} />
+                    {c.participant_count} {c.participant_count === 1 ? 'player' : 'players'}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: c.joined ? 'var(--color-text-secondary, #8A94A6)' : '#5DCAA5',
+                    }}
+                  >
+                    {c.joined ? 'Continue →' : 'Subscribe →'}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {categories.length > 0 ? (
         <div className="category-filters">
           <button className={`category-filter ${selectedCategory === '' ? 'active' : ''}`} onClick={() => setSelectedCategory('')}>

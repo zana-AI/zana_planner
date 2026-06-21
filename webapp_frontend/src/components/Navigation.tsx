@@ -31,7 +31,7 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { title: 'Challenges', subtitle: 'Join a challenge and play' };
   }
   if (pathname.startsWith('/challenges/')) {
-    return { title: 'Challenge', showBack: true, fallbackRoute: '/challenges' };
+    return { title: 'Challenge', showBack: true, fallbackRoute: '/templates' };
   }
   if (pathname === '/my-contents') {
     return { title: 'My Contents', subtitle: 'Saved videos, articles, and podcasts', showBack: true, fallbackRoute: '/templates' };
@@ -85,7 +85,7 @@ export function Navigation(_props: NavigationProps) {
     () => [
       { key: 'today', label: 'My Week', to: '/dashboard' },
       { key: 'community', label: 'Community', to: '/community' },
-      { key: 'explore', label: 'Challenges', to: '/challenges' },
+      { key: 'explore', label: 'Explore', to: '/templates' },
     ],
     [],
   );

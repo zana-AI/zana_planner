@@ -772,8 +772,9 @@ class ChallengeLeaderboardEntry(BaseModel):
     rank: int
     user_id: str
     name: str
-    correct: int
-    attempts: int
+    score_percent: float
+    streak: int
+    active_days: int
 
 
 # Admin authoring (no coach UI in v1; used by admin ingestion)

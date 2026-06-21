@@ -107,24 +107,93 @@ class ChallengesRepository:
     # ------------------------------------------------------------------
 
     def join(self, challenge_id: str, user_id: int, source: Optional[str] = None) -> bool:
-        """Idempotently add the user as a participant. Returns False if the challenge is missing."""
+        """Subscribe the user to the challenge (idempotent). Returns False if challenge missing."""
+        return self.ensure_subscription(challenge_id, user_id, source) is not None
+
+    def challenges_with_reminder_at(self, hhmm: str) -> List[dict]:
+        """Active challenges whose daily reminder time matches HH:MM (used by the reminder sweeper)."""
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT challenge_id, source_key, title
+                    FROM challenges
+                    WHERE status = 'active' AND reminder_local_time = :hhmm
+                """),
+                {"hhmm": hhmm},
+            ).mappings().fetchall()
+            return [dict(r) for r in rows]
+
+    def list_subscribed_user_ids(self, challenge_id: str) -> List[str]:
+        """Active subscribers (participants with a backing promise) of a challenge."""
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT user_id FROM challenge_participants
+                    WHERE challenge_id = :cid AND promise_uuid IS NOT NULL
+                """),
+                {"cid": challenge_id},
+            ).fetchall()
+            return [str(r[0]) for r in rows]
+
+    def participant_promise_uuid(self, challenge_id: str, user_id: int) -> Optional[str]:
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT promise_uuid FROM challenge_participants
+                    WHERE challenge_id = :cid AND user_id = :uid
+                """),
+                {"cid": challenge_id, "uid": str(user_id)},
+            ).fetchone()
+            return row[0] if row and row[0] else None
+
+    def ensure_subscription(self, challenge_id: str, user_id: int, source: Optional[str] = None) -> Optional[str]:
+        """Subscribe the user to the challenge and return their backing promise_uuid.
+
+        Idempotent: if already subscribed (participant row has a promise_uuid) it returns it.
+        Subscribing reuses the existing template→promise/instance machinery so the challenge
+        becomes a real count promise on My Week, plus club membership + promise_club_shares so
+        the cohort leaderboard can rank it. Returns None if the challenge is missing.
+        """
+        from repositories.instances_repo import InstancesRepository
+        from repositories.clubs_repo import ClubsRepository
+
         user = str(user_id)
         with get_db_session() as session:
-            exists = session.execute(
-                text("SELECT 1 FROM challenges WHERE challenge_id = :cid"),
+            row = session.execute(
+                text("SELECT template_id, club_id FROM challenges WHERE challenge_id = :cid"),
                 {"cid": challenge_id},
             ).fetchone()
-            if not exists:
-                return False
+            if not row:
+                return None
+            template_id, club_id = row[0], row[1]
+            existing = session.execute(
+                text("SELECT promise_uuid FROM challenge_participants WHERE challenge_id = :cid AND user_id = :uid"),
+                {"cid": challenge_id, "uid": user},
+            ).fetchone()
+        if existing and existing[0]:
+            return existing[0]
+
+        promise_uuid: Optional[str] = None
+        # Older challenges may predate the template/club backing — record a bare participant then.
+        if template_id:
+            result = InstancesRepository().subscribe_template(user_id, template_id, visibility="public")
+            promise_uuid = result.get("promise_uuid")
+            if club_id and promise_uuid:
+                clubs = ClubsRepository()
+                clubs.add_member(club_id, user_id)
+                clubs.share_promise_to_club(promise_uuid, club_id)
+
+        with get_db_session() as session:
             session.execute(
                 text("""
-                    INSERT INTO challenge_participants (challenge_id, user_id, joined_at_utc, source)
-                    VALUES (:cid, :uid, :ts, :src)
-                    ON CONFLICT (challenge_id, user_id) DO NOTHING
+                    INSERT INTO challenge_participants (challenge_id, user_id, joined_at_utc, source, promise_uuid)
+                    VALUES (:cid, :uid, :ts, :src, :puuid)
+                    ON CONFLICT (challenge_id, user_id)
+                    DO UPDATE SET promise_uuid = COALESCE(challenge_participants.promise_uuid, EXCLUDED.promise_uuid)
                 """),
-                {"cid": challenge_id, "uid": user, "ts": _now_iso(), "src": source},
+                {"cid": challenge_id, "uid": user, "ts": _now_iso(), "src": source, "puuid": promise_uuid},
             )
-            return True
+        return promise_uuid
 
     # ------------------------------------------------------------------
     # Play loop
@@ -224,12 +293,23 @@ class ChallengesRepository:
                 )
 
         total = len([a for a in answers if a.get("item_id") in back_by_item])
+        score_pct = round(100.0 * correct / total) if total else 0
+
+        # Record one scored check-in for today on the backing promise. This single action
+        # drives BOTH the streak (activity) and the club leaderboard (the non-binary score).
+        streak = 0
+        promise_uuid = self.ensure_subscription(challenge_id, user_id, source="play")
+        if promise_uuid:
+            from repositories.actions_repo import ActionsRepository
+            ActionsRepository().append_scored_checkin(user_id, promise_uuid, float(score_pct))
+            streak = ActionsRepository().get_checkin_streak(user_id, promise_uuid)
+
         return {
             "deck_id": deck_id,
             "total": total,
             "correct": correct,
-            "score_pct": round(100.0 * correct / total) if total else 0,
-            "streak": self.get_streak(challenge_id, user_id),
+            "score_pct": score_pct,
+            "streak": streak,
         }
 
     # ------------------------------------------------------------------
@@ -265,61 +345,169 @@ class ChallengesRepository:
         return streak
 
     def leaderboard(self, challenge_id: str, window_days: int = 7, limit: int = 20) -> List[dict]:
-        """Rank participants by correct answers in the rolling window (tie-break: attempts)."""
-        cutoff = _days_ago_iso(window_days)
+        """Cohort leaderboard reusing the club leaderboard model: rank each member by the
+        average non-binary daily score of their backing promise over the rolling window
+        (missing days count as 0), tie-broken by freeze-streak. Replaces the old
+        challenge_attempts counter so there's one score-based leaderboard concept.
+        """
+        from datetime import datetime, timedelta, timezone
+        from repositories.actions_repo import ActionsRepository
+
+        today = datetime.now(timezone.utc).date()
+        window_start = (today - timedelta(days=window_days - 1)).isoformat()
+
         with get_db_session() as session:
+            club_row = session.execute(
+                text("SELECT club_id FROM challenges WHERE challenge_id = :cid"),
+                {"cid": challenge_id},
+            ).fetchone()
+            if not club_row or not club_row[0]:
+                return []
+            club_id = club_row[0]
+
             rows = session.execute(
                 text(f"""
-                    SELECT a.user_id,
+                    SELECT cm.user_id AS user_id,
                            {_NAME_EXPR} AS name,
-                           COALESCE(SUM(a.is_correct), 0) AS correct,
-                           COUNT(*) AS attempts
-                    FROM challenge_attempts a
-                    LEFT JOIN users u ON u.user_id = a.user_id
-                    WHERE a.challenge_id = :cid AND a.answered_at_utc >= :cutoff
-                    GROUP BY a.user_id, {_NAME_EXPR}
-                    ORDER BY correct DESC, attempts DESC
-                    LIMIT :limit
+                           p.promise_uuid AS promise_uuid,
+                           substr(a.at_utc, 1, 10) AS d,
+                           a.score AS score
+                    FROM club_members cm
+                    JOIN promise_club_shares pcs ON pcs.club_id = cm.club_id
+                    JOIN promises p
+                      ON p.promise_uuid = pcs.promise_uuid
+                     AND p.user_id = cm.user_id
+                     AND p.is_deleted = 0
+                    LEFT JOIN users u ON u.user_id = cm.user_id
+                    LEFT JOIN actions a
+                      ON a.user_id = cm.user_id
+                     AND a.promise_uuid = p.promise_uuid
+                     AND a.action_type = 'club_checkin'
+                     AND substr(a.at_utc, 1, 10) >= :ws
+                    WHERE cm.club_id = :club AND cm.status = 'active'
                 """),
-                {"cid": challenge_id, "cutoff": cutoff, "limit": limit},
+                {"club": club_id, "ws": window_start},
             ).mappings().fetchall()
-        return [
-            {
-                "rank": i + 1,
-                "user_id": r["user_id"],
-                "name": r["name"] or r["user_id"],
-                "correct": int(r["correct"] or 0),
-                "attempts": int(r["attempts"] or 0),
-            }
-            for i, r in enumerate(rows)
-        ]
+
+        members: dict[str, dict] = {}
+        for r in rows:
+            uid = str(r["user_id"])
+            m = members.setdefault(uid, {"name": r["name"] or uid, "promise_uuid": r["promise_uuid"], "days": {}})
+            if r["d"] and r["score"] is not None:
+                m["days"][r["d"]] = float(r["score"])
+
+        arepo = ActionsRepository()
+        entries = []
+        for uid, m in members.items():
+            score_percent = round(sum(m["days"].values()) / window_days, 1) if m["days"] else 0.0
+            streak = arepo.get_checkin_streak(uid, m["promise_uuid"]) if m["promise_uuid"] else 0
+            entries.append({
+                "user_id": uid,
+                "name": m["name"],
+                "score_percent": score_percent,
+                "streak": streak,
+                "active_days": len(m["days"]),
+            })
+        entries.sort(key=lambda e: (-e["score_percent"], -e["streak"], str(e["name"]).lower()))
+        return [{"rank": i + 1, **e} for i, e in enumerate(entries[:limit])]
+
+    def daily_activity_for_promises(self, user_id: int, promise_uuids: List[str]) -> dict:
+        """For challenge-backed promises, return {promise_uuid: daily_activity} for the My Week badge.
+
+        daily_activity = { type:'quiz', challenge_id, deck_id|None, status:'due'|'done', score|None }.
+        'due' means there's an un-played released deck today; 'done' carries today's score.
+        """
+        if not promise_uuids:
+            return {}
+        user = str(user_id)
+        uuids = list(promise_uuids)
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT cp.promise_uuid, cp.challenge_id
+                    FROM challenge_participants cp
+                    WHERE cp.user_id = :uid AND cp.promise_uuid = ANY(:uuids)
+                """),
+                {"uid": user, "uuids": uuids},
+            ).mappings().fetchall()
+            score_rows = session.execute(
+                text("""
+                    SELECT promise_uuid, score FROM actions
+                    WHERE user_id = :uid AND action_type = 'club_checkin'
+                      AND substr(at_utc, 1, 10) = :today AND promise_uuid = ANY(:uuids)
+                """),
+                {"uid": user, "today": today, "uuids": uuids},
+            ).mappings().fetchall()
+        today_score = {r["promise_uuid"]: r["score"] for r in score_rows}
+
+        out: dict = {}
+        for r in rows:
+            puuid, cid = r["promise_uuid"], r["challenge_id"]
+            deck = self.get_due_deck(cid, user_id)
+            if deck:
+                out[puuid] = {"type": "quiz", "challenge_id": cid, "deck_id": deck["deck_id"], "status": "due", "score": None}
+            else:
+                s = today_score.get(puuid)
+                out[puuid] = {"type": "quiz", "challenge_id": cid, "deck_id": None, "status": "done",
+                              "score": float(s) if s is not None else None}
+        return out
 
     # ------------------------------------------------------------------
     # Admin authoring (no coach UI in v1 — used by admin ingestion)
     # ------------------------------------------------------------------
 
     def create_challenge(self, host_user_id: int, data: dict) -> dict:
+        from repositories.templates_repo import TemplatesRepository
+        from repositories.clubs_repo import ClubsRepository
+
         cid = _new_id()
         ts = _now_iso()
+        title = data["title"]
+
+        # Backing count promise_template — subscribers subscribe to this so the challenge
+        # becomes a real count promise on My Week. Hidden from the Explore list (is_active=0).
+        template_id = TemplatesRepository().create_template({
+            "title": title,
+            "description": data.get("description") or "",
+            "category": "challenge",
+            "metric_type": "count",
+            "target_value": 7,
+            "is_active": False,
+            "created_by_user_id": str(host_user_id),
+        })
+
+        # Cohort club (no Telegram group — challenges don't need one).
+        club_id = ClubsRepository().create_club(owner_user_id=host_user_id, name=title, visibility="public")
+
         with get_db_session() as session:
             session.execute(
                 text("""
                     INSERT INTO challenges
-                        (challenge_id, host_user_id, title, description, activity_type,
-                         cadence, visibility, source_key, created_at_utc, updated_at_utc)
-                    VALUES (:cid, :host, :title, :desc, :activity, :cadence, :vis, :src, :ts, :ts)
+                        (challenge_id, host_user_id, club_id, template_id, title, description, activity_type,
+                         cadence, visibility, source_key, reminder_local_time, created_at_utc, updated_at_utc)
+                    VALUES (:cid, :host, :club, :template, :title, :desc, :activity,
+                            :cadence, :vis, :src, :reminder, :ts, :ts)
                 """),
                 {
                     "cid": cid,
                     "host": str(host_user_id),
-                    "title": data["title"],
+                    "club": club_id,
+                    "template": template_id,
+                    "title": title,
                     "desc": data.get("description"),
                     "activity": data.get("activity_type", "flashcard"),
                     "cadence": data.get("cadence", "daily"),
                     "vis": data.get("visibility", "public"),
                     "src": data.get("source_key"),
+                    "reminder": data.get("reminder_local_time"),
                     "ts": ts,
                 },
+            )
+            # Challenge cohorts have no Telegram group; clear the default 'pending_admin_setup'.
+            session.execute(
+                text("UPDATE clubs SET telegram_status = 'not_connected' WHERE club_id = :club"),
+                {"club": club_id},
             )
         return self.get(cid, host_user_id)
 
