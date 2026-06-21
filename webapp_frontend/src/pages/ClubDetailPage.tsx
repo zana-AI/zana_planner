@@ -4,6 +4,7 @@ import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import type { ClubSummary } from '../types';
 import { Button } from '../components/ui/Button';
+import { formatPromiseText } from '../utils/activityFormat';
 
 const LANG_LABELS: Record<string, string> = {
   en: 'English',
@@ -285,7 +286,7 @@ export function ClubDetailPage() {
   const telegramReady = !!club.telegram_invite_link && ['ready', 'connected'].includes(club.telegram_status);
   const statusLabel = club.telegram_status.replace(/_/g, ' ');
   const promiseLine = club.promise_text
-    ? `${club.promise_text}${club.target_count_per_week ? ` · ${club.target_count_per_week}×/week` : ''}`
+    ? `${formatPromiseText(club.promise_text)}${club.target_count_per_week ? ` · ${club.target_count_per_week}×/week` : ''}`
     : null;
 
   return (
@@ -495,6 +496,11 @@ export function ClubDetailPage() {
 
           {/* Actions */}
           <div className="club-detail-actions">
+            {club.external_url && (
+              <a className="modal-button modal-button-primary club-detail-action-link" href={club.external_url} target="_blank" rel="noreferrer">
+                {club.external_url.includes('t.me') ? 'Open channel →' : 'Open link →'}
+              </a>
+            )}
             {telegramReady ? (
               <a className="modal-button modal-button-primary club-detail-action-link" href={club.telegram_invite_link} target="_blank" rel="noreferrer">
                 Join Telegram
@@ -510,7 +516,7 @@ export function ClubDetailPage() {
               </button>
             )}
             <Button variant="danger" onClick={handleRemoveClub} disabled={busy}>
-              {busy ? 'Updating…' : isAdmin ? 'Cancel club' : 'Leave club'}
+              {busy ? 'Updating…' : isAdmin ? 'Delete club' : 'Leave club'}
             </Button>
           </div>
 

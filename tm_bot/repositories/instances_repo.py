@@ -120,8 +120,10 @@ class InstancesRepository:
         prefix = "P" if is_recurring else "T"
         promise_id = self._generate_promise_id(user_id, prefix)
         
-        # Create promise text from template title
-        promise_text = template["title"].replace(" ", "_")
+        # Create promise text from template title. Keep spaces — older code stored an
+        # underscored token and un-mangled it for display, but some surfaces (e.g. clubs)
+        # show it raw, which leaked the underscores. Store it human-readable.
+        promise_text = template["title"]
 
         # Create the promise
         promise = Promise(

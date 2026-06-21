@@ -275,6 +275,7 @@ export interface ClubSummary {
   }[];
   telegram_status: 'not_connected' | 'pending_admin_setup' | 'ready' | 'connected';
   telegram_invite_link?: string;
+  external_url?: string;
   promise_id?: string;
   promise_uuid?: string;
   promise_text?: string;

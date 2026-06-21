@@ -222,6 +222,7 @@ class ClubSummary(BaseModel):
     members: List[ClubMemberSummary] = Field(default_factory=list)
     telegram_status: str = "not_connected"
     telegram_invite_link: Optional[str] = None
+    external_url: Optional[str] = None
     promise_id: Optional[str] = None
     promise_uuid: Optional[str] = None
     promise_text: Optional[str] = None

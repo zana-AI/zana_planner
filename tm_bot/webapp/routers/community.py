@@ -350,6 +350,11 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             if "telegram_invite_link" in club_columns
             else "CAST(NULL AS TEXT) AS telegram_invite_link"
         )
+        external_url_select = (
+            "c.external_url"
+            if "external_url" in club_columns
+            else "CAST(NULL AS TEXT) AS external_url"
+        )
 
         rows = session.execute(
             text(f"""
@@ -359,6 +364,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     c.visibility,
                     {telegram_status_select},
                     {telegram_invite_select},
+                    {external_url_select},
                     cm.role,
                     COALESCE(member_counts.member_count, 0) AS member_count,
                     COALESCE(promise_counts.promise_count, 0) AS promise_count,
@@ -447,6 +453,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             members=members_by_club.get(str(row["club_id"]), []),
             telegram_status=str(row["telegram_status"] or "not_connected"),
             telegram_invite_link=str(row["telegram_invite_link"]) if row["telegram_invite_link"] else None,
+            external_url=str(row["external_url"]) if row["external_url"] else None,
             promise_id=str(row["promise_id"]) if row["promise_id"] else None,
             promise_uuid=str(row["promise_uuid"]) if row["promise_uuid"] else None,
             promise_text=str(row["promise_text"]) if row["promise_text"] else None,
@@ -1327,11 +1334,15 @@ async def remove_my_club(
             raise HTTPException(status_code=404, detail="Club not found")
 
         if str(club.get("owner_user_id")) == str(user_id):
-            if str(club.get("telegram_status") or "") != "pending_admin_setup":
-                raise HTTPException(status_code=409, detail="Active clubs cannot be cancelled yet.")
-            if not clubs_repo.cancel_pending_club(club_id, user_id):
-                raise HTTPException(status_code=409, detail="Club could not be cancelled.")
-            return ClubActionResponse(status="cancelled", club_id=club_id, message="Club cancelled.")
+            if str(club.get("telegram_status") or "") == "pending_admin_setup":
+                if not clubs_repo.cancel_pending_club(club_id, user_id):
+                    raise HTTPException(status_code=409, detail="Club could not be cancelled.")
+                return ClubActionResponse(status="cancelled", club_id=club_id, message="Club cancelled.")
+            # Active owned club: archive it. DB-only on purpose — deletion must never
+            # depend on the Telegram group still existing (it may have been removed).
+            if not clubs_repo.archive_club(club_id, user_id):
+                raise HTTPException(status_code=409, detail="Club could not be deleted.")
+            return ClubActionResponse(status="deleted", club_id=club_id, message="Club deleted.")
 
         if not clubs_repo.remove_member(club_id, user_id):
             raise HTTPException(status_code=409, detail="Club could not be left.")
