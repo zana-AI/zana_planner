@@ -222,37 +222,41 @@ export function TemplatesPage() {
             <p className="empty-subtitle">Check back soon for ready-made habits to start.</p>
           </div>
         ) : (
-          templates.map((template) => (
-            <div key={template.template_id} className="template-card" onClick={() => navigate(`/templates/${template.template_id}`)}>
-              <div className="template-header">
-                <span className="template-list-logo">
-                  {(templateUsers[template.template_id] ?? []).length > 0 ? (
-                    <AvatarStack users={templateUsers[template.template_id]} size={20} max={3} />
-                  ) : template.emoji ? (
-                    <Emoji emoji={template.emoji} size={20} />
-                  ) : (
-                    <Bookmark size={16} strokeWidth={1.8} color="rgba(237,243,255,0.45)" />
-                  )}
-                </span>
-                <h3 className="template-title">{template.title}</h3>
-              </div>
-              {template.description ? <p className="template-why">{template.description}</p> : null}
-              <div className="template-meta" style={{ justifyContent: 'flex-end' }}>
-                <span className="template-metric">
-                  {template.target_value} {template.metric_type === 'hours' ? 'hrs' : 'times'}/week
-                </span>
-              </div>
-              {(templateUsers[template.template_id] ?? []).length > 0 && (
-                <div className="template-card-users">
-                  <span className="template-card-users-label">
-                    {templateUsers[template.template_id].length === 1
-                      ? '1 person doing this'
-                      : `${templateUsers[template.template_id].length} people doing this`}
+          templates.map((template) => {
+            const users = templateUsers[template.template_id] ?? [];
+            const metricLabel =
+              template.metric_type === 'hours'
+                ? `${template.target_value} hrs/week`
+                : `${template.target_value}×/week`;
+            return (
+              <div key={template.template_id} className="template-card" onClick={() => navigate(`/templates/${template.template_id}`)}>
+                <div className="template-header">
+                  <span className="template-list-logo">
+                    {template.emoji ? (
+                      <Emoji emoji={template.emoji} size={20} />
+                    ) : (
+                      <Bookmark size={16} strokeWidth={1.8} color="rgba(237,243,255,0.45)" />
+                    )}
                   </span>
+                  <h3 className="template-title">{template.title}</h3>
                 </div>
-              )}
-            </div>
-          ))
+                {template.description ? <p className="template-why">{template.description}</p> : null}
+                <div className="template-meta" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  {users.length > 0 ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <AvatarStack users={users} size={18} max={3} />
+                      <span style={{ fontSize: 12, color: 'var(--color-text-secondary, #8A94A6)' }}>
+                        {users.length === 1 ? '1 doing this' : `${users.length} doing this`}
+                      </span>
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  <span className="template-metric">{metricLabel}</span>
+                </div>
+              </div>
+            );
+          })
         )}
       </main>
     </div>
