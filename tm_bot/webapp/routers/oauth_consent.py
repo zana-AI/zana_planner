@@ -21,12 +21,14 @@ app): trust comes from the Hydra challenge + the Telegram HMAC.
 import hashlib
 import hmac
 import os
+import secrets
 import time
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from utils.logger import get_logger
 
@@ -38,6 +40,10 @@ _AUTH_DATE_MAX_AGE = 86400  # reject Telegram auth payloads older than 1 day
 
 def _hydra_admin() -> str:
     return os.getenv("HYDRA_ADMIN_URL", "http://hydra:4445").rstrip("/")
+
+
+def _hydra_public() -> str:
+    return os.getenv("HYDRA_PUBLIC_INTERNAL_URL", "http://hydra:4444").rstrip("/")
 
 
 def _bot_token(request: Request) -> str:
@@ -89,6 +95,67 @@ async def _hydra_put(path: str, params: dict, body: dict) -> dict:
         resp = await client.put(f"{_hydra_admin()}{path}", params=params, json=body)
         resp.raise_for_status()
         return resp.json()
+
+
+async def _hydra_post(path: str, body: dict) -> dict:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(f"{_hydra_admin()}{path}", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+
+@router.get("/oauth/metadata")
+async def oauth_metadata() -> dict:
+    """RFC 8414 metadata with the DCR endpoint required by remote MCP clients."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{_hydra_public()}/.well-known/openid-configuration")
+        resp.raise_for_status()
+        metadata = resp.json()
+    metadata["registration_endpoint"] = f"{os.getenv('HYDRA_PUBLIC_URL', 'https://auth.xaana.club').rstrip('/')}/oauth2/register"
+    return metadata
+
+
+@router.post("/oauth/register", status_code=201)
+async def oauth_register(payload: dict = Body(...)) -> JSONResponse:
+    """Minimal RFC 7591 registration facade over Hydra's internal admin API."""
+    redirect_uris = payload.get("redirect_uris")
+    if not isinstance(redirect_uris, list) or not redirect_uris:
+        raise HTTPException(status_code=400, detail="redirect_uris must be a non-empty list")
+    for uri in redirect_uris:
+        parsed = urlparse(uri) if isinstance(uri, str) else None
+        if not parsed or parsed.fragment or parsed.scheme not in {"https", "http"} or not parsed.netloc:
+            raise HTTPException(status_code=400, detail="invalid redirect_uri")
+        if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise HTTPException(status_code=400, detail="http redirect_uri is only allowed for localhost")
+
+    auth_method = payload.get("token_endpoint_auth_method", "none")
+    if auth_method not in {"none", "client_secret_basic", "client_secret_post"}:
+        raise HTTPException(status_code=400, detail="unsupported token_endpoint_auth_method")
+    grant_types = payload.get("grant_types", ["authorization_code"])
+    if not isinstance(grant_types, list) or not set(grant_types) <= {"authorization_code", "refresh_token"}:
+        raise HTTPException(status_code=400, detail="unsupported grant_types")
+    response_types = payload.get("response_types", ["code"])
+    if response_types != ["code"]:
+        raise HTTPException(status_code=400, detail="unsupported response_types")
+
+    client_id = secrets.token_urlsafe(24)
+    client = {
+        "client_id": client_id,
+        "client_name": str(payload.get("client_name") or "Xaana MCP client")[:128],
+        "redirect_uris": redirect_uris,
+        "grant_types": grant_types,
+        "response_types": response_types,
+        "scope": str(payload.get("scope") or "openid offline_access"),
+        "token_endpoint_auth_method": auth_method,
+    }
+    if auth_method != "none":
+        client["client_secret"] = secrets.token_urlsafe(32)
+
+    created = await _hydra_post("/admin/clients", client)
+    response = {key: created[key] for key in client if key in created}
+    response["client_id"] = created.get("client_id", client_id)
+    response["client_id_issued_at"] = int(time.time())
+    return JSONResponse(response, status_code=201)
 
 
 @router.get("/oauth/login", response_class=HTMLResponse)

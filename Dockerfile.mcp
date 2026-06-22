@@ -5,12 +5,21 @@
 ARG BASE_IMAGE=zana-ai-bot:staging
 FROM ${BASE_IMAGE}
 
+USER root
+
 COPY requirements.mcp.txt /tmp/requirements.mcp.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.mcp.txt
+RUN python -m venv /opt/mcp-venv && \
+    /opt/mcp-venv/bin/pip install --no-cache-dir -r /tmp/requirements.mcp.txt
 
 # New code not present in older base images.
 COPY tm_bot/mcp_server/ /app/tm_bot/mcp_server/
 COPY run_mcp_local.py /app/run_mcp_local.py
 
+ENV PATH=/opt/mcp-venv/bin:$PATH
+ENV PYTHONPATH=/opt/mcp-venv/lib/python3.11/site-packages:/home/amiryan_j/.local/lib/python3.11/site-packages:/app:/app/tm_bot
+
+USER amiryan_j
+
 EXPOSE 8090
+ENTRYPOINT []
 CMD ["uvicorn", "run_mcp_local:app", "--host", "0.0.0.0", "--port", "8090"]

@@ -55,8 +55,10 @@ curl https://mcp.xaana.club/.well-known/oauth-protected-resource     # lists aut
 curl https://auth.xaana.club/.well-known/oauth-authorization-server  # issuer + jwks_uri
 ```
 
-DCR is enabled by default on Hydra's public `/oauth2/register`, so Claude/ChatGPT
-self-register — no manual client creation needed.
+Hydra 2.2 does not expose RFC 7591 dynamic client registration itself. Nginx
+routes `/oauth2/register` and RFC 8414 metadata to the webapp's constrained DCR
+facade, which creates public OAuth clients through Hydra's internal admin API.
+Claude/ChatGPT therefore self-register without exposing Hydra's admin port.
 
 ## 5. Connect
 
@@ -73,7 +75,8 @@ Hydra, runs the OAuth flow, you "Log in with Telegram", and you're in.
   must use token introspection instead.
 - **Audience:** leave `MCP_OIDC_AUDIENCE` unset — Claude doesn't send the RFC 8707
   resource indicator as of early 2026, so a strict `aud` check breaks the flow.
-- **Hydra DCR** has minor OIDC-spec gaps in early-2026 builds (e.g. registration
-  management endpoints); the Claude/ChatGPT connect flow is unaffected.
+- The DCR facade intentionally supports authorization-code/refresh-token grants
+  and HTTPS redirects (plus localhost HTTP) only. Registration management
+  endpoints are not exposed; the Claude/ChatGPT connect flow does not need them.
 - This validates at deploy time — the Telegram-HMAC + Hydra-admin flow and the
   token verification can't be exercised without the running stack.
