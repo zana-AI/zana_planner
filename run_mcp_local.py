@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "tm_bot"))
 
 from mcp_server.server import build_mcp_server  # noqa: E402
-from mcp_server.auth import CurrentUserMiddleware  # noqa: E402
+from mcp_server.config import config  # noqa: E402
 from utils.logger import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
@@ -33,13 +33,15 @@ os.makedirs(root_dir, exist_ok=True)
 
 _mcp = build_mcp_server(root_dir=root_dir)
 
-# Streamable HTTP ASGI app, wrapped so each request carries the current user_id.
-app = CurrentUserMiddleware(_mcp.streamable_http_app())
+# Streamable HTTP ASGI app. When auth is enabled (WorkOS configured), FastMCP
+# verifies the bearer token and binds identity per request; otherwise tools fall
+# back to MCP_DEFAULT_USER_ID.
+app = _mcp.streamable_http_app()
 
-if not os.getenv("MCP_DEFAULT_USER_ID"):
+if not config.auth_enabled and not config.default_user_id:
     logger.warning(
-        "MCP_DEFAULT_USER_ID is not set — tool calls will fail with 'No active "
-        "user_id set' until it is configured (Phase 1) or OAuth is wired (Phase 2)."
+        "Neither WorkOS auth nor MCP_DEFAULT_USER_ID is configured — tool calls "
+        "will fail until one is set."
     )
 
 logger.info("=" * 60)

@@ -1,5 +1,8 @@
-# MCP server dependency — layered on top of the existing app image (see
-# Dockerfile.mcp), so it does NOT alter the bot/webapp requirements.txt pins.
+# MCP server dependencies — layered on top of the existing app image (see
+# Dockerfile.mcp), so they do NOT alter the bot/webapp requirements.txt pins.
 # Installing on top of the base image lets pip bump shared transitive deps
 # (e.g. starlette) only inside the zana-mcp image if the SDK requires it.
 mcp>=1.12,<2.0
+
+# JWT/JWKS validation of WorkOS access tokens (Phase 2 auth).
+pyjwt[crypto]>=2.8,<3

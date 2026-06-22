@@ -1,66 +1,104 @@
-"""Per-request identity for the MCP server.
+"""WorkOS OAuth token verification for the MCP server.
 
-This is the seam between transport auth and the adapter's per-user scoping. Every
-adapter tool resolves its ``user_id`` from the ``_current_user_id`` context var
-(the same one the LLM path uses, via ``llms.tool_wrappers``). This middleware is
-responsible for setting that context var for the duration of each HTTP request.
+The MCP server is an OAuth *resource server*: WorkOS AuthKit (the authorization
+server) runs the OAuth 2.1 + PKCE flow, dynamic client registration, and the
+login UI; clients (Claude, ChatGPT, ...) present the resulting access token here
+as ``Authorization: Bearer``. We verify that token's signature against WorkOS's
+JWKS and surface the subject.
 
-Phase 1 (current): single-user stub — it sets the context var to
-``MCP_DEFAULT_USER_ID`` so the server is fully testable with the MCP Inspector
-before any OAuth exists.
-
-Phase 2: replace ``_resolve_user_id`` with WorkOS token validation — read the
-``Authorization: Bearer`` header, validate the access token against WorkOS, map
-the OAuth subject to a Zana ``user_id`` via the account-linking table, and return
-that. The rest of the server does not change.
+Wiring this verifier + ``build_auth_settings`` into FastMCP also makes it serve
+the RFC 9728 protected-resource-metadata document and reject unauthenticated
+requests with a spec-correct ``401 / WWW-Authenticate`` — no extra code needed.
 """
 
 from __future__ import annotations
 
-import os
-from typing import Optional
+from typing import List, Optional
 
-from llms.tool_wrappers import _current_user_id
+import anyio
+import jwt
+from jwt import PyJWKClient
+
+from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.settings import AuthSettings
+
 from utils.logger import get_logger
+
+from .config import MCPConfig
 
 logger = get_logger(__name__)
 
 
-def _resolve_user_id(scope) -> Optional[str]:
-    """Return the Zana user_id for this request, or None if unauthenticated.
+def _extract_scopes(claims: dict) -> List[str]:
+    """WorkOS may express scopes as a space-delimited `scope`, a `scp` list, or
+    a `permissions` list. Accept whichever is present."""
+    scope = claims.get("scope")
+    if isinstance(scope, str):
+        return [s for s in scope.split() if s]
+    for key in ("scp", "permissions"):
+        val = claims.get(key)
+        if isinstance(val, list):
+            return [str(s) for s in val]
+    return []
 
-    PHASE 1 STUB: returns the configured default user. Replace the body in Phase 2
-    with bearer-token validation + OAuth-subject -> user_id lookup.
-    """
-    default_user = os.getenv("MCP_DEFAULT_USER_ID")
-    if default_user:
-        return str(default_user).strip()
-    return None
 
+class WorkOSTokenVerifier(TokenVerifier):
+    """Validate a WorkOS-issued JWT access token and return an MCP AccessToken."""
 
-class CurrentUserMiddleware:
-    """ASGI middleware that binds the resolved user_id to the request context.
+    def __init__(
+        self,
+        jwks_url: str,
+        issuer: Optional[str],
+        audience: Optional[str] = None,
+        required_scopes: Optional[List[str]] = None,
+    ) -> None:
+        self.issuer = issuer
+        self.audience = audience
+        self.required_scopes = set(required_scopes or [])
+        # PyJWKClient fetches and caches signing keys; reused across requests.
+        self._jwk_client = PyJWKClient(jwks_url)
 
-    Sets ``_current_user_id`` before delegating to the MCP app and resets it
-    afterward. Because tools run within the same request task (sync tools are run
-    via ``anyio.to_thread``, which copies the context), they observe the value.
-    """
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        user_id = _resolve_user_id(scope)
-        if user_id is None:
-            token = None
-        else:
-            token = _current_user_id.set(user_id)
+    async def verify_token(self, token: str) -> Optional[AccessToken]:
         try:
-            await self.app(scope, receive, send)
-        finally:
-            if token is not None:
-                _current_user_id.reset(token)
+            # JWKS fetch/verify is blocking; keep it off the event loop.
+            signing_key = await anyio.to_thread.run_sync(
+                self._jwk_client.get_signing_key_from_jwt, token
+            )
+            claims = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                issuer=self.issuer,
+                audience=self.audience if self.audience else None,
+                options={"verify_aud": bool(self.audience)},
+            )
+        except Exception as e:  # noqa: BLE001 — any failure is an invalid token
+            logger.warning(f"MCP token rejected: {e}")
+            return None
+
+        subject = claims.get("sub")
+        if not subject:
+            return None
+
+        scopes = _extract_scopes(claims)
+        if self.required_scopes and not self.required_scopes.issubset(set(scopes)):
+            logger.warning("MCP token missing required scopes")
+            return None
+
+        return AccessToken(
+            token=token,
+            client_id=claims.get("client_id") or claims.get("azp") or "",
+            scopes=scopes,
+            expires_at=claims.get("exp"),
+            resource=self.audience,
+            subject=str(subject),
+            claims=claims,
+        )
+
+
+def build_auth_settings(config: MCPConfig) -> AuthSettings:
+    return AuthSettings(
+        issuer_url=config.workos_issuer,
+        resource_server_url=config.resource_server_url,
+        required_scopes=config.required_scopes or None,
+    )
