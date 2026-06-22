@@ -553,10 +553,19 @@ class PlannerAPIAdapter:
         """Get a specific promise by ID."""
         return self.promises_repo.get_promise(user_id, promise_id)
 
-    def get_promises(self, user_id) -> List[Dict]:
-        """List the user's promises (id, text, weekly hours, dates). Use to look up promise_ids."""
+    def get_promises(self, user_id, status: str = "all") -> List[Dict]:
+        """List the user's promises with id, text, tracking ('time'|'count') and status ('active'|'expired'). Use to look up promise_ids.
+
+        Args:
+            status: filter the list — "active" (not past its end date), "expired"
+                (past its end date but still listed), or "all" (default).
+        """
         promises = self.promises_repo.list_promises(user_id)
-        return [self._promise_to_dict(p) for p in promises]
+        dicts = [self._promise_to_dict(p) for p in promises]
+        wanted = (status or "all").strip().lower()
+        if wanted in ("active", "expired"):
+            dicts = [d for d in dicts if d["status"] == wanted]
+        return dicts
     
     def count_promises(self, user_id) -> int:
         """Get total number of promises for a user."""
@@ -1291,10 +1300,20 @@ class PlannerAPIAdapter:
         return f"{promise_type}{(last_id+1):02d}"
 
     def _promise_to_dict(self, promise: Promise) -> Dict:
-        """Convert Promise model to legacy dict format."""
+        """Convert Promise model to a dict for adapter consumers (LLM/MCP/handlers).
+
+        ``tracking`` ('time'|'count') and ``status`` ('active'|'expired') are the
+        model-facing way to describe a promise. ``hours_per_week`` is retained for
+        back-compat (bot handlers read it; it also encodes tracking via the
+        <=0 convention) but is a legacy weekly *target* the product no longer
+        emphasizes — prefer ``tracking`` + recent activity when describing a promise.
+        """
+        is_expired = bool(promise.end_date and promise.end_date < date.today())
         return {
             'id': promise.id,
             'text': promise.text,
+            'tracking': 'count' if promise.is_check_based() else 'time',
+            'status': 'expired' if is_expired else 'active',
             'hours_per_week': promise.hours_per_week,
             'recurring': promise.recurring,
             'end_date': promise.end_date.isoformat() if promise.end_date else '',

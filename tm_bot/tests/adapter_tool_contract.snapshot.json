@@ -1,0 +1,730 @@
+{
+  "adapter_methods": {
+    "add_checkin": {
+      "doc": "Record a yes/no check-in for a count-based promise. Use 'I did it today'-style messages.",
+      "params": [
+        "promise_id",
+        "action_datetime"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "add_promise": {
+      "doc": "Create an ongoing tracked goal the user wants to measure over time.",
+      "params": [
+        "promise_text",
+        "num_hours_promised_per_week",
+        "recurring",
+        "start_date",
+        "end_date"
+      ],
+      "required": [
+        "promise_text",
+        "num_hours_promised_per_week"
+      ]
+    },
+    "async_get_promise_report": {
+      "doc": "Non-blocking wrapper for get_promise_report.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "async_get_promises": {
+      "doc": "Non-blocking wrapper for get_promises.",
+      "params": [],
+      "required": []
+    },
+    "async_get_settings": {
+      "doc": "Non-blocking wrapper for settings_service.get_settings.",
+      "params": [],
+      "required": []
+    },
+    "async_get_weekly_summary": {
+      "doc": "Non-blocking wrapper for reports_service.get_weekly_summary.",
+      "params": [
+        "ref_time"
+      ],
+      "required": []
+    },
+    "async_save_settings": {
+      "doc": "Non-blocking wrapper for settings_service.save_settings.",
+      "params": [
+        "settings"
+      ],
+      "required": [
+        "settings"
+      ]
+    },
+    "cancel_reminder": {
+      "doc": "Cancel (disable) a recurring reminder by its reminder_id.",
+      "params": [
+        "reminder_id"
+      ],
+      "required": [
+        "reminder_id"
+      ]
+    },
+    "clear_profile_pending_question": {
+      "doc": "Clear the pending profile question (call after user answers it).",
+      "params": [],
+      "required": []
+    },
+    "count_actions_on_date": {
+      "doc": "Count logged actions on a specific date (YYYY-MM-DD) based on actions.csv.",
+      "params": [
+        "date_iso"
+      ],
+      "required": [
+        "date_iso"
+      ]
+    },
+    "count_actions_today": {
+      "doc": "Count actions for 'today' in the user's timezone from settings.",
+      "params": [],
+      "required": []
+    },
+    "count_promises": {
+      "doc": "Get total number of promises for a user.",
+      "params": [],
+      "required": []
+    },
+    "create_recurring_reminder": {
+      "doc": "Create a weekly recurring reminder ping for a promise.",
+      "params": [
+        "promise_id",
+        "weekday",
+        "time_local"
+      ],
+      "required": [
+        "promise_id",
+        "weekday",
+        "time_local"
+      ]
+    },
+    "create_reminder": {
+      "doc": "Create a one-off reminder for a future date.",
+      "params": [
+        "text",
+        "remind_at"
+      ],
+      "required": [
+        "text",
+        "remind_at"
+      ]
+    },
+    "create_reminders": {
+      "doc": "Create MULTIPLE one-off reminders in ONE call. Use when the user lists 2+ things to remember.",
+      "params": [
+        "items"
+      ],
+      "required": [
+        "items"
+      ]
+    },
+    "delete_plan_session": {
+      "doc": "Cancel and delete a scheduled session for a promise.",
+      "params": [
+        "session_id"
+      ],
+      "required": [
+        "session_id"
+      ]
+    },
+    "delete_promise": {
+      "doc": "Delete a promise by id. Always require user confirmation first.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "estimate_time_for_content": {
+      "doc": "Estimate time needed for content.",
+      "params": [
+        "content_type",
+        "metadata"
+      ],
+      "required": [
+        "content_type",
+        "metadata"
+      ]
+    },
+    "follow_user": {
+      "doc": "Follow another user by their username.",
+      "params": [
+        "target_username"
+      ],
+      "required": [
+        "target_username"
+      ]
+    },
+    "get_actions": {
+      "doc": "Get all actions for a user (legacy format).",
+      "params": [],
+      "required": []
+    },
+    "get_actions_df": {
+      "doc": "Get actions as DataFrame (for compatibility).",
+      "params": [],
+      "required": []
+    },
+    "get_actions_on_date": {
+      "doc": "Return action rows on a specific date (YYYY-MM-DD).",
+      "params": [
+        "date_iso"
+      ],
+      "required": [
+        "date_iso"
+      ]
+    },
+    "get_all_hours_total": {
+      "doc": "Get total hours logged across all promises, optionally within a date range.",
+      "params": [
+        "since_date",
+        "until_date"
+      ],
+      "required": []
+    },
+    "get_community_stats": {
+      "doc": "Get your community statistics (follower and following counts).",
+      "params": [],
+      "required": []
+    },
+    "get_db_schema": {
+      "doc": "Get database schema and example queries for query_database tool.",
+      "params": [],
+      "required": []
+    },
+    "get_last_action_on_promise": {
+      "doc": "Get last action for a promise (legacy format).",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "get_my_followers": {
+      "doc": "Get list of users who follow you.",
+      "params": [],
+      "required": []
+    },
+    "get_my_following": {
+      "doc": "Get list of users you follow.",
+      "params": [],
+      "required": []
+    },
+    "get_overload_status": {
+      "doc": "Check if user is overloaded with too many active promises and suggest reducing scope.",
+      "params": [],
+      "required": []
+    },
+    "get_plan_sessions": {
+      "doc": "List all scheduled sessions for a promise (planned, done, and skipped).",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "get_profile_status": {
+      "doc": "Get user profile status: completion, known facts, missing fields, pending question.",
+      "params": [],
+      "required": []
+    },
+    "get_promise": {
+      "doc": "Get a specific promise by ID.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "get_promise_hours_total": {
+      "doc": "Get total hours logged for a promise, optionally within a date range.",
+      "params": [
+        "promise_id",
+        "since_date",
+        "until_date"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "get_promise_report": {
+      "doc": "Get promise report.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "get_promise_streak": {
+      "doc": "Get promise streak.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "get_promise_weekly_progress": {
+      "doc": "Get weekly progress for a promise.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "get_promises": {
+      "doc": "List the user's promises with id, text, tracking ('time'|'count') and status ('active'|'expired'). Use to look up promise_ids.",
+      "params": [
+        "status"
+      ],
+      "required": []
+    },
+    "get_setting": {
+      "doc": "Get a single user setting value by key (timezone, nightly_hh, nightly_mm, language, voice_mode).",
+      "params": [
+        "setting_key"
+      ],
+      "required": [
+        "setting_key"
+      ]
+    },
+    "get_settings": {
+      "doc": "Get user settings as a dict (timezone, nightly time, language, voice mode).",
+      "params": [],
+      "required": []
+    },
+    "get_template": {
+      "doc": "Get details for a specific template.",
+      "params": [
+        "template_id"
+      ],
+      "required": [
+        "template_id"
+      ]
+    },
+    "get_tool_help": {
+      "doc": "Get detailed documentation for a specific tool.",
+      "params": [
+        "tool_name"
+      ],
+      "required": [
+        "tool_name"
+      ]
+    },
+    "get_upcoming_sessions": {
+      "doc": "Get all planned sessions across all promises for the next N days (default 7).",
+      "params": [
+        "days_ahead"
+      ],
+      "required": []
+    },
+    "get_weekly_report": {
+      "doc": "Get the user's weekly progress report (hours logged vs promised per goal).",
+      "params": [
+        "reference_time"
+      ],
+      "required": []
+    },
+    "get_weekly_visualization": {
+      "doc": "Generate weekly visualization image for a user.",
+      "params": [
+        "reference_time"
+      ],
+      "required": []
+    },
+    "get_work_hour_suggestion": {
+      "doc": "Get work hour suggestion based on user patterns.",
+      "params": [
+        "day_of_week"
+      ],
+      "required": []
+    },
+    "list_actions_filtered": {
+      "doc": "Get list of actions with optional filtering by promise and date range.",
+      "params": [
+        "promise_id",
+        "since_date",
+        "until_date"
+      ],
+      "required": []
+    },
+    "list_templates": {
+      "doc": "List available promise templates, optionally filtered by category.",
+      "params": [
+        "category"
+      ],
+      "required": []
+    },
+    "log_completed_activities": {
+      "doc": "Log MULTIPLE completed activities in ONE call. Use when the user reports 2+ done things.",
+      "params": [
+        "items"
+      ],
+      "required": [
+        "items"
+      ]
+    },
+    "log_completed_activity": {
+      "doc": "Log time spent on a promise for an activity the user has ALREADY completed.",
+      "params": [
+        "promise_id",
+        "time_spent",
+        "action_datetime",
+        "notes"
+      ],
+      "required": [
+        "promise_id",
+        "time_spent"
+      ]
+    },
+    "log_distraction": {
+      "doc": "Log a distraction event (for budget templates).",
+      "params": [
+        "category",
+        "minutes",
+        "at"
+      ],
+      "required": [
+        "category",
+        "minutes"
+      ]
+    },
+    "mark_session_done": {
+      "doc": "Mark a scheduled session as completed.",
+      "params": [
+        "session_id"
+      ],
+      "required": [
+        "session_id"
+      ]
+    },
+    "mark_session_skipped": {
+      "doc": "Mark a scheduled session as skipped (no time logged).",
+      "params": [
+        "session_id"
+      ],
+      "required": [
+        "session_id"
+      ]
+    },
+    "maybe_ask_profile_question": {
+      "doc": "Check if we should ask a profile question and enqueue it if eligible.",
+      "params": [],
+      "required": []
+    },
+    "no_op": {
+      "doc": "No-op method for testing purposes.",
+      "params": [],
+      "required": []
+    },
+    "open_mini_app": {
+      "doc": "Open the mini app for the user.",
+      "params": [
+        "path",
+        "context"
+      ],
+      "required": []
+    },
+    "process_shared_link": {
+      "doc": "Process a shared link and return formatted summary with time estimate.",
+      "params": [
+        "url"
+      ],
+      "required": [
+        "url"
+      ]
+    },
+    "query_database": {
+      "doc": "Execute a read-only SQL query against your data for complex analytics.",
+      "params": [
+        "sql_query"
+      ],
+      "required": [
+        "sql_query"
+      ]
+    },
+    "resolve_datetime": {
+      "doc": "Resolve a date/time phrase ('tomorrow 3pm') to ISO; translate non-English idioms first.",
+      "params": [
+        "datetime_text"
+      ],
+      "required": [
+        "datetime_text"
+      ]
+    },
+    "schedule_session": {
+      "doc": "Schedule a FUTURE work session (time block) tied to an existing promise.",
+      "params": [
+        "promise_id",
+        "title",
+        "planned_start",
+        "planned_duration_min",
+        "notes"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "schedule_sessions": {
+      "doc": "Schedule MULTIPLE future sessions in ONE call. Use when the user lists 2+ activities to plan.",
+      "params": [
+        "items"
+      ],
+      "required": [
+        "items"
+      ]
+    },
+    "search_promises": {
+      "doc": "Find a user's promise_id by free-text query. Use when promise_id is unknown.",
+      "params": [
+        "query"
+      ],
+      "required": [
+        "query"
+      ]
+    },
+    "set_language": {
+      "doc": "Set the user's preferred reply language.",
+      "params": [
+        "language"
+      ],
+      "required": [
+        "language"
+      ]
+    },
+    "set_llm_handler": {
+      "doc": "Set LLM handler for content management and time estimation services.",
+      "params": [
+        "llm_handler"
+      ],
+      "required": [
+        "llm_handler"
+      ]
+    },
+    "set_timezone": {
+      "doc": "Set the user's timezone (affects all date/time interpretation).",
+      "params": [
+        "timezone"
+      ],
+      "required": [
+        "timezone"
+      ]
+    },
+    "subscribe_template": {
+      "doc": "Subscribe to a template (creates a promise and instance).",
+      "params": [
+        "template_id",
+        "start_date",
+        "target_date"
+      ],
+      "required": [
+        "template_id"
+      ]
+    },
+    "summarize_content": {
+      "doc": "Summarize content using LLM.",
+      "params": [
+        "url",
+        "content_metadata"
+      ],
+      "required": [
+        "url",
+        "content_metadata"
+      ]
+    },
+    "unfollow_user": {
+      "doc": "Unfollow a user by their username.",
+      "params": [
+        "target_username"
+      ],
+      "required": [
+        "target_username"
+      ]
+    },
+    "update_plan_session_status": {
+      "doc": "Mark a planned session as done, skipped, or back to planned.",
+      "params": [
+        "session_id",
+        "status"
+      ],
+      "required": [
+        "session_id",
+        "status"
+      ]
+    },
+    "update_promise": {
+      "doc": "Update an existing promise's text, hours/week, recurrence, or dates (only sets fields you pass).",
+      "params": [
+        "promise_id",
+        "promise_text",
+        "hours_per_week",
+        "recurring",
+        "start_date",
+        "end_date"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "update_promise_start_date": {
+      "doc": "Update promise start date.",
+      "params": [
+        "promise_id",
+        "new_start_date"
+      ],
+      "required": [
+        "promise_id",
+        "new_start_date"
+      ]
+    },
+    "update_setting": {
+      "doc": "Update a low-level user setting by key/value. Prefer set_language or set_timezone.",
+      "params": [
+        "setting_key",
+        "setting_value"
+      ],
+      "required": [
+        "setting_key",
+        "setting_value"
+      ]
+    },
+    "upsert_profile_fact": {
+      "doc": "Upsert a profile fact (e.g., status, schedule_type, primary_goal_1y, top_focus_area, main_constraint).",
+      "params": [
+        "field_key",
+        "field_value",
+        "source",
+        "confidence"
+      ],
+      "required": [
+        "field_key",
+        "field_value"
+      ]
+    }
+  },
+  "llm_exposed": [
+    "add_checkin",
+    "add_promise",
+    "cancel_reminder",
+    "clear_profile_pending_question",
+    "count_actions_on_date",
+    "count_actions_today",
+    "count_promises",
+    "create_recurring_reminder",
+    "create_reminder",
+    "create_reminders",
+    "delete_plan_session",
+    "delete_promise",
+    "follow_user",
+    "get_actions",
+    "get_actions_on_date",
+    "get_all_hours_total",
+    "get_community_stats",
+    "get_last_action_on_promise",
+    "get_my_followers",
+    "get_my_following",
+    "get_overload_status",
+    "get_plan_sessions",
+    "get_profile_status",
+    "get_promise",
+    "get_promise_hours_total",
+    "get_promise_report",
+    "get_promise_streak",
+    "get_promise_weekly_progress",
+    "get_promises",
+    "get_setting",
+    "get_settings",
+    "get_template",
+    "get_tool_help",
+    "get_upcoming_sessions",
+    "get_weekly_report",
+    "get_weekly_visualization",
+    "get_work_hour_suggestion",
+    "list_actions_filtered",
+    "list_templates",
+    "log_completed_activities",
+    "log_completed_activity",
+    "log_distraction",
+    "mark_session_done",
+    "mark_session_skipped",
+    "open_mini_app",
+    "schedule_session",
+    "schedule_sessions",
+    "set_language",
+    "set_timezone",
+    "subscribe_template",
+    "unfollow_user",
+    "update_plan_session_status",
+    "update_promise",
+    "update_promise_start_date",
+    "update_setting",
+    "upsert_profile_fact"
+  ],
+  "mcp_exposed": [
+    "add_checkin",
+    "add_promise",
+    "cancel_reminder",
+    "count_actions_on_date",
+    "count_actions_today",
+    "count_promises",
+    "create_recurring_reminder",
+    "create_reminder",
+    "delete_plan_session",
+    "delete_promise",
+    "follow_user",
+    "get_actions",
+    "get_actions_on_date",
+    "get_all_hours_total",
+    "get_community_stats",
+    "get_last_action_on_promise",
+    "get_my_followers",
+    "get_my_following",
+    "get_overload_status",
+    "get_plan_sessions",
+    "get_profile_status",
+    "get_promise",
+    "get_promise_hours_total",
+    "get_promise_report",
+    "get_promise_streak",
+    "get_promise_weekly_progress",
+    "get_promises",
+    "get_setting",
+    "get_settings",
+    "get_template",
+    "get_tool_help",
+    "get_upcoming_sessions",
+    "get_weekly_report",
+    "get_weekly_visualization",
+    "get_work_hour_suggestion",
+    "list_actions_filtered",
+    "list_templates",
+    "log_completed_activity",
+    "log_distraction",
+    "mark_session_done",
+    "mark_session_skipped",
+    "open_mini_app",
+    "schedule_session",
+    "set_language",
+    "set_timezone",
+    "subscribe_template",
+    "unfollow_user",
+    "update_plan_session_status",
+    "update_promise",
+    "update_promise_start_date",
+    "update_setting",
+    "upsert_profile_fact"
+  ]
+}
