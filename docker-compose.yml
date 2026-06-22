@@ -114,6 +114,37 @@ services:
       - web
 
   # =========================
+  # MCP SERVER (remote Streamable HTTP) — Phase 1
+  # Not started by default. Bring up explicitly with:
+  #   docker compose --profile mcp up -d zana-mcp
+  # Phase 3 wires nginx (mcp.xaana.club) -> this container with buffering off.
+  # =========================
+  zana-mcp:
+    profiles: ["mcp"]
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+      args:
+        BASE_IMAGE: ${MCP_BASE_IMAGE:-zana-ai-bot:staging}
+    image: zana-mcp
+    container_name: zana-mcp
+    env_file:
+      - /opt/zana-config/.env.prod            # same DB/config as the app
+    environment:
+      # Phase 1: scope every request to one user until OAuth lands (Phase 2).
+      - MCP_DEFAULT_USER_ID=${MCP_DEFAULT_USER_ID:-}
+      - MINIAPP_URL=${MINIAPP_URL:-https://xaana.club}
+    expose:
+      - "8090"                                # internal; nginx reaches it via the network
+    volumes:
+      - /srv/zana-users:/app/USERS_DATA_DIR
+    working_dir: /app
+    command: ["uvicorn", "run_mcp_local:app", "--host", "0.0.0.0", "--port", "8090"]
+    restart: unless-stopped
+    networks:
+      - web
+
+  # =========================
   # VECTOR SEARCH (Qdrant)
   # =========================
   qdrant:

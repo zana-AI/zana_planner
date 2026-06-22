@@ -1,0 +1,16 @@
+# MCP server image — built on top of the existing app image so it shares all
+# application code and dependencies, then layers the MCP SDK on top. Build the
+# base image first (e.g. `zana-ai-bot:staging`), then:
+#   docker build -f Dockerfile.mcp --build-arg BASE_IMAGE=zana-ai-bot:staging -t zana-mcp .
+ARG BASE_IMAGE=zana-ai-bot:staging
+FROM ${BASE_IMAGE}
+
+COPY requirements.mcp.txt /tmp/requirements.mcp.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.mcp.txt
+
+# New code not present in older base images.
+COPY tm_bot/mcp_server/ /app/tm_bot/mcp_server/
+COPY run_mcp_local.py /app/run_mcp_local.py
+
+EXPOSE 8090
+CMD ["uvicorn", "run_mcp_local:app", "--host", "0.0.0.0", "--port", "8090"]
