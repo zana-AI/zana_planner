@@ -12,14 +12,14 @@ Three groups of tools:
    declared output schemas (OpenAI "company knowledge" shape), required for
    ChatGPT's Deep Research surface. Claude ignores them.
 
-3. **Account linking** — ``account_status`` / ``link_account``, which operate on
-   the raw OAuth subject (they must work *before* a link exists).
+No account-linking tools are needed: Hydra's subject is already the Telegram
+user_id (see identity.py).
 """
 
 from __future__ import annotations
 
 import functools
-from typing import List, Optional
+from typing import List
 
 from pydantic import BaseModel, Field
 
@@ -27,12 +27,7 @@ from llms.tool_wrappers import _wrap_tool
 from utils.logger import get_logger
 
 from .config import config
-from .identity import (
-    AccountNotLinkedError,
-    bind_current_user,
-    current_subject,
-    resolve_user_id_or_none,
-)
+from .identity import bind_current_user, resolve_user_id_or_none
 from .serialization import normalize_result
 
 logger = get_logger(__name__)
@@ -173,46 +168,3 @@ def register_search_fetch_tools(mcp, adapter) -> None:
             metadata={},
         )
 
-
-# --- Account linking --------------------------------------------------------
-
-
-class AccountStatus(BaseModel):
-    authenticated: bool
-    linked: bool
-    user_id: Optional[str] = None
-
-
-class LinkResult(BaseModel):
-    ok: bool
-    message: str
-    user_id: Optional[str] = None
-
-
-def register_link_tools(mcp, links_repo) -> None:
-    @mcp.tool(
-        name="account_status",
-        description="Check whether this AI account is linked to a Xaana account.",
-    )
-    def account_status() -> AccountStatus:
-        subject = current_subject()
-        if not subject:
-            return AccountStatus(authenticated=False, linked=False)
-        user_id = links_repo.get_user_id_for_subject(config.workos_issuer or "", subject)
-        return AccountStatus(authenticated=True, linked=user_id is not None, user_id=user_id)
-
-    @mcp.tool(
-        name="link_account",
-        description=(
-            "Link this AI account to your Xaana account using a one-time code from "
-            "the Xaana Telegram app (Settings -> Connect AI)."
-        ),
-    )
-    def link_account(code: str) -> LinkResult:
-        subject = current_subject()
-        if not subject:
-            return LinkResult(ok=False, message="Not authenticated.")
-        user_id = links_repo.redeem_link_code((code or "").strip().upper(), config.workos_issuer or "", subject)
-        if user_id is None:
-            return LinkResult(ok=False, message="Invalid or expired code. Get a fresh code from the Xaana app and try again.")
-        return LinkResult(ok=True, message="Linked! You can now use your Xaana promises here.", user_id=user_id)

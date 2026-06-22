@@ -7,8 +7,8 @@ ChatGPT, Perplexity, Grok, Mistral — can use the promise/goal tooling directly
 The bot and its LLM layer are untouched: this server reads the same Postgres
 through the same repositories. It is purely additive.
 
-Auth (Phase 2) turns on automatically when WorkOS is configured; otherwise the
-server runs single-user via ``MCP_DEFAULT_USER_ID`` (Phase 1).
+Auth turns on automatically when an OIDC issuer (self-hosted Ory Hydra) is
+configured; otherwise the server runs single-user via ``MCP_DEFAULT_USER_ID``.
 
 ``build_mcp_server`` is intentionally imported lazily (it pulls in the adapter and
 DB layer) so lightweight submodules like ``config`` and ``auth`` stay importable

@@ -98,6 +98,10 @@ services:
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-content_chunks_v1}
       - VERTEX_EMBEDDING_MODEL=${VERTEX_EMBEDDING_MODEL:-gemini-embedding-001}
       - OBJECT_STORAGE_LOCAL_DIR=/app/USERS_DATA_DIR/_content_assets/pdf
+      # Telegram login/consent app for the MCP OAuth (Hydra) flow:
+      - HYDRA_ADMIN_URL=${HYDRA_ADMIN_URL:-http://hydra:4445}
+      - BOT_USERNAME=${BOT_USERNAME:-}
+      - MINIAPP_URL=${MINIAPP_URL:-https://xaana.club}
     # IMPORTANT: no host port here – nginx will reach it via Docker network
     expose:
       - "8080"                                # internal FastAPI/uvicorn port
@@ -131,7 +135,11 @@ services:
     env_file:
       - /opt/zana-config/.env.prod            # same DB/config as the app
     environment:
-      # Phase 1: scope every request to one user until OAuth lands (Phase 2).
+      # OIDC auth via self-hosted Hydra. Setting MCP_OIDC_ISSUER enables auth;
+      # leave it empty + set MCP_DEFAULT_USER_ID for a no-auth local smoke test.
+      - MCP_OIDC_ISSUER=${HYDRA_PUBLIC_URL:-https://auth.xaana.club}
+      - MCP_OIDC_JWKS_URL=${HYDRA_PUBLIC_URL:-https://auth.xaana.club}/.well-known/jwks.json
+      - MCP_RESOURCE_URL=${MCP_RESOURCE_URL:-https://mcp.xaana.club}
       - MCP_DEFAULT_USER_ID=${MCP_DEFAULT_USER_ID:-}
       - MINIAPP_URL=${MINIAPP_URL:-https://xaana.club}
     expose:
@@ -140,6 +148,75 @@ services:
       - /srv/zana-users:/app/USERS_DATA_DIR
     working_dir: /app
     command: ["uvicorn", "run_mcp_local:app", "--host", "0.0.0.0", "--port", "8090"]
+    restart: unless-stopped
+    networks:
+      - web
+
+  # =========================
+  # OAUTH (Ory Hydra) — authorization server for the MCP connector. Same "mcp"
+  # profile, so `docker compose --profile mcp up -d` brings up the whole stack.
+  # Telegram login/consent is served by zana-webapp at /api/oauth/*.
+  # nginx fronts hydra:4444 as https://auth.xaana.club. Admin (4445) stays internal.
+  # Required secret in .env.prod: HYDRA_SECRETS_SYSTEM (32+ chars).
+  # =========================
+  hydra-postgres:
+    image: postgres:16-alpine
+    container_name: zana-hydra-postgres
+    profiles: ["mcp"]
+    environment:
+      - POSTGRES_USER=hydra
+      - POSTGRES_PASSWORD=${HYDRA_DB_PASSWORD:-hydra}
+      - POSTGRES_DB=hydra
+    volumes:
+      - /srv/hydra-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydra"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - web
+
+  hydra-migrate:
+    image: oryd/hydra:v2.2.0
+    container_name: zana-hydra-migrate
+    profiles: ["mcp"]
+    command: migrate sql -e --yes
+    environment:
+      - DSN=postgres://hydra:${HYDRA_DB_PASSWORD:-hydra}@hydra-postgres:5432/hydra?sslmode=disable
+    depends_on:
+      hydra-postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - web
+
+  hydra:
+    image: oryd/hydra:v2.2.0
+    container_name: zana-hydra
+    profiles: ["mcp"]
+    command: serve all
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    environment:
+      - DSN=postgres://hydra:${HYDRA_DB_PASSWORD:-hydra}@hydra-postgres:5432/hydra?sslmode=disable
+      - SECRETS_SYSTEM=${HYDRA_SECRETS_SYSTEM}
+      - URLS_SELF_ISSUER=${HYDRA_PUBLIC_URL:-https://auth.xaana.club}
+      - URLS_SELF_PUBLIC=${HYDRA_PUBLIC_URL:-https://auth.xaana.club}
+      - URLS_LOGIN=${MINIAPP_URL:-https://xaana.club}/api/oauth/login
+      - URLS_CONSENT=${MINIAPP_URL:-https://xaana.club}/api/oauth/consent
+      - URLS_LOGOUT=${MINIAPP_URL:-https://xaana.club}/api/oauth/logout
+      # JWT access tokens so the MCP server can verify them via JWKS.
+      - STRATEGIES_ACCESS_TOKEN=jwt
+      # nginx terminates TLS and proxies http internally; trust the proxy.
+      - SERVE_TLS_ALLOW_TERMINATION_FROM=0.0.0.0/0
+      - SERVE_COOKIES_SAME_SITE_MODE=Lax
+      - LOG_LEVEL=info
+    expose:
+      - "4444"                                # public OAuth endpoints (nginx -> auth.xaana.club)
+      - "4445"                                # admin API (internal only)
     restart: unless-stopped
     networks:
       - web

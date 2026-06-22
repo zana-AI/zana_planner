@@ -1,14 +1,15 @@
-"""WorkOS OAuth token verification for the MCP server.
+"""OIDC access-token verification for the MCP server.
 
-The MCP server is an OAuth *resource server*: WorkOS AuthKit (the authorization
-server) runs the OAuth 2.1 + PKCE flow, dynamic client registration, and the
-login UI; clients (Claude, ChatGPT, ...) present the resulting access token here
-as ``Authorization: Bearer``. We verify that token's signature against WorkOS's
-JWKS and surface the subject.
+The MCP server is an OAuth *resource server*: our self-hosted Ory Hydra (the
+authorization server) runs the OAuth 2.1 + PKCE flow, dynamic client
+registration, and — via its login app — Telegram authentication. Clients (Claude,
+ChatGPT, ...) present the resulting JWT access token here as
+``Authorization: Bearer``. We verify the signature against Hydra's JWKS and
+surface the subject (which Hydra sets to the Telegram user_id).
 
 Wiring this verifier + ``build_auth_settings`` into FastMCP also makes it serve
 the RFC 9728 protected-resource-metadata document and reject unauthenticated
-requests with a spec-correct ``401 / WWW-Authenticate`` — no extra code needed.
+requests with a spec-correct ``401 / WWW-Authenticate``.
 """
 
 from __future__ import annotations
@@ -30,8 +31,7 @@ logger = get_logger(__name__)
 
 
 def _extract_scopes(claims: dict) -> List[str]:
-    """WorkOS may express scopes as a space-delimited `scope`, a `scp` list, or
-    a `permissions` list. Accept whichever is present."""
+    """Scopes may be a space-delimited `scope`, an `scp` list, or `permissions`."""
     scope = claims.get("scope")
     if isinstance(scope, str):
         return [s for s in scope.split() if s]
@@ -42,8 +42,8 @@ def _extract_scopes(claims: dict) -> List[str]:
     return []
 
 
-class WorkOSTokenVerifier(TokenVerifier):
-    """Validate a WorkOS-issued JWT access token and return an MCP AccessToken."""
+class OidcTokenVerifier(TokenVerifier):
+    """Validate a JWT access token from the OIDC AS (Hydra) and return an MCP AccessToken."""
 
     def __init__(
         self,
@@ -98,7 +98,7 @@ class WorkOSTokenVerifier(TokenVerifier):
 
 def build_auth_settings(config: MCPConfig) -> AuthSettings:
     return AuthSettings(
-        issuer_url=config.workos_issuer,
+        issuer_url=config.oidc_issuer,
         resource_server_url=config.resource_server_url,
         required_scopes=config.required_scopes or None,
     )
