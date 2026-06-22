@@ -69,24 +69,39 @@ def _method_signature(node) -> Dict[str, List[str]]:
 
 
 def _adapter_methods() -> Dict[str, Dict]:
+    """Public callable surface of PlannerAPIAdapter, as the reflectors' ``dir()`` sees it.
+
+    Captures both ``def`` methods and class-level assignment aliases
+    (e.g. ``add_action = log_completed_activity``) — the latter are callable
+    attributes that runtime reflection exposes, so they are part of the contract.
+    """
     tree = ast.parse(_ADAPTER_SRC.read_text(encoding="utf-8"))
     cls = next(
         (n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "PlannerAPIAdapter"),
         None,
     )
     assert cls is not None, "PlannerAPIAdapter class not found"
+
     out: Dict[str, Dict] = {}
     for node in cls.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
+            sig = _method_signature(node)
+            out[node.name] = {
+                "params": sig["params"],
+                "required": sig["required"],
+                "doc": _first_doc_line(node),
+            }
+
+    # Resolve class-level aliases `name = other_name` to the target's signature/doc.
+    for node in cls.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Name):
             continue
-        if node.name.startswith("_"):
+        target_name = node.value.id
+        if target_name not in out:
             continue
-        sig = _method_signature(node)
-        out[node.name] = {
-            "params": sig["params"],
-            "required": sig["required"],
-            "doc": _first_doc_line(node),
-        }
+        for tgt in node.targets:
+            if isinstance(tgt, ast.Name) and not tgt.id.startswith("_") and tgt.id not in out:
+                out[tgt.id] = {**out[target_name], "alias_of": target_name}
     return out
 
 

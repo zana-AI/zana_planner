@@ -1,10 +1,38 @@
 {
   "adapter_methods": {
+    "add_action": {
+      "alias_of": "log_completed_activity",
+      "doc": "Log time spent on a promise for an activity the user has ALREADY completed.",
+      "params": [
+        "promise_id",
+        "time_spent",
+        "action_datetime",
+        "notes"
+      ],
+      "required": [
+        "promise_id",
+        "time_spent"
+      ]
+    },
     "add_checkin": {
       "doc": "Record a yes/no check-in for a count-based promise. Use 'I did it today'-style messages.",
       "params": [
         "promise_id",
         "action_datetime"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
+    "add_plan_session": {
+      "alias_of": "schedule_session",
+      "doc": "Schedule a FUTURE work session (time block) tied to an existing promise.",
+      "params": [
+        "promise_id",
+        "title",
+        "planned_start",
+        "planned_duration_min",
+        "notes"
       ],
       "required": [
         "promise_id"
