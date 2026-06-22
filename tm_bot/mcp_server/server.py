@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from services.planner_api_adapter import PlannerAPIAdapter
 from utils.logger import get_logger
@@ -52,6 +53,16 @@ def build_mcp_server(root_dir: str, *, stateless_http: bool = True) -> FastMCP:
         name="Xaana Accountability Promise Tracker",
         instructions=SERVER_INSTRUCTIONS,
         stateless_http=stateless_http,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                "mcp.xaana.club",
+                "zana-mcp:8090",
+                "127.0.0.1:*",
+                "localhost:*",
+            ],
+            allowed_origins=["https://mcp.xaana.club"],
+        ),
         **auth_kwargs,
     )
 
