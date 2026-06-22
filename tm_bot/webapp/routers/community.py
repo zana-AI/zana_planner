@@ -165,7 +165,11 @@ def _rank_club_leaderboard_members(
                 if not daily_stats and metric_type != "count" and activity_date in activity_days_set and len(activity_days_set) == 1:
                     day_duration_hours = duration_hours
 
-                if metric_type == "count":
+                day_scored = day_stats.get("score")
+                if day_scored is not None:
+                    # Non-binary scored check-in (challenge daily quiz) — rank by how well.
+                    day_score = min(max(float(day_scored), 0.0), 100.0)
+                elif metric_type == "count":
                     day_score = 100.0 if day_checkins > 0 else 0.0
                 else:
                     daily_target = max(target_value / 7.0, 0.25)
@@ -346,6 +350,11 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             if "telegram_invite_link" in club_columns
             else "CAST(NULL AS TEXT) AS telegram_invite_link"
         )
+        external_url_select = (
+            "c.external_url"
+            if "external_url" in club_columns
+            else "CAST(NULL AS TEXT) AS external_url"
+        )
 
         rows = session.execute(
             text(f"""
@@ -355,6 +364,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
                     c.visibility,
                     {telegram_status_select},
                     {telegram_invite_select},
+                    {external_url_select},
                     cm.role,
                     COALESCE(member_counts.member_count, 0) AS member_count,
                     COALESCE(promise_counts.promise_count, 0) AS promise_count,
@@ -443,6 +453,7 @@ def _list_user_clubs(user_id: int) -> List[ClubSummary]:
             members=members_by_club.get(str(row["club_id"]), []),
             telegram_status=str(row["telegram_status"] or "not_connected"),
             telegram_invite_link=str(row["telegram_invite_link"]) if row["telegram_invite_link"] else None,
+            external_url=str(row["external_url"]) if row["external_url"] else None,
             promise_id=str(row["promise_id"]) if row["promise_id"] else None,
             promise_uuid=str(row["promise_uuid"]) if row["promise_uuid"] else None,
             promise_text=str(row["promise_text"]) if row["promise_text"] else None,
@@ -749,6 +760,7 @@ async def get_club_leaderboard(
                         a.promise_uuid,
                         a.action_type,
                         COALESCE(a.time_spent_hours, 0.0) AS time_spent_hours,
+                        a.score AS score,
                         DATE(a.at_utc::timestamptz) AS action_date,
                         a.at_utc AS at_utc
                     FROM actions a
@@ -770,7 +782,7 @@ async def get_club_leaderboard(
             lambda: {
                 "activity_days": set(),
                 "checkin_days": set(),
-                "daily": defaultdict(lambda: {"checkins": 0, "duration_hours": 0.0}),
+                "daily": defaultdict(lambda: {"checkins": 0, "duration_hours": 0.0, "score": None}),
                 "duration_hours": 0.0,
                 "checkin_count": 0,
                 "last_activity_at_utc": None,
@@ -786,6 +798,10 @@ async def get_club_leaderboard(
                 stats["checkin_days"].add(action_date)
                 stats["daily"][action_date]["checkins"] += 1
                 stats["checkin_count"] += 1
+                if row["score"] is not None:
+                    # Non-binary scored check-in (e.g. a challenge daily quiz): the day's
+                    # score is the quiz result, not just "did you show up".
+                    stats["daily"][action_date]["score"] = float(row["score"])
             elif action_type == "log_time":
                 hours = float(row["time_spent_hours"] or 0.0)
                 if hours > 0:
@@ -1318,11 +1334,15 @@ async def remove_my_club(
             raise HTTPException(status_code=404, detail="Club not found")
 
         if str(club.get("owner_user_id")) == str(user_id):
-            if str(club.get("telegram_status") or "") != "pending_admin_setup":
-                raise HTTPException(status_code=409, detail="Active clubs cannot be cancelled yet.")
-            if not clubs_repo.cancel_pending_club(club_id, user_id):
-                raise HTTPException(status_code=409, detail="Club could not be cancelled.")
-            return ClubActionResponse(status="cancelled", club_id=club_id, message="Club cancelled.")
+            if str(club.get("telegram_status") or "") == "pending_admin_setup":
+                if not clubs_repo.cancel_pending_club(club_id, user_id):
+                    raise HTTPException(status_code=409, detail="Club could not be cancelled.")
+                return ClubActionResponse(status="cancelled", club_id=club_id, message="Club cancelled.")
+            # Active owned club: archive it. DB-only on purpose — deletion must never
+            # depend on the Telegram group still existing (it may have been removed).
+            if not clubs_repo.archive_club(club_id, user_id):
+                raise HTTPException(status_code=409, detail="Club could not be deleted.")
+            return ClubActionResponse(status="deleted", club_id=club_id, message="Club deleted.")
 
         if not clubs_repo.remove_member(club_id, user_id):
             raise HTTPException(status_code=409, detail="Club could not be left.")

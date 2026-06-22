@@ -148,6 +148,48 @@ class ActionsRepository:
                 },
             )
 
+    def append_scored_checkin(self, user_id: int, promise_uuid: str, score: float, notes: str | None = None) -> None:
+        """Record a non-binary scored check-in for today (idempotent — replaces any existing one).
+
+        Used by challenge daily quizzes: one check-in per day carries the day's score (0..100),
+        which drives both the streak (activity) and the leaderboard (how well). Stored as a
+        'club_checkin' action so the existing streak/leaderboard paths pick it up.
+        """
+        user = str(user_id)
+        now_dt = datetime.utcnow()
+        at_utc = now_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        today = now_dt.strftime("%Y-%m-%d")
+        with get_db_session() as session:
+            session.execute(
+                text("""
+                    DELETE FROM actions
+                    WHERE user_id = :user_id
+                      AND promise_uuid = :promise_uuid
+                      AND action_type = 'club_checkin'
+                      AND DATE(at_utc) = :today;
+                """),
+                {"user_id": user, "promise_uuid": promise_uuid, "today": today},
+            )
+            session.execute(
+                text("""
+                    INSERT INTO actions(
+                        action_uuid, user_id, promise_uuid, promise_id_text,
+                        action_type, time_spent_hours, score, at_utc, notes
+                    ) VALUES (
+                        :action_uuid, :user_id, :promise_uuid, '',
+                        'club_checkin', 0.0, :score, :at_utc, :notes
+                    );
+                """),
+                {
+                    "action_uuid": str(uuid.uuid4()),
+                    "user_id": user,
+                    "promise_uuid": promise_uuid,
+                    "score": float(score),
+                    "at_utc": at_utc,
+                    "notes": notes,
+                },
+            )
+
     def delete_club_checkin(self, user_id: int, promise_uuid: str) -> None:
         """Remove today's club check-in action."""
         user = str(user_id)

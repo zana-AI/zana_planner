@@ -16,7 +16,7 @@ from repositories.auth_session_repo import AuthSessionRepository
 from utils.logger import get_logger
 
 # Import all routers
-from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer, youtube_watch, content, plan_sessions, oauth_consent
+from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer, youtube_watch, content, plan_sessions, challenges, oauth_consent
 
 logger = get_logger(__name__)
 
@@ -82,7 +82,11 @@ def create_webapp_api(
     delayed_message_service = DelayedMessageService(scheduler)
     app.state.delayed_message_service = delayed_message_service
     app.state.learning_pipeline_worker = LearningPipelineWorker()
-    
+
+    # Daily challenge quiz reminder sweeper (gated by WEBAPP_CHALLENGE_REMINDER_SWEEPER).
+    from services.challenge_reminder_service import ChallengeReminderService
+    app.state.challenge_reminder_service = ChallengeReminderService(bot_token)
+
     # Include all routers
     app.include_router(health.router)
     app.include_router(auth.router)
@@ -96,6 +100,7 @@ def create_webapp_api(
     app.include_router(youtube_watch.router)
     app.include_router(content.router)
     app.include_router(plan_sessions.router)
+    app.include_router(challenges.router)
     app.include_router(oauth_consent.router)
 
     # Startup event to log registered routes and fetch bot username
@@ -321,14 +326,23 @@ def create_webapp_api(
         except Exception as e:
             logger.error(f"Failed to start learning pipeline worker: {e}", exc_info=True)
 
+        # Start daily challenge quiz reminder sweeper (gated by env flag).
+        try:
+            await app.state.challenge_reminder_service.start()
+        except Exception as e:
+            logger.error(f"Failed to start challenge reminder sweeper: {e}", exc_info=True)
+
     @app.on_event("shutdown")
     async def shutdown_event():
         try:
             worker = getattr(app.state, "learning_pipeline_worker", None)
             if worker:
                 await worker.stop()
+            reminder = getattr(app.state, "challenge_reminder_service", None)
+            if reminder:
+                await reminder.stop()
         except Exception as e:
-            logger.warning(f"Failed to stop learning pipeline worker cleanly: {e}")
+            logger.warning(f"Failed to stop background workers cleanly: {e}")
     
     @app.get("/")
     async def root():

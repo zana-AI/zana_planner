@@ -312,6 +312,44 @@ class ClubsRepository:
             )
             return True
 
+    def archive_club(self, club_id: str, owner_user_id: int) -> bool:
+        """Delete (archive) an active owner-created club.
+
+        DB-only by design: the Telegram group may have been removed, so deletion must
+        not depend on any group operation. Archives the club and marks every membership
+        as left, which removes it from owners' and members' club lists.
+        """
+        owner = str(owner_user_id)
+        now = utc_now_iso()
+
+        with get_db_session() as session:
+            ensure_club_telegram_columns(session)
+            result = session.execute(
+                text("""
+                    UPDATE clubs
+                    SET status = 'archived',
+                        updated_at_utc = :updated_at_utc
+                    WHERE club_id = :club_id
+                      AND owner_user_id = :owner_user_id
+                      AND COALESCE(status, 'active') = 'active';
+                """),
+                {"club_id": club_id, "owner_user_id": owner, "updated_at_utc": now},
+            )
+            if result.rowcount <= 0:
+                return False
+
+            session.execute(
+                text("""
+                    UPDATE club_members
+                    SET status = 'left',
+                        left_at_utc = :left_at_utc
+                    WHERE club_id = :club_id
+                      AND status = 'active';
+                """),
+                {"club_id": club_id, "left_at_utc": now},
+            )
+            return True
+
     def mark_admin_reminded(self, club_id: str, owner_user_id: int) -> bool:
         """Record that the owner sent a reminder to admins for a pending club."""
         owner = str(owner_user_id)

@@ -12,6 +12,10 @@ import { ClubDetailPage } from './pages/ClubDetailPage';
 import { FocusPage } from './pages/FocusPage';
 import { MyContentsPage } from './pages/MyContentsPage';
 import { PdfReaderPage } from './pages/PdfReaderPage';
+import { ChallengesPage } from './pages/ChallengesPage';
+import { ChallengeDetailPage } from './pages/ChallengeDetailPage';
+import { ChallengePlayPage } from './pages/ChallengePlayPage';
+import { useChallengeDeepLink } from './hooks/useChallengeDeepLink';
 import { DevAdminLoginPage } from './pages/DevAdminLoginPage';
 import { UsersPage } from './components/UsersPage';
 import { HomePage } from './components/HomePage';
@@ -20,6 +24,12 @@ import { AdminPanel } from './components/AdminPanel';
 import { Navigation } from './components/Navigation';
 import { apiClient } from './api/client';
 import { shouldUseLocalMockData } from './api/mockData';
+
+// Handles channel-post deep links (?startapp=<source_key>) — must live inside the Router.
+function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
+  useChallengeDeepLink(enabled);
+  return null;
+}
 
 function App() {
   const { initData, isReady } = useTelegramWebApp();
@@ -94,6 +104,7 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app-shell-v2">
+        <ChallengeDeepLinkRouter enabled={isAuthenticated} />
         <Navigation />
         <Routes>
         {/* Local development helper - backend must explicitly enable dev auth */}
@@ -143,6 +154,38 @@ function App() {
           }
         />
         
+        {/* Challenges (interactive challenge engine) */}
+        <Route
+          path="/challenges"
+          element={
+            isAuthenticated ? (
+              <ChallengesPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="/challenges/:challengeId"
+          element={
+            isAuthenticated ? (
+              <ChallengeDetailPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="/challenges/:challengeId/play"
+          element={
+            isAuthenticated ? (
+              <ChallengePlayPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+
         {/* Templates Pages */}
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/templates/:templateId" element={<TemplateDetailPage />} />

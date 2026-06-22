@@ -5,6 +5,11 @@ function toLocalDateKey(date: Date): string {
 }
 
 export function shouldUseLocalMockData(): boolean {
+  // If a real session token is present, always use the live API (even in dev) —
+  // lets the local preview mirror prod when proxied at the real backend.
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('telegram_auth_token')) {
+    return false;
+  }
   return import.meta.env.DEV;
 }
 

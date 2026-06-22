@@ -91,6 +91,62 @@ export interface AppNavItem {
   to: string;
 }
 
+// Challenges (interactive challenge engine — see docs/CHALLENGES_DESIGN.md)
+export type ChallengeActivityType = 'flashcard' | 'multiple_choice';
+
+export interface ChallengeSummary {
+  challenge_id: string;
+  host_user_id: string;
+  host_name: string;
+  title: string;
+  description?: string | null;
+  activity_type: ChallengeActivityType;
+  cadence: string;
+  visibility: string;
+  status: string;
+  participant_count: number;
+  joined: boolean;
+}
+
+export interface ChallengeItemPublic {
+  item_id: string;
+  position: number;
+  front: string;
+  example?: string | null;
+  back?: string | null;       // flashcards only
+  options?: string[] | null;  // multiple_choice only
+}
+
+export interface ChallengeDeck {
+  deck_id: string;
+  title: string;
+  activity_type: ChallengeActivityType;
+  items: ChallengeItemPublic[];
+}
+
+export interface ChallengeAnswer {
+  item_id: string;
+  response: string;           // MCQ: chosen option · flashcard: 'knew' | 'didnt'
+  time_ms?: number;
+}
+
+export interface ChallengeCompleteResult {
+  deck_id: string;
+  total: number;
+  correct: number;
+  score_pct: number;
+  streak: number;
+}
+
+export interface ChallengeLeaderboardEntry {
+  rank: number;
+  user_id: string;
+  name: string;
+  score_percent: number;
+  streak: number;
+  active_days: number;
+}
+
 // API Response types
 export interface SessionData {
   date: string;
@@ -115,6 +171,16 @@ export interface PromiseData {
   end_date?: string; // ISO date string (YYYY-MM-DD)
   planned_sessions_count?: number;
   next_session_start?: string | null;
+  daily_activity?: PromiseDailyActivity | null;
+}
+
+// Challenge quiz attached to a promise, surfaced on the My Week badge.
+export interface PromiseDailyActivity {
+  type: 'quiz';
+  challenge_id: string;
+  deck_id?: string | null;
+  status: 'due' | 'done';
+  score?: number | null;
 }
 
 export interface WeeklyReportData {
@@ -209,6 +275,7 @@ export interface ClubSummary {
   }[];
   telegram_status: 'not_connected' | 'pending_admin_setup' | 'ready' | 'connected';
   telegram_invite_link?: string;
+  external_url?: string;
   promise_id?: string;
   promise_uuid?: string;
   promise_text?: string;

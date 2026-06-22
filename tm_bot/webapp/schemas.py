@@ -222,6 +222,7 @@ class ClubSummary(BaseModel):
     members: List[ClubMemberSummary] = Field(default_factory=list)
     telegram_status: str = "not_connected"
     telegram_invite_link: Optional[str] = None
+    external_url: Optional[str] = None
     promise_id: Optional[str] = None
     promise_uuid: Optional[str] = None
     promise_text: Optional[str] = None
@@ -710,3 +711,93 @@ class PlanSessionUpdate(BaseModel):
 
 class ChecklistItemToggle(BaseModel):
     done: bool
+
+
+# ---------------------------------------------------------------------------
+# Challenges (interactive challenge engine — see docs/CHALLENGES_DESIGN.md)
+# ---------------------------------------------------------------------------
+
+class ChallengeSummary(BaseModel):
+    challenge_id: str
+    host_user_id: str
+    host_name: str
+    title: str
+    description: Optional[str] = None
+    activity_type: Literal["flashcard", "multiple_choice"]
+    cadence: str
+    visibility: str
+    status: str
+    participant_count: int
+    joined: bool
+
+
+class ChallengeJoinRequest(BaseModel):
+    source: Optional[str] = None  # startapp deep-link token / attribution
+
+
+class ChallengeItemPublic(BaseModel):
+    item_id: str
+    position: int
+    front: str
+    example: Optional[str] = None
+    back: Optional[str] = None            # flashcards only (MCQ hides the answer)
+    options: Optional[List[str]] = None   # MCQ only
+
+
+class ChallengeDeckOut(BaseModel):
+    deck_id: str
+    title: str
+    activity_type: Literal["flashcard", "multiple_choice"]
+    items: List[ChallengeItemPublic]
+
+
+class ChallengeAnswer(BaseModel):
+    item_id: str
+    response: str                # MCQ: chosen option · flashcard: 'knew' | 'didnt'
+    time_ms: Optional[int] = None
+
+
+class ChallengeCompleteRequest(BaseModel):
+    answers: List[ChallengeAnswer]
+
+
+class ChallengeCompleteResult(BaseModel):
+    deck_id: str
+    total: int
+    correct: int
+    score_pct: int
+    streak: int
+
+
+class ChallengeLeaderboardEntry(BaseModel):
+    rank: int
+    user_id: str
+    name: str
+    score_percent: float
+    streak: int
+    active_days: int
+
+
+# Admin authoring (no coach UI in v1; used by admin ingestion)
+class ChallengeItemIn(BaseModel):
+    front: str
+    back: str
+    example: Optional[str] = None
+    options: Optional[List[str]] = None
+
+
+class ChallengeCreateRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    activity_type: Literal["flashcard", "multiple_choice"] = "flashcard"
+    cadence: Literal["daily", "weekly"] = "daily"
+    visibility: Literal["public", "unlisted"] = "public"
+    source_key: Optional[str] = None
+    host_user_id: Optional[int] = None  # defaults to the calling admin
+
+
+class ChallengeDeckIn(BaseModel):
+    title: str
+    position: int = 0
+    release_at: Optional[str] = None
+    items: List[ChallengeItemIn]

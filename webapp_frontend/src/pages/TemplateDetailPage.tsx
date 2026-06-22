@@ -1,21 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Bookmark, Globe, Lock } from 'lucide-react';
+import { Bookmark } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { TemplateDetail } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { Button } from '../components/ui/Button';
 import { Emoji } from '../components/ui/Emoji';
-
-// Mirrors the backend logic: max(today + 6 months, Dec 31 of this year)
-function defaultEndDate(): string {
-  const today = new Date();
-  const m6 = new Date(today);
-  m6.setMonth(m6.getMonth() + 6);
-  const eoy = new Date(today.getFullYear(), 11, 31); // Dec 31
-  const result = m6 > eoy ? m6 : eoy;
-  return result.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-}
 
 export function TemplateDetailPage() {
   const { templateId } = useParams<{ templateId: string }>();
@@ -25,9 +15,7 @@ export function TemplateDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [subscribing, setSubscribing] = useState(false);
-  const [targetValue, setTargetValue] = useState<number | null>(null);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
-  const endDateDisplay = defaultEndDate();
 
   useEffect(() => {
     if (!templateId) return;
@@ -37,7 +25,6 @@ export function TemplateDetailPage() {
       try {
         const data = await apiClient.getTemplate(templateId);
         setTemplate(data);
-        setTargetValue(data.target_value);
         hapticFeedback('success');
       } catch (err) {
         console.error('Failed to load template:', err);
@@ -56,10 +43,8 @@ export function TemplateDetailPage() {
     setSubscribing(true);
     setError('');
     try {
-      await apiClient.subscribeTemplate(templateId, {
-        target_value: targetValue !== null ? targetValue : undefined,
-        visibility,
-      });
+      // Target and end date use the template defaults — no setup needed.
+      await apiClient.subscribeTemplate(templateId, { visibility });
       hapticFeedback('success');
       navigate('/dashboard');
     } catch (err: any) {
@@ -97,7 +82,6 @@ export function TemplateDetailPage() {
   return (
     <div className="app">
       <main className="template-detail-page">
-        {/* Info card — read-only */}
         <section className="template-detail-card">
           <div className="template-detail-title-row">
             <span className="template-detail-icon">
@@ -109,71 +93,31 @@ export function TemplateDetailPage() {
             </span>
             <div>
               <h2 className="template-detail-title">{template.title}</h2>
-              <span className="template-detail-chip">{template.category.replace(/_/g, ' ')}</span>
             </div>
           </div>
 
           {template.description ? <p className="template-detail-description">{template.description}</p> : null}
 
-          <div className="template-detail-metric">
-            <strong>{template.target_value}</strong>
-            <span>{template.metric_type === 'hours' ? 'hours/week' : 'times/week'}</span>
-          </div>
-        </section>
-
-        {/* Configure card — consistent with PromiseCard edit form */}
-        <section className="template-detail-card">
-          <h3 className="template-detail-section-title">Configure your promise</h3>
-
-          {/* Weekly target */}
-          <div className="card-form-group">
-            <label className="card-form-label">Weekly target</label>
-            <div className="template-detail-input-row">
-              <input
-                type="number"
-                step="1"
-                min="1"
-                value={targetValue !== null ? targetValue : template.target_value}
-                onChange={(e) => setTargetValue(parseFloat(e.target.value) || template.target_value)}
-                className="card-form-input"
-              />
-              <span className="template-detail-input-unit">
-                {template.metric_type === 'hours' ? 'hrs / week' : 'times / week'}
-              </span>
-            </div>
-          </div>
-
-          {/* End date (informational) */}
-          <div className="card-form-group">
-            <label className="card-form-label">Runs until</label>
-            <div className="card-form-date-button" style={{ cursor: 'default', opacity: 0.75 }}>
-              {endDateDisplay}
-            </div>
-            <span style={{ fontSize: '0.72rem', color: 'rgba(232,238,252,0.45)', marginTop: 4, display: 'block' }}>
-              Auto-set to 6 months from now or end of this year, whichever is later.
-            </span>
-          </div>
-
-          {/* Visibility toggle */}
-          <div className="card-recurring-section" style={{ marginTop: 8 }}>
-            <div className="card-recurring-info">
-              <span className="card-recurring-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Visibility — the only choice; everything else uses sensible defaults. */}
+          <div className="card-setting-row" style={{ marginTop: 12 }}>
+            <div className="card-setting-info">
+              <span className="card-setting-title">Public visibility</span>
+              <span className="card-setting-subtitle">
                 {visibility === 'public'
-                  ? <><Globe size={14} style={{ opacity: 0.8 }} /> Visible to community</>
-                  : <><Lock size={14} style={{ opacity: 0.7 }} /> Private (only you)</>
-                }
-              </span>
-              <span className="card-recurring-subtitle">
-                {visibility === 'public'
-                  ? 'Others can see your progress and be inspired.'
-                  : 'Your progress is hidden from other users.'}
+                  ? 'Visible to community — others can be inspired.'
+                  : 'Only visible to you.'}
               </span>
             </div>
             <button
-              className={`card-recurring-toggle-button ${visibility === 'public' ? 'active' : ''}`}
-              onClick={() => setVisibility((v) => v === 'public' ? 'private' : 'public')}
+              type="button"
+              className={`card-switch${visibility === 'public' ? ' card-switch--on' : ''}`}
+              onClick={() => setVisibility((v) => (v === 'public' ? 'private' : 'public'))}
+              aria-pressed={visibility === 'public'}
             >
-              {visibility === 'public' ? 'Make private' : 'Make public'}
+              <span className="card-switch-track" aria-hidden="true">
+                <span className="card-switch-thumb" />
+              </span>
+              <span className="card-switch-label">{visibility === 'public' ? 'Public' : 'Private'}</span>
             </button>
           </div>
 

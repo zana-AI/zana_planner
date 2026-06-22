@@ -295,6 +295,17 @@ class ReportsService:
             else:
                 promise_data['next_session_start'] = None
 
+        # Attach today's challenge quiz for challenge-backed promises (My Week badge CTA).
+        try:
+            from repositories.challenges_repo import ChallengesRepository
+            activity_by_uuid = ChallengesRepository().daily_activity_for_promises(user_id, uuids)
+            for promise_id, promise_data in report_data.items():
+                p_uuid = promise_uuid_by_id.get(promise_id)
+                if p_uuid and p_uuid in activity_by_uuid:
+                    promise_data['daily_activity'] = activity_by_uuid[p_uuid]
+        except Exception:
+            pass  # the daily-activity add-on must never break the weekly report
+
         return report_data
 
     def get_promise_summary(self, user_id: int, promise_id: str, ref_time: datetime) -> Dict[str, Any]:

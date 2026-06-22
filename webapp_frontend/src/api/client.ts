@@ -1399,6 +1399,54 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  // ---------------------------------------------------------------------------
+  // Challenges (interactive challenge engine — see docs/CHALLENGES_DESIGN.md)
+  // ---------------------------------------------------------------------------
+
+  async listChallenges(): Promise<import('../types').ChallengeSummary[]> {
+    return this.request('/challenges');
+  }
+
+  async getChallenge(challengeId: string): Promise<import('../types').ChallengeSummary> {
+    return this.request(`/challenges/${challengeId}`);
+  }
+
+  async getChallengeBySource(sourceKey: string): Promise<import('../types').ChallengeSummary> {
+    return this.request(`/challenges/by-source/${encodeURIComponent(sourceKey)}`);
+  }
+
+  async joinChallenge(challengeId: string, source?: string): Promise<import('../types').ChallengeSummary> {
+    return this.request(`/challenges/${challengeId}/join`, {
+      method: 'POST',
+      body: JSON.stringify({ source: source ?? null }),
+    });
+  }
+
+  /** The next due deck, or null when the user is caught up (backend returns 404). */
+  async getDueDeck(challengeId: string): Promise<import('../types').ChallengeDeck | null> {
+    try {
+      return await this.request<import('../types').ChallengeDeck>(`/challenges/${challengeId}/deck`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  async completeChallengeDeck(
+    challengeId: string,
+    deckId: string,
+    answers: import('../types').ChallengeAnswer[],
+  ): Promise<import('../types').ChallengeCompleteResult> {
+    return this.request(`/challenges/${challengeId}/decks/${deckId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    });
+  }
+
+  async getChallengeLeaderboard(challengeId: string): Promise<import('../types').ChallengeLeaderboardEntry[]> {
+    return this.request(`/challenges/${challengeId}/leaderboard`);
+  }
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { HTMLAttributes, KeyboardEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { PromiseData } from '../types';
 import { Badge } from './ui/Badge';
 import { formatPromiseText } from '../utils/activityFormat';
@@ -49,6 +50,7 @@ function formatNextSession(isoStr: string): string {
 }
 
 export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV2Props) {
+  const navigate = useNavigate();
   const {
     text,
     hours_promised,
@@ -61,6 +63,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
     recurring = true,
     planned_sessions_count = 0,
     next_session_start,
+    daily_activity,
   } = data;
 
   const isCountBased = metric_type === 'count';
@@ -137,6 +140,38 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
           <span className="meta" dir="ltr">{progress}%</span>
         )}
       </DRow>
+      {daily_activity ? (
+        daily_activity.status === 'due' ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/challenges/${daily_activity.challenge_id}/play`);
+            }}
+            style={{
+              marginTop: 10,
+              width: '100%',
+              border: 0,
+              borderRadius: 10,
+              padding: '10px 12px',
+              background: '#5DCAA5',
+              color: '#06281F',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer',
+            }}
+          >
+            📝 Today's quiz →
+          </button>
+        ) : (
+          <div
+            style={{ marginTop: 10, fontSize: 12.5, color: 'var(--color-text-secondary, #8A94A6)', textAlign: 'right' }}
+            dir="ltr"
+          >
+            ✓ Quiz done{daily_activity.score != null ? ` · ${Math.round(daily_activity.score)}%` : ''}
+          </div>
+        )
+      ) : null}
     </article>
   );
 }
