@@ -24,6 +24,7 @@ from typing import List
 from pydantic import BaseModel, Field
 
 from llms.tool_wrappers import _wrap_tool
+from llms.tool_exposure import MCP_EXCLUDED_TOOLS as EXCLUDED_TOOLS
 from utils.logger import get_logger
 
 from .config import config
@@ -32,27 +33,9 @@ from .serialization import normalize_result
 
 logger = get_logger(__name__)
 
-
-# Methods not exposed as tools. Mirrors the LLM exclusion list plus MCP-specific
-# omissions: raw SQL (unsafe for remote clients), batch plural variants (kept the
-# singular forms), and content-pipeline helpers driven by non-MCP code.
-EXCLUDED_TOOLS = {
-    "query_database",
-    "get_db_schema",
-    "add_action",
-    "add_plan_session",
-    "no_op",
-    "maybe_ask_profile_question",
-    "clear_profile_pending_question",
-    "set_llm_handler",
-    "schedule_sessions",
-    "log_completed_activities",
-    "create_reminders",
-    "process_shared_link",
-    "estimate_time_for_content",
-    "summarize_content",
-    "get_actions_df",
-}
+# Which adapter methods are exposed here is governed centrally — see
+# llms/tool_exposure.py and docs/ADAPTER_API_CONTRACT.md. New public adapter
+# methods are exposed by default unless listed there.
 
 
 def _bound_tool(fn):

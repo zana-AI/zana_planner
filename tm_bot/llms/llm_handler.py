@@ -3241,35 +3241,11 @@ class LLMHandler:
 
     def _build_tools(self, adapter: PlannerAPIAdapter):
         """Convert adapter methods into LangChain StructuredTool objects."""
-        # Exclude tools that add too much context or are rarely needed
-        EXCLUDED_TOOLS = {
-            "query_database",  # SQL tool - complex, rarely needed, adds schema bloat
-            "get_db_schema",   # Database schema - on-demand only
-            # Back-compat aliases superseded by user-verb names below; hidden from
-            # the LLM so the planner only sees one canonical tool per intent.
-            "add_action",          # → log_completed_activity
-            "add_plan_session",    # → schedule_session
-            # Internal helpers that pollute the planner's tool vocabulary.
-            "no_op",
-            "maybe_ask_profile_question",
-            "set_llm_handler",   # internal wiring, not a user-facing tool
-            # Superseded by LLM-based resolvers added below.
-            "resolve_datetime",
-            "search_promises",
-            # Async wrappers — the LLM should call the sync method instead.
-            "async_get_settings",
-            "async_save_settings",
-            "async_get_promises",
-            "async_get_promise_report",
-            "async_get_weekly_summary",
-            # Redundant DataFrame variant; get_actions covers the LLM use case.
-            "get_actions_df",
-            # Background content-pipeline helpers; called from non-LLM code paths.
-            "process_shared_link",
-            "estimate_time_for_content",
-            "summarize_content",
-        }
-        
+        # Exposure is governed centrally — see llms/tool_exposure.py and
+        # docs/ADAPTER_API_CONTRACT.md. New public adapter methods are exposed
+        # by default unless listed there.
+        from llms.tool_exposure import LLM_EXCLUDED_TOOLS as EXCLUDED_TOOLS
+
         tools = []
         for attr_name in dir(adapter):
             if attr_name.startswith("_"):
