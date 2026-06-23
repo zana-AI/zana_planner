@@ -120,8 +120,8 @@ export function PromiseDetailSheet({
   // Session being edited (opens ScheduleSheet in edit mode) / added to calendar
   const [editSession, setEditSession] = useState<PlanSession | null>(null);
   const [calendarSession, setCalendarSession] = useState<PlanSession | null>(null);
-  // A few recent activity logs (what was actually done on this promise) shown above the
-  // upcoming sessions, so the sheet reads as a short timeline: recently done, then planned.
+  // A few recent activity logs (what was actually done on this promise) shown below the
+  // upcoming sessions, so the sheet reads forward-first: what's planned next, then recently done.
   const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
 
   const reloadSessions = useCallback(() => {
@@ -144,7 +144,15 @@ export function PromiseDetailSheet({
     return () => { cancelled = true; };
   }, [open, promiseId]);
 
-  const upcomingSessions = planSessions.filter(s => s.status === 'planned');
+  // Planned sessions, ordered chronologically (soonest first). Sessions with no
+  // time set sink to the bottom rather than jumping to the top.
+  const upcomingSessions = planSessions
+    .filter(s => s.status === 'planned')
+    .sort((a, b) => {
+      const ta = a.planned_start ? new Date(a.planned_start).getTime() : Infinity;
+      const tb = b.planned_start ? new Date(b.planned_start).getTime() : Infinity;
+      return ta - tb;
+    });
 
   // Pre-fill values for LogActionModal from the session being marked done
   const doneSession = logDoneSessionId !== null
@@ -280,33 +288,8 @@ export function PromiseDetailSheet({
         </>
       ) : null}
 
-      {/* Recent logs — what was actually done on this promise (read-only) */}
-      {recentLogs.length > 0 && (
-        <>
-          <p className="ds-eyebrow" style={{ marginTop: 16 }}>Recent</p>
-          <div className="recent-log-list">
-            {recentLogs.map((log, index) => {
-              const note = (log.notes ?? '').trim();
-              const amount = log.time_spent > 0 ? log.time_str : '';
-              return (
-                <div key={`${log.datetime}-${index}`} className="recent-log-row">
-                  <span className="recent-log-icon" aria-hidden>
-                    <Check size={12} />
-                  </span>
-                  <span className="recent-log-title">
-                    {note || (amount ? `${amount} logged` : 'Logged')}
-                  </span>
-                  <span className="recent-log-time">
-                    {note && amount ? `${amount} · ` : ''}{formatLogDate(log.date)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Planned sessions */}
+      {/* Planned sessions — upcoming work comes first; what's already done is
+          shown below under "Recent". */}
       {!sessionsLoading && upcomingSessions.length > 0 && (
         <>
           <p className="ds-eyebrow" style={{ marginTop: 16 }}>
@@ -360,6 +343,32 @@ export function PromiseDetailSheet({
                 </div>
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* Recent logs — what was actually done on this promise (read-only) */}
+      {recentLogs.length > 0 && (
+        <>
+          <p className="ds-eyebrow" style={{ marginTop: 16 }}>Recent</p>
+          <div className="recent-log-list">
+            {recentLogs.map((log, index) => {
+              const note = (log.notes ?? '').trim();
+              const amount = log.time_spent > 0 ? log.time_str : '';
+              return (
+                <div key={`${log.datetime}-${index}`} className="recent-log-row">
+                  <span className="recent-log-icon" aria-hidden>
+                    <Check size={12} />
+                  </span>
+                  <span className="recent-log-title">
+                    {note || (amount ? `${amount} logged` : 'Logged')}
+                  </span>
+                  <span className="recent-log-time">
+                    {note && amount ? `${amount} · ` : ''}{formatLogDate(log.date)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

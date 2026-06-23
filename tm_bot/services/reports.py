@@ -32,11 +32,6 @@ class ReportsService:
         week_sunday = week_start.date() + timedelta(days=6)
         return week_sunday < date.today()
 
-    @staticmethod
-    def _promise_started_by(ref_time: datetime, start_date: Optional[date]) -> bool:
-        """True when the promise had started by the reference week."""
-        return not start_date or start_date <= ref_time.date()
-
     def get_weekly_summary(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
         """Get weekly summary data for a user."""
         if ref_time.tzinfo is not None:
@@ -78,7 +73,7 @@ class ReportsService:
             if is_past_week:
                 if promise.id in promises_with_activity:
                     report_data[promise.id] = all_promise_data[promise.id]
-            elif self._promise_started_by(ref_time, promise.start_date):
+            elif not (promise.end_date and promise.end_date < date.today()):
                 report_data[promise.id] = all_promise_data[promise.id]
 
         return report_data
@@ -269,7 +264,7 @@ class ReportsService:
             report_data = {
                 promise.id: all_promise_data[promise.id]
                 for promise in promises
-                if self._promise_started_by(ref_time, promise.start_date)
+                if not (promise.end_date and promise.end_date < date.today())
             }
 
         # Handle budget templates with distraction_events
