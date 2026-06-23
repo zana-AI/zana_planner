@@ -136,6 +136,17 @@ jobs:
               echo '[STAGING] WARNING: Webapp container (zana-webapp) is not running - check logs: docker compose logs zana-webapp'
             fi
 
+            # zana-webapp was recreated with a new container IP. nginx caches the
+            # old upstream IP (incl. the auth.xaana.club OAuth metadata/register
+            # facade), so reload it to re-resolve. Non-fatal if nginx isn't up.
+            if docker ps --filter name=zana-nginx --filter status=running -q | grep -q .; then
+              if docker exec zana-nginx nginx -s reload; then
+                echo '[STAGING] OK: reloaded zana-nginx to re-resolve zana-webapp'
+              else
+                echo '[STAGING] WARNING: nginx reload failed - check: docker logs zana-nginx'
+              fi
+            fi
+
             echo '[STAGING] Done.'
           REMOTE_SCRIPT
 
