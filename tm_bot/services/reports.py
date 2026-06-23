@@ -80,8 +80,71 @@ class ReportsService:
                     report_data[promise.id] = all_promise_data[promise.id]
             elif self._promise_started_by(ref_time, promise.start_date):
                 report_data[promise.id] = all_promise_data[promise.id]
-        
+
         return report_data
+
+    def get_weekly_breakdown(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
+        """Structured weekly activity per active promise: check-ins and hours.
+
+        Unlike get_weekly_summary, this counts check-ins for count-based habits
+        (which have no hours target) and never scores anything as a percentage of
+        a weekly-hours quota. Expired promises (past their end date) are omitted.
+        """
+        if ref_time.tzinfo is not None:
+            ref_time = ref_time.replace(tzinfo=None)
+        week_start, week_end = get_week_range(ref_time)
+        today = date.today()
+
+        promises = self.promises_repo.list_promises(user_id)
+        actions = self.actions_repo.list_actions(user_id, since=week_start)
+
+        canonical_by_norm: Dict[str, str] = {}
+        agg: Dict[str, Dict[str, float]] = {}
+        for p in promises:
+            canonical_by_norm.setdefault(normalize_promise_id(p.id), p.id)
+            agg[p.id] = {"hours": 0.0, "checkins": 0}
+
+        for action in actions:
+            action_at = action.at.replace(tzinfo=None) if action.at.tzinfo else action.at
+            if not (week_start <= action_at <= week_end):
+                continue
+            canonical = canonical_by_norm.get(normalize_promise_id(action.promise_id))
+            if not canonical or canonical not in agg:
+                continue
+            # Count only real activity (a logged duration or an explicit check-in),
+            # not skip/delete bookkeeping actions.
+            if action.time_spent > 0 or action.action in ('checkin', 'club_checkin'):
+                agg[canonical]["hours"] += action.time_spent
+                agg[canonical]["checkins"] += 1
+
+        items: List[Dict[str, Any]] = []
+        total_hours = 0.0
+        total_checkins = 0
+        for p in promises:
+            if p.end_date and p.end_date < today:
+                continue  # skip expired — a weekly report is about live commitments
+            a = agg[p.id]
+            hours = round(a["hours"], 2)
+            items.append({
+                "id": p.id,
+                "name": p.text.replace('_', ' '),
+                "tracking": "count" if p.is_check_based() else "time",
+                "checkins": a["checkins"],
+                "hours": hours,
+            })
+            total_hours += hours
+            total_checkins += a["checkins"]
+
+        return {
+            "week_start": week_start.date().isoformat() if hasattr(week_start, 'date') else str(week_start),
+            "week_end": week_end.date().isoformat() if hasattr(week_end, 'date') else str(week_end),
+            "promises": items,
+            "totals": {
+                "active_promises": len(items),
+                "total_checkins": total_checkins,
+                "total_hours": round(total_hours, 2),
+            },
+        }
 
     def get_weekly_summary_with_sessions(self, user_id: int, ref_time: datetime) -> Dict[str, Any]:
         """Get weekly summary data with per-day session breakdown for visualization."""

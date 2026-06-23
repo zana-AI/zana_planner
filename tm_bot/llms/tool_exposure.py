@@ -58,11 +58,18 @@ LLM_EXCLUDED_TOOLS: Set[str] = {
 # deliberately by *also* hiding the batch/plural write variants (keeping the
 # singular forms schedule_session / log_completed_activity / create_reminder)
 # and clear_profile_pending_question (bot-flow only).
+#
+# It also hides the two weekly views that only make sense in the Telegram bot:
+# get_weekly_report emits a target-percentage prose report (misleading for
+# count-based habits) and get_weekly_visualization returns an image marker the
+# bot renders. Remote clients get the structured get_weekly_breakdown instead.
 MCP_EXCLUDED_TOOLS: Set[str] = LLM_EXCLUDED_TOOLS | {
     "clear_profile_pending_question",
     "schedule_sessions",
     "log_completed_activities",
     "create_reminders",
+    "get_weekly_report",
+    "get_weekly_visualization",
 }
 
 

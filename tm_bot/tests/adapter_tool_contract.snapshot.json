@@ -359,6 +359,13 @@
       ],
       "required": []
     },
+    "get_weekly_breakdown": {
+      "doc": "Structured weekly activity per active promise: check-ins for habits and hours for time goals (not a target percentage). Prefer this over get_weekly_report for analysis.",
+      "params": [
+        "reference_time"
+      ],
+      "required": []
+    },
     "get_weekly_report": {
       "doc": "Get the user's weekly progress report (hours logged vs promised per goal).",
       "params": [
@@ -678,6 +685,7 @@
     "get_template",
     "get_tool_help",
     "get_upcoming_sessions",
+    "get_weekly_breakdown",
     "get_weekly_report",
     "get_weekly_visualization",
     "get_work_hour_suggestion",
@@ -734,8 +742,7 @@
     "get_template",
     "get_tool_help",
     "get_upcoming_sessions",
-    "get_weekly_report",
-    "get_weekly_visualization",
+    "get_weekly_breakdown",
     "get_work_hour_suggestion",
     "list_actions_filtered",
     "list_templates",
