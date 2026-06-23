@@ -782,6 +782,12 @@ class PlannerAPIAdapter:
         summary = self.reports_service.get_weekly_summary(user_id, reference_time)
         return self.reports_service.format_weekly_report(summary)
 
+    def get_weekly_breakdown(self, user_id, reference_time: Optional[datetime] = None):
+        """Structured weekly activity per active promise: check-ins for habits and hours for time goals (not a target percentage). Prefer this over get_weekly_report for analysis."""
+        if not reference_time:
+            reference_time = datetime.now()
+        return self.reports_service.get_weekly_breakdown(user_id, reference_time)
+
     def get_weekly_visualization(self, user_id, reference_time: Optional[datetime] = None) -> str:
         """Generate weekly visualization image for a user."""
         if not reference_time:
@@ -1311,7 +1317,10 @@ class PlannerAPIAdapter:
         is_expired = bool(promise.end_date and promise.end_date < date.today())
         return {
             'id': promise.id,
-            'text': promise.text,
+            # Display name: strip the legacy underscore encoding so every consumer
+            # (LLM/MCP/handlers) sees clean text, matching search/fetch and reports.
+            # Operations use 'id', not this text, so cleaning it is safe.
+            'text': promise.text.replace('_', ' '),
             'tracking': 'count' if promise.is_check_based() else 'time',
             'status': 'expired' if is_expired else 'active',
             'hours_per_week': promise.hours_per_week,
