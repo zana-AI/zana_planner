@@ -138,6 +138,17 @@ jobs:
               echo '[PROD] WARNING: Webapp health check failed - check logs: docker compose logs zana-prod'
             fi
 
+            # zana-webapp was force-recreated with a new container IP. Reload nginx
+            # so it re-resolves the new upstream (incl. the auth.xaana.club OAuth
+            # metadata/register facade). Non-fatal if nginx isn't up.
+            if docker ps --filter name=zana-nginx --filter status=running -q | grep -q .; then
+              if docker exec zana-nginx nginx -s reload; then
+                echo '[PROD] OK: reloaded zana-nginx to re-resolve zana-webapp'
+              else
+                echo '[PROD] WARNING: nginx reload failed - check: docker logs zana-nginx'
+              fi
+            fi
+
             echo '[PROD] Done.'
           REMOTE_SCRIPT
 
