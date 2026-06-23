@@ -37,11 +37,13 @@ function weekExpectedFraction(weekDays: string[]): number {
   return idx >= 0 ? (idx + 1) / 7 : 1.0;
 }
 
-function getStatusClass(progress: number, expectedFraction: number): 'good' | 'warn' | 'bad' | '' {
+// Use raw (unrounded) progress so that e.g. 1 check-in on Monday (14.28%)
+// is not marked behind due to integer rounding against expected 14.28%.
+function getStatusClass(rawProgress: number, expectedFraction: number): 'good' | 'warn' | 'bad' | '' {
   const expected = expectedFraction * 100;
-  if (progress >= expected) return 'good';
-  if (progress >= expected * 0.5) return 'warn';
-  if (progress > 0) return 'bad';
+  if (rawProgress >= expected) return 'good';
+  if (rawProgress >= expected * 0.5) return 'warn';
+  if (rawProgress > 0) return 'bad';
   return '';
 }
 
@@ -108,10 +110,14 @@ export function PromiseDetailSheet({
   const isClubPromise = visibility === 'clubs';
   const target = target_value || hours_promised || 1;
   const achieved = achieved_value ?? hours_spent ?? 0;
-  const progress = target > 0 ? Math.min(Math.round((achieved / target) * 100), 100) : 0;
+  const rawProgress = target > 0 ? Math.min((achieved / target) * 100, 100) : 0;
+  const progress = Math.round(rawProgress);
   const expectedFraction = weekExpectedFraction(weekDays);
-  const statusClass = getStatusClass(progress, expectedFraction);
-  const statusLabel = statusClass === 'good' ? 'On track' : statusClass === 'warn' ? 'Behind' : 'At risk';
+  // Only show weekly status for promises with a real weekly target:
+  // non-recurring (trip/project) and zero-target promises have no meaningful pace.
+  const hasWeeklyTarget = isCountBased ? target > 0 : recurring && (hours_promised ?? 0) > 0;
+  const statusClass = hasWeeklyTarget ? getStatusClass(rawProgress, expectedFraction) : null;
+  const statusLabel = statusClass === 'good' ? 'On track' : statusClass === 'warn' ? 'Behind' : statusClass === 'bad' ? 'At risk' : '';
 
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -253,9 +259,11 @@ export function PromiseDetailSheet({
         </div>
         <div className="row" style={{ marginTop: 2 }}>
           <span className="value">{progress}%</span>
-          <Badge variant={statusClass || 'neutral'} showDot>
-            {statusLabel}
-          </Badge>
+          {statusClass !== null && statusLabel && (
+            <Badge variant={statusClass || 'neutral'} showDot>
+              {statusLabel}
+            </Badge>
+          )}
         </div>
         {isCountBased && recurring ? (
           <div className="checkin-dots" style={{ marginTop: 10 }}>
