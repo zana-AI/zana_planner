@@ -11,7 +11,7 @@ import type { AvatarStackUser } from '../components/ui/AvatarStack';
 type TemplateUser = AvatarStackUser;
 
 const CHALLENGE_ACTIVITY_LABEL: Record<string, string> = {
-  flashcard: 'Flashcards',
+  flashcard: 'Quiz',
   multiple_choice: 'Quiz',
 };
 
@@ -154,7 +154,7 @@ export function TemplatesPage() {
                       letterSpacing: 0.3,
                       textTransform: 'uppercase',
                       color: '#0B0F1A',
-                      background: c.activity_type === 'multiple_choice' ? '#7FB2F0' : '#5DCAA5',
+                      background: '#7FB2F0',
                       borderRadius: 999,
                       padding: '4px 10px',
                       display: 'inline-flex',
