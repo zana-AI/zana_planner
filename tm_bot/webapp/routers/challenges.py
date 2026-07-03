@@ -132,3 +132,20 @@ async def admin_add_deck(
     return _repo().add_deck(
         challenge_id, body.title, items, position=body.position, release_at=body.release_at
     )
+
+
+@router.delete("/admin/challenges/{challenge_id}/decks/{deck_id}")
+async def admin_delete_deck(
+    challenge_id: str,
+    deck_id: str,
+    admin_id: int = Depends(get_admin_user),
+):
+    """Cancel a scheduled deck. Only allowed while it hasn't gone live and no one has played it."""
+    if not _repo().get(challenge_id, admin_id):
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if not _repo().delete_deck(deck_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Deck not found, already released, or already has attempts",
+        )
+    return {"status": "deleted", "deck_id": deck_id}

@@ -513,18 +513,19 @@ class ChallengesRepository:
         return self.get(cid, host_user_id)
 
     def add_deck(self, challenge_id: str, title: str, items: List[dict], position: int = 0,
-                 release_at: Optional[str] = None) -> dict:
+                 release_at: Optional[str] = None, source_ref: Optional[str] = None) -> dict:
         """Create a deck plus its items in one shot (admin ingestion path)."""
         deck_id = _new_id()
         ts = _now_iso()
         with get_db_session() as session:
             session.execute(
                 text("""
-                    INSERT INTO challenge_decks (deck_id, challenge_id, title, position, release_at, created_at_utc)
-                    VALUES (:deck, :cid, :title, :pos, :rel, :ts)
+                    INSERT INTO challenge_decks
+                        (deck_id, challenge_id, title, position, release_at, source_ref, created_at_utc)
+                    VALUES (:deck, :cid, :title, :pos, :rel, :src, :ts)
                 """),
                 {"deck": deck_id, "cid": challenge_id, "title": title,
-                 "pos": position, "rel": release_at, "ts": ts},
+                 "pos": position, "rel": release_at, "src": source_ref, "ts": ts},
             )
             for i, item in enumerate(items):
                 options = item.get("options")
@@ -547,6 +548,72 @@ class ChallengesRepository:
                     },
                 )
         return {"deck_id": deck_id, "item_count": len(items)}
+
+    def get_source_refs(self, challenge_id: str) -> List[str]:
+        """All non-null source_refs already used for this challenge (dedup lookup)."""
+        with get_db_session() as session:
+            rows = session.execute(
+                text("""
+                    SELECT source_ref FROM challenge_decks
+                    WHERE challenge_id = :cid AND source_ref IS NOT NULL
+                """),
+                {"cid": challenge_id},
+            ).fetchall()
+            return [r[0] for r in rows]
+
+    def get_deck_count(self, challenge_id: str) -> int:
+        """Total decks (any state) for this challenge — used to append new decks' position."""
+        with get_db_session() as session:
+            row = session.execute(
+                text("SELECT COUNT(*) FROM challenge_decks WHERE challenge_id = :cid"),
+                {"cid": challenge_id},
+            ).fetchone()
+            return int(row[0]) if row else 0
+
+    def get_latest_release_at(self, challenge_id: str) -> Optional[str]:
+        """The latest release_at among this challenge's decks (queue tail), or None if empty."""
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT release_at FROM challenge_decks
+                    WHERE challenge_id = :cid AND release_at IS NOT NULL
+                    ORDER BY release_at DESC LIMIT 1
+                """),
+                {"cid": challenge_id},
+            ).fetchone()
+            return row[0] if row else None
+
+    def delete_deck(self, deck_id: str) -> bool:
+        """Cancel a not-yet-live deck. Refuses if it's already released or has attempts.
+
+        Returns True if deleted, False if the deck doesn't exist or isn't cancellable.
+        """
+        now = _now_iso()
+        with get_db_session() as session:
+            deck = session.execute(
+                text("SELECT release_at FROM challenge_decks WHERE deck_id = :deck"),
+                {"deck": deck_id},
+            ).fetchone()
+            if not deck:
+                return False
+            release_at = deck[0]
+            if release_at is None or release_at <= now:
+                return False  # already live (or always-visible) — not cancellable
+
+            attempted = session.execute(
+                text("SELECT 1 FROM challenge_attempts WHERE deck_id = :deck LIMIT 1"),
+                {"deck": deck_id},
+            ).fetchone()
+            if attempted:
+                return False  # never delete a deck someone already played
+
+            session.execute(
+                text("DELETE FROM challenge_items WHERE deck_id = :deck"), {"deck": deck_id}
+            )
+            session.execute(
+                text("DELETE FROM challenge_decks WHERE deck_id = :deck"), {"deck": deck_id}
+            )
+            return True
 
     # ------------------------------------------------------------------
     # Internal helpers
