@@ -304,7 +304,11 @@ export function PromiseDetailSheet({
             Scheduled sessions
           </p>
           <div className="plan-sessions-list">
-            {upcomingSessions.map(session => (
+            {upcomingSessions.map(session => {
+              const sessionNotes = (session.notes ?? '').trim();
+              const checklistTotal = session.checklist?.length ?? 0;
+              const checklistDone = session.checklist?.filter(item => item.done).length ?? 0;
+              return (
               <div key={session.id} className="plan-session-row">
                 <div className="plan-session-info">
                   <span className="plan-session-title">
@@ -313,7 +317,11 @@ export function PromiseDetailSheet({
                   <span className="plan-session-time">
                     {formatSessionTime(session.planned_start)}
                     {session.planned_duration_min ? ` · ${session.planned_duration_min} min` : ''}
+                    {checklistTotal > 0 ? ` · ${checklistDone}/${checklistTotal} steps` : ''}
                   </span>
+                  {sessionNotes && (
+                    <span className="plan-session-notes">{sessionNotes}</span>
+                  )}
                 </div>
                 <div className="plan-session-actions">
                   <button
@@ -350,7 +358,8 @@ export function PromiseDetailSheet({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

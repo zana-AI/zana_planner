@@ -4,10 +4,10 @@ Plan session endpoints: Promise → PlanSessions → Checklist.
 
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from sqlalchemy import text
 
 from ..dependencies import get_current_user
@@ -17,6 +17,7 @@ from ..schemas import (
     PlanSessionStatusUpdate,
     PlanSessionUpdate,
     ChecklistItemToggle,
+    UpcomingPlanSessionOut,
 )
 from repositories.plan_sessions_repo import PlanSessionsRepository
 from repositories.settings_repo import SettingsRepository
@@ -131,6 +132,24 @@ def _session_payload(data: dict, user_id: int) -> dict:
     if data.get("reminder_offset_min") is not None:
         data["reminder_offset_min"] = int(data["reminder_offset_min"])
     return data
+
+
+@router.get("/plan-sessions/upcoming", response_model=list[UpcomingPlanSessionOut])
+async def list_upcoming_plan_sessions(
+    days: int = Query(default=1, ge=1, le=31),
+    user_id: int = Depends(get_current_user),
+):
+    """All planned sessions across promises, from the start of the user's today
+    through the next `days` days. Powers the dashboard agenda view."""
+    tz = _user_timezone(user_id)
+    local_day_start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    since = local_day_start.astimezone(timezone.utc)
+    until = (local_day_start + timedelta(days=days)).astimezone(timezone.utc)
+
+    def _iso_z(dt: datetime) -> str:
+        return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    return PlanSessionsRepository().list_upcoming_for_user(user_id, _iso_z(since), _iso_z(until))
 
 
 @router.get("/promises/{promise_id}/plan-sessions", response_model=list[PlanSessionOut])

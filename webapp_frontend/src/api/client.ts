@@ -1368,6 +1368,10 @@ class ApiClient {
     return this.request(`/promises/${promiseId}/plan-sessions`);
   }
 
+  async getUpcomingPlanSessions(days: number = 1): Promise<import('../types').UpcomingPlanSession[]> {
+    return this.request(`/plan-sessions/upcoming?days=${days}`);
+  }
+
   async createPlanSession(promiseId: string, data: import('../types').PlanSessionIn): Promise<import('../types').PlanSession> {
     return this.request(`/promises/${promiseId}/plan-sessions`, {
       method: 'POST',

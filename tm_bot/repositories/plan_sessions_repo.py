@@ -432,7 +432,10 @@ class PlanSessionsRepository:
                 """),
                 {"user_id": user, "since_iso": since_iso, "until_iso": until_iso},
             ).mappings().fetchall()
-            return [_row_to_dict(r) for r in rows]
+            return [
+                {**_row_to_dict(r), "checklist": self._get_checklist(session, r["id"])}
+                for r in rows
+            ]
 
     @staticmethod
     def _get_checklist(session, plan_session_id: int) -> List[dict]:

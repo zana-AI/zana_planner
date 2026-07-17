@@ -696,6 +696,12 @@ class PlanSessionOut(BaseModel):
     checklist: List[PlanChecklistItemOut]
 
 
+class UpcomingPlanSessionOut(PlanSessionOut):
+    """A planned session enriched with its promise, for cross-promise agenda views."""
+    promise_id: Optional[str] = None
+    promise_text: Optional[str] = None
+
+
 class PlanSessionStatusUpdate(BaseModel):
     status: str   # planned | done | skipped
 

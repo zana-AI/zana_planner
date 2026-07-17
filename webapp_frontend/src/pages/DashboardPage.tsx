@@ -8,6 +8,7 @@ import { UserCard } from '../components/UserCard';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
+import { TodayAgenda } from '../components/TodayAgenda';
 import { CreatePromiseModal } from '../components/CreatePromiseModal';
 import { CheckinSheet } from '../components/sheets/CheckinSheet';
 import { EditPromiseSheet } from '../components/sheets/EditPromiseSheet';
@@ -423,6 +424,12 @@ export function DashboardPage() {
     setDetailPromise({ id, data });
   }, []);
 
+  // Open a promise detail sheet knowing only the promise id (agenda rows).
+  const handleOpenPromiseById = useCallback((id: string) => {
+    const promiseData = reportData?.promises[id] ?? olderPromisesData?.promises[id];
+    if (promiseData) setDetailPromise({ id, data: promiseData });
+  }, [reportData, olderPromisesData]);
+
   // Deep link from Telegram DM: /dashboard?promise=<id> opens the promise detail sheet.
   const openPromiseId = searchParams.get('promise');
   useEffect(() => {
@@ -571,6 +578,10 @@ export function DashboardPage() {
               <div className="fill" style={{ width: `${overallProgress.cappedPct}%` }} />
             </div>
           </div>
+        )}
+
+        {isCurrentWeek && !isLocalMockSession && (
+          <TodayAgenda onOpenPromise={handleOpenPromiseById} refreshKey={reportData} />
         )}
 
         {(promisesData || (isCurrentWeek && emptyPromisesData && olderPromiseCount === 0)) && (
