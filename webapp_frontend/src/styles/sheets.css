@@ -297,6 +297,39 @@
   opacity: 0.85;
 }
 
+/* Today's sessions nested under their promise — prominent so tasks stay noticed. */
+.pcard-today {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.pcard-task {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.pcard-task-time {
+  flex: 0 0 auto;
+  min-width: 58px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.pcard-task-body { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.pcard-task-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pcard-task-meta { font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
+
 .club-badge-card {
   min-width: 0;
 }

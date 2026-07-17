@@ -8,7 +8,6 @@ import { UserCard } from '../components/UserCard';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { SuggestionsInbox } from '../components/SuggestionsInbox';
 import { FocusBar } from '../components/FocusBar';
-import { TodayAgenda } from '../components/TodayAgenda';
 import { CreatePromiseModal } from '../components/CreatePromiseModal';
 import { CheckinSheet } from '../components/sheets/CheckinSheet';
 import { EditPromiseSheet } from '../components/sheets/EditPromiseSheet';
@@ -20,7 +19,7 @@ import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
 import { Toast } from '../components/ui/Toast';
 import { useToast } from '../hooks/useToast';
 import { getMockCommunityUsers, getMockWeeklyReport, shouldUseLocalMockData } from '../api/mockData';
-import type { PromiseData, WeeklyReportData, PublicUser, UserInfo } from '../types';
+import type { PromiseData, WeeklyReportData, PublicUser, UserInfo, UpcomingPlanSession } from '../types';
 
 type ActivePromise = { id: string; data: PromiseData };
 
@@ -69,6 +68,8 @@ export function DashboardPage() {
   const [focusPickOpen, setFocusPickOpen] = useState(false);
   const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
   const [showOlderPromises, setShowOlderPromises] = useState(false);
+  // Today's planned sessions grouped by promise id, rendered inside each promise card.
+  const [sessionsByPromise, setSessionsByPromise] = useState<Record<string, UpcomingPlanSession[]>>({});
   const { message: toastMessage, showToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
   const allowLocalMockData = shouldUseLocalMockData();
@@ -424,11 +425,28 @@ export function DashboardPage() {
     setDetailPromise({ id, data });
   }, []);
 
-  // Open a promise detail sheet knowing only the promise id (agenda rows).
-  const handleOpenPromiseById = useCallback((id: string) => {
-    const promiseData = reportData?.promises[id] ?? olderPromisesData?.promises[id];
-    if (promiseData) setDetailPromise({ id, data: promiseData });
-  }, [reportData, olderPromisesData]);
+  // Fetch today's planned sessions once and group them by promise id, so each
+  // promise card can render its own tasks nested underneath. Refetches whenever
+  // the report refreshes (e.g. after logging a session).
+  useEffect(() => {
+    if (!isCurrentWeek || isLocalMockSession) {
+      setSessionsByPromise({});
+      return;
+    }
+    let cancelled = false;
+    apiClient.getUpcomingPlanSessions(1)
+      .then(sessions => {
+        if (cancelled) return;
+        const grouped: Record<string, UpcomingPlanSession[]> = {};
+        for (const s of sessions) {
+          if (!s.promise_id) continue;
+          (grouped[s.promise_id] ??= []).push(s);
+        }
+        setSessionsByPromise(grouped);
+      })
+      .catch(() => { if (!cancelled) setSessionsByPromise({}); });
+    return () => { cancelled = true; };
+  }, [reportData, isCurrentWeek, isLocalMockSession]);
 
   // Deep link from Telegram DM: /dashboard?promise=<id> opens the promise detail sheet.
   const openPromiseId = searchParams.get('promise');
@@ -580,10 +598,6 @@ export function DashboardPage() {
           </div>
         )}
 
-        {isCurrentWeek && !isLocalMockSession && (
-          <TodayAgenda onOpenPromise={handleOpenPromiseById} refreshKey={reportData} />
-        )}
-
         {(promisesData || (isCurrentWeek && emptyPromisesData && olderPromiseCount === 0)) && (
           <>
             <div className="section-head">
@@ -598,6 +612,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
             {olderPromiseCount > 0 ? (
@@ -624,6 +639,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
           </>
@@ -641,6 +657,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
           </>
@@ -658,6 +675,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
           </>

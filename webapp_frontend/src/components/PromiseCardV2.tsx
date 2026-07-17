@@ -1,6 +1,6 @@
 import type { HTMLAttributes, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { PromiseData } from '../types';
+import type { PromiseData, UpcomingPlanSession } from '../types';
 import { Badge } from './ui/Badge';
 import { formatPromiseText } from '../utils/activityFormat';
 
@@ -9,10 +9,19 @@ interface PromiseCardV2Props {
   data: PromiseData;
   weekDays: string[];
   onOpenDetail: () => void;
+  /** Today's planned sessions for this promise, rendered as prominent nested rows. */
+  plannedToday?: UpcomingPlanSession[];
 }
 
 function toLocalDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function formatSessionClock(isoStr: string | null): string {
+  if (!isoStr) return '';
+  const dt = new Date(isoStr);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 // Returns expected progress fraction (0-1) based on today's position in the week.
@@ -49,7 +58,7 @@ function formatNextSession(isoStr: string): string {
   return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV2Props) {
+export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday = [] }: PromiseCardV2Props) {
   const navigate = useNavigate();
   const {
     text,
@@ -87,7 +96,16 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
 
   const checkinDays = weekDays.map((date) => (sessionsByDate[date] || 0) > 0);
 
-  const sessionsLabel = planned_sessions_count > 0
+  // Today's planned sessions for this promise, soonest first. These render as
+  // prominent rows nested under the card so tasks stay noticed under their promise.
+  const todayKey = toLocalDateKey(new Date());
+  const todaySessions = plannedToday
+    .filter(s => s.status === 'planned' && s.planned_start && toLocalDateKey(new Date(s.planned_start)) === todayKey)
+    .sort((a, b) => new Date(a.planned_start!).getTime() - new Date(b.planned_start!).getTime());
+  const hasTodayRows = todaySessions.length > 0;
+
+  // Small chip only kicks in when there is nothing today but a future session is next.
+  const sessionsLabel = !hasTodayRows && planned_sessions_count > 0
     ? (next_session_start
         ? formatNextSession(next_session_start)
         : `${planned_sessions_count} session${planned_sessions_count > 1 ? 's' : ''}`)
@@ -140,6 +158,29 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail }: PromiseCardV
           <span className="meta" dir="ltr">{progress}%</span>
         )}
       </DRow>
+      {hasTodayRows ? (
+        <div className="pcard-today">
+          {todaySessions.map(session => {
+            const title = (session.title || '').trim() || 'Session';
+            const clock = formatSessionClock(session.planned_start);
+            const checklistTotal = session.checklist?.length ?? 0;
+            const checklistDone = session.checklist?.filter(item => item.done).length ?? 0;
+            const meta = [
+              session.planned_duration_min ? `${session.planned_duration_min} min` : '',
+              checklistTotal > 0 ? `${checklistDone}/${checklistTotal} steps` : '',
+            ].filter(Boolean).join(' · ');
+            return (
+              <div key={session.id} className="pcard-task">
+                <span className="pcard-task-time" dir="ltr">{clock}</span>
+                <span className="pcard-task-body">
+                  <span className="pcard-task-title" dir="auto">{title}</span>
+                  {meta && <span className="pcard-task-meta" dir="ltr">{meta}</span>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       {daily_activity ? (
         daily_activity.status === 'due' ? (
           <button
