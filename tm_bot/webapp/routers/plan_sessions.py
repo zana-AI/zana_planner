@@ -4,10 +4,10 @@ Plan session endpoints: Promise → PlanSessions → Checklist.
 
 import asyncio
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy import text
 
 from ..dependencies import get_current_user
@@ -136,20 +136,15 @@ def _session_payload(data: dict, user_id: int) -> dict:
 
 @router.get("/plan-sessions/upcoming", response_model=list[UpcomingPlanSessionOut])
 async def list_upcoming_plan_sessions(
-    days: int = Query(default=1, ge=1, le=31),
     user_id: int = Depends(get_current_user),
 ):
-    """All planned sessions across promises, from the start of the user's today
-    through the next `days` days. Powers the dashboard agenda view."""
+    """All still-ahead planned sessions across promises: dated from the start of the
+    user's today onward, plus any with no time set yet. Grouped per promise in the UI."""
     tz = _user_timezone(user_id)
     local_day_start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     since = local_day_start.astimezone(timezone.utc)
-    until = (local_day_start + timedelta(days=days)).astimezone(timezone.utc)
-
-    def _iso_z(dt: datetime) -> str:
-        return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-    return PlanSessionsRepository().list_upcoming_for_user(user_id, _iso_z(since), _iso_z(until))
+    since_iso = since.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return PlanSessionsRepository().list_active_planned_for_user(user_id, since_iso)
 
 
 @router.get("/promises/{promise_id}/plan-sessions", response_model=list[PlanSessionOut])

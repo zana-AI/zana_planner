@@ -312,12 +312,16 @@
 .pcard-task-time {
   flex: 0 0 auto;
   min-width: 58px;
+  max-width: 130px;
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.pcard-task-time--none { color: var(--fg-subtle); font-weight: 500; }
 .pcard-task-body { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .pcard-task-title {
   font-size: 14px;

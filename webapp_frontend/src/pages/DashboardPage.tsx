@@ -434,7 +434,7 @@ export function DashboardPage() {
       return;
     }
     let cancelled = false;
-    apiClient.getUpcomingPlanSessions(1)
+    apiClient.getUpcomingPlanSessions()
       .then(sessions => {
         if (cancelled) return;
         const grouped: Record<string, UpcomingPlanSession[]> = {};
