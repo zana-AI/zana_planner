@@ -29,6 +29,8 @@ def ensure_club_telegram_columns(session) -> None:
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS vibe TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS checkin_what_counts TEXT",
         "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS club_goal TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS timezone TEXT",
+        "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS leaderboard_time TEXT",
     ):
         session.execute(text(ddl))
 
@@ -434,7 +436,9 @@ class ClubsRepository:
                         name,
                         telegram_chat_id,
                         COALESCE(reminder_time, '21:00') AS reminder_time,
-                        language
+                        language,
+                        timezone,
+                        leaderboard_time
                     FROM clubs
                     WHERE telegram_status IN ('ready', 'connected')
                       AND NULLIF(trim(COALESCE(telegram_chat_id, '')), '') IS NOT NULL

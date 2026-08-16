@@ -2280,6 +2280,19 @@ class PlannerBot:
         except Exception as exc:
             logger.exception("bootstrap_schedule_existing_users: failed to schedule club_reminder_tick: %s", exc)
 
+        # Repeating tick every 15 min — sends the rendered leaderboard image to
+        # clubs whose configured leaderboard_time falls within the current
+        # window (opt-in only; skipped when unset).
+        try:
+            job_scheduler.schedule_repeating(
+                name="club_leaderboard_tick",
+                callback=self._send_due_club_leaderboards,
+                seconds=900,
+            )
+            logger.info("bootstrap_schedule_existing_users: scheduled club_leaderboard_tick every 15 min")
+        except Exception as exc:
+            logger.exception("bootstrap_schedule_existing_users: failed to schedule club_leaderboard_tick: %s", exc)
+
         # Repeating tick every 5 min — dispatches due promise reminders.
         try:
             job_scheduler.schedule_repeating(
@@ -2334,6 +2347,19 @@ class PlannerBot:
             await service.send_due_club_reminders(bot, context.bot_data)
         except Exception as exc:
             logger.exception("[ClubReminder] Tick failed: %s", exc)
+
+    async def _send_due_club_leaderboards(self, context) -> None:
+        """Scheduled callback (every 15 min): send leaderboard images to clubs whose time is now due."""
+        from services.club_reminder_service import ClubReminderService
+        bot = getattr(context, "bot", None)
+        if bot is None:
+            logger.warning("[ClubLeaderboard] No bot instance in context — skipping tick")
+            return
+        try:
+            service = ClubReminderService()
+            await service.send_due_club_leaderboards(bot, context.bot_data, self.miniapp_url)
+        except Exception as exc:
+            logger.exception("[ClubLeaderboard] Tick failed: %s", exc)
 
     async def _dispatch_promise_reminders(self, context) -> None:
         """Scheduled callback (every 5 min): send due promise reminders to users."""

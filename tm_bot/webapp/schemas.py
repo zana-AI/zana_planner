@@ -126,6 +126,9 @@ class UpdateClubSettingsRequest(BaseModel):
     """Request to update club-level settings; only club admins may call this."""
     reminder_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     language: Optional[str] = Field(default=None, min_length=2, max_length=10)
+    timezone: Optional[str] = Field(default=None, max_length=64)
+    # Empty string clears it (disables the leaderboard image); omit the field to leave unchanged.
+    leaderboard_time: Optional[str] = Field(default=None, pattern=r"^(\d{2}:\d{2})?$")
 
 
 class UpdateClubContextRequest(BaseModel):
@@ -230,6 +233,8 @@ class ClubSummary(BaseModel):
     target_count_per_week: Optional[float] = None
     reminder_time: Optional[str] = None
     language: Optional[str] = None
+    timezone: Optional[str] = None
+    leaderboard_time: Optional[str] = None
     description: Optional[str] = None
     club_goal: Optional[str] = None
     vibe: Optional[str] = None

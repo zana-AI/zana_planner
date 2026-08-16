@@ -283,6 +283,8 @@ export interface ClubSummary {
   target_count_per_week?: number;
   reminder_time?: string;
   language?: string;
+  timezone?: string;
+  leaderboard_time?: string;
   description?: string;
   club_goal?: string;
   vibe?: string;

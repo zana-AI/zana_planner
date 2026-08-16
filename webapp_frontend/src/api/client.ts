@@ -799,7 +799,7 @@ class ApiClient {
 
   async updateClub(
     clubId: string,
-    body: { reminder_time?: string; language?: string },
+    body: { reminder_time?: string; language?: string; timezone?: string; leaderboard_time?: string },
   ): Promise<ClubSummary> {
     if (shouldUseLocalMockData()) {
       return this.updateLocalMockClub(clubId, body);

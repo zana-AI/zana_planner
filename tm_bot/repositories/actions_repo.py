@@ -112,12 +112,19 @@ class ActionsRepository:
         ps = [a for a in actions if (a.promise_id or "").strip().upper() == pid]
         return max(ps, key=lambda a: a.at) if ps else None
 
-    def append_club_checkin(self, user_id: int, promise_uuid: str, notes: str | None = None) -> None:
-        """Record a club check-in for today (idempotent — replaces any existing one)."""
+    def append_club_checkin(
+        self, user_id: int, promise_uuid: str, notes: str | None = None, today: date | None = None
+    ) -> None:
+        """Record a club check-in for today (idempotent — replaces any existing one).
+
+        `today` lets a caller pass a club-local date (see
+        `club_reminder_service.resolve_club_timezone`) instead of the raw
+        UTC day; defaults to UTC-now when omitted, preserving old behavior.
+        """
         user = str(user_id)
         now_dt = datetime.utcnow()
         at_utc = now_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        today = now_dt.strftime("%Y-%m-%d")
+        today = (today or now_dt.date()).strftime("%Y-%m-%d")
         with get_db_session() as session:
             session.execute(
                 text("""
@@ -190,10 +197,10 @@ class ActionsRepository:
                 },
             )
 
-    def delete_club_checkin(self, user_id: int, promise_uuid: str) -> None:
-        """Remove today's club check-in action."""
+    def delete_club_checkin(self, user_id: int, promise_uuid: str, today: date | None = None) -> None:
+        """Remove today's club check-in action. See `append_club_checkin` for `today`."""
         user = str(user_id)
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = (today or datetime.utcnow().date()).strftime("%Y-%m-%d")
         with get_db_session() as session:
             session.execute(
                 text("""
@@ -206,9 +213,11 @@ class ActionsRepository:
                 {"user_id": user, "promise_uuid": promise_uuid, "today": today},
             )
 
-    def get_today_checkins(self, promise_uuid: str) -> set[str]:
-        """Return the set of user_ids (as str) who have a club_checkin action today."""
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+    def get_today_checkins(self, promise_uuid: str, today: date | None = None) -> set[str]:
+        """Return the set of user_ids (as str) who have a club_checkin action today.
+        See `append_club_checkin` for `today`.
+        """
+        today = (today or datetime.utcnow().date()).strftime("%Y-%m-%d")
         with get_db_session() as session:
             rows = session.execute(
                 text("""

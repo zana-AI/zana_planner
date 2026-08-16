@@ -68,6 +68,7 @@ from services.club_reminder_service import (
     CLUB_CHECKIN_PREFIX,
     build_club_reminder_message,
     create_club_checkin_keyboard,
+    local_today_for_timezone,
 )
 from services.admin_ops_service import (
     dispatch_github_workflow,
@@ -2877,20 +2878,23 @@ Generate the calendar links now:"""
         if promise_uuid:
             from repositories.actions_repo import ActionsRepository
             actions_repo = ActionsRepository()
+            club_local_today = local_today_for_timezone(timezone_name or "UTC")
             try:
                 if new_status == "done":
-                    actions_repo.append_club_checkin(user_id, promise_uuid)
+                    actions_repo.append_club_checkin(user_id, promise_uuid, today=club_local_today)
                 elif old_status == "done":
-                    actions_repo.delete_club_checkin(user_id, promise_uuid)
+                    actions_repo.delete_club_checkin(user_id, promise_uuid, today=club_local_today)
                 # Re-query DB so counter stays accurate across multiple cards / restarts
-                checked_in = actions_repo.get_today_checkins(promise_uuid)
+                checked_in = actions_repo.get_today_checkins(promise_uuid, today=club_local_today)
                 for m in members:
                     if str(m["user_id"]) in checked_in:
                         m["status"] = "done"
                     elif m.get("status") == "done":
                         m["status"] = None
                     try:
-                        m["streak"] = actions_repo.get_checkin_streak(int(m["user_id"]), promise_uuid)
+                        m["streak"] = actions_repo.get_checkin_streak(
+                            int(m["user_id"]), promise_uuid, reference_date=club_local_today
+                        )
                     except Exception:
                         pass
             except Exception as exc:

@@ -16,6 +16,22 @@ const LANG_LABELS: Record<string, string> = {
   tr: 'Turkish',
 };
 
+// Curated list — a club only needs a fixed timezone when it's tied to something
+// with its own reset clock (e.g. an external game/service), not for everyday use.
+const CLUB_TIMEZONE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: "Use my personal timezone (default)" },
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Asia/Tehran', label: 'Tehran (Iran)' },
+  { value: 'Europe/Paris', label: 'Paris / Berlin / Madrid' },
+  { value: 'Europe/London', label: 'London' },
+  { value: 'Asia/Dubai', label: 'Dubai' },
+  { value: 'Asia/Kolkata', label: 'Mumbai / Delhi' },
+  { value: 'Asia/Tokyo', label: 'Tokyo' },
+  { value: 'America/New_York', label: 'New York' },
+  { value: 'America/Los_Angeles', label: 'Los Angeles' },
+  { value: 'Australia/Sydney', label: 'Sydney' },
+];
+
 export function ClubDetailPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
@@ -30,6 +46,8 @@ export function ClubDetailPage() {
   const [editingSettings, setEditingSettings] = useState(false);
   const [editReminderTime, setEditReminderTime] = useState('');
   const [editLanguage, setEditLanguage] = useState('en');
+  const [editTimezone, setEditTimezone] = useState('');
+  const [editLeaderboardTime, setEditLeaderboardTime] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editGoal, setEditGoal] = useState('');
   const [editVibe, setEditVibe] = useState('');
@@ -151,6 +169,8 @@ export function ClubDetailPage() {
     if (!club) return;
     setEditReminderTime(club.reminder_time || '21:00');
     setEditLanguage(club.language || 'en');
+    setEditTimezone(club.timezone || '');
+    setEditLeaderboardTime(club.leaderboard_time || '');
     setEditingSettings(true);
   };
 
@@ -159,7 +179,12 @@ export function ClubDetailPage() {
     setBusy(true);
     setError('');
     try {
-      const updated = await apiClient.updateClub(club.club_id, { reminder_time: editReminderTime, language: editLanguage });
+      const updated = await apiClient.updateClub(club.club_id, {
+        reminder_time: editReminderTime,
+        language: editLanguage,
+        timezone: editTimezone,
+        leaderboard_time: editLeaderboardTime,
+      });
       setClub(updated);
       setEditingSettings(false);
       hapticFeedback('success');
@@ -367,7 +392,7 @@ export function ClubDetailPage() {
                 <div className="club-detail-edit-form">
                   <label className="club-detail-field-label">Reminder time</label>
                   <input className="club-detail-edit-input" type="time" value={editReminderTime} onChange={(e) => setEditReminderTime(e.target.value)} />
-                  <p className="club-detail-hint">In your local timezone.</p>
+                  <p className="club-detail-hint">In your local timezone, unless a club timezone is set below.</p>
                   <label className="club-detail-field-label">Bot language</label>
                   <select className="club-detail-edit-input" value={editLanguage} onChange={(e) => setEditLanguage(e.target.value)}>
                     <option value="en">English</option>
@@ -379,13 +404,27 @@ export function ClubDetailPage() {
                     <option value="tr">Turkish</option>
                   </select>
                   <p className="club-detail-hint">The language Xaana uses in this group's chat.</p>
+                  <label className="club-detail-field-label">Club timezone</label>
+                  <select className="club-detail-edit-input" value={editTimezone} onChange={(e) => setEditTimezone(e.target.value)}>
+                    {CLUB_TIMEZONE_OPTIONS.map((opt) => (
+                      <option key={opt.value || 'default'} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <p className="club-detail-hint">Overrides when "today" flips for check-ins/streaks and message timing — set this if the club is tied to something with its own daily reset (e.g. an external game).</p>
+                  <label className="club-detail-field-label">Leaderboard image time</label>
+                  <input className="club-detail-edit-input" type="time" value={editLeaderboardTime} onChange={(e) => setEditLeaderboardTime(e.target.value)} />
+                  <p className="club-detail-hint">Optional — sends a rendered 7-day leaderboard picture at this time (club timezone above). Leave blank to turn it off.</p>
                   <div className="club-detail-edit-buttons">
                     <button type="button" className="modal-button modal-button-primary" onClick={handleSaveSettings} disabled={busy || !editReminderTime}>{busy ? 'Saving…' : 'Save'}</button>
                     <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingSettings(false)} disabled={busy}>Cancel</button>
                   </div>
                 </div>
               ) : (
-                <p className="club-detail-promise">{club.reminder_time ?? '21:00'} daily · {LANG_LABELS[club.language ?? 'en'] ?? club.language ?? 'English'}</p>
+                <p className="club-detail-promise">
+                  {club.reminder_time ?? '21:00'} daily · {LANG_LABELS[club.language ?? 'en'] ?? club.language ?? 'English'}
+                  {club.timezone ? ` · ${club.timezone}` : ''}
+                  {club.leaderboard_time ? ` · leaderboard ${club.leaderboard_time}` : ''}
+                </p>
               )}
             </div>
           )}

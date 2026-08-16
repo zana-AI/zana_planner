@@ -17,8 +17,11 @@ A member's private promises are never touched.
 """
 from __future__ import annotations
 
+import os
 import random
-from datetime import datetime
+import tempfile
+import uuid
+from datetime import date, datetime
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -27,6 +30,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from repositories.clubs_repo import ClubsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.actions_repo import ActionsRepository
+from services.club_leaderboard_service import compute_club_leaderboard
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -119,6 +123,36 @@ def _owner_timezone(owner_user_id: str) -> str:
         return "UTC"
 
 
+def resolve_club_timezone(club: dict) -> str:
+    """
+    Return the timezone that should govern this club's day boundary and
+    message scheduling: the club's own `timezone` if set (e.g. a club tied
+    to an external service with its own reset time, like Cheenva at
+    23:59 Asia/Tehran), else the owner's personal timezone — i.e. exactly
+    today's behavior when `timezone` is unset.
+    """
+    club_tz = (club.get("timezone") or "").strip()
+    if club_tz:
+        try:
+            ZoneInfo(club_tz)
+            return club_tz
+        except ZoneInfoNotFoundError:
+            pass
+    return _owner_timezone(str(club.get("owner_user_id") or ""))
+
+
+def local_today_for_timezone(tz_name: str, now_utc: datetime | None = None) -> date:
+    """Return "today" as a date in the given timezone."""
+    now = now_utc or datetime.utcnow()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=ZoneInfo("UTC"))
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
+    return now.astimezone(tz).date()
+
+
 # ---------------------------------------------------------------------------
 # Message building
 # ---------------------------------------------------------------------------
@@ -206,14 +240,14 @@ class ClubReminderService:
         self.clubs_repo = ClubsRepository()
         self.actions_repo = ActionsRepository()
 
-    def _is_reminder_due(self, reminder_time: str, owner_tz: str, now_utc: datetime) -> bool:
+    def _is_reminder_due(self, reminder_time: str, tz_name: str, now_utc: datetime) -> bool:
         """Return True if the club's reminder falls within the current 15-min window."""
         try:
             hh, mm = map(int, reminder_time.split(":"))
         except (ValueError, AttributeError):
             hh, mm = 21, 0
 
-        now_local = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo(owner_tz))
+        now_local = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo(tz_name))
         target_minutes = hh * 60 + mm
         current_minutes = now_local.hour * 60 + now_local.minute
         return target_minutes <= current_minutes < target_minutes + 15
@@ -250,8 +284,8 @@ class ClubReminderService:
             if bot_data["club_reminder_sent"].get(club_id) == today_str:
                 continue
 
-            owner_tz = _owner_timezone(owner_user_id)
-            if not self._is_reminder_due(reminder_time, owner_tz, now):
+            club_tz = resolve_club_timezone(club)
+            if not self._is_reminder_due(reminder_time, club_tz, now):
                 continue
 
             if not chat_id:
@@ -276,7 +310,11 @@ class ClubReminderService:
             promise_uuid = next(
                 (m.get("promise_uuid") for m in raw_members if m.get("promise_uuid")), None
             )
-            checked_in_today = self.actions_repo.get_today_checkins(promise_uuid) if promise_uuid else set()
+            club_local_today = local_today_for_timezone(club_tz, now)
+            checked_in_today = (
+                self.actions_repo.get_today_checkins(promise_uuid, today=club_local_today)
+                if promise_uuid else set()
+            )
 
             # Build member state with streak pre-loaded from DB
             members = []
@@ -285,7 +323,9 @@ class ClubReminderService:
                 streak = 0
                 if promise_uuid:
                     try:
-                        streak = self.actions_repo.get_checkin_streak(uid, promise_uuid)
+                        streak = self.actions_repo.get_checkin_streak(
+                            uid, promise_uuid, reference_date=club_local_today
+                        )
                     except Exception:
                         pass
                 members.append({
@@ -302,7 +342,7 @@ class ClubReminderService:
                 promise_text=promise_text,
                 language=language,
                 now_utc=now,
-                timezone=owner_tz,
+                timezone=club_tz,
             )
             if message is None:
                 logger.info("[ClubReminder] Club %s has no promise — skipping", club_id)
@@ -324,7 +364,7 @@ class ClubReminderService:
                     "promise_text": promise_text,
                     "promise_uuid": promise_uuid,
                     "language": language,
-                    "timezone": owner_tz,
+                    "timezone": club_tz,
                     "members": members,
                     "sent_at_utc": now.isoformat(),
                 }
@@ -346,6 +386,96 @@ class ClubReminderService:
                     "[ClubReminder] ✗ Failed to send to club %s chat %s: %s",
                     club_id, chat_id, exc,
                 )
+
+    async def send_due_club_leaderboards(
+        self, bot, bot_data: dict, miniapp_url: str, now_utc: datetime | None = None
+    ) -> None:
+        """
+        Called every 15 minutes. Sends a rendered 7-day leaderboard image to
+        each club whose `leaderboard_time` falls within the current window.
+        Opt-in only — clubs with `leaderboard_time` unset are skipped
+        entirely, so this never sends anything for a club that hasn't
+        configured it. Leaves the plain-text check-in message untouched.
+        """
+        now = now_utc or datetime.utcnow()
+        today_str = now.strftime("%Y-%m-%d")
+
+        clubs = self.clubs_repo.get_active_clubs_with_telegram()
+
+        if "club_leaderboard_sent" not in bot_data:
+            bot_data["club_leaderboard_sent"] = {}
+
+        for club in clubs:
+            club_id = str(club["club_id"])
+            club_name = str(club.get("name") or "Club")
+            chat_id = club.get("telegram_chat_id")
+            leaderboard_time = str(club.get("leaderboard_time") or "").strip()
+            if not leaderboard_time:
+                continue
+
+            if bot_data["club_leaderboard_sent"].get(club_id) == today_str:
+                continue
+
+            club_tz = resolve_club_timezone(club)
+            if not self._is_reminder_due(leaderboard_time, club_tz, now):
+                continue
+
+            if not chat_id:
+                logger.warning("[ClubLeaderboard] Club %s has no telegram_chat_id — skipping", club_id)
+                continue
+
+            image_path: Optional[str] = None
+            try:
+                club_local_today = local_today_for_timezone(club_tz, now)
+                leaderboard = compute_club_leaderboard(club_id, today=club_local_today, limit=10)
+                if not leaderboard.get("members"):
+                    logger.info("[ClubLeaderboard] Club %s has no members yet — skipping image", club_id)
+                    bot_data["club_leaderboard_sent"][club_id] = today_str
+                    continue
+
+                from visualisation.club_leaderboard import render_club_leaderboard_png
+
+                image_path = os.path.join(
+                    tempfile.gettempdir(), f"club_leaderboard_{club_id}_{uuid.uuid4().hex}.png"
+                )
+                await render_club_leaderboard_png(
+                    club_name=club_name,
+                    leaderboard=leaderboard,
+                    output_path=image_path,
+                    miniapp_url=miniapp_url,
+                )
+
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        "Open in app",
+                        # Plain url button, not web_app: Telegram restricts
+                        # InlineKeyboardButton.web_app to private chats, and
+                        # this message is posted into the group.
+                        url=f"{miniapp_url.rstrip('/')}/clubs/{club_id}",
+                    )
+                ]])
+                await bot.send_photo(
+                    chat_id=int(chat_id),
+                    photo=image_path,
+                    caption=f"🏆 {club_name} · leaderboard",
+                    reply_markup=keyboard,
+                )
+                bot_data["club_leaderboard_sent"][club_id] = today_str
+                logger.info(
+                    "[ClubLeaderboard] ✓ Sent to club %s ('%s') chat %s",
+                    club_id, club_name, chat_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[ClubLeaderboard] ✗ Failed to send to club %s chat %s: %s",
+                    club_id, chat_id, exc,
+                )
+            finally:
+                if image_path and os.path.exists(image_path):
+                    try:
+                        os.remove(image_path)
+                    except OSError:
+                        pass
 
     # Keep old name as alias so any external callers don't break
     async def send_all_club_nightly_reminders(self, bot, bot_data: dict) -> None:
