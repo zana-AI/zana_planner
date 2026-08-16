@@ -57,7 +57,26 @@ class MockJobScheduler(IJobScheduler):
         self._jobs[job_name] = job
         
         logger.debug(f"Mock: Scheduled daily job {job_name} at {hh}:{mm:02d} {tz}")
-    
+
+    def schedule_daily_utc(
+        self,
+        name: str,
+        callback: Callable,
+        hh: int = 21,
+        mm: int = 0,
+        data: Optional[dict] = None,
+    ) -> None:
+        """Schedule a shared daily job at a fixed UTC time (not tied to any user)."""
+        if name in self._jobs:
+            del self._jobs[name]
+
+        job = MockJob(name, callback, data)
+        job.daily_time = time(hh, mm)
+        job.daily_tz = "UTC"
+        self._jobs[name] = job
+
+        logger.debug(f"Mock: Scheduled daily UTC job {name} at {hh}:{mm:02d} UTC")
+
     def schedule_once(
         self,
         name: str,

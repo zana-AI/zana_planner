@@ -45,6 +45,10 @@ jobs:
         GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
         GCP_GEMINI_MODEL: ${{ secrets.GCP_GEMINI_MODEL }}
         GCP_CREDENTIALS_B64: ${{ secrets.GCP_CREDENTIALS_B64 }}
+        # Dummy LLM key so load_llm_env() (run at import time via handlers/translator)
+        # doesn't hard-fail when no provider creds are present in CI. Non-e2e tests
+        # are mocked/offline and never make a real LLM call, so it's never used.
+        GROQ_API_KEY: ci-dummy-no-llm-calls-in-non-e2e
 
     - name: Upload Test Report Artifact
       uses: actions/upload-artifact@v4
