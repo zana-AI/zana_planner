@@ -9,7 +9,10 @@ services:
     image: zana-ai-bot:prod
     container_name: zana-prod
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_started
+      zana-postgres:
+        condition: service_healthy
     env_file:
       - /opt/zana-config/.env.prod
     environment:
@@ -88,7 +91,10 @@ services:
     image: zana-project-webapp
     container_name: zana-webapp
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_started
+      zana-postgres:
+        condition: service_healthy
     env_file:
       - /opt/zana-config/.env.prod            # Production environment
     environment:
@@ -217,6 +223,44 @@ services:
     expose:
       - "4444"                                # public OAuth endpoints (nginx -> auth.xaana.club)
       - "4445"                                # admin API (internal only)
+    restart: unless-stopped
+    networks:
+      - web
+
+  # =========================
+  # APP DATABASE (self-hosted PostgreSQL) — replaces Cloud SQL zana-prod.
+  # Data persists on the host at /srv/zana-postgres. Reachable on the `web`
+  # network as host `zana-postgres:5432`. Set DATABASE_URL_PROD in .env.prod to
+  #   postgresql://${ZANA_DB_USER}:${ZANA_DB_PASSWORD}@zana-postgres:5432/${ZANA_DB_NAME}
+  # Match the image major version to the source (Cloud SQL was Postgres 18).
+  # =========================
+  zana-postgres:
+    image: postgres:18-alpine
+    container_name: zana-postgres
+    environment:
+      - POSTGRES_USER=${ZANA_DB_USER:-zana}
+      - POSTGRES_PASSWORD=${ZANA_DB_PASSWORD:-zana}
+      - POSTGRES_DB=${ZANA_DB_NAME:-zana}
+    volumes:
+      # Postgres 18+ wants the mount at /var/lib/postgresql (data lands in a
+      # versioned subdir), not /var/lib/postgresql/data.
+      - /srv/zana-postgres:/var/lib/postgresql
+    # Give Postgres real, bounded host memory (host has 4GB + 4GB swap).
+    shm_size: "256mb"
+    mem_limit: 1g
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "max_connections=50"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ZANA_DB_USER:-zana} -d ${ZANA_DB_NAME:-zana}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     restart: unless-stopped
     networks:
       - web

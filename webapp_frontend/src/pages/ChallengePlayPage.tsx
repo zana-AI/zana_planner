@@ -290,7 +290,7 @@ export function ChallengePlayPage() {
         ) : null}
         {isFlashcard && revealed ? (
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${border}`, width: '100%' }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: accent }}>{item.back}</div>
+            <div style={{ fontSize: 16, fontWeight: 500, lineHeight: 1.5, color: accent }}>{item.back}</div>
           </div>
         ) : null}
       </div>

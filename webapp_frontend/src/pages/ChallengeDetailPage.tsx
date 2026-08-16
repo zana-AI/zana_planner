@@ -11,7 +11,7 @@ const textPrimary = 'var(--color-text-primary, #E6EAF2)';
 const textSecondary = 'var(--color-text-secondary, #8A94A6)';
 const accent = '#5DCAA5';
 
-const ACTIVITY_LABEL: Record<string, string> = { flashcard: 'Flashcards', multiple_choice: 'Quiz' };
+const ACTIVITY_LABEL: Record<string, string> = { flashcard: 'Quiz', multiple_choice: 'Quiz' };
 
 export function ChallengeDetailPage() {
   const navigate = useNavigate();

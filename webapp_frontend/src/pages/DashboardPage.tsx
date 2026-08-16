@@ -19,7 +19,7 @@ import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
 import { Toast } from '../components/ui/Toast';
 import { useToast } from '../hooks/useToast';
 import { getMockCommunityUsers, getMockWeeklyReport, shouldUseLocalMockData } from '../api/mockData';
-import type { PromiseData, WeeklyReportData, PublicUser, UserInfo } from '../types';
+import type { PromiseData, WeeklyReportData, PublicUser, UserInfo, UpcomingPlanSession } from '../types';
 
 type ActivePromise = { id: string; data: PromiseData };
 
@@ -68,6 +68,8 @@ export function DashboardPage() {
   const [focusPickOpen, setFocusPickOpen] = useState(false);
   const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
   const [showOlderPromises, setShowOlderPromises] = useState(false);
+  // Today's planned sessions grouped by promise id, rendered inside each promise card.
+  const [sessionsByPromise, setSessionsByPromise] = useState<Record<string, UpcomingPlanSession[]>>({});
   const { message: toastMessage, showToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
   const allowLocalMockData = shouldUseLocalMockData();
@@ -423,6 +425,29 @@ export function DashboardPage() {
     setDetailPromise({ id, data });
   }, []);
 
+  // Fetch today's planned sessions once and group them by promise id, so each
+  // promise card can render its own tasks nested underneath. Refetches whenever
+  // the report refreshes (e.g. after logging a session).
+  useEffect(() => {
+    if (!isCurrentWeek || isLocalMockSession) {
+      setSessionsByPromise({});
+      return;
+    }
+    let cancelled = false;
+    apiClient.getUpcomingPlanSessions()
+      .then(sessions => {
+        if (cancelled) return;
+        const grouped: Record<string, UpcomingPlanSession[]> = {};
+        for (const s of sessions) {
+          if (!s.promise_id) continue;
+          (grouped[s.promise_id] ??= []).push(s);
+        }
+        setSessionsByPromise(grouped);
+      })
+      .catch(() => { if (!cancelled) setSessionsByPromise({}); });
+    return () => { cancelled = true; };
+  }, [reportData, isCurrentWeek, isLocalMockSession]);
+
   // Deep link from Telegram DM: /dashboard?promise=<id> opens the promise detail sheet.
   const openPromiseId = searchParams.get('promise');
   useEffect(() => {
@@ -587,6 +612,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
             {olderPromiseCount > 0 ? (
@@ -613,6 +639,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
           </>
@@ -630,6 +657,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
           </>
@@ -647,6 +675,7 @@ export function DashboardPage() {
               hideHeader
               hideProgress
               useV2Cards
+              sessionsByPromise={sessionsByPromise}
               onOpenDetail={handleOpenDetail}
             />
           </>

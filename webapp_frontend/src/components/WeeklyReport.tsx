@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { PromiseData, WeeklyReportData } from '../types';
+import type { PromiseData, WeeklyReportData, UpcomingPlanSession } from '../types';
 import { PromiseCard } from './PromiseCard';
 import { PromiseCardV2 } from './PromiseCardV2';
 
@@ -11,6 +11,8 @@ interface WeeklyReportProps {
   onCreatePromise?: () => void;
   useV2Cards?: boolean;
   onOpenDetail?: (id: string, data: PromiseData) => void;
+  /** Today's planned sessions grouped by promise id, rendered inside each V2 card. */
+  sessionsByPromise?: Record<string, UpcomingPlanSession[]>;
 }
 
 /**
@@ -62,6 +64,7 @@ export function WeeklyReport({
   onCreatePromise,
   useV2Cards = false,
   onOpenDetail,
+  sessionsByPromise,
 }: WeeklyReportProps) {
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
@@ -211,6 +214,7 @@ export function WeeklyReport({
                 id={id}
                 data={promiseData}
                 weekDays={weekDays}
+                plannedToday={sessionsByPromise?.[id] ?? []}
                 onOpenDetail={() => onOpenDetail(id, promiseData)}
               />
             ) : (

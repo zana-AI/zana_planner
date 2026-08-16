@@ -432,7 +432,36 @@ class PlanSessionsRepository:
                 """),
                 {"user_id": user, "since_iso": since_iso, "until_iso": until_iso},
             ).mappings().fetchall()
-            return [_row_to_dict(r) for r in rows]
+            return [
+                {**_row_to_dict(r), "checklist": self._get_checklist(session, r["id"])}
+                for r in rows
+            ]
+
+    def list_active_planned_for_user(self, user_id: int, since_iso: str) -> List[dict]:
+        """List planned sessions that still lie ahead: dated today/future, or with no
+        time set yet (e.g. accepted from a proposal). Past-dated planned sessions are
+        excluded so stale leftovers don't surface. Joined with the promise for grouping.
+        """
+        user = str(user_id)
+        with get_db_session() as session:
+            columns = _plan_session_columns(session)
+            rows = session.execute(
+                text(f"""
+                    SELECT {_plan_session_select(columns, alias="ps")},
+                           p.current_id AS promise_id, p.text AS promise_text
+                    FROM plan_sessions ps
+                    LEFT JOIN promises p ON p.promise_uuid = ps.promise_uuid
+                    WHERE ps.user_id = :user_id
+                      AND ps.status = 'planned'
+                      AND (ps.planned_start IS NULL OR ps.planned_start >= :since_iso)
+                    ORDER BY ps.planned_start NULLS LAST
+                """),
+                {"user_id": user, "since_iso": since_iso},
+            ).mappings().fetchall()
+            return [
+                {**_row_to_dict(r), "checklist": self._get_checklist(session, r["id"])}
+                for r in rows
+            ]
 
     @staticmethod
     def _get_checklist(session, plan_session_id: int) -> List[dict]:

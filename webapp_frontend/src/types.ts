@@ -785,6 +785,12 @@ export interface PlanSession {
   checklist: PlanChecklistItem[];
 }
 
+/** A planned session enriched with its promise, as returned by /plan-sessions/upcoming. */
+export interface UpcomingPlanSession extends PlanSession {
+  promise_id: string | null;
+  promise_text: string | null;
+}
+
 export interface PlanSessionIn {
   title?: string;
   planned_start?: string;

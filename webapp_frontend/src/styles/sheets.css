@@ -297,6 +297,43 @@
   opacity: 0.85;
 }
 
+/* Today's sessions nested under their promise — prominent so tasks stay noticed. */
+.pcard-today {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.pcard-task {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.pcard-task-time {
+  flex: 0 0 auto;
+  min-width: 58px;
+  max-width: 130px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcard-task-time--none { color: var(--fg-subtle); font-weight: 500; }
+.pcard-task-body { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.pcard-task-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pcard-task-meta { font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
+
 .club-badge-card {
   min-width: 0;
 }
@@ -723,6 +760,56 @@
 .plan-session-btn--delete:hover { background: var(--bad-500);  color: #fff; border-color: transparent; }
 .plan-session-btn--edit:hover  { background: var(--accent);    color: #fff; border-color: transparent; }
 .plan-session-btn--cal:hover   { background: var(--accent);    color: #fff; border-color: transparent; }
+
+/* Session notes / checklist detail inside PromiseDetailSheet rows */
+.plan-session-notes {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Dashboard agenda — today's planned sessions across promises */
+.agenda-list { display: grid; gap: 6px; }
+.agenda-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.agenda-row:hover { border-color: var(--accent); }
+.agenda-time {
+  flex-shrink: 0;
+  min-width: 42px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+.agenda-info { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.agenda-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agenda-meta {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agenda-cal-btn { opacity: 0.6; }
+.agenda-row:hover .agenda-cal-btn { opacity: 1; }
 
 /* Recent activity logs inside PromiseDetailSheet — read-only, compact rows */
 .recent-log-list { display: grid; gap: 4px; margin-top: 8px; }

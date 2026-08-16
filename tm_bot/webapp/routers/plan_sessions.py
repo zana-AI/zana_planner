@@ -17,6 +17,7 @@ from ..schemas import (
     PlanSessionStatusUpdate,
     PlanSessionUpdate,
     ChecklistItemToggle,
+    UpcomingPlanSessionOut,
 )
 from repositories.plan_sessions_repo import PlanSessionsRepository
 from repositories.settings_repo import SettingsRepository
@@ -131,6 +132,19 @@ def _session_payload(data: dict, user_id: int) -> dict:
     if data.get("reminder_offset_min") is not None:
         data["reminder_offset_min"] = int(data["reminder_offset_min"])
     return data
+
+
+@router.get("/plan-sessions/upcoming", response_model=list[UpcomingPlanSessionOut])
+async def list_upcoming_plan_sessions(
+    user_id: int = Depends(get_current_user),
+):
+    """All still-ahead planned sessions across promises: dated from the start of the
+    user's today onward, plus any with no time set yet. Grouped per promise in the UI."""
+    tz = _user_timezone(user_id)
+    local_day_start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    since = local_day_start.astimezone(timezone.utc)
+    since_iso = since.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return PlanSessionsRepository().list_active_planned_for_user(user_id, since_iso)
 
 
 @router.get("/promises/{promise_id}/plan-sessions", response_model=list[PlanSessionOut])
