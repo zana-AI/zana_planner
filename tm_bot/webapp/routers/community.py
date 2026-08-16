@@ -962,7 +962,7 @@ async def sync_club_description(
                         LIMIT 1
                     """),
                     {"club_id": club_id},
-                ).fetchone()
+                ).mappings().fetchone()
                 if row:
                     promise_text = row["text"] or ""
                     target = row["target_value"]

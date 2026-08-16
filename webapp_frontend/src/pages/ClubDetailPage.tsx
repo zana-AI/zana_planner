@@ -40,6 +40,9 @@ export function ClubDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Errors from in-page actions (save, sync, delete...) — shown as an inline banner.
+  // Kept separate from `error` above, which gates the full-page "club not found" state.
+  const [actionError, setActionError] = useState('');
   const [editingPromise, setEditingPromise] = useState(false);
   const [editText, setEditText] = useState('');
   const [editTarget, setEditTarget] = useState<number | ''>('');
@@ -112,7 +115,7 @@ export function ClubDetailPage() {
     }
 
     setBusy(true);
-    setError('');
+    setActionError('');
     try {
       await apiClient.removeMyClub(club.club_id);
       hapticFeedback('success');
@@ -120,7 +123,7 @@ export function ClubDetailPage() {
     } catch (err) {
       console.error('Failed to update club:', err);
       hapticFeedback('error');
-      setError(err instanceof ApiError ? err.message : 'Failed to update club.');
+      setActionError(err instanceof ApiError ? err.message : 'Failed to update club.');
     } finally {
       setBusy(false);
     }
@@ -139,7 +142,7 @@ export function ClubDetailPage() {
       try {
         await apiClient.syncClubDescription(clubId);
       } catch {
-        setError('Saved, but failed to update group description.');
+        setActionError('Saved, but failed to update group description.');
       }
     }
   };
@@ -147,7 +150,7 @@ export function ClubDetailPage() {
   const handleSavePromise = async () => {
     if (!club?.promise_uuid) return;
     setBusy(true);
-    setError('');
+    setActionError('');
     try {
       const updated = await apiClient.updateClubPromise(club.club_id, club.promise_uuid, {
         promise_text: editText || undefined,
@@ -159,7 +162,7 @@ export function ClubDetailPage() {
       await maybeSyncDescription(club.club_id, telegramReady);
     } catch (err) {
       hapticFeedback('error');
-      setError(err instanceof ApiError ? err.message : 'Failed to update promise.');
+      setActionError(err instanceof ApiError ? err.message : 'Failed to update promise.');
     } finally {
       setBusy(false);
     }
@@ -177,7 +180,7 @@ export function ClubDetailPage() {
   const handleSaveSettings = async () => {
     if (!club) return;
     setBusy(true);
-    setError('');
+    setActionError('');
     try {
       const updated = await apiClient.updateClub(club.club_id, {
         reminder_time: editReminderTime,
@@ -191,7 +194,7 @@ export function ClubDetailPage() {
       await maybeSyncDescription(club.club_id, telegramReady);
     } catch (err) {
       hapticFeedback('error');
-      setError(err instanceof ApiError ? err.message : 'Failed to save settings.');
+      setActionError(err instanceof ApiError ? err.message : 'Failed to save settings.');
     } finally {
       setBusy(false);
     }
@@ -208,7 +211,7 @@ export function ClubDetailPage() {
   const handleSaveContext = async () => {
     if (!club) return;
     setBusy(true);
-    setError('');
+    setActionError('');
     try {
       const updated = await apiClient.updateClubContext(club.club_id, {
         description: editDescription.trim(),
@@ -220,7 +223,7 @@ export function ClubDetailPage() {
       hapticFeedback('success');
     } catch (err) {
       hapticFeedback('error');
-      setError(err instanceof ApiError ? err.message : 'Failed to save club context.');
+      setActionError(err instanceof ApiError ? err.message : 'Failed to save club context.');
     } finally {
       setBusy(false);
     }
@@ -229,11 +232,11 @@ export function ClubDetailPage() {
   const handleIngestContext = async () => {
     if (!club) return;
     if (!contextNote.trim() && contextFiles.length === 0) {
-      setError('Add a note or image first.');
+      setActionError('Add a note or image first.');
       return;
     }
     setBusy(true);
-    setError('');
+    setActionError('');
     setContextNotice('');
     setContextQuestions([]);
     try {
@@ -250,7 +253,7 @@ export function ClubDetailPage() {
       hapticFeedback('success');
     } catch (err) {
       hapticFeedback('error');
-      setError(err instanceof ApiError ? err.message : 'Failed to extract club context.');
+      setActionError(err instanceof ApiError ? err.message : 'Failed to extract club context.');
     } finally {
       setBusy(false);
     }
@@ -260,14 +263,14 @@ export function ClubDetailPage() {
     if (!club?.promise_uuid) return;
     if (!window.confirm('Delete this club promise? This cannot be undone.')) return;
     setBusy(true);
-    setError('');
+    setActionError('');
     try {
       await apiClient.deleteClubPromise(club.club_id, club.promise_uuid);
       setClub({ ...club, promise_uuid: undefined, promise_text: undefined, target_count_per_week: undefined });
       hapticFeedback('success');
     } catch (err) {
       hapticFeedback('error');
-      setError(err instanceof ApiError ? err.message : 'Failed to delete promise.');
+      setActionError(err instanceof ApiError ? err.message : 'Failed to delete promise.');
     } finally {
       setBusy(false);
     }
@@ -318,6 +321,8 @@ export function ClubDetailPage() {
     <div className="app">
       <div className="club-detail-container">
         <section className="club-detail-card">
+
+          {actionError ? <p className="error-message" style={{ marginBottom: 12 }}>{actionError}</p> : null}
 
           {/* Header */}
           <div className="club-detail-header2">
