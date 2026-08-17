@@ -195,8 +195,13 @@ def route_group_message(
                     {"role": "system", "content": _SYSTEM},
                     {"role": "user", "content": user_content},
                 ],
-                max_tokens=100,
+                max_tokens=200,
                 temperature=0.0,
+                # openai/gpt-oss-* models spend part of the token budget on hidden
+                # chain-of-thought before the final answer; "low" keeps that small
+                # enough that a 200-token cap still leaves room for the JSON reply
+                # (default effort was silently truncating the whole response to "").
+                reasoning_effort="low",
             )
             raw = (resp.choices[0].message.content or "").strip()
             latency_ms = int((time.perf_counter() - start) * 1000)
