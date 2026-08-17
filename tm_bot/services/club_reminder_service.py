@@ -453,11 +453,18 @@ class ClubReminderService:
 
                 keyboard = InlineKeyboardMarkup([[
                     InlineKeyboardButton(
-                        "Open in app",
+                        "See full leaderboard",
                         # Plain url button, not web_app: Telegram restricts
                         # InlineKeyboardButton.web_app to private chats, and
                         # this message is posted into the group.
-                        url=f"{miniapp_url.rstrip('/')}/clubs/{club_id}",
+                        #
+                        # /community?club=<id> opens the club's bottom sheet,
+                        # which is where the interactive leaderboard actually
+                        # lives (see webapp_frontend ClubBadge.tsx). NOT
+                        # /clubs/<id> — that's the owner-only management page
+                        # (edit/delete promise, delete club), which is both
+                        # wrong for members and alarming for non-admins.
+                        url=f"{miniapp_url.rstrip('/')}/community?club={club_id}",
                     )
                 ]])
                 await bot.send_photo(
