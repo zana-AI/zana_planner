@@ -30,7 +30,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from repositories.clubs_repo import ClubsRepository
 from repositories.settings_repo import SettingsRepository
 from repositories.actions_repo import ActionsRepository
-from services.club_leaderboard_service import compute_club_leaderboard
+from services.club_leaderboard_service import compute_club_leaderboard, resolve_avatar_data_uris
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -435,6 +435,12 @@ class ClubReminderService:
 
                 from visualisation.club_leaderboard import render_club_leaderboard_png
 
+                # The webapp's avatar endpoint requires Telegram auth this
+                # server-side render has no session for, so resolve public
+                # avatars straight from disk into inline data URIs instead.
+                member_ids = [str(m["user_id"]) for m in leaderboard.get("members", [])]
+                avatar_data_uris = resolve_avatar_data_uris(member_ids)
+
                 image_path = os.path.join(
                     tempfile.gettempdir(), f"club_leaderboard_{club_id}_{uuid.uuid4().hex}.png"
                 )
@@ -442,7 +448,7 @@ class ClubReminderService:
                     club_name=club_name,
                     leaderboard=leaderboard,
                     output_path=image_path,
-                    miniapp_url=miniapp_url,
+                    avatar_data_uris=avatar_data_uris,
                 )
 
                 keyboard = InlineKeyboardMarkup([[

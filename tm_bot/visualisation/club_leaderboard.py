@@ -15,7 +15,7 @@ from __future__ import annotations
 import html
 import os
 from datetime import date, datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -89,7 +89,7 @@ def build_club_leaderboard_html(
     club_name: str,
     leaderboard: Dict[str, Any],
     *,
-    miniapp_url: str = "https://xaana.club",
+    avatar_data_uris: Optional[Dict[str, str]] = None,
     width: int = 760,
 ) -> str:
     window_start: date = leaderboard["window_start"]
@@ -103,16 +103,14 @@ def build_club_leaderboard_html(
         f'<div class="dayCell" dir="ltr">{DAY_LABELS[d.weekday()]}</div>' for d in window_dates
     )
 
+    avatar_data_uris = avatar_data_uris or {}
     rows_html: List[str] = []
     for member in members:
         user_id = str(member["user_id"])
         name = _display_name(member)
-        avatar_path = member.get("avatar_path")
-        if avatar_path:
-            avatar_html = (
-                f'<img class="avatar" src="{_escape(miniapp_url.rstrip("/"))}/api/media/avatars/{_escape(user_id)}" '
-                f'alt="" />'
-            )
+        avatar_data_uri = avatar_data_uris.get(user_id)
+        if avatar_data_uri:
+            avatar_html = f'<img class="avatar" src="{_escape(avatar_data_uri)}" alt="" />'
         else:
             initial = _escape((name or "U")[0].upper())
             color = _avatar_color(user_id)
@@ -314,13 +312,15 @@ async def render_club_leaderboard_png(
     club_name: str,
     leaderboard: Dict[str, Any],
     output_path: str,
-    miniapp_url: str = "https://xaana.club",
+    avatar_data_uris: Optional[Dict[str, str]] = None,
     width: int = 760,
 ) -> str:
     """Render the club leaderboard HTML to a PNG at output_path (headless Chromium)."""
     from playwright.async_api import async_playwright  # type: ignore  # pylint: disable=import-error
 
-    html_doc = build_club_leaderboard_html(club_name, leaderboard, miniapp_url=miniapp_url, width=width)
+    html_doc = build_club_leaderboard_html(
+        club_name, leaderboard, avatar_data_uris=avatar_data_uris, width=width
+    )
 
     out_dir = os.path.dirname(output_path)
     if out_dir:

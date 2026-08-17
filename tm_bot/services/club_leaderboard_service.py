@@ -9,6 +9,9 @@ either process without pulling webapp code into the bot.
 """
 from __future__ import annotations
 
+import base64
+import mimetypes
+import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -360,3 +363,54 @@ def compute_club_leaderboard(club_id: str, today: date, limit: int = 10) -> Dict
         ],
         "members": selected_members,
     }
+
+
+def resolve_avatar_data_uris(user_ids: List[str], root_dir: Optional[str] = None) -> Dict[str, str]:
+    """
+    Resolve public avatars to inline `data:` URIs for the bot's rendered
+    leaderboard image.
+
+    The webapp's own `<img src="/api/media/avatars/{user_id}">` requires
+    Telegram auth (`get_current_user`), which a server-side Playwright
+    render has no session for — that request would just 401. Read the
+    files directly instead, applying the same visibility check and
+    path-traversal guard as `webapp/routers/health.py::get_user_avatar`.
+    """
+    if not user_ids:
+        return {}
+    root = root_dir or os.getenv("ROOT_DIR") or os.getcwd()
+    root_abs = os.path.abspath(root)
+
+    with get_db_session() as session:
+        rows = session.execute(
+            text("""
+                SELECT user_id, avatar_path, avatar_visibility
+                FROM users
+                WHERE user_id = ANY(:user_ids);
+            """),
+            {"user_ids": [str(u) for u in user_ids]},
+        ).mappings().fetchall()
+
+    data_uris: Dict[str, str] = {}
+    for row in rows:
+        avatar_path = row.get("avatar_path")
+        visibility = row.get("avatar_visibility") or "public"
+        if not avatar_path or visibility != "public":
+            continue
+
+        full_path = avatar_path if os.path.isabs(avatar_path) else os.path.join(root, avatar_path)
+        full_path = os.path.normpath(full_path)
+        if not os.path.abspath(full_path).startswith(root_abs):
+            continue
+        if not os.path.isfile(full_path):
+            continue
+
+        mime_type, _ = mimetypes.guess_type(full_path)
+        try:
+            with open(full_path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            continue
+        data_uris[str(row["user_id"])] = f"data:{mime_type or 'image/jpeg'};base64,{encoded}"
+
+    return data_uris
