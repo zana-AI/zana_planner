@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Regression: Persian reminder was mis-routed to `engagement` instead of `operator`.
-# The router (llama-3.3-70b) should recognise the transactional intent even in Persian.
+# The router (openai/gpt-oss-20b) should recognise the transactional intent even in Persian.
 name: t2_01_persian_reminder_routing
 description: Persian reminder phrase must route to operator and call create_reminder
 tier: 2

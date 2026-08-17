@@ -353,7 +353,7 @@ def _build_tier2_models():
     if groq_key:
         from langchain_openai import ChatOpenAI
         base_url = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-        model_name = "llama-3.3-70b-versatile"
+        model_name = "openai/gpt-oss-20b"
         router = ChatOpenAI(openai_api_key=groq_key, base_url=base_url, model=model_name, temperature=0.0)
         planner = ChatOpenAI(openai_api_key=groq_key, base_url=base_url, model=model_name, temperature=0.2)
         responder = ChatOpenAI(openai_api_key=groq_key, base_url=base_url, model=model_name, temperature=0.3)

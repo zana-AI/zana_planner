@@ -20,7 +20,7 @@ class GroqProviderAdapter(ProviderAdapter):
     _TOOL_MISMATCH_BLOCK_SECONDS = 60.0
     CANDIDATE_MODELS = (
         "openai/gpt-oss-20b",
-        "llama-3.3-70b-versatile",
+        "openai/gpt-oss-120b",
     )
 
     def __init__(self, cfg: Dict[str, Any]):

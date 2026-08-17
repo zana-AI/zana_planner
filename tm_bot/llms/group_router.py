@@ -2,7 +2,7 @@
 Pre-LLM group message router.
 
 Classifies incoming group messages and returns a RouterDecision before any
-main LLM call, using a fast Groq model (llama-3.1-8b-instant). This separates
+main LLM call, using a fast Groq model (openai/gpt-oss-20b). This separates
 "should I respond?" from "how should I respond?" — keeping the expensive
 responder model out of noise, bait, and side-chatter.
 
@@ -32,8 +32,8 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-_ROUTER_MODEL = "llama-3.1-8b-instant"
-_FALLBACK_MODEL = "llama-3.3-70b-versatile"
+_ROUTER_MODEL = "openai/gpt-oss-20b"
+_FALLBACK_MODEL = "openai/gpt-oss-120b"
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 ACTIONS = frozenset({"IGNORE", "REACT_EMOJI", "SHORT_REPLY", "FULL_REPLY"})

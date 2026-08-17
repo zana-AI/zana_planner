@@ -90,7 +90,7 @@ def load_llm_env():
         fallback_provider = normalize_provider_name(fallback_provider_raw.strip().lower() or "openai")
     elif llm_provider == "groq":
         # Keep Groq fallback in-provider by default:
-        # openai/gpt-oss-20b -> llama-3.3-70b-versatile.
+        # openai/gpt-oss-20b -> openai/gpt-oss-120b.
         fallback_provider = "groq"
     elif llm_provider == "gemini":
         # Prefer Groq over DeepSeek/OpenAI when available for lower latency.

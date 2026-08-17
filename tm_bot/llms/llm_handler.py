@@ -919,8 +919,8 @@ class LLMHandler:
                             or "deepseek-chat"
                         )
                         fallback_groq_model = (
-                            str(cfg.get("LLM_FALLBACK_GROQ_MODEL", "llama-3.3-70b-versatile")).strip()
-                            or "llama-3.3-70b-versatile"
+                            str(cfg.get("LLM_FALLBACK_GROQ_MODEL", "openai/gpt-oss-20b")).strip()
+                            or "openai/gpt-oss-20b"
                         )
                         fallback_xai_model = (
                             str(cfg.get("LLM_FALLBACK_XAI_MODEL", "grok-4.3")).strip()

@@ -37,9 +37,9 @@ MODEL_CONFIGS = {
         responder="deepseek-chat",
     ),
     "groq": RoleModels(
-        router="llama-3.3-70b-versatile",
-        planner="llama-3.3-70b-versatile",
-        responder="llama-3.3-70b-versatile",
+        router="openai/gpt-oss-20b",
+        planner="openai/gpt-oss-20b",
+        responder="openai/gpt-oss-20b",
     ),
     "xai": RoleModels(
         router="grok-4.3",
@@ -53,7 +53,7 @@ FALLBACK_MODELS = {
     "gemini": "gemini-2.5-flash-lite",
     "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "openai/gpt-oss-20b",
     "xai": "grok-4.3",
 }
 
