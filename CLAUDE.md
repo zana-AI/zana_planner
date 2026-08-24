@@ -156,6 +156,16 @@ docker compose logs -f zana-prod
 curl https://xaana.club/api/health
 ```
 
+## Flashcards (spaced repetition)
+
+A separate engine from `challenge_*` — see
+`tm_bot/db/alembic/versions/032_flashcards_srs.py` for why the tables are
+deliberately not shared. Review state must never live in `challenge_attempts`.
+
+**Working on flashcard content (the words themselves)? Read
+[docs/FLASHCARDS_OPS.md](docs/FLASHCARDS_OPS.md) first** — DB connection, schema,
+the `source_key` trap, importers, and what must never be hand-edited.
+
 ## Test Markers
 
 | Marker | Meaning |
