@@ -56,6 +56,9 @@ function CountsBar({ counts }: { counts: FlashcardCounts | null }) {
     <div className="fc-counts">
       <span className="fc-count fc-count-due">{counts.due} due</span>
       <span className="fc-count fc-count-new">{counts.new} new</span>
+      {counts.studied > 0 ? (
+        <span className="fc-count fc-count-studied">{counts.studied} studied</span>
+      ) : null}
       <span className="fc-count fc-count-total">{counts.total} total</span>
     </div>
   );

@@ -42,6 +42,17 @@ def normalise_key(value: str) -> str:
     return re.sub(r"\s+", " ", stripped).strip().lower()
 
 
+# Expands :deck into that deck plus every deck beneath it. Prepended to a query
+# so filtering by a parent ("French") also reaches its children's notes.
+DECK_SUBTREE_CTE = (
+    "WITH RECURSIVE sub AS ("
+    " SELECT deck_id FROM flashcard_deck WHERE deck_id = :deck"
+    " UNION ALL"
+    " SELECT d.deck_id FROM flashcard_deck d JOIN sub s ON d.parent_deck_id = s.deck_id"
+    ") "
+)
+
+
 def _decode_json(row: Dict[str, Any], *fields: str) -> Dict[str, Any]:
     for field in fields:
         value = row.get(field)
@@ -193,11 +204,14 @@ class FlashcardNoteRepository:
         search: Optional[str] = None,
         limit: int = 500,
     ) -> List[dict]:
-        sql = f"SELECT {self._COLUMNS} FROM flashcard_note WHERE user_id = :u"
+        # A deck means that deck and everything under it. Notes hang off leaf
+        # decks, so an exact match on a parent silently returns nothing.
+        prefix = DECK_SUBTREE_CTE if deck_id else ""
+        sql = f"{prefix}SELECT {self._COLUMNS} FROM flashcard_note WHERE user_id = :u"
         params: Dict[str, Any] = {"u": str(user_id), "lim": limit}
         if deck_id:
-            sql += " AND deck_id = :d"
-            params["d"] = deck_id
+            sql += " AND deck_id IN (SELECT deck_id FROM sub)"
+            params["deck"] = deck_id
         if search:
             # source_key is already normalised, so search the same way.
             sql += " AND source_key LIKE :q"

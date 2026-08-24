@@ -43,6 +43,7 @@
 
 .fc-count-due { color: #fbbf24; border-color: rgba(251, 191, 36, 0.35); }
 .fc-count-new { color: #60a5fa; border-color: rgba(96, 165, 250, 0.35); }
+.fc-count-studied { color: #4ade80; border-color: rgba(74, 222, 128, 0.35); }
 
 /* tabs */
 

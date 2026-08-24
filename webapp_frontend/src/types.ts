@@ -837,6 +837,8 @@ export interface FlashcardFields {
 export interface FlashcardCounts {
   due: number;
   new: number;
+  /** Cards reviewed at least once — persisted review history. */
+  studied: number;
   total: number;
 }
 

@@ -10,6 +10,7 @@ the card and append its log row in one transaction.
 """
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -183,7 +184,16 @@ class FlashcardCardRepository:
                 new_params,
             ).mappings().all()
 
-        return [self._decode(dict(r)) for r in list(due_rows) + list(new_rows)]
+        # Selection stays ordered above — most-overdue first, and new cards in
+        # authoring order — so that *which* cards come back is deterministic and
+        # the backlog is cleared before new material. Presentation order is then
+        # shuffled within each group, so a deck isn't drilled in the same
+        # sequence every session (which trains the order, not the words).
+        due_list = [dict(r) for r in due_rows]
+        new_list = [dict(r) for r in new_rows]
+        random.shuffle(due_list)
+        random.shuffle(new_list)
+        return [self._decode(r) for r in due_list + new_list]
 
     def counts(
         self,
@@ -203,6 +213,9 @@ class FlashcardCardRepository:
                 f"{prefix}SELECT "
                 "SUM(CASE WHEN c.reps > 0 AND c.due <= :now THEN 1 ELSE 0 END) AS due, "
                 "SUM(CASE WHEN c.reps = 0 THEN 1 ELSE 0 END) AS new, "
+                # Cards touched at least once — the visible proof that review
+                # history is being kept, not just a queue that empties.
+                "SUM(CASE WHEN c.reps > 0 THEN 1 ELSE 0 END) AS studied, "
                 "COUNT(*) AS total "
                 "FROM flashcard_card c JOIN flashcard_note n ON n.note_id = c.note_id "
                 f"WHERE n.user_id = :u AND c.suspended = false{deck_filter}"
@@ -212,6 +225,7 @@ class FlashcardCardRepository:
         return {
             "due": int(row["due"] or 0),
             "new": int(row["new"] or 0),
+            "studied": int(row["studied"] or 0),
             "total": int(row["total"] or 0),
         }
 
