@@ -809,3 +809,103 @@ declare global {
     };
   }
 }
+
+// --- Flashcards (spaced repetition) ---------------------------------------
+// Separate from Challenge* on purpose: challenges are cohort-scheduled and
+// graded, flashcards are scheduled per learner by FSRS from a 1-4 self-rating.
+
+export interface FlashcardReference {
+  reference_id: string;
+  kind: 'content' | 'segment' | 'highlight' | 'asset' | 'url';
+  content_id?: string | null;
+  asset_id?: string | null;
+  segment_id?: string | null;
+  highlight_id?: string | null;
+  locator: Record<string, unknown>;
+  label?: string | null;
+}
+
+export interface FlashcardFields {
+  front: string;
+  back?: string;
+  note_fa?: string;
+  example?: string;
+  source_page?: string;
+  [key: string]: unknown;
+}
+
+export interface FlashcardCounts {
+  due: number;
+  new: number;
+  total: number;
+}
+
+export interface FlashcardQueueCard {
+  card_id: string;
+  note_id: string;
+  note_type: string;
+  deck: string;
+  fields: FlashcardFields;
+  state: number;
+  reps: number;
+  due: string;
+  references: FlashcardReference[];
+}
+
+export interface FlashcardQueue {
+  cards: FlashcardQueueCard[];
+  counts: FlashcardCounts;
+}
+
+/** 1=Again 2=Hard 3=Good 4=Easy — the learner's own assessment. */
+export type FlashcardRating = 1 | 2 | 3 | 4;
+
+export interface FlashcardReviewResult {
+  card_id: string;
+  state: number;
+  reps: number;
+  lapses: number;
+  due: string;
+  stability: number | null;
+  difficulty: number | null;
+  counts: FlashcardCounts;
+}
+
+export interface FlashcardCardStats {
+  card_id: string;
+  reps: number;
+  lapses: number;
+  due: string;
+  stability: number | null;
+  difficulty: number | null;
+  suspended: boolean;
+}
+
+export interface FlashcardNote {
+  note_id: string;
+  deck_id: string;
+  note_type: string;
+  fields: FlashcardFields;
+  source?: string | null;
+  references: FlashcardReference[];
+  card: FlashcardCardStats | null;
+}
+
+export interface FlashcardDeck {
+  deck_id: string;
+  name: string;
+  parent_deck_id?: string | null;
+}
+
+export interface CreateFlashcardNoteRequest {
+  deck_path?: string;
+  note_type?: string;
+  fields: FlashcardFields;
+  references?: Array<Omit<FlashcardReference, 'reference_id'>>;
+}
+
+export interface UpdateFlashcardNoteRequest {
+  fields: FlashcardFields;
+  note_type?: string;
+  deck_path?: string;
+}

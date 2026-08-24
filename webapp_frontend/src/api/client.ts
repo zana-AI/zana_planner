@@ -1451,6 +1451,63 @@ class ApiClient {
   async getChallengeLeaderboard(challengeId: string): Promise<import('../types').ChallengeLeaderboardEntry[]> {
     return this.request(`/challenges/${challengeId}/leaderboard`);
   }
+
+  // --- Flashcards (spaced repetition) --------------------------------------
+
+  async getFlashcardQueue(deckId?: string, limit = 50): Promise<import('../types').FlashcardQueue> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (deckId) params.set('deck_id', deckId);
+    return this.request(`/flashcards/queue?${params.toString()}`);
+  }
+
+  /** rating: 1=Again 2=Hard 3=Good 4=Easy */
+  async reviewFlashcard(
+    cardId: string,
+    rating: import('../types').FlashcardRating,
+    durationMs?: number
+  ): Promise<import('../types').FlashcardReviewResult> {
+    return this.request('/flashcards/review', {
+      method: 'POST',
+      body: JSON.stringify({ card_id: cardId, rating, duration_ms: durationMs }),
+    });
+  }
+
+  async getFlashcardDecks(): Promise<import('../types').FlashcardDeck[]> {
+    return this.request('/flashcards/decks');
+  }
+
+  async getFlashcardNotes(params: { deckId?: string; search?: string; limit?: number } = {}):
+    Promise<import('../types').FlashcardNote[]> {
+    const query = new URLSearchParams();
+    if (params.deckId) query.set('deck_id', params.deckId);
+    if (params.search) query.set('search', params.search);
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString();
+    return this.request(`/flashcards/notes${suffix ? `?${suffix}` : ''}`);
+  }
+
+  async createFlashcardNote(
+    payload: import('../types').CreateFlashcardNoteRequest
+  ): Promise<import('../types').FlashcardNote> {
+    return this.request('/flashcards/notes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateFlashcardNote(
+    noteId: string,
+    payload: import('../types').UpdateFlashcardNoteRequest
+  ): Promise<import('../types').FlashcardNote> {
+    return this.request(`/flashcards/notes/${noteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteFlashcardNote(noteId: string): Promise<{ ok: boolean }> {
+    return this.request(`/flashcards/notes/${noteId}`, { method: 'DELETE' });
+  }
 }
 
 /**

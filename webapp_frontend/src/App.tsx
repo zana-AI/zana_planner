@@ -13,6 +13,7 @@ import { FocusPage } from './pages/FocusPage';
 import { MyContentsPage } from './pages/MyContentsPage';
 import { PdfReaderPage } from './pages/PdfReaderPage';
 import { ChallengesPage } from './pages/ChallengesPage';
+import { FlashcardsPage } from './pages/FlashcardsPage';
 import { ChallengeDetailPage } from './pages/ChallengeDetailPage';
 import { ChallengePlayPage } from './pages/ChallengePlayPage';
 import { useChallengeDeepLink } from './hooks/useChallengeDeepLink';
@@ -180,6 +181,18 @@ function App() {
           element={
             isAuthenticated ? (
               <ChallengePlayPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+
+        {/* Flashcards - authenticated only */}
+        <Route
+          path="/flashcards"
+          element={
+            isAuthenticated ? (
+              <FlashcardsPage />
             ) : (
               <Navigate to="/" replace />
             )
