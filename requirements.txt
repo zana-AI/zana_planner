@@ -30,6 +30,7 @@ fastapi==0.129.0
 filetype==1.2.0
 fonttools==4.61.1
 frozenlist==1.8.0
+fsrs==6.3.2
 google-api-core==2.28.1
 google-auth==2.45.0
 google-cloud-aiplatform==1.115.0

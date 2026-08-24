@@ -83,7 +83,7 @@ export interface TelegramUser {
 
 // Session and navigation UI contracts
 export type SessionMode = 'telegram_mini_app' | 'browser_token' | 'unauthenticated';
-export type AppNavKey = 'today' | 'community' | 'explore';
+export type AppNavKey = 'today' | 'community' | 'explore' | 'vocab';
 
 export interface AppNavItem {
   key: AppNavKey;

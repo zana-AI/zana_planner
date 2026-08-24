@@ -1,0 +1,289 @@
+"""
+Flashcard service: the session-owning layer over the flashcard repositories.
+
+Scheduling is FSRS v6 via py-fsrs. All interval, stability and difficulty maths
+lives in that library — this module only converts rows to `fsrs.Card` and back.
+Do not reimplement any of it: FSRS is a fitted model, not a heuristic, and an
+approximation would be wrong in ways that take months to become visible.
+
+This is the only module outside the flashcard repositories that should open a
+database session for them; a review must write the card update and its
+review-log row in one transaction.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from fsrs import Card, Rating, Scheduler, State
+
+from db.postgres_db import get_db_session
+from repositories.flashcard_repo import (
+    FlashcardDeckRepository,
+    FlashcardNoteRepository,
+    FlashcardReferenceRepository,
+)
+from repositories.flashcard_review_repo import (
+    FlashcardCardRepository,
+    FlashcardReviewLogRepository,
+)
+
+# Stock FSRS-6 parameters. Once a user has a few hundred reviews,
+# `optimize_parameters` can refit these and the result should be persisted per
+# user and passed to Scheduler(parameters=...).
+_scheduler = Scheduler()
+
+_decks = FlashcardDeckRepository()
+_notes = FlashcardNoteRepository()
+_refs = FlashcardReferenceRepository()
+_cards = FlashcardCardRepository()
+_log = FlashcardReviewLogRepository()
+
+DEFAULT_NEW_PER_DAY = 20
+
+
+def _row_to_fsrs_card(row: Dict[str, Any]) -> Card:
+    """Column names match the dataclass, so this is a direct field copy."""
+    return Card(
+        state=State(row["state"]),
+        step=row["step"],
+        stability=row["stability"],
+        difficulty=row["difficulty"],
+        due=row["due"],
+        last_review=row["last_review"],
+    )
+
+
+# --- review loop -----------------------------------------------------------
+
+
+def get_queue(
+    user_id: str,
+    limit: int = 50,
+    new_limit: int = DEFAULT_NEW_PER_DAY,
+    deck_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Cards due now, with their note content and any source references."""
+    now = datetime.now(timezone.utc)
+    with get_db_session() as session:
+        rows = _cards.get_due_queue(
+            session, user_id, now, new_limit=new_limit, limit=limit, deck_id=deck_id
+        )
+        cards: List[Dict[str, Any]] = []
+        for row in rows:
+            note = _notes.get(session, row["note_id"])
+            if note is None:
+                continue
+            deck = _decks.get(session, note["deck_id"])
+            cards.append(
+                {
+                    "card_id": row["card_id"],
+                    "note_id": note["note_id"],
+                    "note_type": note["note_type"],
+                    "deck": deck["name"] if deck else "",
+                    "fields": note["fields"],
+                    "state": row["state"],
+                    "reps": row["reps"],
+                    "due": row["due"].isoformat(),
+                    "references": _refs.list_for_note(session, note["note_id"]),
+                }
+            )
+        return {"cards": cards, "counts": _cards.counts(session, user_id, now)}
+
+
+def review_card(
+    user_id: str,
+    card_id: str,
+    rating: int,
+    duration_ms: Optional[int] = None,
+    now: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
+    """Apply one review. Returns None if the card is not this user's."""
+    if rating not in (1, 2, 3, 4):
+        raise ValueError(f"rating must be 1-4, got {rating!r}")
+
+    review_time = now or datetime.now(timezone.utc)
+
+    with get_db_session() as session:
+        card = _cards.get(session, card_id)
+        if card is None:
+            return None
+
+        # A card is only reachable through its note's owner; without this any
+        # authenticated user could rate someone else's cards.
+        note = _notes.get(session, card["note_id"])
+        if note is None or str(note["user_id"]) != str(user_id):
+            return None
+
+        state_before = card["state"]
+        updated, _ = _scheduler.review_card(
+            _row_to_fsrs_card(card),
+            Rating(rating),
+            review_datetime=review_time,
+            review_duration=duration_ms,
+        )
+
+        # A lapse is forgetting something that had graduated to Review.
+        # Failing a card that was never learned is not forgetting it.
+        is_lapse = rating == Rating.Again.value and state_before == State.Review.value
+
+        _cards.update_scheduling(
+            session,
+            card_id,
+            state=updated.state.value,
+            step=updated.step,
+            stability=updated.stability,
+            difficulty=updated.difficulty,
+            due=updated.due,
+            last_review=updated.last_review,
+            increment_lapses=is_lapse,
+        )
+        _log.append(
+            session,
+            card_id=card_id,
+            rating=rating,
+            review_datetime=review_time,
+            review_duration_ms=duration_ms,
+            state_before=state_before,
+        )
+
+        refreshed = _cards.get(session, card_id)
+        assert refreshed is not None
+        return {
+            "card_id": card_id,
+            "state": refreshed["state"],
+            "reps": refreshed["reps"],
+            "lapses": refreshed["lapses"],
+            "due": refreshed["due"].isoformat(),
+            "stability": refreshed["stability"],
+            "difficulty": refreshed["difficulty"],
+            "counts": _cards.counts(session, user_id, datetime.now(timezone.utc)),
+        }
+
+
+# --- authoring -------------------------------------------------------------
+
+
+def list_decks(user_id: str) -> List[dict]:
+    with get_db_session() as session:
+        return _decks.list_for_user(session, user_id)
+
+
+def list_notes(
+    user_id: str,
+    deck_id: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 500,
+) -> List[dict]:
+    with get_db_session() as session:
+        notes = _notes.list_for_user(session, user_id, deck_id, search, limit)
+        for note in notes:
+            note["references"] = _refs.list_for_note(session, note["note_id"])
+            card = _cards.get_for_note(session, note["note_id"])
+            # Surface scheduling read-only, so the editor can show how a card
+            # is actually going without being able to corrupt it.
+            note["card"] = (
+                {
+                    "card_id": card["card_id"],
+                    "reps": card["reps"],
+                    "lapses": card["lapses"],
+                    "due": card["due"].isoformat(),
+                    "stability": card["stability"],
+                    "difficulty": card["difficulty"],
+                    "suspended": card["suspended"],
+                }
+                if card
+                else None
+            )
+        return notes
+
+
+def create_note(
+    user_id: str,
+    deck_path: str,
+    fields: Dict[str, Any],
+    note_type: str = "vocab",
+    source: Optional[str] = "manual",
+    references: Optional[List[Dict[str, Any]]] = None,
+) -> dict:
+    """Author a new note and give it a card that is due immediately."""
+    with get_db_session() as session:
+        deck = _decks.get_or_create_path(session, user_id, deck_path)
+        note = _notes.upsert(
+            session, user_id, deck["deck_id"], fields, note_type, source
+        )
+        _cards.get_or_create(
+            session, note["note_id"], due=datetime.now(timezone.utc)
+        )
+        for reference in references or []:
+            _refs.add(session, note["note_id"], **reference)
+        note["references"] = _refs.list_for_note(session, note["note_id"])
+        return note
+
+
+def update_note(
+    user_id: str,
+    note_id: str,
+    fields: Dict[str, Any],
+    note_type: Optional[str] = None,
+    deck_path: Optional[str] = None,
+) -> Optional[dict]:
+    """Edit a note's content.
+
+    Scheduling is untouched: editing a definition must never reset how well the
+    word is known.
+    """
+    with get_db_session() as session:
+        note = _notes.get(session, note_id)
+        if note is None or str(note["user_id"]) != str(user_id):
+            return None
+
+        deck_id = None
+        if deck_path:
+            deck_id = _decks.get_or_create_path(session, user_id, deck_path)["deck_id"]
+
+        updated = _notes.update_fields(session, note_id, fields, note_type, deck_id)
+        if updated:
+            updated["references"] = _refs.list_for_note(session, note_id)
+        return updated
+
+
+def delete_note(user_id: str, note_id: str) -> bool:
+    """Delete a note, its cards and their review history (cascade)."""
+    with get_db_session() as session:
+        note = _notes.get(session, note_id)
+        if note is None or str(note["user_id"]) != str(user_id):
+            return False
+        _notes.delete(session, note_id)
+        return True
+
+
+def add_reference(user_id: str, note_id: str, **reference: Any) -> Optional[dict]:
+    """Attach a source reference — a PDF highlight, a video/podcast moment, a URL."""
+    with get_db_session() as session:
+        note = _notes.get(session, note_id)
+        if note is None or str(note["user_id"]) != str(user_id):
+            return None
+        return _refs.add(session, note_id, **reference)
+
+
+def delete_reference(user_id: str, note_id: str, reference_id: str) -> bool:
+    with get_db_session() as session:
+        note = _notes.get(session, note_id)
+        if note is None or str(note["user_id"]) != str(user_id):
+            return False
+        _refs.delete(session, reference_id)
+        return True
+
+
+def optimize_parameters(user_id: str) -> List[float]:
+    """Refit FSRS parameters to this user's own review history.
+
+    Needs a few hundred reviews before it beats the stock parameters, so run it
+    periodically rather than per review.
+    """
+    from fsrs import Optimizer
+
+    with get_db_session() as session:
+        logs = _log.list_for_user(session, user_id)
+    return Optimizer(logs).compute_optimal_parameters()

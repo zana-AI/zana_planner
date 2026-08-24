@@ -25,6 +25,13 @@ pydantic>=2.12.0
 pydantic-settings>=2.12.0       # Required by pydantic
 
 # ============================================================================
+# Spaced Repetition (flashcards engine)
+# ============================================================================
+# FSRS v6 scheduler + optimizer. All interval/stability/difficulty maths
+# lives here — never reimplement it. See migration 032_flashcards_srs.
+fsrs==6.3.2
+
+# ============================================================================
 # Data Processing & Storage
 # ============================================================================
 pandas>=2.3.0
