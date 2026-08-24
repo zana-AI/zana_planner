@@ -88,7 +88,10 @@ def get_queue(
                     "references": _refs.list_for_note(session, note["note_id"]),
                 }
             )
-        return {"cards": cards, "counts": _cards.counts(session, user_id, now)}
+        return {
+            "cards": cards,
+            "counts": _cards.counts(session, user_id, now, deck_id=deck_id),
+        }
 
 
 def review_card(
@@ -167,6 +170,19 @@ def review_card(
 def list_decks(user_id: str) -> List[dict]:
     with get_db_session() as session:
         return _decks.list_for_user(session, user_id)
+
+
+def deck_summary(user_id: str) -> List[dict]:
+    """Top-level decks with their due/new/total counts.
+
+    Drives the study entry points elsewhere in the app, so a new subject or
+    language shows up on its own once its first deck exists — nothing about it
+    is specific to French.
+    """
+    with get_db_session() as session:
+        return _decks.list_roots_with_counts(
+            session, user_id, datetime.now(timezone.utc)
+        )
 
 
 def list_notes(

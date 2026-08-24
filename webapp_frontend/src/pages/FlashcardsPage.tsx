@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type {
   FlashcardCounts,
@@ -10,16 +11,20 @@ import type {
 } from '../types';
 import './FlashcardsPage.css';
 
-/** 1=Again 2=Hard 3=Good 4=Easy — FSRS ratings, learner self-assessed. */
+/**
+ * UI copy is English — the app chrome is English everywhere, and the study
+ * content itself carries whatever language the deck is in. Nothing here is
+ * specific to French.
+ */
 const RATINGS: Array<{ value: FlashcardRating; label: string; hint: string; tone: string }> = [
-  { value: 1, label: 'Encore', hint: 'oublié', tone: 'again' },
-  { value: 2, label: 'Difficile', hint: 'avec peine', tone: 'hard' },
-  { value: 3, label: 'Correct', hint: 'su', tone: 'good' },
-  { value: 4, label: 'Facile', hint: 'immédiat', tone: 'easy' },
+  { value: 1, label: 'Again', hint: 'forgot', tone: 'again' },
+  { value: 2, label: 'Hard', hint: 'a struggle', tone: 'hard' },
+  { value: 3, label: 'Good', hint: 'knew it', tone: 'good' },
+  { value: 4, label: 'Easy', hint: 'instant', tone: 'easy' },
 ];
 
 /**
- * Render the `**bold**` / `*italic*` used in the vocab definitions.
+ * Render the `**bold**` / `*italic*` that authored definitions carry.
  *
  * Deliberately builds React nodes rather than setting innerHTML: the text is
  * user-authored, so injecting it as markup would be an XSS hole.
@@ -49,16 +54,22 @@ function CountsBar({ counts }: { counts: FlashcardCounts | null }) {
   if (!counts) return null;
   return (
     <div className="fc-counts">
-      <span className="fc-count fc-count-due">{counts.due} à revoir</span>
-      <span className="fc-count fc-count-new">{counts.new} nouvelles</span>
-      <span className="fc-count fc-count-total">{counts.total} au total</span>
+      <span className="fc-count fc-count-due">{counts.due} due</span>
+      <span className="fc-count fc-count-new">{counts.new} new</span>
+      <span className="fc-count fc-count-total">{counts.total} total</span>
     </div>
   );
 }
 
 // --- review ---------------------------------------------------------------
 
-function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) => void }) {
+function ReviewPane({
+  deckId,
+  onCountsChange,
+}: {
+  deckId?: string;
+  onCountsChange: (c: FlashcardCounts) => void;
+}) {
   const [cards, setCards] = useState<FlashcardQueueCard[]>([]);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -71,7 +82,7 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
     setLoading(true);
     setError('');
     try {
-      const queue = await apiClient.getFlashcardQueue();
+      const queue = await apiClient.getFlashcardQueue(deckId);
       setCards(queue.cards);
       setIndex(0);
       setRevealed(false);
@@ -79,11 +90,11 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
       onCountsChange(queue.counts);
     } catch (err) {
       console.error('Failed to load flashcard queue:', err);
-      setError("Impossible de charger les cartes.");
+      setError("Couldn't load your cards.");
     } finally {
       setLoading(false);
     }
-  }, [onCountsChange]);
+  }, [deckId, onCountsChange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -102,11 +113,11 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
         setRevealed(false);
         shownAt.current = Date.now();
       } else {
-        await load();   // refill: cards rated "Encore" come back in this session
+        await load();   // refill: cards rated "Again" come back in this session
       }
     } catch (err) {
       console.error('Failed to submit review:', err);
-      setError("La note n'a pas pu être enregistrée.");
+      setError("Couldn't save your rating.");
     } finally {
       setSubmitting(false);
     }
@@ -130,12 +141,12 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
     return () => window.removeEventListener('keydown', onKey);
   }, [card, revealed, rate]);
 
-  if (loading) return <div className="fc-message">Chargement…</div>;
+  if (loading) return <div className="fc-message">Loading…</div>;
   if (error) {
     return (
       <div className="fc-message fc-error">
         {error}
-        <button className="fc-link" onClick={load}>Réessayer</button>
+        <button className="fc-link" onClick={load}>Try again</button>
       </div>
     );
   }
@@ -143,8 +154,8 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
     return (
       <div className="fc-message fc-done">
         <div className="fc-done-mark">✓</div>
-        <p>Rien à réviser pour le moment.</p>
-        <button className="fc-link" onClick={load}>Actualiser</button>
+        <p>Nothing to review right now.</p>
+        <button className="fc-link" onClick={load}>Refresh</button>
       </div>
     );
   }
@@ -182,7 +193,7 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
             ) : null}
           </div>
         ) : (
-          <div className="fc-reveal-hint">Appuyer pour voir la réponse</div>
+          <div className="fc-reveal-hint">Tap to reveal</div>
         )}
       </div>
 
@@ -194,7 +205,7 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
               className={`fc-rating fc-rating-${r.tone}`}
               disabled={submitting}
               onClick={() => rate(r.value)}
-              aria-label={`${r.label} — ${r.hint} (touche ${r.value})`}
+              aria-label={`${r.label} — ${r.hint} (key ${r.value})`}
               aria-keyshortcuts={String(r.value)}
             >
               <span className="fc-rating-label">{r.label}</span>
@@ -204,7 +215,7 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
         </div>
       ) : (
         <button className="fc-show" onClick={() => setRevealed(true)}>
-          Voir la réponse
+          Show answer
         </button>
       )}
     </div>
@@ -213,55 +224,63 @@ function ReviewPane({ onCountsChange }: { onCountsChange: (c: FlashcardCounts) =
 
 // --- authoring ------------------------------------------------------------
 
-const EMPTY_DRAFT = { front: '', back: '', note_fa: '', example: '', deck_path: 'Français::B1' };
-
-function ManagePane({ onChanged }: { onChanged: () => void }) {
+function ManagePane({
+  deckId,
+  defaultDeckPath,
+  onChanged,
+}: {
+  deckId?: string;
+  defaultDeckPath: string;
+  onChanged: () => void;
+}) {
   const [notes, setNotes] = useState<FlashcardNote[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);  // note_id, or 'new'
-  const [draft, setDraft] = useState({ ...EMPTY_DRAFT });
+  const [draft, setDraft] = useState(() => emptyDraft(defaultDeckPath));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setNotes(await apiClient.getFlashcardNotes({ search: search || undefined }));
+      setNotes(await apiClient.getFlashcardNotes({
+        deckId,
+        search: search || undefined,
+      }));
     } catch (err) {
       console.error('Failed to load notes:', err);
-      setError('Impossible de charger les cartes.');
+      setError("Couldn't load your cards.");
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [deckId, search]);
 
   useEffect(() => {
     const t = setTimeout(load, search ? 250 : 0);   // debounce typing
     return () => clearTimeout(t);
   }, [load, search]);
 
-  const decks = useMemo(() => {
-    const seen = new Set<string>();
-    notes.forEach((n) => n.card && seen.add(n.deck_id));
-    return seen;
-  }, [notes]);
+  const deckCount = useMemo(
+    () => new Set(notes.map((n) => n.deck_id)).size,
+    [notes],
+  );
 
-  const startNew = () => { setDraft({ ...EMPTY_DRAFT }); setEditing('new'); setError(''); };
+  const startNew = () => { setDraft(emptyDraft(defaultDeckPath)); setEditing('new'); setError(''); };
   const startEdit = (note: FlashcardNote) => {
     setDraft({
       front: note.fields.front || '',
       back: note.fields.back || '',
       note_fa: note.fields.note_fa || '',
       example: note.fields.example || '',
-      deck_path: EMPTY_DRAFT.deck_path,
+      deck_path: defaultDeckPath,
     });
     setEditing(note.note_id);
     setError('');
   };
 
   const save = async () => {
-    if (!draft.front.trim()) { setError('Le recto est obligatoire.'); return; }
+    if (!draft.front.trim()) { setError('Front is required.'); return; }
     setBusy(true);
     setError('');
     const fields: FlashcardFields = { front: draft.front.trim() };
@@ -280,15 +299,14 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
       onChanged();
     } catch (err) {
       console.error('Failed to save note:', err);
-      setError("L'enregistrement a échoué.");
+      setError('Save failed.');
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async (note: FlashcardNote) => {
-    const label = note.fields.front;
-    if (!window.confirm(`Supprimer « ${label} » et tout son historique de révision ?`)) return;
+    if (!window.confirm(`Delete “${note.fields.front}” and its review history?`)) return;
     setBusy(true);
     try {
       await apiClient.deleteFlashcardNote(note.note_id);
@@ -296,7 +314,7 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
       onChanged();
     } catch (err) {
       console.error('Failed to delete note:', err);
-      setError('La suppression a échoué.');
+      setError('Delete failed.');
     } finally {
       setBusy(false);
     }
@@ -307,12 +325,12 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
       <div className="fc-toolbar">
         <input
           className="fc-search"
-          placeholder="Rechercher…"
+          placeholder="Search…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           dir="auto"
         />
-        <button className="fc-add" onClick={startNew}>+ Ajouter</button>
+        <button className="fc-add" onClick={startNew}>+ Add</button>
       </div>
 
       {error ? <div className="fc-inline-error">{error}</div> : null}
@@ -320,27 +338,25 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
       {editing ? (
         <div className="fc-editor">
           <label>
-            Recto
+            Front
             <input
               value={draft.front}
               onChange={(e) => setDraft({ ...draft, front: e.target.value })}
-              placeholder="le chien"
               dir="auto"
               autoFocus
             />
           </label>
           <label>
-            Définition
+            Definition
             <textarea
               value={draft.back}
               onChange={(e) => setDraft({ ...draft, back: e.target.value })}
-              placeholder="Animal domestique…"
               rows={3}
               dir="auto"
             />
           </label>
           <label>
-            Exemple <span className="fc-optional">(facultatif)</span>
+            Example <span className="fc-optional">(optional)</span>
             <input
               value={draft.example}
               onChange={(e) => setDraft({ ...draft, example: e.target.value })}
@@ -348,7 +364,7 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
             />
           </label>
           <label>
-            Ma note <span className="fc-optional">(facultatif)</span>
+            Your note <span className="fc-optional">(optional)</span>
             <input
               value={draft.note_fa}
               onChange={(e) => setDraft({ ...draft, note_fa: e.target.value })}
@@ -357,7 +373,7 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
           </label>
           {editing === 'new' ? (
             <label>
-              Paquet
+              Deck <span className="fc-optional">(use :: to nest)</span>
               <input
                 value={draft.deck_path}
                 onChange={(e) => setDraft({ ...draft, deck_path: e.target.value })}
@@ -366,31 +382,31 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
             </label>
           ) : (
             <p className="fc-hint">
-              Modifier le contenu ne remet pas à zéro la programmation de la carte.
+              Editing the content won’t reset this card’s schedule.
             </p>
           )}
           <div className="fc-editor-actions">
             <button className="fc-secondary" onClick={() => setEditing(null)} disabled={busy}>
-              Annuler
+              Cancel
             </button>
             <button className="fc-primary" onClick={save} disabled={busy}>
-              {busy ? 'Enregistrement…' : 'Enregistrer'}
+              {busy ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
       ) : null}
 
       {loading ? (
-        <div className="fc-message">Chargement…</div>
+        <div className="fc-message">Loading…</div>
       ) : notes.length === 0 ? (
         <div className="fc-message">
-          {search ? 'Aucun résultat.' : 'Aucune carte pour le moment.'}
+          {search ? 'No matches.' : 'No cards yet.'}
         </div>
       ) : (
         <>
           <div className="fc-list-meta">
-            {notes.length} carte{notes.length > 1 ? 's' : ''}
-            {decks.size > 1 ? ` · ${decks.size} paquets` : ''}
+            {notes.length} card{notes.length === 1 ? '' : 's'}
+            {deckCount > 1 ? ` · ${deckCount} decks` : ''}
           </div>
           <ul className="fc-list">
             {notes.map((note) => (
@@ -410,16 +426,18 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
                   <div className="fc-item-stats">
                     {note.card ? (
                       <>
-                        <span>{note.card.reps} révision{note.card.reps > 1 ? 's' : ''}</span>
-                        {note.card.lapses > 0 ? <span>{note.card.lapses} oubli{note.card.lapses > 1 ? 's' : ''}</span> : null}
+                        <span>{note.card.reps} review{note.card.reps === 1 ? '' : 's'}</span>
+                        {note.card.lapses > 0 ? (
+                          <span>{note.card.lapses} lapse{note.card.lapses === 1 ? '' : 's'}</span>
+                        ) : null}
                         {note.fields.source_page ? <span>p. {note.fields.source_page}</span> : null}
                       </>
-                    ) : <span>jamais révisée</span>}
+                    ) : <span>never reviewed</span>}
                   </div>
                 </div>
                 <div className="fc-item-actions">
-                  <button onClick={() => startEdit(note)} aria-label="Modifier">✎</button>
-                  <button onClick={() => remove(note)} aria-label="Supprimer">🗑</button>
+                  <button onClick={() => startEdit(note)} aria-label="Edit">✎</button>
+                  <button onClick={() => remove(note)} aria-label="Delete">🗑</button>
                 </div>
               </li>
             ))}
@@ -430,20 +448,28 @@ function ManagePane({ onChanged }: { onChanged: () => void }) {
   );
 }
 
+function emptyDraft(deckPath: string) {
+  return { front: '', back: '', note_fa: '', example: '', deck_path: deckPath };
+}
+
 // --- page -----------------------------------------------------------------
 
 export function FlashcardsPage() {
+  const [params] = useSearchParams();
+  const deckId = params.get('deck') || undefined;
+  const deckName = params.get('name') || undefined;
+
   const [tab, setTab] = useState<'review' | 'manage'>('review');
   const [counts, setCounts] = useState<FlashcardCounts | null>(null);
 
   const refreshCounts = useCallback(async () => {
     try {
-      const queue = await apiClient.getFlashcardQueue(undefined, 1);
+      const queue = await apiClient.getFlashcardQueue(deckId, 1);
       setCounts(queue.counts);
     } catch {
       /* counts are decorative; a failure here must not break the page */
     }
-  }, []);
+  }, [deckId]);
 
   useEffect(() => { refreshCounts(); }, [refreshCounts]);
 
@@ -451,7 +477,7 @@ export function FlashcardsPage() {
     <div className="fc-page">
       <div className="fc-container">
         <header className="fc-header">
-          <h1>Vocabulaire</h1>
+          <h1>{deckName || 'Study'}</h1>
           <CountsBar counts={counts} />
         </header>
 
@@ -460,19 +486,25 @@ export function FlashcardsPage() {
             className={tab === 'review' ? 'is-active' : ''}
             onClick={() => setTab('review')}
           >
-            Réviser
+            Review
           </button>
           <button
             className={tab === 'manage' ? 'is-active' : ''}
             onClick={() => setTab('manage')}
           >
-            Mes cartes
+            My cards
           </button>
         </div>
 
-        {tab === 'review'
-          ? <ReviewPane onCountsChange={setCounts} />
-          : <ManagePane onChanged={refreshCounts} />}
+        {tab === 'review' ? (
+          <ReviewPane deckId={deckId} onCountsChange={setCounts} />
+        ) : (
+          <ManagePane
+            deckId={deckId}
+            defaultDeckPath={deckName || 'My cards'}
+            onChanged={refreshCounts}
+          />
+        )}
       </div>
     </div>
   );

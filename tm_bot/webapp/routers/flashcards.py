@@ -94,6 +94,12 @@ async def list_decks(user_id: int = Depends(get_current_user)):
     return flashcard_service.list_decks(str(user_id))
 
 
+@router.get("/summary")
+async def deck_summary(user_id: int = Depends(get_current_user)):
+    """Top-level decks with due/new/total counts, for study entry points."""
+    return flashcard_service.deck_summary(str(user_id))
+
+
 @router.get("/notes")
 async def list_notes(
     deck_id: Optional[str] = None,

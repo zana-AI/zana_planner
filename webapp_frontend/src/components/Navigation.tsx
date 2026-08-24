@@ -31,7 +31,7 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { title: 'Challenges', subtitle: 'Join a challenge and play' };
   }
   if (pathname === '/flashcards') {
-    return { title: 'Vocabulaire', subtitle: 'Spaced-repetition review' };
+    return { title: 'Study', subtitle: 'Spaced-repetition review', showBack: true, fallbackRoute: '/templates' };
   }
   if (pathname.startsWith('/challenges/')) {
     return { title: 'Challenge', showBack: true, fallbackRoute: '/templates' };
@@ -89,7 +89,6 @@ export function Navigation(_props: NavigationProps) {
       { key: 'today', label: 'My Week', to: '/dashboard' },
       { key: 'community', label: 'Community', to: '/community' },
       { key: 'explore', label: 'Explore', to: '/templates' },
-      { key: 'vocab', label: 'Vocab', to: '/flashcards' },
     ],
     [],
   );

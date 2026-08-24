@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bookmark, Users, Layers } from 'lucide-react';
+import { Bookmark, Users, Layers, GraduationCap } from 'lucide-react';
 import { apiClient } from '../api/client';
-import type { PromiseTemplate, ChallengeSummary } from '../types';
+import type { PromiseTemplate, ChallengeSummary, FlashcardDeckSummary } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { Emoji } from '../components/ui/Emoji';
 import { AvatarStack } from '../components/ui/AvatarStack';
@@ -20,6 +20,7 @@ export function TemplatesPage() {
   const { hapticFeedback } = useTelegramWebApp();
   const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
   const [challenges, setChallenges] = useState<ChallengeSummary[]>([]);
+  const [studyDecks, setStudyDecks] = useState<FlashcardDeckSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [templateUsers, setTemplateUsers] = useState<Record<string, TemplateUser[]>>({});
@@ -51,6 +52,21 @@ export function TemplatesPage() {
         if (active) setChallenges(data);
       })
       .catch((err) => console.error('Failed to load challenges:', err));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Study decks are listed from the user's own decks, so a new subject or
+  // language appears here on its own without touching this page.
+  useEffect(() => {
+    let active = true;
+    apiClient
+      .getFlashcardSummary()
+      .then((data) => {
+        if (active) setStudyDecks(data.filter((d) => d.total > 0));
+      })
+      .catch((err) => console.error('Failed to load study decks:', err));
     return () => {
       active = false;
     };
@@ -103,6 +119,83 @@ export function TemplatesPage() {
 
   return (
     <div className="app">
+      {studyDecks.length > 0 ? (
+        <section style={{ padding: '4px 0 8px' }}>
+          <h2
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              letterSpacing: 0.3,
+              textTransform: 'uppercase',
+              color: 'var(--color-text-secondary, #8A94A6)',
+              margin: '0 0 10px',
+            }}
+          >
+            Study
+          </h2>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {studyDecks.map((deck) => (
+              <button
+                key={deck.deck_id}
+                type="button"
+                onClick={() => {
+                  hapticFeedback('light');
+                  navigate(
+                    `/flashcards?deck=${encodeURIComponent(deck.deck_id)}` +
+                    `&name=${encodeURIComponent(deck.name)}`,
+                  );
+                }}
+                style={{
+                  textAlign: 'left',
+                  border: '1px solid var(--color-border, #1E2740)',
+                  background: 'var(--color-surface, #131A2B)',
+                  borderRadius: 14,
+                  padding: 14,
+                  color: 'var(--color-text-primary, #E6EAF2)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.25 }}>{deck.name}</div>
+                    <div style={{ fontSize: 13, color: 'var(--color-text-secondary, #8A94A6)', marginTop: 2 }}>
+                      {deck.total} card{deck.total === 1 ? '' : 's'}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: 0.3,
+                      textTransform: 'uppercase',
+                      color: '#0B0F1A',
+                      background: '#9DE7B0',
+                      borderRadius: 999,
+                      padding: '4px 10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <GraduationCap size={12} />
+                    Flashcards
+                  </span>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--color-text-secondary, #B6BECC)' }}>
+                  {deck.due + deck.new > 0
+                    ? `${deck.due} due · ${deck.new} new`
+                    : 'All caught up for now'}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {challenges.length > 0 ? (
         <section style={{ padding: '4px 0 8px' }}>
           <h2

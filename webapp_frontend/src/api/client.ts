@@ -1476,6 +1476,11 @@ class ApiClient {
     return this.request('/flashcards/decks');
   }
 
+  /** Top-level decks with due/new/total, for study entry points. */
+  async getFlashcardSummary(): Promise<import('../types').FlashcardDeckSummary[]> {
+    return this.request('/flashcards/summary');
+  }
+
   async getFlashcardNotes(params: { deckId?: string; search?: string; limit?: number } = {}):
     Promise<import('../types').FlashcardNote[]> {
     const query = new URLSearchParams();

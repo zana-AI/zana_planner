@@ -83,7 +83,7 @@ export interface TelegramUser {
 
 // Session and navigation UI contracts
 export type SessionMode = 'telegram_mini_app' | 'browser_token' | 'unauthenticated';
-export type AppNavKey = 'today' | 'community' | 'explore' | 'vocab';
+export type AppNavKey = 'today' | 'community' | 'explore';
 
 export interface AppNavItem {
   key: AppNavKey;
@@ -895,6 +895,15 @@ export interface FlashcardDeck {
   deck_id: string;
   name: string;
   parent_deck_id?: string | null;
+}
+
+/** A top-level deck with counts summed over its whole subtree. */
+export interface FlashcardDeckSummary {
+  deck_id: string;
+  name: string;
+  due: number;
+  new: number;
+  total: number;
 }
 
 export interface CreateFlashcardNoteRequest {

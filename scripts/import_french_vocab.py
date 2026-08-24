@@ -41,8 +41,10 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Deck names. Nested with '::' the way the deck repository splits them.
-DECK_ROOT = "Français::B1"
+# Deck names, nested with '::' the way the deck repository splits them.
+# The root is English because it surfaces as a label in the app's (English)
+# chrome; the levels below it keep the source's own French names.
+DECK_ROOT = "French::B1"
 
 # Header cell -> canonical field name. Compared after lowercasing and
 # stripping accents, so "Définition (fr)" and "Definition (FR)" both match.

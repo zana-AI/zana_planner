@@ -22,6 +22,16 @@ CARD_COLUMNS = (
     "due, last_review, reps, lapses, suspended"
 )
 
+# Expands :deck into that deck plus every deck beneath it. Prepended to a query
+# so filtering by a parent ("Français") also picks up its children's notes.
+SUBTREE_CTE = (
+    "WITH RECURSIVE sub AS ("
+    " SELECT deck_id FROM flashcard_deck WHERE deck_id = :deck"
+    " UNION ALL"
+    " SELECT d.deck_id FROM flashcard_deck d JOIN sub s ON d.parent_deck_id = s.deck_id"
+    ") "
+)
+
 
 def _new_id() -> str:
     return uuid.uuid4().hex
@@ -141,14 +151,17 @@ class FlashcardCardRepository:
         Overdue cards come first and new material only fills what is left:
         letting new cards jump a backlog is how a deck spirals out of control.
         """
-        deck_filter = " AND n.deck_id = :deck" if deck_id else ""
+        # Selecting a deck means that deck *and everything under it* — notes hang
+        # off leaf decks, so an exact match on a parent would return nothing.
+        prefix = SUBTREE_CTE if deck_id else ""
+        deck_filter = " AND n.deck_id IN (SELECT deck_id FROM sub)" if deck_id else ""
         params: Dict[str, Any] = {"u": str(user_id), "now": now, "lim": limit}
         if deck_id:
             params["deck"] = deck_id
 
         due_rows = session.execute(
             text(
-                f"SELECT c.{CARD_COLUMNS.replace(', ', ', c.')} "
+                f"{prefix}SELECT c.{CARD_COLUMNS.replace(', ', ', c.')} "
                 "FROM flashcard_card c JOIN flashcard_note n ON n.note_id = c.note_id "
                 "WHERE n.user_id = :u AND c.suspended = false AND c.reps > 0 "
                 f"AND c.due <= :now{deck_filter} ORDER BY c.due LIMIT :lim"
@@ -162,7 +175,7 @@ class FlashcardCardRepository:
             new_params = dict(params, lim=min(remaining, new_limit))
             new_rows = session.execute(
                 text(
-                    f"SELECT c.{CARD_COLUMNS.replace(', ', ', c.')} "
+                    f"{prefix}SELECT c.{CARD_COLUMNS.replace(', ', ', c.')} "
                     "FROM flashcard_card c JOIN flashcard_note n ON n.note_id = c.note_id "
                     "WHERE n.user_id = :u AND c.suspended = false AND c.reps = 0"
                     f"{deck_filter} ORDER BY n.created_at LIMIT :lim"
@@ -172,17 +185,29 @@ class FlashcardCardRepository:
 
         return [self._decode(dict(r)) for r in list(due_rows) + list(new_rows)]
 
-    def counts(self, session: Session, user_id: str, now: datetime) -> Dict[str, int]:
+    def counts(
+        self,
+        session: Session,
+        user_id: str,
+        now: datetime,
+        deck_id: Optional[str] = None,
+    ) -> Dict[str, int]:
+        prefix = SUBTREE_CTE if deck_id else ""
+        deck_filter = " AND n.deck_id IN (SELECT deck_id FROM sub)" if deck_id else ""
+        params: Dict[str, Any] = {"u": str(user_id), "now": now}
+        if deck_id:
+            params["deck"] = deck_id
+
         row = session.execute(
             text(
-                "SELECT "
+                f"{prefix}SELECT "
                 "SUM(CASE WHEN c.reps > 0 AND c.due <= :now THEN 1 ELSE 0 END) AS due, "
                 "SUM(CASE WHEN c.reps = 0 THEN 1 ELSE 0 END) AS new, "
                 "COUNT(*) AS total "
                 "FROM flashcard_card c JOIN flashcard_note n ON n.note_id = c.note_id "
-                "WHERE n.user_id = :u AND c.suspended = false"
+                f"WHERE n.user_id = :u AND c.suspended = false{deck_filter}"
             ),
-            {"u": str(user_id), "now": now},
+            params,
         ).mappings().fetchone()
         return {
             "due": int(row["due"] or 0),

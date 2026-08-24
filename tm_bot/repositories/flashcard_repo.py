@@ -17,6 +17,7 @@ import json
 import re
 import unicodedata
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
@@ -67,6 +68,47 @@ class FlashcardDeckRepository:
                 "FROM flashcard_deck WHERE user_id = :u ORDER BY name"
             ),
             {"u": str(user_id)},
+        ).mappings().all()
+        return [dict(r) for r in rows]
+
+    def list_roots_with_counts(
+        self, session: Session, user_id: str, now: datetime
+    ) -> List[dict]:
+        """Top-level decks with counts aggregated over their whole subtree.
+
+        Notes always hang off leaf decks ("Français::B1::Édito B1 Livre"), so a
+        root's totals have to be summed recursively — counting only its direct
+        notes would report zero for every root.
+        """
+        rows = session.execute(
+            text(
+                """
+                WITH RECURSIVE tree AS (
+                    SELECT deck_id AS root_id, deck_id
+                    FROM flashcard_deck
+                    WHERE user_id = :u AND parent_deck_id IS NULL
+                  UNION ALL
+                    SELECT t.root_id, d.deck_id
+                    FROM flashcard_deck d JOIN tree t ON d.parent_deck_id = t.deck_id
+                )
+                SELECT r.deck_id, r.name,
+                       count(c.card_id) AS total,
+                       count(c.card_id) FILTER (
+                           WHERE c.suspended = false AND c.reps > 0 AND c.due <= :now
+                       ) AS due,
+                       count(c.card_id) FILTER (
+                           WHERE c.suspended = false AND c.reps = 0
+                       ) AS new
+                FROM flashcard_deck r
+                JOIN tree t ON t.root_id = r.deck_id
+                LEFT JOIN flashcard_note n ON n.deck_id = t.deck_id
+                LEFT JOIN flashcard_card c ON c.note_id = n.note_id
+                WHERE r.user_id = :u AND r.parent_deck_id IS NULL
+                GROUP BY r.deck_id, r.name
+                ORDER BY r.name
+                """
+            ),
+            {"u": str(user_id), "now": now},
         ).mappings().all()
         return [dict(r) for r in rows]
 
