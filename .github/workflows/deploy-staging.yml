@@ -1,4 +1,4 @@
-name: Deploy to Staging on GCP
+name: Deploy to Staging
 
 on:
   push:

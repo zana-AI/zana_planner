@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Xaana (ZanaAI) is a Telegram bot + Mini App for goal/promise accountability. It runs as a Docker container on a GCP VM (domain `xaana.club`). The bot handles NLP-driven promise tracking via `python-telegram-bot`, while the web layer serves a React SPA via FastAPI/uvicorn.
+Xaana (ZanaAI) is a Telegram bot + Mini App for goal/promise accountability. It runs as a Docker container on a Contabo VPS (domain `xaana.club`). The bot handles NLP-driven promise tracking via `python-telegram-bot`, while the web layer serves a React SPA via FastAPI/uvicorn.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ stats_service/         # Separate service (port 8000)
 
 **Key wiring:** `planner_bot.py` wires handlers to a platform adapter. In production the adapter is the real `python-telegram-bot` integration; in tests it is `MockPlatformAdapter`. Repositories all use `get_db_session()` from `postgres_db.py` — never raw connections.
 
-**Database:** PostgreSQL (Neon/Supabase). Environment selects which URL: `DATABASE_URL_PROD` (when `ENVIRONMENT=production`) or `DATABASE_URL_STAGING`. Alembic handles all schema changes.
+**Database:** PostgreSQL, **self-hosted** in the `zana-postgres` container on the VM (`postgres:18-alpine`) — superuser `zana`, prod DB `zana`, staging DB `zana_staging`. Environment selects which URL: `DATABASE_URL_PROD` (when `ENVIRONMENT=production`) or `DATABASE_URL_STAGING`. Alembic handles all schema changes.
 
 ## Common Commands
 
@@ -137,13 +137,13 @@ def downgrade() -> None:
 
 ```bash
 # Apply to production
-sudo docker exec -it zana-prod bash -c "cd /app && alembic -c tm_bot/db/alembic.ini upgrade head"
+docker exec -it zana-prod bash -c "cd /app && alembic -c tm_bot/db/alembic.ini upgrade head"
 
 # Apply to staging
-sudo docker exec -it zana-staging bash -c "cd /app && alembic -c tm_bot/db/alembic.ini upgrade head"
+docker exec -it zana-staging bash -c "cd /app && alembic -c tm_bot/db/alembic.ini upgrade head"
 
 # Or if the container isn't running
-sudo docker compose run --rm --entrypoint python zana-prod \
+docker compose run --rm --entrypoint python zana-prod \
   -m alembic -c /app/tm_bot/db/alembic.ini upgrade head
 ```
 
@@ -180,23 +180,29 @@ curl https://xaana.club/api/health
 
 ## Operations & Debugging
 
-**VM access** — the bot runs on GCP VM `vm-telegram-bots` (zone `europe-west9-c`). SSH via gcloud (handles key provisioning):
+**VM access** — the bot runs on a **Contabo VPS** (`vmi3512459`, `169.58.186.195`). Plain SSH as `root`, no cloud CLI:
 
 ```bash
-gcloud compute ssh vm-telegram-bots --zone=europe-west9-c --command="sudo docker ps"
+ssh root@169.58.186.195 "docker ps"
 ```
 
-Running containers: `zana-prod`, `zana-staging`, `zana-webapp`, `zana-qdrant`, `zana-nginx`, `zana-stats`.
-Compose dir on the VM: `/opt/zana-bot`. Env files: `/opt/zana-config/.env.{prod,staging,langfuse}` (not in the repo).
+You are root on the VM, so `docker` needs no `sudo`.
+
+> Xaana ran on GCP (`vm-telegram-bots`, `europe-west9-c`) until the credit lapsed and that VM was suspended in Aug 2026. Any instruction mentioning `gcloud compute ssh` is stale.
+
+Running containers: `zana-prod`, `zana-staging`, `zana-webapp`, `zana-postgres`, `zana-qdrant`, `zana-nginx`.
+Defined but not running: `zana-stats`, plus the `mcp` and `langfuse` compose profiles.
+Compose dir on the VM: `/opt/zana-bot/zana_planner` (note the nested path). Env files: `/opt/zana-config/.env.{prod,staging}` (not in the repo).
 
 **Deploy flow**
-- Push to `master` → **staging auto-deploys** (GH Actions `deploy-staging.yml`). The built image is tagged `zana-ai-bot:staging`; `/app/VERSION` holds the commit SHA.
+- Push to `master` → **staging auto-deploys** (GH Actions `deploy-staging.yml`). The built image is tagged `zana-ai-bot:staging`; `/app/VERSION` holds the commit SHA. CI connects over generic SSH secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `PROJECT_PATH`, `DEPLOY_SSH_KEY`) — not cloud-specific.
+- ⚠️ **`deploy-staging.yml` also rebuilds `zana-webapp`, which runs `ENVIRONMENT=production` against the prod DB.** So a push to `master` ships the web app to *production* despite the workflow's name. Sequence any migration the web app depends on before the push.
 - **Prod is a manual promotion** (`deploy-prod.yml`, `workflow_dispatch`) that retags the staging image as `zana-ai-bot:prod` and recreates `zana-prod` + `zana-webapp`. It does **not** start the `langfuse` compose profile.
-- Manual prod promote (if `gh` unavailable), from `/opt/zana-bot`:
+- Manual prod promote (if `gh` unavailable), from `/opt/zana-bot/zana_planner`:
   ```bash
-  sudo docker tag zana-ai-bot:prod zana-ai-bot:prod-rollback   # save rollback first
-  sudo docker tag zana-ai-bot:staging zana-ai-bot:prod
-  sudo docker compose up -d --force-recreate --no-build zana-prod
+  docker tag zana-ai-bot:prod zana-ai-bot:prod-rollback   # save rollback first
+  docker tag zana-ai-bot:staging zana-ai-bot:prod
+  docker compose up -d --force-recreate --no-build zana-prod
   ```
   Rollback: retag `zana-ai-bot:prod-rollback` → `zana-ai-bot:prod` and recreate.
 
