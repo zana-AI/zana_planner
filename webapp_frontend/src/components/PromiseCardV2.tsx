@@ -83,6 +83,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
     planned_sessions_count = 0,
     next_session_start,
     daily_activity,
+    decks = [],
   } = data;
 
   const isCountBased = metric_type === 'count';
@@ -120,6 +121,26 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
 
   // Small chip only kicks in when there are no rows to nest but the report still
   // reports a session (rare fallback).
+  // At most two, and only for work that is actually waiting — a card carrying a
+  // row of buttons stops reading as "this one needs you".
+  const ctas: Array<{ key: string; label: string; to: string }> = [];
+  if (daily_activity?.status === 'due') {
+    ctas.push({
+      key: 'quiz',
+      label: "📝 Today's quiz →",
+      to: `/challenges/${daily_activity.challenge_id}/play`,
+    });
+  }
+  for (const deck of decks) {
+    const pending = deck.due + deck.new;
+    if (pending === 0 || ctas.length >= 2) continue;
+    ctas.push({
+      key: `deck-${deck.deck_id}`,
+      label: `🎴 ${deck.name} · ${pending} to review →`,
+      to: `/flashcards?deck=${encodeURIComponent(deck.deck_id)}&name=${encodeURIComponent(deck.name)}`,
+    });
+  }
+
   const sessionsLabel = !hasSessionRows && planned_sessions_count > 0
     ? (next_session_start
         ? formatNextSession(next_session_start)
@@ -196,37 +217,30 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
           })}
         </div>
       ) : null}
-      {daily_activity ? (
-        daily_activity.status === 'due' ? (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              navigate(`/challenges/${daily_activity.challenge_id}/play`);
-            }}
-            style={{
-              marginTop: 10,
-              width: '100%',
-              border: 0,
-              borderRadius: 10,
-              padding: '10px 12px',
-              background: '#5DCAA5',
-              color: '#06281F',
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: 'pointer',
-            }}
-          >
-            📝 Today's quiz →
-          </button>
-        ) : (
-          <div
-            style={{ marginTop: 10, fontSize: 12.5, color: 'var(--color-text-secondary, #8A94A6)', textAlign: 'right' }}
-            dir="ltr"
-          >
-            ✓ Quiz done{daily_activity.score != null ? ` · ${Math.round(daily_activity.score)}%` : ''}
-          </div>
-        )
+      {/* Call to action. A promise card that only reports a shortfall gives the
+          user nothing to press; these turn "0/7 check-ins, at risk" into a way
+          out of it. Vocabulary decks reuse the button the challenge quiz already
+          had rather than inventing a second style for the same idea. */}
+      {ctas.map((cta) => (
+        <button
+          key={cta.key}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            navigate(cta.to);
+          }}
+          className="pcard-cta"
+        >
+          {cta.label}
+        </button>
+      ))}
+      {daily_activity && daily_activity.status !== 'due' ? (
+        <div
+          style={{ marginTop: 10, fontSize: 12.5, color: 'var(--color-text-secondary, #8A94A6)', textAlign: 'right' }}
+          dir="ltr"
+        >
+          ✓ Quiz done{daily_activity.score != null ? ` · ${Math.round(daily_activity.score)}%` : ''}
+        </div>
       ) : null}
     </article>
   );

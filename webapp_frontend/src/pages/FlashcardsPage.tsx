@@ -163,6 +163,20 @@ function ReviewPane({
     );
   }
 
+  // Reverse direction (definition/translation -> word) is a *presentation*
+  // choice, not a second card: one card, one FSRS state, shown each way on
+  // alternating reviews. `reps` is stable until the card is rated, so the
+  // direction cannot flip while it is on screen.
+  //
+  // Grammar notes are never reversed — "here is the rule, name it" is not a
+  // useful recall target.
+  //
+  // Recognising a word and producing it are different skills, so a single
+  // stability value is a blend of the two. That is the accepted cost of not
+  // splitting them into separate cards.
+  const isReversed =
+    card.note_type !== 'grammar' && Boolean(card.fields.back) && card.reps % 2 === 1;
+
   return (
     <div className="fc-review">
       <div className="fc-progress">
@@ -176,15 +190,24 @@ function ReviewPane({
         role="button"
         tabIndex={0}
       >
+        {isReversed ? (
+          <span className="fc-direction">produce the word</span>
+        ) : null}
+
         <div className="fc-card-front" dir="auto">
-          <RichText text={card.fields.front} />
+          <RichText text={isReversed ? card.fields.back! : card.fields.front} />
         </div>
 
         {revealed ? (
           <div className="fc-card-back">
-            {card.fields.back ? (
+            {isReversed ? (
+              <p className="fc-definition" dir="auto"><RichText text={card.fields.front} /></p>
+            ) : card.fields.back ? (
               <p className="fc-definition" dir="auto"><RichText text={card.fields.back} /></p>
             ) : null}
+            {/* The example usually contains the target word, so it stays on the
+                answer side in both directions — as a prompt it would give the
+                answer away. */}
             {card.fields.example ? (
               <p className="fc-example" dir="auto"><RichText text={card.fields.example} /></p>
             ) : null}

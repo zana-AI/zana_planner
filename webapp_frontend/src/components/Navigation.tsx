@@ -31,13 +31,14 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { title: 'Challenges', subtitle: 'Join a challenge and play' };
   }
   if (pathname === '/flashcards') {
-    return { title: 'Study', subtitle: 'Spaced-repetition review', showBack: true, fallbackRoute: '/templates' };
+    return { title: 'Quiz', subtitle: 'Review what you are about to forget', showBack: true, fallbackRoute: '/dashboard' };
   }
   if (pathname.startsWith('/challenges/')) {
     return { title: 'Challenge', showBack: true, fallbackRoute: '/templates' };
   }
   if (pathname === '/my-contents') {
-    return { title: 'My Contents', subtitle: 'Saved videos, articles, and podcasts', showBack: true, fallbackRoute: '/templates' };
+    // A primary tab now, so no back button — there is nothing to go back to.
+    return { title: 'Content', subtitle: 'Videos, PDFs and podcasts you study from' };
   }
   if (pathname === '/admin') {
     return { title: 'Admin', showBack: true, fallbackRoute: '/dashboard' };
@@ -88,6 +89,7 @@ export function Navigation(_props: NavigationProps) {
     () => [
       { key: 'today', label: 'My Week', to: '/dashboard' },
       { key: 'community', label: 'Community', to: '/community' },
+      { key: 'content', label: 'Content', to: '/my-contents' },
       { key: 'explore', label: 'Explore', to: '/templates' },
     ],
     [],

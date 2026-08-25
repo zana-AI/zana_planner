@@ -38,7 +38,10 @@ class ReferenceIn(BaseModel):
 
 
 class NoteIn(BaseModel):
-    deck_path: str = "Français::B1"
+    # Must match the existing root exactly. A different spelling silently
+    # creates a second root, which is how "Français" and "French" once became
+    # two unrelated-looking decks.
+    deck_path: str = "French::B1"
     note_type: str = "vocab"
     # {front, back, note_fa, example, source_page, tags}
     fields: Dict[str, Any]
@@ -49,6 +52,10 @@ class NoteUpdateIn(BaseModel):
     fields: Dict[str, Any]
     note_type: Optional[str] = None
     deck_path: Optional[str] = None
+
+
+class DeckUpdateIn(BaseModel):
+    promise_id: Optional[str] = None
 
 
 class ReviewIn(BaseModel):
@@ -98,6 +105,25 @@ async def list_decks(user_id: int = Depends(get_current_user)):
 async def deck_summary(user_id: int = Depends(get_current_user)):
     """Top-level decks with due/new/total counts, for study entry points."""
     return flashcard_service.deck_summary(str(user_id))
+
+
+@router.patch("/decks/{deck_id}")
+async def update_deck(
+    deck_id: str,
+    payload: DeckUpdateIn,
+    user_id: int = Depends(get_current_user),
+):
+    """Attach a deck to a promise so it appears under Play, or detach it.
+
+    `promise_id: null` is a real instruction to detach, which is why the field
+    is optional-with-sentinel rather than merged only when truthy.
+    """
+    ok = flashcard_service.set_deck_promise(
+        str(user_id), deck_id, payload.promise_id
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    return {"deck_id": deck_id, "promise_id": payload.promise_id}
 
 
 @router.get("/notes")

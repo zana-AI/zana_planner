@@ -378,3 +378,19 @@
   .fc-rating-hint { display: none; }
   .fc-card-front { font-size: 1.3rem; }
 }
+
+/* Direction badge — shown only when a card is being asked in reverse
+   (definition/translation -> word), so it is never ambiguous which way the
+   prompt runs. */
+.fc-direction {
+  align-self: center;
+  margin-bottom: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--tg-theme-secondary-bg-color, rgba(127, 127, 127, 0.16));
+  color: var(--tg-theme-hint-color, #8b8b8b);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

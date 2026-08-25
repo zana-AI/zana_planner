@@ -185,6 +185,34 @@ def deck_summary(user_id: str) -> List[dict]:
         )
 
 
+def decks_by_promise(user_id: str) -> Dict[str, List[dict]]:
+    """{promise_uuid: [deck, ...]} for decks attached to a promise.
+
+    Feeds the Play launcher, which lists what a promise can actually be *done*
+    with. Decks with nothing to study are still returned — a promise showing
+    "all caught up" is more useful than one whose deck silently vanishes.
+    """
+    with get_db_session() as session:
+        rows = _decks.list_by_promise(session, user_id, datetime.now(timezone.utc))
+    grouped: Dict[str, List[dict]] = {}
+    for row in rows:
+        grouped.setdefault(row["promise_id"], []).append(
+            {
+                "deck_id": row["deck_id"],
+                "name": row["name"],
+                "due": int(row["due"]),
+                "new": int(row["new"]),
+                "total": int(row["total"]),
+            }
+        )
+    return grouped
+
+
+def set_deck_promise(user_id: str, deck_id: str, promise_id: Optional[str]) -> bool:
+    with get_db_session() as session:
+        return _decks.set_promise(session, user_id, deck_id, promise_id)
+
+
 def list_notes(
     user_id: str,
     deck_id: Optional[str] = None,

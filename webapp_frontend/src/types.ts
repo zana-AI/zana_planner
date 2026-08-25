@@ -83,7 +83,7 @@ export interface TelegramUser {
 
 // Session and navigation UI contracts
 export type SessionMode = 'telegram_mini_app' | 'browser_token' | 'unauthenticated';
-export type AppNavKey = 'today' | 'community' | 'explore';
+export type AppNavKey = 'today' | 'community' | 'explore' | 'content';
 
 export interface AppNavItem {
   key: AppNavKey;
@@ -172,6 +172,17 @@ export interface PromiseData {
   planned_sessions_count?: number;
   next_session_start?: string | null;
   daily_activity?: PromiseDailyActivity | null;
+  decks?: PromiseDeck[];
+}
+
+// A vocabulary deck owned by this promise. Counts cover the deck's whole
+// subtree, so a parent deck reports what its children hold.
+export interface PromiseDeck {
+  deck_id: string;
+  name: string;
+  due: number;
+  new: number;
+  total: number;
 }
 
 // Challenge quiz attached to a promise, surfaced on the My Week badge.

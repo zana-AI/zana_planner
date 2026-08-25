@@ -364,6 +364,19 @@ class ReportsService:
         except Exception:
             pass  # the daily-activity add-on must never break the weekly report
 
+        # Attach vocabulary decks owned by each promise. Play renders the same
+        # promise list as My Week, so its actions have to travel with the report
+        # rather than come from a second endpoint that could disagree with it.
+        try:
+            from services import flashcard_service
+            decks_by_uuid = flashcard_service.decks_by_promise(str(user_id))
+            for promise_id, promise_data in report_data.items():
+                p_uuid = promise_uuid_by_id.get(promise_id)
+                if p_uuid and p_uuid in decks_by_uuid:
+                    promise_data['decks'] = decks_by_uuid[p_uuid]
+        except Exception:
+            pass  # same rule: an add-on must never break the weekly report
+
         return report_data
 
     def get_promise_summary(self, user_id: int, promise_id: str, ref_time: datetime) -> Dict[str, Any]:

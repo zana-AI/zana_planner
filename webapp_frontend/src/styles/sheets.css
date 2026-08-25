@@ -254,6 +254,21 @@
 }
 
 .pcard:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+/* The one control on a promise card. Sized up from the app's normal button so a
+   card with work waiting reads differently from one that is merely informative. */
+.pcard-cta {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  text-align: center;
+}
+.pcard-cta:hover { filter: brightness(1.06); }
 .pcard.good { border-left: 2px solid var(--good-500); }
 .pcard.warn { border-left: 2px solid var(--warn-500); }
 .pcard.bad  { border-left: 2px solid var(--bad-500); }
@@ -1022,6 +1037,74 @@
   border-radius: var(--r-pill);
   background: var(--fg-on-accent);
 }
+
+/* Play launcher ---------------------------------------------------------- */
+/* Deliberately larger than the rest of the app's controls: the point of this
+   sheet is the impression that something important is waiting, which a normal
+   list row does not carry. */
+.play-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.play-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 104px;
+  padding: 16px 14px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  cursor: pointer;
+  color: inherit;
+}
+.play-tile.is-waiting { border-color: var(--accent); background: var(--accent-soft); }
+.play-tile-title {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  /* Long promise names must not push the tile out of the grid. */
+  overflow-wrap: anywhere;
+}
+.play-tile-meta { font-size: 12.5px; color: var(--fg-muted); }
+.play-tile.is-waiting .play-tile-meta { color: var(--accent); font-weight: 600; }
+
+.play-actions { display: grid; gap: 10px; }
+.play-action {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 15px 13px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  cursor: pointer;
+  color: inherit;
+}
+.play-action.is-waiting { border-color: var(--accent); background: var(--accent-soft); }
+.play-action-icon { display: grid; place-items: center; color: var(--fg-muted); }
+.play-action.is-waiting .play-action-icon { color: var(--accent); }
+.play-action-body { display: grid; gap: 3px; min-width: 0; }
+.play-action-label { font-size: 15.5px; font-weight: 650; overflow-wrap: anywhere; }
+.play-action-detail { font-size: 12.5px; color: var(--fg-muted); }
+
+.play-back {
+  margin-top: 14px;
+  width: 100%;
+  padding: 11px;
+  background: none;
+  border: 0;
+  color: var(--fg-muted);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.play-empty { color: var(--fg-muted); font-size: 14px; margin: 4px 0 0; }
 
 .sched-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .sched-datetime-row {

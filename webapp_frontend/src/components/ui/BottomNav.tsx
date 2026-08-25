@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Compass, Home, Users } from 'lucide-react';
+import { Compass, Home, Library, Users } from 'lucide-react';
 import type { AppNavItem } from '../../types';
 
 interface BottomNavProps {
@@ -13,6 +13,7 @@ export function BottomNav({ items }: BottomNavProps) {
   const getIcon = (key: AppNavItem['key']) => {
     if (key === 'today') return <Home size={18} />;
     if (key === 'community') return <Users size={18} />;
+    if (key === 'content') return <Library size={18} />;
     return <Compass size={18} />;
   };
 

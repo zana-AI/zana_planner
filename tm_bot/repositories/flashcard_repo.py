@@ -65,7 +65,7 @@ class FlashcardDeckRepository:
     def get(self, session: Session, deck_id: str) -> Optional[dict]:
         row = session.execute(
             text(
-                "SELECT deck_id, user_id, name, parent_deck_id "
+                "SELECT deck_id, user_id, name, parent_deck_id, promise_id "
                 "FROM flashcard_deck WHERE deck_id = :d"
             ),
             {"d": deck_id},
@@ -75,7 +75,7 @@ class FlashcardDeckRepository:
     def list_for_user(self, session: Session, user_id: str) -> List[dict]:
         rows = session.execute(
             text(
-                "SELECT deck_id, user_id, name, parent_deck_id "
+                "SELECT deck_id, user_id, name, parent_deck_id, promise_id "
                 "FROM flashcard_deck WHERE user_id = :u ORDER BY name"
             ),
             {"u": str(user_id)},
@@ -87,7 +87,7 @@ class FlashcardDeckRepository:
     ) -> List[dict]:
         """Top-level decks with counts aggregated over their whole subtree.
 
-        Notes always hang off leaf decks ("Français::B1::Édito B1 Livre"), so a
+        Notes always hang off leaf decks ("French::B1::Édito B1 Livre"), so a
         root's totals have to be summed recursively — counting only its direct
         notes would report zero for every root.
         """
@@ -122,6 +122,73 @@ class FlashcardDeckRepository:
             {"u": str(user_id), "now": now},
         ).mappings().all()
         return [dict(r) for r in rows]
+
+    def list_by_promise(
+        self, session: Session, user_id: str, now: datetime
+    ) -> List[dict]:
+        """Decks attached to a promise, with counts over each deck's subtree.
+
+        Same recursive shape as `list_roots_with_counts`, but rooted at decks
+        carrying a `promise_id` instead of at parentless decks — a promise can
+        own a mid-tree deck ("French::B1") without owning its siblings.
+        """
+        rows = session.execute(
+            text(
+                """
+                WITH RECURSIVE tree AS (
+                    SELECT deck_id AS root_id, deck_id
+                    FROM flashcard_deck
+                    WHERE user_id = :u AND promise_id IS NOT NULL
+                  UNION ALL
+                    SELECT t.root_id, d.deck_id
+                    FROM flashcard_deck d JOIN tree t ON d.parent_deck_id = t.deck_id
+                )
+                SELECT r.deck_id, r.name, r.promise_id,
+                       count(c.card_id) AS total,
+                       count(c.card_id) FILTER (
+                           WHERE c.suspended = false AND c.reps > 0 AND c.due <= :now
+                       ) AS due,
+                       count(c.card_id) FILTER (
+                           WHERE c.suspended = false AND c.reps = 0
+                       ) AS new
+                FROM flashcard_deck r
+                JOIN tree t ON t.root_id = r.deck_id
+                LEFT JOIN flashcard_note n ON n.deck_id = t.deck_id
+                LEFT JOIN flashcard_card c ON c.note_id = n.note_id
+                WHERE r.user_id = :u AND r.promise_id IS NOT NULL
+                GROUP BY r.deck_id, r.name, r.promise_id
+                ORDER BY r.name
+                """
+            ),
+            {"u": str(user_id), "now": now},
+        ).mappings().all()
+        return [dict(r) for r in rows]
+
+    def set_promise(
+        self, session: Session, user_id: str, deck_id: str, promise_id: Optional[str]
+    ) -> bool:
+        """Attach a deck to a promise, or detach it when `promise_id` is None."""
+        result = session.execute(
+            text(
+                "UPDATE flashcard_deck SET promise_id = :p "
+                "WHERE deck_id = :d AND user_id = :u"
+            ),
+            {"p": promise_id, "d": deck_id, "u": str(user_id)},
+        )
+        return result.rowcount > 0
+
+    def reparent(
+        self, session: Session, user_id: str, deck_id: str, parent_deck_id: Optional[str]
+    ) -> bool:
+        """Move a deck under a different parent. Notes and cards follow untouched."""
+        result = session.execute(
+            text(
+                "UPDATE flashcard_deck SET parent_deck_id = :p "
+                "WHERE deck_id = :d AND user_id = :u"
+            ),
+            {"p": parent_deck_id, "d": deck_id, "u": str(user_id)},
+        )
+        return result.rowcount > 0
 
     def _find_child(
         self, session: Session, user_id: str, name: str, parent_id: Optional[str]

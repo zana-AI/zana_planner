@@ -85,11 +85,12 @@ SELECT * FROM flashcard_note WHERE deck_id IN (SELECT deck_id FROM sub);
 
 ## 3. The tables
 
-Created by migration `032_flashcards_srs`. Prod is at that revision.
+Created by migration `032_flashcards_srs`, extended by `033_flashcard_deck_promise`.
+Prod is at `033`.
 
 | Table | Holds |
 |---|---|
-| `flashcard_deck` | nested decks (`parent_deck_id`, self-referencing) |
+| `flashcard_deck` | nested decks (`parent_deck_id`, self-referencing) + `promise_id` |
 | `flashcard_note` | the authored content — **this is what content work edits** |
 | `flashcard_note_reference` | where a card came from (FKs into `content*`) |
 | `flashcard_card` | FSRS scheduling state — **do not hand-edit** |
@@ -266,13 +267,42 @@ database directly. Only code changes need a deploy (push to `master`; note that
 this rebuilds `zana-webapp` with `ENVIRONMENT=production`, so a push to master is
 a production web release).
 
-The app: `https://xaana.club` → **Explore → Study → French**.
+**Migrations do not run on deploy.** Apply them yourself, before the code that
+needs them lands — new code against an old schema is how issue 58 happened:
+
+```bash
+ssh root@169.58.186.195 "docker exec -w /app/tm_bot/db zana-webapp alembic upgrade head"
+```
+
+The app: `https://xaana.club` → **Play → French**, or **Explore → Quiz → French**.
+
+---
+
+## 6b. Decks and promises
+
+There is exactly **one root deck, `French`**, holding `B1`, `B2.1` and
+`Actualités`. It carries `promise_id` = P22 (`French with Atena`), which is what
+puts it under Play and on the promise card.
+
+Two rules keep it that way:
+
+- **Never invent a root name.** `get_or_create_path` creates whatever it is
+  given, so `Français::B1` silently builds a second tree next to `French::B1`.
+  That is exactly how the deck list came to show "Français (26)" and
+  "French (105)" as if they were unrelated. Match the existing root exactly.
+- **Attach new roots to a promise**, or they are reachable only from Explore:
+
+```bash
+curl -X PATCH .../api/flashcards/decks/<deck_id> -d '{"promise_id": "<promise_uuid>"}'
+```
 
 ---
 
 ## 7. Related
 
 - `tm_bot/db/alembic/versions/032_flashcards_srs.py` — schema + design rationale
+- `tm_bot/db/alembic/versions/033_flashcard_deck_promise.py` — the deck→promise edge
+- `webapp_frontend/src/components/sheets/PlaySheet.tsx` — the Play launcher
 - `tm_bot/repositories/flashcard_repo.py` — decks, notes, references
 - `tm_bot/repositories/flashcard_review_repo.py` — cards, review log
 - `tm_bot/services/flashcard_service.py` — the only place that opens sessions for these

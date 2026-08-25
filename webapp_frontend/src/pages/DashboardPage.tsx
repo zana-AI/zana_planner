@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Timer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Plus } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
@@ -14,6 +14,7 @@ import { EditPromiseSheet } from '../components/sheets/EditPromiseSheet';
 import { FocusPickerSheet } from '../components/sheets/FocusPickerSheet';
 import { FocusSheet } from '../components/sheets/FocusSheet';
 import { LogTimeSheet } from '../components/sheets/LogTimeSheet';
+import { PlaySheet } from '../components/sheets/PlaySheet';
 import { PromiseDetailSheet } from '../components/sheets/PromiseDetailSheet';
 import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
 import { Toast } from '../components/ui/Toast';
@@ -66,6 +67,7 @@ export function DashboardPage() {
   const [checkinPromise, setCheckinPromise] = useState<ActivePromise | null>(null);
   const [schedulePromise, setSchedulePromise] = useState<ActivePromise | null>(null);
   const [focusPickOpen, setFocusPickOpen] = useState(false);
+  const [playOpen, setPlayOpen] = useState(false);
   const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
   const [showOlderPromises, setShowOlderPromises] = useState(false);
   // Today's planned sessions grouped by promise id, rendered inside each promise card.
@@ -421,6 +423,14 @@ export function DashboardPage() {
       .map(([id, data]) => ({ id, data }));
   }, [currentReportData]);
 
+  // Play reads the same report My Week renders, so the launcher can never show
+  // a promise the page below it disagrees about. It decides which of those are
+  // actionable itself — see PlaySheet.
+  const playPromises = useMemo(() => {
+    if (!currentReportData) return [] as ActivePromise[];
+    return Object.entries(currentReportData.promises).map(([id, data]) => ({ id, data }));
+  }, [currentReportData]);
+
   const handleOpenDetail = useCallback((id: string, data: PromiseData) => {
     setDetailPromise({ id, data });
   }, []);
@@ -581,14 +591,17 @@ export function DashboardPage() {
             </div>
             <div className="row overall-actions">
               <span className="value">{Math.round(overallProgress.cappedPct)}%</span>
-              {focusCandidates.length > 0 ? (
+              {/* One launcher for everything. Focus used to have its own button
+                  here; it is now one of the actions Play offers, so there is a
+                  single answer to "what do I do now?". */}
+              {playPromises.length > 0 ? (
                 <button
                   type="button"
-                  className="btn btn-sm btn-secondary"
-                  onClick={() => setFocusPickOpen(true)}
+                  className="btn btn-sm btn-primary"
+                  onClick={() => setPlayOpen(true)}
                 >
-                  <Timer size={14} aria-hidden />
-                  Start focus
+                  <Play size={14} aria-hidden />
+                  Play
                 </button>
               ) : null}
             </div>
@@ -924,6 +937,20 @@ export function DashboardPage() {
         weekDays={weekDays}
         onClose={() => setSchedulePromise(null)}
         onSuccess={handleSheetSuccess}
+      />
+
+      <PlaySheet
+        open={playOpen}
+        promises={playPromises}
+        onClose={() => setPlayOpen(false)}
+        onStartFocus={(id, text) => {
+          setPlayOpen(false);
+          setFocusPromise({ id, data: { text } as PromiseData });
+        }}
+        onCheckIn={(id, data) => {
+          setPlayOpen(false);
+          setCheckinPromise({ id, data });
+        }}
       />
 
       <FocusPickerSheet

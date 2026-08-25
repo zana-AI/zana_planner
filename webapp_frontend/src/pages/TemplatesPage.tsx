@@ -10,9 +10,12 @@ import type { AvatarStackUser } from '../components/ui/AvatarStack';
 
 type TemplateUser = AvatarStackUser;
 
+// Everything here is a quiz — the badge says which *kind*, so "Quiz" on its own
+// would carry no information. Cohort quizzes release daily; vocab quizzes come
+// back when you are about to forget them.
 const CHALLENGE_ACTIVITY_LABEL: Record<string, string> = {
-  flashcard: 'Quiz',
-  multiple_choice: 'Quiz',
+  flashcard: 'Daily',
+  multiple_choice: 'Daily',
 };
 
 export function TemplatesPage() {
@@ -131,7 +134,7 @@ export function TemplatesPage() {
               margin: '0 0 10px',
             }}
           >
-            Study
+            Quiz
           </h2>
           <div style={{ display: 'grid', gap: 10 }}>
             {studyDecks.map((deck) => (
@@ -182,7 +185,7 @@ export function TemplatesPage() {
                     }}
                   >
                     <GraduationCap size={12} />
-                    Flashcards
+                    Vocab
                   </span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--color-text-secondary, #B6BECC)' }}>
