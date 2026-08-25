@@ -413,10 +413,17 @@ class ChallengesRepository:
         return [{"rank": i + 1, **e} for i, e in enumerate(entries[:limit])]
 
     def daily_activity_for_promises(self, user_id: int, promise_uuids: List[str]) -> dict:
-        """For challenge-backed promises, return {promise_uuid: daily_activity} for the My Week badge.
+        """For challenge-backed promises, return {promise_uuid: [activity, ...]}.
 
-        daily_activity = { type:'quiz', challenge_id, deck_id|None, status:'due'|'done', score|None }.
-        'due' means there's an un-played released deck today; 'done' carries today's score.
+        activity = { type:'quiz', challenge_id, title, deck_id|None,
+                     status:'due'|'done', score|None }.
+        'due' means there's an un-played released deck today; 'done' carries
+        today's score.
+
+        A promise can back **several** challenges — consolidating every French
+        course under one promise is the whole point of the promise being the
+        organising unit — so this returns a list per promise. Keying a single
+        activity by promise_uuid silently dropped all but the last one.
         """
         if not promise_uuids:
             return {}
@@ -426,9 +433,12 @@ class ChallengesRepository:
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT cp.promise_uuid, cp.challenge_id
+                    SELECT cp.promise_uuid, cp.challenge_id, c.title
                     FROM challenge_participants cp
+                    JOIN challenges c ON c.challenge_id = cp.challenge_id
                     WHERE cp.user_id = :uid AND cp.promise_uuid = ANY(:uuids)
+                      AND c.status = 'active'
+                    ORDER BY c.title
                 """),
                 {"uid": user, "uuids": uuids},
             ).mappings().fetchall()
@@ -440,6 +450,9 @@ class ChallengesRepository:
                 """),
                 {"uid": user, "today": today, "uuids": uuids},
             ).mappings().fetchall()
+        # Check-ins are recorded against the promise, not the challenge, so with
+        # several challenges on one promise today's score cannot be attributed to
+        # a particular one. It is reported on each; the number is the promise's.
         today_score = {r["promise_uuid"]: r["score"] for r in score_rows}
 
         out: dict = {}
@@ -447,11 +460,14 @@ class ChallengesRepository:
             puuid, cid = r["promise_uuid"], r["challenge_id"]
             deck = self.get_due_deck(cid, user_id)
             if deck:
-                out[puuid] = {"type": "quiz", "challenge_id": cid, "deck_id": deck["deck_id"], "status": "due", "score": None}
+                activity = {"type": "quiz", "challenge_id": cid, "title": r["title"],
+                            "deck_id": deck["deck_id"], "status": "due", "score": None}
             else:
                 s = today_score.get(puuid)
-                out[puuid] = {"type": "quiz", "challenge_id": cid, "deck_id": None, "status": "done",
-                              "score": float(s) if s is not None else None}
+                activity = {"type": "quiz", "challenge_id": cid, "title": r["title"],
+                            "deck_id": None, "status": "done",
+                            "score": float(s) if s is not None else None}
+            out.setdefault(puuid, []).append(activity)
         return out
 
     # ------------------------------------------------------------------

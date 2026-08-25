@@ -359,8 +359,16 @@ class ReportsService:
             activity_by_uuid = ChallengesRepository().daily_activity_for_promises(user_id, uuids)
             for promise_id, promise_data in report_data.items():
                 p_uuid = promise_uuid_by_id.get(promise_id)
-                if p_uuid and p_uuid in activity_by_uuid:
-                    promise_data['daily_activity'] = activity_by_uuid[p_uuid]
+                activities = activity_by_uuid.get(p_uuid) if p_uuid else None
+                if not activities:
+                    continue
+                promise_data['quizzes'] = activities
+                # `daily_activity` stays singular for existing consumers. A due
+                # quiz wins over a finished one, so a promise with several
+                # challenges still reports as "something to do".
+                promise_data['daily_activity'] = next(
+                    (a for a in activities if a['status'] == 'due'), activities[0]
+                )
         except Exception:
             pass  # the daily-activity add-on must never break the weekly report
 

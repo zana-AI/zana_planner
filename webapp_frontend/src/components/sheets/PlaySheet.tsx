@@ -56,15 +56,20 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
       const { id, data } = item;
       const actions: PlayAction[] = [];
 
-      if (data.daily_activity?.status === 'due') {
-        const challengeId = data.daily_activity.challenge_id;
+      // Every challenge on this promise, not just one — a promise that owns two
+      // courses has to offer both.
+      const quizzes = data.quizzes ?? (data.daily_activity ? [data.daily_activity] : []);
+      for (const quiz of quizzes) {
+        const due = quiz.status === 'due';
         actions.push({
-          key: `quiz-${challengeId}`,
-          label: "Today's quiz",
-          detail: 'New questions today',
+          key: `quiz-${quiz.challenge_id}`,
+          label: quiz.title || "Today's quiz",
+          detail: due
+            ? 'New questions today'
+            : `Done today${quiz.score != null ? ` · ${Math.round(quiz.score)}%` : ''}`,
           icon: <Layers size={18} aria-hidden />,
-          waiting: true,
-          run: () => go(`/challenges/${challengeId}/play`),
+          waiting: due,
+          run: () => go(`/challenges/${quiz.challenge_id}/play`),
         });
       }
 

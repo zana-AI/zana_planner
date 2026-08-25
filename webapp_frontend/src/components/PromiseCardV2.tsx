@@ -83,6 +83,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
     planned_sessions_count = 0,
     next_session_start,
     daily_activity,
+    quizzes,
     decks = [],
   } = data;
 
@@ -124,11 +125,18 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
   // At most two, and only for work that is actually waiting — a card carrying a
   // row of buttons stops reading as "this one needs you".
   const ctas: Array<{ key: string; label: string; to: string }> = [];
-  if (daily_activity?.status === 'due') {
+  const dueQuizzes = (quizzes ?? (daily_activity ? [daily_activity] : []))
+    .filter((q) => q.status === 'due');
+  for (const quiz of dueQuizzes) {
+    if (ctas.length >= 2) break;
     ctas.push({
-      key: 'quiz',
-      label: "📝 Today's quiz →",
-      to: `/challenges/${daily_activity.challenge_id}/play`,
+      key: `quiz-${quiz.challenge_id}`,
+      // Once a promise owns several courses, "Today's quiz" is ambiguous — say
+      // which one. With only one, the generic label reads better.
+      label: dueQuizzes.length > 1 && quiz.title
+        ? `📝 ${quiz.title} →`
+        : "📝 Today's quiz →",
+      to: `/challenges/${quiz.challenge_id}/play`,
     });
   }
   for (const deck of decks) {

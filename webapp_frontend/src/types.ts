@@ -171,7 +171,10 @@ export interface PromiseData {
   end_date?: string; // ISO date string (YYYY-MM-DD)
   planned_sessions_count?: number;
   next_session_start?: string | null;
+  /** The due one if any, else the first — kept singular for older consumers. */
   daily_activity?: PromiseDailyActivity | null;
+  /** Every challenge backing this promise. A promise can own several. */
+  quizzes?: PromiseDailyActivity[];
   decks?: PromiseDeck[];
 }
 
@@ -189,6 +192,8 @@ export interface PromiseDeck {
 export interface PromiseDailyActivity {
   type: 'quiz';
   challenge_id: string;
+  /** The challenge's own name — needed once a promise carries more than one. */
+  title?: string;
   deck_id?: string | null;
   status: 'due' | 'done';
   score?: number | null;
