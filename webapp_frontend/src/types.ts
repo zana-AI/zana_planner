@@ -142,6 +142,9 @@ export interface ChallengeLeaderboardEntry {
   rank: number;
   user_id: string;
   name: string;
+  /** Credit-minutes earned in the window. The board is ranked by this. */
+  credits?: number;
+  /** Average accuracy — the tie-break, not the ranking. */
   score_percent: number;
   streak: number;
   active_days: number;

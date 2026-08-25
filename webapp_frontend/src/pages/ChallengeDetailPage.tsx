@@ -213,8 +213,11 @@ export function ChallengeDetailPage() {
                   </span>
                   {e.name}
                 </span>
+                {/* Credits lead because the board is ranked by them; showing
+                    accuracy first would look like the order was wrong. */}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: textSecondary }}>
-                  {e.score_percent}% · {e.streak}🔥
+                  <span style={{ color: accent, fontWeight: 700 }}>⚡{Math.round(e.credits ?? 0)}</span>
+                  · {e.score_percent}% · {e.streak}🔥
                 </span>
               </div>
             ))}
