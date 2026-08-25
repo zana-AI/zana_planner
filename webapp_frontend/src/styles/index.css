@@ -53,7 +53,6 @@ select:focus {
 /* PDF reader */
 .pdf-reader-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 16px;
   min-height: calc(100dvh - 72px);
   padding: 16px;
@@ -89,10 +88,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 
 .pdf-reader-page--fullscreen .pdf-reader-tools {
   display: none;
-}
-
-.pdf-reader-page--fullscreen .pdf-reader-canvas-shell {
-  height: calc(100dvh - 45px);
 }
 
 .pdf-reader-page--fullscreen .pdf-reader-toolbar {
@@ -142,7 +137,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 .pdf-reader-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-height: 44px;
   padding: 6px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
@@ -184,7 +178,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 .pdf-reader-canvas-shell {
   position: relative;
   width: 100%;
-  height: calc(100dvh - 120px);
   overflow: auto;
   background: #1f1f1f;
   overscroll-behavior: contain;
@@ -559,11 +552,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
     order: 1;
   }
 
-  .pdf-reader-canvas-shell {
-    min-height: 58dvh;
-    height: 58dvh;
-  }
-
   .pdf-reader-toolbar {
     gap: 6px;
     padding-inline: 6px;
@@ -585,6 +573,14 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   }
 }
 
+/* ⚠ The .pdf-reader-* rules below are TOP LEVEL, not inside the
+   @media (max-width: 767px) block that ends just above. Media queries add no
+   specificity, so these override the mobile rules too — .pdf-reader-toolbar
+   gap is 7px on phones, not the 6px declared in the media block. Two known
+   consequences are tracked in #111; do not merge these into the base rules
+   without re-checking the cascade, because source order is load-bearing here
+   (.pdf-reader-page{position:relative} below currently beats
+   .pdf-reader-page--fullscreen{position:fixed} for the same reason). */
 .pdf-reader-page {
   grid-template-columns: minmax(0, 1fr);
   position: relative;
