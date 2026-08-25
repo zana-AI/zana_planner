@@ -11,7 +11,6 @@ import { FocusBar } from '../components/FocusBar';
 import { CreatePromiseModal } from '../components/CreatePromiseModal';
 import { CheckinSheet } from '../components/sheets/CheckinSheet';
 import { EditPromiseSheet } from '../components/sheets/EditPromiseSheet';
-import { FocusPickerSheet } from '../components/sheets/FocusPickerSheet';
 import { FocusSheet } from '../components/sheets/FocusSheet';
 import { LogTimeSheet } from '../components/sheets/LogTimeSheet';
 import { PlaySheet } from '../components/sheets/PlaySheet';
@@ -66,7 +65,6 @@ export function DashboardPage() {
   const [logPromise, setLogPromise] = useState<ActivePromise | null>(null);
   const [checkinPromise, setCheckinPromise] = useState<ActivePromise | null>(null);
   const [schedulePromise, setSchedulePromise] = useState<ActivePromise | null>(null);
-  const [focusPickOpen, setFocusPickOpen] = useState(false);
   const [playOpen, setPlayOpen] = useState(false);
   const [focusPromise, setFocusPromise] = useState<ActivePromise | null>(null);
   const [showOlderPromises, setShowOlderPromises] = useState(false);
@@ -415,13 +413,6 @@ export function DashboardPage() {
   const distractionCount = distractionsPromisesData
     ? Object.keys(distractionsPromisesData.promises).length
     : 0;
-
-  const focusCandidates = useMemo(() => {
-    if (!currentReportData) return [] as ActivePromise[];
-    return Object.entries(currentReportData.promises)
-      .filter(([, data]) => data.metric_type !== 'count' && (data.hours_promised || 0) > 0)
-      .map(([id, data]) => ({ id, data }));
-  }, [currentReportData]);
 
   // Play reads the same report My Week renders, so the launcher can never show
   // a promise the page below it disagrees about. It decides which of those are
@@ -950,16 +941,6 @@ export function DashboardPage() {
         onCheckIn={(id, data) => {
           setPlayOpen(false);
           setCheckinPromise({ id, data });
-        }}
-      />
-
-      <FocusPickerSheet
-        open={focusPickOpen}
-        promises={focusCandidates}
-        onClose={() => setFocusPickOpen(false)}
-        onStart={(id, text) => {
-          setFocusPickOpen(false);
-          setFocusPromise({ id, data: { text } as PromiseData });
         }}
       />
 
