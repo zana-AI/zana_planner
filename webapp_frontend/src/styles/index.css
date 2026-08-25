@@ -53,9 +53,8 @@ select:focus {
 /* PDF reader */
 .pdf-reader-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 16px;
-  min-height: calc(100vh - 72px);
+  min-height: calc(100dvh - 72px);
   padding: 16px;
   padding-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
 }
@@ -91,10 +90,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   display: none;
 }
 
-.pdf-reader-page--fullscreen .pdf-reader-canvas-shell {
-  height: calc(100dvh - 45px);
-}
-
 .pdf-reader-page--fullscreen .pdf-reader-toolbar {
   position: absolute;
   top: max(8px, env(safe-area-inset-top));
@@ -102,7 +97,9 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   right: max(8px, env(safe-area-inset-right));
   z-index: 4;
   border: 1px solid rgba(237, 243, 255, 0.12);
-  border-radius: 999px;
+  /* 22px matches the 44px single-row height, so this still reads as a pill,
+     but degrades to a rounded rectangle when the toolbar wraps (#111). */
+  border-radius: 22px;
   background: rgba(5, 7, 14, 0.72);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
   backdrop-filter: blur(14px);
@@ -140,7 +137,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 .pdf-reader-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-height: 44px;
   padding: 6px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
@@ -182,7 +178,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 .pdf-reader-canvas-shell {
   position: relative;
   width: 100%;
-  height: calc(100vh - 120px);
   overflow: auto;
   background: #1f1f1f;
   overscroll-behavior: contain;
@@ -553,13 +548,8 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 
   .pdf-reader-viewer {
     width: 100%;
-    min-height: 58vh;
+    min-height: 58dvh;
     order: 1;
-  }
-
-  .pdf-reader-canvas-shell {
-    min-height: 58vh;
-    height: 58vh;
   }
 
   .pdf-reader-toolbar {
@@ -583,19 +573,37 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   }
 }
 
+/* ⚠ The .pdf-reader-* rules below are TOP LEVEL, not inside the
+   @media (max-width: 767px) block that ends just above. Media queries add no
+   specificity, so these override the mobile rules too — .pdf-reader-toolbar
+   gap is 7px on phones, not the 6px declared in the media block. Two known
+   consequences are tracked in #111; do not merge these into the base rules
+   without re-checking the cascade, because source order is load-bearing here
+   (.pdf-reader-page{position:relative} below currently beats
+   .pdf-reader-page--fullscreen{position:fixed} for the same reason). */
 .pdf-reader-page {
   grid-template-columns: minmax(0, 1fr);
   position: relative;
 }
 
+/* The toolbar carries ~11 controls and does not fit a phone width. It used to
+   scroll horizontally with the scrollbar explicitly hidden, so the controls
+   that overflowed were unreachable and gave no hint they existed (#111).
+   Wrapping instead keeps every control reachable without a scroll gesture; the
+   spacer takes the rest of its row, which groups page-nav and tools onto
+   separate rows on narrow screens. overflow-x is kept only as a fallback for a
+   single item wider than the toolbar. */
 .pdf-reader-toolbar {
   gap: 7px;
+  flex-wrap: wrap;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
-.pdf-reader-toolbar::-webkit-scrollbar {
-  display: none;
+/* Controls keep their intended size instead of being squeezed thinner as the
+   toolbar fills up. */
+.pdf-reader-toolbar > *:not(.pdf-reader-toolbar-spacer) {
+  flex: 0 0 auto;
 }
 
 .pdf-reader-icon-btn--with-badge {
@@ -667,7 +675,7 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 }
 
 .pdf-reader-canvas-shell {
-  height: calc(100vh - 172px);
+  height: calc(100dvh - 172px);
 }
 
 .pdf-reader-highlights-drawer {
@@ -799,8 +807,8 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 
 @media (max-width: 767px) {
   .pdf-reader-canvas-shell {
-    min-height: 58vh;
-    height: 58vh;
+    min-height: 58dvh;
+    height: 58dvh;
   }
 
   .pdf-reader-timeline-meta {
@@ -812,7 +820,7 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   .pdf-reader-highlights-drawer {
     position: fixed;
     inset: auto 10px calc(var(--bottom-nav-height) + 10px + env(safe-area-inset-bottom)) 10px;
-    max-height: 64vh;
+    max-height: 64dvh;
     width: auto;
   }
 }
