@@ -25,9 +25,11 @@ const TYPE_FILTERS: { key: TypeFilter; label: string }[] = [
   { key: 'text', label: 'Articles' },
 ];
 
+// "Recently added" leads because it is the default: the library is somewhere you
+// put things, and the thing you just put in should be the thing you see.
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: 'recent', label: 'Recently read' },
   { key: 'added', label: 'Recently added' },
+  { key: 'recent', label: 'Recently read' },
   { key: 'progress', label: 'Most progress' },
   { key: 'title', label: 'Title A-Z' },
 ];
@@ -94,7 +96,8 @@ export function MyContentsPage() {
   // a filter that hides what you just saved reads as the save having failed.
   const [status, setStatus] = useState<StatusFilter>('all');
   const [contentType, setContentType] = useState<TypeFilter>('all');
-  const [sort, setSort] = useState<SortKey>('recent');
+  const [sort, setSort] = useState<SortKey>('added');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -209,15 +212,22 @@ export function MyContentsPage() {
     }
   };
 
+  // Counted against the defaults, so landing on the page shows zero active
+  // filters rather than one.
   const activeFilterCount = useMemo(() => {
-    return [status !== 'in_progress', contentType !== 'all', Boolean(debouncedQuery)].filter(Boolean).length;
-  }, [contentType, debouncedQuery, status]);
+    return [
+      status !== 'all',
+      contentType !== 'all',
+      sort !== 'added',
+      Boolean(debouncedQuery),
+    ].filter(Boolean).length;
+  }, [contentType, debouncedQuery, sort, status]);
 
   const resetFilters = () => {
-    setStatus('in_progress');
+    setStatus('all');
     setContentType('all');
     setQuery('');
-    setSort('recent');
+    setSort('added');
   };
 
   return (
@@ -238,6 +248,11 @@ export function MyContentsPage() {
         </div>
         {addError && <div className="content-library-error">{addError}</div>}
 
+        {/* Search plus one toggle. Status chips, type chips and sort used to sit
+            in three permanent rows above the library, so the content itself
+            started below the fold — on a phone the filters outweighed what they
+            filtered. They now open on demand and the button carries a count, so
+            an active filter is still visible while collapsed. */}
         <div className="content-library-search-row">
           <label className="content-library-search">
             <Search size={16} />
@@ -248,55 +263,71 @@ export function MyContentsPage() {
               placeholder="Search your library"
             />
           </label>
-          <label className="content-library-sort">
-            <span>Sort</span>
-            <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.key} value={option.key}>{option.label}</option>
+          <button
+            type="button"
+            className={`content-library-filter-toggle${filtersOpen ? ' is-open' : ''}`}
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-expanded={filtersOpen}
+          >
+            <Filter size={15} aria-hidden />
+            <span>Filters</span>
+            {activeFilterCount > 0 && (
+              <span className="content-library-filter-count">{activeFilterCount}</span>
+            )}
+          </button>
+        </div>
+
+        {filtersOpen && (
+          <div className="content-library-filter-panel">
+            <div className="content-library-filters" aria-label="Library status filters">
+              {STATUS_FILTERS.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  className={status === filter.key ? 'is-active' : ''}
+                  onClick={() => setStatus(filter.key)}
+                >
+                  {filter.label}
+                  {filter.key !== 'all' && facets.status?.[filter.key] != null && (
+                    <span>{facets.status[filter.key]}</span>
+                  )}
+                </button>
               ))}
-            </select>
-          </label>
-        </div>
+            </div>
 
-        <div className="content-library-filters" aria-label="Library status filters">
-          {STATUS_FILTERS.map((filter) => (
-            <button
-              key={filter.key}
-              type="button"
-              className={status === filter.key ? 'is-active' : ''}
-              onClick={() => setStatus(filter.key)}
-            >
-              {filter.label}
-              {filter.key !== 'all' && facets.status?.[filter.key] != null && (
-                <span>{facets.status[filter.key]}</span>
+            <div className="content-library-filters" aria-label="Library type filters">
+              {TYPE_FILTERS.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  className={contentType === filter.key ? 'is-active' : ''}
+                  onClick={() => setContentType(filter.key)}
+                >
+                  {filter.label}
+                  {filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
+                    <span>{facets.content_type[filter.key]}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="content-library-filter-foot">
+              <label className="content-library-sort">
+                <span>Sort</span>
+                <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              {activeFilterCount > 0 && (
+                <button className="content-library-clear" type="button" onClick={resetFilters}>
+                  Clear
+                </button>
               )}
-            </button>
-          ))}
-        </div>
-
-        <div className="content-library-type-row">
-          <Filter size={15} />
-          <div className="content-library-type-chips">
-            {TYPE_FILTERS.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                className={contentType === filter.key ? 'is-active' : ''}
-                onClick={() => setContentType(filter.key)}
-              >
-                {filter.label}
-                {filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
-                  <span>{facets.content_type[filter.key]}</span>
-                )}
-              </button>
-            ))}
+            </div>
           </div>
-          {activeFilterCount > 0 && (
-            <button className="content-library-clear" type="button" onClick={resetFilters}>
-              Clear
-            </button>
-          )}
-        </div>
+        )}
       </section>
 
       {error && <div className="content-library-error">{error}</div>}

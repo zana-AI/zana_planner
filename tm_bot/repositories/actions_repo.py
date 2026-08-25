@@ -155,12 +155,29 @@ class ActionsRepository:
                 },
             )
 
-    def append_scored_checkin(self, user_id: int, promise_uuid: str, score: float, notes: str | None = None) -> None:
+    def append_scored_checkin(
+        self,
+        user_id: int,
+        promise_uuid: str,
+        score: float,
+        notes: str | None = None,
+        challenge_id: str | None = None,
+        time_spent_hours: float = 0.0,
+    ) -> None:
         """Record a non-binary scored check-in for today (idempotent — replaces any existing one).
 
         Used by challenge daily quizzes: one check-in per day carries the day's score (0..100),
         which drives both the streak (activity) and the leaderboard (how well). Stored as a
         'club_checkin' action so the existing streak/leaderboard paths pick it up.
+
+        Idempotency is per **challenge** per day, not per promise per day. One
+        promise can back several challenges — a single "Learn French" promise
+        owning both a course quiz and a naturalisation quiz — and scoping the
+        replace by promise alone made the second quiz of the day delete the
+        first one's check-in.
+
+        `time_spent_hours` is the measured time actually spent answering, so an
+        hours-based promise registers the work instead of sitting at 0.0.
         """
         user = str(user_id)
         now_dt = datetime.utcnow()
@@ -173,18 +190,29 @@ class ActionsRepository:
                     WHERE user_id = :user_id
                       AND promise_uuid = :promise_uuid
                       AND action_type = 'club_checkin'
-                      AND DATE(at_utc) = :today;
+                      AND DATE(at_utc) = :today
+                      AND (
+                            (:challenge_id IS NULL AND challenge_id IS NULL)
+                         OR challenge_id = :challenge_id
+                      );
                 """),
-                {"user_id": user, "promise_uuid": promise_uuid, "today": today},
+                {
+                    "user_id": user,
+                    "promise_uuid": promise_uuid,
+                    "today": today,
+                    "challenge_id": challenge_id,
+                },
             )
             session.execute(
                 text("""
                     INSERT INTO actions(
                         action_uuid, user_id, promise_uuid, promise_id_text,
-                        action_type, time_spent_hours, score, at_utc, notes
+                        action_type, time_spent_hours, score, at_utc, notes,
+                        challenge_id
                     ) VALUES (
                         :action_uuid, :user_id, :promise_uuid, '',
-                        'club_checkin', 0.0, :score, :at_utc, :notes
+                        'club_checkin', :hours, :score, :at_utc, :notes,
+                        :challenge_id
                     );
                 """),
                 {
@@ -192,8 +220,10 @@ class ActionsRepository:
                     "user_id": user,
                     "promise_uuid": promise_uuid,
                     "score": float(score),
+                    "hours": float(time_spent_hours),
                     "at_utc": at_utc,
                     "notes": notes,
+                    "challenge_id": challenge_id,
                 },
             )
 

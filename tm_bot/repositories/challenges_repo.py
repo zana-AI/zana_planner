@@ -298,11 +298,27 @@ class ChallengesRepository:
 
         # Record one scored check-in for today on the backing promise. This single action
         # drives BOTH the streak (activity) and the club leaderboard (the non-binary score).
+        # It carries `challenge_id` so a promise backing several challenges keeps one
+        # check-in per challenge rather than letting them overwrite each other.
+        #
+        # The time answering is summed from the attempts, so an hours-based promise
+        # ("Learn French, 3h/week") registers real practice instead of a flat zero.
+        # It is genuinely small — a daily quiz is minutes — but it is measured, not
+        # invented.
+        answered_ms = sum(int(a.get("time_ms") or 0) for a in answers)
+        hours_spent = round(answered_ms / 3_600_000.0, 4)
+
         streak = 0
         promise_uuid = self.ensure_subscription(challenge_id, user_id, source="play")
         if promise_uuid:
             from repositories.actions_repo import ActionsRepository
-            ActionsRepository().append_scored_checkin(user_id, promise_uuid, float(score_pct))
+            ActionsRepository().append_scored_checkin(
+                user_id,
+                promise_uuid,
+                float(score_pct),
+                challenge_id=challenge_id,
+                time_spent_hours=hours_spent,
+            )
             streak = ActionsRepository().get_checkin_streak(user_id, promise_uuid)
 
         return {
@@ -366,28 +382,39 @@ class ChallengesRepository:
                 return []
             club_id = club_row[0]
 
+            # Members come from `challenge_participants`, not from promises shared
+            # to the club. Going via `promise_club_shares` tied the leaderboard to
+            # a promise that had to exist, be undeleted, and back exactly one
+            # challenge — so consolidating several courses onto one promise both
+            # dropped players off the board and scored one quiz in another
+            # course's league table.
+            #
+            # Scores are matched on challenge_id, falling back to promise-matching
+            # for check-ins written before migration 034 gave them one.
             rows = session.execute(
                 text(f"""
-                    SELECT cm.user_id AS user_id,
+                    SELECT cp.user_id AS user_id,
                            {_NAME_EXPR} AS name,
-                           p.promise_uuid AS promise_uuid,
+                           cp.promise_uuid AS promise_uuid,
                            substr(a.at_utc, 1, 10) AS d,
                            a.score AS score
-                    FROM club_members cm
-                    JOIN promise_club_shares pcs ON pcs.club_id = cm.club_id
-                    JOIN promises p
-                      ON p.promise_uuid = pcs.promise_uuid
-                     AND p.user_id = cm.user_id
-                     AND p.is_deleted = 0
-                    LEFT JOIN users u ON u.user_id = cm.user_id
+                    FROM challenge_participants cp
+                    JOIN club_members cm
+                      ON cm.club_id = :club
+                     AND cm.user_id = cp.user_id
+                     AND cm.status = 'active'
+                    LEFT JOIN users u ON u.user_id = cp.user_id
                     LEFT JOIN actions a
-                      ON a.user_id = cm.user_id
-                     AND a.promise_uuid = p.promise_uuid
+                      ON a.user_id = cp.user_id
                      AND a.action_type = 'club_checkin'
                      AND substr(a.at_utc, 1, 10) >= :ws
-                    WHERE cm.club_id = :club AND cm.status = 'active'
+                     AND (
+                           a.challenge_id = cp.challenge_id
+                        OR (a.challenge_id IS NULL AND a.promise_uuid = cp.promise_uuid)
+                     )
+                    WHERE cp.challenge_id = :cid
                 """),
-                {"club": club_id, "ws": window_start},
+                {"club": club_id, "cid": challenge_id, "ws": window_start},
             ).mappings().fetchall()
 
         members: dict[str, dict] = {}
@@ -444,16 +471,21 @@ class ChallengesRepository:
             ).mappings().fetchall()
             score_rows = session.execute(
                 text("""
-                    SELECT promise_uuid, score FROM actions
+                    SELECT promise_uuid, challenge_id, score FROM actions
                     WHERE user_id = :uid AND action_type = 'club_checkin'
                       AND substr(at_utc, 1, 10) = :today AND promise_uuid = ANY(:uuids)
                 """),
                 {"uid": user, "today": today, "uuids": uuids},
             ).mappings().fetchall()
-        # Check-ins are recorded against the promise, not the challenge, so with
-        # several challenges on one promise today's score cannot be attributed to
-        # a particular one. It is reported on each; the number is the promise's.
-        today_score = {r["promise_uuid"]: r["score"] for r in score_rows}
+        # Prefer the score recorded against this exact challenge; fall back to the
+        # promise for check-ins written before migration 034 carried a
+        # challenge_id.
+        score_by_challenge = {
+            r["challenge_id"]: r["score"] for r in score_rows if r["challenge_id"]
+        }
+        score_by_promise = {
+            r["promise_uuid"]: r["score"] for r in score_rows if not r["challenge_id"]
+        }
 
         out: dict = {}
         for r in rows:
@@ -463,7 +495,7 @@ class ChallengesRepository:
                 activity = {"type": "quiz", "challenge_id": cid, "title": r["title"],
                             "deck_id": deck["deck_id"], "status": "due", "score": None}
             else:
-                s = today_score.get(puuid)
+                s = score_by_challenge.get(cid, score_by_promise.get(puuid))
                 activity = {"type": "quiz", "challenge_id": cid, "title": r["title"],
                             "deck_id": None, "status": "done",
                             "score": float(s) if s is not None else None}

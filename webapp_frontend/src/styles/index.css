@@ -852,6 +852,55 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   gap: 8px;
 }
 
+/* Filters collapse behind one button so the library itself starts near the top
+   of the screen instead of below three rows of chips. */
+.content-library-filters { flex-wrap: wrap; }
+
+.content-library-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(237, 243, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(237, 243, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.content-library-filter-toggle.is-open {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.content-library-filter-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.content-library-filter-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(237, 243, 255, 0.1);
+}
+.content-library-filter-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .content-library-add input,
 .content-library-search input,
 .content-library-sort select {
