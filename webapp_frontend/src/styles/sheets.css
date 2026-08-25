@@ -269,6 +269,15 @@
   text-align: center;
 }
 .pcard-cta:hover { filter: brightness(1.06); }
+/* Credits earned this week. Sits beside the progress figure rather than
+   replacing it — the bar says how far through the commitment you are, this says
+   how much work you put in to get there. */
+.pcard-credits {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
 .pcard.good { border-left: 2px solid var(--good-500); }
 .pcard.warn { border-left: 2px solid var(--warn-500); }
 .pcard.bad  { border-left: 2px solid var(--bad-500); }

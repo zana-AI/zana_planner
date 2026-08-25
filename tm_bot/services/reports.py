@@ -236,7 +236,7 @@ class ReportsService:
                 if canonical not in actions_by_promise_date:
                     actions_by_promise_date[canonical] = {}
                 if action_date not in actions_by_promise_date[canonical]:
-                    actions_by_promise_date[canonical][action_date] = {'hours': 0.0, 'count': 0, 'notes': []}
+                    actions_by_promise_date[canonical][action_date] = {'hours': 0.0, 'count': 0, 'credits': 0.0, 'notes': []}
                 
                 # Track both hours and count
                 if action.action == 'log_time':
@@ -245,10 +245,24 @@ class ReportsService:
                         promises_with_action_activity.add(canonical)
                     if action.notes and action.notes.strip():
                         actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
-                elif action.action in ('checkin', 'club_checkin'):
-                    actions_by_promise_date[canonical][action_date]['count'] += 1
+                elif action.action in ('checkin', 'club_checkin', 'credit'):
+                    # 'credit' is a day's banked credit that has not yet reached
+                    # the check-in threshold: it earns progress but not a tick.
+                    if action.action != 'credit':
+                        actions_by_promise_date[canonical][action_date]['count'] += 1
+                    # Credits earned by quizzes and reviews count toward an
+                    # hours-based target. Without this a check-in contributes to
+                    # `count` only, so "Learn French, 3h/week" showed 0% no
+                    # matter how many quizzes were played. See services/credits.py.
+                    credit_hours = float(getattr(action, 'credits_minutes', 0.0) or 0.0) / 60.0
+                    actions_by_promise_date[canonical][action_date]['hours'] += credit_hours
+                    actions_by_promise_date[canonical][action_date]['credits'] += \
+                        float(getattr(action, 'credits_minutes', 0.0) or 0.0)
                     promises_with_action_activity.add(canonical)
-                    if action.notes and action.notes.strip():
+                    # "credit:<source>" is an internal marker used to find the
+                    # day's running row, not something the user wrote.
+                    if (action.notes and action.notes.strip()
+                            and not action.notes.startswith('credit:')):
                         actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
             else:
                 logger.debug(f"[DEBUG] Action at {action_at} is outside week range {week_start} to {week_end}")
@@ -307,8 +321,10 @@ class ReportsService:
             sessions = []
             total_hours = 0.0
             total_count = 0
-            
+            total_credits = 0.0
+
             for action_date, data in sorted(date_data.items()):
+                total_credits += float(data.get('credits', 0.0) or 0.0)
                 notes_list = data.get('notes', [])
                 # Filter out empty notes
                 notes_list = [n for n in notes_list if n and n.strip()]
@@ -334,6 +350,10 @@ class ReportsService:
             else:
                 promise_data['achieved_value'] = total_hours
                 promise_data['hours_spent'] = total_hours
+
+            # Credits earned this week, so the card can show what the quizzes and
+            # reviews were worth rather than only their share of the hours bar.
+            promise_data['credits_minutes'] = round(total_credits, 1)
             
             promise_data['sessions'] = sessions
 

@@ -176,6 +176,8 @@ export interface PromiseData {
   /** Every challenge backing this promise. A promise can own several. */
   quizzes?: PromiseDailyActivity[];
   decks?: PromiseDeck[];
+  /** Credit-minutes earned this week from quizzes and reviews. */
+  credits_minutes?: number;
 }
 
 // A vocabulary deck owned by this promise. Counts cover the deck's whole

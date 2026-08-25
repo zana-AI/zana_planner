@@ -85,6 +85,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
     daily_activity,
     quizzes,
     decks = [],
+    credits_minutes,
   } = data;
 
   const isCountBased = metric_type === 'count';
@@ -194,6 +195,11 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
             ? `${Math.round(achieved)}/${Math.round(target)} check-ins`
             : `${achieved.toFixed(1)}h / ${target.toFixed(1)}h`}
         </span>
+        {credits_minutes && credits_minutes > 0 ? (
+          <span className="pcard-credits" dir="ltr" title="Earned from quizzes and reviews this week">
+            ⚡ {Math.round(credits_minutes)}
+          </span>
+        ) : null}
         {sessionsLabel ? (
           <span className="sessions-chip" dir="ltr" aria-label={`${planned_sessions_count} planned session${planned_sessions_count > 1 ? 's' : ''}`}>
             &#x1F4C5; {sessionsLabel}

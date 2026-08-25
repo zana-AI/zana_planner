@@ -301,12 +301,16 @@ class ChallengesRepository:
         # It carries `challenge_id` so a promise backing several challenges keeps one
         # check-in per challenge rather than letting them overwrite each other.
         #
-        # The time answering is summed from the attempts, so an hours-based promise
-        # ("Learn French, 3h/week") registers real practice instead of a flat zero.
-        # It is genuinely small — a daily quiz is minutes — but it is measured, not
-        # invented.
+        # Two different quantities, deliberately both recorded:
+        #   hours_spent  what the quiz really took, for the honest record
+        #   credits      what it is worth, one per question answered
+        # Progress runs on credits because the real duration of a quiz is under a
+        # minute — too small to move a weekly hours target. See services/credits.py.
+        from services import credits as credit_rules
+
         answered_ms = sum(int(a.get("time_ms") or 0) for a in answers)
         hours_spent = round(answered_ms / 3_600_000.0, 4)
+        earned_credits = credit_rules.quiz_credits(total)
 
         streak = 0
         promise_uuid = self.ensure_subscription(challenge_id, user_id, source="play")
@@ -318,6 +322,7 @@ class ChallengesRepository:
                 float(score_pct),
                 challenge_id=challenge_id,
                 time_spent_hours=hours_spent,
+                credits_minutes=earned_credits,
             )
             streak = ActionsRepository().get_checkin_streak(user_id, promise_uuid)
 
@@ -397,7 +402,8 @@ class ChallengesRepository:
                            {_NAME_EXPR} AS name,
                            cp.promise_uuid AS promise_uuid,
                            substr(a.at_utc, 1, 10) AS d,
-                           a.score AS score
+                           a.score AS score,
+                           a.credits_minutes AS credits
                     FROM challenge_participants cp
                     JOIN club_members cm
                       ON cm.club_id = :club
@@ -420,23 +426,35 @@ class ChallengesRepository:
         members: dict[str, dict] = {}
         for r in rows:
             uid = str(r["user_id"])
-            m = members.setdefault(uid, {"name": r["name"] or uid, "promise_uuid": r["promise_uuid"], "days": {}})
+            m = members.setdefault(
+                uid,
+                {"name": r["name"] or uid, "promise_uuid": r["promise_uuid"],
+                 "days": {}, "credits": {}},
+            )
             if r["d"] and r["score"] is not None:
                 m["days"][r["d"]] = float(r["score"])
+            if r["d"] and r["credits"] is not None:
+                m["credits"][r["d"]] = float(r["credits"])
 
         arepo = ActionsRepository()
         entries = []
         for uid, m in members.items():
             score_percent = round(sum(m["days"].values()) / window_days, 1) if m["days"] else 0.0
+            credits = round(sum(m["credits"].values()), 1)
             streak = arepo.get_checkin_streak(uid, m["promise_uuid"]) if m["promise_uuid"] else 0
             entries.append({
                 "user_id": uid,
                 "name": m["name"],
                 "score_percent": score_percent,
+                "credits": credits,
                 "streak": streak,
                 "active_days": len(m["days"]),
             })
-        entries.sort(key=lambda e: (-e["score_percent"], -e["streak"], str(e["name"]).lower()))
+        # Ranked by credits earned — effort put in — with accuracy as the
+        # tie-break. Ranking by average score alone rewarded playing rarely and
+        # well over showing up: one perfect quiz beat six good ones.
+        entries.sort(key=lambda e: (-e["credits"], -e["score_percent"], -e["streak"],
+                                    str(e["name"]).lower()))
         return [{"rank": i + 1, **e} for i, e in enumerate(entries[:limit])]
 
     def daily_activity_for_promises(self, user_id: int, promise_uuids: List[str]) -> dict:

@@ -164,6 +164,33 @@ class FlashcardDeckRepository:
         ).mappings().all()
         return [dict(r) for r in rows]
 
+    def find_promise_for_deck(self, session: Session, deck_id: str) -> Optional[str]:
+        """The promise owning this deck, or the nearest ancestor that has one.
+
+        Notes hang off leaf decks while the promise is attached at the root, so
+        a leaf has to look upward. Returns the closest match, letting a subtree
+        be assigned to its own promise later without disturbing its siblings.
+        """
+        row = session.execute(
+            text(
+                """
+                WITH RECURSIVE up AS (
+                    SELECT deck_id, parent_deck_id, promise_id, 0 AS depth
+                    FROM flashcard_deck WHERE deck_id = :d
+                  UNION ALL
+                    SELECT p.deck_id, p.parent_deck_id, p.promise_id, up.depth + 1
+                    FROM flashcard_deck p JOIN up ON up.parent_deck_id = p.deck_id
+                )
+                SELECT promise_id FROM up
+                WHERE promise_id IS NOT NULL
+                ORDER BY depth
+                LIMIT 1
+                """
+            ),
+            {"d": deck_id},
+        ).fetchone()
+        return row[0] if row else None
+
     def set_promise(
         self, session: Session, user_id: str, deck_id: str, promise_id: Optional[str]
     ) -> bool:

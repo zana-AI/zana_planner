@@ -27,6 +27,9 @@ from repositories.flashcard_review_repo import (
     FlashcardCardRepository,
     FlashcardReviewLogRepository,
 )
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Stock FSRS-6 parameters. Once a user has a few hundred reviews,
 # `optimize_parameters` can refit these and the result should be persisted per
@@ -152,7 +155,7 @@ def review_card(
 
         refreshed = _cards.get(session, card_id)
         assert refreshed is not None
-        return {
+        result = {
             "card_id": card_id,
             "state": refreshed["state"],
             "reps": refreshed["reps"],
@@ -162,6 +165,41 @@ def review_card(
             "difficulty": refreshed["difficulty"],
             "counts": _cards.counts(session, user_id, datetime.now(timezone.utc)),
         }
+        deck_id = note["deck_id"]
+
+    # Outside the transaction above: crediting must never be able to roll back a
+    # review. The review is the thing that matters and it is already durable.
+    result["credits_minutes"] = _award_review_credit(user_id, deck_id)
+    return result
+
+
+def _award_review_credit(user_id: str, deck_id: str) -> float:
+    """Credit one rated card to the promise that owns this card's deck.
+
+    Walks up the deck tree because notes hang off leaf decks ("French::B1::
+    Édito B1 Livre") while the promise is attached at the root. Returns the
+    running credit total for today, or 0.0 when the deck belongs to no promise —
+    an unattached deck is still perfectly usable, it just scores nothing.
+    """
+    from services import credits as credit_rules
+
+    try:
+        with get_db_session() as session:
+            promise_id = _decks.find_promise_for_deck(session, deck_id)
+        if not promise_id:
+            return 0.0
+
+        from repositories.actions_repo import ActionsRepository
+
+        return ActionsRepository().accumulate_credit(
+            user_id,
+            promise_id,
+            credit_rules.flashcard_credits(1),
+            source="flashcards",
+        )
+    except Exception:  # crediting is an add-on; a review must still count
+        logger.exception("failed to credit flashcard review")
+        return 0.0
 
 
 # --- authoring -------------------------------------------------------------

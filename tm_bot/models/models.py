@@ -42,9 +42,13 @@ class Action:
     user_id: str
     promise_id: str
     action: str           # e.g., "log_time", "skip", "delete", etc.
-    time_spent: float     # hours (can be 0 for skip/delete)
+    time_spent: float     # hours actually elapsed (can be 0 for skip/delete)
     at: datetime          # action timestamp
     notes: Optional[str] = None  # optional notes for this action
+    # What the work was worth, in credit-minutes — see services/credits.py.
+    # Distinct from time_spent: a quiz takes under a minute but is credited per
+    # question answered, so progress reflects effort rather than elapsed time.
+    credits_minutes: float = 0.0
 
 
 @dataclass

@@ -64,7 +64,7 @@ class ActionsRepository:
                 rows = session.execute(
                     text("""
                         SELECT
-                            a.action_type, a.time_spent_hours, a.at_utc, a.notes,
+                            a.action_type, a.time_spent_hours, a.at_utc, a.notes, a.credits_minutes,
                             COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
                         FROM actions a
                         LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
@@ -77,7 +77,7 @@ class ActionsRepository:
                 rows = session.execute(
                     text("""
                         SELECT
-                            a.action_type, a.time_spent_hours, a.at_utc, a.notes,
+                            a.action_type, a.time_spent_hours, a.at_utc, a.notes, a.credits_minutes,
                             COALESCE(p.current_id, a.promise_id_text) AS canonical_promise_id
                         FROM actions a
                         LEFT JOIN promises p ON p.promise_uuid = a.promise_uuid AND p.user_id = a.user_id
@@ -98,6 +98,7 @@ class ActionsRepository:
                     promise_id=str(r["canonical_promise_id"] or ""),
                     action=str(r["action_type"] or "log_time"),
                     time_spent=float(r["time_spent_hours"] or 0.0),
+                    credits_minutes=float(r["credits_minutes"] or 0.0),
                     at=at,
                     notes=r.get("notes") if r.get("notes") else None,
                 )
@@ -155,6 +156,76 @@ class ActionsRepository:
                 },
             )
 
+    def accumulate_credit(
+        self,
+        user_id: int | str,
+        promise_uuid: str,
+        credits_minutes: float,
+        source: str = "review",
+    ) -> float:
+        """Add credit to today's running total for this promise, and return it.
+
+        One row per promise per day per source, incremented — not one row per
+        rated card. A review session is dozens of cards; a row each would bury
+        the action history under noise and make the weekly report scan hundreds
+        of rows to compute one number.
+
+        The day counts as checked once the total passes the threshold in
+        services/credits.py, which is why `action_type` is only promoted to
+        'club_checkin' at that point: below it the credit is banked but the
+        streak has not been earned.
+        """
+        from services import credits as credit_rules
+
+        user = str(user_id)
+        now_dt = datetime.utcnow()
+        at_utc = now_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        today = now_dt.strftime("%Y-%m-%d")
+        note = f"credit:{source}"
+
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT action_uuid, credits_minutes FROM actions
+                    WHERE user_id = :user_id
+                      AND promise_uuid = :promise_uuid
+                      AND DATE(at_utc) = :today
+                      AND notes = :note
+                    LIMIT 1;
+                """),
+                {"user_id": user, "promise_uuid": promise_uuid, "today": today, "note": note},
+            ).mappings().fetchone()
+
+            total = float(credits_minutes) + (float(row["credits_minutes"]) if row else 0.0)
+            action_type = "club_checkin" if credit_rules.counts_as_checkin(total) else "credit"
+
+            if row:
+                session.execute(
+                    text("""
+                        UPDATE actions
+                        SET credits_minutes = :total, action_type = :atype, at_utc = :at_utc
+                        WHERE action_uuid = :aid;
+                    """),
+                    {"total": total, "atype": action_type, "at_utc": at_utc,
+                     "aid": row["action_uuid"]},
+                )
+            else:
+                session.execute(
+                    text("""
+                        INSERT INTO actions(
+                            action_uuid, user_id, promise_uuid, promise_id_text,
+                            action_type, time_spent_hours, at_utc, notes, credits_minutes
+                        ) VALUES (
+                            :action_uuid, :user_id, :promise_uuid, '',
+                            :atype, 0.0, :at_utc, :note, :total
+                        );
+                    """),
+                    {"action_uuid": str(uuid.uuid4()), "user_id": user,
+                     "promise_uuid": promise_uuid, "atype": action_type,
+                     "at_utc": at_utc, "note": note, "total": total},
+                )
+        return total
+
     def append_scored_checkin(
         self,
         user_id: int,
@@ -163,6 +234,7 @@ class ActionsRepository:
         notes: str | None = None,
         challenge_id: str | None = None,
         time_spent_hours: float = 0.0,
+        credits_minutes: float = 0.0,
     ) -> None:
         """Record a non-binary scored check-in for today (idempotent — replaces any existing one).
 
@@ -176,8 +248,11 @@ class ActionsRepository:
         replace by promise alone made the second quiz of the day delete the
         first one's check-in.
 
-        `time_spent_hours` is the measured time actually spent answering, so an
-        hours-based promise registers the work instead of sitting at 0.0.
+        `time_spent_hours` is the measured time actually spent answering — the
+        true duration, kept for the record. `credits_minutes` is what the work is
+        *worth* (see services/credits.py); that is what drives progress, because
+        a quiz that genuinely took 52 seconds is not a meaningful share of a
+        weekly hours target.
         """
         user = str(user_id)
         now_dt = datetime.utcnow()
@@ -208,11 +283,11 @@ class ActionsRepository:
                     INSERT INTO actions(
                         action_uuid, user_id, promise_uuid, promise_id_text,
                         action_type, time_spent_hours, score, at_utc, notes,
-                        challenge_id
+                        challenge_id, credits_minutes
                     ) VALUES (
                         :action_uuid, :user_id, :promise_uuid, '',
                         'club_checkin', :hours, :score, :at_utc, :notes,
-                        :challenge_id
+                        :challenge_id, :credits
                     );
                 """),
                 {
@@ -221,6 +296,7 @@ class ActionsRepository:
                     "promise_uuid": promise_uuid,
                     "score": float(score),
                     "hours": float(time_spent_hours),
+                    "credits": float(credits_minutes),
                     "at_utc": at_utc,
                     "notes": notes,
                     "challenge_id": challenge_id,
