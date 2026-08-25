@@ -8,9 +8,11 @@ type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed';
 type TypeFilter = 'all' | 'pdf' | 'video' | 'audio' | 'text';
 type SortKey = 'recent' | 'added' | 'title' | 'progress';
 
+// "All" leads because it is the default — the selected chip should be the first
+// one, not buried second.
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: 'in_progress', label: 'Continue' },
   { key: 'all', label: 'All' },
+  { key: 'in_progress', label: 'Continue' },
   { key: 'saved', label: 'Saved' },
   { key: 'completed', label: 'Completed' },
 ];
@@ -87,7 +89,10 @@ export function MyContentsPage() {
   const [addError, setAddError] = useState('');
   const [items, setItems] = useState<UserContentWithDetails[]>([]);
   const [facets, setFacets] = useState<MyContentsFacets>({});
-  const [status, setStatus] = useState<StatusFilter>('in_progress');
+  // Opens on the whole library, not on "Continue". As a sub-page this landed on
+  // what you were mid-way through; as a primary tab it has to show everything —
+  // a filter that hides what you just saved reads as the save having failed.
+  const [status, setStatus] = useState<StatusFilter>('all');
   const [contentType, setContentType] = useState<TypeFilter>('all');
   const [sort, setSort] = useState<SortKey>('recent');
   const [query, setQuery] = useState('');

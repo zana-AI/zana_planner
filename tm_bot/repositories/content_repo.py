@@ -320,8 +320,13 @@ class ContentRepository:
             "added": "uc.added_at DESC",
             "title": "LOWER(COALESCE(c.title, '')) ASC, uc.added_at DESC",
             "progress": "uc.progress_ratio DESC NULLS LAST, uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC",
-            "recent": "uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC",
-        }.get(sort_key, "uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC")
+            # Never-opened content has a null last_interaction_at, and NULLS LAST
+            # buried it below everything ever touched — so a link saved a minute
+            # ago sorted beneath an article read last year. Falling back to
+            # added_at makes "recent" mean recently added *or* read, which is
+            # what the word means to someone who just saved something.
+            "recent": "COALESCE(uc.last_interaction_at, uc.added_at) DESC, uc.added_at DESC",
+        }.get(sort_key, "COALESCE(uc.last_interaction_at, uc.added_at) DESC, uc.added_at DESC")
 
         with get_db_session() as session:
             rows = session.execute(
