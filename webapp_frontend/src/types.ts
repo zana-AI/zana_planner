@@ -507,6 +507,11 @@ export interface PromiseTemplate {
 // TemplateDetail is now just an alias for PromiseTemplate (simplified schema)
 export type TemplateDetail = PromiseTemplate;
 
+export interface ExploreItem { id: string; title: string; type: string; order: number; published: boolean; url?: string | null; native_ref?: string | null; image?: string | null; description?: string | null; class_offer?: string | null; }
+export interface ExploreTopic { id: string; title: string; order: number; published: boolean; items: ExploreItem[]; }
+export interface ExploreCategory { id: string; title: string; order: number; published: boolean; topics: ExploreTopic[]; }
+export interface ExploreCatalog { version: number; categories: ExploreCategory[]; }
+
 export interface SubscribeTemplateRequest {
   start_date?: string;
   target_date?: string;

@@ -39,7 +39,8 @@ import type {
   PdfHighlight,
   CreatePdfHighlightRequest,
   UpdatePdfHighlightRequest,
-  FollowGraphData
+  FollowGraphData,
+  ExploreCatalog
 } from '../types';
 import { getMockClubLeaderboard, getMockClubs, getMockCommunityUsers, getMockPublicActivity, shouldUseLocalMockData } from './mockData';
 
@@ -1202,6 +1203,10 @@ class ApiClient {
     if (programKey) params.append('program_key', programKey);
     const query = params.toString();
     return this.request<{ templates: PromiseTemplate[] }>(`/templates${query ? `?${query}` : ''}`);
+  }
+
+  async getExploreCatalog(): Promise<ExploreCatalog> {
+    return this.request<ExploreCatalog>('/explore');
   }
 
   /**

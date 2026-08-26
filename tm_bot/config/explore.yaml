@@ -1,0 +1,37 @@
+version: 1
+categories:
+  - id: learning
+    title: Learning
+    order: 10
+    published: true
+    topics:
+      - id: languages
+        title: Languages
+        order: 10
+        published: true
+        items:
+          - id: french-classes
+            title: French classes
+            type: offer
+            order: 10
+            published: true
+            description: Practice with a friendly teacher.
+            class_offer: "French classes — €5/hour"
+            native_ref: /templates
+          - id: learn-french-channel
+            title: Learn French on Telegram
+            type: telegram
+            order: 20
+            published: true
+            url: https://t.me/example
+      - id: videos
+        title: Videos
+        order: 20
+        published: true
+        items:
+          - id: learning-video-example
+            title: A useful learning video
+            type: youtube
+            order: 10
+            published: false
+            url: https://www.youtube.com/watch?v=dQw4w9WgXcQ

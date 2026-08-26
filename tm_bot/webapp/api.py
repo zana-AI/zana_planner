@@ -16,7 +16,7 @@ from repositories.auth_session_repo import AuthSessionRepository
 from utils.logger import get_logger
 
 # Import all routers
-from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer, youtube_watch, content, plan_sessions, challenges, oauth_consent, flashcards, public_clubs
+from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer, youtube_watch, content, plan_sessions, challenges, oauth_consent, flashcards, public_clubs, explore
 
 logger = get_logger(__name__)
 
@@ -104,6 +104,7 @@ def create_webapp_api(
     app.include_router(oauth_consent.router)
     app.include_router(flashcards.router)
     app.include_router(public_clubs.router)
+    app.include_router(explore.router)
 
     # Startup event to log registered routes and fetch bot username
     @app.on_event("startup")
