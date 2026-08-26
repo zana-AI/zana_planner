@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
 import { useTimezoneDetection } from './hooks/useTimezoneDetection';
+import { useServerLanguageSync } from './i18n/useServerLanguageSync';
 import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
@@ -41,6 +42,9 @@ function App() {
   const allowLocalMockData = shouldUseLocalMockData();
   const isAuthenticated = !!initData || !!getDevInitData() || hasSessionToken || allowLocalMockData;
   useTimezoneDetection(isAuthenticated && isReady);
+
+  // Adopt the language stored on the account (set here or via the Telegram bot).
+  useServerLanguageSync(isAuthenticated && isReady);
   
   // Check for session token on mount and listen for changes
   useEffect(() => {

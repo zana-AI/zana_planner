@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bookmark, Users, Layers, GraduationCap } from 'lucide-react';
@@ -19,6 +20,7 @@ const CHALLENGE_ACTIVITY_LABEL: Record<string, string> = {
 };
 
 export function TemplatesPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
   const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
@@ -39,7 +41,7 @@ export function TemplatesPage() {
         hapticFeedback('success');
       } catch (err) {
         console.error('Failed to load templates:', err);
-        setError('Failed to load templates');
+        setError(t('templates.loadFailed'));
         hapticFeedback('error');
       } finally {
         setLoading(false);
@@ -110,7 +112,7 @@ export function TemplatesPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading promise library...</div>
+          <div className="loading-text">{t('templates.loading')}</div>
         </div>
       </div>
     );
@@ -121,10 +123,10 @@ export function TemplatesPage() {
       <div className="app">
         <div className="error">
           <div className="error-icon">!</div>
-          <h1 className="error-title">Something went wrong</h1>
+          <h1 className="error-title">{t('common.somethingWentWrong')}</h1>
           <p className="error-message">{error}</p>
           <button className="retry-button" onClick={() => window.location.reload()}>
-            Try Again
+            {t('common.tryAgain')}
           </button>
         </div>
       </div>
@@ -346,8 +348,8 @@ export function TemplatesPage() {
       <main className="templates-grid">
         {templates.length === 0 ? (
           <div className="empty-state">
-            <h2 className="empty-title">No habits yet</h2>
-            <p className="empty-subtitle">Check back soon for ready-made habits to start.</p>
+            <h2 className="empty-title">{t('templates.emptyTitle')}</h2>
+            <p className="empty-subtitle">{t('templates.emptySubtitle')}</p>
           </div>
         ) : (
           templates.map((template) => {

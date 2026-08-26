@@ -4,8 +4,11 @@
 
 :root {
   /* ---- TYPE FAMILIES ----------------------------------------------------- */
+  /* Manrope carries Latin; Vazirmatn Variable picks up Persian/Arabic glyphs it
+     has no coverage for. Because the browser falls back per-character, one stack
+     serves both languages — there is no RTL-specific font stack to switch to. */
   --font-sans:
-    "Manrope", "Inter", "Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew",
+    "Manrope", "Inter", "Vazirmatn Variable", "Noto Sans Arabic", "Noto Sans Hebrew",
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:
     ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
@@ -224,4 +227,47 @@
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ==========================================================================
+   Right-to-left
+   --------------------------------------------------------------------------
+   Direction itself is set on <html> by src/i18n (never as a component prop).
+   These are the typographic corrections Persian needs beyond mirroring.
+   See docs/I18N_RTL_PLAN.md §5.
+   ========================================================================== */
+
+:root[dir="rtl"] {
+  /* Persian is cursive and renders optically smaller than Latin at the same
+     size, and its ascenders/descenders need more room than --lh-body gives. */
+  --lh-tight: 1.3;
+  --lh-snug: 1.5;
+  --lh-body: 1.72;
+  --lh-loose: 1.85;
+
+  /* Negative tracking breaks the joins between Persian letterforms. */
+  --tracking-tight: 0;
+  --tracking-flat: 0;
+  --tracking-wide: 0;
+}
+
+/* Persian has no letter case, so uppercasing is a no-op on Persian text — but
+   it still shouts any Latin word interleaved into it (brand names, "PDF"). */
+:root[dir="rtl"] [class*="eyebrow"],
+:root[dir="rtl"] [class*="label"],
+:root[dir="rtl"] [class*="kicker"] {
+  text-transform: none;
+}
+
+/* Icons that encode direction — chevrons, arrows, undo. Opt in by adding the
+   class; do NOT blanket-mirror, or logos and play buttons flip too. */
+:root[dir="rtl"] .icon-directional {
+  transform: scaleX(-1);
+}
+
+/* Numerals stay LTR even inside an RTL run: phone numbers, durations, codes. */
+[dir="rtl"] .numeric-ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
 }

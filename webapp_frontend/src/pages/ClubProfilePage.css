@@ -74,7 +74,7 @@
 
 .clubprofile-byline .dot::before {
   content: '·';
-  margin-right: var(--sp-2);
+  margin-inline-end: var(--sp-2);
   color: var(--fg-disabled);
 }
 
@@ -345,7 +345,7 @@
   color: var(--fg-secondary);
   font-variant-numeric: tabular-nums;
   min-width: 38px;
-  text-align: right;
+  text-align: end;
 }
 
 .clubprofile-board-empty {

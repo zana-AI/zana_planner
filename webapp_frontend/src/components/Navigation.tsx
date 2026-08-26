@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { ArrowLeft, Library, LogOut, Settings, Shield, Timer } from 'lucide-react';
 import { apiClient } from '../api/client';
@@ -11,62 +12,64 @@ import { BottomNav } from './ui/BottomNav';
 import { IconButton } from './ui/IconButton';
 
 interface ShellPageMeta {
-  title: string;
-  subtitle?: string;
+  /** Key under `shell.*` in the locale catalogs. */
+  key: string;
+  hasSubtitle?: boolean;
   showBack?: boolean;
   fallbackRoute?: string;
 }
 
 function getShellPageMeta(pathname: string): ShellPageMeta {
   if (pathname === '/dashboard') {
-    return { title: 'My Week', subtitle: 'Your weekly promises and progress' };
+    return { key: 'dashboard', hasSubtitle: true };
   }
   if (pathname === '/community') {
-    return { title: 'Community', subtitle: 'Recent public activity and people you follow' };
+    return { key: 'community', hasSubtitle: true };
   }
   if (pathname === '/templates') {
-    return { title: 'Explore', subtitle: 'Promise library and marketplace' };
+    return { key: 'explore', hasSubtitle: true };
   }
   if (pathname === '/challenges') {
-    return { title: 'Challenges', subtitle: 'Join a challenge and play' };
+    return { key: 'challenges', hasSubtitle: true };
   }
   if (pathname === '/flashcards') {
-    return { title: 'Quiz', subtitle: 'Review what you are about to forget', showBack: true, fallbackRoute: '/dashboard' };
+    return { key: 'flashcards', hasSubtitle: true, showBack: true, fallbackRoute: '/dashboard' };
   }
   if (pathname.startsWith('/challenges/')) {
-    return { title: 'Challenge', showBack: true, fallbackRoute: '/templates' };
+    return { key: 'challengeDetail', showBack: true, fallbackRoute: '/templates' };
   }
   if (pathname === '/my-contents') {
     // A primary tab now, so no back button — there is nothing to go back to.
-    return { title: 'Content', subtitle: 'Videos, PDFs and podcasts you study from' };
+    return { key: 'myContents', hasSubtitle: true };
   }
   if (pathname === '/admin') {
-    return { title: 'Admin', showBack: true, fallbackRoute: '/dashboard' };
+    return { key: 'admin', showBack: true, fallbackRoute: '/dashboard' };
   }
   if (pathname === '/focus') {
-    return { title: 'Start Focus Session', showBack: true, fallbackRoute: '/dashboard' };
+    return { key: 'focus', showBack: true, fallbackRoute: '/dashboard' };
   }
   if (pathname === '/settings') {
-    return { title: 'Settings', showBack: true, fallbackRoute: '/dashboard' };
+    return { key: 'settings', showBack: true, fallbackRoute: '/dashboard' };
   }
   if (pathname === '/timezone') {
-    return { title: 'Timezone', subtitle: 'Select your timezone', showBack: true, fallbackRoute: '/settings' };
+    return { key: 'timezone', hasSubtitle: true, showBack: true, fallbackRoute: '/settings' };
   }
   if (pathname.startsWith('/templates/')) {
-    return { title: 'Add Promise', showBack: true, fallbackRoute: '/templates' };
+    return { key: 'addPromise', showBack: true, fallbackRoute: '/templates' };
   }
   if (pathname.startsWith('/users/')) {
-    return { title: 'Profile', showBack: true, fallbackRoute: '/community' };
+    return { key: 'profile', showBack: true, fallbackRoute: '/community' };
   }
   if (pathname.startsWith('/clubs/')) {
-    return { title: 'Club', showBack: true, fallbackRoute: '/community' };
+    return { key: 'club', showBack: true, fallbackRoute: '/community' };
   }
-  return { title: 'Xaana' };
+  return { key: 'fallback' };
 }
 
 interface NavigationProps {}
 
 export function Navigation(_props: NavigationProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const navigationType = useNavigationType();
@@ -87,12 +90,12 @@ export function Navigation(_props: NavigationProps) {
 
   const navItems = useMemo<AppNavItem[]>(
     () => [
-      { key: 'today', label: 'My Week', to: '/dashboard' },
-      { key: 'community', label: 'Community', to: '/community' },
-      { key: 'content', label: 'Content', to: '/my-contents' },
-      { key: 'explore', label: 'Explore', to: '/templates' },
+      { key: 'today', label: t('nav.myWeek'), to: '/dashboard' },
+      { key: 'community', label: t('nav.community'), to: '/community' },
+      { key: 'content', label: t('nav.content'), to: '/my-contents' },
+      { key: 'explore', label: t('nav.explore'), to: '/templates' },
     ],
-    [],
+    [t],
   );
 
   useEffect(() => {
@@ -187,21 +190,21 @@ export function Navigation(_props: NavigationProps) {
   return (
     <>
       <header className="app-header-v2">
-        <button type="button" className="brand" onClick={() => navigate('/dashboard')} aria-label="Go to My Week" />
+        <button type="button" className="brand" onClick={() => navigate('/dashboard')} aria-label={t('nav.goToMyWeek')} />
         {shouldShowBack ? (
-          <IconButton label="Back" icon={<ArrowLeft size={18} />} onClick={handleBack} />
+          <IconButton label={t('common.back')} icon={<ArrowLeft size={18} className="icon-directional" />} onClick={handleBack} />
         ) : null}
         <div className="titles">
-          <h1>{shellPage.title}</h1>
-          {shellPage.subtitle ? <p>{shellPage.subtitle}</p> : null}
+          <h1>{t(`shell.${shellPage.key}.title`)}</h1>
+          {shellPage.hasSubtitle ? <p>{t(`shell.${shellPage.key}.subtitle`)}</p> : null}
         </div>
         {isDashboard ? (
-          <button type="button" className="icon-btn-v2" onClick={() => navigate('/focus')} aria-label="Start focus">
+          <button type="button" className="icon-btn-v2" onClick={() => navigate('/focus')} aria-label={t('nav.startFocus')}>
             <Timer size={18} />
           </button>
         ) : null}
         <div style={{ position: 'relative' }} ref={menuRef}>
-          <button type="button" className="avatar" onClick={() => setShowProfileMenu((prev) => !prev)} aria-label="Open profile menu">
+          <button type="button" className="avatar" onClick={() => setShowProfileMenu((prev) => !prev)} aria-label={t('nav.openProfileMenu')}>
             {telegramUser?.photo_url ? (
               <img src={telegramUser.photo_url} alt={displayName} style={{ width: '100%', height: '100%', borderRadius: '999px', objectFit: 'cover' }} />
             ) : (
@@ -212,22 +215,22 @@ export function Navigation(_props: NavigationProps) {
             <div className="profile-menu-v2">
               <button type="button" onClick={() => { navigate('/my-contents'); setShowProfileMenu(false); }}>
                 <Library size={16} />
-                My Contents
+                {t('menu.myContents')}
               </button>
               <button type="button" onClick={() => { navigate('/settings'); setShowProfileMenu(false); }}>
                 <Settings size={16} />
-                Settings
+                {t('menu.settings')}
               </button>
               {isAdmin ? (
                 <button type="button" onClick={() => { navigate('/admin'); setShowProfileMenu(false); }}>
                   <Shield size={16} />
-                  Admin Panel
+                  {t('menu.adminPanel')}
                 </button>
               ) : null}
               {sessionMode === 'browser_token' ? (
                 <button type="button" onClick={handleLogout}>
                   <LogOut size={16} />
-                  Logout
+                  {t('menu.logout')}
                 </button>
               ) : null}
             </div>

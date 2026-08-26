@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../api/client';
 import { BottomSheet } from '../ui/BottomSheet';
@@ -11,6 +12,7 @@ interface CheckinSheetProps {
 }
 
 export function CheckinSheet({ open, promiseId, promiseText, onClose, onSuccess }: CheckinSheetProps) {
+  const { t } = useTranslation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -24,10 +26,10 @@ export function CheckinSheet({ open, promiseId, promiseText, onClose, onSuccess 
     setError('');
     try {
       await apiClient.checkinPromise(promiseId, { action_datetime: new Date().toISOString() });
-      onSuccess('Checked in');
+      onSuccess(t('checkin.checkedIn'));
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to check in');
+      setError(err instanceof Error ? err.message : t('checkin.failed'));
     } finally {
       setIsSubmitting(false);
     }

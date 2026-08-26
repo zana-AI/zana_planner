@@ -1,3 +1,4 @@
+import { formatDate } from '../../i18n/format';
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../api/client';
 import type { PlanSession } from '../../types';
@@ -38,7 +39,7 @@ function todayKey() {
 function formatDayLabel(dateKey: string) {
   const date = new Date(`${dateKey}T12:00:00`);
   return {
-    dow: date.toLocaleDateString('en-US', { weekday: 'short' }),
+    dow: formatDate(date, { weekday: 'short' }),
     num: date.getDate(),
   };
 }

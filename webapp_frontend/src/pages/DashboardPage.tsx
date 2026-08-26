@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Play, Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { formatDateRange, formatNumber } from '../i18n/format';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
@@ -44,6 +46,9 @@ function getWeekDays(weekStart: string): string[] {
 }
 
 export function DashboardPage() {
+  const { t, i18n } = useTranslation();
+  // Re-derive locale-formatted strings when the language changes.
+  const i18nLanguage = i18n.language;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
@@ -98,10 +103,9 @@ export function DashboardPage() {
     if (!reportData) return '';
     const start = new Date(reportData.week_start);
     const end = new Date(reportData.week_end);
-    const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    return `${startStr} - ${endStr}`;
-  }, [reportData]);
+    // Locale-aware: Jalali + Persian digits under `fa`, Gregorian under `en`.
+    return formatDateRange(start, end, { year: 'numeric', month: 'short', day: 'numeric' });
+  }, [reportData, i18nLanguage]);
 
   const fetchReport = useCallback(async (
     authData: string,
@@ -134,7 +138,7 @@ export function DashboardPage() {
           if (allowLocalMockData) {
             setReportData(getMockWeeklyReport(refTime));
           } else {
-            setError('Authentication failed. Please log in again.');
+            setError(t('dashboard.authFailed'));
             navigate('/', { replace: true });
           }
         } else {
@@ -148,7 +152,7 @@ export function DashboardPage() {
         if (allowLocalMockData) {
           setReportData(getMockWeeklyReport(refTime));
         } else {
-          setError('Failed to load your dashboard. Please try again.');
+          setError(t('dashboard.loadFailed'));
         }
       }
       hapticFeedback('error');
@@ -521,7 +525,7 @@ export function DashboardPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading your workspace...</div>
+          <div className="loading-text">{t('dashboard.loadingWorkspace')}</div>
         </div>
       </div>
     );
@@ -533,10 +537,10 @@ export function DashboardPage() {
       <div className="app">
         <div className="error">
           <div className="error-icon">!</div>
-          <h1 className="error-title">Something went wrong</h1>
+          <h1 className="error-title">{t('common.somethingWentWrong')}</h1>
           <p className="error-message">{error}</p>
           <button className="retry-button" onClick={handleRefresh}>
-            Try Again
+            {t('common.tryAgain')}
           </button>
         </div>
       </div>
@@ -557,31 +561,31 @@ export function DashboardPage() {
             type="button"
             onClick={handlePreviousWeek}
             disabled={loading}
-            aria-label="Previous week"
+            aria-label={t('dashboard.previousWeek')}
           >
-            <ChevronLeft size={16} aria-hidden />
+            <ChevronLeft size={16} aria-hidden className="icon-directional" />
           </button>
-          <div className="range">{weekRangeDisplay || 'Loading...'}</div>
+          <div className="range">{weekRangeDisplay || t('common.loading')}</div>
           <button
             type="button"
             onClick={handleNextWeek}
             disabled={loading || isCurrentWeek}
-            aria-label="Next week"
+            aria-label={t('dashboard.nextWeek')}
           >
-            <ChevronRight size={16} aria-hidden />
+            <ChevronRight size={16} aria-hidden className="icon-directional" />
           </button>
         </div>
 
         {currentReportData && currentReportData.total_promised > 0 && (
           <div className="overall">
             <div className="row">
-              <span className="label">Overall progress</span>
+              <span className="label">{t('dashboard.overallProgress')}</span>
               <span className="sub">
-                {overallProgress.cappedTotal.toFixed(1)}h / {currentReportData.total_promised.toFixed(1)}h
+                {t('dashboard.hoursOfHours', { spent: formatNumber(overallProgress.cappedTotal, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), promised: formatNumber(currentReportData.total_promised, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
               </span>
             </div>
             <div className="row overall-actions">
-              <span className="value">{Math.round(overallProgress.cappedPct)}%</span>
+              <span className="value">{formatNumber(Math.round(overallProgress.cappedPct))}%</span>
               {/* One launcher for everything. Focus used to have its own button
                   here; it is now one of the actions Play offers, so there is a
                   single answer to "what do I do now?". */}
@@ -592,7 +596,7 @@ export function DashboardPage() {
                   onClick={() => setPlayOpen(true)}
                 >
                   <Play size={14} aria-hidden />
-                  Play
+                  {t('dashboard.play')}
                 </button>
               ) : null}
             </div>
@@ -605,9 +609,9 @@ export function DashboardPage() {
         {(promisesData || (isCurrentWeek && emptyPromisesData && olderPromiseCount === 0)) && (
           <>
             <div className="section-head">
-              <h2>Promises</h2>
+              <h2>{t('dashboard.promises')}</h2>
               <span className="meta">
-                {promiseCount > 0 ? `${promiseCount} active` : 'None yet'}
+                {promiseCount > 0 ? t('dashboard.activeCount', { count: promiseCount }) : t('common.noneYet')}
               </span>
             </div>
             <WeeklyReport
@@ -625,7 +629,7 @@ export function DashboardPage() {
                 className={`older-promises-toggle${showOlderPromises ? ' is-open' : ''}`}
                 onClick={() => setShowOlderPromises((value) => !value)}
               >
-                <span>{showOlderPromises ? 'Hide older promises' : `Show ${olderPromiseCount} older ${olderPromiseCount === 1 ? 'promise' : 'promises'}`}</span>
+                <span>{showOlderPromises ? t('dashboard.hideOlderPromises') : t('dashboard.showOlderPromises', { count: olderPromiseCount })}</span>
               </button>
             ) : null}
           </>
@@ -634,7 +638,7 @@ export function DashboardPage() {
         {shouldShowOlderPromises && olderPromisesData ? (
           <>
             <div className="section-head section-head--older">
-              <h2>Older promises</h2>
+              <h2>{t('dashboard.olderPromises')}</h2>
               <span className="meta">{olderPromiseCount} ended</span>
             </div>
             <WeeklyReport
@@ -652,8 +656,8 @@ export function DashboardPage() {
         {tasksData && (
           <>
             <div className="section-head">
-              <h2>One-time tasks</h2>
-              <span className="meta">{taskCount} this week</span>
+              <h2>{t('dashboard.oneTimeTasks')}</h2>
+              <span className="meta">{t('dashboard.tasksThisWeek', { count: taskCount })}</span>
             </div>
             <WeeklyReport
               data={tasksData}
@@ -670,8 +674,8 @@ export function DashboardPage() {
         {distractionsPromisesData && (
           <>
             <div className="section-head">
-              <h2>Distractions</h2>
-              <span className="meta">Stay under budget</span>
+              <h2>{t('dashboard.distractions')}</h2>
+              <span className="meta">{t('dashboard.stayUnderBudget')}</span>
             </div>
             <WeeklyReport
               data={distractionsPromisesData}
@@ -687,12 +691,12 @@ export function DashboardPage() {
 
         {!loading && !isCurrentWeek && !promisesData && !olderPromisesData && !tasksData && !distractionsPromisesData && (
           <div className="empty-state">
-            <h2 className="empty-title">No promises or tasks yet</h2>
+            <h2 className="empty-title">{t('dashboard.emptyTitle')}</h2>
             <p className="empty-subtitle">
-              Start tracking your promises in the Telegram bot to see your progress here.
+              {t('dashboard.emptySubtitle')}
             </p>
             <button type="button" className="btn btn-primary" onClick={() => navigate('/templates')}>
-              Explore Promise Library
+              {t('dashboard.explorePromiseLibrary')}
             </button>
           </div>
         )}
@@ -807,7 +811,7 @@ export function DashboardPage() {
             ) : (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h4 style={{ color: '#fff', margin: 0 }}>Promise Suggestions</h4>
+                  <h4 style={{ color: '#fff', margin: 0 }}>{t('dashboard.promiseSuggestions')}</h4>
                   <button
                     className="button-secondary"
                     onClick={() => setShowSuggestionsInbox(false)}
@@ -858,7 +862,7 @@ export function DashboardPage() {
       )}
 
       {isCurrentWeek ? (
-        <button type="button" className="fab" aria-label="Create promise" onClick={() => setShowCreatePromiseModal(true)}>
+        <button type="button" className="fab" aria-label={t('dashboard.createPromise')} onClick={() => setShowCreatePromiseModal(true)}>
           <Plus size={22} />
         </button>
       ) : null}

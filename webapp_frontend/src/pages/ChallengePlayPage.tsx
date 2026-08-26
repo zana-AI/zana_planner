@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Trophy, Flame, Check, X, RotateCcw } from 'lucide-react';
@@ -20,6 +21,7 @@ const textSecondary = 'var(--color-text-secondary, #8A94A6)';
 const accent = '#5DCAA5';
 
 export function ChallengePlayPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { challengeId } = useParams<{ challengeId: string }>();
   const { hapticFeedback } = useTelegramWebApp();
@@ -69,7 +71,7 @@ export function ChallengePlayPage() {
       } catch (err) {
         console.error('Failed to load challenge:', err);
         if (active) {
-          setErrorMsg('Could not load this challenge.');
+          setErrorMsg(t('challenges.loadOneFailed'));
           setPhase('error');
         }
       }
@@ -91,7 +93,7 @@ export function ChallengePlayPage() {
         setPhase('result');
       } catch (err) {
         console.error('Failed to submit deck:', err);
-        setErrorMsg('Could not save your answers.');
+        setErrorMsg(t('challenges.saveFailed'));
         setPhase('error');
       }
     },
@@ -199,9 +201,9 @@ export function ChallengePlayPage() {
           }}
         >
           <Check size={32} color={accent} />
-          <h1 style={{ fontSize: 20, margin: '12px 0 6px', color: textPrimary }}>You're all caught up</h1>
+          <h1 style={{ fontSize: 20, margin: '12px 0 6px', color: textPrimary }}>{t('challenges.allCaughtUp')}</h1>
           <p style={{ color: textSecondary, lineHeight: 1.5, margin: 0 }}>
-            No new sets right now{challenge ? ` in ${challenge.title}` : ''}. Come back later for the next one.
+            {challenge ? t('challenges.noNewSetsIn', { title: challenge.title }) : t('challenges.noNewSets')}
           </p>
         </div>
         {Leaderboard}
@@ -223,10 +225,10 @@ export function ChallengePlayPage() {
         >
           <div style={{ fontSize: 44, fontWeight: 800, color: accent, lineHeight: 1 }}>{result.score_pct}%</div>
           <p style={{ color: textPrimary, margin: '10px 0 4px', fontSize: 16 }}>
-            {result.correct} / {result.total} correct
+            {t('challenges.correctOfTotal', { correct: result.correct, total: result.total })}
           </p>
           <p style={{ color: textSecondary, margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Flame size={15} color="#EF9F27" /> {result.streak}-day streak
+            <Flame size={15} color="#EF9F27" /> {t('challenges.dayStreak', { count: result.streak })}
           </p>
         </div>
         <button

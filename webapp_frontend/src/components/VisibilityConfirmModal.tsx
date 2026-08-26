@@ -47,7 +47,7 @@ export function VisibilityConfirmModal({
               <div className="modal-warning-icon"><Globe size={20} strokeWidth={1.8} /></div>
               <div className="modal-warning-text">
                 <strong>This will:</strong>
-                <ul style={{ margin: '6px 0 0 0', paddingLeft: '18px', lineHeight: '1.7' }}>
+                <ul style={{ margin: '6px 0 0 0', paddingInlineStart: '18px', lineHeight: '1.7' }}>
                   <li>Show your progress in the <strong>community activity feed</strong></li>
                   <li>Add this promise to the <strong>promise template library</strong>, showing your activity on that template</li>
                   <li>Let others see your streak and progress</li>

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { ExternalLink, Settings, Shield, Trophy, Users } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -15,10 +17,10 @@ interface ClubBadgeProps {
   onRemove: (club: ClubSummary) => void;
 }
 
-function getStatus(progress: number): { label: string; variant: 'good' | 'warn' | 'bad' } {
-  if (progress >= 70) return { label: 'On track', variant: 'good' };
-  if (progress >= 40) return { label: 'Building', variant: 'warn' };
-  return { label: 'Needs push', variant: 'bad' };
+function getStatus(progress: number): { key: 'onTrack' | 'building' | 'needsPush'; variant: 'good' | 'warn' | 'bad' } {
+  if (progress >= 70) return { key: 'onTrack', variant: 'good' };
+  if (progress >= 40) return { key: 'building', variant: 'warn' };
+  return { key: 'needsPush', variant: 'bad' };
 }
 
 function formatValue(value: number, metricType: string): string {
@@ -28,8 +30,8 @@ function formatValue(value: number, metricType: string): string {
   return String(Math.round(value));
 }
 
-function formatBreakdown(member: ClubLeaderboardMember): string {
-  if (!member.breakdown.length) return 'No activity yet';
+function formatBreakdown(member: ClubLeaderboardMember, t: TFunction): string {
+  if (!member.breakdown.length) return t('club.noActivityYet');
   return member.breakdown
     .slice(0, 3)
     .map((item) => `${item.promise_text}: ${formatValue(item.achieved_value, item.metric_type)}/${formatValue(item.target_value, item.metric_type)}`)
@@ -51,6 +53,7 @@ function formatActivityTitle(date: string, checkins: number, durationHours: numb
 }
 
 export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSettings, onRemove }: ClubBadgeProps) {
+  const { t } = useTranslation();
   const [sheetOpen, setSheetOpen] = useState(initialOpen);
   const [leaderboard, setLeaderboard] = useState<ClubLeaderboardResponse | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -75,7 +78,7 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
       .catch((err) => {
         if (!cancelled) {
           console.error('Failed to load club leaderboard:', err);
-          setLeaderboardError(err instanceof Error ? err.message : 'Failed to load leaderboard.');
+          setLeaderboardError(err instanceof Error ? err.message : t('club.leaderboardFailed'));
         }
       })
       .finally(() => {
@@ -108,17 +111,17 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
             <span className="pid" dir="ltr">#{club.visibility}</span>
           </div>
           <Badge variant={leaderboard ? status.variant : 'neutral'} showDot={!!leaderboard}>
-            {leaderboard ? status.label : 'Club'}
+            {leaderboard ? t(`club.${status.key}`) : t('shell.club.title')}
           </Badge>
         </div>
 
-        <p className="club-badge-promise">{club.promise_text || 'No shared promise yet'}</p>
+        <p className="club-badge-promise">{club.promise_text || t('club.noSharedPromise')}</p>
 
         <div className="club-badge-member-strip">
           <AvatarStack users={club.members} size={24} max={5} />
           <span>{club.member_count} {club.member_count === 1 ? 'member' : 'members'}</span>
           <span>{club.promise_count || (club.promise_uuid ? 1 : 0)} {(club.promise_count || 0) === 1 ? 'promise' : 'promises'}</span>
-          {topMember ? <span>Lead: {topMember.first_name || topMember.username || 'Member'}</span> : null}
+          {topMember ? <span>{t('club.lead', { name: topMember.first_name || topMember.username || t('club.member') })}</span> : null}
         </div>
 
         {leaderboard ? (
@@ -128,8 +131,8 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
         ) : null}
 
         <div className="row">
-          <span className="sub" dir="ltr">{leaderboard ? `${leaderboard.window_start} - ${leaderboard.window_end}` : 'Open leaderboard'}</span>
-          <span className="meta" dir="ltr">{leaderboard ? `${progress}%` : 'Rolling 7d'}</span>
+          <span className="sub" dir="auto">{leaderboard ? `${leaderboard.window_start} - ${leaderboard.window_end}` : t('club.openLeaderboard')}</span>
+          <span className="meta" dir="auto">{leaderboard ? `${progress}%` : t('club.rolling7d')}</span>
         </div>
       </article>
 
@@ -156,7 +159,7 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
           </div>
           <div className="row" style={{ marginTop: 2 }}>
             <span className="value">{progress}%</span>
-            <Badge variant={status.variant} showDot>{status.label}</Badge>
+            <Badge variant={status.variant} showDot>{t(`club.${status.key}`)}</Badge>
           </div>
           <div className="track" style={{ marginTop: 10 }}>
             <div className="fill" style={{ width: `${progress}%` }} />
@@ -185,7 +188,7 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
               <span className="club-leaderboard-rank">{member.rank}</span>
               <div className="club-leaderboard-person">
                 <strong>{member.first_name || member.username || 'Member'}</strong>
-                <span>{member.freeze_streak} day streak | {formatBreakdown(member)}</span>
+                <span>{member.freeze_streak} day streak | {formatBreakdown(member, t)}</span>
               </div>
               <div className="club-activity-strip" aria-label={`${member.first_name || member.username || 'Member'} activity over the last 7 days`}>
                 {member.daily_activity.map((day) => (

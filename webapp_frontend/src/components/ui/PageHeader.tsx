@@ -44,7 +44,7 @@ export function PageHeader({
     <header className="ui-page-header">
       <div className="ui-page-header-left">
         {showBack ? (
-          <Button variant="ghost" size="sm" onClick={handleBack} leftIcon={<ArrowLeft size={16} />}>
+          <Button variant="ghost" size="sm" onClick={handleBack} leftIcon={<ArrowLeft size={16} className="icon-directional" />}>
             {backLabel}
           </Button>
         ) : null}

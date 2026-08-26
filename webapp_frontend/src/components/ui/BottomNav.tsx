@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Compass, Home, Library, Users } from 'lucide-react';
 import type { AppNavItem } from '../../types';
@@ -7,6 +8,7 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ items }: BottomNavProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -18,7 +20,7 @@ export function BottomNav({ items }: BottomNavProps) {
   };
 
   return (
-    <nav className="ui-bottom-nav" aria-label="Primary navigation">
+    <nav className="ui-bottom-nav" aria-label={t('nav.primary')}>
       {items.map((item) => {
         const isActive = location.pathname === item.to || (item.to !== '/dashboard' && location.pathname.startsWith(item.to));
         return (

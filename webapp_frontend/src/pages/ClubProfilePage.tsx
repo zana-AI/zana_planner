@@ -151,7 +151,7 @@ export function ClubProfilePage() {
           <p className="clubprofile-byline">
             {profile.host_name ? <span>by {profile.host_name}</span> : null}
             <span className={profile.host_name ? 'dot' : undefined}>
-              <Users size={12} aria-hidden style={{ verticalAlign: '-1px', marginRight: 4 }} />
+              <Users size={12} aria-hidden style={{ verticalAlign: '-1px', marginInlineEnd: 4 }} />
               {memberLabel} {memberLabel === 1 ? 'member' : 'members'}
             </span>
           </p>

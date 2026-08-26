@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -16,11 +17,11 @@ import './FlashcardsPage.css';
  * content itself carries whatever language the deck is in. Nothing here is
  * specific to French.
  */
-const RATINGS: Array<{ value: FlashcardRating; label: string; hint: string; tone: string }> = [
-  { value: 1, label: 'Again', hint: 'forgot', tone: 'again' },
-  { value: 2, label: 'Hard', hint: 'a struggle', tone: 'hard' },
-  { value: 3, label: 'Good', hint: 'knew it', tone: 'good' },
-  { value: 4, label: 'Easy', hint: 'instant', tone: 'easy' },
+const RATINGS: Array<{ value: FlashcardRating; tone: 'again' | 'hard' | 'good' | 'easy' }> = [
+  { value: 1, tone: 'again' },
+  { value: 2, tone: 'hard' },
+  { value: 3, tone: 'good' },
+  { value: 4, tone: 'easy' },
 ];
 
 /**
@@ -73,6 +74,7 @@ function ReviewPane({
   deckId?: string;
   onCountsChange: (c: FlashcardCounts) => void;
 }) {
+  const { t } = useTranslation();
   const [cards, setCards] = useState<FlashcardQueueCard[]>([]);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -93,7 +95,7 @@ function ReviewPane({
       onCountsChange(queue.counts);
     } catch (err) {
       console.error('Failed to load flashcard queue:', err);
-      setError("Couldn't load your cards.");
+      setError(t('flashcards.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -120,7 +122,7 @@ function ReviewPane({
       }
     } catch (err) {
       console.error('Failed to submit review:', err);
-      setError("Couldn't save your rating.");
+      setError(t('flashcards.ratingFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -144,12 +146,12 @@ function ReviewPane({
     return () => window.removeEventListener('keydown', onKey);
   }, [card, revealed, rate]);
 
-  if (loading) return <div className="fc-message">Loading…</div>;
+  if (loading) return <div className="fc-message">{t('flashcards.loading')}</div>;
   if (error) {
     return (
       <div className="fc-message fc-error">
         {error}
-        <button className="fc-link" onClick={load}>Try again</button>
+        <button className="fc-link" onClick={load}>{t('flashcards.tryAgain')}</button>
       </div>
     );
   }
@@ -157,8 +159,8 @@ function ReviewPane({
     return (
       <div className="fc-message fc-done">
         <div className="fc-done-mark">✓</div>
-        <p>Nothing to review right now.</p>
-        <button className="fc-link" onClick={load}>Refresh</button>
+        <p>{t('flashcards.nothingToReview')}</p>
+        <button className="fc-link" onClick={load}>{t('flashcards.refresh')}</button>
       </div>
     );
   }
@@ -215,11 +217,11 @@ function ReviewPane({
               <p className="fc-note-fa" dir="auto">{card.fields.note_fa}</p>
             ) : null}
             {card.fields.source_page ? (
-              <p className="fc-source">p. {card.fields.source_page}</p>
+              <p className="fc-source">{t('flashcards.page', { page: card.fields.source_page })}</p>
             ) : null}
           </div>
         ) : (
-          <div className="fc-reveal-hint">Tap to reveal</div>
+          <div className="fc-reveal-hint">{t('flashcards.tapToReveal')}</div>
         )}
       </div>
 
@@ -231,11 +233,11 @@ function ReviewPane({
               className={`fc-rating fc-rating-${r.tone}`}
               disabled={submitting}
               onClick={() => rate(r.value)}
-              aria-label={`${r.label} — ${r.hint} (key ${r.value})`}
+              aria-label={`${t(`flashcards.rating.${r.tone}`)} — ${t(`flashcards.rating.${r.tone}Hint`)} (${r.value})`}
               aria-keyshortcuts={String(r.value)}
             >
-              <span className="fc-rating-label">{r.label}</span>
-              <span className="fc-rating-hint">{r.hint}</span>
+              <span className="fc-rating-label">{t(`flashcards.rating.${r.tone}`)}</span>
+              <span className="fc-rating-hint">{t(`flashcards.rating.${r.tone}Hint`)}</span>
             </button>
           ))}
         </div>
@@ -259,6 +261,7 @@ function ManagePane({
   defaultDeckPath: string;
   onChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const [notes, setNotes] = useState<FlashcardNote[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -276,7 +279,7 @@ function ManagePane({
       }));
     } catch (err) {
       console.error('Failed to load notes:', err);
-      setError("Couldn't load your cards.");
+      setError(t('flashcards.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -306,7 +309,7 @@ function ManagePane({
   };
 
   const save = async () => {
-    if (!draft.front.trim()) { setError('Front is required.'); return; }
+    if (!draft.front.trim()) { setError(t('flashcards.frontRequired')); return; }
     setBusy(true);
     setError('');
     const fields: FlashcardFields = { front: draft.front.trim() };
@@ -325,7 +328,7 @@ function ManagePane({
       onChanged();
     } catch (err) {
       console.error('Failed to save note:', err);
-      setError('Save failed.');
+      setError(t('flashcards.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -340,7 +343,7 @@ function ManagePane({
       onChanged();
     } catch (err) {
       console.error('Failed to delete note:', err);
-      setError('Delete failed.');
+      setError(t('flashcards.deleteFailed'));
     } finally {
       setBusy(false);
     }
@@ -351,7 +354,7 @@ function ManagePane({
       <div className="fc-toolbar">
         <input
           className="fc-search"
-          placeholder="Search…"
+          placeholder={t('flashcards.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           dir="auto"
@@ -423,16 +426,16 @@ function ManagePane({
       ) : null}
 
       {loading ? (
-        <div className="fc-message">Loading…</div>
+        <div className="fc-message">{t('flashcards.loading')}</div>
       ) : notes.length === 0 ? (
         <div className="fc-message">
-          {search ? 'No matches.' : 'No cards yet.'}
+          {search ? t('flashcards.noMatches') : t('flashcards.noCards')}
         </div>
       ) : (
         <>
           <div className="fc-list-meta">
-            {notes.length} card{notes.length === 1 ? '' : 's'}
-            {deckCount > 1 ? ` · ${deckCount} decks` : ''}
+            {t('flashcards.cardCount', { count: notes.length })}
+            {deckCount > 1 ? ` · ${t('flashcards.deckCount', { count: deckCount })}` : ''}
           </div>
           <ul className="fc-list">
             {notes.map((note) => (
@@ -462,8 +465,8 @@ function ManagePane({
                   </div>
                 </div>
                 <div className="fc-item-actions">
-                  <button onClick={() => startEdit(note)} aria-label="Edit">✎</button>
-                  <button onClick={() => remove(note)} aria-label="Delete">🗑</button>
+                  <button onClick={() => startEdit(note)} aria-label={t('common.edit')}>✎</button>
+                  <button onClick={() => remove(note)} aria-label={t('common.delete')}>🗑</button>
                 </div>
               </li>
             ))}
@@ -481,6 +484,7 @@ function emptyDraft(deckPath: string) {
 // --- page -----------------------------------------------------------------
 
 export function FlashcardsPage() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const deckId = params.get('deck') || undefined;
   const deckName = params.get('name') || undefined;
@@ -503,7 +507,7 @@ export function FlashcardsPage() {
     <div className="fc-page">
       <div className="fc-container">
         <header className="fc-header">
-          <h1>{deckName || 'Study'}</h1>
+          <h1>{deckName || t('flashcards.study')}</h1>
           <CountsBar counts={counts} />
         </header>
 
@@ -512,13 +516,13 @@ export function FlashcardsPage() {
             className={tab === 'review' ? 'is-active' : ''}
             onClick={() => setTab('review')}
           >
-            Review
+            {t('flashcards.reviewTab')}
           </button>
           <button
             className={tab === 'manage' ? 'is-active' : ''}
             onClick={() => setTab('manage')}
           >
-            My cards
+            {t('flashcards.myCards')}
           </button>
         </div>
 
@@ -527,7 +531,7 @@ export function FlashcardsPage() {
         ) : (
           <ManagePane
             deckId={deckId}
-            defaultDeckPath={deckName || 'My cards'}
+            defaultDeckPath={deckName || t('flashcards.myCards')}
             onChanged={refreshCounts}
           />
         )}

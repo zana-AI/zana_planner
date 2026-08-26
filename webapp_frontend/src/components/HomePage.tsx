@@ -94,8 +94,10 @@ export function HomePage() {
 
   if (isAuthenticated) return null;
 
+  // Copy here is English-only by design (plan §6) — pin LTR so an RTL <html>
+  // does not mirror an untranslated page.
   return (
-    <main className="home-page home-page-v2">
+    <main className="home-page home-page-v2" dir="ltr">
       <section className="home-v2-hero" aria-labelledby="home-title">
         <div className="home-v2-hero-copy">
           <div className="home-v2-brand-row">

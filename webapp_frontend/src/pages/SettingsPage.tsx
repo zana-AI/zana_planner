@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import type { UserInfo } from '../types';
 import { Button } from '../components/ui/Button';
+import { applyServerLanguage, isReleased } from '../i18n';
 
-const LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'fa', label: 'Persian' },
-  { value: 'fr', label: 'French' },
-];
+// The account language always drives the Telegram bot, where all three already
+// work. `isReleased()` decides whether it also switches this app's UI — see
+// RELEASED_UI_LANGUAGES in src/i18n. Labels are endonyms on purpose: a language
+// is listed in its own language, so it stays findable when the UI is unreadable.
+const LANGUAGES = ['en', 'fa', 'fr'] as const;
 
 export function SettingsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -34,6 +37,7 @@ export function SettingsPage() {
         const info = await apiClient.getUserInfo();
         setUserInfo(info);
         setDisplayNameDraft((info.first_name || '').trim());
+        applyServerLanguage(info.language);
       } catch (err) {
         console.error('Failed to fetch user info:', err);
         if (err instanceof ApiError && err.status === 401) {
@@ -41,7 +45,7 @@ export function SettingsPage() {
           window.dispatchEvent(new Event('logout'));
           navigate('/', { replace: true });
         } else {
-          setError('Failed to load settings.');
+          setError(t('settings.loadFailed'));
         }
       } finally {
         setLoading(false);
@@ -72,10 +76,10 @@ export function SettingsPage() {
       });
       setUserInfo(updated);
       setDisplayNameDraft((updated.first_name || '').trim());
-      showSuccess('Display name updated.');
+      showSuccess(t('settings.displayNameUpdated'));
     } catch (err) {
       console.error('Failed to update display name:', err);
-      setError(err instanceof ApiError ? err.message : 'Failed to update display name.');
+      setError(err instanceof ApiError ? err.message : t('settings.displayNameFailed'));
       hapticFeedback('error');
     } finally {
       setNameSaving(false);
@@ -89,10 +93,12 @@ export function SettingsPage() {
     try {
       await apiClient.updateUserSettings({ language });
       setUserInfo((prev) => (prev ? { ...prev, language } : null));
-      showSuccess('Language updated.');
+      // Switches the app UI too, for languages whose catalogs have shipped.
+      applyServerLanguage(language);
+      showSuccess(t('settings.languageUpdated'));
     } catch (err) {
       console.error('Failed to update language:', err);
-      setError(err instanceof ApiError ? err.message : 'Failed to update language.');
+      setError(err instanceof ApiError ? err.message : t('settings.languageFailed'));
       hapticFeedback('error');
     } finally {
       setLanguageSaving(false);
@@ -106,7 +112,7 @@ export function SettingsPage() {
     try {
       await apiClient.updateUserSettings({ voice_mode: value });
       setUserInfo((prev) => (prev ? { ...prev, voice_mode: value } : null));
-      showSuccess(enabled ? 'Voice mode enabled.' : 'Voice mode disabled.');
+      showSuccess(enabled ? t('settings.voiceModeEnabled') : t('settings.voiceModeDisabled'));
     } catch (err) {
       console.error('Failed to update voice mode:', err);
       setError(err instanceof ApiError ? err.message : 'Failed to update voice mode.');
@@ -121,7 +127,7 @@ export function SettingsPage() {
       <div className="page-container">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading...</div>
+          <div className="loading-text">{t('common.loading')}</div>
         </div>
       </div>
     );
@@ -130,7 +136,7 @@ export function SettingsPage() {
   const displayTimezone =
     userInfo?.timezone && userInfo.timezone !== 'DEFAULT'
       ? userInfo.timezone
-      : 'Not set';
+      : t('settings.timezoneNotSet');
   const voiceEnabled = userInfo?.voice_mode === 'enabled';
   const currentName = (userInfo?.first_name || '').trim();
   const canSaveName = !nameSaving && !!userInfo && displayNameDraft.trim() !== currentName;
@@ -140,7 +146,7 @@ export function SettingsPage() {
       <div className="settings-sections">
         {/* Display name */}
         <section className="settings-section">
-          <h3>Display name</h3>
+          <h3>{t('settings.displayName')}</h3>
           <p className="settings-value">{currentName || 'Not set'}</p>
           <div className="settings-name-row">
             <input
@@ -166,14 +172,14 @@ export function SettingsPage() {
               onClick={handleDisplayNameSave}
               disabled={!canSaveName}
             >
-              {nameSaving ? 'Saving...' : 'Save'}
+              {nameSaving ? t('common.saving') : t('common.save')}
             </Button>
           </div>
         </section>
 
         {/* Timezone */}
         <section className="settings-section">
-          <h3>Timezone</h3>
+          <h3>{t('settings.timezone')}</h3>
           <p className="settings-value">{displayTimezone.replace(/_/g, ' ')}</p>
           <Button
             type="button"
@@ -181,15 +187,15 @@ export function SettingsPage() {
             size="sm"
             onClick={() => navigate('/timezone', { replace: false })}
           >
-            Change timezone
+            {t('settings.changeTimezone')}
           </Button>
         </section>
 
         {/* Language */}
         <section className="settings-section">
-          <h3>Language</h3>
+          <h3>{t('settings.language')}</h3>
           <div className="settings-language-buttons">
-            {LANGUAGES.map(({ value, label }) => (
+            {LANGUAGES.map((value) => (
               <Button
                 key={value}
                 type="button"
@@ -198,17 +204,22 @@ export function SettingsPage() {
                 onClick={() => handleLanguageChange(value)}
                 disabled={languageSaving}
               >
-                {label}
+                {t(`language.${value}`)}
               </Button>
             ))}
           </div>
+          <p className="settings-hint">
+            {isReleased(userInfo?.language)
+              ? t('settings.languageAppHint')
+              : t('settings.languageBotHint')}
+          </p>
         </section>
 
         {/* Voice mode */}
         <section className="settings-section">
-          <h3>Voice mode</h3>
+          <h3>{t('settings.voiceMode')}</h3>
           <p className="settings-hint">
-            When enabled, the bot can send voice messages in the chat.
+            {t('settings.voiceModeHint')}
           </p>
           <div className="settings-voice-toggle">
             <Button
@@ -218,7 +229,7 @@ export function SettingsPage() {
               onClick={() => handleVoiceModeChange(false)}
               disabled={voiceModeSaving}
             >
-              Disabled
+              {t('settings.disabled')}
             </Button>
             <Button
               type="button"
@@ -227,7 +238,7 @@ export function SettingsPage() {
               onClick={() => handleVoiceModeChange(true)}
               disabled={voiceModeSaving}
             >
-              Enabled
+              {t('settings.enabled')}
             </Button>
           </div>
         </section>

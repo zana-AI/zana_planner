@@ -1,3 +1,4 @@
+import { formatDateRange as formatIntlDateRange } from '../i18n/format';
 import { useMemo } from 'react';
 import type { PromiseData, WeeklyReportData, UpcomingPlanSession } from '../types';
 import { PromiseCard } from './PromiseCard';
@@ -22,12 +23,8 @@ function formatDateRange(startDate: string, endDate: string): string {
   const start = new Date(startDate);
   const end = new Date(endDate);
   
-  const formatOptions: Intl.DateTimeFormatOptions = { 
-    day: 'numeric', 
-    month: 'short' 
-  };
-  
-  return `${start.toLocaleDateString('en-US', formatOptions)} - ${end.toLocaleDateString('en-US', formatOptions)}`;
+  // Locale-aware: Jalali + Persian digits under `fa`.
+  return formatIntlDateRange(start, end, { day: 'numeric', month: 'short' });
 }
 
 /**

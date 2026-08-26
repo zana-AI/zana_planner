@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
@@ -10,6 +11,7 @@ import { buildActivitySummaryText } from '../utils/activitySummary';
 import { getDicebearUrl } from '../utils/dicebearAvatar';
 
 export function UserDetailPage() {
+  const { t } = useTranslation();
   const { userId } = useParams<{ userId: string }>();
   const { user, initData, hapticFeedback } = useTelegramWebApp();
   const [userData, setUserData] = useState<PublicUser | null>(null);
@@ -149,7 +151,7 @@ export function UserDetailPage() {
 
   const isOwnProfile = currentUserId === userId;
   const displayName = getDisplayName(userData);
-  const activitySummary = buildActivitySummaryText(userData.weekly_activity_count, userData.last_activity_at_utc);
+  const activitySummary = buildActivitySummaryText(userData.weekly_activity_count, userData.last_activity_at_utc, t);
 
   const dicebearUrl = getDicebearUrl(userData.user_id);
   const avatarUrl =

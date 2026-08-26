@@ -182,7 +182,7 @@ export function AdminPanel() {
 
   if (loading) {
     return (
-      <div className="admin-panel">
+      <div className="admin-panel" dir="ltr">
         <div className="admin-panel-loading">
           <div className="loading-spinner" />
           <div className="loading-text">Loading users...</div>
@@ -193,7 +193,7 @@ export function AdminPanel() {
 
   if (error && error.includes('Access denied')) {
     return (
-      <div className="admin-panel">
+      <div className="admin-panel" dir="ltr">
         <div className="admin-panel-error">
           <div className="error-icon">!</div>
           <p className="error-message">{error}</p>
@@ -203,7 +203,7 @@ export function AdminPanel() {
   }
 
   return (
-    <div className="admin-panel">
+    <div className="admin-panel" dir="ltr">
       <AdminTabs
         activeTab={activeTab}
         onTabChange={setActiveTab}

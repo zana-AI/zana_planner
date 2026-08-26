@@ -99,7 +99,7 @@
 
 .fc-card.is-revealed {
   cursor: default;
-  text-align: left;
+  text-align: start;
   justify-content: flex-start;
 }
 

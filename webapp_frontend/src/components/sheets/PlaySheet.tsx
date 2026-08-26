@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, CheckCircle2, Layers, Timer } from 'lucide-react';
@@ -31,14 +33,15 @@ type PlayAction = {
 
 // One line under the promise title on the square. It answers "why am I looking
 // at this?", so a real number always beats a generic verb.
-function summarise(actions: PlayAction[]): string {
+function summarise(actions: PlayAction[], t: TFunction): string {
   const waiting = actions.filter((a) => a.waiting);
-  if (waiting.length === 0) return actions.length > 0 ? 'Ready' : 'Nothing due';
+  if (waiting.length === 0) return actions.length > 0 ? t('play.ready') : t('play.nothingDue');
   if (waiting.length === 1) return waiting[0].detail || waiting[0].label;
-  return `${waiting.length} things waiting`;
+  return t('play.thingsWaiting', { count: waiting.length });
 }
 
 export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: PlaySheetProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
   const [openPromiseId, setOpenPromiseId] = useState<string | null>(null);
@@ -65,7 +68,7 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
           key: `quiz-${quiz.challenge_id}`,
           label: quiz.title || "Today's quiz",
           detail: due
-            ? 'New questions today'
+            ? t('play.newQuestionsToday')
             : `Done today${quiz.score != null ? ` · ${Math.round(quiz.score)}%` : ''}`,
           icon: <Layers size={18} aria-hidden />,
           waiting: due,
@@ -95,8 +98,8 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
       if (data.metric_type === 'count') {
         actions.push({
           key: `checkin-${id}`,
-          label: 'Check in',
-          detail: 'Log that you did it',
+          label: t('play.checkIn'),
+          detail: t('play.logThatYouDidIt'),
           icon: <CheckCircle2 size={18} aria-hidden />,
           waiting: false,
           run: () => {
@@ -107,7 +110,7 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
       } else if ((data.hours_promised || 0) > 0) {
         actions.push({
           key: `focus-${id}`,
-          label: 'Start focus',
+          label: t('play.startFocus'),
           detail: '25-minute timer',
           icon: <Timer size={18} aria-hidden />,
           waiting: false,
@@ -171,7 +174,7 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
               <span className="play-action-icon">{action.icon}</span>
               <span className="play-action-body">
                 <span className="play-action-label" dir="auto">{action.label}</span>
-                <span className="play-action-detail" dir="ltr">{action.detail}</span>
+                <span className="play-action-detail" dir="auto">{action.detail}</span>
               </span>
             </button>
           ))}
@@ -192,7 +195,7 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
       open={open}
       onClose={close}
       title="Play"
-      subtitle={cards.length > 0 ? 'What needs doing today' : undefined}
+      subtitle={cards.length > 0 ? t('play.whatNeedsDoingToday') : undefined}
     >
       {cards.length === 0 ? (
         <p className="play-empty">
@@ -221,7 +224,7 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
                 <span className="play-tile-title" dir="auto">
                   {formatPromiseText(item.data.text)}
                 </span>
-                <span className="play-tile-meta" dir="ltr">{summarise(actions)}</span>
+                <span className="play-tile-meta" dir="auto">{summarise(actions, t)}</span>
               </button>
             );
           })}

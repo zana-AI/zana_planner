@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PublicUser } from '../types';
@@ -74,6 +75,7 @@ function getDisplayName(user: PublicUser): string {
 }
 
 export function UserCard({ user, currentUserId, showFollowButton = false, onFollowChange, onClick }: UserCardProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [imageError, setImageError] = useState(false);
   const [dicebearError, setDicebearError] = useState(false);
@@ -93,7 +95,7 @@ export function UserCard({ user, currentUserId, showFollowButton = false, onFoll
   const initials = getInitials(user);
   const displayName = getDisplayName(user);
   const avatarColor = getAvatarColor(user.user_id);
-  const activitySummary = buildActivitySummaryText(user.weekly_activity_count, user.last_activity_at_utc);
+  const activitySummary = buildActivitySummaryText(user.weekly_activity_count, user.last_activity_at_utc, t);
   
   // Generate DiceBear avatar URL (deterministic based on user_id)
   const dicebearUrl = getDicebearUrl(user.user_id);

@@ -11,12 +11,15 @@
     "screenshots:home": "node scripts/render_home_screenshots.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/vazirmatn": "^5.3.0",
     "@fontsource/manrope": "^5.2.7",
     "@xyflow/react": "^12.10.1",
+    "i18next": "^26.4.0",
     "lucide-react": "^0.525.0",
     "pdfjs-dist": "^5.7.284",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-i18next": "^17.0.12",
     "react-router-dom": "^7.11.0"
   },
   "devDependencies": {

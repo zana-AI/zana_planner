@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Users, Trophy, Flame, Layers, Play } from 'lucide-react';
@@ -14,6 +15,7 @@ const accent = '#5DCAA5';
 const ACTIVITY_LABEL: Record<string, string> = { flashcard: 'Quiz', multiple_choice: 'Quiz' };
 
 export function ChallengeDetailPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { challengeId } = useParams<{ challengeId: string }>();
   const { hapticFeedback } = useTelegramWebApp();
@@ -42,7 +44,7 @@ export function ChallengeDetailPage() {
         setHasDueDeck(!!deck && deck.items.length > 0);
       } catch (err) {
         console.error('Failed to load challenge:', err);
-        if (active) setError('Could not load this challenge.');
+        if (active) setError(t('challenges.loadOneFailed'));
       } finally {
         if (active) setLoading(false);
       }
@@ -67,7 +69,7 @@ export function ChallengeDetailPage() {
     return (
       <main style={{ padding: '40px 16px', textAlign: 'center', color: textSecondary }}>
         <div className="error-icon">!</div>
-        <p style={{ marginTop: 12 }}>{error || 'Challenge not found.'}</p>
+        <p style={{ marginTop: 12 }}>{error || t('challenges.notFound')}</p>
         <button className="retry-button" onClick={() => navigate('/challenges')}>
           Back to challenges
         </button>
@@ -158,7 +160,7 @@ export function ChallengeDetailPage() {
             gap: 8,
           }}
         >
-          <Play size={17} /> {challenge.joined ? "Play today's set" : 'Start playing'}
+          <Play size={17} /> {challenge.joined ? t('challenges.playToday') : t('challenges.startPlaying')}
         </button>
       ) : (
         <div

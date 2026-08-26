@@ -1,3 +1,6 @@
+import { formatDate, weekdayNarrowLabels } from '../../i18n/format';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users } from 'lucide-react';
@@ -47,20 +50,20 @@ function getStatusClass(rawProgress: number, expectedFraction: number): 'good' |
   return '';
 }
 
-function formatSessionTime(isoStr: string | null): string {
-  if (!isoStr) return 'No time set';
+function formatSessionTime(isoStr: string | null, t: TFunction): string {
+  if (!isoStr) return t('promise.noTimeSet');
   const dt = new Date(isoStr);
-  if (Number.isNaN(dt.getTime())) return 'No time set';
+  if (Number.isNaN(dt.getTime())) return t('promise.noTimeSet');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
   const dtDay = new Date(dt);
   dtDay.setHours(0, 0, 0, 0);
-  const time = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const time = formatDate(dt, { hour: 'numeric', minute: '2-digit' });
   if (dtDay.getTime() === today.getTime()) return `Today · ${time}`;
   if (dtDay.getTime() === tomorrow.getTime()) return `Tomorrow · ${time}`;
-  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + ` · ${time}`;
+  return formatDate(dt, { weekday: 'short', month: 'short', day: 'numeric' }) + ` · ${time}`;
 }
 
 type RecentLog = { datetime: string; date: string; time_spent: number; time_str: string; notes: string | null };
@@ -68,16 +71,16 @@ type RecentLog = { datetime: string; date: string; time_spent: number; time_str:
 const RECENT_LOGS_LIMIT = 3;
 
 // Format a YYYY-MM-DD log date as Today / Yesterday / "May 31".
-function formatLogDate(dateStr: string): string {
+function formatLogDate(dateStr: string, t: TFunction): string {
   const [y, m, d] = (dateStr || '').split('-').map(Number);
   if (!y || !m || !d) return dateStr || '';
   const dt = new Date(y, m - 1, d);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const diffDays = Math.round((today.getTime() - dt.getTime()) / 86400000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (diffDays === 0) return t('common.today');
+  if (diffDays === 1) return t('common.yesterday');
+  return formatDate(dt, { month: 'short', day: 'numeric' });
 }
 
 export function PromiseDetailSheet({
@@ -93,6 +96,7 @@ export function PromiseDetailSheet({
   onEdit,
   onLogged,
 }: PromiseDetailSheetProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const {
     text,
@@ -117,7 +121,7 @@ export function PromiseDetailSheet({
   // non-recurring (trip/project) and zero-target promises have no meaningful pace.
   const hasWeeklyTarget = isCountBased ? target > 0 : recurring && (hours_promised ?? 0) > 0;
   const statusClass = hasWeeklyTarget ? getStatusClass(rawProgress, expectedFraction) : null;
-  const statusLabel = statusClass === 'good' ? 'On track' : statusClass === 'warn' ? 'Behind' : statusClass === 'bad' ? 'At risk' : '';
+  const statusLabel = statusClass === 'good' ? t('status.onTrack') : statusClass === 'warn' ? t('status.behind') : statusClass === 'bad' ? t('status.atRisk') : '';
 
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -238,11 +242,11 @@ export function PromiseDetailSheet({
       headerActions={(
         <>
           {isClubPromise && (
-            <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={handleGoToClub} aria-label="Go to club">
+            <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={handleGoToClub} aria-label={t('promise.goToClub')}>
               <Users size={18} aria-hidden />
             </button>
           )}
-          <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={onFocus} aria-label="Start focus">
+          <button type="button" className="btn btn-ghost btn-sm sheet-icon-action" onClick={onFocus} aria-label={t('promise.startFocus')}>
             <Timer size={18} aria-hidden />
           </button>
         </>
@@ -250,7 +254,7 @@ export function PromiseDetailSheet({
     >
       <section className="overall">
         <div className="row">
-          <span className="label">This week</span>
+          <span className="label">{t('promise.thisWeek')}</span>
           <span className="sub">
             {isCountBased
               ? `${Math.round(achieved)}/${Math.round(target)} check-ins`
@@ -280,7 +284,7 @@ export function PromiseDetailSheet({
 
       {recurring ? (
         <>
-          <p className="ds-eyebrow" style={{ marginTop: 16 }}>Weekly activity</p>
+          <p className="ds-eyebrow" style={{ marginTop: 16 }}>{t('promise.weeklyActivity')}</p>
           <div className="heatmap">
             {dayValues.map((value, index) => (
               <div key={weekDays[index]} className="day">
@@ -289,7 +293,7 @@ export function PromiseDetailSheet({
             ))}
           </div>
           <div className="heatmap-labels">
-            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label) => (
+            {weekdayNarrowLabels().map((label, dayIdx) => (
               <span key={label}>{label}</span>
             ))}
           </div>
@@ -312,10 +316,10 @@ export function PromiseDetailSheet({
               <div key={session.id} className="plan-session-row">
                 <div className="plan-session-info">
                   <span className="plan-session-title">
-                    {session.title || 'Untitled session'}
+                    {session.title || t('promise.untitledSession')}
                   </span>
                   <span className="plan-session-time">
-                    {formatSessionTime(session.planned_start)}
+                    {formatSessionTime(session.planned_start, t)}
                     {session.planned_duration_min ? ` · ${session.planned_duration_min} min` : ''}
                     {checklistTotal > 0 ? ` · ${checklistDone}/${checklistTotal} steps` : ''}
                   </span>
@@ -328,7 +332,7 @@ export function PromiseDetailSheet({
                     type="button"
                     className="plan-session-btn plan-session-btn--edit"
                     onClick={() => setEditSession(session)}
-                    aria-label="Edit session"
+                    aria-label={t('promise.editSession')}
                   >
                     <Pencil size={14} />
                   </button>
@@ -336,7 +340,7 @@ export function PromiseDetailSheet({
                     type="button"
                     className="plan-session-btn plan-session-btn--cal"
                     onClick={() => setCalendarSession(session)}
-                    aria-label="Add to calendar"
+                    aria-label={t('promise.addToCalendar')}
                   >
                     <CalendarPlus size={14} />
                   </button>
@@ -344,7 +348,7 @@ export function PromiseDetailSheet({
                     type="button"
                     className="plan-session-btn plan-session-btn--done"
                     onClick={() => setLogDoneSessionId(session.id)}
-                    aria-label="Log and mark done"
+                    aria-label={t('promise.logAndMarkDone')}
                   >
                     <Check size={14} />
                   </button>
@@ -352,7 +356,7 @@ export function PromiseDetailSheet({
                     type="button"
                     className="plan-session-btn plan-session-btn--delete"
                     onClick={() => handleDelete(session.id)}
-                    aria-label="Delete session"
+                    aria-label={t('promise.deleteSession')}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -367,7 +371,7 @@ export function PromiseDetailSheet({
       {/* Recent logs — what was actually done on this promise (read-only) */}
       {recentLogs.length > 0 && (
         <>
-          <p className="ds-eyebrow" style={{ marginTop: 16 }}>Recent</p>
+          <p className="ds-eyebrow" style={{ marginTop: 16 }}>{t('promise.recent')}</p>
           <div className="recent-log-list">
             {recentLogs.map((log, index) => {
               const note = (log.notes ?? '').trim();
@@ -378,10 +382,10 @@ export function PromiseDetailSheet({
                     <Check size={12} />
                   </span>
                   <span className="recent-log-title">
-                    {note || (amount ? `${amount} logged` : 'Logged')}
+                    {note || (amount ? t('promise.amountLogged', { amount }) : t('promise.logged'))}
                   </span>
                   <span className="recent-log-time">
-                    {note && amount ? `${amount} · ` : ''}{formatLogDate(log.date)}
+                    {note && amount ? `${amount} · ` : ''}{formatLogDate(log.date, t)}
                   </span>
                 </div>
               );

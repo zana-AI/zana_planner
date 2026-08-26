@@ -1,5 +1,8 @@
 import type { HTMLAttributes, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import { formatDate, formatNumber } from '../i18n/format';
 import type { PromiseData, UpcomingPlanSession } from '../types';
 import { Badge } from './ui/Badge';
 import { formatPromiseText } from '../utils/activityFormat';
@@ -19,19 +22,19 @@ function toLocalDateKey(date: Date): string {
 
 // Time column for a nested session row: clock for today, day + clock for future,
 // and a clear "No time" for accepted tasks that don't have a slot yet.
-function formatSessionWhen(isoStr: string | null): string {
-  if (!isoStr) return 'No time';
+function formatSessionWhen(isoStr: string | null, t: TFunction): string {
+  if (!isoStr) return t('promise.noTime');
   const dt = new Date(isoStr);
-  if (Number.isNaN(dt.getTime())) return 'No time';
-  const time = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  if (Number.isNaN(dt.getTime())) return t('promise.noTime');
+  const time = formatDate(dt, { hour: 'numeric', minute: '2-digit' });
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const dtDay = new Date(dt);
   dtDay.setHours(0, 0, 0, 0);
   const diffDays = Math.round((dtDay.getTime() - today.getTime()) / 86400000);
   if (diffDays === 0) return time;
-  if (diffDays === 1) return `Tmrw ${time}`;
-  return `${dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
+  if (diffDays === 1) return t('promise.tomorrowShortAt', { time });
+  return `${formatDate(dt, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
 }
 
 // Returns expected progress fraction (0-1) based on today's position in the week.
@@ -45,15 +48,15 @@ function weekExpectedFraction(weekDays: string[]): number {
 function getStatusInfo(
   progress: number,
   expectedFraction: number,
-): { label: string; cls: 'good' | 'warn' | 'bad' | '' } {
+): { key: 'onTrack' | 'behind' | 'atRisk'; cls: 'good' | 'warn' | 'bad' | '' } {
   const expected = expectedFraction * 100;
-  if (progress >= expected) return { label: 'On track', cls: 'good' };
-  if (progress >= expected * 0.5) return { label: 'Behind', cls: 'warn' };
-  if (progress > 0) return { label: 'At risk', cls: 'bad' };
-  return { label: 'At risk', cls: '' };
+  if (progress >= expected) return { key: 'onTrack', cls: 'good' };
+  if (progress >= expected * 0.5) return { key: 'behind', cls: 'warn' };
+  if (progress > 0) return { key: 'atRisk', cls: 'bad' };
+  return { key: 'atRisk', cls: '' };
 }
 
-function formatNextSession(isoStr: string): string {
+function formatNextSession(isoStr: string, t: TFunction): string {
   const dt = new Date(isoStr);
   if (Number.isNaN(dt.getTime())) return '';
   const today = new Date();
@@ -62,13 +65,14 @@ function formatNextSession(isoStr: string): string {
   tomorrow.setDate(today.getDate() + 1);
   const dtDay = new Date(dt);
   dtDay.setHours(0, 0, 0, 0);
-  const time = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  if (dtDay.getTime() === today.getTime()) return `Today ${time}`;
-  if (dtDay.getTime() === tomorrow.getTime()) return `Tomorrow ${time}`;
-  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const time = formatDate(dt, { hour: 'numeric', minute: '2-digit' });
+  if (dtDay.getTime() === today.getTime()) return t('promise.todayAt', { time });
+  if (dtDay.getTime() === tomorrow.getTime()) return t('promise.tomorrowAt', { time });
+  return formatDate(dt, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday = [] }: PromiseCardV2Props) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const {
     text,
@@ -94,7 +98,8 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
   const achieved = achieved_value ?? hours_spent ?? 0;
   const progress = target > 0 ? Math.min(Math.round((achieved / target) * 100), 100) : 0;
   const expectedFraction = weekExpectedFraction(weekDays);
-  const { label: statusLabel, cls: statusClass } = getStatusInfo(progress, expectedFraction);
+  const { key: statusKey, cls: statusClass } = getStatusInfo(progress, expectedFraction);
+  const statusLabel = t(`status.${statusKey}`);
 
   const sessionsByDate: Record<string, number> = {};
   sessions.forEach((session) => {
@@ -152,7 +157,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
 
   const sessionsLabel = !hasSessionRows && planned_sessions_count > 0
     ? (next_session_start
-        ? formatNextSession(next_session_start)
+        ? formatNextSession(next_session_start, t)
         : `${planned_sessions_count} session${planned_sessions_count > 1 ? 's' : ''}`)
     : null;
 
@@ -192,8 +197,8 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
       <DRow>
         <span className="sub" dir="ltr">
           {isCountBased
-            ? `${Math.round(achieved)}/${Math.round(target)} check-ins`
-            : `${achieved.toFixed(1)}h / ${target.toFixed(1)}h`}
+            ? t('promise.checkIns', { done: Math.round(achieved), total: Math.round(target) })
+            : t('dashboard.hoursOfHours', { spent: formatNumber(achieved, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), promised: formatNumber(target, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
         </span>
         {credits_minutes && credits_minutes > 0 ? (
           <span className="pcard-credits" dir="ltr" title="Earned from quizzes and reviews this week">
@@ -205,14 +210,14 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
             &#x1F4C5; {sessionsLabel}
           </span>
         ) : (
-          <span className="meta" dir="ltr">{progress}%</span>
+          <span className="meta" dir="auto">{formatNumber(progress)}%</span>
         )}
       </DRow>
       {hasSessionRows ? (
         <div className="pcard-today">
           {upcomingSessions.map(session => {
-            const title = (session.title || '').trim() || 'Session';
-            const when = formatSessionWhen(session.planned_start);
+            const title = (session.title || '').trim() || t('promise.session');
+            const when = formatSessionWhen(session.planned_start, t);
             const checklistTotal = session.checklist?.length ?? 0;
             const checklistDone = session.checklist?.filter(item => item.done).length ?? 0;
             const meta = [

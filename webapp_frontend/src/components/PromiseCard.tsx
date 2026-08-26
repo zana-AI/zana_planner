@@ -1,3 +1,4 @@
+import { formatDate as formatIntlDate, weekdayNarrowLabels, weekdayLongLabels } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PromiseData, SessionData, PlanSession } from '../types';
@@ -19,7 +20,6 @@ interface PromiseCardProps {
   onRefresh?: () => void; // Callback to refresh data after changes
 }
 
-const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 type PromiseProgressTone = 'strong' | 'on-track' | 'attention' | 'risk';
 type PlanSessionFormState = {
   title: string;
@@ -606,7 +606,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     }
   };
   
-  const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const WEEKDAY_NAMES = weekdayLongLabels();
   
   const handleEndDateSelect = (date: string) => {
     setEditingEndDate(date);
@@ -617,7 +617,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
     if (!dateStr) return 'Not set';
     try {
       const date = new Date(dateStr + 'T00:00:00');
-      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      return formatIntlDate(date, { year: 'numeric', month: 'short', day: 'numeric' });
     } catch {
       return dateStr;
     }
@@ -1073,9 +1073,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       if (dayNotes.length === 0) return null;
                       
                       const date = new Date(dateKey);
-                      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                      const dayName = formatIntlDate(date, { weekday: 'short' });
                       const dayNumber = date.getDate();
-                      const month = date.toLocaleDateString('en-US', { month: 'short' });
+                      const month = formatIntlDate(date, { month: 'short' });
                       
                       return (
                         <div 
@@ -1129,8 +1129,8 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             const hasNotes = dayNotes.length > 0;
             
             let title = isCountBased 
-              ? `${DAY_LABELS[index]}: ${Math.round(value)}`
-              : `${DAY_LABELS[index]}: ${value.toFixed(2)}h`;
+              ? `${weekdayNarrowLabels()[index]}: ${Math.round(value)}`
+              : `${weekdayNarrowLabels()[index]}: ${value.toFixed(2)}h`;
             
             if (hasNotes) {
               title += '\n\nNotes:\n' + dayNotes.join('\n');
@@ -1152,7 +1152,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     title={dayNotes.join('\n')}
                   />
                 )}
-                <div className="day-label" dir="ltr">{DAY_LABELS[index]}</div>
+                <div className="day-label" dir="auto">{weekdayNarrowLabels()[index]}</div>
               </div>
             );
           })}

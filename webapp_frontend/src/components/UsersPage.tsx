@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
@@ -84,6 +85,7 @@ function buildMomentumActivity(users: PublicUser[]): CommunityFeedItem[] {
 }
 
 export function UsersPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const openClubId = searchParams.get('club');
@@ -314,7 +316,7 @@ export function UsersPage() {
       <div className="users-page">
         <div className="users-page-loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading community...</div>
+          <div className="loading-text">{t('community.loading')}</div>
         </div>
       </div>
     );
@@ -325,7 +327,7 @@ export function UsersPage() {
       <div className="users-page">
         <div className="users-page-error">
           <div className="error-icon">!</div>
-          <p className="error-message">Authentication required.</p>
+          <p className="error-message">{t('community.authRequired')}</p>
         </div>
       </div>
     );
@@ -336,7 +338,7 @@ export function UsersPage() {
       {loading && activityItems.length === 0 ? (
         <div className="users-page-loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading community...</div>
+          <div className="loading-text">{t('community.loading')}</div>
         </div>
       ) : null}
 
@@ -355,8 +357,8 @@ export function UsersPage() {
           <section className="community-v2-section community-v2-clubs-section">
             <div className="community-v2-section-header">
               <div>
-                <h3 className="community-v2-title">Clubs</h3>
-                <p className="community-v2-section-subtitle">Small circles for shared promises.</p>
+                <h3 className="community-v2-title">{t('community.clubs')}</h3>
+                <p className="community-v2-section-subtitle">{t('community.clubsSubtitle')}</p>
               </div>
               <div className="community-club-header-actions">
                 <span className="community-v2-count">{clubs.length}</span>
@@ -368,13 +370,13 @@ export function UsersPage() {
                     setShowCreateClubDialog(true);
                   }}
                 >
-                  Create club
+                  {t('community.createClub')}
                 </button>
               </div>
             </div>
 
             {clubsLoading && clubs.length === 0 ? (
-              <div className="community-v2-empty-note">Loading clubs...</div>
+              <div className="community-v2-empty-note">{t('community.loadingClubs')}</div>
             ) : clubs.length > 0 ? (
               <div className="community-club-grid">
                 {clubs.map((club) => (
@@ -389,7 +391,7 @@ export function UsersPage() {
                 ))}
               </div>
             ) : (
-              <div className="community-v2-empty-note">No clubs yet.</div>
+              <div className="community-v2-empty-note">{t('community.noClubs')}</div>
             )}
           </section>
 
@@ -403,7 +405,7 @@ export function UsersPage() {
             >
               <section className="modal-content community-club-dialog" onClick={(event) => event.stopPropagation()}>
                 <div className="modal-header">
-                  <h3 id="create-club-title" className="modal-title">Create club</h3>
+                  <h3 id="create-club-title" className="modal-title">{t('community.createClub')}</h3>
                   <button
                     type="button"
                     className="modal-close"
@@ -417,7 +419,7 @@ export function UsersPage() {
 
                 <form className="modal-form community-club-dialog-form" onSubmit={handleCreateClub}>
                   <label className="modal-form-group">
-                    <span className="modal-label">Club name</span>
+                    <span className="modal-label">{t('community.clubName')}</span>
                     <input
                       className="modal-input"
                       value={clubForm.name}
@@ -429,7 +431,7 @@ export function UsersPage() {
                   </label>
 
                   <label className="modal-form-group">
-                    <span className="modal-label">Shared promise</span>
+                    <span className="modal-label">{t('community.sharedPromise')}</span>
                     <input
                       className="modal-input"
                       value={clubForm.promise_text}
@@ -441,7 +443,7 @@ export function UsersPage() {
 
                   <div className="community-club-dialog-row">
                     <label className="modal-form-group">
-                      <span className="modal-label">Visibility</span>
+                      <span className="modal-label">{t('community.visibility')}</span>
                       <select
                         className="modal-input"
                         value={clubForm.visibility}
@@ -450,13 +452,13 @@ export function UsersPage() {
                           visibility: event.target.value as 'private' | 'public',
                         }))}
                       >
-                        <option value="private">Private</option>
-                        <option value="public">Public</option>
+                        <option value="private">{t('community.private')}</option>
+                        <option value="public">{t('community.public')}</option>
                       </select>
                     </label>
 
                     <label className="modal-form-group">
-                      <span className="modal-label">Per week</span>
+                      <span className="modal-label">{t('community.perWeek')}</span>
                       <input
                         className="modal-input"
                         type="number"
@@ -481,10 +483,10 @@ export function UsersPage() {
                       disabled={creatingClub}
                       onClick={() => setShowCreateClubDialog(false)}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </button>
                     <button type="submit" className="modal-button modal-button-primary" disabled={creatingClub}>
-                      {creatingClub ? 'Creating...' : 'Create club'}
+                      {creatingClub ? t('community.creating') : t('community.createClub')}
                     </button>
                   </div>
                 </form>

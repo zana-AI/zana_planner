@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../api/client';
 import { BottomSheet } from '../ui/BottomSheet';
@@ -28,6 +29,7 @@ export function LogTimeSheet({
   prefillTime,
   prefillNotes,
 }: LogTimeSheetProps) {
+  const { t } = useTranslation();
   const [hours, setHours] = useState(prefillHours ?? '1');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -48,7 +50,7 @@ export function LogTimeSheet({
   const handleSubmit = async () => {
     const hoursNum = parseFloat(hours);
     if (Number.isNaN(hoursNum) || hoursNum <= 0) {
-      setError('Enter a valid number of hours');
+      setError(t('logTime.invalidHours'));
       return;
     }
     setIsSubmitting(true);
@@ -63,7 +65,7 @@ export function LogTimeSheet({
       onSuccess(`Logged ${hoursNum}h`);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to log time');
+      setError(err instanceof Error ? err.message : t('logTime.failed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -85,16 +87,16 @@ export function LogTimeSheet({
         ))}
       </div>
       <div className="field-row" style={{ marginTop: 12 }}>
-        <label htmlFor="log-hours">Hours</label>
+        <label htmlFor="log-hours">{t('logTime.hours')}</label>
         <input id="log-hours" type="number" step="0.1" min="0.1" value={hours} onChange={(e) => setHours(e.target.value)} />
       </div>
       <div className="lt-grid2" style={{ marginTop: 12 }}>
         <div className="field-row">
-          <label htmlFor="log-date">Date</label>
+          <label htmlFor="log-date">{t('logTime.date')}</label>
           <input id="log-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div className="field-row">
-          <label htmlFor="log-time">Time</label>
+          <label htmlFor="log-time">{t('logTime.time')}</label>
           <input id="log-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
         </div>
       </div>
@@ -104,7 +106,7 @@ export function LogTimeSheet({
       </div>
       {error ? <p className="ds-caption" style={{ color: 'var(--bad-500)', marginTop: 8 }}>{error}</p> : null}
       <Button variant="primary" fullWidth onClick={handleSubmit} disabled={isSubmitting} style={{ marginTop: 16 }}>
-        {isSubmitting ? 'Logging…' : 'Save log'}
+        {isSubmitting ? t('logTime.logging') : t('logTime.saveLog')}
       </Button>
     </BottomSheet>
   );

@@ -1,3 +1,4 @@
+import { weekdayNarrowLabels } from '../i18n/format';
 import { useState, useMemo } from 'react';
 
 interface InlineCalendarProps {
@@ -7,7 +8,6 @@ interface InlineCalendarProps {
   onClose?: () => void;
 }
 
-const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -179,7 +179,7 @@ export function InlineCalendar({ selectedDate, onDateSelect, minDate, onClose }:
         gap: '4px',
         marginBottom: '8px'
       }}>
-        {DAY_LABELS.map((label, index) => (
+        {weekdayNarrowLabels(0).map((label, index) => (
           <div
             key={index}
             style={{

@@ -209,7 +209,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
               {session.title || 'Session'}
             </span>
             {session.planned_start && (
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginInlineStart: 6 }}>
                 {formatPlannedStart(session.planned_start)}
               </span>
             )}
@@ -277,7 +277,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
 
         {/* Checklist items */}
         {expanded && hasChecklist && (
-          <div style={{ marginTop: 8, paddingLeft: 4 }}>
+          <div style={{ marginTop: 8, paddingInlineStart: 4 }}>
             {session.checklist.map(item => (
               <label
                 key={item.id}

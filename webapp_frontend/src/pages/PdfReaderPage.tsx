@@ -849,17 +849,17 @@ export function PdfReaderPage() {
       <section className="pdf-reader-viewer">
         <div className="pdf-reader-toolbar">
           <button className="pdf-reader-icon-btn" onClick={() => window.history.back()} title="Back to library" type="button">
-            <ArrowLeft size={18} />
+            <ArrowLeft size={18} className="icon-directional" />
           </button>
           <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber - 1)} disabled={!pageCount || pageNumber <= 1} title="Previous page" type="button">
-            <ChevronLeft size={18} />
+            <ChevronLeft size={18} className="icon-directional" />
           </button>
           <label className="pdf-reader-page-count" title="Jump to page">
             <input type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
             <span>/ {pageCount || 0}</span>
           </label>
           <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber + 1)} disabled={!pageCount || pageNumber >= pageCount} title="Next page" type="button">
-            <ChevronRight size={18} />
+            <ChevronRight size={18} className="icon-directional" />
           </button>
           <div className="pdf-reader-toolbar-spacer" />
           <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.15)} disabled={scale <= 0.65} title="Zoom out" type="button">
@@ -949,7 +949,7 @@ export function PdfReaderPage() {
                   type="button"
                   aria-label="Previous page"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={18} className="icon-directional" />
                 </button>
                 <button
                   className="pdf-reader-page-zone pdf-reader-page-zone--next"
@@ -961,7 +961,7 @@ export function PdfReaderPage() {
                   type="button"
                   aria-label="Next page"
                 >
-                  <ChevronRight size={18} />
+                  <ChevronRight size={18} className="icon-directional" />
                 </button>
                 <div className="pdf-reader-fullscreen-toast">
                   Tap edges to turn page

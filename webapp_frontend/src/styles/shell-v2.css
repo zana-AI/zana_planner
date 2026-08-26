@@ -133,7 +133,7 @@
 .profile-menu-v2 {
   position: absolute;
   top: calc(100% + 8px);
-  right: 16px;
+  inset-inline-end: 16px;
   min-width: 200px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
@@ -157,7 +157,7 @@
   font-weight: 600;
   border-radius: var(--r-8);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 
 .profile-menu-v2 button:hover { background: var(--surface); }
@@ -206,8 +206,8 @@
 
   .dashboard .dashboard-main {
     flex: 1 1 0;
-    padding-left: 0;
-    padding-right: 0;
+    padding-inline-start: 0;
+    padding-inline-end: 0;
   }
 
   .community-sidebar {

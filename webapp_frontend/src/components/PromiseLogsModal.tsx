@@ -1,3 +1,4 @@
+import { formatDateRange as formatIntlDateRange } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { useModalBodyLock } from '../hooks/useModalBodyLock';
@@ -30,7 +31,7 @@ function formatDateRange(startDate?: string, endDate?: string): string {
   const start = parseLocalDate(startDate);
   const end = parseLocalDate(endDate);
   const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-  return `Logs for ${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
+  return `Logs for ${formatIntlDateRange(start, end, options)}`;
 }
 
 export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose, startDate, endDate }: PromiseLogsModalProps) {

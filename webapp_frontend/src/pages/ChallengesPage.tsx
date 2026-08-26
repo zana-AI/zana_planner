@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Sparkles, Layers } from 'lucide-react';
@@ -11,6 +12,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
 };
 
 export function ChallengesPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
   const [challenges, setChallenges] = useState<ChallengeSummary[]>([]);
@@ -27,7 +29,7 @@ export function ChallengesPage() {
         if (active) setChallenges(data);
       } catch (err) {
         console.error('Failed to load challenges:', err);
-        if (active) setError('Failed to load challenges');
+        if (active) setError(t('challenges.loadFailed'));
       } finally {
         if (active) setLoading(false);
       }
@@ -42,7 +44,7 @@ export function ChallengesPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading challenges…</div>
+          <div className="loading-text">{t('challenges.loading')}</div>
         </div>
       </div>
     );
@@ -53,10 +55,10 @@ export function ChallengesPage() {
       <div className="app">
         <div className="error">
           <div className="error-icon">!</div>
-          <h1 className="error-title">Something went wrong</h1>
+          <h1 className="error-title">{t('common.somethingWentWrong')}</h1>
           <p className="error-message">{error}</p>
           <button className="retry-button" onClick={() => window.location.reload()}>
-            Try Again
+            {t('common.tryAgain')}
           </button>
         </div>
       </div>
