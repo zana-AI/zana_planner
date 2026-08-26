@@ -9,6 +9,7 @@ import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { ClubDetailPage } from './pages/ClubDetailPage';
+import { ClubProfilePage } from './pages/ClubProfilePage';
 import { FocusPage } from './pages/FocusPage';
 import { MyContentsPage } from './pages/MyContentsPage';
 import { PdfReaderPage } from './pages/PdfReaderPage';
@@ -142,6 +143,12 @@ function App() {
             )
           }
         />
+
+        {/* Public club profile — deliberately NOT behind `isAuthenticated`.
+            This is the landing page for someone arriving cold from a creator's
+            Telegram channel; gating it would spend the whole click budget before
+            they see anything. Sign-in happens on the CTA. See docs/CLUBS_MODEL.md §5. */}
+        <Route path="/c/:clubRef" element={<ClubProfilePage />} />
 
         {/* Club Detail Page - authenticated only */}
         <Route

@@ -169,7 +169,12 @@ export function Navigation(_props: NavigationProps) {
 
   useTelegramBackButton({ enabled: shouldShowBack, onClick: handleBack });
 
-  if (!isAuthenticated || location.pathname === '/' || isScreenshotRoute) return null;
+  // `/c/*` is the public club landing page — a standalone page with its own
+  // header, shown to visitors who may not have an account. App chrome there
+  // would frame it as an app screen and distract from its single CTA.
+  const isPublicClubPage = location.pathname.startsWith('/c/');
+
+  if (!isAuthenticated || location.pathname === '/' || isScreenshotRoute || isPublicClubPage) return null;
 
   const displayName =
     userInfo?.first_name ||

@@ -941,3 +941,57 @@ export interface UpdateFlashcardNoteRequest {
   note_type?: string;
   deck_path?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Public club profile (xaana.club/<club>) — served without auth
+// ---------------------------------------------------------------------------
+
+export interface PublicClubLink {
+  kind: 'telegram' | 'web';
+  label: string;
+  url: string;
+  members_only: boolean;
+}
+
+export interface PublicClubRound {
+  kind: 'quiz' | 'checkin';
+  title: string;
+  subtitle?: string | null;
+  item_count: number;
+  challenge_id?: string | null;
+  activity_type?: string | null;
+  cadence?: string | null;
+}
+
+export interface PublicClubLeaderboardRow {
+  rank: number;
+  name: string;
+  initials: string;
+  user_id?: string | null;
+  score_percent: number;
+  streak: number;
+  /** Seven daily score percents, oldest first. */
+  daily_activity: number[];
+}
+
+export interface PublicClubViewer {
+  authenticated: boolean;
+  is_member: boolean;
+}
+
+export interface PublicClubProfile {
+  club_id: string;
+  name: string;
+  tagline?: string | null;
+  description?: string | null;
+  host_name?: string | null;
+  member_count: number;
+  participant_count?: number | null;
+  visibility: string;
+  links: PublicClubLink[];
+  today?: PublicClubRound | null;
+  leaderboard: PublicClubLeaderboardRow[];
+  window_start?: string | null;
+  window_end?: string | null;
+  viewer: PublicClubViewer;
+}

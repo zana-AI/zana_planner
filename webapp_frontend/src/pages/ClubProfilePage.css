@@ -1,0 +1,399 @@
+/* ==========================================================================
+   Public club profile — xaana.club/<club>
+
+   A landing page, not an app screen: it is the first thing a stranger sees
+   after tapping a link in a Telegram channel, and it renders before they have
+   signed in. Everything is arranged around one job — get them into today's
+   round in one tap — so the CTA card is the only element allowed to be loud.
+   ========================================================================== */
+
+.clubprofile {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  padding: 0 var(--sp-4) calc(var(--sp-8) + env(safe-area-inset-bottom));
+}
+
+.clubprofile-inner {
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+/* ---- Hero ---------------------------------------------------------------
+   A soft brand wash bleeds past the page padding so the identity block reads
+   as a masthead rather than another card in the stack. */
+.clubprofile-hero {
+  position: relative;
+  margin: 0 calc(var(--sp-4) * -1);
+  padding: calc(var(--sp-7) + env(safe-area-inset-top)) var(--sp-4) var(--sp-6);
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(34, 211, 238, 0.14) 0%, transparent 62%),
+    radial-gradient(90% 80% at 85% 10%, rgba(167, 139, 250, 0.12) 0%, transparent 60%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-3);
+}
+
+.clubprofile-monogram {
+  width: 68px;
+  height: 68px;
+  border-radius: var(--r-16);
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-24);
+  font-weight: var(--fw-black);
+  color: var(--fg-on-accent);
+  background: var(--grad-brand);
+  box-shadow: var(--shadow-2);
+}
+
+.clubprofile-name {
+  font-size: var(--fs-24);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-tight);
+  font-weight: var(--fw-black);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.clubprofile-byline {
+  font-size: var(--fs-13);
+  color: var(--fg-muted);
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+.clubprofile-byline .dot::before {
+  content: '·';
+  margin-right: var(--sp-2);
+  color: var(--fg-disabled);
+}
+
+.clubprofile-tagline {
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+  color: var(--fg-secondary);
+  margin: 0;
+  max-width: 40ch;
+}
+
+/* ---- Outbound links -----------------------------------------------------
+   Present for legitimacy ("this really is Atena's page") but deliberately
+   quiet: every one of them takes the visitor off the page, so they must not
+   compete with the CTA below. */
+.clubprofile-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+
+.clubprofile-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong);
+  background: rgba(230, 234, 245, 0.04);
+  color: var(--fg-secondary);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semi);
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.clubprofile-link:hover,
+.clubprofile-link:focus-visible {
+  background: rgba(230, 234, 245, 0.09);
+  color: var(--fg);
+}
+
+.clubprofile-link svg {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+/* ---- Today's round — the one loud thing on the page --------------------- */
+.clubprofile-today {
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-16);
+  background:
+    linear-gradient(180deg, var(--accent-soft) 0%, transparent 55%),
+    var(--surface);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  box-shadow: var(--shadow-2);
+}
+
+.clubprofile-today-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.clubprofile-eyebrow {
+  font-size: var(--fs-11);
+  line-height: 1;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--accent);
+}
+
+.clubprofile-today-meta {
+  font-size: var(--fs-12);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.clubprofile-today-title {
+  font-size: var(--fs-17);
+  line-height: var(--lh-snug);
+  font-weight: var(--fw-bold);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.clubprofile-today-sub {
+  font-size: var(--fs-13);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.clubprofile-cta {
+  width: 100%;
+  min-height: var(--h-input-lg);
+  border: 0;
+  border-radius: var(--r-12);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-black);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.clubprofile-cta:hover:not(:disabled) { background: var(--accent-hover); }
+.clubprofile-cta:active:not(:disabled) { transform: translateY(1px); }
+.clubprofile-cta:disabled { opacity: 0.6; cursor: default; }
+.clubprofile-cta:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+.clubprofile-cta-note {
+  font-size: var(--fs-12);
+  color: var(--fg-muted);
+  text-align: center;
+  margin: 0;
+}
+
+/* The Telegram widget replaces the button in place once the visitor taps it,
+   so signing in never feels like a detour to another screen. */
+.clubprofile-auth {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+}
+
+.clubprofile-empty {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-12);
+  padding: var(--sp-5);
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+
+/* ---- Leaderboard --------------------------------------------------------
+   Social proof, not a directory: five rows, no per-promise breakdown. */
+.clubprofile-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.clubprofile-section-title {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-bold);
+  color: var(--fg-secondary);
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clubprofile-window {
+  font-size: var(--fs-11);
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.clubprofile-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.clubprofile-row {
+  display: grid;
+  grid-template-columns: 20px 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  background: var(--surface);
+}
+
+.clubprofile-rank {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-bold);
+  color: var(--fg-subtle);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.clubprofile-row--podium .clubprofile-rank { color: var(--accent); }
+
+.clubprofile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-bold);
+  color: var(--fg-on-accent);
+  background: var(--ink-600);
+}
+
+.clubprofile-person {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.clubprofile-person strong {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semi);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clubprofile-person span {
+  font-size: var(--fs-11);
+  color: var(--fg-subtle);
+}
+
+.clubprofile-strip {
+  display: flex;
+  gap: 3px;
+}
+
+/* Same thresholds and colours as the in-app leaderboard (sheets.css) so the
+   page, the bottom sheet and the rendered Telegram image all agree. */
+.clubprofile-cell {
+  width: 9px;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  border: 1px solid rgba(230, 234, 245, 0.1);
+  background: rgba(230, 234, 245, 0.08);
+}
+
+.clubprofile-cell.level-2 {
+  background: rgba(20, 184, 166, 0.42);
+  border-color: rgba(45, 212, 191, 0.28);
+}
+
+.clubprofile-cell.level-3 {
+  background: rgba(20, 184, 166, 0.7);
+  border-color: rgba(45, 212, 191, 0.42);
+}
+
+.clubprofile-cell.level-4 {
+  background: var(--good-500);
+  border-color: rgba(45, 212, 191, 0.72);
+}
+
+.clubprofile-score {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-bold);
+  color: var(--fg-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 38px;
+  text-align: right;
+}
+
+.clubprofile-board-empty {
+  padding: var(--sp-5);
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-12);
+}
+
+/* ---- About + footer ----------------------------------------------------- */
+.clubprofile-about {
+  font-size: var(--fs-14);
+  line-height: var(--lh-loose);
+  color: var(--fg-muted);
+  margin: 0;
+  white-space: pre-line;
+}
+
+.clubprofile-footer {
+  text-align: center;
+  font-size: var(--fs-11);
+  color: var(--fg-disabled);
+  padding-top: var(--sp-2);
+}
+
+.clubprofile-footer a {
+  color: var(--fg-subtle);
+  text-decoration: none;
+}
+
+.clubprofile-footer a:hover { color: var(--fg-muted); }
+
+/* ---- Loading / error ---------------------------------------------------- */
+.clubprofile-state {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: var(--sp-6);
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clubprofile-cta { transition: none; }
+  .clubprofile-cta:active:not(:disabled) { transform: none; }
+}

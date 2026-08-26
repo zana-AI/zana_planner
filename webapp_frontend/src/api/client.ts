@@ -1513,6 +1513,16 @@ class ApiClient {
   async deleteFlashcardNote(noteId: string): Promise<{ ok: boolean }> {
     return this.request(`/flashcards/notes/${noteId}`, { method: 'DELETE' });
   }
+
+  // ---------------------------------------------------------------------------
+  // Public club profile — the only endpoint that answers without a session.
+  // Auth headers are still sent when we have them, so a logged-in visitor gets
+  // the member-only extras (group invite link) on the same page.
+  // ---------------------------------------------------------------------------
+
+  async getPublicClub(clubRef: string): Promise<import('../types').PublicClubProfile> {
+    return this.request(`/public/clubs/${encodeURIComponent(clubRef)}`);
+  }
 }
 
 /**
