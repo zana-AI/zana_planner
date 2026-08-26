@@ -92,6 +92,56 @@ class ChallengesRepository:
             ).mappings().fetchone()
             return self._challenge_summary(row) if row else None
 
+    def get_active_by_club(self, club_id: str) -> Optional[dict]:
+        """The active challenge backing a club, if any — no viewer required.
+
+        Used by the anonymous public club page, which has no user to compute
+        `joined` for, so this deliberately returns fewer fields than `get()`.
+        A club without a challenge (a plain check-in club like a gym pair)
+        simply returns None.
+        """
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT c.challenge_id, c.title, c.description, c.activity_type,
+                           c.cadence, c.visibility,
+                           (SELECT COUNT(*) FROM challenge_participants p
+                              WHERE p.challenge_id = c.challenge_id) AS participant_count
+                    FROM challenges c
+                    WHERE c.club_id = :club_id AND c.status = 'active'
+                    ORDER BY c.created_at_utc DESC
+                    LIMIT 1
+                """),
+                {"club_id": club_id},
+            ).mappings().fetchone()
+            return dict(row) if row else None
+
+    def current_deck_preview(self, challenge_id: str) -> Optional[dict]:
+        """Headline info about the round currently on offer, with no answers.
+
+        This is the *newest released* deck — "what's up today" — which is what a
+        stranger landing on the public page should see. It is intentionally not
+        `get_due_deck()`: that resolves the oldest deck *this user* hasn't played,
+        which is personal and needs auth. Once they sign in, the play flow uses
+        `get_due_deck` as usual, so a returning player still resumes where they left off.
+        """
+        now = _now_iso()
+        with get_db_session() as session:
+            row = session.execute(
+                text("""
+                    SELECT d.deck_id, d.title, d.release_at,
+                           (SELECT COUNT(*) FROM challenge_items i
+                              WHERE i.deck_id = d.deck_id) AS item_count
+                    FROM challenge_decks d
+                    WHERE d.challenge_id = :cid
+                      AND (d.release_at IS NULL OR d.release_at <= :now)
+                    ORDER BY d.release_at DESC NULLS LAST, d.position DESC
+                    LIMIT 1
+                """),
+                {"cid": challenge_id, "now": now},
+            ).mappings().fetchone()
+            return dict(row) if row else None
+
     def get_by_source_key(self, source_key: str) -> Optional[str]:
         """Resolve a startapp deep-link token to a challenge_id."""
         if not source_key:

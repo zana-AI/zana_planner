@@ -365,6 +365,40 @@ def compute_club_leaderboard(club_id: str, today: date, limit: int = 10) -> Dict
     }
 
 
+def resolve_avatar_file(user_id: str, root_dir: Optional[str] = None) -> Optional[str]:
+    """Absolute path to one user's avatar, or None if absent or not public.
+
+    Same visibility check and path-traversal guard as
+    `resolve_avatar_data_uris`, for callers that want to stream the file
+    (the public club page) rather than inline it.
+    """
+    root = root_dir or os.getenv("ROOT_DIR") or os.getcwd()
+    root_abs = os.path.abspath(root)
+
+    with get_db_session() as session:
+        row = session.execute(
+            text("""
+                SELECT avatar_path, avatar_visibility
+                FROM users WHERE user_id = :user_id LIMIT 1;
+            """),
+            {"user_id": str(user_id)},
+        ).mappings().fetchone()
+
+    if not row:
+        return None
+    avatar_path = row.get("avatar_path")
+    if (row.get("avatar_visibility") or "public") != "public":
+        return None
+    if not avatar_path:
+        avatar_path = os.path.join("media", "avatars", f"{user_id}.jpg")
+
+    full_path = avatar_path if os.path.isabs(avatar_path) else os.path.join(root, avatar_path)
+    full_path = os.path.normpath(full_path)
+    if not os.path.abspath(full_path).startswith(root_abs):
+        return None
+    return full_path if os.path.isfile(full_path) else None
+
+
 def resolve_avatar_data_uris(user_ids: List[str], root_dir: Optional[str] = None) -> Dict[str, str]:
     """
     Resolve public avatars to inline `data:` URIs for the bot's rendered

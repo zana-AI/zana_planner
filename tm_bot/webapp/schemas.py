@@ -812,3 +812,66 @@ class ChallengeDeckIn(BaseModel):
     position: int = 0
     release_at: Optional[str] = None
     items: List[ChallengeItemIn]
+
+
+# ---------------------------------------------------------------------------
+# Public club profile (xaana.club/<club> landing page — see docs/CLUBS_MODEL.md §5)
+#
+# Everything here is served to *unauthenticated* visitors arriving cold from a
+# creator's Telegram channel, so each field is chosen for what is safe to show a
+# stranger. Anything member-only (the group invite link, per-promise breakdowns)
+# is filtered out server-side rather than hidden in the UI.
+# ---------------------------------------------------------------------------
+
+class PublicClubLink(BaseModel):
+    """One outbound link on the profile (channel, website, group)."""
+    kind: Literal["telegram", "web"]
+    label: str
+    url: str
+    members_only: bool = False
+
+
+class PublicClubRound(BaseModel):
+    """What this club is asking you to do today — the page's primary CTA."""
+    kind: Literal["quiz", "checkin"]
+    title: str
+    subtitle: Optional[str] = None
+    item_count: int = 0
+    challenge_id: Optional[str] = None
+    activity_type: Optional[str] = None
+    cadence: Optional[str] = None
+
+
+class PublicClubLeaderboardRow(BaseModel):
+    """A leaderboard row stripped down to what a non-member may see."""
+    rank: int
+    name: str
+    initials: str
+    user_id: Optional[str] = None      # only for members whose avatar is public
+    score_percent: float = 0.0
+    streak: int = 0
+    daily_activity: List[float] = Field(default_factory=list)  # 7 score percents, oldest first
+
+
+class PublicClubViewer(BaseModel):
+    """Who is looking — drives the CTA's wording and the member-only bits."""
+    authenticated: bool = False
+    is_member: bool = False
+
+
+class PublicClubProfile(BaseModel):
+    """Anonymous-readable club landing page payload."""
+    club_id: str
+    name: str
+    tagline: Optional[str] = None
+    description: Optional[str] = None
+    host_name: Optional[str] = None
+    member_count: int = 0
+    participant_count: Optional[int] = None
+    visibility: str = "public"
+    links: List[PublicClubLink] = Field(default_factory=list)
+    today: Optional[PublicClubRound] = None
+    leaderboard: List[PublicClubLeaderboardRow] = Field(default_factory=list)
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    viewer: PublicClubViewer = Field(default_factory=PublicClubViewer)
