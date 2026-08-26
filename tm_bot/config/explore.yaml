@@ -1,37 +1,164 @@
 version: 1
+
+# Explore is organised by SUBJECT, not by kind of content. A category is
+# something a person is working on (French, Gym); a topic is the kind of thing
+# inside it (quiz, club, habit). See docs/EXPLORE_CONTENT.md.
+#
+# This catalog is an ALLOWLIST, not a mirror of the database. Nothing appears in
+# Explore unless it is written down here, which is what keeps test fixtures and
+# half-finished rows out of the tab.
+#
+# Only globally-valid destinations belong here:
+#   * challenges — visibility=public, status=active
+#   * clubs      — visibility=public only; /c/<id> returns 404 to non-members
+#                  of a private club, so a private club is a dead link
+#   * templates  — promise_templates with is_active=1
+# Per-user rows must NOT be listed: flashcard decks belong to one user_id, and
+# the Explore page already lists the caller's own decks from its own endpoint.
+#
+# `icon` and `accent` are read by nothing yet — ExploreCategory ignores unknown
+# keys. They are here so the tile design has its data when the model gains the
+# fields.
+
 categories:
-  - id: learning
-    title: Learning
+  - id: french
+    title: French
+    icon: bubble-fr
+    accent: "#22D3EE"
     order: 10
     published: true
     topics:
-      - id: languages
-        title: Languages
+      - id: quizzes
+        title: Daily quiz
         order: 10
         published: true
         items:
-          - id: french-classes
-            title: French classes
-            type: offer
+          - id: atena-fr
+            title: French with Atena 🇫🇷
+            type: challenge
             order: 10
             published: true
-            description: Practice with a friendly teacher.
-            class_offer: "French classes — €5/hour"
-            native_ref: /templates
-          - id: learn-french-channel
-            title: Learn French on Telegram
-            type: telegram
+            description: A short daily French quiz — 10 new questions every day.
+            native_ref: /challenges/660762b526d849ffa4470a9e690fc2d3
+          - id: fr-naturalization
+            title: French Naturalization Prep 🇫🇷
+            type: challenge
             order: 20
             published: true
-            url: https://t.me/example
-      - id: videos
-        title: Videos
+            description: Q&A to prep the French citizenship interview — study at your own pace.
+            native_ref: /challenges/8780918c227541c089498430da290c8d
+      - id: clubs
+        title: Clubs
         order: 20
         published: true
         items:
-          - id: learning-video-example
-            title: A useful learning video
-            type: youtube
+          - id: club-french-atena
+            title: French with Atena 🇫🇷
+            type: club
             order: 10
-            published: false
-            url: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+            published: true
+            description: Atena's daily French quiz — 10 new questions every day.
+            native_ref: /c/9b31b136-aee6-439e-b93e-51326069c141
+          - id: club-fr-naturalization
+            title: French Naturalization Prep 🇫🇷
+            type: club
+            order: 20
+            published: true
+            native_ref: /c/cf20f093-6d94-4d6e-8573-f658723fbcdd
+
+  - id: gym
+    title: Gym & Exercise
+    icon: dumbbell
+    accent: "#34D399"
+    order: 20
+    published: true
+    topics:
+      - id: habits
+        title: Habits
+        order: 10
+        published: true
+        items:
+          - id: tpl-gym
+            title: Go to the Gym
+            type: template
+            order: 10
+            published: true
+            description: Work out 3 times a week.
+            native_ref: /templates/gym-3x-l2
+          - id: tpl-walk-outside
+            title: Walk Outside
+            type: template
+            order: 20
+            published: true
+            description: Take a walk on most days.
+            native_ref: /templates/e28e0221-d4c7-4b99-b8e6-4ed72751fd3b
+      # Crossfit Club is deliberately absent: visibility=private, so /c/<id>
+      # would 404 for everyone who is not already a member.
+
+  - id: care
+    title: Care
+    icon: spark
+    accent: "#F87171"
+    order: 30
+    published: true
+    topics:
+      - id: habits
+        title: Habits
+        order: 10
+        published: true
+        items:
+          - id: tpl-smile-daily
+            title: Smile Daily 😀
+            type: template
+            order: 10
+            published: true
+            description: Smile on purpose, every day.
+            native_ref: /templates/5f764a7f-de2a-49fc-a295-ce44ae6bfc74
+          - id: tpl-cook-at-home
+            title: Cook at Home
+            type: template
+            order: 20
+            published: true
+            description: Cook a meal at home, not takeout.
+            native_ref: /templates/2ca4c4a2-3a17-4aa1-8214-cafe73027f28
+          # Titled from the DB row. Renaming this to "Tidy Up" ("leave one thing
+          # nicer than you found it") means updating promise_templates too —
+          # otherwise the card and its detail page disagree.
+          - id: tpl-clean-house
+            title: Clean House
+            type: template
+            order: 30
+            published: true
+            description: Clean one thing each day.
+            native_ref: /templates/36a62645-1950-457e-bda9-f88d091ad996
+
+  - id: english
+    title: English
+    icon: bubble-en
+    accent: "#A78BFA"
+    order: 40
+    published: true
+    topics:
+      - id: habits
+        title: Habits
+        order: 10
+        published: true
+        items:
+          # template_id reads "french-3h-l1" but the row is English — legacy id.
+          - id: tpl-study-english
+            title: Study English
+            type: template
+            order: 10
+            published: true
+            description: Study English a little each day.
+            native_ref: /templates/french-3h-l1
+
+  # Nothing in the database is about piano yet. Kept unpublished so the subject
+  # is written down without shipping a category that opens onto an empty screen.
+  - id: piano
+    title: Piano
+    icon: piano
+    accent: "#F4B860"
+    order: 50
+    published: false
+    topics: []
