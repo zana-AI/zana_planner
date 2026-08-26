@@ -1,10 +1,12 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+The single source of guidance for coding agents (Claude Code, Codex, …) working in this
+repository. There is deliberately no separate CLAUDE.md — it was removed in favour of this
+file so the two could not drift apart.
 
 ## Project Overview
 
-Xaana (ZanaAI) is a Telegram bot + Mini App for goal/promise accountability. It runs as a Docker container on a Contabo VPS (domain `xaana.club`). The bot handles NLP-driven promise tracking via `python-telegram-bot`, while the web layer serves a React SPA via FastAPI/uvicorn.
+Xaana (ZanaAI) is a Telegram bot + Mini App for goal/promise accountability. It runs as Docker containers on a Contabo VPS (`169.58.186.195`, domain `xaana.club`). The bot handles NLP-driven promise tracking via `python-telegram-bot`, while the web layer serves a React SPA via FastAPI/uvicorn.
 
 ## Architecture
 
@@ -17,7 +19,7 @@ tm_bot/
   services/            # Business logic (reminders, clubs, etc.)
   db/
     postgres_db.py     # SQLAlchemy connection (reads DATABASE_URL_PROD/STAGING)
-    alembic/           # Schema migrations (versions/001–018+)
+    alembic/           # Schema migrations (hand-written; 001–032, latest on master)
     alembic.ini        # script_location = tm_bot/db/alembic (relative to /app)
   webapp/
     routers/           # FastAPI route modules (admin.py, user.py, etc.)
@@ -25,16 +27,18 @@ tm_bot/
     auth.py            # Telegram initData HMAC validation
   platforms/           # Platform abstraction layer
     testing/           # MockPlatformAdapter, CLIPlatformAdapter for tests
-  llms/                # Claude API integration
+  llms/                # Multi-provider LLM layer — Gemini, OpenAI, DeepSeek,
+                       # Groq, xAI adapters behind providers/factory.py
   models/models.py     # Domain dataclasses / UserSettings
 
 webapp_frontend/       # React + Vite SPA (built into dist/, served by FastAPI)
-stats_service/         # Separate service (port 8000)
+stats_service/         # Separate service (port 8000) — in the tree, but no
+                       # zana-stats container is currently running
 ```
 
 **Key wiring:** `planner_bot.py` wires handlers to a platform adapter. In production the adapter is the real `python-telegram-bot` integration; in tests it is `MockPlatformAdapter`. Repositories all use `get_db_session()` from `postgres_db.py` — never raw connections.
 
-**Database:** PostgreSQL, **self-hosted** in the `zana-postgres` container on the VM (`postgres:18-alpine`) — superuser `zana`, prod DB `zana`, staging DB `zana_staging`. Environment selects which URL: `DATABASE_URL_PROD` (when `ENVIRONMENT=production`) or `DATABASE_URL_STAGING`. Alembic handles all schema changes.
+**Database:** PostgreSQL **self-hosted in the `zana-postgres` container** (`postgres:18-alpine`) on the VPS — not Neon, not Supabase. Superuser `zana`; prod DB `zana`, staging DB `zana_staging` (staging lags prod — check before assuming). The port is not published, so reach it via `docker exec zana-postgres psql -U zana -d zana`. Environment selects which URL: `DATABASE_URL_PROD` (when `ENVIRONMENT=production`) or `DATABASE_URL_STAGING`. Alembic handles all schema changes.
 
 ## Common Commands
 
@@ -158,13 +162,21 @@ curl https://xaana.club/api/health
 
 ## Flashcards (spaced repetition)
 
-A separate engine from `challenge_*` — see
-`tm_bot/db/alembic/versions/032_flashcards_srs.py` for why the tables are
-deliberately not shared. Review state must never live in `challenge_attempts`.
+`flashcard_*` tables (migration `032_flashcards_srs`, live in prod) are a
+**second, independent engine** — separate from `challenge_*` on purpose.
+Challenges are cohort-scheduled by the calendar and graded binary; flashcards
+are scheduled per learner by FSRS from a 1-4 self-assessment. Binary
+correctness cannot drive a memory model.
 
-**Working on flashcard content (the words themselves)? Read
-[docs/FLASHCARDS_OPS.md](docs/FLASHCARDS_OPS.md) first** — DB connection, schema,
-the `source_key` trap, importers, and what must never be hand-edited.
+**Never** store review state in `challenge_attempts`, let
+`challenge_decks.release_at` drive what gets reviewed, reimplement scheduling
+(py-fsrs owns it), or write to `flashcard_review_log` (append-only, and the
+FSRS optimiser's training input).
+
+Full operating guide — where the data lives, whose cards, how to edit content
+safely, and the importers: **`docs/FLASHCARDS_OPS.md`**. Design rationale is in
+the header of `tm_bot/db/alembic/versions/032_flashcards_srs.py`. Keep the
+detail in those two places rather than copying it here, so it cannot drift.
 
 ## Test Markers
 
@@ -190,7 +202,7 @@ the `source_key` trap, importers, and what must never be hand-edited.
 
 ## Operations & Debugging
 
-**VM access** — the bot runs on a **Contabo VPS** (`vmi3512459`, `169.58.186.195`). Plain SSH as `root`, no cloud CLI:
+**VM access** — everything runs on a **Contabo VPS** (`vmi3512459`, `169.58.186.195`). Plain SSH as `root`, no cloud CLI:
 
 ```bash
 ssh root@169.58.186.195 "docker ps"
@@ -203,6 +215,9 @@ You are root on the VM, so `docker` needs no `sudo`.
 Running containers: `zana-prod`, `zana-staging`, `zana-webapp`, `zana-postgres`, `zana-qdrant`, `zana-nginx`.
 Defined but not running: `zana-stats`, plus the `mcp` and `langfuse` compose profiles.
 Compose dir on the VM: `/opt/zana-bot/zana_planner` (note the nested path). Env files: `/opt/zana-config/.env.{prod,staging}` (not in the repo).
+
+**Never `cat` an env file into a conversation, and never echo a connection
+string** — they hold `BOT_TOKEN` and LLM API keys.
 
 **Deploy flow**
 - Push to `master` → **staging auto-deploys** (GH Actions `deploy-staging.yml`). The built image is tagged `zana-ai-bot:staging`; `/app/VERSION` holds the commit SHA. CI connects over generic SSH secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `PROJECT_PATH`, `DEPLOY_SSH_KEY`) — not cloud-specific.

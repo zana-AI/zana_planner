@@ -12,6 +12,8 @@ env.*
 *.md
 !.claude/skills/**/*.md
 !docs/**/*.md
+# The agent guidance file must be tracked — it replaced CLAUDE.md.
+!AGENTS.md
 *.jar
 *.mp3
 !requirements*
