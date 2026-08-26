@@ -40,14 +40,16 @@ For a **one-time bulk load** (like a 500-question corpus), you likely don't need
 
 ## 4. Operational gotchas (learned the hard way, don't re-learn them)
 
-- **Prod DB/container access**: `gcloud compute ssh vm-telegram-bots --zone=europe-west9-c --command="..."` (see `vm-ops` skill), then `sudo docker exec -i zana-prod python3 <script>`. For any script/JSON payload, base64-encode and pipe it: `echo $B64 | base64 -d | sudo docker exec -i zana-prod python3 -` — plain stdin redirection through `--command` is unverified, don't rely on it.
-- **`gcloud auth login` needs a human browser OAuth flow** — never runnable by Claude, and the token TTL is ~1h. Any automation built on `gcloud compute ssh` is **not truly unattended** — fine for a one-time load or a manually-triggered run, but if the new challenge needs a genuinely scheduled/unattended daily push, that auth gap must be solved first (e.g. an HTTPS admin endpoint with a static service token instead of SSH).
+- **Prod DB/container access**: `ssh root@169.58.186.195 "..."` (Contabo VPS — see the `vm-ops` skill), then `docker exec -i zana-prod python3 <script>`. You are root; no `sudo`. For any script/JSON payload, base64-encode and pipe it: `echo $B64 | base64 -d | ssh root@169.58.186.195 "docker exec -i zana-prod python3 -"`.
+  > Anything in older notes about `gcloud compute ssh vm-telegram-bots --zone=europe-west9-c` is **stale** — the GCP VM was suspended in Aug 2026 when the credit lapsed and the stack moved to Contabo. There is no `gcloud` in this loop any more.
+- **A scheduled daily push is now genuinely possible.** The old blocker was `gcloud auth login` needing a human browser OAuth flow with a ~1h token TTL, which made unattended automation impossible. Plain SSH key auth has no such expiry, so a cron/systemd timer on the VM can drive the daily push directly. (An HTTPS admin endpoint with a static service token is still the cleaner long-term shape.)
 - **`deploy-prod.yml` has a pre-existing bug**: its remote check (`docker images | grep -q staging`) runs as a non-sudo SSH user without docker-group access, so it always reports a false "staging image not found." Workaround — promote manually:
   ```
-  sudo docker tag zana-ai-bot:prod zana-ai-bot:prod-rollback
-  sudo docker tag zana-ai-bot:staging zana-ai-bot:prod
-  cd /opt/zana-bot && sudo docker compose up -d --force-recreate --no-build zana-prod
+  docker tag zana-ai-bot:prod zana-ai-bot:prod-rollback
+  docker tag zana-ai-bot:staging zana-ai-bot:prod
+  cd /opt/zana-bot/zana_planner && docker compose up -d --force-recreate --no-build zana-prod
   ```
+  (Note the **nested** repo path — `/opt/zana-bot` alone holds no compose file.)
 - **Deploy path**: push to `master` → `deploy-staging.yml` auto-rebuilds `zana-staging` (bot) **and** `zana-webapp`. There's no separate staging/prod split for the webapp — it's prod-facing (`xaana.club`) on every master push. Only the bot (`zana-prod`) needs the separate manual promotion above.
 - **Migrations**: sequential `NNN_description.py` under `tm_bot/db/alembic/versions/`, apply via the `migrate` skill (staging then prod) — never auto-applied by the deploy workflows.
 
