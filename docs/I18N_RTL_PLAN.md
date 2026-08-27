@@ -1,6 +1,7 @@
 # Persian (fa) Localization & RTL Plan
 
 Status: **SHIPPED 2026-08-27** — Phases 1–4 complete, Persian live for all users.
+Catalogs cover the full app (514 keys per language); see §8 for what remains.
 Written 2026-08-26.
 
 Persian is selected from **Settings → Language**, and is the default for anyone whose
@@ -385,17 +386,19 @@ Things that reliably get missed:
 
 ## 8. Not shipped / follow-ups
 
-1. **Numeric inputs don't normalize Persian digits yet.** `toLatinDigits()` is written and
-   exported but unwired. `LogTimeSheet`, `DurationWheelPicker` and the promise-hours field
-   need it before a Persian-keyboard user can log time. Highest-priority follow-up.
+1. ~~**Numeric inputs don't normalize Persian digits.**~~ ✅ Done 2026-08-27 (`86435b2`).
+   Every `parseFloat` / `parseInt` on user input now runs through `toLatinDigits()`, so a
+   Persian keyboard's `۳٫۵` parses instead of returning `NaN`.
 2. **Phase 5 (bot) not started.** The Telegram bot still LLM-translates at runtime via
    `translate_text()`. Works, but costs latency and wording drift.
 3. **D3 (Saturday week start) not shipped.** Deliberate: it re-buckets existing weekly
    history for *all* users, English included, and was never actually chosen.
 4. **`InlineCalendar` shows a Gregorian grid with Persian labels.** Display dates are
    Jalali everywhere else, so the picker is now inconsistent. Needs `jalaali-js`.
-5. **Persian copy is unreviewed.** Written by Claude, grammatical but not idiomatic in
-   places. Atena should review before any Persian-language marketing push.
+5. **Persian copy is unreviewed.** A revision pass landed 2026-08-27 (`19f4e8b`) that
+   removed the worst calques — «در مسیر» → «طبق برنامه», «اجتماع» → «همراهان», «کشف» →
+   «کاوش» — and reshaped error strings to Persian's «… نشد» pattern. It is still
+   Claude-written: Atena should review before any Persian-language marketing push.
 6. **`npm run lint` cannot run** — the script calls `eslint`, which is not in
    `devDependencies`. Pre-existing, unrelated to this work.
 
