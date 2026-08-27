@@ -58,7 +58,17 @@ class ContentResolveService:
         existing = self._repo.get_content_by_canonical_url(canonical)
         if existing:
             updated_at_sec = _parse_iso_to_seconds(existing.get("updated_at"))
-            if updated_at_sec:
+            # Older rows may have been created while yt-dlp was unavailable and
+            # therefore contain the generic placeholder title. Let YouTube
+            # metadata refresh those rows instead of keeping the placeholder
+            # alive for the cache TTL.
+            is_placeholder_title = (
+                str(existing.get("provider") or "").lower() == "youtube"
+                and str(existing.get("title") or "").strip().lower() in {
+                    "youtube video", "youtube video ", "untitled"
+                }
+            )
+            if updated_at_sec and not is_placeholder_title:
                 import time
                 if (int(time.time()) - updated_at_sec) < CONTENT_CACHE_TTL_SECONDS:
                     existing["content_id"] = existing["id"]

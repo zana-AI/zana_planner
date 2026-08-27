@@ -1179,6 +1179,20 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 .content-library-empty {
   display: grid;
   gap: 8px;
+  justify-items: start;
+  padding: clamp(24px, 6vw, 52px);
+  background: linear-gradient(135deg, rgba(24, 42, 82, 0.75), rgba(15, 24, 50, 0.58));
+}
+
+.content-library-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 4px;
+  border-radius: 14px;
+  background: rgba(99, 167, 247, 0.16);
+  color: var(--accent);
 }
 
 .content-library-error {
@@ -1207,11 +1221,11 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   }
 
   .content-card {
-    grid-template-columns: 74px minmax(0, 1fr);
+    grid-template-columns: 104px minmax(0, 1fr);
   }
 
   .content-card-media {
-    width: 74px;
+    width: 104px;
   }
 
   .content-card-actions {

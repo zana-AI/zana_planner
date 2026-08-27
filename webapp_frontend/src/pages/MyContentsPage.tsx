@@ -12,18 +12,18 @@ type SortKey = 'recent' | 'added' | 'title' | 'progress';
 // "All" leads because it is the default — the selected chip should be the first
 // one, not buried second.
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'in_progress', label: 'Continue' },
-  { key: 'saved', label: 'Saved' },
-  { key: 'completed', label: 'Completed' },
+  { key: 'all', label: 'all' },
+  { key: 'in_progress', label: 'continue' },
+  { key: 'saved', label: 'saved' },
+  { key: 'completed', label: 'completed' },
 ];
 
 const TYPE_FILTERS: { key: TypeFilter; label: string }[] = [
-  { key: 'all', label: 'All types' },
-  { key: 'pdf', label: 'PDFs' },
-  { key: 'video', label: 'Videos' },
-  { key: 'audio', label: 'Audio' },
-  { key: 'text', label: 'Articles' },
+  { key: 'all', label: 'allTypes' },
+  { key: 'pdf', label: 'pdfs' },
+  { key: 'video', label: 'videos' },
+  { key: 'audio', label: 'audio' },
+  { key: 'text', label: 'articles' },
 ];
 
 // "Recently added" leads because it is the default: the library is somewhere you
@@ -73,7 +73,8 @@ function getInternalYouTubeWatchUrl(item: UserContentWithDetails): string | null
 
   if (provider !== 'youtube' && !videoId) return null;
   if (!videoId) return null;
-  return `/youtube-watch?video_id=${encodeURIComponent(videoId)}`;
+  const contentId = item.content_id || item.id;
+  return `/youtube-watch?video_id=${encodeURIComponent(videoId)}${contentId ? `&content_id=${encodeURIComponent(contentId)}` : ''}`;
 }
 
 function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
@@ -87,7 +88,7 @@ function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
 }
 
 export function MyContentsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [addUrl, setAddUrl] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
@@ -186,7 +187,7 @@ export function MyContentsPage() {
 
     const youtubeWatchUrl = getInternalYouTubeWatchUrl(item);
     if (youtubeWatchUrl) {
-      window.location.assign(youtubeWatchUrl);
+      window.location.assign(`${youtubeWatchUrl}&lang=${encodeURIComponent(i18n.language)}`);
       return;
     }
 
@@ -289,7 +290,7 @@ export function MyContentsPage() {
                   className={status === filter.key ? 'is-active' : ''}
                   onClick={() => setStatus(filter.key)}
                 >
-                  {filter.label}
+                  {t(`myContents.status.${filter.label}`)}
                   {filter.key !== 'all' && facets.status?.[filter.key] != null && (
                     <span>{facets.status[filter.key]}</span>
                   )}
@@ -305,7 +306,7 @@ export function MyContentsPage() {
                   className={contentType === filter.key ? 'is-active' : ''}
                   onClick={() => setContentType(filter.key)}
                 >
-                  {filter.label}
+                  {t(`myContents.types.${filter.label}`)}
                   {filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
                     <span>{facets.content_type[filter.key]}</span>
                   )}
@@ -359,8 +360,11 @@ export function MyContentsPage() {
         </>
       ) : (
         <section className="content-library-empty">
+          <div className="content-library-empty-icon" aria-hidden="true"><Plus size={22} /></div>
           <h2>{t('myContents.noContentHereYet')}</h2>
-          <p>{t('myContents.pasteALinkAboveOrClearFiltersToBroadenTheLib')}</p>
+          <p>{activeFilterCount === 0
+            ? t('myContents.emptyLibraryGuide')
+            : t('myContents.pasteALinkAboveOrClearFiltersToBroadenTheLib')}</p>
           {activeFilterCount > 0 && (
             <button type="button" onClick={resetFilters}>{t('myContents.clearFilters')}</button>
           )}

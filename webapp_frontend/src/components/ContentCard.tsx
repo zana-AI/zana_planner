@@ -36,13 +36,13 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
 
 export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps) {
   const { t } = useTranslation();
-  const title = item.title || 'Untitled';
+  const title = item.title || t('content.untitled');
   const provider = (item.provider || 'other').replace(/_/g, ' ');
   const displayType = getDisplayType(item);
   const durationSeconds = item.duration_seconds ?? item.estimated_read_seconds;
   const durationLabel = durationSeconds != null
     ? displayType === 'text' || displayType === 'pdf'
-      ? `~${formatDuration(durationSeconds)} read`
+      ? t('content.readDuration', { duration: `~${formatDuration(durationSeconds)}` })
       : formatDuration(durationSeconds)
     : '';
   const progressRatio = Math.max(0, Math.min(1, Number(item.progress_ratio || 0)));
@@ -51,11 +51,11 @@ export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps)
     : null;
   const buckets = item.buckets ?? [];
   const bucketCount = item.bucket_count ?? 120;
-  const source = item.author_channel || provider;
+  const source = item.author_channel || (provider === 'youtube' ? 'YouTube' : provider);
 
   const secondaryStatus = item.status === 'completed'
-    ? { label: 'Resume', icon: <RotateCcw size={15} />, value: 'in_progress' as const }
-    : { label: 'Done', icon: <CheckCircle2 size={15} />, value: 'completed' as const };
+      ? { label: t('content.resume'), icon: <RotateCcw size={15} />, value: 'in_progress' as const }
+    : { label: t('content.markComplete'), icon: <CheckCircle2 size={15} />, value: 'completed' as const };
 
   return (
     <article
@@ -85,20 +85,20 @@ export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps)
         <div className="content-card-meta-row">
           <span className={`content-card-type content-card-type--${displayType}`}>
             <TypeIcon type={displayType} />
-            {displayType}
+            {t(`content.types.${displayType}`)}
           </span>
-          <span className="content-card-status">{item.status.replace('_', ' ')}</span>
+          <span className="content-card-status">{t(`content.status.${item.status}`, item.status.replace('_', ' '))}</span>
         </div>
         <h3 className="content-card-title">{title}</h3>
         <div className="content-card-subtitle">
           <span>{source}</span>
           {durationLabel && <span>{durationLabel}</span>}
-          <span>{Math.round(progressRatio * 100)}% read</span>
+          <span>{t('content.progressRead', { percent: Math.round(progressRatio * 100) })}</span>
         </div>
         <HeatmapBar
           data={{ bucket_count: bucketCount, buckets }}
           markerRatio={markerRatio}
-          ariaLabel="Read coverage timeline"
+          ariaLabel={t('content.readCoverageTimeline')}
           className="content-card-timeline"
         />
       </div>

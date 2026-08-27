@@ -16,30 +16,34 @@
       --player-safe-right: max(10px, env(safe-area-inset-right, 0px), var(--tg-safe-area-inset-right, 0px), var(--tg-content-safe-area-inset-right, 0px), var(--watch-safe-right));
       --player-safe-bottom: max(10px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px), var(--watch-safe-bottom));
       --player-safe-left: max(10px, env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px), var(--tg-content-safe-area-inset-left, 0px), var(--watch-safe-left));
-      --player-control-rail: clamp(56px, 9vw, 78px);
+      --app-bg: #081225;
+      --app-panel: #0f1c37;
+      --app-border: rgba(170, 196, 238, 0.16);
+      --app-accent: #63a7f7;
+      --player-control-rail: clamp(64px, 9vw, 82px);
       --watch-viewport-height: 100dvh;
     }
     body {
       margin: 0;
       min-height: 100vh;
       min-height: 100dvh;
-      padding: 8px;
+      padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
       font-family: system-ui, sans-serif;
-      background: var(--tg-theme-bg-color, #fff);
-      color: var(--tg-theme-text-color, #000);
+      background: var(--app-bg);
+      color: #edf3ff;
     }
     .video-title {
       font-size: 15px;
       font-weight: 600;
       padding: 0 0 6px;
-      color: var(--tg-theme-text-color, #000);
+      color: #edf3ff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       line-height: 1.35;
       min-height: 1.35em;
     }
-    .video-wrap { position: relative; width: 100%; padding-bottom: 56.25%; height: 0; }
+    .video-wrap { position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border: 1px solid var(--app-border); border-radius: 14px; background: #000; box-shadow: 0 18px 48px rgba(0,0,0,.28); }
     .video-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
     .progress-container {
       margin-top: 6px;
@@ -57,9 +61,15 @@
       border-radius: 3px;
       opacity: 0.78;
     }
-    .hint { font-size: 12px; color: var(--tg-theme-hint-color, #999); margin-top: 8px; }
-    .controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-    .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+    .transcript { margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; }
+    .transcript summary { cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 800; color: #edf3ff; }
+    .transcript-list { max-height: 280px; overflow: auto; border-top: 1px solid var(--app-border); }
+    .transcript-cue { display: grid; grid-template-columns: 54px 1fr; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid rgba(170,196,238,.08); background: transparent; color: rgba(237,243,255,.78); text-align: start; font: inherit; font-size: 13px; cursor: pointer; }
+    .transcript-cue:hover, .transcript-cue:focus-visible { background: rgba(99,167,247,.12); color: #fff; outline: none; }
+    .transcript-time { color: var(--app-accent); font-variant-numeric: tabular-nums; }
+    .hint { font-size: 12px; color: rgba(237,243,255,.58); margin: 10px 2px 0; }
+    .controls { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
+    .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; white-space: nowrap; }
     .toggle input { width: 18px; height: 18px; }
     .debug {
       margin-top: 10px;
@@ -168,7 +178,7 @@
     .expand-btn {
       padding: 5px 10px;
       background: transparent;
-      color: var(--tg-theme-button-color, #2481cc);
+      color: var(--app-accent);
       border: 1px solid currentColor;
       border-radius: 8px;
       font-size: 13px;
@@ -186,28 +196,51 @@
     <iframe id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
   <div id="watchProgress" class="progress-container" hidden></div>
-  <p class="hint">When done, tap the button below to close and get your watch summary.</p>
+  <details id="transcript" class="transcript" hidden>
+    <summary id="transcriptTitle">Transcript</summary>
+    <div id="transcriptList" class="transcript-list"></div>
+  </details>
+  <p id="doneHint" class="hint">When you’re finished, close this page to save your watch progress.</p>
   <div class="controls">
     <label class="toggle">
       <input type="checkbox" id="trackToggle" checked>
-      Track
+      <span id="trackLabel">Track progress</span>
     </label>
-    <span class="hint">Track watched segments (polling fallback).</span>
-    <button id="expandBtn" class="expand-btn" hidden>Expand</button>
+    <span id="trackHint" class="hint">Save the parts you watch.</span>
+    <button id="expandBtn" class="expand-btn" hidden>Full screen</button>
   </div>
   <pre id="debugLog" class="debug" hidden></pre>
 
   <div id="immersiveControls" class="immersive-controls" aria-label="Player controls">
     <!-- Floating Done button: shown beside the video in landscape / fullscreen modes -->
-    <button id="floatDoneBtn" class="float-btn" title="Done" aria-label="Done">Done</button>
+    <button id="floatDoneBtn" class="float-btn" title="Close and save" aria-label="Close and save">Close</button>
     <!-- Floating Exit button: shown beside the video in desktop fullscreen mode -->
-    <button id="floatExitBtn" class="float-btn" title="Exit fullscreen" aria-label="Exit fullscreen">Exit</button>
+    <button id="floatExitBtn" class="float-btn" title="Exit full screen" aria-label="Exit full screen">Exit</button>
   </div>
 
   <script>
 (function() {
   var params = new URLSearchParams(window.location.search);
   var videoId = params.get('video_id') || '';
+  var contentId = params.get('content_id') || '';
+  var language = (params.get('lang') || 'en').toLowerCase().split('-')[0];
+  var copy = language === 'fa' ? {
+    hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', track: 'ردگیری پیشرفت',
+    trackHint: 'بخش‌هایی را که می‌بینید ذخیره می‌کنیم.', full: 'تمام‌صفحه', close: 'بستن و ذخیره', exit: 'خروج'
+  } : {
+    hint: 'When you’re finished, close this page to save your watch progress.', track: 'Track progress',
+    trackHint: 'Save the parts you watch.', full: 'Full screen', close: 'Close and save', exit: 'Exit'
+  };
+  document.documentElement.lang = language;
+  document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
+  document.getElementById('doneHint').textContent = copy.hint;
+  document.getElementById('trackLabel').textContent = copy.track;
+  document.getElementById('trackHint').textContent = copy.trackHint;
+  document.getElementById('expandBtn').textContent = copy.full;
+  document.getElementById('floatDoneBtn').textContent = copy.close;
+  document.getElementById('floatDoneBtn').title = copy.close;
+  document.getElementById('floatDoneBtn').setAttribute('aria-label', copy.close);
+  document.getElementById('floatExitBtn').textContent = copy.exit;
   var userToken = params.get('ut') || '';
   var promiseId = params.get('pid') || '';
   var debug = params.get('debug') === '1';
@@ -226,6 +259,46 @@
   var videoDuration = 0;
   var debugLog = document.getElementById('debugLog');
   if (debug && debugLog) debugLog.hidden = false;
+
+  function formatCueTime(seconds) {
+    var total = Math.max(0, Math.floor(Number(seconds) || 0));
+    var minutes = Math.floor(total / 60);
+    var secs = String(total % 60).padStart(2, '0');
+    return minutes + ':' + secs;
+  }
+
+  function loadTranscript() {
+    if (!contentId) return;
+    var headers = {};
+    var token = '';
+    try { token = localStorage.getItem('telegram_auth_token') || ''; } catch (_) {}
+    var initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+    if (token) headers.Authorization = 'Bearer ' + token;
+    else if (initData) headers['X-Telegram-Init-Data'] = initData;
+    fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/transcript', { headers: headers })
+      .then(function(response) { return response.ok ? response.json() : null; })
+      .then(function(data) {
+        if (!data || !data.available || !data.cues || !data.cues.length) return;
+        var panel = document.getElementById('transcript');
+        var list = document.getElementById('transcriptList');
+        var title = document.getElementById('transcriptTitle');
+        title.textContent = (language === 'fa' ? 'زیرنویس' : 'Transcript') + (data.source === 'automatic' ? (language === 'fa' ? ' · خودکار' : ' · automatic') : '');
+        list.innerHTML = '';
+        data.cues.forEach(function(cue) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'transcript-cue';
+          button.innerHTML = '<span class="transcript-time">' + formatCueTime(cue.start) + '</span><span></span>';
+          button.querySelector('span:last-child').textContent = cue.text;
+          button.addEventListener('click', function() {
+            if (player && typeof player.seekTo === 'function') { player.seekTo(Number(cue.start) || 0, true); player.playVideo(); }
+          });
+          list.appendChild(button);
+        });
+        panel.hidden = false;
+      })
+      .catch(function() { /* Captions are optional; keep the player usable. */ });
+  }
 
   // Detect mobile (Android/iOS) vs desktop — only mobile gets landscape/fullscreen handling.
   var isMobileDevice = (function() {
@@ -705,7 +778,7 @@
     window.Telegram.WebApp.expand();
     syncTelegramLayoutVars();
     setTimeout(updateOrientationMode, 60);
-    window.Telegram.WebApp.MainButton.setText('Done').show().onClick(handleDone);
+    window.Telegram.WebApp.MainButton.setText(copy.close).show().onClick(handleDone);
   }
 
   // ── Floating Done button (landscape / desktop-fullscreen overlay) ────────────
@@ -754,6 +827,8 @@
       exitDesktopFullscreen();
     });
   }
+
+  loadTranscript();
 
   // Keep desktop-fullscreen class in sync with the browser's actual fullscreen state.
   function onFullscreenChange() {

@@ -13,6 +13,7 @@ Future extensions (document only):
 import os
 import re
 from typing import Any, Dict, List, Optional
+from html import unescape
 
 from utils.logger import get_logger
 
@@ -139,6 +140,90 @@ def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
         _enrich_with_youtube_api(video_id, result, api_key)
 
     return result
+
+
+def get_video_transcript(
+    video_id: str,
+    url: Optional[str] = None,
+    preferred_language: Optional[str] = None,
+    max_cues: int = 5000,
+) -> Dict[str, Any]:
+    """Fetch timestamped manual or automatic captions through yt-dlp.
+
+    This deliberately downloads only the caption track, never the video. The
+    result is normalized to short cues so the webapp can render a searchable
+    transcript and seek the embedded player to a cue.
+    """
+    if not YT_DLP_AVAILABLE:
+        return {"available": False, "cues": [], "reason": "yt-dlp unavailable"}
+    video_url = url or f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            if not info:
+                return {"available": False, "cues": []}
+            manual = info.get("subtitles") or {}
+            automatic = info.get("automatic_captions") or {}
+            tracks = _select_caption_tracks(manual, automatic, preferred_language)
+            for language, track in tracks:
+                for fmt in sorted(track, key=lambda item: 0 if item.get("ext") == "vtt" else 1):
+                    track_url = fmt.get("url")
+                    if not track_url:
+                        continue
+                    raw = ydl.urlopen(track_url).read().decode("utf-8", errors="replace")
+                    cues = _parse_vtt_cues(raw) if fmt.get("ext") == "vtt" else _parse_caption_xml(raw)
+                    if cues:
+                        return {"available": True, "language": language, "source": "manual" if language in manual else "automatic", "cues": cues[:max_cues]}
+    except Exception as exc:
+        logger.info("yt-dlp transcript fetch failed for %s: %s", video_id, exc)
+    return {"available": False, "cues": []}
+
+
+def _select_caption_tracks(manual: Dict[str, Any], automatic: Dict[str, Any], preferred: Optional[str]):
+    available = [(lang, tracks) for lang, tracks in manual.items()]
+    available += [(lang, tracks) for lang, tracks in automatic.items()]
+    if not available:
+        return []
+    preferred_base = (preferred or "").lower().split("-")[0]
+    return sorted(available, key=lambda pair: (
+        0 if preferred and pair[0].lower() == preferred.lower() else
+        1 if preferred_base and pair[0].lower().split("-")[0] == preferred_base else
+        2 if pair[0].lower().startswith("en") else 3
+    ))
+
+
+def _parse_timestamp(value: str) -> float:
+    parts = value.replace(",", ".").split(":")
+    if len(parts) == 3:
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+    return int(parts[0]) * 60 + float(parts[1])
+
+
+def _parse_vtt_cues(raw: str) -> List[Dict[str, Any]]:
+    import re
+    cues: List[Dict[str, Any]] = []
+    blocks = re.split(r"\n\s*\n", raw.replace("\r\n", "\n"))
+    for block in blocks:
+        match = re.search(r"(?m)^(\d{1,2}:\d{2}(?::\d{2})?[\.,]\d{3})\s+-->\s+(\d{1,2}:\d{2}(?::\d{2})?[\.,]\d{3})", block)
+        if not match:
+            continue
+        text_lines = block[match.end():].splitlines()
+        text = " ".join(line.strip() for line in text_lines if line.strip() and not line.startswith("NOTE"))
+        text = re.sub(r"<[^>]+>", "", unescape(text)).strip()
+        if text:
+            cues.append({"start": _parse_timestamp(match.group(1)), "end": _parse_timestamp(match.group(2)), "text": text})
+    return cues
+
+
+def _parse_caption_xml(raw: str) -> List[Dict[str, Any]]:
+    import re
+    cues: List[Dict[str, Any]] = []
+    for match in re.finditer(r"<text[^>]*start=\"([^\"]+)\"[^>]*dur=\"([^\"]+)\"[^>]*>(.*?)</text>", raw, re.S):
+        text = re.sub(r"<[^>]+>", "", unescape(match.group(3))).strip()
+        if text:
+            start = float(match.group(1))
+            cues.append({"start": start, "end": start + float(match.group(2)), "text": text})
+    return cues
 
 
 def _get_video_info_basic(url: str, result: Dict[str, Any]) -> Dict[str, Any]:

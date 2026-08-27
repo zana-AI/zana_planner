@@ -217,6 +217,25 @@ async def get_content_heatmap(
     return data
 
 
+@router.get("/content/{content_id}/transcript")
+async def get_youtube_transcript(
+    content_id: str,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Return timestamped YouTube captions for a content item, if available."""
+    repo = get_content_repo()
+    if not repo.get_user_content(str(user_id), content_id):
+        raise HTTPException(status_code=404, detail="User content not found")
+    content = repo.get_content_by_id(content_id) or {}
+    if str(content.get("provider") or "").lower() != "youtube":
+        return {"available": False, "cues": []}
+    from utils.youtube_utils import extract_video_id, get_video_transcript
+    video_id = extract_video_id(content.get("original_url") or content.get("canonical_url") or "")
+    if not video_id:
+        return {"available": False, "cues": []}
+    return get_video_transcript(video_id, url=content.get("original_url"), preferred_language=None)
+
+
 @router.patch("/user-content/{content_id}")
 async def update_user_content(
     content_id: str,

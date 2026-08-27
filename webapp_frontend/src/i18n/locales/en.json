@@ -581,6 +581,7 @@
     "clear": "Clear",
     "loadingLibrary": "Loading library...",
     "noContentHereYet": "No content here yet",
+    "emptyLibraryGuide": "Send a PDF, YouTube video, podcast, or article to Xaana in Telegram and keep it here for later learning.",
     "pasteALinkAboveOrClearFiltersToBroadenTheLib": "Paste a link above, or clear filters to broaden the library.",
     "clearFilters": "Clear filters",
     "pasteAPdfYoutubeArticleOrPodcastUrl": "Paste a PDF, YouTube, article, or podcast URL",
@@ -589,7 +590,21 @@
     "libraryTypeFilters": "Library type filters",
     "libraryItems": "Library items",
     "failedToLoadLibrary": "Failed to load library",
-    "failedToUpdateContent": "Failed to update content"
+    "failedToUpdateContent": "Failed to update content",
+    "status": { "all": "All", "continue": "Continue", "saved": "Saved", "completed": "Completed" },
+    "types": { "allTypes": "All types", "pdfs": "PDFs", "videos": "Videos", "audio": "Audio", "articles": "Articles" }
+  },
+  "content": {
+    "untitled": "Untitled",
+    "resume": "Resume",
+    "markComplete": "Mark complete",
+    "readDuration": "{{duration}} read",
+    "progressRead": "{{percent}}% read",
+    "readCoverageTimeline": "Read coverage timeline",
+    "open": "Open",
+    "more": "More",
+    "types": { "pdf": "PDF", "video": "Video", "audio": "Audio", "text": "Article", "other": "Other" },
+    "status": { "saved": "Saved", "in_progress": "In progress", "completed": "Completed" }
   },
   "pdfReader": {
     "loadingPdf": "Loading PDF...",
