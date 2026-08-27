@@ -9,7 +9,7 @@
     "close": "بستن",
     "saving": "در حال ذخیره…",
     "tryAgain": "تلاش دوباره",
-    "somethingWentWrong": "مشکلی پیش آمد",
+    "somethingWentWrong": "خطایی رخ داد",
     "today": "امروز",
     "yesterday": "دیروز",
     "delete": "حذف",
@@ -21,9 +21,9 @@
   "nav": {
     "primary": "ناوبری اصلی",
     "myWeek": "هفتهٔ من",
-    "community": "اجتماع",
+    "community": "همراهان",
     "content": "محتوا",
-    "explore": "کشف",
+    "explore": "کاوش",
     "goToMyWeek": "رفتن به هفتهٔ من",
     "startFocus": "شروع تمرکز",
     "openProfileMenu": "باز کردن منوی نمایه"
@@ -40,27 +40,27 @@
       "subtitle": "قول‌های هفتگی و پیشرفت شما"
     },
     "community": {
-      "title": "اجتماع",
-      "subtitle": "فعالیت‌های عمومی اخیر و افرادی که دنبال می‌کنید"
+      "title": "همراهان",
+      "subtitle": "فعالیت‌های عمومی تازه و کسانی که دنبال می‌کنید"
     },
     "explore": {
-      "title": "کشف",
+      "title": "کاوش",
       "subtitle": "کتابخانهٔ قول‌ها و بازارچه"
     },
     "challenges": {
       "title": "چالش‌ها",
-      "subtitle": "در یک چالش شرکت کنید و بازی کنید"
+      "subtitle": "به یک چالش بپیوندید و شروع کنید"
     },
     "flashcards": {
       "title": "آزمون",
-      "subtitle": "آنچه را در آستانهٔ فراموشی است مرور کنید"
+      "subtitle": "چیزهایی را که دارید فراموش می‌کنید مرور کنید"
     },
     "challengeDetail": {
       "title": "چالش"
     },
     "myContents": {
       "title": "محتوا",
-      "subtitle": "ویدیوها، پی‌دی‌اف‌ها و پادکست‌هایی که با آن‌ها مطالعه می‌کنید"
+      "subtitle": "ویدیو، پی‌دی‌اف و پادکستی که با آن مطالعه می‌کنید"
     },
     "admin": {
       "title": "مدیریت"
@@ -91,23 +91,23 @@
   "settings": {
     "displayName": "نام نمایشی",
     "displayNamePlaceholder": "نام شما",
-    "displayNameUpdated": "نام نمایشی به‌روزرسانی شد.",
-    "displayNameFailed": "به‌روزرسانی نام نمایشی انجام نشد.",
+    "displayNameUpdated": "نام نمایشی به‌روز شد.",
+    "displayNameFailed": "نام نمایشی به‌روز نشد.",
     "timezone": "منطقهٔ زمانی",
-    "timezoneNotSet": "تنظیم نشده",
+    "timezoneNotSet": "تعیین نشده",
     "changeTimezone": "تغییر منطقهٔ زمانی",
     "language": "زبان",
-    "languageUpdated": "زبان به‌روزرسانی شد.",
-    "languageFailed": "به‌روزرسانی زبان انجام نشد.",
+    "languageUpdated": "زبان به‌روز شد.",
+    "languageFailed": "زبان به‌روز نشد.",
     "languageBotHint": "روی ربات Xaana در تلگرام اعمال می‌شود.",
-    "languageAppHint": "روی ربات و این برنامه اعمال می‌شود.",
+    "languageAppHint": "روی ربات و همین برنامه اعمال می‌شود.",
     "voiceMode": "حالت صوتی",
-    "voiceModeHint": "وقتی روشن باشد، ربات می‌تواند در گفت‌وگو پیام صوتی بفرستد.",
+    "voiceModeHint": "با روشن بودن این گزینه، ربات می‌تواند در گفت‌وگو پیام صوتی بفرستد.",
     "enabled": "روشن",
     "disabled": "خاموش",
     "voiceModeEnabled": "حالت صوتی روشن شد.",
     "voiceModeDisabled": "حالت صوتی خاموش شد.",
-    "loadFailed": "بارگذاری تنظیمات انجام نشد.",
+    "loadFailed": "تنظیمات بارگذاری نشد.",
     "enterYourDisplayName": "نام نمایشی خود را بنویسید"
   },
   "language": {
@@ -116,12 +116,12 @@
     "fr": "Français"
   },
   "status": {
-    "onTrack": "در مسیر",
-    "behind": "عقب",
+    "onTrack": "طبق برنامه",
+    "behind": "عقب از برنامه",
     "atRisk": "در خطر"
   },
   "dashboard": {
-    "loadingWorkspace": "در حال بارگذاری فضای کاری شما…",
+    "loadingWorkspace": "در حال آماده‌سازی فضای کاری…",
     "previousWeek": "هفتهٔ قبل",
     "nextWeek": "هفتهٔ بعد",
     "overallProgress": "پیشرفت کلی",
@@ -134,20 +134,20 @@
     "olderPromises": "قول‌های قدیمی",
     "oneTimeTasks": "کارهای یک‌باره",
     "distractions": "حواس‌پرتی‌ها",
-    "stayUnderBudget": "زیر سقف بمانید",
+    "stayUnderBudget": "زیر سقف تعیین‌شده",
     "emptyTitle": "هنوز قول یا کاری ثبت نشده",
-    "emptySubtitle": "برای دیدن پیشرفت‌تان در اینجا، ثبت قول‌ها را در ربات تلگرام شروع کنید.",
-    "explorePromiseLibrary": "کتابخانهٔ قول‌ها",
+    "emptySubtitle": "برای اینکه پیشرفتتان اینجا دیده شود، از ربات تلگرام اولین قولتان را ثبت کنید.",
+    "explorePromiseLibrary": "گشتی در کتابخانهٔ قول‌ها",
     "createPromise": "ساختن قول",
     "promiseSuggestions": "پیشنهادهای قول",
-    "authFailed": "احراز هویت ناموفق بود. لطفاً دوباره وارد شوید.",
-    "loadFailed": "بارگذاری داشبورد انجام نشد. لطفاً دوباره تلاش کنید.",
+    "authFailed": "ورود شما معتبر نیست. لطفاً دوباره وارد شوید.",
+    "loadFailed": "داشبورد بارگذاری نشد. لطفاً دوباره تلاش کنید.",
     "hoursOfHours": "{{spent}} از {{promised}} ساعت",
     "tasksThisWeek": "{{count, num}} این هفته",
-    "community": "اجتماع",
+    "community": "همراهان",
     "activeUsersOnXaana": "کاربران فعال Xaana",
     "viewSuggestions": "دیدن پیشنهادها",
-    "exploreCommunity": "گشتن در اجتماع",
+    "exploreCommunity": "گشتی میان همراهان",
     "back": "بازگشت",
     "noUsersFound": "کاربری پیدا نشد",
     "loading": "در حال بارگذاری…"
@@ -167,7 +167,7 @@
     "startFocus": "شروع تمرکز",
     "editSession": "ویرایش جلسه",
     "addToCalendar": "افزودن به تقویم",
-    "logAndMarkDone": "ثبت و علامت‌گذاری به‌عنوان انجام‌شده",
+    "logAndMarkDone": "ثبت و اتمام",
     "deleteSession": "حذف جلسه",
     "todayAt": "امروز ساعت {{time}}",
     "tomorrowAt": "فردا ساعت {{time}}",
@@ -182,13 +182,13 @@
     "ready": "آماده",
     "nothingDue": "کاری در انتظار نیست",
     "newQuestionsToday": "پرسش‌های تازهٔ امروز",
-    "whatNeedsDoingToday": "امروز چه باید کرد",
+    "whatNeedsDoingToday": "امروز چه کارهایی مانده",
     "checkIn": "ثبت انجام",
-    "logThatYouDidIt": "ثبت کنید که انجامش دادید",
+    "logThatYouDidIt": "ثبت کنید که انجام شد",
     "startFocus": "شروع تمرکز",
     "thingsWaiting_one": "{{count, num}} مورد در انتظار",
     "thingsWaiting_other": "{{count, num}} مورد در انتظار",
-    "nothingIsWaitingRightNowAddAPromiseOrComeBac": "الان کاری در انتظار نیست. قولی اضافه کنید، یا فردا سر بزنید.",
+    "nothingIsWaitingRightNowAddAPromiseOrComeBac": "الان کاری در انتظار نیست. قولی اضافه کنید یا فردا سر بزنید.",
     "seeAllPromises": "دیدن همهٔ قول‌ها",
     "play": "شروع"
   },
@@ -200,7 +200,7 @@
     "date": "تاریخ",
     "time": "زمان",
     "cancel": "انصراف",
-    "markTodayComplete": "امروز را انجام‌شده علامت بزن",
+    "markTodayComplete": "امروز را انجام‌شده علامت بزنید",
     "checkIn2": "ثبت انجام"
   },
   "logTime": {
@@ -221,15 +221,15 @@
     "newPromise": "قول تازه",
     "addACustomWeeklyCommitment": "افزودن تعهد هفتگی دلخواه",
     "noDataAvailableForThisWeek": "برای این هفته داده‌ای نیست",
-    "loadingYourWeeklyReport": "در حال بارگذاری گزارش هفتگی شما…",
-    "somethingWentWrong": "مشکلی پیش آمد",
+    "loadingYourWeeklyReport": "در حال بارگذاری گزارش هفتگی…",
+    "somethingWentWrong": "خطایی رخ داد",
     "tryAgain": "تلاش دوباره",
-    "explorePromiseLibrary": "کتابخانهٔ قول‌ها",
-    "authenticationFailedPleaseLogInAgain": "احراز هویت ناموفق بود. لطفاً دوباره وارد شوید.",
-    "failedToLoadYourWeeklyReportPleaseTryAgain": "بارگذاری گزارش هفتگی شما انجام نشد. لطفاً دوباره تلاش کنید."
+    "explorePromiseLibrary": "گشتی در کتابخانهٔ قول‌ها",
+    "authenticationFailedPleaseLogInAgain": "ورود شما معتبر نیست. لطفاً دوباره وارد شوید.",
+    "failedToLoadYourWeeklyReportPleaseTryAgain": "گزارش هفتگی بارگذاری نشد. لطفاً دوباره تلاش کنید."
   },
   "activity": {
-    "recently": "اخیراً",
+    "recently": "همین اواخر",
     "today": "امروز",
     "daysAgo_one": "{{count, num}} روز پیش",
     "daysAgo_other": "{{count, num}} روز پیش",
@@ -252,25 +252,25 @@
     "loadOneFailed": "این چالش بارگذاری نشد.",
     "saveFailed": "پاسخ‌های شما ذخیره نشد.",
     "playToday": "مجموعهٔ امروز",
-    "startPlaying": "شروع بازی",
-    "allCaughtUp": "همه‌چیز به‌روز است",
-    "noNewSets": "فعلاً مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
-    "noNewSetsIn": "فعلاً در {{title}} مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
+    "startPlaying": "شروع کنید",
+    "allCaughtUp": "فعلاً کاری نمانده",
+    "noNewSets": "الان مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
+    "noNewSetsIn": "الان در {{title}} مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
     "correctOfTotal": "{{correct, num}} از {{total, num}} درست",
     "dayStreak": "{{count, num}} روز پیاپی",
     "backToChallenges": "بازگشت به چالش‌ها",
     "done": "تمام",
     "didnTKnow": "بلد نبودم",
     "knewIt": "بلد بودم",
-    "showAnswer": "نمایش پاسخ"
+    "showAnswer": "دیدن پاسخ"
   },
   "flashcards": {
     "tryAgain": "تلاش دوباره",
     "refresh": "تازه‌سازی",
     "nothingToReview": "الان چیزی برای مرور نیست.",
-    "tapToReveal": "برای دیدن پاسخ ضربه بزنید",
+    "tapToReveal": "برای دیدن پاسخ لمس کنید",
     "loading": "در حال بارگذاری…",
-    "noMatches": "موردی یافت نشد.",
+    "noMatches": "موردی پیدا نشد.",
     "noCards": "هنوز کارتی نیست.",
     "search": "جست‌وجو…",
     "frontRequired": "روی کارت الزامی است.",
@@ -283,26 +283,26 @@
     "page": "ص. {{page, num}}",
     "rating": {
       "again": "دوباره",
-      "againHint": "فراموش کردم",
+      "againHint": "یادم نبود",
       "hard": "سخت",
-      "hardHint": "دشوار بود",
+      "hardHint": "به‌سختی",
       "good": "خوب",
       "goodHint": "بلد بودم",
       "easy": "آسان",
-      "easyHint": "فوری"
+      "easyHint": "خیلی راحت"
     },
     "study": "مطالعه",
     "loadFailed": "کارت‌های شما بارگذاری نشد.",
-    "ratingFailed": "امتیاز شما ذخیره نشد.",
+    "ratingFailed": "امتیاز شما ثبت نشد.",
     "reviewTab": "مرور",
     "showAnswer": "نمایش پاسخ",
-    "editingTheContentWonTResetThisCardSSchedule": "ویرایش محتوا زمان‌بندی این کارت را از نو تنظیم نمی‌کند.",
+    "editingTheContentWonTResetThisCardSSchedule": "ویرایش محتوا، زمان‌بندی مرور این کارت را از نو تنظیم نمی‌کند.",
     "cancel": "انصراف"
   },
   "templates": {
     "loading": "در حال بارگذاری کتابخانهٔ قول‌ها…",
     "loadFailed": "بارگذاری الگوها انجام نشد",
-    "emptyTitle": "هنوز عادتی نیست",
+    "emptyTitle": "هنوز عادتی اینجا نیست",
     "emptySubtitle": "به‌زودی عادت‌های آماده برای شروع اینجا خواهند بود.",
     "quiz": "آزمون",
     "vocab": "واژگان",
@@ -310,8 +310,8 @@
     "quickStartHabits": "عادت‌های آمادهٔ شروع"
   },
   "community": {
-    "loading": "در حال بارگذاری اجتماع…",
-    "authRequired": "احراز هویت لازم است.",
+    "loading": "در حال بارگذاری همراهان…",
+    "authRequired": "برای دیدن این بخش باید وارد شوید.",
     "clubs": "باشگاه‌ها",
     "clubsSubtitle": "حلقه‌های کوچک برای قول‌های مشترک.",
     "loadingClubs": "در حال بارگذاری باشگاه‌ها…",
@@ -325,8 +325,8 @@
     "perWeek": "در هفته",
     "creating": "در حال ساخت…",
     "tryAgain": "تلاش دوباره",
-    "discoverActiveUsers": "کشف کاربران فعال",
-    "youAreAlreadyConnectedWithMostActiveUsers": "شما از پیش با بیشتر کاربران فعال در ارتباط هستید.",
+    "discoverActiveUsers": "کاربران فعال را پیدا کنید",
+    "youAreAlreadyConnectedWithMostActiveUsers": "شما با بیشتر کاربران فعال در ارتباط هستید.",
     "following": "دنبال‌شده‌ها",
     "loadingFollowing": "در حال بارگذاری دنبال‌شده‌ها…",
     "notFollowingAnyoneYet": "هنوز کسی را دنبال نمی‌کنید.",
@@ -340,15 +340,15 @@
     "close": "بستن",
     "tennisFriends": "دوستان تنیس",
     "playTennis": "تنیس بازی کن",
-    "failedToLoadCommunityPleaseTryAgain": "بارگذاری اجتماع انجام نشد. لطفاً دوباره تلاش کنید."
+    "failedToLoadCommunityPleaseTryAgain": "بارگذاری این بخش انجام نشد. لطفاً دوباره تلاش کنید."
   },
   "club": {
-    "onTrack": "در مسیر",
-    "building": "در حال ساخت",
+    "onTrack": "طبق برنامه",
+    "building": "در حال شکل‌گیری",
     "needsPush": "نیاز به تلاش",
     "noActivityYet": "هنوز فعالیتی نیست",
-    "leaderboardFailed": "بارگذاری جدول انجام نشد.",
-    "noSharedPromise": "هنوز قول مشترکی نیست",
+    "leaderboardFailed": "جدول رده‌بندی بارگذاری نشد.",
+    "noSharedPromise": "هنوز قول مشترکی تعیین نشده",
     "member": "عضو",
     "lead": "پیشتاز: {{name}}",
     "openLeaderboard": "جدول باز",
@@ -379,7 +379,7 @@
     "edit": "ویرایش",
     "delete": "حذف",
     "cancel": "انصراف",
-    "noPromiseSetYet": "هنوز قولی تعیین نشده است.",
+    "noPromiseSetYet": "هنوز قولی تعیین نشده.",
     "dailyReminder": "یادآور روزانه",
     "reminderTime": "زمان یادآور",
     "inYourLocalTimezoneUnlessAClubTimezoneIsSetB": "به وقت محلی شما، مگر آنکه در پایین وقت باشگاه تعیین شود.",
@@ -392,7 +392,7 @@
     "goal": "هدف",
     "vibe": "حال‌وهوا",
     "checkIn": "ثبت انجام",
-    "noXaanaContextYet": "هنوز اطلاعاتی برای Xaana ثبت نشده است.",
+    "noXaanaContextYet": "هنوز چیزی دربارهٔ این باشگاه به Xaana گفته نشده.",
     "advancedFields": "تنظیمات پیشرفته",
     "whatCountsAsACheckIn": "چه چیزی ثبت انجام حساب می‌شود",
     "joinTelegram": "عضویت در تلگرام",
@@ -450,9 +450,9 @@
     "selectPromise": "قول را انتخاب کنید:",
     "duration": "مدت:",
     "cancel": "انصراف",
-    "failedToLoadPromisesPleaseTryAgain": "بارگذاری قول‌ها انجام نشد. لطفاً دوباره تلاش کنید.",
-    "pleaseSelectAPromise": "لطفاً یک قول انتخاب کنید",
-    "failedToStartFocusSession": "شروع جلسهٔ تمرکز انجام نشد",
+    "failedToLoadPromisesPleaseTryAgain": "قول‌ها بارگذاری نشدند. لطفاً دوباره تلاش کنید.",
+    "pleaseSelectAPromise": "یک قول انتخاب کنید",
+    "failedToStartFocusSession": "جلسهٔ تمرکز شروع نشد",
     "chooseAPromise": "— یک قول انتخاب کنید —",
     "starting": "در حال شروع…",
     "startFocusSession": "شروع جلسهٔ تمرکز",
@@ -466,12 +466,12 @@
     "time": "زمان",
     "cancel": "انصراف",
     "addAnyNotesAboutThisSession": "اگر یادداشتی دربارهٔ این جلسه دارید بنویسید…",
-    "pleaseEnterAValidPositiveNumberOfHours": "لطفاً یک عدد مثبت و معتبر برای ساعت وارد کنید"
+    "pleaseEnterAValidPositiveNumberOfHours": "یک عدد مثبت و معتبر برای ساعت وارد کنید"
   },
   "login": {
     "loadingLogin": "در حال بارگذاری ورود…",
     "unableToLoadTelegramLoginBotUsernameNotAvail": "ورود با تلگرام بارگذاری نشد؛ نام کاربری ربات در دسترس نیست.",
-    "pleaseCheckServerConfigurationOrTryAgainLate": "لطفاً تنظیمات سرور را بررسی کنید یا بعداً دوباره تلاش کنید."
+    "pleaseCheckServerConfigurationOrTryAgainLate": "تنظیمات سرور را بررسی کنید یا بعداً دوباره تلاش کنید."
   },
   "myContents": {
     "filters": "فیلترها",
@@ -479,15 +479,15 @@
     "clear": "پاک کردن",
     "loadingLibrary": "در حال بارگذاری کتابخانه…",
     "noContentHereYet": "هنوز محتوایی اینجا نیست",
-    "pasteALinkAboveOrClearFiltersToBroadenTheLib": "پیوندی را در بالا بچسبانید، یا فیلترها را پاک کنید تا کتابخانه گسترده‌تر شود.",
+    "pasteALinkAboveOrClearFiltersToBroadenTheLib": "پیوندی را در بالا بچسبانید، یا فیلترها را بردارید تا کتابخانه گسترده‌تر شود.",
     "clearFilters": "پاک کردن فیلترها",
     "pasteAPdfYoutubeArticleOrPodcastUrl": "نشانی یک پی‌دی‌اف، یوتیوب، مقاله یا پادکست را بچسبانید",
     "searchYourLibrary": "جست‌وجو در کتابخانه",
     "libraryStatusFilters": "فیلترهای وضعیت کتابخانه",
     "libraryTypeFilters": "فیلترهای نوع کتابخانه",
     "libraryItems": "موارد کتابخانه",
-    "failedToLoadLibrary": "بارگذاری کتابخانه انجام نشد",
-    "failedToUpdateContent": "به‌روزرسانی محتوا انجام نشد"
+    "failedToLoadLibrary": "کتابخانه بارگذاری نشد",
+    "failedToUpdateContent": "محتوا به‌روز نشد"
   },
   "pdfReader": {
     "loadingPdf": "در حال بارگذاری پی‌دی‌اف…",
@@ -508,13 +508,13 @@
     "more": "بیشتر",
     "pdfHighlights": "هایلایت‌های پی‌دی‌اف",
     "closeHighlights": "بستن هایلایت‌ها",
-    "failedToSyncReadingProgress": "هم‌گام‌سازی پیشرفت مطالعه انجام نشد",
-    "failedToOpenPdf": "باز کردن پی‌دی‌اف انجام نشد",
-    "telegramDidNotProvideAuthenticationDataPleas": "تلگرام اطلاعات ورود را نفرستاد. لطفاً دوباره از دکمهٔ ربات وارد شوید.",
-    "failedToRenderPdfPage": "نمایش صفحهٔ پی‌دی‌اف انجام نشد",
-    "failedToSyncReadCoverage": "هم‌گام‌سازی میزان مطالعه انجام نشد",
-    "failedToSaveSelectedHighlight": "ذخیرهٔ هایلایت انتخاب‌شده انجام نشد",
-    "failedToDeleteHighlight": "حذف هایلایت انجام نشد",
+    "failedToSyncReadingProgress": "پیشرفت مطالعه هم‌گام نشد",
+    "failedToOpenPdf": "پی‌دی‌اف باز نشد",
+    "telegramDidNotProvideAuthenticationDataPleas": "تلگرام اطلاعات ورود را نفرستاد. لطفاً دوباره از دکمهٔ ربات باز کنید.",
+    "failedToRenderPdfPage": "صفحهٔ پی‌دی‌اف نمایش داده نشد",
+    "failedToSyncReadCoverage": "میزان مطالعه هم‌گام نشد",
+    "failedToSaveSelectedHighlight": "هایلایت انتخاب‌شده ذخیره نشد",
+    "failedToDeleteHighlight": "هایلایت حذف نشد",
     "highlight": "هایلایت",
     "cancel": "انصراف",
     "addNoteOptional": "افزودن یادداشت (اختیاری)",
@@ -580,7 +580,7 @@
     "plannedSession": "جلسهٔ برنامه‌ریزی‌شده",
     "customDurationInMinutes": "مدت دلخواه به دقیقه",
     "durationMustBeGreaterThan0Minutes": "مدت باید بیشتر از صفر دقیقه باشد",
-    "sessionUpdated": "جلسه به‌روزرسانی شد",
+    "sessionUpdated": "جلسه به‌روز شد",
     "sessionScheduled": "جلسه زمان‌بندی شد"
   },
   "suggestPromise": {
@@ -594,36 +594,36 @@
     "selectATemplate": "یک الگو انتخاب کنید",
     "promiseDescription": "شرح قول",
     "cancel": "انصراف",
-    "suggestionsAppearInTheRecipientSInboxForRevi": "پیشنهادها برای بررسی در صندوق گیرنده نمایش داده می‌شوند.",
+    "suggestionsAppearInTheRecipientSInboxForRevi": "پیشنهاد شما در صندوق گیرنده برای بررسی نمایش داده می‌شود.",
     "closeSuggestPromiseDialog": "بستن پنجرهٔ پیشنهاد قول",
     "addAPersonalMessage": "یک پیام شخصی بنویسید",
-    "pleaseSelectATemplate": "لطفاً یک الگو انتخاب کنید.",
-    "pleaseEnterAPromiseDescription": "لطفاً شرح قول را بنویسید.",
-    "failedToSendSuggestion": "ارسال پیشنهاد انجام نشد."
+    "pleaseSelectATemplate": "یک الگو انتخاب کنید.",
+    "pleaseEnterAPromiseDescription": "شرح قول را بنویسید.",
+    "failedToSendSuggestion": "پیشنهاد فرستاده نشد."
   },
   "suggestions": {
     "loadingSuggestions": "در حال بارگذاری پیشنهادها…",
     "retry": "تلاش دوباره",
-    "noPendingSuggestions": "پیشنهاد در انتظاری نیست",
+    "noPendingSuggestions": "پیشنهادی در انتظار نیست",
     "templateBasedPromise": "قول بر پایهٔ الگو",
     "promiseSuggestion": "پیشنهاد قول",
-    "failedToLoadSuggestions": "بارگذاری پیشنهادها انجام نشد",
-    "failedToAcceptSuggestion": "پذیرفتن پیشنهاد انجام نشد",
-    "failedToDeclineSuggestion": "رد کردن پیشنهاد انجام نشد"
+    "failedToLoadSuggestions": "پیشنهادها بارگذاری نشدند",
+    "failedToAcceptSuggestion": "پیشنهاد پذیرفته نشد",
+    "failedToDeclineSuggestion": "پیشنهاد رد نشد"
   },
   "templateDetail": {
     "loadingTemplate": "در حال بارگذاری الگو…",
     "templateNotFound": "الگو پیدا نشد",
     "publicVisibility": "نمایش عمومی",
-    "failedToLoadTemplate": "بارگذاری الگو انجام نشد"
+    "failedToLoadTemplate": "الگو بارگذاری نشد"
   },
   "timezonePage": {
     "useDetected": "استفاده از موقعیت شناسایی‌شده",
     "selectFromCommonTimezones": "از میان منطقه‌های زمانی پرکاربرد انتخاب کنید:",
-    "timezoneUpdatedSuccessfullyRedirecting": "منطقهٔ زمانی به‌روزرسانی شد. در حال انتقال…",
+    "timezoneUpdatedSuccessfullyRedirecting": "منطقهٔ زمانی به‌روز شد. در حال انتقال…",
     "cancel": "انصراف",
-    "pleaseSelectOrEnterATimezone": "لطفاً یک منطقهٔ زمانی انتخاب یا وارد کنید",
-    "failedToUpdateTimezonePleaseTryAgain": "به‌روزرسانی منطقهٔ زمانی انجام نشد. لطفاً دوباره تلاش کنید.",
+    "pleaseSelectOrEnterATimezone": "یک منطقهٔ زمانی انتخاب یا وارد کنید",
+    "failedToUpdateTimezonePleaseTryAgain": "منطقهٔ زمانی به‌روز نشد. لطفاً دوباره تلاش کنید.",
     "loading": "در حال بارگذاری…"
   },
   "userDetail": {
@@ -632,8 +632,8 @@
     "suggestPromise": "پیشنهاد قول",
     "publicPromises": "قول‌های عمومی",
     "noPublicPromisesYet": "هنوز قول عمومی‌ای نیست",
-    "userIdIsRequired": "شناسهٔ کاربر الزامی است",
-    "failedToLoadUser": "بارگذاری کاربر انجام نشد"
+    "userIdIsRequired": "شناسهٔ کاربر لازم است",
+    "failedToLoadUser": "کاربر بارگذاری نشد"
   },
   "visibility": {
     "thisWill": "این کار:",
