@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { Check, Pause, Play } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -21,6 +22,7 @@ export function FocusSheet({
   onComplete,
   durationMinutes = 25,
 }: FocusSheetProps) {
+  const { t } = useTranslation();
   const totalSeconds = durationMinutes * 60;
   const [remaining, setRemaining] = useState(totalSeconds);
   const [running, setRunning] = useState(true);
@@ -57,7 +59,7 @@ export function FocusSheet({
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Focus" subtitle={promiseText}>
+    <BottomSheet open={open} onClose={onClose} title={t('focus.focus')} subtitle={promiseText}>
       <section className="focus-ring">
         <svg width="220" height="220" aria-hidden="true">
           <defs>
@@ -92,9 +94,7 @@ export function FocusSheet({
           {running ? 'Pause' : 'Resume'}
         </Button>
         <Button variant="primary" onClick={handleComplete}>
-          <Check size={14} />
-          Finish
-        </Button>
+          <Check size={14} />{t('focus.finish')}</Button>
       </div>
     </BottomSheet>
   );

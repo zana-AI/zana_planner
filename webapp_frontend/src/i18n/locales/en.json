@@ -15,7 +15,8 @@
     "delete": "Delete",
     "edit": "Edit",
     "done": "Done",
-    "noneYet": "None yet"
+    "noneYet": "None yet",
+    "reload": "Reload"
   },
   "nav": {
     "primary": "Primary navigation",
@@ -106,7 +107,8 @@
     "disabled": "Disabled",
     "voiceModeEnabled": "Voice mode enabled.",
     "voiceModeDisabled": "Voice mode disabled.",
-    "loadFailed": "Failed to load settings."
+    "loadFailed": "Failed to load settings.",
+    "enterYourDisplayName": "Enter your display name"
   },
   "language": {
     "en": "English",
@@ -141,7 +143,14 @@
     "authFailed": "Authentication failed. Please log in again.",
     "loadFailed": "Failed to load your dashboard. Please try again.",
     "hoursOfHours": "{{spent}}h / {{promised}}h",
-    "tasksThisWeek": "{{count, num}} this week"
+    "tasksThisWeek": "{{count, num}} this week",
+    "community": "Community",
+    "activeUsersOnXaana": "Active users on Xaana",
+    "loading": "Loading...",
+    "viewSuggestions": "View Suggestions",
+    "exploreCommunity": "Explore Community",
+    "back": "Back",
+    "noUsersFound": "No users found"
   },
   "promise": {
     "noTime": "No time",
@@ -162,7 +171,12 @@
     "deleteSession": "Delete session",
     "todayAt": "Today {{time}}",
     "tomorrowAt": "Tomorrow {{time}}",
-    "tomorrowShortAt": "Tmrw {{time}}"
+    "tomorrowShortAt": "Tmrw {{time}}",
+    "scheduledSessions": "Scheduled sessions",
+    "checkIn": "Check in",
+    "log": "Log",
+    "schedule": "Schedule",
+    "edit": "Edit"
   },
   "play": {
     "ready": "Ready",
@@ -173,11 +187,21 @@
     "logThatYouDidIt": "Log that you did it",
     "startFocus": "Start focus",
     "thingsWaiting_one": "{{count, num}} thing waiting",
-    "thingsWaiting_other": "{{count, num}} things waiting"
+    "thingsWaiting_other": "{{count, num}} things waiting",
+    "nothingIsWaitingRightNowAddAPromiseOrComeBac": "Nothing is waiting right now. Add a promise, or come back tomorrow.",
+    "seeAllPromises": "See all promises",
+    "play": "Play"
   },
   "checkin": {
     "checkedIn": "Checked in",
-    "failed": "Failed to check in"
+    "failed": "Failed to check in",
+    "checkIn": "Check In",
+    "promise": "Promise",
+    "date": "Date",
+    "time": "Time",
+    "cancel": "Cancel",
+    "markTodayComplete": "Mark today complete",
+    "checkIn2": "Check in"
   },
   "logTime": {
     "hours": "Hours",
@@ -186,10 +210,23 @@
     "invalidHours": "Enter a valid number of hours",
     "failed": "Failed to log time",
     "logging": "Logging…",
-    "saveLog": "Save log"
+    "saveLog": "Save log",
+    "logTime": "Log time"
   },
   "weeklyReport": {
-    "weekOf": "Week of {{range}}"
+    "weekOf": "Week of {{range}}",
+    "promises": "Promises",
+    "totals": "Totals",
+    "overallProgress": "Overall Progress",
+    "newPromise": "New Promise",
+    "addACustomWeeklyCommitment": "Add a custom weekly commitment",
+    "noDataAvailableForThisWeek": "No data available for this week",
+    "loadingYourWeeklyReport": "Loading your weekly report...",
+    "somethingWentWrong": "Something went wrong",
+    "tryAgain": "Try Again",
+    "explorePromiseLibrary": "Explore Promise Library",
+    "authenticationFailedPleaseLogInAgain": "Authentication failed. Please log in again.",
+    "failedToLoadYourWeeklyReportPleaseTryAgain": "Failed to load your weekly report. Please try again."
   },
   "activity": {
     "recently": "recently",
@@ -205,7 +242,8 @@
     "thisWeek_one": "{{count, num}} activity this week",
     "thisWeek_other": "{{count, num}} activities this week",
     "lastActivity": "Last activity {{when}}",
-    "noActivity": "No activity yet"
+    "noActivity": "No activity yet",
+    "profile": "Profile"
   },
   "challenges": {
     "loading": "Loading challenges…",
@@ -219,7 +257,12 @@
     "noNewSets": "No new sets right now. Come back later for the next one.",
     "noNewSetsIn": "No new sets right now in {{title}}. Come back later for the next one.",
     "correctOfTotal": "{{correct, num}} / {{total, num}} correct",
-    "dayStreak": "{{count, num}}-day streak"
+    "dayStreak": "{{count, num}}-day streak",
+    "backToChallenges": "Back to challenges",
+    "done": "Done",
+    "didnTKnow": "Didn't know",
+    "knewIt": "Knew it",
+    "showAnswer": "Show answer"
   },
   "flashcards": {
     "tryAgain": "Try again",
@@ -251,13 +294,20 @@
     "study": "Study",
     "loadFailed": "Couldn't load your cards.",
     "ratingFailed": "Couldn't save your rating.",
-    "reviewTab": "Review"
+    "reviewTab": "Review",
+    "showAnswer": "Show answer",
+    "editingTheContentWonTResetThisCardSSchedule": "Editing the content won’t reset this card’s schedule.",
+    "cancel": "Cancel"
   },
   "templates": {
     "loading": "Loading promise library...",
     "loadFailed": "Failed to load templates",
     "emptyTitle": "No habits yet",
-    "emptySubtitle": "Check back soon for ready-made habits to start."
+    "emptySubtitle": "Check back soon for ready-made habits to start.",
+    "quiz": "Quiz",
+    "vocab": "Vocab",
+    "challenges": "Challenges",
+    "quickStartHabits": "Quick-start habits"
   },
   "community": {
     "loading": "Loading community...",
@@ -273,7 +323,24 @@
     "private": "Private",
     "public": "Public",
     "perWeek": "Per week",
-    "creating": "Creating..."
+    "creating": "Creating...",
+    "tryAgain": "Try Again",
+    "discoverActiveUsers": "Discover Active Users",
+    "youAreAlreadyConnectedWithMostActiveUsers": "You are already connected with most active users.",
+    "following": "Following",
+    "loadingFollowing": "Loading following...",
+    "notFollowingAnyoneYet": "Not following anyone yet.",
+    "followers": "Followers",
+    "loadingFollowers": "Loading followers...",
+    "noFollowersYet": "No followers yet.",
+    "recentActivity": "Recent Activity",
+    "loadingRecentActivity": "Loading recent activity...",
+    "noRecentPublicActivityYet": "No recent public activity yet",
+    "followActiveUsersToPersonalizeThisStream": "Follow active users to personalize this stream.",
+    "close": "Close",
+    "tennisFriends": "Tennis friends",
+    "playTennis": "Play tennis",
+    "failedToLoadCommunityPleaseTryAgain": "Failed to load community. Please try again."
   },
   "club": {
     "onTrack": "On track",
@@ -285,6 +352,298 @@
     "member": "Member",
     "lead": "Lead: {{name}}",
     "openLeaderboard": "Open leaderboard",
-    "rolling7d": "Rolling 7d"
+    "rolling7d": "Rolling 7d",
+    "clubProgress": "Club progress",
+    "leaderboard": "Leaderboard",
+    "loadingLeaderboard": "Loading leaderboard...",
+    "noLeaderboardActivityYet": "No leaderboard activity yet.",
+    "pending": "Pending",
+    "manage": "Manage",
+    "openClubSettings": "Open club settings"
+  },
+  "content": {
+    "open": "Open",
+    "more": "More"
+  },
+  "createPromise": {
+    "newPromise": "New Promise",
+    "promise": "Promise",
+    "weeklyHours": "Weekly hours",
+    "visibility": "Visibility",
+    "private": "Private",
+    "public": "Public",
+    "cancel": "Cancel",
+    "closeNewPromiseDialog": "Close new promise dialog",
+    "enterAPromise": "Enter a promise.",
+    "weeklyHoursMustBeGreaterThan0": "Weekly hours must be greater than 0."
+  },
+  "focus": {
+    "pause": "Pause",
+    "stop": "Stop",
+    "resume": "Resume",
+    "sessionCompleteConfirmationIsSentToYourTeleg": "Session complete. Confirmation is sent to your Telegram chat.",
+    "backToChat": "Back to Chat",
+    "dismiss": "Dismiss",
+    "finish": "Finish",
+    "focus": "Focus",
+    "loadingPromises": "Loading promises...",
+    "selectPromise": "Select Promise:",
+    "duration": "Duration:",
+    "cancel": "Cancel",
+    "failedToLoadPromisesPleaseTryAgain": "Failed to load promises. Please try again.",
+    "pleaseSelectAPromise": "Please select a promise",
+    "failedToStartFocusSession": "Failed to start focus session",
+    "chooseAPromise": "-- Choose a promise --",
+    "starting": "Starting...",
+    "startFocusSession": "Start Focus Session",
+    "minutes": "{{count, num}} minutes",
+    "minutesUnit": "minutes"
+  },
+  "logAction": {
+    "logTime": "Log Time",
+    "promise": "Promise",
+    "date": "Date",
+    "time": "Time",
+    "cancel": "Cancel",
+    "addAnyNotesAboutThisSession": "Add any notes about this session...",
+    "pleaseEnterAValidPositiveNumberOfHours": "Please enter a valid positive number of hours"
+  },
+  "banner": {
+    "happyNewYear2026StartAchievingYourGoalsWithX": "Happy New Year 2026! Start achieving your goals with Xaana",
+    "dismissBanner": "Dismiss banner"
+  },
+  "planSessions": {
+    "noSessionsYet": "No sessions yet.",
+    "cancel": "Cancel",
+    "deleteSession": "Delete session",
+    "titleOptional": "Title (optional)",
+    "durationMin": "Duration (min)",
+    "notesOptional": "Notes (optional)",
+    "addChecklistItem": "Add checklist item…"
+  },
+  "promiseCard": {
+    "budget": "Budget",
+    "edit": "Edit",
+    "promiseTitle": "Promise Title",
+    "endDate": "End Date",
+    "publicVisibility": "Public visibility",
+    "repeatWeekly": "Repeat weekly",
+    "reminders": "Reminders",
+    "loadingReminders": "Loading reminders...",
+    "remove": "Remove",
+    "saveReminders": "Save Reminders",
+    "cancel": "Cancel",
+    "notesForThisWeek": "Notes for This Week",
+    "noNotesForThisWeekOpenEditToModifyThisPromis": "No notes for this week. Open Edit to modify this promise.",
+    "plannedSessions": "Planned sessions",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "reminder": "Reminder",
+    "logs": "Logs",
+    "goToClub": "Go to club",
+    "editPromise": "Edit promise",
+    "enterPromiseTitle": "Enter promise title",
+    "title": "Title",
+    "notes": "Notes",
+    "titleOptional": "Title (optional)",
+    "notesOptional": "Notes (optional)",
+    "viewLogsForThisWeek": "View logs for this week",
+    "checkIn": "Check in",
+    "logTimeSpent": "Log time spent",
+    "addPlannedSession": "Add planned session",
+    "earnedFromQuizzesAndReviewsThisWeek": "Earned from quizzes and reviews this week"
+  },
+  "promiseDelete": {
+    "deletePromise": "Delete Promise",
+    "areYouSureYouWantToDeleteThisPromise": "Are you sure you want to delete this promise?",
+    "thisActionCannotBeUndone": "This action cannot be undone.",
+    "cancel": "Cancel",
+    "close": "Close"
+  },
+  "promiseLogs": {
+    "loadingLogs": "Loading logs...",
+    "noLogsYetForThisPromise": "No logs yet for this promise."
+  },
+  "suggestPromise": {
+    "suggestPromise": "Suggest Promise",
+    "sendTo": "Send to",
+    "suggestionSource": "Suggestion source",
+    "templateLibrary": "Template Library",
+    "customText": "Custom Text",
+    "selectTemplate": "Select template",
+    "loadingTemplates": "Loading templates...",
+    "selectATemplate": "Select a template",
+    "promiseDescription": "Promise description",
+    "cancel": "Cancel",
+    "suggestionsAppearInTheRecipientSInboxForRevi": "Suggestions appear in the recipient's inbox for review.",
+    "closeSuggestPromiseDialog": "Close suggest promise dialog",
+    "addAPersonalMessage": "Add a personal message",
+    "pleaseSelectATemplate": "Please select a template.",
+    "pleaseEnterAPromiseDescription": "Please enter a promise description.",
+    "failedToSendSuggestion": "Failed to send suggestion."
+  },
+  "suggestions": {
+    "loadingSuggestions": "Loading suggestions...",
+    "retry": "Retry",
+    "noPendingSuggestions": "No pending suggestions",
+    "templateBasedPromise": "Template-based promise",
+    "promiseSuggestion": "Promise suggestion",
+    "failedToLoadSuggestions": "Failed to load suggestions",
+    "failedToAcceptSuggestion": "Failed to accept suggestion",
+    "failedToDeclineSuggestion": "Failed to decline suggestion"
+  },
+  "login": {
+    "loadingLogin": "Loading login...",
+    "unableToLoadTelegramLoginBotUsernameNotAvail": "Unable to load Telegram login. Bot username not available.",
+    "pleaseCheckServerConfigurationOrTryAgainLate": "Please check server configuration or try again later."
+  },
+  "visibility": {
+    "thisWill": "This will:",
+    "letOthersSeeYourStreakAndProgress": "Let others see your streak and progress",
+    "cancel": "Cancel"
+  },
+  "weeklyNote": {
+    "weeklyNote": "Weekly Note",
+    "promise": "Promise",
+    "cancel": "Cancel",
+    "howDidThisWeekGoWhatDidYouLearn": "How did this week go? What did you learn?"
+  },
+  "calendar": {
+    "googleCalendar": "Google Calendar",
+    "opensAPreFilledEvent": "Opens a pre-filled event",
+    "appleOtherCalendar": "Apple / other calendar",
+    "downloadsAnIcsFile": "Downloads an .ics file",
+    "addToCalendar": "Add to calendar"
+  },
+  "editPromise": {
+    "promiseTitle": "Promise title",
+    "endDate": "End date",
+    "publicVisibility": "Public visibility",
+    "repeatWeekly": "Repeat weekly",
+    "cancel": "Cancel",
+    "editPromise": "Edit promise",
+    "whatAreYouCommittingTo": "What are you committing to?"
+  },
+  "schedule": {
+    "date": "Date",
+    "time": "Time",
+    "duration": "Duration",
+    "reminder": "Reminder",
+    "plannedSession": "Planned session",
+    "customDurationInMinutes": "Custom duration in minutes",
+    "durationMustBeGreaterThan0Minutes": "Duration must be greater than 0 minutes",
+    "sessionUpdated": "Session updated",
+    "sessionScheduled": "Session scheduled"
+  },
+  "clubDetail": {
+    "loadingClub": "Loading club...",
+    "clubNotFound": "Club not found",
+    "promise": "Promise",
+    "edit": "Edit",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "noPromiseSetYet": "No promise set yet.",
+    "dailyReminder": "Daily reminder",
+    "reminderTime": "Reminder time",
+    "inYourLocalTimezoneUnlessAClubTimezoneIsSetB": "In your local timezone, unless a club timezone is set below.",
+    "botLanguage": "Bot language",
+    "theLanguageXaanaUsesInThisGroupSChat": "The language Xaana uses in this group's chat.",
+    "clubTimezone": "Club timezone",
+    "leaderboardImageTime": "Leaderboard image time",
+    "tellXaanaAboutThisClub": "Tell Xaana about this club",
+    "description": "Description",
+    "goal": "Goal",
+    "vibe": "Vibe",
+    "checkIn": "Check-in",
+    "noXaanaContextYet": "No Xaana context yet.",
+    "advancedFields": "Advanced fields",
+    "whatCountsAsACheckIn": "What counts as a check-in",
+    "joinTelegram": "Join Telegram",
+    "invite": "Invite",
+    "whatWillTheGroupDo": "What will the group do?",
+    "timesPerWeek": "Times per week",
+    "clubIdIsRequired": "Club ID is required"
+  },
+  "clubProfile": {
+    "goToXaana": "Go to Xaana",
+    "today": "Today",
+    "signInWithTelegramToStart": "Sign in with Telegram to start.",
+    "thisWeek": "This week",
+    "about": "About",
+    "keptByXaana": "Kept by Xaana",
+    "clubLinks": "Club links",
+    "leaderboard": "Leaderboard",
+    "thisClubPageIsNotAvailable": "This club page is not available."
+  },
+  "myContents": {
+    "filters": "Filters",
+    "sort": "Sort",
+    "clear": "Clear",
+    "loadingLibrary": "Loading library...",
+    "noContentHereYet": "No content here yet",
+    "pasteALinkAboveOrClearFiltersToBroadenTheLib": "Paste a link above, or clear filters to broaden the library.",
+    "clearFilters": "Clear filters",
+    "pasteAPdfYoutubeArticleOrPodcastUrl": "Paste a PDF, YouTube, article, or podcast URL",
+    "searchYourLibrary": "Search your library",
+    "libraryStatusFilters": "Library status filters",
+    "libraryTypeFilters": "Library type filters",
+    "libraryItems": "Library items",
+    "failedToLoadLibrary": "Failed to load library",
+    "failedToUpdateContent": "Failed to update content"
+  },
+  "pdfReader": {
+    "loadingPdf": "Loading PDF...",
+    "rendering": "Rendering...",
+    "tapEdgesToTurnPage": "Tap edges to turn page",
+    "pdfUrlUnavailable": "PDF URL unavailable.",
+    "highlights": "Highlights",
+    "openPage": "Open page",
+    "delete": "Delete",
+    "selectTextInThePdfToSaveAHighlight": "Select text in the PDF to save a highlight.",
+    "backToLibrary": "Back to library",
+    "previousPage": "Previous page",
+    "jumpToPage": "Jump to page",
+    "nextPage": "Next page",
+    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in",
+    "fitWidth": "Fit width",
+    "more": "More",
+    "pdfHighlights": "PDF highlights",
+    "closeHighlights": "Close highlights",
+    "failedToSyncReadingProgress": "Failed to sync reading progress",
+    "failedToOpenPdf": "Failed to open PDF",
+    "telegramDidNotProvideAuthenticationDataPleas": "Telegram did not provide authentication data. Please reopen this from the bot button.",
+    "failedToRenderPdfPage": "Failed to render PDF page",
+    "failedToSyncReadCoverage": "Failed to sync read coverage",
+    "failedToSaveSelectedHighlight": "Failed to save selected highlight",
+    "failedToDeleteHighlight": "Failed to delete highlight",
+    "highlight": "Highlight",
+    "cancel": "Cancel",
+    "addNoteOptional": "Add note (optional)",
+    "highlightColor": "Highlight color"
+  },
+  "templateDetail": {
+    "loadingTemplate": "Loading template...",
+    "templateNotFound": "Template not found",
+    "publicVisibility": "Public visibility",
+    "failedToLoadTemplate": "Failed to load template"
+  },
+  "timezonePage": {
+    "loading": "Loading...",
+    "useDetected": "Use Detected",
+    "selectFromCommonTimezones": "Select from common timezones:",
+    "timezoneUpdatedSuccessfullyRedirecting": "Timezone updated successfully. Redirecting...",
+    "cancel": "Cancel",
+    "pleaseSelectOrEnterATimezone": "Please select or enter a timezone",
+    "failedToUpdateTimezonePleaseTryAgain": "Failed to update timezone. Please try again."
+  },
+  "userDetail": {
+    "loadingUserProfile": "Loading user profile...",
+    "userNotFound": "User not found",
+    "suggestPromise": "Suggest Promise",
+    "publicPromises": "Public Promises",
+    "noPublicPromisesYet": "No public promises yet",
+    "userIdIsRequired": "User ID is required",
+    "failedToLoadUser": "Failed to load user"
   }
 }

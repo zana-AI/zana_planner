@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw } from 'lucide-react';
 import { HeatmapBar } from './HeatmapBar';
 import type { UserContentWithDetails } from '../types';
@@ -34,6 +35,7 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
 }
 
 export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps) {
+  const { t } = useTranslation();
   const title = item.title || 'Untitled';
   const provider = (item.provider || 'other').replace(/_/g, ' ');
   const displayType = getDisplayType(item);
@@ -102,9 +104,9 @@ export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps)
       </div>
 
       <div className="content-card-actions" onClick={(event) => event.stopPropagation()}>
-        <button className="content-card-action" type="button" onClick={onClick} title="Open">
+        <button className="content-card-action" type="button" onClick={onClick} title={t('content.open')}>
           <ExternalLink size={15} />
-          <span>Open</span>
+          <span>{t('content.open')}</span>
         </button>
         {onStatusChange && (
           <button
@@ -117,7 +119,7 @@ export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps)
             <span>{secondaryStatus.label}</span>
           </button>
         )}
-        <button className="content-card-icon-action" type="button" title="More">
+        <button className="content-card-icon-action" type="button" title={t('content.more')}>
           <MoreHorizontal size={16} />
         </button>
       </div>

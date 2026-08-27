@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { Emoji } from './ui/Emoji';
 
 export function NewYearBanner() {
+  const { t } = useTranslation();
   const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
@@ -25,14 +27,12 @@ export function NewYearBanner() {
     <div className="new-year-banner">
       <div className="new-year-banner-content">
         <span className="new-year-banner-emoji"><Emoji emoji="🎉" size={18} /></span>
-        <span className="new-year-banner-text">
-          Happy New Year 2026! Start achieving your goals with Xaana
-        </span>
+        <span className="new-year-banner-text">{t('banner.happyNewYear2026StartAchievingYourGoalsWithX')}</span>
       </div>
       <button 
         className="new-year-banner-close"
         onClick={handleDismiss}
-        aria-label="Dismiss banner"
+        aria-label={t('banner.dismissBanner')}
       >
         ×
       </button>

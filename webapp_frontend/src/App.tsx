@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
@@ -35,6 +36,7 @@ function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
 }
 
 function App() {
+  const { t } = useTranslation();
   const { initData, isReady } = useTelegramWebApp();
   const [hasSessionToken, setHasSessionToken] = useState(false);
   
@@ -101,7 +103,7 @@ function App() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading...</div>
+          <div className="loading-text">{t('common.loading')}</div>
         </div>
       </div>
     );

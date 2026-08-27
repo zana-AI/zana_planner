@@ -201,7 +201,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
             : t('dashboard.hoursOfHours', { spent: formatNumber(achieved, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), promised: formatNumber(target, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
         </span>
         {credits_minutes && credits_minutes > 0 ? (
-          <span className="pcard-credits" dir="ltr" title="Earned from quizzes and reviews this week">
+          <span className="pcard-credits" dir="ltr" title={t('promiseCard.earnedFromQuizzesAndReviewsThisWeek')}>
             ⚡ {Math.round(credits_minutes)}
           </span>
         ) : null}

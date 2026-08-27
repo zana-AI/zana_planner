@@ -304,9 +304,7 @@ export function PromiseDetailSheet({
           shown below under "Recent". */}
       {!sessionsLoading && upcomingSessions.length > 0 && (
         <>
-          <p className="ds-eyebrow" style={{ marginTop: 16 }}>
-            Scheduled sessions
-          </p>
+          <p className="ds-eyebrow" style={{ marginTop: 16 }}>{t('promise.scheduledSessions')}</p>
           <div className="plan-sessions-list">
             {upcomingSessions.map(session => {
               const sessionNotes = (session.notes ?? '').trim();
@@ -397,23 +395,15 @@ export function PromiseDetailSheet({
       <div className="action-row" style={{ marginTop: 16 }}>
         {isCountBased ? (
           <Button variant="secondary" onClick={onCheckin}>
-            <Check size={14} />
-            Check in
-          </Button>
+            <Check size={14} />{t('promise.checkIn')}</Button>
         ) : (
           <Button variant="secondary" onClick={onLogTime}>
-            <Clock size={14} />
-            Log
-          </Button>
+            <Clock size={14} />{t('promise.log')}</Button>
         )}
         <Button variant="secondary" onClick={onSchedule}>
-          <Timer size={14} />
-          Schedule
-        </Button>
+          <Timer size={14} />{t('promise.schedule')}</Button>
         <Button variant="secondary" onClick={onEdit}>
-          <Pencil size={14} />
-          Edit
-        </Button>
+          <Pencil size={14} />{t('promise.edit')}</Button>
       </div>
 
       {/* Log + mark-done modal, opened when tapping ✓ on a planned session row */}

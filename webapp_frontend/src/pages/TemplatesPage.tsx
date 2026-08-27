@@ -146,9 +146,7 @@ export function TemplatesPage() {
               color: 'var(--color-text-secondary, #8A94A6)',
               margin: '0 0 10px',
             }}
-          >
-            Quiz
-          </h2>
+          >{t('templates.quiz')}</h2>
           <div style={{ display: 'grid', gap: 10 }}>
             {studyDecks.map((deck) => (
               <button
@@ -197,9 +195,7 @@ export function TemplatesPage() {
                       gap: 4,
                     }}
                   >
-                    <GraduationCap size={12} />
-                    Vocab
-                  </span>
+                    <GraduationCap size={12} />{t('templates.vocab')}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--color-text-secondary, #B6BECC)' }}>
                   {deck.due + deck.new > 0
@@ -223,9 +219,7 @@ export function TemplatesPage() {
               color: 'var(--color-text-secondary, #8A94A6)',
               margin: '0 0 10px',
             }}
-          >
-            Challenges
-          </h2>
+          >{t('templates.challenges')}</h2>
           <div style={{ display: 'grid', gap: 10 }}>
             {challenges.map((c) => (
               <button
@@ -340,9 +334,7 @@ export function TemplatesPage() {
             color: 'var(--color-text-secondary, #8A94A6)',
             margin: '8px 0 10px',
           }}
-        >
-          Quick-start habits
-        </h2>
+        >{t('templates.quickStartHabits')}</h2>
       ) : null}
 
       <main className="templates-grid">

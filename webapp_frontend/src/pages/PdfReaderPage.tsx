@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -45,6 +46,7 @@ const applyRasterCacheToCanvas = (target: HTMLCanvasElement, entry: PageRasterCa
 };
 
 export function PdfReaderPage() {
+  const { t } = useTranslation();
   const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
@@ -222,7 +224,7 @@ export function PdfReaderPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to sync reading progress');
       } else {
-        setError('Failed to sync reading progress');
+        setError(t('pdfReader.failedToSyncReadingProgress'));
       }
     } finally {
       isSavingProgressRef.current = false;
@@ -305,7 +307,7 @@ export function PdfReaderPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to open PDF');
       } else {
-        setError('Failed to open PDF');
+        setError(t('pdfReader.failedToOpenPdf'));
       }
     } finally {
       setLoading(false);
@@ -315,7 +317,7 @@ export function PdfReaderPage() {
   useEffect(() => {
     if (isReady && isTelegramMiniApp && !authData && !hasBrowserToken) {
       setLoading(false);
-      setError('Telegram did not provide authentication data. Please reopen this from the bot button.');
+      setError(t('pdfReader.telegramDidNotProvideAuthenticationDataPleas'));
       return;
     }
     load();
@@ -568,7 +570,7 @@ export function PdfReaderPage() {
         finishRenderPreview();
       } catch (err) {
         if (!cancelled && !(err instanceof Error && err.name === 'RenderingCancelledException')) {
-          setError('Failed to render PDF page');
+          setError(t('pdfReader.failedToRenderPdfPage'));
         }
       } finally {
         if (!cancelled) {
@@ -627,7 +629,7 @@ export function PdfReaderPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to sync read coverage');
       } else {
-        setError('Failed to sync read coverage');
+        setError(t('pdfReader.failedToSyncReadCoverage'));
       }
     } finally {
       readSyncInFlightRef.current = false;
@@ -810,7 +812,7 @@ export function PdfReaderPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to save selected highlight');
       } else {
-        setError('Failed to save selected highlight');
+        setError(t('pdfReader.failedToSaveSelectedHighlight'));
       }
     }
   };
@@ -825,7 +827,7 @@ export function PdfReaderPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to delete highlight');
       } else {
-        setError('Failed to delete highlight');
+        setError(t('pdfReader.failedToDeleteHighlight'));
       }
     }
   };
@@ -848,38 +850,38 @@ export function PdfReaderPage() {
     <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}${isFullscreen && !fullscreenControlsVisible ? ' pdf-reader-page--chrome-hidden' : ''}`}>
       <section className="pdf-reader-viewer">
         <div className="pdf-reader-toolbar">
-          <button className="pdf-reader-icon-btn" onClick={() => window.history.back()} title="Back to library" type="button">
+          <button className="pdf-reader-icon-btn" onClick={() => window.history.back()} title={t('pdfReader.backToLibrary')} type="button">
             <ArrowLeft size={18} className="icon-directional" />
           </button>
-          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber - 1)} disabled={!pageCount || pageNumber <= 1} title="Previous page" type="button">
+          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber - 1)} disabled={!pageCount || pageNumber <= 1} title={t('pdfReader.previousPage')} type="button">
             <ChevronLeft size={18} className="icon-directional" />
           </button>
-          <label className="pdf-reader-page-count" title="Jump to page">
+          <label className="pdf-reader-page-count" title={t('pdfReader.jumpToPage')}>
             <input type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
             <span>/ {pageCount || 0}</span>
           </label>
-          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber + 1)} disabled={!pageCount || pageNumber >= pageCount} title="Next page" type="button">
+          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber + 1)} disabled={!pageCount || pageNumber >= pageCount} title={t('pdfReader.nextPage')} type="button">
             <ChevronRight size={18} className="icon-directional" />
           </button>
           <div className="pdf-reader-toolbar-spacer" />
-          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.15)} disabled={scale <= 0.65} title="Zoom out" type="button">
+          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.15)} disabled={scale <= 0.65} title={t('pdfReader.zoomOut')} type="button">
             <ZoomOut size={18} />
           </button>
           <div className="pdf-reader-zoom">{Math.round(scale * 100)}%</div>
-          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(0.15)} disabled={scale >= 3} title="Zoom in" type="button">
+          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(0.15)} disabled={scale >= 3} title={t('pdfReader.zoomIn')} type="button">
             <ZoomIn size={18} />
           </button>
-          <button className="pdf-reader-icon-btn" onClick={fitToWidth} disabled={!pageSize.width} title="Fit width" type="button">
+          <button className="pdf-reader-icon-btn" onClick={fitToWidth} disabled={!pageSize.width} title={t('pdfReader.fitWidth')} type="button">
             <ScanLine size={18} />
           </button>
-          <button className="pdf-reader-icon-btn pdf-reader-icon-btn--with-badge" onClick={() => setHighlightsOpen((open) => !open)} title="Highlights" type="button">
+          <button className="pdf-reader-icon-btn pdf-reader-icon-btn--with-badge" onClick={() => setHighlightsOpen((open) => !open)} title={t('pdfReader.highlights')} type="button">
             <PanelRight size={18} />
             {highlights.length > 0 && <span>{highlights.length}</span>}
           </button>
           <button className="pdf-reader-icon-btn" onClick={isFullscreen ? exitFullscreen : enterFullscreen} title={isFullscreen ? 'Exit reader mode' : 'Reader fullscreen'} type="button">
             {isFullscreen ? <X size={18} /> : <Maximize2 size={18} />}
           </button>
-          <button className="pdf-reader-icon-btn" title="More" type="button">
+          <button className="pdf-reader-icon-btn" title={t('pdfReader.more')} type="button">
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -897,7 +899,7 @@ export function PdfReaderPage() {
           {error && <div className="pdf-reader-inline-error">{error}</div>}
         </div>
         {loading ? (
-          <div className="pdf-reader-empty">Loading PDF...</div>
+          <div className="pdf-reader-empty">{t('pdfReader.loadingPdf')}</div>
         ) : pdfUrl ? (
           <div
             ref={shellRef}
@@ -936,7 +938,7 @@ export function PdfReaderPage() {
                 />
               )}
             </div>
-            {isRendering && <div className="pdf-reader-rendering">Rendering...</div>}
+            {isRendering && <div className="pdf-reader-rendering">{t('pdfReader.rendering')}</div>}
             {isFullscreen && (
               <>
                 <button
@@ -947,7 +949,7 @@ export function PdfReaderPage() {
                   }}
                   disabled={pageNumber <= 1}
                   type="button"
-                  aria-label="Previous page"
+                  aria-label={t('pdfReader.previousPage')}
                 >
                   <ChevronLeft size={18} className="icon-directional" />
                 </button>
@@ -959,29 +961,27 @@ export function PdfReaderPage() {
                   }}
                   disabled={pageNumber >= pageCount}
                   type="button"
-                  aria-label="Next page"
+                  aria-label={t('pdfReader.nextPage')}
                 >
                   <ChevronRight size={18} className="icon-directional" />
                 </button>
-                <div className="pdf-reader-fullscreen-toast">
-                  Tap edges to turn page
-                </div>
+                <div className="pdf-reader-fullscreen-toast">{t('pdfReader.tapEdgesToTurnPage')}</div>
               </>
             )}
           </div>
         ) : (
-          <div className="pdf-reader-empty pdf-reader-empty--error">PDF URL unavailable.</div>
+          <div className="pdf-reader-empty pdf-reader-empty--error">{t('pdfReader.pdfUrlUnavailable')}</div>
         )}
       </section>
 
       {highlightsOpen && (
-        <aside className="pdf-reader-highlights-drawer" aria-label="PDF highlights">
+        <aside className="pdf-reader-highlights-drawer" aria-label={t('pdfReader.pdfHighlights')}>
           <header>
             <div>
-              <h2>Highlights</h2>
+              <h2>{t('pdfReader.highlights')}</h2>
               <p>{highlights.length} saved {expiresLabel ? `- URL expires ${expiresLabel}` : ''}</p>
             </div>
-            <button className="pdf-reader-icon-btn" type="button" onClick={() => setHighlightsOpen(false)} title="Close highlights">
+            <button className="pdf-reader-icon-btn" type="button" onClick={() => setHighlightsOpen(false)} title={t('pdfReader.closeHighlights')}>
               <X size={18} />
             </button>
           </header>
@@ -993,19 +993,17 @@ export function PdfReaderPage() {
                   <article key={h.id} className="pdf-reader-highlight-card">
                     <button type="button" onClick={() => goToPage(h.page_index + 1)}>
                       <FileText size={14} />
-                      <span>Open page</span>
+                      <span>{t('pdfReader.openPage')}</span>
                     </button>
                     {h.selected_text && <p>{h.selected_text}</p>}
                     {h.note && <p className="pdf-reader-highlight-note">{h.note}</p>}
                     <button className="pdf-reader-highlight-delete" onClick={() => deleteHighlight(h.id)} type="button">
-                      <Trash2 size={14} />
-                      Delete
-                    </button>
+                      <Trash2 size={14} />{t('pdfReader.delete')}</button>
                   </article>
                 ))}
               </section>
             ))}
-            {highlights.length === 0 && <div className="pdf-reader-empty">Select text in the PDF to save a highlight.</div>}
+            {highlights.length === 0 && <div className="pdf-reader-empty">{t('pdfReader.selectTextInThePdfToSaveAHighlight')}</div>}
           </div>
         </aside>
       )}

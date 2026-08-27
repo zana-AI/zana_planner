@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useModalBodyLock } from '../../hooks/useModalBodyLock';
@@ -21,6 +22,7 @@ export function BottomSheet({
   showClose = true,
   headerActions,
 }: BottomSheetProps) {
+  const { t } = useTranslation();
   useModalBodyLock(open);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export function BottomSheet({
           <div className="sheet-header-actions">
             {headerActions}
             {showClose ? (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close" style={{ width: 32, padding: 0 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label={t('common.close')} style={{ width: 32, padding: 0 }}>
                 <X size={18} />
               </button>
             ) : null}

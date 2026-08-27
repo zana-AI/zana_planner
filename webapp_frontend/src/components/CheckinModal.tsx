@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { apiClient } from '../api/client';
 import { useModalBodyLock } from '../hooks/useModalBodyLock';
@@ -11,6 +12,7 @@ interface CheckinModalProps {
 }
 
 export function CheckinModal({ promiseId, promiseText, isOpen, onClose, onSuccess }: CheckinModalProps) {
+  const { t } = useTranslation();
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -73,7 +75,7 @@ export function CheckinModal({ promiseId, promiseText, isOpen, onClose, onSucces
     <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Check In</h2>
+          <h2 className="modal-title">{t('checkin.checkIn')}</h2>
           <button className="modal-close" onClick={handleClose} disabled={isSubmitting}>
             ×
           </button>
@@ -81,12 +83,12 @@ export function CheckinModal({ promiseId, promiseText, isOpen, onClose, onSucces
         
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="modal-form-group">
-            <label className="modal-label">Promise</label>
+            <label className="modal-label">{t('checkin.promise')}</label>
             <div className="modal-promise-text">{promiseText}</div>
           </div>
 
           <div className="modal-form-group">
-            <label htmlFor="checkin-date" className="modal-label">Date</label>
+            <label htmlFor="checkin-date" className="modal-label">{t('checkin.date')}</label>
             <input
               id="checkin-date"
               type="date"
@@ -98,7 +100,7 @@ export function CheckinModal({ promiseId, promiseText, isOpen, onClose, onSucces
           </div>
 
           <div className="modal-form-group">
-            <label htmlFor="checkin-time" className="modal-label">Time</label>
+            <label htmlFor="checkin-time" className="modal-label">{t('checkin.time')}</label>
             <input
               id="checkin-time"
               type="time"
@@ -119,9 +121,7 @@ export function CheckinModal({ promiseId, promiseText, isOpen, onClose, onSucces
               className="modal-button modal-button-secondary"
               onClick={handleClose}
               disabled={isSubmitting}
-            >
-              Cancel
-            </button>
+            >{t('checkin.cancel')}</button>
             <button
               type="submit"
               className="modal-button modal-button-primary"

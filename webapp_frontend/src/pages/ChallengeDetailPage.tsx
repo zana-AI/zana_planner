@@ -70,9 +70,7 @@ export function ChallengeDetailPage() {
       <main style={{ padding: '40px 16px', textAlign: 'center', color: textSecondary }}>
         <div className="error-icon">!</div>
         <p style={{ marginTop: 12 }}>{error || t('challenges.notFound')}</p>
-        <button className="retry-button" onClick={() => navigate('/challenges')}>
-          Back to challenges
-        </button>
+        <button className="retry-button" onClick={() => navigate('/challenges')}>{t('challenges.backToChallenges')}</button>
       </main>
     );
   }

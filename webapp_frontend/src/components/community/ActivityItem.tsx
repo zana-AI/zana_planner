@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PublicActivityItem } from '../../types';
@@ -29,6 +30,7 @@ export function ActivityItem({
   followPending = false,
   onToggleFollow,
 }: ActivityItemProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const actor = item.actor;
   const [imageError, setImageError] = useState(false);
@@ -106,7 +108,7 @@ export function ActivityItem({
 
       <div className="community-activity-actions">
         {isCurrentUser ? null : (
-          <button type="button" className="community-activity-btn" onClick={openProfile}>Profile</button>
+          <button type="button" className="community-activity-btn" onClick={openProfile}>{t('activity.profile')}</button>
         )}
         {canToggleFollow ? (
           <button

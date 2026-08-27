@@ -194,13 +194,11 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
     <BottomSheet
       open={open}
       onClose={close}
-      title="Play"
+      title={t('play.play')}
       subtitle={cards.length > 0 ? t('play.whatNeedsDoingToday') : undefined}
     >
       {cards.length === 0 ? (
-        <p className="play-empty">
-          Nothing is waiting right now. Add a promise, or come back tomorrow.
-        </p>
+        <p className="play-empty">{t('play.nothingIsWaitingRightNowAddAPromiseOrComeBac')}</p>
       ) : (
         <div className="play-grid">
           {cards.map(({ item, actions }) => {
@@ -230,9 +228,7 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
           })}
         </div>
       )}
-      <button type="button" className="play-back" onClick={() => go('/dashboard')}>
-        See all promises
-      </button>
+      <button type="button" className="play-back" onClick={() => go('/dashboard')}>{t('play.seeAllPromises')}</button>
     </BottomSheet>
   );
 }

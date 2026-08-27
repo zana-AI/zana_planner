@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Globe, Play, Send, Trophy, Users } from 'lucide-react';
@@ -52,6 +53,7 @@ function LinkChip({ link }: { link: PublicClubLink }) {
 }
 
 export function ClubProfilePage() {
+  const { t } = useTranslation();
   const { clubRef } = useParams<{ clubRef: string }>();
 
   const [profile, setProfile] = useState<PublicClubProfile | null>(null);
@@ -69,7 +71,7 @@ export function ClubProfilePage() {
       .then((data) => { if (active) setProfile(data); })
       .catch((err) => {
         console.error('Failed to load club profile:', err);
-        if (active) setError('This club page is not available.');
+        if (active) setError(t('clubProfile.thisClubPageIsNotAvailable'));
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -126,7 +128,7 @@ export function ClubProfilePage() {
         <div>
           <p>{error || 'Club not found.'}</p>
           <p style={{ marginTop: 8 }}>
-            <a href="/" style={{ color: 'var(--accent)' }}>Go to Xaana</a>
+            <a href="/" style={{ color: 'var(--accent)' }}>{t('clubProfile.goToXaana')}</a>
           </p>
         </div>
       </div>
@@ -161,16 +163,16 @@ export function ClubProfilePage() {
           ) : null}
 
           {profile.links.length ? (
-            <nav className="clubprofile-links" aria-label="Club links">
+            <nav className="clubprofile-links" aria-label={t('clubProfile.clubLinks')}>
               {profile.links.map((link) => <LinkChip key={link.url} link={link} />)}
             </nav>
           ) : null}
         </header>
 
         {round ? (
-          <section className="clubprofile-today" aria-label="Today">
+          <section className="clubprofile-today" aria-label={t('clubProfile.today')}>
             <div className="clubprofile-today-head">
-              <span className="clubprofile-eyebrow">Today</span>
+              <span className="clubprofile-eyebrow">{t('clubProfile.today')}</span>
               {round.item_count > 0 && round.kind === 'quiz' ? (
                 <span className="clubprofile-today-meta">
                   {round.item_count} {round.item_count === 1 ? 'question' : 'questions'}
@@ -186,7 +188,7 @@ export function ClubProfilePage() {
             {signingIn ? (
               <div className="clubprofile-auth">
                 <TelegramLogin onAuthSuccess={handleAuthSuccess} />
-                <p className="clubprofile-cta-note">Sign in with Telegram to start.</p>
+                <p className="clubprofile-cta-note">{t('clubProfile.signInWithTelegramToStart')}</p>
               </div>
             ) : (
               <>
@@ -211,11 +213,10 @@ export function ClubProfilePage() {
           </section>
         )}
 
-        <section aria-label="Leaderboard">
+        <section aria-label={t('clubProfile.leaderboard')}>
           <div className="clubprofile-section-head">
             <h2 className="clubprofile-section-title">
-              <Trophy size={14} aria-hidden /> This week
-            </h2>
+              <Trophy size={14} aria-hidden />{t('clubProfile.thisWeek')}</h2>
             <span className="clubprofile-window" dir="ltr">
               {formatWindow(profile.window_start, profile.window_end)}
             </span>
@@ -267,16 +268,16 @@ export function ClubProfilePage() {
         </section>
 
         {profile.description ? (
-          <section aria-label="About">
+          <section aria-label={t('clubProfile.about')}>
             <div className="clubprofile-section-head">
-              <h2 className="clubprofile-section-title">About</h2>
+              <h2 className="clubprofile-section-title">{t('clubProfile.about')}</h2>
             </div>
             <p className="clubprofile-about" dir="auto">{profile.description}</p>
           </section>
         ) : null}
 
         <footer className="clubprofile-footer">
-          <a href="/">Kept by Xaana</a>
+          <a href="/">{t('clubProfile.keptByXaana')}</a>
         </footer>
       </div>
     </main>

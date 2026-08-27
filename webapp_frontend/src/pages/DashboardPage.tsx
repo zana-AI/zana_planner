@@ -724,16 +724,12 @@ export function DashboardPage() {
             fontWeight: '700', 
             color: '#fff', 
             marginBottom: '0.5rem' 
-          }}>
-            Community
-          </h3>
+          }}>{t('dashboard.community')}</h3>
           <p style={{ 
             fontSize: '0.8rem', 
             color: 'rgba(232, 238, 252, 0.6)',
             marginBottom: '1rem'
-          }}>
-            Active users on Xaana
-          </p>
+          }}>{t('dashboard.activeUsersOnXaana')}</p>
         </div>
 
         {communityLoading ? (
@@ -742,9 +738,7 @@ export function DashboardPage() {
             textAlign: 'center',
             color: 'rgba(232, 238, 252, 0.6)',
             fontSize: '0.9rem'
-          }}>
-            Loading...
-          </div>
+          }}>{t('dashboard.loading')}</div>
         ) : communityUsers.length > 0 ? (
           <>
             {!showSuggestionsInbox ? (
@@ -780,9 +774,7 @@ export function DashboardPage() {
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
                     }}
-                  >
-                    View Suggestions
-                  </button>
+                  >{t('dashboard.viewSuggestions')}</button>
                   <button
                     onClick={() => navigate('/community')}
                     style={{
@@ -803,9 +795,7 @@ export function DashboardPage() {
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
                     }}
-                  >
-                    Explore Community
-                  </button>
+                  >{t('dashboard.exploreCommunity')}</button>
                 </div>
               </>
             ) : (
@@ -816,9 +806,7 @@ export function DashboardPage() {
                     className="button-secondary"
                     onClick={() => setShowSuggestionsInbox(false)}
                     style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
-                  >
-                    Back
-                  </button>
+                  >{t('dashboard.back')}</button>
                 </div>
                 <SuggestionsInbox />
               </div>
@@ -830,9 +818,7 @@ export function DashboardPage() {
             textAlign: 'center',
             color: 'rgba(232, 238, 252, 0.6)',
             fontSize: '0.85rem'
-          }}>
-            No users found
-          </div>
+          }}>{t('dashboard.noUsersFound')}</div>
         )}
       </aside>
 

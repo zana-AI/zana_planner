@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
@@ -7,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import './FocusPage.css';
 
 export function FocusPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [promisesData, setPromisesData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,7 +25,7 @@ export function FocusPage() {
         setPromisesData(data);
       } catch (err) {
         console.error('Failed to load promises:', err);
-        setError('Failed to load promises. Please try again.');
+        setError(t('focus.failedToLoadPromisesPleaseTryAgain'));
       } finally {
         setLoadingPromises(false);
       }
@@ -40,7 +42,7 @@ export function FocusPage() {
 
   const handleStart = async () => {
     if (!selectedPromiseId) {
-      setError('Please select a promise');
+      setError(t('focus.pleaseSelectAPromise'));
       return;
     }
 
@@ -57,7 +59,7 @@ export function FocusPage() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to start focus session');
+        setError(t('focus.failedToStartFocusSession'));
       }
     } finally {
       setLoading(false);
@@ -71,12 +73,12 @@ export function FocusPage() {
       <div className="focus-page-container">
         {loadingPromises ? (
           <div className="focus-page-content">
-            <div className="focus-loading-message">Loading promises...</div>
+            <div className="focus-loading-message">{t('focus.loadingPromises')}</div>
           </div>
         ) : (
           <div className="focus-page-content">
             <div className="focus-page-section">
-              <label htmlFor="promise-select">Select Promise:</label>
+              <label htmlFor="promise-select">{t('focus.selectPromise')}</label>
               <select
                 id="promise-select"
                 value={selectedPromiseId}
@@ -84,7 +86,7 @@ export function FocusPage() {
                 className="focus-page-select"
                 disabled={loadingPromises}
               >
-                <option value="">-- Choose a promise --</option>
+                <option value="">{t('focus.chooseAPromise')}</option>
                 {getAvailablePromises().map((promise) => (
                   <option key={promise.id} value={promise.id}>
                     {promise.text}
@@ -94,7 +96,7 @@ export function FocusPage() {
             </div>
 
             <div className="focus-page-section">
-              <label>Duration:</label>
+              <label>{t('focus.duration')}</label>
               <DurationWheelPicker value={selectedDuration} onChange={setSelectedDuration} min={1} max={120} />
             </div>
 
@@ -102,11 +104,9 @@ export function FocusPage() {
 
             <div className="focus-page-actions">
               <Button variant="primary" fullWidth onClick={handleStart} disabled={loading || !selectedPromiseId || loadingPromises}>
-                {loading ? 'Starting...' : 'Start Focus Session'}
+                {loading ? t('focus.starting') : t('focus.startFocusSession')}
               </Button>
-              <Button variant="secondary" fullWidth onClick={handleCancel}>
-                Cancel
-              </Button>
+              <Button variant="secondary" fullWidth onClick={handleCancel}>{t('focus.cancel')}</Button>
             </div>
           </div>
         )}

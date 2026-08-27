@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 
@@ -11,6 +12,7 @@ interface WeeklyNoteModalProps {
 }
 
 export function WeeklyNoteModal({ promiseId, promiseText, weekStart, isOpen, onClose, onSuccess }: WeeklyNoteModalProps) {
+  const { t } = useTranslation();
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -57,7 +59,7 @@ export function WeeklyNoteModal({ promiseId, promiseText, weekStart, isOpen, onC
     <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Weekly Note</h2>
+          <h2 className="modal-title">{t('weeklyNote.weeklyNote')}</h2>
           <button className="modal-close" onClick={handleClose} disabled={isSubmitting}>
             ×
           </button>
@@ -65,7 +67,7 @@ export function WeeklyNoteModal({ promiseId, promiseText, weekStart, isOpen, onC
         
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="modal-form-group">
-            <label className="modal-label">Promise</label>
+            <label className="modal-label">{t('weeklyNote.promise')}</label>
             <div className="modal-promise-text">{promiseText.replace(/_/g, ' ')}</div>
           </div>
 
@@ -78,7 +80,7 @@ export function WeeklyNoteModal({ promiseId, promiseText, weekStart, isOpen, onC
               value={note}
               onChange={(e) => setNote(e.target.value)}
               className="modal-textarea"
-              placeholder="How did this week go? What did you learn?"
+              placeholder={t('weeklyNote.howDidThisWeekGoWhatDidYouLearn')}
               rows={4}
               disabled={isSubmitting}
             />
@@ -94,9 +96,7 @@ export function WeeklyNoteModal({ promiseId, promiseText, weekStart, isOpen, onC
               className="modal-button modal-button-secondary"
               onClick={handleClose}
               disabled={isSubmitting}
-            >
-              Cancel
-            </button>
+            >{t('weeklyNote.cancel')}</button>
             <button
               type="submit"
               className="modal-button modal-button-primary"

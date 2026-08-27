@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
@@ -33,6 +34,7 @@ const CLUB_TIMEZONE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export function ClubDetailPage() {
+  const { t } = useTranslation();
   const { clubId } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
   const { initData, hapticFeedback } = useTelegramWebApp();
@@ -77,7 +79,7 @@ export function ClubDetailPage() {
 
   useEffect(() => {
     if (!clubId) {
-      setError('Club ID is required');
+      setError(t('clubDetail.clubIdIsRequired'));
       setLoading(false);
       return;
     }
@@ -89,7 +91,7 @@ export function ClubDetailPage() {
         const response = await apiClient.getMyClubs();
         const found = response.clubs.find((item) => item.club_id === clubId);
         if (!found) {
-          setError('Club not found');
+          setError(t('clubDetail.clubNotFound'));
           setClub(null);
           return;
         }
@@ -292,7 +294,7 @@ export function ClubDetailPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading club...</div>
+          <div className="loading-text">{t('clubDetail.loadingClub')}</div>
         </div>
       </div>
     );
@@ -303,7 +305,7 @@ export function ClubDetailPage() {
       <div className="app">
         <div className="error">
           <div className="error-icon">!</div>
-          <h1 className="error-title">Club not found</h1>
+          <h1 className="error-title">{t('clubDetail.clubNotFound')}</h1>
           <p className="error-message">{error || 'The club you are looking for does not exist.'}</p>
         </div>
       </div>
@@ -339,13 +341,13 @@ export function ClubDetailPage() {
           {/* Promise */}
           <div className="club-detail-section">
             <div className="club-detail-label-row">
-              <span className="club-detail-label">Promise</span>
+              <span className="club-detail-label">{t('clubDetail.promise')}</span>
               {isAdmin && !editingPromise && (
                 <span className="club-detail-admin-actions">
                   {club.promise_uuid && club.promise_text ? (
                     <>
-                      <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>Edit</button>
-                      <button type="button" className="club-detail-action-btn club-detail-action-btn--danger" onClick={handleDeletePromise} disabled={busy}>Delete</button>
+                      <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>{t('clubDetail.edit')}</button>
+                      <button type="button" className="club-detail-action-btn club-detail-action-btn--danger" onClick={handleDeletePromise} disabled={busy}>{t('clubDetail.delete')}</button>
                     </>
                   ) : (
                     <button type="button" className="club-detail-action-btn" onClick={handleEditPromise} disabled={busy}>+ Add</button>
@@ -355,17 +357,17 @@ export function ClubDetailPage() {
             </div>
             {editingPromise ? (
               <div className="club-detail-edit-form">
-                <input className="club-detail-edit-input" value={editText} onChange={(e) => setEditText(e.target.value)} maxLength={160} placeholder="What will the group do?" />
-                <input className="club-detail-edit-input" type="number" min={1} max={21} value={editTarget} onChange={(e) => setEditTarget(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Times per week" />
+                <input className="club-detail-edit-input" value={editText} onChange={(e) => setEditText(e.target.value)} maxLength={160} placeholder={t('clubDetail.whatWillTheGroupDo')} />
+                <input className="club-detail-edit-input" type="number" min={1} max={21} value={editTarget} onChange={(e) => setEditTarget(e.target.value === '' ? '' : Number(e.target.value))} placeholder={t('clubDetail.timesPerWeek')} />
                 <div className="club-detail-edit-buttons">
                   <button type="button" className="modal-button modal-button-primary" onClick={handleSavePromise} disabled={busy || !editText.trim()}>{busy ? 'Saving…' : 'Save'}</button>
-                  <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingPromise(false)} disabled={busy}>Cancel</button>
+                  <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingPromise(false)} disabled={busy}>{t('clubDetail.cancel')}</button>
                 </div>
               </div>
             ) : promiseLine ? (
               <p className="club-detail-promise">{promiseLine}</p>
             ) : (
-              <p className="club-detail-empty">No promise set yet.</p>
+              <p className="club-detail-empty">{t('clubDetail.noPromiseSetYet')}</p>
             )}
           </div>
 
@@ -388,17 +390,17 @@ export function ClubDetailPage() {
           {isAdmin && (
             <div className="club-detail-section">
               <div className="club-detail-label-row">
-                <span className="club-detail-label">Daily reminder</span>
+                <span className="club-detail-label">{t('clubDetail.dailyReminder')}</span>
                 {!editingSettings && (
-                  <button type="button" className="club-detail-action-btn" onClick={handleEditSettings} disabled={busy}>Edit</button>
+                  <button type="button" className="club-detail-action-btn" onClick={handleEditSettings} disabled={busy}>{t('clubDetail.edit')}</button>
                 )}
               </div>
               {editingSettings ? (
                 <div className="club-detail-edit-form">
-                  <label className="club-detail-field-label">Reminder time</label>
+                  <label className="club-detail-field-label">{t('clubDetail.reminderTime')}</label>
                   <input className="club-detail-edit-input" type="time" value={editReminderTime} onChange={(e) => setEditReminderTime(e.target.value)} />
-                  <p className="club-detail-hint">In your local timezone, unless a club timezone is set below.</p>
-                  <label className="club-detail-field-label">Bot language</label>
+                  <p className="club-detail-hint">{t('clubDetail.inYourLocalTimezoneUnlessAClubTimezoneIsSetB')}</p>
+                  <label className="club-detail-field-label">{t('clubDetail.botLanguage')}</label>
                   <select className="club-detail-edit-input" value={editLanguage} onChange={(e) => setEditLanguage(e.target.value)}>
                     <option value="en">English</option>
                     <option value="fa">Persian (فارسی)</option>
@@ -408,20 +410,20 @@ export function ClubDetailPage() {
                     <option value="ar">Arabic</option>
                     <option value="tr">Turkish</option>
                   </select>
-                  <p className="club-detail-hint">The language Xaana uses in this group's chat.</p>
-                  <label className="club-detail-field-label">Club timezone</label>
+                  <p className="club-detail-hint">{t('clubDetail.theLanguageXaanaUsesInThisGroupSChat')}</p>
+                  <label className="club-detail-field-label">{t('clubDetail.clubTimezone')}</label>
                   <select className="club-detail-edit-input" value={editTimezone} onChange={(e) => setEditTimezone(e.target.value)}>
                     {CLUB_TIMEZONE_OPTIONS.map((opt) => (
                       <option key={opt.value || 'default'} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
                   <p className="club-detail-hint">Overrides when "today" flips for check-ins/streaks and message timing — set this if the club is tied to something with its own daily reset (e.g. an external game).</p>
-                  <label className="club-detail-field-label">Leaderboard image time</label>
+                  <label className="club-detail-field-label">{t('clubDetail.leaderboardImageTime')}</label>
                   <input className="club-detail-edit-input" type="time" value={editLeaderboardTime} onChange={(e) => setEditLeaderboardTime(e.target.value)} />
                   <p className="club-detail-hint">Optional — sends a rendered 7-day leaderboard picture at this time (club timezone above). Leave blank to turn it off.</p>
                   <div className="club-detail-edit-buttons">
                     <button type="button" className="modal-button modal-button-primary" onClick={handleSaveSettings} disabled={busy || !editReminderTime}>{busy ? 'Saving…' : 'Save'}</button>
-                    <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingSettings(false)} disabled={busy}>Cancel</button>
+                    <button type="button" className="modal-button modal-button-secondary" onClick={() => setEditingSettings(false)} disabled={busy}>{t('clubDetail.cancel')}</button>
                   </div>
                 </div>
               ) : (
@@ -437,7 +439,7 @@ export function ClubDetailPage() {
           {/* Club context (admin only) */}
           {isAdmin && (
             <div className="club-detail-section">
-              <span className="club-detail-label">Tell Xaana about this club</span>
+              <span className="club-detail-label">{t('clubDetail.tellXaanaAboutThisClub')}</span>
               <div className="club-detail-edit-form">
                 <textarea
                   className="club-detail-edit-input club-detail-edit-textarea club-detail-context-note"
@@ -484,19 +486,19 @@ export function ClubDetailPage() {
               </div>
 
               <div className="club-detail-context-list">
-                {club.description ? <p><strong>Description</strong>{club.description}</p> : null}
-                {club.club_goal ? <p><strong>Goal</strong>{club.club_goal}</p> : null}
-                {club.vibe ? <p><strong>Vibe</strong>{club.vibe}</p> : null}
-                {club.checkin_what_counts ? <p><strong>Check-in</strong>{club.checkin_what_counts}</p> : null}
+                {club.description ? <p><strong>{t('clubDetail.description')}</strong>{club.description}</p> : null}
+                {club.club_goal ? <p><strong>{t('clubDetail.goal')}</strong>{club.club_goal}</p> : null}
+                {club.vibe ? <p><strong>{t('clubDetail.vibe')}</strong>{club.vibe}</p> : null}
+                {club.checkin_what_counts ? <p><strong>{t('clubDetail.checkIn')}</strong>{club.checkin_what_counts}</p> : null}
                 {!club.description && !club.club_goal && !club.vibe && !club.checkin_what_counts ? (
-                  <p className="club-detail-empty">No Xaana context yet.</p>
+                  <p className="club-detail-empty">{t('clubDetail.noXaanaContextYet')}</p>
                 ) : null}
               </div>
 
               <details className="club-detail-advanced-context">
-                <summary onClick={handleEditContext}>Advanced fields</summary>
+                <summary onClick={handleEditContext}>{t('clubDetail.advancedFields')}</summary>
                 <div className="club-detail-edit-form">
-                  <label className="club-detail-field-label">Description</label>
+                  <label className="club-detail-field-label">{t('clubDetail.description')}</label>
                   <textarea
                     className="club-detail-edit-input club-detail-edit-textarea"
                     value={editDescription}
@@ -504,7 +506,7 @@ export function ClubDetailPage() {
                     maxLength={1000}
                     rows={3}
                   />
-                  <label className="club-detail-field-label">Goal</label>
+                  <label className="club-detail-field-label">{t('clubDetail.goal')}</label>
                   <textarea
                     className="club-detail-edit-input club-detail-edit-textarea"
                     value={editGoal}
@@ -512,7 +514,7 @@ export function ClubDetailPage() {
                     maxLength={1500}
                     rows={4}
                   />
-                  <label className="club-detail-field-label">Vibe</label>
+                  <label className="club-detail-field-label">{t('clubDetail.vibe')}</label>
                   <textarea
                     className="club-detail-edit-input club-detail-edit-textarea"
                     value={editVibe}
@@ -520,7 +522,7 @@ export function ClubDetailPage() {
                     maxLength={500}
                     rows={2}
                   />
-                  <label className="club-detail-field-label">What counts as a check-in</label>
+                  <label className="club-detail-field-label">{t('clubDetail.whatCountsAsACheckIn')}</label>
                   <textarea
                     className="club-detail-edit-input club-detail-edit-textarea"
                     value={editCheckinCounts}
@@ -546,18 +548,14 @@ export function ClubDetailPage() {
               </a>
             )}
             {telegramReady ? (
-              <a className="modal-button modal-button-primary club-detail-action-link" href={club.telegram_invite_link} target="_blank" rel="noreferrer">
-                Join Telegram
-              </a>
+              <a className="modal-button modal-button-primary club-detail-action-link" href={club.telegram_invite_link} target="_blank" rel="noreferrer">{t('clubDetail.joinTelegram')}</a>
             ) : (
               <button type="button" className="modal-button modal-button-secondary" disabled>
                 {club.telegram_status === 'not_connected' ? 'No Telegram group' : 'Telegram pending…'}
               </button>
             )}
             {botUsername && (
-              <button type="button" className="modal-button modal-button-secondary" onClick={handleInvite}>
-                Invite
-              </button>
+              <button type="button" className="modal-button modal-button-secondary" onClick={handleInvite}>{t('clubDetail.invite')}</button>
             )}
             <Button variant="danger" onClick={handleRemoveClub} disabled={busy}>
               {busy ? 'Updating…' : isAdmin ? 'Delete club' : 'Leave club'}

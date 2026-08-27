@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { formatDateRange as formatIntlDateRange } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
@@ -35,6 +36,7 @@ function formatDateRange(startDate?: string, endDate?: string): string {
 }
 
 export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose, startDate, endDate }: PromiseLogsModalProps) {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
@@ -81,11 +83,11 @@ export function PromiseLogsModal({ promiseId, promiseText, isOpen, onClose, star
           <div className="promise-logs-promise-name">{promiseText.replace(/_/g, ' ')}</div>
           
           {loading ? (
-            <div className="promise-logs-loading">Loading logs...</div>
+            <div className="promise-logs-loading">{t('promiseLogs.loadingLogs')}</div>
           ) : error ? (
             <div className="promise-logs-error">{error}</div>
           ) : logs.length === 0 ? (
-            <div className="promise-logs-empty">No logs yet for this promise.</div>
+            <div className="promise-logs-empty">{t('promiseLogs.noLogsYetForThisPromise')}</div>
           ) : (
             <div className="promise-logs-list">
               {logs.map((log, index) => (

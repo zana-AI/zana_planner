@@ -207,7 +207,7 @@ export function UsersPage() {
         }
         setError(err.message);
       } else {
-        setError('Failed to load community. Please try again.');
+        setError(t('community.failedToLoadCommunityPleaseTryAgain'));
       }
     } finally {
       setLoading(false);
@@ -346,9 +346,7 @@ export function UsersPage() {
         <div className="users-page-error">
           <div className="error-icon">!</div>
           <p className="error-message">{error}</p>
-          <button type="button" className="retry-button" onClick={fetchCommunityData}>
-            Try Again
-          </button>
+          <button type="button" className="retry-button" onClick={fetchCommunityData}>{t('community.tryAgain')}</button>
         </div>
       ) : null}
 
@@ -409,7 +407,7 @@ export function UsersPage() {
                   <button
                     type="button"
                     className="modal-close"
-                    aria-label="Close"
+                    aria-label={t('community.close')}
                     disabled={creatingClub}
                     onClick={() => setShowCreateClubDialog(false)}
                   >
@@ -424,7 +422,7 @@ export function UsersPage() {
                       className="modal-input"
                       value={clubForm.name}
                       onChange={(event) => setClubForm((prev) => ({ ...prev, name: event.target.value }))}
-                      placeholder="Tennis friends"
+                      placeholder={t('community.tennisFriends')}
                       maxLength={80}
                       autoFocus
                     />
@@ -436,7 +434,7 @@ export function UsersPage() {
                       className="modal-input"
                       value={clubForm.promise_text}
                       onChange={(event) => setClubForm((prev) => ({ ...prev, promise_text: event.target.value }))}
-                      placeholder="Play tennis"
+                      placeholder={t('community.playTennis')}
                       maxLength={160}
                     />
                   </label>
@@ -496,7 +494,7 @@ export function UsersPage() {
 
           <section className="community-v2-section community-v2-people-section">
             <div className="community-v2-section-header">
-              <h3 className="community-v2-title">Discover Active Users</h3>
+              <h3 className="community-v2-title">{t('community.discoverActiveUsers')}</h3>
               <span className="community-v2-count">{discoverCandidates.length}</span>
             </div>
             {visibleDiscover.length > 0 ? (
@@ -525,20 +523,18 @@ export function UsersPage() {
                 ) : null}
               </>
             ) : (
-              <div className="community-v2-empty-note">
-                You are already connected with most active users.
-              </div>
+              <div className="community-v2-empty-note">{t('community.youAreAlreadyConnectedWithMostActiveUsers')}</div>
             )}
           </section>
 
           {currentUserId ? (
             <section className="community-v2-section community-v2-people-section">
               <div className="community-v2-section-header">
-                <h3 className="community-v2-title">Following</h3>
+                <h3 className="community-v2-title">{t('community.following')}</h3>
                 <span className="community-v2-count">{following.length}</span>
               </div>
               {followingLoading ? (
-                <div className="community-v2-empty-note">Loading following...</div>
+                <div className="community-v2-empty-note">{t('community.loadingFollowing')}</div>
               ) : following.length > 0 ? (
                 <>
                   <div className="community-v2-people-grid">
@@ -562,7 +558,7 @@ export function UsersPage() {
                   ) : null}
                 </>
               ) : (
-                <div className="community-v2-empty-note">Not following anyone yet.</div>
+                <div className="community-v2-empty-note">{t('community.notFollowingAnyoneYet')}</div>
               )}
             </section>
           ) : null}
@@ -570,11 +566,11 @@ export function UsersPage() {
           {currentUserId ? (
             <section className="community-v2-section community-v2-people-section">
               <div className="community-v2-section-header">
-                <h3 className="community-v2-title">Followers</h3>
+                <h3 className="community-v2-title">{t('community.followers')}</h3>
                 <span className="community-v2-count">{followers.length}</span>
               </div>
               {followersLoading ? (
-                <div className="community-v2-empty-note">Loading followers...</div>
+                <div className="community-v2-empty-note">{t('community.loadingFollowers')}</div>
               ) : followers.length > 0 ? (
                 <>
                   <div className="community-v2-people-grid">
@@ -598,19 +594,19 @@ export function UsersPage() {
                   ) : null}
                 </>
               ) : (
-                <div className="community-v2-empty-note">No followers yet.</div>
+                <div className="community-v2-empty-note">{t('community.noFollowersYet')}</div>
               )}
             </section>
           ) : null}
 
           <section className="community-v2-section community-v2-activity">
             <div className="community-v2-section-header">
-              <h3 className="community-v2-title">Recent Activity</h3>
+              <h3 className="community-v2-title">{t('community.recentActivity')}</h3>
               <span className="community-v2-count">{activityFeed.length}</span>
             </div>
 
             {activityLoading && activityItems.length === 0 ? (
-              <div className="community-v2-empty-note">Loading recent activity...</div>
+              <div className="community-v2-empty-note">{t('community.loadingRecentActivity')}</div>
             ) : activityFeed.length > 0 ? (
               <>
                 <div className="community-v2-activity-list">
@@ -637,8 +633,8 @@ export function UsersPage() {
               </>
             ) : (
               <div className="community-v2-activity-empty">
-                <p className="community-v2-empty-title">No recent public activity yet</p>
-                <p className="community-v2-empty-note">Follow active users to personalize this stream.</p>
+                <p className="community-v2-empty-title">{t('community.noRecentPublicActivityYet')}</p>
+                <p className="community-v2-empty-note">{t('community.followActiveUsersToPersonalizeThisStream')}</p>
                 <div className="community-v2-placeholder-list">
                   <div className="community-v2-placeholder-row" />
                   <div className="community-v2-placeholder-row" />

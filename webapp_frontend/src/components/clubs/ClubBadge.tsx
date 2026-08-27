@@ -146,7 +146,7 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
             type="button"
             className="btn btn-ghost btn-sm sheet-icon-action"
             onClick={() => onOpenSettings(club)}
-            aria-label="Open club settings"
+            aria-label={t('club.openClubSettings')}
           >
             <Settings size={18} aria-hidden />
           </button>
@@ -154,7 +154,7 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
       >
         <section className="overall club-sheet-overall">
           <div className="row">
-            <span className="label">Club progress</span>
+            <span className="label">{t('club.clubProgress')}</span>
             <span className="sub">{leaderboard?.member_count ?? club.member_count} members</span>
           </div>
           <div className="row" style={{ marginTop: 2 }}>
@@ -172,17 +172,17 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
         </section>
 
         <div className="club-sheet-section-head">
-          <p className="ds-eyebrow">Leaderboard</p>
+          <p className="ds-eyebrow">{t('club.leaderboard')}</p>
           {leaderboard ? <span className="club-sheet-window">{leaderboard.window_start} - {leaderboard.window_end}</span> : null}
         </div>
 
         <div className="club-leaderboard">
           {leaderboardLoading ? (
-            <div className="club-leaderboard-state">Loading leaderboard...</div>
+            <div className="club-leaderboard-state">{t('club.loadingLeaderboard')}</div>
           ) : leaderboardError ? (
             <div className="club-leaderboard-state club-leaderboard-state--error">{leaderboardError}</div>
           ) : leaderboard && leaderboard.members.length === 0 ? (
-            <div className="club-leaderboard-state">No leaderboard activity yet.</div>
+            <div className="club-leaderboard-state">{t('club.noLeaderboardActivityYet')}</div>
           ) : leaderboard?.members.map((member) => (
             <div className="club-leaderboard-row" key={member.user_id}>
               <span className="club-leaderboard-rank">{member.rank}</span>
@@ -221,14 +221,10 @@ export function ClubBadge({ club, busy = false, initialOpen = false, onOpenSetti
             </Button>
           ) : (
             <Button variant="secondary" disabled>
-              <ExternalLink size={14} />
-              Pending
-            </Button>
+              <ExternalLink size={14} />{t('club.pending')}</Button>
           )}
           <Button variant="secondary" onClick={() => onOpenSettings(club)}>
-            <Settings size={14} />
-            Manage
-          </Button>
+            <Settings size={14} />{t('club.manage')}</Button>
           <Button
             variant="danger"
             disabled={busy}

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '../api/client';
 
@@ -16,6 +17,7 @@ export function TelegramLogin({
   cornerRadius = 8,
   requestAccess = true
 }: TelegramLoginProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [botUsername, setBotUsername] = useState<string | null>(botName || null);
   const [loading, setLoading] = useState(!botName);
@@ -161,7 +163,7 @@ export function TelegramLogin({
     return (
       <div className="telegram-login-loading">
         <div className="loading-spinner" />
-        <div>Loading login...</div>
+        <div>{t('login.loadingLogin')}</div>
       </div>
     );
   }
@@ -169,10 +171,8 @@ export function TelegramLogin({
   if (!botUsername) {
     return (
       <div className="telegram-login-error">
-        <p>Unable to load Telegram login. Bot username not available.</p>
-        <p style={{ fontSize: '0.9em', marginTop: '0.5rem', opacity: 0.8 }}>
-          Please check server configuration or try again later.
-        </p>
+        <p>{t('login.unableToLoadTelegramLoginBotUsernameNotAvail')}</p>
+        <p style={{ fontSize: '0.9em', marginTop: '0.5rem', opacity: 0.8 }}>{t('login.pleaseCheckServerConfigurationOrTryAgainLate')}</p>
       </div>
     );
   }

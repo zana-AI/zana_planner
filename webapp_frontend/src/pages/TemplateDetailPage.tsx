@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Bookmark } from 'lucide-react';
@@ -8,6 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Emoji } from '../components/ui/Emoji';
 
 export function TemplateDetailPage() {
+  const { t } = useTranslation();
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
@@ -28,7 +30,7 @@ export function TemplateDetailPage() {
         hapticFeedback('success');
       } catch (err) {
         console.error('Failed to load template:', err);
-        setError('Failed to load template');
+        setError(t('templateDetail.failedToLoadTemplate'));
         hapticFeedback('error');
       } finally {
         setLoading(false);
@@ -61,7 +63,7 @@ export function TemplateDetailPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading template...</div>
+          <div className="loading-text">{t('templateDetail.loadingTemplate')}</div>
         </div>
       </div>
     );
@@ -72,7 +74,7 @@ export function TemplateDetailPage() {
       <div className="app">
         <div className="error">
           <div className="error-icon">!</div>
-          <h1 className="error-title">Template not found</h1>
+          <h1 className="error-title">{t('templateDetail.templateNotFound')}</h1>
           <p className="error-message">{error || 'The selected template does not exist.'}</p>
         </div>
       </div>
@@ -101,7 +103,7 @@ export function TemplateDetailPage() {
           {/* Visibility — the only choice; everything else uses sensible defaults. */}
           <div className="card-setting-row" style={{ marginTop: 12 }}>
             <div className="card-setting-info">
-              <span className="card-setting-title">Public visibility</span>
+              <span className="card-setting-title">{t('templateDetail.publicVisibility')}</span>
               <span className="card-setting-subtitle">
                 {visibility === 'public'
                   ? 'Visible to community — others can be inspired.'

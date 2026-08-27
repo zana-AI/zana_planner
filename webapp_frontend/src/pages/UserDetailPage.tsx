@@ -44,7 +44,7 @@ export function UserDetailPage() {
 
   useEffect(() => {
     if (!userId) {
-      setError('User ID is required');
+      setError(t('userDetail.userIdIsRequired'));
       setLoading(false);
       return;
     }
@@ -67,7 +67,7 @@ export function UserDetailPage() {
         if (err instanceof ApiError) {
           setError(err.message);
         } else {
-          setError('Failed to load user');
+          setError(t('userDetail.failedToLoadUser'));
         }
         setPublicPromises([]);
       } finally {
@@ -131,7 +131,7 @@ export function UserDetailPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading user profile...</div>
+          <div className="loading-text">{t('userDetail.loadingUserProfile')}</div>
         </div>
       </div>
     );
@@ -142,7 +142,7 @@ export function UserDetailPage() {
       <div className="app">
         <div className="error">
           <div className="error-icon">!</div>
-          <h1 className="error-title">User not found</h1>
+          <h1 className="error-title">{t('userDetail.userNotFound')}</h1>
           <p className="error-message">{error || 'The user you are looking for does not exist.'}</p>
         </div>
       </div>
@@ -189,9 +189,7 @@ export function UserDetailPage() {
                 >
                   {isLoadingFollow ? '...' : isFollowing ? 'Unfollow' : 'Follow'}
                 </Button>
-                <Button size="sm" onClick={() => setShowSuggestModal(true)}>
-                  Suggest Promise
-                </Button>
+                <Button size="sm" onClick={() => setShowSuggestModal(true)}>{t('userDetail.suggestPromise')}</Button>
               </div>
             ) : null}
           </div>
@@ -208,7 +206,7 @@ export function UserDetailPage() {
 
         {publicPromises.length > 0 ? (
           <div>
-            <h3 className="user-detail-section-title">Public Promises</h3>
+            <h3 className="user-detail-section-title">{t('userDetail.publicPromises')}</h3>
             <div className="user-detail-promises">
               {publicPromises.map((badge) => (
                 <PromiseBadge key={badge.promise_id} badge={badge} compact={false} />
@@ -216,7 +214,7 @@ export function UserDetailPage() {
             </div>
           </div>
         ) : (
-          <div className="user-detail-empty">No public promises yet</div>
+          <div className="user-detail-empty">{t('userDetail.noPublicPromisesYet')}</div>
         )}
       </div>
 

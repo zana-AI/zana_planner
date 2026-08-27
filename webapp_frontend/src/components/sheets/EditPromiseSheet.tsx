@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../api/client';
 import type { PromiseData } from '../../types';
@@ -28,6 +29,7 @@ export function EditPromiseSheet({
   onClose,
   onSaved,
 }: EditPromiseSheetProps) {
+  const { t } = useTranslation();
   const isCountBased = data.metric_type === 'count';
   const initialTarget = isCountBased ? data.target_value ?? 1 : data.hours_promised;
   const [title, setTitle] = useState(data.text);
@@ -119,15 +121,15 @@ export function EditPromiseSheet({
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Edit promise" subtitle={formatPromiseText(data.text)}>
+    <BottomSheet open={open} onClose={onClose} title={t('editPromise.editPromise')} subtitle={formatPromiseText(data.text)}>
       <div className="edit-sheet-form">
         <div className="field-row">
-          <label htmlFor="edit-promise-title">Promise title</label>
+          <label htmlFor="edit-promise-title">{t('editPromise.promiseTitle')}</label>
           <input
             id="edit-promise-title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="What are you committing to?"
+            placeholder={t('editPromise.whatAreYouCommittingTo')}
           />
         </div>
 
@@ -144,7 +146,7 @@ export function EditPromiseSheet({
             />
           </div>
           <div className="field-row">
-            <label htmlFor="edit-promise-end">End date</label>
+            <label htmlFor="edit-promise-end">{t('editPromise.endDate')}</label>
             <input
               id="edit-promise-end"
               type="date"
@@ -158,7 +160,7 @@ export function EditPromiseSheet({
         <div className="edit-sheet-grid">
           <label className="edit-sheet-toggle">
             <span>
-              <strong>Public visibility</strong>
+              <strong>{t('editPromise.publicVisibility')}</strong>
               <span>{visibility === 'public' ? 'Visible to others' : 'Only visible to you'}</span>
             </span>
             <input
@@ -169,7 +171,7 @@ export function EditPromiseSheet({
           </label>
           <label className="edit-sheet-toggle">
             <span>
-              <strong>Repeat weekly</strong>
+              <strong>{t('editPromise.repeatWeekly')}</strong>
               <span>{recurring ? 'Tracked every week' : 'One-time task'}</span>
             </span>
             <input
@@ -185,9 +187,7 @@ export function EditPromiseSheet({
             <Button variant="primary" onClick={handleSave} disabled={!canSave || saving || deleting}>
               {saving ? 'Saving...' : 'Save'}
             </Button>
-            <Button variant="secondary" onClick={onClose} disabled={saving || deleting}>
-              Cancel
-            </Button>
+            <Button variant="secondary" onClick={onClose} disabled={saving || deleting}>{t('editPromise.cancel')}</Button>
           </div>
           <Button variant="danger" onClick={handleDelete} disabled={saving || deleting}>
             {deleting ? 'Deleting...' : 'Delete promise'}

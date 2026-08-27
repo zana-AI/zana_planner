@@ -1,3 +1,5 @@
+import { toLatinDigits } from '../i18n/format';
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { useModalBodyLock } from '../hooks/useModalBodyLock';
 
@@ -25,6 +27,7 @@ const DURATION_CHIPS: { label: string; hours: number }[] = [
 ];
 
 export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSuccess, prefillHours, prefillDate, prefillTime, prefillNotes }: LogActionModalProps) {
+  const { t } = useTranslation();
   const [hours, setHours] = useState(prefillHours ?? '');
   const [date, setDate] = useState(prefillDate ?? '');
   const [time, setTime] = useState(prefillTime ?? '');
@@ -58,9 +61,9 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
     e.preventDefault();
     setError('');
 
-    const hoursNum = parseFloat(hours);
+    const hoursNum = parseFloat(toLatinDigits(hours));
     if (isNaN(hoursNum) || hoursNum <= 0) {
-      setError('Please enter a valid positive number of hours');
+      setError(t('logAction.pleaseEnterAValidPositiveNumberOfHours'));
       return;
     }
 
@@ -112,7 +115,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
     <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Log Time</h2>
+          <h2 className="modal-title">{t('logAction.logTime')}</h2>
           <button className="modal-close" onClick={handleClose} disabled={isSubmitting}>
             ×
           </button>
@@ -120,7 +123,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
         
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="modal-form-group">
-            <label className="modal-label">Promise</label>
+            <label className="modal-label">{t('logAction.promise')}</label>
             <div className="modal-promise-text">{promiseText}</div>
           </div>
 
@@ -133,7 +136,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
                 <button
                   key={chip.label}
                   type="button"
-                  className={`sched-chip${parseFloat(hours) === chip.hours ? ' is-active' : ''}`}
+                  className={`sched-chip${parseFloat(toLatinDigits(hours)) === chip.hours ? ' is-active' : ''}`}
                   onClick={() => setHours(String(chip.hours))}
                   disabled={isSubmitting}
                 >
@@ -156,7 +159,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
           </div>
 
           <div className="modal-form-group">
-            <label htmlFor="date" className="modal-label">Date</label>
+            <label htmlFor="date" className="modal-label">{t('logAction.date')}</label>
             <input
               id="date"
               type="date"
@@ -168,7 +171,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
           </div>
 
           <div className="modal-form-group">
-            <label htmlFor="time" className="modal-label">Time</label>
+            <label htmlFor="time" className="modal-label">{t('logAction.time')}</label>
             <input
               id="time"
               type="time"
@@ -186,7 +189,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="modal-input"
-              placeholder="Add any notes about this session..."
+              placeholder={t('logAction.addAnyNotesAboutThisSession')}
               rows={3}
               disabled={isSubmitting}
             />
@@ -202,9 +205,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
               className="modal-button modal-button-secondary"
               onClick={handleClose}
               disabled={isSubmitting}
-            >
-              Cancel
-            </button>
+            >{t('logAction.cancel')}</button>
             <button
               type="submit"
               className="modal-button modal-button-primary"

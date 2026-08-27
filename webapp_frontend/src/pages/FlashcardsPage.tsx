@@ -242,9 +242,7 @@ function ReviewPane({
           ))}
         </div>
       ) : (
-        <button className="fc-show" onClick={() => setRevealed(true)}>
-          Show answer
-        </button>
+        <button className="fc-show" onClick={() => setRevealed(true)}>{t('flashcards.showAnswer')}</button>
       )}
     </div>
   );
@@ -410,14 +408,10 @@ function ManagePane({
               />
             </label>
           ) : (
-            <p className="fc-hint">
-              Editing the content won’t reset this card’s schedule.
-            </p>
+            <p className="fc-hint">{t('flashcards.editingTheContentWonTResetThisCardSSchedule')}</p>
           )}
           <div className="fc-editor-actions">
-            <button className="fc-secondary" onClick={() => setEditing(null)} disabled={busy}>
-              Cancel
-            </button>
+            <button className="fc-secondary" onClick={() => setEditing(null)} disabled={busy}>{t('flashcards.cancel')}</button>
             <button className="fc-primary" onClick={save} disabled={busy}>
               {busy ? 'Saving…' : 'Save'}
             </button>

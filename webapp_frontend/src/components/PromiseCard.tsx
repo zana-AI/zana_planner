@@ -1,4 +1,5 @@
-import { formatDate as formatIntlDate, weekdayNarrowLabels, weekdayLongLabels } from '../i18n/format';
+import { useTranslation } from 'react-i18next';
+import { formatDate as formatIntlDate, weekdayNarrowLabels, weekdayLongLabels, toLatinDigits } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PromiseData, SessionData, PlanSession } from '../types';
@@ -112,6 +113,7 @@ function calculateProgress(spent: number, promised: number): number {
  * PromiseCard component - displays a single promise with progress visualization
  */
 export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const {
     text,
@@ -775,12 +777,10 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             <div className="card-title" dir="auto">
               <span className="card-title-text">{formatPromiseText(text)}</span>
               {isBudget && (
-                <span className="card-budget-badge">
-                  Budget
-                </span>
+                <span className="card-budget-badge">{t('promiseCard.budget')}</span>
               )}
               {isClubPromise && (
-                <button type="button" className="card-club-badge" title="Go to club" onClick={handleClubBadgeClick} aria-label="Go to club">
+                <button type="button" className="card-club-badge" title={t('promiseCard.goToClub')} onClick={handleClubBadgeClick} aria-label={t('promiseCard.goToClub')}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M16 21v-2a4 4 0 0 0-8 0v2" />
                     <circle cx="12" cy="7" r="4" />
@@ -794,9 +794,9 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               <button
                 className="card-edit-button"
                 onClick={handleEditClick}
-                title="Edit promise"
+                title={t('promiseCard.editPromise')}
               >
-                <span>Edit</span>
+                <span>{t('promiseCard.edit')}</span>
               </button>
               {!isClubPromise && (
               <span
@@ -852,15 +852,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
               <div className="card-edit-form">
                 {/* Text field */}
                 <div className="card-form-group">
-                  <label className="card-form-label">
-                    Promise Title
-                  </label>
+                  <label className="card-form-label">{t('promiseCard.promiseTitle')}</label>
                   <input
                     type="text"
                     className="card-form-input"
                     value={editingText}
                     onChange={(e) => setEditingText(e.target.value)}
-                    placeholder="Enter promise title"
+                    placeholder={t('promiseCard.enterPromiseTitle')}
                   />
                 </div>
                 
@@ -874,7 +872,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       type="number"
                       className="card-form-input"
                       value={editingTarget}
-                      onChange={(e) => setEditingTarget(parseInt(e.target.value) || 1)}
+                      onChange={(e) => setEditingTarget(parseInt(toLatinDigits(e.target.value)) || 1)}
                       min="1"
                       step="1"
                       placeholder="1"
@@ -884,7 +882,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       type="number"
                       className="card-form-input"
                       value={editingHours}
-                      onChange={(e) => setEditingHours(parseFloat(e.target.value) || 0)}
+                      onChange={(e) => setEditingHours(parseFloat(toLatinDigits(e.target.value)) || 0)}
                       min="0.1"
                       step="0.1"
                       placeholder="0.0"
@@ -894,9 +892,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 
                 {/* End date field */}
                 <div className="card-form-group">
-                  <label className="card-form-label">
-                    End Date
-                  </label>
+                  <label className="card-form-label">{t('promiseCard.endDate')}</label>
                   <button
                     className="card-form-date-button"
                     onClick={() => setShowCalendar(!showCalendar)}
@@ -916,7 +912,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 {!isClubPromise && (
                   <div className="card-setting-row">
                     <div className="card-setting-info">
-                      <span className="card-setting-title">Public visibility</span>
+                      <span className="card-setting-title">{t('promiseCard.publicVisibility')}</span>
                       <span className="card-setting-subtitle">
                         {currentVisibility === 'public'
                           ? 'Visible to other people'
@@ -942,7 +938,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
 
                 <div className="card-setting-row">
                   <div className="card-setting-info">
-                    <span className="card-setting-title">Repeat weekly</span>
+                    <span className="card-setting-title">{t('promiseCard.repeatWeekly')}</span>
                     <span className="card-setting-subtitle">
                       {currentRecurring
                         ? 'Shows every week with weekday tracking'
@@ -968,7 +964,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 {/* Reminders section */}
                 <div className="card-section card-reminders-section">
                   <div className="card-section-header">
-                    <span>Reminders</span>
+                    <span>{t('promiseCard.reminders')}</span>
                     <button
                       className="card-reminders-add-button"
                       onClick={handleAddReminder}
@@ -978,9 +974,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   </div>
                   
                   {isLoadingReminders ? (
-                    <div className="card-empty-state">
-                      Loading reminders...
-                    </div>
+                    <div className="card-empty-state">{t('promiseCard.loadingReminders')}</div>
                   ) : reminders.length === 0 ? (
                     <div className="card-empty-state">
                       No reminders set. Click "+ Add" to create one.
@@ -994,7 +988,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                         <select
                           className="card-reminder-weekday"
                           value={reminder.weekday}
-                          onChange={(e) => handleUpdateReminder(index, 'weekday', parseInt(e.target.value))}
+                          onChange={(e) => handleUpdateReminder(index, 'weekday', parseInt(toLatinDigits(e.target.value)))}
                         >
                           {WEEKDAY_NAMES.map((name, i) => (
                             <option key={i} value={i}>{name}</option>
@@ -1016,10 +1010,8 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                         <button
                           className="card-reminder-remove"
                           onClick={() => handleRemoveReminder(index)}
-                          title="Remove"
-                        >
-                          Remove
-                        </button>
+                          title={t('promiseCard.remove')}
+                        >{t('promiseCard.remove')}</button>
                       </div>
                     ))
                   )}
@@ -1028,9 +1020,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     <button
                       className="card-reminders-save-button"
                       onClick={handleSaveReminders}
-                    >
-                      Save Reminders
-                    </button>
+                    >{t('promiseCard.saveReminders')}</button>
                   )}
                 </div>
                 
@@ -1047,9 +1037,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     className="card-form-button-secondary"
                     onClick={handleCancelEdit}
                     disabled={isUpdatingPromise || isDeletingPromise}
-                  >
-                    Cancel
-                  </button>
+                  >{t('promiseCard.cancel')}</button>
                 </div>
                 <button
                   className="card-form-button-danger"
@@ -1065,9 +1053,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 {/* Notes section - show all notes for the week */}
                 {Object.keys(notesByDate).length > 0 && (
                   <div className="card-section card-notes-section">
-                    <div className="card-section-header">
-                      Notes for This Week
-                    </div>
+                    <div className="card-section-header">{t('promiseCard.notesForThisWeek')}</div>
                     {weekDays.map((dateKey) => {
                       const dayNotes = notesByDate[dateKey] || [];
                       if (dayNotes.length === 0) return null;
@@ -1100,9 +1086,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 )}
                 
                 {Object.keys(notesByDate).length === 0 && (
-                  <div className="card-empty-state">
-                    No notes for this week. Open Edit to modify this promise.
-                  </div>
+                  <div className="card-empty-state">{t('promiseCard.noNotesForThisWeekOpenEditToModifyThisPromis')}</div>
                 )}
               </div>
             )}
@@ -1163,7 +1147,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       {(planSessions.filter(s => s.status === 'planned').length > 0 || showAddForm) && (
         <div className="planned-sessions-strip">
           <div className="planned-sessions-strip-header">
-            <span>Planned sessions</span>
+            <span>{t('promiseCard.plannedSessions')}</span>
             <span>{planSessions.filter(s => s.status === 'planned').length}</span>
           </div>
           {planSessions.filter(s => s.status === 'planned').map(session => {
@@ -1181,7 +1165,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                   <form className="planned-session-add-form" onSubmit={handleEditSave}>
                     <input
                       className="planned-session-add-input planned-session-add-title"
-                      placeholder="Title"
+                      placeholder={t('promiseCard.title')}
                       value={editForm.title}
                       onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
                     />
@@ -1218,14 +1202,14 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     </div>
                     <input
                       className="planned-session-add-input planned-session-add-title"
-                      placeholder="Notes"
+                      placeholder={t('promiseCard.notes')}
                       value={editForm.notes}
                       onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
                     />
                     <div className="planned-session-quick-row">
-                      <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: getDefaultPlannedStart() }))}>Today</button>
+                      <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: getDefaultPlannedStart() }))}>{t('promiseCard.today')}</button>
                       <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 60) }))}>+1h</button>
-                      <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 1440) }))}>Tomorrow</button>
+                      <button type="button" onClick={() => setEditForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 1440) }))}>{t('promiseCard.tomorrow')}</button>
                     </div>
                     <div className="planned-session-reminder-row">
                       <label>
@@ -1233,9 +1217,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                           type="checkbox"
                           checked={editForm.reminder_enabled}
                           onChange={e => setEditForm(f => ({ ...f, reminder_enabled: e.target.checked }))}
-                        />
-                        Reminder
-                      </label>
+                        />{t('promiseCard.reminder')}</label>
                       <select
                         value={editForm.reminder_offset_min}
                         disabled={!editForm.reminder_enabled}
@@ -1250,9 +1232,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                       <button type="submit" className="planned-session-action planned-session-action--done" disabled={editFormSaving}>
                         {editFormSaving ? '…' : 'Save'}
                       </button>
-                      <button type="button" className="planned-session-action planned-session-action--delete" onClick={() => { setEditingSessionId(null); setActiveDurationPicker(null); }}>
-                        Cancel
-                      </button>
+                      <button type="button" className="planned-session-action planned-session-action--delete" onClick={() => { setEditingSessionId(null); setActiveDurationPicker(null); }}>{t('promiseCard.cancel')}</button>
                     </div>
                   </form>
                 ) : (
@@ -1302,7 +1282,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
             <form className="planned-session-add-form" onSubmit={handleAddFormSubmit}>
               <input
                 className="planned-session-add-input planned-session-add-title"
-                placeholder="Title (optional)"
+                placeholder={t('promiseCard.titleOptional')}
                 value={addForm.title}
                 onChange={e => setAddForm(f => ({ ...f, title: e.target.value }))}
               />
@@ -1338,13 +1318,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 </div>
               </div>
               <div className="planned-session-quick-row">
-                <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: getDefaultPlannedStart() }))}>Today</button>
+                <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: getDefaultPlannedStart() }))}>{t('promiseCard.today')}</button>
                 <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 60) }))}>+1h</button>
-                <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 1440) }))}>Tomorrow</button>
+                <button type="button" onClick={() => setAddForm(f => ({ ...f, planned_start: shiftDateTimeLocal(f.planned_start, 1440) }))}>{t('promiseCard.tomorrow')}</button>
               </div>
               <textarea
                 className="planned-session-add-input planned-session-add-title"
-                placeholder="Notes (optional)"
+                placeholder={t('promiseCard.notesOptional')}
                 value={addForm.notes}
                 onChange={e => setAddForm(f => ({ ...f, notes: e.target.value }))}
                 rows={2}
@@ -1355,9 +1335,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                     type="checkbox"
                     checked={addForm.reminder_enabled}
                     onChange={e => setAddForm(f => ({ ...f, reminder_enabled: e.target.checked }))}
-                  />
-                  Reminder
-                </label>
+                  />{t('promiseCard.reminder')}</label>
                 <select
                   value={addForm.reminder_offset_min}
                   disabled={!addForm.reminder_enabled}
@@ -1372,9 +1350,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
                 <button type="submit" className="planned-session-action planned-session-action--done" disabled={addFormSaving}>
                   {addFormSaving ? '…' : 'Save'}
                 </button>
-                <button type="button" className="planned-session-action planned-session-action--delete" onClick={cancelAddSessionForm}>
-                  Cancel
-                </button>
+                <button type="button" className="planned-session-action planned-session-action--delete" onClick={cancelAddSessionForm}>{t('promiseCard.cancel')}</button>
               </div>
             </form>
           )}
@@ -1385,15 +1361,13 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         <button
           className="card-add-session-button"
           onClick={() => setIsLogsModalOpen(true)}
-          title="View logs for this week"
-        >
-          Logs
-        </button>
+          title={t('promiseCard.viewLogsForThisWeek')}
+        >{t('promiseCard.logs')}</button>
         {isCountBased ? (
           <button
             className="card-log-button"
             onClick={() => setIsCheckinModalOpen(true)}
-            title="Check in"
+            title={t('promiseCard.checkIn')}
           >
             + Check In
           </button>
@@ -1401,7 +1375,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
           <button
             className="card-log-button"
             onClick={() => setIsLogModalOpen(true)}
-            title="Log time spent"
+            title={t('promiseCard.logTimeSpent')}
           >
             + Log Time
           </button>
@@ -1409,7 +1383,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
         <button
           className="card-add-session-button"
           onClick={openAddSessionForm}
-          title="Add planned session"
+          title={t('promiseCard.addPlannedSession')}
         >
           + Add Session
         </button>

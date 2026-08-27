@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
@@ -6,6 +7,7 @@ import { WeeklyReport } from '../components/WeeklyReport';
 import type { WeeklyReportData } from '../types';
 
 export function WeeklyReportPage() {
+  const { t } = useTranslation();
   const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -38,7 +40,7 @@ export function WeeklyReportPage() {
       
       if (err instanceof ApiError) {
         if (err.status === 401) {
-          setError('Authentication failed. Please log in again.');
+          setError(t('weeklyReport.authenticationFailedPleaseLogInAgain'));
           // Clear invalid token and redirect
           apiClient.clearAuth();
           window.dispatchEvent(new Event('logout'));
@@ -47,7 +49,7 @@ export function WeeklyReportPage() {
           setError(err.message);
         }
       } else {
-        setError('Failed to load your weekly report. Please try again.');
+        setError(t('weeklyReport.failedToLoadYourWeeklyReportPleaseTryAgain'));
       }
       
       setState('error');
@@ -137,7 +139,7 @@ export function WeeklyReportPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading your weekly report...</div>
+          <div className="loading-text">{t('weeklyReport.loadingYourWeeklyReport')}</div>
         </div>
       </div>
     );
@@ -149,12 +151,10 @@ export function WeeklyReportPage() {
       <div className="app">
         <div className="error">
           <div className="error-icon">!</div>
-          <h1 className="error-title">Something went wrong</h1>
+          <h1 className="error-title">{t('weeklyReport.somethingWentWrong')}</h1>
           <p className="error-message">{error}</p>
           {initData && (
-            <button className="retry-button" onClick={handleRetry}>
-              Try Again
-            </button>
+            <button className="retry-button" onClick={handleRetry}>{t('weeklyReport.tryAgain')}</button>
           )}
         </div>
       </div>
@@ -168,7 +168,7 @@ export function WeeklyReportPage() {
       <div className="app">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading your weekly report...</div>
+          <div className="loading-text">{t('weeklyReport.loadingYourWeeklyReport')}</div>
         </div>
       </div>
     );
@@ -200,9 +200,7 @@ export function WeeklyReportPage() {
             fontSize: '0.9rem',
             fontWeight: '500'
           }}
-        >
-          Explore Promise Library
-        </button>
+        >{t('weeklyReport.explorePromiseLibrary')}</button>
       </div>
 
       {/* Weekly Report */}

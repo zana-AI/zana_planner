@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { formatNumber } from '../i18n/format';
 import { useRef, useEffect, useCallback, type CSSProperties } from 'react';
 import './DurationWheelPicker.css';
 
@@ -20,6 +22,7 @@ export function DurationWheelPicker({
   visibleItems = 5,
   className = '',
 }: DurationWheelPickerProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Generate array of numbers
@@ -103,12 +106,12 @@ export function DurationWheelPicker({
               style={{ height: itemHeight }}
               onClick={() => handleItemClick(num)}
             >
-              {num}
+              {formatNumber(num)}
             </div>
           ))}
         </div>
       </div>
-      <div className="wheel-picker-unit">minutes</div>
+      <div className="wheel-picker-unit">{t('focus.minutesUnit')}</div>
     </div>
   );
 }

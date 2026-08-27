@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
@@ -13,6 +14,7 @@ function getDefaultEndDate(): string {
 }
 
 export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalProps) {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const [hoursPerWeek, setHoursPerWeek] = useState('1');
   const [endDate, setEndDate] = useState(getDefaultEndDate);
@@ -27,12 +29,12 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
     const hours = Number(hoursPerWeek);
 
     if (!trimmedText) {
-      setError('Enter a promise.');
+      setError(t('createPromise.enterAPromise'));
       return;
     }
 
     if (!Number.isFinite(hours) || hours <= 0) {
-      setError('Weekly hours must be greater than 0.');
+      setError(t('createPromise.weeklyHoursMustBeGreaterThan0'));
       return;
     }
 
@@ -61,8 +63,8 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content create-promise-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="modal-header">
-          <h2 className="modal-title">New Promise</h2>
-          <button className="modal-close" type="button" onClick={onClose} aria-label="Close new promise dialog" disabled={saving}>
+          <h2 className="modal-title">{t('createPromise.newPromise')}</h2>
+          <button className="modal-close" type="button" onClick={onClose} aria-label={t('createPromise.closeNewPromiseDialog')} disabled={saving}>
             <X size={18} />
           </button>
         </div>
@@ -75,9 +77,7 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
           }}
         >
           <div className="modal-form-group">
-            <label className="modal-label" htmlFor="create-promise-text">
-              Promise
-            </label>
+            <label className="modal-label" htmlFor="create-promise-text">{t('createPromise.promise')}</label>
             <textarea
               id="create-promise-text"
               value={text}
@@ -91,9 +91,7 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
           </div>
 
           <div className="modal-form-group">
-            <label className="modal-label" htmlFor="create-promise-hours">
-              Weekly hours
-            </label>
+            <label className="modal-label" htmlFor="create-promise-hours">{t('createPromise.weeklyHours')}</label>
             <input
               id="create-promise-hours"
               type="number"
@@ -121,9 +119,7 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
           </div>
 
           <div className="modal-form-group">
-            <label className="modal-label" htmlFor="create-promise-visibility">
-              Visibility
-            </label>
+            <label className="modal-label" htmlFor="create-promise-visibility">{t('createPromise.visibility')}</label>
             <select
               id="create-promise-visibility"
               value={visibility}
@@ -131,17 +127,15 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
               className="modal-input"
               disabled={saving}
             >
-              <option value="private">Private</option>
-              <option value="public">Public</option>
+              <option value="private">{t('createPromise.private')}</option>
+              <option value="public">{t('createPromise.public')}</option>
             </select>
           </div>
 
           {error ? <div className="modal-error">{error}</div> : null}
 
           <div className="modal-actions">
-            <button className="modal-button modal-button-secondary" type="button" onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
+            <button className="modal-button modal-button-secondary" type="button" onClick={onClose} disabled={saving}>{t('createPromise.cancel')}</button>
             <button className="modal-button modal-button-primary" type="submit" disabled={saving}>
               {saving ? 'Creating...' : 'Create Promise'}
             </button>

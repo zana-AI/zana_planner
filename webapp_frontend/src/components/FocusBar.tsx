@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '../api/client';
 import type { FocusSession, WeeklyReportData } from '../types';
@@ -9,6 +10,7 @@ interface FocusBarProps {
 }
 
 export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
+  const { t } = useTranslation();
   const [currentSession, setCurrentSession] = useState<FocusSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
@@ -355,42 +357,30 @@ export function FocusBar({ promisesData, onSessionComplete }: FocusBarProps) {
         <div className={`focus-controls ${isFinished ? 'finished' : ''}`}>
           {isRunning ? (
             <>
-              <button className="focus-control-btn pause" onClick={handlePause} disabled={loading}>
-                Pause
-              </button>
-              <button className="focus-control-btn stop" onClick={handleStop} disabled={loading}>
-                Stop
-              </button>
+              <button className="focus-control-btn pause" onClick={handlePause} disabled={loading}>{t('focus.pause')}</button>
+              <button className="focus-control-btn stop" onClick={handleStop} disabled={loading}>{t('focus.stop')}</button>
             </>
           ) : null}
 
           {isPaused ? (
             <>
-              <button className="focus-control-btn resume" onClick={handleResume} disabled={loading}>
-                Resume
-              </button>
-              <button className="focus-control-btn stop" onClick={handleStop} disabled={loading}>
-                Stop
-              </button>
+              <button className="focus-control-btn resume" onClick={handleResume} disabled={loading}>{t('focus.resume')}</button>
+              <button className="focus-control-btn stop" onClick={handleStop} disabled={loading}>{t('focus.stop')}</button>
             </>
           ) : null}
 
           {isFinished ? (
             <>
-              <div className="focus-complete-message">Session complete. Confirmation is sent to your Telegram chat.</div>
+              <div className="focus-complete-message">{t('focus.sessionCompleteConfirmationIsSentToYourTeleg')}</div>
               <div className="focus-finished-actions">
                 {isTelegramMiniApp ? (
-                  <button className="focus-control-btn back-chat" onClick={handleBackToChat} disabled={loading}>
-                    Back to Chat
-                  </button>
+                  <button className="focus-control-btn back-chat" onClick={handleBackToChat} disabled={loading}>{t('focus.backToChat')}</button>
                 ) : null}
                 <button
                   className="focus-control-btn dismiss"
                   onClick={handleDismissFinished}
                   disabled={loading}
-                >
-                  Dismiss
-                </button>
+                >{t('focus.dismiss')}</button>
               </div>
             </>
           ) : null}

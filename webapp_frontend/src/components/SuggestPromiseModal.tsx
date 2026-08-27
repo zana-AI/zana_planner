@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { Library, PenSquare, X } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
@@ -12,6 +13,7 @@ interface SuggestPromiseModalProps {
 }
 
 export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }: SuggestPromiseModalProps) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<'template' | 'freeform'>('template');
   const [templates, setTemplates] = useState<PromiseTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -45,12 +47,12 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
 
   const handleSubmit = async () => {
     if (mode === 'template' && !selectedTemplateId) {
-      setError('Please select a template.');
+      setError(t('suggestPromise.pleaseSelectATemplate'));
       return;
     }
 
     if (mode === 'freeform' && !freeformText.trim()) {
-      setError('Please enter a promise description.');
+      setError(t('suggestPromise.pleaseEnterAPromiseDescription'));
       return;
     }
 
@@ -77,7 +79,7 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to send suggestion.');
+        setError(t('suggestPromise.failedToSendSuggestion'));
       }
     } finally {
       setLoading(false);
@@ -88,8 +90,8 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content suggest-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="modal-header">
-          <h2 className="modal-title">Suggest Promise</h2>
-          <button className="modal-close" type="button" onClick={onClose} aria-label="Close suggest promise dialog">
+          <h2 className="modal-title">{t('suggestPromise.suggestPromise')}</h2>
+          <button className="modal-close" type="button" onClick={onClose} aria-label={t('suggestPromise.closeSuggestPromiseDialog')}>
             <X size={18} />
           </button>
         </div>
@@ -102,12 +104,12 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
           }}
         >
           <div className="modal-form-group">
-            <label className="modal-label">Send to</label>
+            <label className="modal-label">{t('suggestPromise.sendTo')}</label>
             <div className="modal-promise-text">{toUserName}</div>
           </div>
 
           <div className="modal-form-group">
-            <label className="modal-label">Suggestion source</label>
+            <label className="modal-label">{t('suggestPromise.suggestionSource')}</label>
             <div className="suggest-mode-toggle">
               <button
                 type="button"
@@ -115,28 +117,22 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
                 onClick={() => setMode('template')}
                 disabled={loading}
               >
-                <Library size={14} />
-                Template Library
-              </button>
+                <Library size={14} />{t('suggestPromise.templateLibrary')}</button>
               <button
                 type="button"
                 className={`suggest-mode-button ${mode === 'freeform' ? 'active' : ''}`}
                 onClick={() => setMode('freeform')}
                 disabled={loading}
               >
-                <PenSquare size={14} />
-                Custom Text
-              </button>
+                <PenSquare size={14} />{t('suggestPromise.customText')}</button>
             </div>
           </div>
 
           {mode === 'template' ? (
             <div className="modal-form-group">
-              <label className="modal-label" htmlFor="suggest-template-id">
-                Select template
-              </label>
+              <label className="modal-label" htmlFor="suggest-template-id">{t('suggestPromise.selectTemplate')}</label>
               {loadingTemplates ? (
-                <div className="suggest-modal-loading">Loading templates...</div>
+                <div className="suggest-modal-loading">{t('suggestPromise.loadingTemplates')}</div>
               ) : (
                 <select
                   id="suggest-template-id"
@@ -145,7 +141,7 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
                   className="modal-input"
                   disabled={loading}
                 >
-                  <option value="">Select a template</option>
+                  <option value="">{t('suggestPromise.selectATemplate')}</option>
                   {templates.map((template) => (
                     <option key={template.template_id} value={template.template_id}>
                       {template.title}
@@ -156,9 +152,7 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
             </div>
           ) : (
             <div className="modal-form-group">
-              <label className="modal-label" htmlFor="suggest-freeform-text">
-                Promise description
-              </label>
+              <label className="modal-label" htmlFor="suggest-freeform-text">{t('suggestPromise.promiseDescription')}</label>
               <textarea
                 id="suggest-freeform-text"
                 value={freeformText}
@@ -179,7 +173,7 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
               id="suggest-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Add a personal message"
+              placeholder={t('suggestPromise.addAPersonalMessage')}
               rows={2}
               className="modal-input"
               disabled={loading}
@@ -189,15 +183,13 @@ export function SuggestPromiseModal({ toUserId, toUserName, onClose, onSuccess }
           {error ? <div className="modal-error">{error}</div> : null}
 
           <div className="modal-actions">
-            <button className="modal-button modal-button-secondary" type="button" onClick={onClose} disabled={loading}>
-              Cancel
-            </button>
+            <button className="modal-button modal-button-secondary" type="button" onClick={onClose} disabled={loading}>{t('suggestPromise.cancel')}</button>
             <button className="modal-button modal-button-primary" type="submit" disabled={isSubmitDisabled}>
               {loading ? 'Sending...' : 'Send Suggestion'}
             </button>
           </div>
 
-          <p className="suggest-modal-note">Suggestions appear in the recipient's inbox for review.</p>
+          <p className="suggest-modal-note">{t('suggestPromise.suggestionsAppearInTheRecipientSInboxForRevi')}</p>
         </form>
       </div>
     </div>

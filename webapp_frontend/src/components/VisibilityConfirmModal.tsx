@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Globe, Lock } from 'lucide-react';
 
 interface VisibilityConfirmModalProps {
@@ -15,6 +16,7 @@ export function VisibilityConfirmModal({
   onConfirm,
   onCancel,
 }: VisibilityConfirmModalProps) {
+  const { t } = useTranslation();
   if (!isOpen) return null;
 
   const isMakingPublic = newVisibility === 'public';
@@ -46,11 +48,11 @@ export function VisibilityConfirmModal({
             <div className="modal-warning">
               <div className="modal-warning-icon"><Globe size={20} strokeWidth={1.8} /></div>
               <div className="modal-warning-text">
-                <strong>This will:</strong>
+                <strong>{t('visibility.thisWill')}</strong>
                 <ul style={{ margin: '6px 0 0 0', paddingInlineStart: '18px', lineHeight: '1.7' }}>
                   <li>Show your progress in the <strong>community activity feed</strong></li>
                   <li>Add this promise to the <strong>promise template library</strong>, showing your activity on that template</li>
-                  <li>Let others see your streak and progress</li>
+                  <li>{t('visibility.letOthersSeeYourStreakAndProgress')}</li>
                 </ul>
               </div>
             </div>
@@ -70,9 +72,7 @@ export function VisibilityConfirmModal({
               type="button"
               className="modal-button modal-button-secondary"
               onClick={onCancel}
-            >
-              Cancel
-            </button>
+            >{t('visibility.cancel')}</button>
             <button
               type="button"
               className="modal-button modal-button-primary"

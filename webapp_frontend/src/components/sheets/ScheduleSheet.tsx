@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { formatDate } from '../../i18n/format';
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../api/client';
@@ -58,6 +59,7 @@ function splitLocalDateTime(iso: string): { date: string; time: string } | null 
 }
 
 export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose, onSuccess, editSession }: ScheduleSheetProps) {
+  const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [selectedTime, setSelectedTime] = useState('09:00');
@@ -98,7 +100,7 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
   const handleSubmit = async () => {
     if (!selectedDate || !selectedTime) return;
     if (!Number.isFinite(duration) || duration <= 0) {
-      setError('Duration must be greater than 0 minutes');
+      setError(t('schedule.durationMustBeGreaterThan0Minutes'));
       return;
     }
     setIsSubmitting(true);
@@ -114,10 +116,10 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
       };
       if (editSession) {
         await apiClient.updatePlanSession(editSession.id, payload);
-        onSuccess('Session updated');
+        onSuccess(t('schedule.sessionUpdated'));
       } else {
         await apiClient.createPlanSession(promiseId, payload);
-        onSuccess('Session scheduled');
+        onSuccess(t('schedule.sessionScheduled'));
       }
       onClose();
     } catch (err) {
@@ -133,13 +135,13 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
       <input
         type="text"
         className="sched-title-input"
-        placeholder="Planned session"
+        placeholder={t('schedule.plannedSession')}
         value={title}
         onChange={(event) => setTitle(event.target.value)}
         maxLength={120}
       />
 
-      <p className="ds-caption" style={{ marginTop: 12 }}>Date</p>
+      <p className="ds-caption" style={{ marginTop: 12 }}>{t('schedule.date')}</p>
       <input
         type="date"
         className="sched-single-input"
@@ -163,7 +165,7 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
         </div>
       ) : null}
 
-      <p className="ds-caption" style={{ marginTop: 12 }}>Time</p>
+      <p className="ds-caption" style={{ marginTop: 12 }}>{t('schedule.time')}</p>
       <input
         type="time"
         className="sched-single-input"
@@ -183,7 +185,7 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
         ))}
       </div>
 
-      <p className="ds-caption" style={{ marginTop: 12 }}>Duration</p>
+      <p className="ds-caption" style={{ marginTop: 12 }}>{t('schedule.duration')}</p>
       <div className="sched-chip-row">
         {DURATION_PRESETS.map((preset) => (
           <button
@@ -207,7 +209,7 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
             if (Number.isFinite(next) && next > 0) setDuration(next);
             else if (event.target.value === '') setDuration(DEFAULT_DURATION);
           }}
-          aria-label="Custom duration in minutes"
+          aria-label={t('schedule.customDurationInMinutes')}
         />
       </div>
 
@@ -217,9 +219,7 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
             type="checkbox"
             checked={reminderEnabled}
             onChange={(event) => setReminderEnabled(event.target.checked)}
-          />
-          Reminder
-        </label>
+          />{t('schedule.reminder')}</label>
         <select
           value={reminderOffset}
           disabled={!reminderEnabled}

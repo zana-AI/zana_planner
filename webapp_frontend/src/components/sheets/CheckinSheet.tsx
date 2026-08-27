@@ -36,11 +36,9 @@ export function CheckinSheet({ open, promiseId, promiseText, onClose, onSuccess 
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Check in" subtitle={promiseText}>
+    <BottomSheet open={open} onClose={onClose} title={t('checkin.checkIn2')} subtitle={promiseText}>
       <button type="button" className="btn-checkin" onClick={handleSubmit} disabled={isSubmitting}>
-        <span className="circle">✓</span>
-        Mark today complete
-      </button>
+        <span className="circle">✓</span>{t('checkin.markTodayComplete')}</button>
       {error ? <p className="ds-caption" style={{ color: 'var(--bad-500)', marginTop: 8 }}>{error}</p> : null}
     </BottomSheet>
   );

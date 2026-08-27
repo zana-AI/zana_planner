@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Ref } from 'react';
 import type { PopoverPosition, SelectionDraft } from './types';
 
@@ -20,6 +21,7 @@ export function HighlightPopover({
   onSave,
   onCancel,
 }: HighlightPopoverProps) {
+  const { t } = useTranslation();
   return (
     <div
       ref={popoverRef}
@@ -39,22 +41,18 @@ export function HighlightPopover({
       <textarea
         value={draft.note}
         onChange={(event) => onNoteChange(event.target.value)}
-        placeholder="Add note (optional)"
+        placeholder={t('pdfReader.addNoteOptional')}
         rows={2}
       />
       <div className="pdf-reader-selection-actions">
         <input
-          aria-label="Highlight color"
+          aria-label={t('pdfReader.highlightColor')}
           type="color"
           value={draft.color}
           onChange={(event) => onColorChange(event.target.value)}
         />
-        <button type="button" onClick={onSave}>
-          Highlight
-        </button>
-        <button type="button" onClick={onCancel}>
-          Cancel
-        </button>
+        <button type="button" onClick={onSave}>{t('pdfReader.highlight')}</button>
+        <button type="button" onClick={onCancel}>{t('pdfReader.cancel')}</button>
       </div>
     </div>
   );

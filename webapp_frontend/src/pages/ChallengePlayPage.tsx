@@ -145,9 +145,7 @@ export function ChallengePlayPage() {
       <div style={{ textAlign: 'center', padding: '48px 16px', color: textSecondary }}>
         <div className="error-icon">!</div>
         <p style={{ marginTop: 12 }}>{errorMsg}</p>
-        <button className="retry-button" onClick={() => navigate('/challenges')}>
-          Back to challenges
-        </button>
+        <button className="retry-button" onClick={() => navigate('/challenges')}>{t('challenges.backToChallenges')}</button>
       </div>,
     );
   }
@@ -245,9 +243,7 @@ export function ChallengePlayPage() {
             fontWeight: 700,
             cursor: 'pointer',
           }}
-        >
-          Done
-        </button>
+        >{t('challenges.done')}</button>
         {Leaderboard}
       </div>,
     );
@@ -303,11 +299,9 @@ export function ChallengePlayPage() {
           revealed ? (
             <div style={{ display: 'flex', gap: 10 }}>
               <button type="button" onClick={() => recordAndAdvance('didnt')} style={choiceBtn('#3A2230', '#F0997B')}>
-                <X size={16} /> Didn't know
-              </button>
+                <X size={16} />{t('challenges.didnTKnow')}</button>
               <button type="button" onClick={() => recordAndAdvance('knew')} style={choiceBtn('#10302A', accent)}>
-                <Check size={16} /> Knew it
-              </button>
+                <Check size={16} />{t('challenges.knewIt')}</button>
             </div>
           ) : (
             <button
@@ -331,8 +325,7 @@ export function ChallengePlayPage() {
                 gap: 8,
               }}
             >
-              <RotateCcw size={16} /> Show answer
-            </button>
+              <RotateCcw size={16} />{t('challenges.showAnswer')}</button>
           )
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>

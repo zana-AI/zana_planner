@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import type { PlanSession, PlanSessionIn } from '../types';
 import { apiClient } from '../api/client';
@@ -39,6 +40,7 @@ const EMPTY_FORM: PlanSessionIn = {
 
 export const PlanSessionsList = forwardRef<PlanSessionsListRef, PlanSessionsListProps>(
 function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: PlanSessionsListProps, ref) {
+  const { t } = useTranslation();
   const [sessions, setSessions] = useState<PlanSession[]>(externalSessions ?? []);
   const [loading, setLoading] = useState(!externalSessions);
   const [error, setError] = useState<string | null>(null);
@@ -264,7 +266,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
           <button
             onClick={() => handleDelete(session.id)}
             style={{ fontSize: 12, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}
-            title="Delete session"
+            title={t('planSessions.deleteSession')}
           >
             ✕
           </button>
@@ -322,7 +324,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
       )}
 
       {sessions.length === 0 && !showForm && (
-        <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>No sessions yet.</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>{t('planSessions.noSessionsYet')}</div>
       )}
 
       {renderGroup('Planned', planned, 'var(--accent)')}
@@ -337,7 +339,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
         >
           <div style={{ marginBottom: 8 }}>
             <input
-              placeholder="Title (optional)"
+              placeholder={t('planSessions.titleOptional')}
               value={form.title ?? ''}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               style={{ width: '100%', fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(9,15,31,0.7)', color: 'var(--text)', boxSizing: 'border-box' }}
@@ -352,7 +354,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
             />
             <input
               type="number"
-              placeholder="Duration (min)"
+              placeholder={t('planSessions.durationMin')}
               value={form.planned_duration_min ?? ''}
               onChange={e => setForm(f => ({ ...f, planned_duration_min: e.target.value ? Number(e.target.value) : undefined }))}
               style={{ width: 130, fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid rgba(232,238,252,0.18)', background: 'rgba(9,15,31,0.7)', color: 'var(--text)' }}
@@ -361,7 +363,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
           </div>
           <div style={{ marginBottom: 8 }}>
             <textarea
-              placeholder="Notes (optional)"
+              placeholder={t('planSessions.notesOptional')}
               value={form.notes ?? ''}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               rows={2}
@@ -382,7 +384,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
           )}
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             <input
-              placeholder="Add checklist item…"
+              placeholder={t('planSessions.addChecklistItem')}
               value={newItemText}
               onChange={e => setNewItemText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } }}
@@ -403,9 +405,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
               type="button"
               onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setNewItemText(''); }}
               style={{ fontSize: 13, padding: '5px 14px', borderRadius: 4, background: 'rgba(232,238,252,0.06)', border: '1px solid rgba(232,238,252,0.14)', color: 'var(--text)', cursor: 'pointer' }}
-            >
-              Cancel
-            </button>
+            >{t('planSessions.cancel')}</button>
           </div>
         </form>
       ) : (

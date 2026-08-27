@@ -15,7 +15,8 @@
     "delete": "حذف",
     "edit": "ویرایش",
     "done": "انجام شد",
-    "noneYet": "هنوز هیچ"
+    "noneYet": "هنوز هیچ",
+    "reload": "بارگذاری دوباره"
   },
   "nav": {
     "primary": "ناوبری اصلی",
@@ -106,7 +107,8 @@
     "disabled": "خاموش",
     "voiceModeEnabled": "حالت صوتی روشن شد.",
     "voiceModeDisabled": "حالت صوتی خاموش شد.",
-    "loadFailed": "بارگذاری تنظیمات انجام نشد."
+    "loadFailed": "بارگذاری تنظیمات انجام نشد.",
+    "enterYourDisplayName": "نام نمایشی خود را بنویسید"
   },
   "language": {
     "en": "English",
@@ -141,7 +143,14 @@
     "authFailed": "احراز هویت ناموفق بود. لطفاً دوباره وارد شوید.",
     "loadFailed": "بارگذاری داشبورد انجام نشد. لطفاً دوباره تلاش کنید.",
     "hoursOfHours": "{{spent}} از {{promised}} ساعت",
-    "tasksThisWeek": "{{count, num}} این هفته"
+    "tasksThisWeek": "{{count, num}} این هفته",
+    "community": "اجتماع",
+    "activeUsersOnXaana": "کاربران فعال Xaana",
+    "viewSuggestions": "دیدن پیشنهادها",
+    "exploreCommunity": "گشتن در اجتماع",
+    "back": "بازگشت",
+    "noUsersFound": "کاربری پیدا نشد",
+    "loading": "در حال بارگذاری…"
   },
   "promise": {
     "noTime": "بدون زمان",
@@ -162,7 +171,12 @@
     "deleteSession": "حذف جلسه",
     "todayAt": "امروز ساعت {{time}}",
     "tomorrowAt": "فردا ساعت {{time}}",
-    "tomorrowShortAt": "فردا {{time}}"
+    "tomorrowShortAt": "فردا {{time}}",
+    "scheduledSessions": "جلسه‌های زمان‌بندی‌شده",
+    "checkIn": "ثبت انجام",
+    "log": "ثبت",
+    "schedule": "زمان‌بندی",
+    "edit": "ویرایش"
   },
   "play": {
     "ready": "آماده",
@@ -173,11 +187,21 @@
     "logThatYouDidIt": "ثبت کنید که انجامش دادید",
     "startFocus": "شروع تمرکز",
     "thingsWaiting_one": "{{count, num}} مورد در انتظار",
-    "thingsWaiting_other": "{{count, num}} مورد در انتظار"
+    "thingsWaiting_other": "{{count, num}} مورد در انتظار",
+    "nothingIsWaitingRightNowAddAPromiseOrComeBac": "الان کاری در انتظار نیست. قولی اضافه کنید، یا فردا سر بزنید.",
+    "seeAllPromises": "دیدن همهٔ قول‌ها",
+    "play": "شروع"
   },
   "checkin": {
     "checkedIn": "ثبت شد",
-    "failed": "ثبت انجام نشد"
+    "failed": "ثبت انجام نشد",
+    "checkIn": "ثبت انجام",
+    "promise": "قول",
+    "date": "تاریخ",
+    "time": "زمان",
+    "cancel": "انصراف",
+    "markTodayComplete": "امروز را انجام‌شده علامت بزن",
+    "checkIn2": "ثبت انجام"
   },
   "logTime": {
     "hours": "ساعت",
@@ -186,10 +210,23 @@
     "invalidHours": "یک عدد معتبر برای ساعت وارد کنید",
     "failed": "ثبت زمان انجام نشد",
     "logging": "در حال ثبت…",
-    "saveLog": "ذخیرهٔ ثبت"
+    "saveLog": "ذخیرهٔ ثبت",
+    "logTime": "ثبت زمان"
   },
   "weeklyReport": {
-    "weekOf": "هفتهٔ {{range}}"
+    "weekOf": "هفتهٔ {{range}}",
+    "promises": "قول‌ها",
+    "totals": "جمع کل",
+    "overallProgress": "پیشرفت کلی",
+    "newPromise": "قول تازه",
+    "addACustomWeeklyCommitment": "افزودن تعهد هفتگی دلخواه",
+    "noDataAvailableForThisWeek": "برای این هفته داده‌ای نیست",
+    "loadingYourWeeklyReport": "در حال بارگذاری گزارش هفتگی شما…",
+    "somethingWentWrong": "مشکلی پیش آمد",
+    "tryAgain": "تلاش دوباره",
+    "explorePromiseLibrary": "کتابخانهٔ قول‌ها",
+    "authenticationFailedPleaseLogInAgain": "احراز هویت ناموفق بود. لطفاً دوباره وارد شوید.",
+    "failedToLoadYourWeeklyReportPleaseTryAgain": "بارگذاری گزارش هفتگی شما انجام نشد. لطفاً دوباره تلاش کنید."
   },
   "activity": {
     "recently": "اخیراً",
@@ -205,7 +242,8 @@
     "thisWeek_one": "{{count, num}} فعالیت این هفته",
     "thisWeek_other": "{{count, num}} فعالیت این هفته",
     "lastActivity": "آخرین فعالیت {{when}}",
-    "noActivity": "هنوز فعالیتی نیست"
+    "noActivity": "هنوز فعالیتی نیست",
+    "profile": "نمایه"
   },
   "challenges": {
     "loading": "در حال بارگذاری چالش‌ها…",
@@ -219,7 +257,12 @@
     "noNewSets": "فعلاً مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
     "noNewSetsIn": "فعلاً در {{title}} مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
     "correctOfTotal": "{{correct, num}} از {{total, num}} درست",
-    "dayStreak": "{{count, num}} روز پیاپی"
+    "dayStreak": "{{count, num}} روز پیاپی",
+    "backToChallenges": "بازگشت به چالش‌ها",
+    "done": "تمام",
+    "didnTKnow": "بلد نبودم",
+    "knewIt": "بلد بودم",
+    "showAnswer": "نمایش پاسخ"
   },
   "flashcards": {
     "tryAgain": "تلاش دوباره",
@@ -251,13 +294,20 @@
     "study": "مطالعه",
     "loadFailed": "کارت‌های شما بارگذاری نشد.",
     "ratingFailed": "امتیاز شما ذخیره نشد.",
-    "reviewTab": "مرور"
+    "reviewTab": "مرور",
+    "showAnswer": "نمایش پاسخ",
+    "editingTheContentWonTResetThisCardSSchedule": "ویرایش محتوا زمان‌بندی این کارت را از نو تنظیم نمی‌کند.",
+    "cancel": "انصراف"
   },
   "templates": {
     "loading": "در حال بارگذاری کتابخانهٔ قول‌ها…",
     "loadFailed": "بارگذاری الگوها انجام نشد",
     "emptyTitle": "هنوز عادتی نیست",
-    "emptySubtitle": "به‌زودی عادت‌های آماده برای شروع اینجا خواهند بود."
+    "emptySubtitle": "به‌زودی عادت‌های آماده برای شروع اینجا خواهند بود.",
+    "quiz": "آزمون",
+    "vocab": "واژگان",
+    "challenges": "چالش‌ها",
+    "quickStartHabits": "عادت‌های آمادهٔ شروع"
   },
   "community": {
     "loading": "در حال بارگذاری اجتماع…",
@@ -273,7 +323,24 @@
     "private": "خصوصی",
     "public": "عمومی",
     "perWeek": "در هفته",
-    "creating": "در حال ساخت…"
+    "creating": "در حال ساخت…",
+    "tryAgain": "تلاش دوباره",
+    "discoverActiveUsers": "کشف کاربران فعال",
+    "youAreAlreadyConnectedWithMostActiveUsers": "شما از پیش با بیشتر کاربران فعال در ارتباط هستید.",
+    "following": "دنبال‌شده‌ها",
+    "loadingFollowing": "در حال بارگذاری دنبال‌شده‌ها…",
+    "notFollowingAnyoneYet": "هنوز کسی را دنبال نمی‌کنید.",
+    "followers": "دنبال‌کننده‌ها",
+    "loadingFollowers": "در حال بارگذاری دنبال‌کننده‌ها…",
+    "noFollowersYet": "هنوز دنبال‌کننده‌ای ندارید.",
+    "recentActivity": "فعالیت‌های اخیر",
+    "loadingRecentActivity": "در حال بارگذاری فعالیت‌های اخیر…",
+    "noRecentPublicActivityYet": "هنوز فعالیت عمومی تازه‌ای نیست",
+    "followActiveUsersToPersonalizeThisStream": "کاربران فعال را دنبال کنید تا این فهرست به سلیقهٔ شما نزدیک شود.",
+    "close": "بستن",
+    "tennisFriends": "دوستان تنیس",
+    "playTennis": "تنیس بازی کن",
+    "failedToLoadCommunityPleaseTryAgain": "بارگذاری اجتماع انجام نشد. لطفاً دوباره تلاش کنید."
   },
   "club": {
     "onTrack": "در مسیر",
@@ -285,6 +352,298 @@
     "member": "عضو",
     "lead": "پیشتاز: {{name}}",
     "openLeaderboard": "جدول باز",
-    "rolling7d": "۷ روز اخیر"
+    "rolling7d": "۷ روز اخیر",
+    "clubProgress": "پیشرفت باشگاه",
+    "leaderboard": "جدول رده‌بندی",
+    "loadingLeaderboard": "در حال بارگذاری جدول رده‌بندی…",
+    "noLeaderboardActivityYet": "هنوز فعالیتی برای جدول رده‌بندی نیست.",
+    "pending": "در انتظار",
+    "manage": "مدیریت",
+    "openClubSettings": "باز کردن تنظیمات باشگاه"
+  },
+  "banner": {
+    "happyNewYear2026StartAchievingYourGoalsWithX": "سال نو ۲۰۲۶ مبارک! رسیدن به هدف‌هایتان را با Xaana شروع کنید",
+    "dismissBanner": "بستن اعلان"
+  },
+  "calendar": {
+    "googleCalendar": "تقویم گوگل",
+    "opensAPreFilledEvent": "یک رویداد از پیش پرشده باز می‌کند",
+    "appleOtherCalendar": "تقویم اپل یا تقویم دیگر",
+    "downloadsAnIcsFile": "یک فایل ‎.ics دانلود می‌کند",
+    "addToCalendar": "افزودن به تقویم"
+  },
+  "clubDetail": {
+    "loadingClub": "در حال بارگذاری باشگاه…",
+    "clubNotFound": "باشگاه پیدا نشد",
+    "promise": "قول",
+    "edit": "ویرایش",
+    "delete": "حذف",
+    "cancel": "انصراف",
+    "noPromiseSetYet": "هنوز قولی تعیین نشده است.",
+    "dailyReminder": "یادآور روزانه",
+    "reminderTime": "زمان یادآور",
+    "inYourLocalTimezoneUnlessAClubTimezoneIsSetB": "به وقت محلی شما، مگر آنکه در پایین وقت باشگاه تعیین شود.",
+    "botLanguage": "زبان ربات",
+    "theLanguageXaanaUsesInThisGroupSChat": "زبانی که Xaana در گفت‌وگوی این گروه به کار می‌برد.",
+    "clubTimezone": "منطقهٔ زمانی باشگاه",
+    "leaderboardImageTime": "زمان ارسال تصویر جدول",
+    "tellXaanaAboutThisClub": "دربارهٔ این باشگاه به Xaana بگویید",
+    "description": "توضیح",
+    "goal": "هدف",
+    "vibe": "حال‌وهوا",
+    "checkIn": "ثبت انجام",
+    "noXaanaContextYet": "هنوز اطلاعاتی برای Xaana ثبت نشده است.",
+    "advancedFields": "تنظیمات پیشرفته",
+    "whatCountsAsACheckIn": "چه چیزی ثبت انجام حساب می‌شود",
+    "joinTelegram": "عضویت در تلگرام",
+    "invite": "دعوت",
+    "whatWillTheGroupDo": "گروه قرار است چه کار کند؟",
+    "timesPerWeek": "دفعات در هفته",
+    "clubIdIsRequired": "شناسهٔ باشگاه الزامی است"
+  },
+  "clubProfile": {
+    "goToXaana": "رفتن به Xaana",
+    "today": "امروز",
+    "signInWithTelegramToStart": "برای شروع با تلگرام وارد شوید.",
+    "thisWeek": "این هفته",
+    "about": "درباره",
+    "keptByXaana": "با پیگیری Xaana",
+    "clubLinks": "پیوندهای باشگاه",
+    "leaderboard": "جدول رده‌بندی",
+    "thisClubPageIsNotAvailable": "این صفحهٔ باشگاه در دسترس نیست."
+  },
+  "content": {
+    "open": "باز کردن",
+    "more": "بیشتر"
+  },
+  "createPromise": {
+    "newPromise": "قول تازه",
+    "promise": "قول",
+    "weeklyHours": "ساعت در هفته",
+    "visibility": "دیده‌شدن",
+    "private": "خصوصی",
+    "public": "عمومی",
+    "cancel": "انصراف",
+    "closeNewPromiseDialog": "بستن پنجرهٔ قول تازه",
+    "enterAPromise": "یک قول بنویسید.",
+    "weeklyHoursMustBeGreaterThan0": "ساعت هفتگی باید بیشتر از صفر باشد."
+  },
+  "editPromise": {
+    "promiseTitle": "عنوان قول",
+    "endDate": "تاریخ پایان",
+    "publicVisibility": "نمایش عمومی",
+    "repeatWeekly": "تکرار هفتگی",
+    "cancel": "انصراف",
+    "editPromise": "ویرایش قول",
+    "whatAreYouCommittingTo": "به چه چیزی متعهد می‌شوید؟"
+  },
+  "focus": {
+    "pause": "مکث",
+    "stop": "توقف",
+    "resume": "ادامه",
+    "sessionCompleteConfirmationIsSentToYourTeleg": "جلسه تمام شد. تأیید آن به گفت‌وگوی تلگرام شما فرستاده شد.",
+    "backToChat": "بازگشت به گفت‌وگو",
+    "dismiss": "بستن",
+    "finish": "پایان",
+    "focus": "تمرکز",
+    "loadingPromises": "در حال بارگذاری قول‌ها…",
+    "selectPromise": "قول را انتخاب کنید:",
+    "duration": "مدت:",
+    "cancel": "انصراف",
+    "failedToLoadPromisesPleaseTryAgain": "بارگذاری قول‌ها انجام نشد. لطفاً دوباره تلاش کنید.",
+    "pleaseSelectAPromise": "لطفاً یک قول انتخاب کنید",
+    "failedToStartFocusSession": "شروع جلسهٔ تمرکز انجام نشد",
+    "chooseAPromise": "— یک قول انتخاب کنید —",
+    "starting": "در حال شروع…",
+    "startFocusSession": "شروع جلسهٔ تمرکز",
+    "minutes": "{{count, num}} دقیقه",
+    "minutesUnit": "دقیقه"
+  },
+  "logAction": {
+    "logTime": "ثبت زمان",
+    "promise": "قول",
+    "date": "تاریخ",
+    "time": "زمان",
+    "cancel": "انصراف",
+    "addAnyNotesAboutThisSession": "اگر یادداشتی دربارهٔ این جلسه دارید بنویسید…",
+    "pleaseEnterAValidPositiveNumberOfHours": "لطفاً یک عدد مثبت و معتبر برای ساعت وارد کنید"
+  },
+  "login": {
+    "loadingLogin": "در حال بارگذاری ورود…",
+    "unableToLoadTelegramLoginBotUsernameNotAvail": "ورود با تلگرام بارگذاری نشد؛ نام کاربری ربات در دسترس نیست.",
+    "pleaseCheckServerConfigurationOrTryAgainLate": "لطفاً تنظیمات سرور را بررسی کنید یا بعداً دوباره تلاش کنید."
+  },
+  "myContents": {
+    "filters": "فیلترها",
+    "sort": "ترتیب",
+    "clear": "پاک کردن",
+    "loadingLibrary": "در حال بارگذاری کتابخانه…",
+    "noContentHereYet": "هنوز محتوایی اینجا نیست",
+    "pasteALinkAboveOrClearFiltersToBroadenTheLib": "پیوندی را در بالا بچسبانید، یا فیلترها را پاک کنید تا کتابخانه گسترده‌تر شود.",
+    "clearFilters": "پاک کردن فیلترها",
+    "pasteAPdfYoutubeArticleOrPodcastUrl": "نشانی یک پی‌دی‌اف، یوتیوب، مقاله یا پادکست را بچسبانید",
+    "searchYourLibrary": "جست‌وجو در کتابخانه",
+    "libraryStatusFilters": "فیلترهای وضعیت کتابخانه",
+    "libraryTypeFilters": "فیلترهای نوع کتابخانه",
+    "libraryItems": "موارد کتابخانه",
+    "failedToLoadLibrary": "بارگذاری کتابخانه انجام نشد",
+    "failedToUpdateContent": "به‌روزرسانی محتوا انجام نشد"
+  },
+  "pdfReader": {
+    "loadingPdf": "در حال بارگذاری پی‌دی‌اف…",
+    "rendering": "در حال آماده‌سازی…",
+    "tapEdgesToTurnPage": "برای ورق زدن، کناره‌ها را لمس کنید",
+    "pdfUrlUnavailable": "نشانی پی‌دی‌اف در دسترس نیست.",
+    "highlights": "هایلایت‌ها",
+    "openPage": "باز کردن صفحه",
+    "delete": "حذف",
+    "selectTextInThePdfToSaveAHighlight": "برای ذخیرهٔ هایلایت، متنی را در پی‌دی‌اف انتخاب کنید.",
+    "backToLibrary": "بازگشت به کتابخانه",
+    "previousPage": "صفحهٔ قبل",
+    "jumpToPage": "پرش به صفحه",
+    "nextPage": "صفحهٔ بعد",
+    "zoomOut": "کوچک‌نمایی",
+    "zoomIn": "بزرگ‌نمایی",
+    "fitWidth": "اندازهٔ عرض صفحه",
+    "more": "بیشتر",
+    "pdfHighlights": "هایلایت‌های پی‌دی‌اف",
+    "closeHighlights": "بستن هایلایت‌ها",
+    "failedToSyncReadingProgress": "هم‌گام‌سازی پیشرفت مطالعه انجام نشد",
+    "failedToOpenPdf": "باز کردن پی‌دی‌اف انجام نشد",
+    "telegramDidNotProvideAuthenticationDataPleas": "تلگرام اطلاعات ورود را نفرستاد. لطفاً دوباره از دکمهٔ ربات وارد شوید.",
+    "failedToRenderPdfPage": "نمایش صفحهٔ پی‌دی‌اف انجام نشد",
+    "failedToSyncReadCoverage": "هم‌گام‌سازی میزان مطالعه انجام نشد",
+    "failedToSaveSelectedHighlight": "ذخیرهٔ هایلایت انتخاب‌شده انجام نشد",
+    "failedToDeleteHighlight": "حذف هایلایت انجام نشد",
+    "highlight": "هایلایت",
+    "cancel": "انصراف",
+    "addNoteOptional": "افزودن یادداشت (اختیاری)",
+    "highlightColor": "رنگ هایلایت"
+  },
+  "planSessions": {
+    "noSessionsYet": "هنوز جلسه‌ای نیست.",
+    "cancel": "انصراف",
+    "deleteSession": "حذف جلسه",
+    "titleOptional": "عنوان (اختیاری)",
+    "durationMin": "مدت (دقیقه)",
+    "notesOptional": "یادداشت (اختیاری)",
+    "addChecklistItem": "افزودن مورد به فهرست…"
+  },
+  "promiseCard": {
+    "budget": "سقف",
+    "edit": "ویرایش",
+    "promiseTitle": "عنوان قول",
+    "endDate": "تاریخ پایان",
+    "publicVisibility": "نمایش عمومی",
+    "repeatWeekly": "تکرار هفتگی",
+    "reminders": "یادآورها",
+    "loadingReminders": "در حال بارگذاری یادآورها…",
+    "remove": "حذف",
+    "saveReminders": "ذخیرهٔ یادآورها",
+    "cancel": "انصراف",
+    "notesForThisWeek": "یادداشت‌های این هفته",
+    "noNotesForThisWeekOpenEditToModifyThisPromis": "برای این هفته یادداشتی نیست. برای تغییر این قول، ویرایش را باز کنید.",
+    "plannedSessions": "جلسه‌های برنامه‌ریزی‌شده",
+    "today": "امروز",
+    "tomorrow": "فردا",
+    "reminder": "یادآور",
+    "logs": "ثبت‌ها",
+    "goToClub": "رفتن به باشگاه",
+    "editPromise": "ویرایش قول",
+    "enterPromiseTitle": "عنوان قول را بنویسید",
+    "title": "عنوان",
+    "notes": "یادداشت",
+    "titleOptional": "عنوان (اختیاری)",
+    "notesOptional": "یادداشت (اختیاری)",
+    "viewLogsForThisWeek": "دیدن ثبت‌های این هفته",
+    "checkIn": "ثبت انجام",
+    "logTimeSpent": "ثبت زمان صرف‌شده",
+    "addPlannedSession": "افزودن جلسهٔ برنامه‌ریزی‌شده",
+    "earnedFromQuizzesAndReviewsThisWeek": "به‌دست‌آمده از آزمون‌ها و مرورهای این هفته"
+  },
+  "promiseDelete": {
+    "deletePromise": "حذف قول",
+    "areYouSureYouWantToDeleteThisPromise": "از حذف این قول مطمئنید؟",
+    "thisActionCannotBeUndone": "این کار برگشت‌پذیر نیست.",
+    "cancel": "انصراف",
+    "close": "بستن"
+  },
+  "promiseLogs": {
+    "loadingLogs": "در حال بارگذاری ثبت‌ها…",
+    "noLogsYetForThisPromise": "هنوز برای این قول ثبتی نیست."
+  },
+  "schedule": {
+    "date": "تاریخ",
+    "time": "زمان",
+    "duration": "مدت",
+    "reminder": "یادآور",
+    "plannedSession": "جلسهٔ برنامه‌ریزی‌شده",
+    "customDurationInMinutes": "مدت دلخواه به دقیقه",
+    "durationMustBeGreaterThan0Minutes": "مدت باید بیشتر از صفر دقیقه باشد",
+    "sessionUpdated": "جلسه به‌روزرسانی شد",
+    "sessionScheduled": "جلسه زمان‌بندی شد"
+  },
+  "suggestPromise": {
+    "suggestPromise": "پیشنهاد قول",
+    "sendTo": "ارسال به",
+    "suggestionSource": "منبع پیشنهاد",
+    "templateLibrary": "کتابخانهٔ الگوها",
+    "customText": "متن دلخواه",
+    "selectTemplate": "انتخاب الگو",
+    "loadingTemplates": "در حال بارگذاری الگوها…",
+    "selectATemplate": "یک الگو انتخاب کنید",
+    "promiseDescription": "شرح قول",
+    "cancel": "انصراف",
+    "suggestionsAppearInTheRecipientSInboxForRevi": "پیشنهادها برای بررسی در صندوق گیرنده نمایش داده می‌شوند.",
+    "closeSuggestPromiseDialog": "بستن پنجرهٔ پیشنهاد قول",
+    "addAPersonalMessage": "یک پیام شخصی بنویسید",
+    "pleaseSelectATemplate": "لطفاً یک الگو انتخاب کنید.",
+    "pleaseEnterAPromiseDescription": "لطفاً شرح قول را بنویسید.",
+    "failedToSendSuggestion": "ارسال پیشنهاد انجام نشد."
+  },
+  "suggestions": {
+    "loadingSuggestions": "در حال بارگذاری پیشنهادها…",
+    "retry": "تلاش دوباره",
+    "noPendingSuggestions": "پیشنهاد در انتظاری نیست",
+    "templateBasedPromise": "قول بر پایهٔ الگو",
+    "promiseSuggestion": "پیشنهاد قول",
+    "failedToLoadSuggestions": "بارگذاری پیشنهادها انجام نشد",
+    "failedToAcceptSuggestion": "پذیرفتن پیشنهاد انجام نشد",
+    "failedToDeclineSuggestion": "رد کردن پیشنهاد انجام نشد"
+  },
+  "templateDetail": {
+    "loadingTemplate": "در حال بارگذاری الگو…",
+    "templateNotFound": "الگو پیدا نشد",
+    "publicVisibility": "نمایش عمومی",
+    "failedToLoadTemplate": "بارگذاری الگو انجام نشد"
+  },
+  "timezonePage": {
+    "useDetected": "استفاده از موقعیت شناسایی‌شده",
+    "selectFromCommonTimezones": "از میان منطقه‌های زمانی پرکاربرد انتخاب کنید:",
+    "timezoneUpdatedSuccessfullyRedirecting": "منطقهٔ زمانی به‌روزرسانی شد. در حال انتقال…",
+    "cancel": "انصراف",
+    "pleaseSelectOrEnterATimezone": "لطفاً یک منطقهٔ زمانی انتخاب یا وارد کنید",
+    "failedToUpdateTimezonePleaseTryAgain": "به‌روزرسانی منطقهٔ زمانی انجام نشد. لطفاً دوباره تلاش کنید.",
+    "loading": "در حال بارگذاری…"
+  },
+  "userDetail": {
+    "loadingUserProfile": "در حال بارگذاری نمایه…",
+    "userNotFound": "کاربر پیدا نشد",
+    "suggestPromise": "پیشنهاد قول",
+    "publicPromises": "قول‌های عمومی",
+    "noPublicPromisesYet": "هنوز قول عمومی‌ای نیست",
+    "userIdIsRequired": "شناسهٔ کاربر الزامی است",
+    "failedToLoadUser": "بارگذاری کاربر انجام نشد"
+  },
+  "visibility": {
+    "thisWill": "این کار:",
+    "letOthersSeeYourStreakAndProgress": "به دیگران اجازه می‌دهد پیوستگی و پیشرفت شما را ببینند",
+    "cancel": "انصراف"
+  },
+  "weeklyNote": {
+    "weeklyNote": "یادداشت هفتگی",
+    "promise": "قول",
+    "cancel": "انصراف",
+    "howDidThisWeekGoWhatDidYouLearn": "این هفته چطور گذشت؟ چه چیزی یاد گرفتید؟"
   }
 }

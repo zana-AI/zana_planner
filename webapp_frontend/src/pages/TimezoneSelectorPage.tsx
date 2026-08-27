@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
@@ -27,6 +28,7 @@ const TIMEZONES = [
 ];
 
 export function TimezoneSelectorPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [currentTimezone, setCurrentTimezone] = useState<string>('');
@@ -86,7 +88,7 @@ export function TimezoneSelectorPage() {
     const tzToSave = customTimezone.trim() || selectedTimezone;
     
     if (!tzToSave) {
-      setError('Please select or enter a timezone');
+      setError(t('timezonePage.pleaseSelectOrEnterATimezone'));
       return;
     }
 
@@ -115,7 +117,7 @@ export function TimezoneSelectorPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to update timezone');
       } else {
-        setError('Failed to update timezone. Please try again.');
+        setError(t('timezonePage.failedToUpdateTimezonePleaseTryAgain'));
       }
       hapticFeedback('error');
     } finally {
@@ -128,7 +130,7 @@ export function TimezoneSelectorPage() {
       <div className="page-container">
         <div className="loading">
           <div className="loading-spinner" />
-          <div className="loading-text">Loading...</div>
+          <div className="loading-text">{t('timezonePage.loading')}</div>
         </div>
       </div>
     );
@@ -154,14 +156,12 @@ export function TimezoneSelectorPage() {
                 setCustomTimezone('');
               }}
               disabled={saving}
-            >
-              Use Detected
-            </Button>
+            >{t('timezonePage.useDetected')}</Button>
           </div>
         )}
 
         <div className="timezone-groups">
-          <h3>Select from common timezones:</h3>
+          <h3>{t('timezonePage.selectFromCommonTimezones')}</h3>
           {TIMEZONES.map(({ group, zones }) => (
             <div key={group} className="timezone-group">
               <h4>{group}</h4>
@@ -209,9 +209,7 @@ export function TimezoneSelectorPage() {
         )}
 
         {success && (
-          <div className="success-message">
-            Timezone updated successfully. Redirecting...
-          </div>
+          <div className="success-message">{t('timezonePage.timezoneUpdatedSuccessfullyRedirecting')}</div>
         )}
 
         <div className="timezone-actions">
@@ -220,9 +218,7 @@ export function TimezoneSelectorPage() {
             size="md"
             onClick={() => navigate('/settings', { replace: true })}
             disabled={saving}
-          >
-            Cancel
-          </Button>
+          >{t('timezonePage.cancel')}</Button>
           <Button
             variant="primary"
             size="md"

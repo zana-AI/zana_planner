@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { apiClient, ApiError } from '../api/client';
 import type { PromiseSuggestion } from '../types';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 
 export function SuggestionsInbox() {
+  const { t } = useTranslation();
   const { hapticFeedback } = useTelegramWebApp();
   const [suggestions, setSuggestions] = useState<PromiseSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +27,7 @@ export function SuggestionsInbox() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to load suggestions');
+        setError(t('suggestions.failedToLoadSuggestions'));
       }
     } finally {
       setLoading(false);
@@ -49,7 +51,7 @@ export function SuggestionsInbox() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to accept suggestion');
+        setError(t('suggestions.failedToAcceptSuggestion'));
       }
     } finally {
       setProcessing(prev => {
@@ -77,7 +79,7 @@ export function SuggestionsInbox() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to decline suggestion');
+        setError(t('suggestions.failedToDeclineSuggestion'));
       }
     } finally {
       setProcessing(prev => {
@@ -89,23 +91,21 @@ export function SuggestionsInbox() {
   };
 
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center', color: 'rgba(232, 238, 252, 0.6)' }}>Loading suggestions...</div>;
+    return <div style={{ padding: '2rem', textAlign: 'center', color: 'rgba(232, 238, 252, 0.6)' }}>{t('suggestions.loadingSuggestions')}</div>;
   }
 
   if (error && suggestions.length === 0) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <div style={{ color: '#ff6b6b', marginBottom: '1rem' }}>{error}</div>
-        <button className="button-primary" onClick={loadSuggestions}>Retry</button>
+        <button className="button-primary" onClick={loadSuggestions}>{t('suggestions.retry')}</button>
       </div>
     );
   }
 
   if (suggestions.length === 0) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: 'rgba(232, 238, 252, 0.6)' }}>
-        No pending suggestions
-      </div>
+      <div style={{ padding: '2rem', textAlign: 'center', color: 'rgba(232, 238, 252, 0.6)' }}>{t('suggestions.noPendingSuggestions')}</div>
     );
   }
 
@@ -163,13 +163,9 @@ export function SuggestionsInbox() {
                     )}
                   </div>
                 ) : suggestion.template_id ? (
-                  <div style={{ color: 'rgba(232, 238, 252, 0.8)' }}>
-                    Template-based promise
-                  </div>
+                  <div style={{ color: 'rgba(232, 238, 252, 0.8)' }}>{t('suggestions.templateBasedPromise')}</div>
                 ) : (
-                  <div style={{ color: 'rgba(232, 238, 252, 0.8)' }}>
-                    Promise suggestion
-                  </div>
+                  <div style={{ color: 'rgba(232, 238, 252, 0.8)' }}>{t('suggestions.promiseSuggestion')}</div>
                 )}
               </div>
 

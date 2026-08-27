@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { formatDateRange as formatIntlDateRange } from '../i18n/format';
 import { useMemo } from 'react';
 import type { PromiseData, WeeklyReportData, UpcomingPlanSession } from '../types';
@@ -63,6 +64,7 @@ export function WeeklyReport({
   onOpenDetail,
   sessionsByPromise,
 }: WeeklyReportProps) {
+  const { t } = useTranslation();
   const { week_start, week_end, total_promised, total_spent, promises } = data;
   
   const dateRange = useMemo(
@@ -131,11 +133,11 @@ export function WeeklyReport({
       {!hideHeader && (
         <header className="report-header">
           <div className="header-left">
-            <h1 className="header-title" dir="auto">Promises</h1>
+            <h1 className="header-title" dir="auto">{t('weeklyReport.promises')}</h1>
             <div className="header-subtitle" dir="ltr">{dateRange}</div>
           </div>
           <div className="header-right">
-            <div className="header-totals-label" dir="ltr">Totals</div>
+            <div className="header-totals-label" dir="ltr">{t('weeklyReport.totals')}</div>
             <div className="header-totals-value" dir="ltr">
               {total_spent.toFixed(1)}/{total_promised.toFixed(1)} h
             </div>
@@ -158,7 +160,7 @@ export function WeeklyReport({
             alignItems: 'center',
             marginBottom: '8px'
           }}>
-            <span style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.72)' }}>Overall Progress</span>
+            <span style={{ fontSize: '0.85rem', color: 'rgba(232, 238, 252, 0.72)' }}>{t('weeklyReport.overallProgress')}</span>
             <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text)' }}>
               {Math.round(cappedPct)}% ({cappedTotal.toFixed(1)}h / {total_promised.toFixed(1)}h)
             </span>
@@ -228,24 +230,22 @@ export function WeeklyReport({
             <button className="create-promise-card" type="button" onClick={onCreatePromise}>
               <span className="create-promise-card-header">
                 <span className="create-promise-card-icon">+</span>
-                <span className="create-promise-card-title">New Promise</span>
+                <span className="create-promise-card-title">{t('weeklyReport.newPromise')}</span>
               </span>
-              <span className="create-promise-card-subtitle">Add a custom weekly commitment</span>
+              <span className="create-promise-card-subtitle">{t('weeklyReport.addACustomWeeklyCommitment')}</span>
             </button>
           ) : null}
         </main>
       ) : (
         <div className="empty-state">
-          <h2 className="empty-title" dir="auto">No data available for this week</h2>
+          <h2 className="empty-title" dir="auto">{t('weeklyReport.noDataAvailableForThisWeek')}</h2>
           <p className="empty-subtitle">
             {onCreatePromise
               ? 'Create a custom promise to start tracking your week.'
               : 'Start tracking your promises in the Telegram bot to see your progress here.'}
           </p>
           {onCreatePromise ? (
-            <button className="create-promise-empty-button" type="button" onClick={onCreatePromise}>
-              New Promise
-            </button>
+            <button className="create-promise-empty-button" type="button" onClick={onCreatePromise}>{t('weeklyReport.newPromise')}</button>
           ) : null}
         </div>
       )}

@@ -160,7 +160,7 @@ export function SettingsPage() {
                   handleDisplayNameSave();
                 }
               }}
-              placeholder="Enter your display name"
+              placeholder={t('settings.enterYourDisplayName')}
               maxLength={64}
               disabled={nameSaving}
             />

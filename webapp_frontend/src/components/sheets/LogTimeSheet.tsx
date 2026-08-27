@@ -1,3 +1,4 @@
+import { toLatinDigits } from '../../i18n/format';
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../api/client';
@@ -48,7 +49,7 @@ export function LogTimeSheet({
   }, [open, prefillDate, prefillHours, prefillNotes, prefillTime]);
 
   const handleSubmit = async () => {
-    const hoursNum = parseFloat(hours);
+    const hoursNum = parseFloat(toLatinDigits(hours));
     if (Number.isNaN(hoursNum) || hoursNum <= 0) {
       setError(t('logTime.invalidHours'));
       return;
@@ -72,7 +73,7 @@ export function LogTimeSheet({
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Log time" subtitle={promiseText}>
+    <BottomSheet open={open} onClose={onClose} title={t('logTime.logTime')} subtitle={promiseText}>
       <div className="lt-quick">
         {QUICK_HOURS.map((value) => (
           <button

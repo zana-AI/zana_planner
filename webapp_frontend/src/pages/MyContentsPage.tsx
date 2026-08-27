@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
@@ -86,6 +87,7 @@ function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
 }
 
 export function MyContentsPage() {
+  const { t } = useTranslation();
   const [addUrl, setAddUrl] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
@@ -137,7 +139,7 @@ export function MyContentsPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to load library');
       } else {
-        setError('Failed to load library');
+        setError(t('myContents.failedToLoadLibrary'));
       }
     } finally {
       setLoading(false);
@@ -206,7 +208,7 @@ export function MyContentsPage() {
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to update content');
       } else {
-        setError('Failed to update content');
+        setError(t('myContents.failedToUpdateContent'));
       }
       await loadContents();
     }
@@ -236,7 +238,7 @@ export function MyContentsPage() {
         <div className="content-library-add">
           <input
             type="url"
-            placeholder="Paste a PDF, YouTube, article, or podcast URL"
+            placeholder={t('myContents.pasteAPdfYoutubeArticleOrPodcastUrl')}
             value={addUrl}
             onChange={(e) => setAddUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddContent()}
@@ -260,7 +262,7 @@ export function MyContentsPage() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search your library"
+              placeholder={t('myContents.searchYourLibrary')}
             />
           </label>
           <button
@@ -270,7 +272,7 @@ export function MyContentsPage() {
             aria-expanded={filtersOpen}
           >
             <Filter size={15} aria-hidden />
-            <span>Filters</span>
+            <span>{t('myContents.filters')}</span>
             {activeFilterCount > 0 && (
               <span className="content-library-filter-count">{activeFilterCount}</span>
             )}
@@ -279,7 +281,7 @@ export function MyContentsPage() {
 
         {filtersOpen && (
           <div className="content-library-filter-panel">
-            <div className="content-library-filters" aria-label="Library status filters">
+            <div className="content-library-filters" aria-label={t('myContents.libraryStatusFilters')}>
               {STATUS_FILTERS.map((filter) => (
                 <button
                   key={filter.key}
@@ -295,7 +297,7 @@ export function MyContentsPage() {
               ))}
             </div>
 
-            <div className="content-library-filters" aria-label="Library type filters">
+            <div className="content-library-filters" aria-label={t('myContents.libraryTypeFilters')}>
               {TYPE_FILTERS.map((filter) => (
                 <button
                   key={filter.key}
@@ -313,7 +315,7 @@ export function MyContentsPage() {
 
             <div className="content-library-filter-foot">
               <label className="content-library-sort">
-                <span>Sort</span>
+                <span>{t('myContents.sort')}</span>
                 <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
                   {SORT_OPTIONS.map((option) => (
                     <option key={option.key} value={option.key}>{option.label}</option>
@@ -321,9 +323,7 @@ export function MyContentsPage() {
                 </select>
               </label>
               {activeFilterCount > 0 && (
-                <button className="content-library-clear" type="button" onClick={resetFilters}>
-                  Clear
-                </button>
+                <button className="content-library-clear" type="button" onClick={resetFilters}>{t('myContents.clear')}</button>
               )}
             </div>
           </div>
@@ -333,10 +333,10 @@ export function MyContentsPage() {
       {error && <div className="content-library-error">{error}</div>}
 
       {loading ? (
-        <div className="content-library-state">Loading library...</div>
+        <div className="content-library-state">{t('myContents.loadingLibrary')}</div>
       ) : items.length > 0 ? (
         <>
-          <section className="content-library-grid" aria-label="Library items">
+          <section className="content-library-grid" aria-label={t('myContents.libraryItems')}>
             {items.map((item) => (
               <ContentCard
                 key={item.user_content_id || item.content_id || item.id}
@@ -359,10 +359,10 @@ export function MyContentsPage() {
         </>
       ) : (
         <section className="content-library-empty">
-          <h2>No content here yet</h2>
-          <p>Paste a link above, or clear filters to broaden the library.</p>
+          <h2>{t('myContents.noContentHereYet')}</h2>
+          <p>{t('myContents.pasteALinkAboveOrClearFiltersToBroadenTheLib')}</p>
           {activeFilterCount > 0 && (
-            <button type="button" onClick={resetFilters}>Clear filters</button>
+            <button type="button" onClick={resetFilters}>{t('myContents.clearFilters')}</button>
           )}
         </section>
       )}
