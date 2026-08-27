@@ -8,6 +8,9 @@ env.*
 !webapp_frontend/package-lock.json
 !webapp_frontend/tsconfig.json
 !webapp_frontend/tsconfig.node.json
+# Locale catalogs are source, not config — the blanket *.json above would
+# otherwise drop them silently and the Docker build fails on a missing module.
+!webapp_frontend/src/i18n/locales/*.json
 *.txt
 *.md
 !.claude/skills/**/*.md

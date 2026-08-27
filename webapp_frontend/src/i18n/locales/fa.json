@@ -1,0 +1,290 @@
+{
+  "common": {
+    "loading": "در حال بارگذاری…",
+    "back": "بازگشت",
+    "save": "ذخیره",
+    "cancel": "انصراف",
+    "retry": "تلاش دوباره",
+    "viewAll": "مشاهدهٔ همه",
+    "close": "بستن",
+    "saving": "در حال ذخیره…",
+    "tryAgain": "تلاش دوباره",
+    "somethingWentWrong": "مشکلی پیش آمد",
+    "today": "امروز",
+    "yesterday": "دیروز",
+    "delete": "حذف",
+    "edit": "ویرایش",
+    "done": "انجام شد",
+    "noneYet": "هنوز هیچ"
+  },
+  "nav": {
+    "primary": "ناوبری اصلی",
+    "myWeek": "هفتهٔ من",
+    "community": "اجتماع",
+    "content": "محتوا",
+    "explore": "کشف",
+    "goToMyWeek": "رفتن به هفتهٔ من",
+    "startFocus": "شروع تمرکز",
+    "openProfileMenu": "باز کردن منوی نمایه"
+  },
+  "menu": {
+    "myContents": "محتوای من",
+    "settings": "تنظیمات",
+    "adminPanel": "پنل مدیریت",
+    "logout": "خروج"
+  },
+  "shell": {
+    "dashboard": {
+      "title": "هفتهٔ من",
+      "subtitle": "قول‌های هفتگی و پیشرفت شما"
+    },
+    "community": {
+      "title": "اجتماع",
+      "subtitle": "فعالیت‌های عمومی اخیر و افرادی که دنبال می‌کنید"
+    },
+    "explore": {
+      "title": "کشف",
+      "subtitle": "کتابخانهٔ قول‌ها و بازارچه"
+    },
+    "challenges": {
+      "title": "چالش‌ها",
+      "subtitle": "در یک چالش شرکت کنید و بازی کنید"
+    },
+    "flashcards": {
+      "title": "آزمون",
+      "subtitle": "آنچه را در آستانهٔ فراموشی است مرور کنید"
+    },
+    "challengeDetail": {
+      "title": "چالش"
+    },
+    "myContents": {
+      "title": "محتوا",
+      "subtitle": "ویدیوها، پی‌دی‌اف‌ها و پادکست‌هایی که با آن‌ها مطالعه می‌کنید"
+    },
+    "admin": {
+      "title": "مدیریت"
+    },
+    "focus": {
+      "title": "شروع جلسهٔ تمرکز"
+    },
+    "settings": {
+      "title": "تنظیمات"
+    },
+    "timezone": {
+      "title": "منطقهٔ زمانی",
+      "subtitle": "منطقهٔ زمانی خود را انتخاب کنید"
+    },
+    "addPromise": {
+      "title": "افزودن قول"
+    },
+    "profile": {
+      "title": "نمایه"
+    },
+    "club": {
+      "title": "باشگاه"
+    },
+    "fallback": {
+      "title": "Xaana"
+    }
+  },
+  "settings": {
+    "displayName": "نام نمایشی",
+    "displayNamePlaceholder": "نام شما",
+    "displayNameUpdated": "نام نمایشی به‌روزرسانی شد.",
+    "displayNameFailed": "به‌روزرسانی نام نمایشی انجام نشد.",
+    "timezone": "منطقهٔ زمانی",
+    "timezoneNotSet": "تنظیم نشده",
+    "changeTimezone": "تغییر منطقهٔ زمانی",
+    "language": "زبان",
+    "languageUpdated": "زبان به‌روزرسانی شد.",
+    "languageFailed": "به‌روزرسانی زبان انجام نشد.",
+    "languageBotHint": "روی ربات Xaana در تلگرام اعمال می‌شود.",
+    "languageAppHint": "روی ربات و این برنامه اعمال می‌شود.",
+    "voiceMode": "حالت صوتی",
+    "voiceModeHint": "وقتی روشن باشد، ربات می‌تواند در گفت‌وگو پیام صوتی بفرستد.",
+    "enabled": "روشن",
+    "disabled": "خاموش",
+    "voiceModeEnabled": "حالت صوتی روشن شد.",
+    "voiceModeDisabled": "حالت صوتی خاموش شد.",
+    "loadFailed": "بارگذاری تنظیمات انجام نشد."
+  },
+  "language": {
+    "en": "English",
+    "fa": "فارسی",
+    "fr": "Français"
+  },
+  "status": {
+    "onTrack": "در مسیر",
+    "behind": "عقب",
+    "atRisk": "در خطر"
+  },
+  "dashboard": {
+    "loadingWorkspace": "در حال بارگذاری فضای کاری شما…",
+    "previousWeek": "هفتهٔ قبل",
+    "nextWeek": "هفتهٔ بعد",
+    "overallProgress": "پیشرفت کلی",
+    "play": "شروع",
+    "promises": "قول‌ها",
+    "activeCount": "{{count, num}} فعال",
+    "hideOlderPromises": "پنهان کردن قول‌های قدیمی",
+    "showOlderPromises_one": "نمایش {{count, num}} قول قدیمی",
+    "showOlderPromises_other": "نمایش {{count, num}} قول قدیمی",
+    "olderPromises": "قول‌های قدیمی",
+    "oneTimeTasks": "کارهای یک‌باره",
+    "distractions": "حواس‌پرتی‌ها",
+    "stayUnderBudget": "زیر سقف بمانید",
+    "emptyTitle": "هنوز قول یا کاری ثبت نشده",
+    "emptySubtitle": "برای دیدن پیشرفت‌تان در اینجا، ثبت قول‌ها را در ربات تلگرام شروع کنید.",
+    "explorePromiseLibrary": "کتابخانهٔ قول‌ها",
+    "createPromise": "ساختن قول",
+    "promiseSuggestions": "پیشنهادهای قول",
+    "authFailed": "احراز هویت ناموفق بود. لطفاً دوباره وارد شوید.",
+    "loadFailed": "بارگذاری داشبورد انجام نشد. لطفاً دوباره تلاش کنید.",
+    "hoursOfHours": "{{spent}} از {{promised}} ساعت",
+    "tasksThisWeek": "{{count, num}} این هفته"
+  },
+  "promise": {
+    "noTime": "بدون زمان",
+    "noTimeSet": "زمانی تعیین نشده",
+    "session": "جلسه",
+    "untitledSession": "جلسهٔ بی‌نام",
+    "thisWeek": "این هفته",
+    "weeklyActivity": "فعالیت هفتگی",
+    "recent": "اخیر",
+    "logged": "ثبت شد",
+    "amountLogged": "{{amount}} ثبت شد",
+    "checkIns": "{{done, num}} از {{total, num}} ثبت",
+    "goToClub": "رفتن به باشگاه",
+    "startFocus": "شروع تمرکز",
+    "editSession": "ویرایش جلسه",
+    "addToCalendar": "افزودن به تقویم",
+    "logAndMarkDone": "ثبت و علامت‌گذاری به‌عنوان انجام‌شده",
+    "deleteSession": "حذف جلسه",
+    "todayAt": "امروز ساعت {{time}}",
+    "tomorrowAt": "فردا ساعت {{time}}",
+    "tomorrowShortAt": "فردا {{time}}"
+  },
+  "play": {
+    "ready": "آماده",
+    "nothingDue": "کاری در انتظار نیست",
+    "newQuestionsToday": "پرسش‌های تازهٔ امروز",
+    "whatNeedsDoingToday": "امروز چه باید کرد",
+    "checkIn": "ثبت انجام",
+    "logThatYouDidIt": "ثبت کنید که انجامش دادید",
+    "startFocus": "شروع تمرکز",
+    "thingsWaiting_one": "{{count, num}} مورد در انتظار",
+    "thingsWaiting_other": "{{count, num}} مورد در انتظار"
+  },
+  "checkin": {
+    "checkedIn": "ثبت شد",
+    "failed": "ثبت انجام نشد"
+  },
+  "logTime": {
+    "hours": "ساعت",
+    "date": "تاریخ",
+    "time": "زمان",
+    "invalidHours": "یک عدد معتبر برای ساعت وارد کنید",
+    "failed": "ثبت زمان انجام نشد",
+    "logging": "در حال ثبت…",
+    "saveLog": "ذخیرهٔ ثبت"
+  },
+  "weeklyReport": {
+    "weekOf": "هفتهٔ {{range}}"
+  },
+  "activity": {
+    "recently": "اخیراً",
+    "today": "امروز",
+    "daysAgo_one": "{{count, num}} روز پیش",
+    "daysAgo_other": "{{count, num}} روز پیش",
+    "weeksAgo_one": "{{count, num}} هفته پیش",
+    "weeksAgo_other": "{{count, num}} هفته پیش",
+    "monthsAgo_one": "{{count, num}} ماه پیش",
+    "monthsAgo_other": "{{count, num}} ماه پیش",
+    "yearsAgo_one": "{{count, num}} سال پیش",
+    "yearsAgo_other": "{{count, num}} سال پیش",
+    "thisWeek_one": "{{count, num}} فعالیت این هفته",
+    "thisWeek_other": "{{count, num}} فعالیت این هفته",
+    "lastActivity": "آخرین فعالیت {{when}}",
+    "noActivity": "هنوز فعالیتی نیست"
+  },
+  "challenges": {
+    "loading": "در حال بارگذاری چالش‌ها…",
+    "loadFailed": "بارگذاری چالش‌ها انجام نشد",
+    "notFound": "چالش پیدا نشد.",
+    "loadOneFailed": "این چالش بارگذاری نشد.",
+    "saveFailed": "پاسخ‌های شما ذخیره نشد.",
+    "playToday": "مجموعهٔ امروز",
+    "startPlaying": "شروع بازی",
+    "allCaughtUp": "همه‌چیز به‌روز است",
+    "noNewSets": "فعلاً مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
+    "noNewSetsIn": "فعلاً در {{title}} مجموعهٔ تازه‌ای نیست. بعداً برای مورد بعدی سر بزنید.",
+    "correctOfTotal": "{{correct, num}} از {{total, num}} درست",
+    "dayStreak": "{{count, num}} روز پیاپی"
+  },
+  "flashcards": {
+    "tryAgain": "تلاش دوباره",
+    "refresh": "تازه‌سازی",
+    "nothingToReview": "الان چیزی برای مرور نیست.",
+    "tapToReveal": "برای دیدن پاسخ ضربه بزنید",
+    "loading": "در حال بارگذاری…",
+    "noMatches": "موردی یافت نشد.",
+    "noCards": "هنوز کارتی نیست.",
+    "search": "جست‌وجو…",
+    "frontRequired": "روی کارت الزامی است.",
+    "saveFailed": "ذخیره انجام نشد.",
+    "deleteFailed": "حذف انجام نشد.",
+    "myCards": "کارت‌های من",
+    "cardCount_one": "{{count, num}} کارت",
+    "cardCount_other": "{{count, num}} کارت",
+    "deckCount": "{{count, num}} دسته",
+    "page": "ص. {{page, num}}",
+    "rating": {
+      "again": "دوباره",
+      "againHint": "فراموش کردم",
+      "hard": "سخت",
+      "hardHint": "دشوار بود",
+      "good": "خوب",
+      "goodHint": "بلد بودم",
+      "easy": "آسان",
+      "easyHint": "فوری"
+    },
+    "study": "مطالعه",
+    "loadFailed": "کارت‌های شما بارگذاری نشد.",
+    "ratingFailed": "امتیاز شما ذخیره نشد.",
+    "reviewTab": "مرور"
+  },
+  "templates": {
+    "loading": "در حال بارگذاری کتابخانهٔ قول‌ها…",
+    "loadFailed": "بارگذاری الگوها انجام نشد",
+    "emptyTitle": "هنوز عادتی نیست",
+    "emptySubtitle": "به‌زودی عادت‌های آماده برای شروع اینجا خواهند بود."
+  },
+  "community": {
+    "loading": "در حال بارگذاری اجتماع…",
+    "authRequired": "احراز هویت لازم است.",
+    "clubs": "باشگاه‌ها",
+    "clubsSubtitle": "حلقه‌های کوچک برای قول‌های مشترک.",
+    "loadingClubs": "در حال بارگذاری باشگاه‌ها…",
+    "noClubs": "هنوز باشگاهی نیست.",
+    "createClub": "ساختن باشگاه",
+    "clubName": "نام باشگاه",
+    "sharedPromise": "قول مشترک",
+    "visibility": "دیده‌شدن",
+    "private": "خصوصی",
+    "public": "عمومی",
+    "perWeek": "در هفته",
+    "creating": "در حال ساخت…"
+  },
+  "club": {
+    "onTrack": "در مسیر",
+    "building": "در حال ساخت",
+    "needsPush": "نیاز به تلاش",
+    "noActivityYet": "هنوز فعالیتی نیست",
+    "leaderboardFailed": "بارگذاری جدول انجام نشد.",
+    "noSharedPromise": "هنوز قول مشترکی نیست",
+    "member": "عضو",
+    "lead": "پیشتاز: {{name}}",
+    "openLeaderboard": "جدول باز",
+    "rolling7d": "۷ روز اخیر"
+  }
+}

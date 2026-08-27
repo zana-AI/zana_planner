@@ -1,0 +1,290 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "back": "Back",
+    "save": "Save",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "viewAll": "View all",
+    "close": "Close",
+    "saving": "Saving...",
+    "tryAgain": "Try Again",
+    "somethingWentWrong": "Something went wrong",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "delete": "Delete",
+    "edit": "Edit",
+    "done": "Done",
+    "noneYet": "None yet"
+  },
+  "nav": {
+    "primary": "Primary navigation",
+    "myWeek": "My Week",
+    "community": "Community",
+    "content": "Content",
+    "explore": "Explore",
+    "goToMyWeek": "Go to My Week",
+    "startFocus": "Start focus",
+    "openProfileMenu": "Open profile menu"
+  },
+  "menu": {
+    "myContents": "My Contents",
+    "settings": "Settings",
+    "adminPanel": "Admin Panel",
+    "logout": "Logout"
+  },
+  "shell": {
+    "dashboard": {
+      "title": "My Week",
+      "subtitle": "Your weekly promises and progress"
+    },
+    "community": {
+      "title": "Community",
+      "subtitle": "Recent public activity and people you follow"
+    },
+    "explore": {
+      "title": "Explore",
+      "subtitle": "Promise library and marketplace"
+    },
+    "challenges": {
+      "title": "Challenges",
+      "subtitle": "Join a challenge and play"
+    },
+    "flashcards": {
+      "title": "Quiz",
+      "subtitle": "Review what you are about to forget"
+    },
+    "challengeDetail": {
+      "title": "Challenge"
+    },
+    "myContents": {
+      "title": "Content",
+      "subtitle": "Videos, PDFs and podcasts you study from"
+    },
+    "admin": {
+      "title": "Admin"
+    },
+    "focus": {
+      "title": "Start Focus Session"
+    },
+    "settings": {
+      "title": "Settings"
+    },
+    "timezone": {
+      "title": "Timezone",
+      "subtitle": "Select your timezone"
+    },
+    "addPromise": {
+      "title": "Add Promise"
+    },
+    "profile": {
+      "title": "Profile"
+    },
+    "club": {
+      "title": "Club"
+    },
+    "fallback": {
+      "title": "Xaana"
+    }
+  },
+  "settings": {
+    "displayName": "Display name",
+    "displayNamePlaceholder": "Your name",
+    "displayNameUpdated": "Display name updated.",
+    "displayNameFailed": "Failed to update display name.",
+    "timezone": "Time zone",
+    "timezoneNotSet": "Not set",
+    "changeTimezone": "Change timezone",
+    "language": "Language",
+    "languageUpdated": "Language updated.",
+    "languageFailed": "Failed to update language.",
+    "languageBotHint": "Applies to the Xaana bot in Telegram.",
+    "languageAppHint": "Applies to the bot and this app.",
+    "voiceMode": "Voice mode",
+    "voiceModeHint": "When enabled, the bot can send voice messages in the chat.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "voiceModeEnabled": "Voice mode enabled.",
+    "voiceModeDisabled": "Voice mode disabled.",
+    "loadFailed": "Failed to load settings."
+  },
+  "language": {
+    "en": "English",
+    "fa": "Persian",
+    "fr": "French"
+  },
+  "status": {
+    "onTrack": "On track",
+    "behind": "Behind",
+    "atRisk": "At risk"
+  },
+  "dashboard": {
+    "loadingWorkspace": "Loading your workspace...",
+    "previousWeek": "Previous week",
+    "nextWeek": "Next week",
+    "overallProgress": "Overall progress",
+    "play": "Play",
+    "promises": "Promises",
+    "activeCount": "{{count, num}} active",
+    "hideOlderPromises": "Hide older promises",
+    "showOlderPromises_one": "Show {{count, num}} older promise",
+    "showOlderPromises_other": "Show {{count, num}} older promises",
+    "olderPromises": "Older promises",
+    "oneTimeTasks": "One-time tasks",
+    "distractions": "Distractions",
+    "stayUnderBudget": "Stay under budget",
+    "emptyTitle": "No promises or tasks yet",
+    "emptySubtitle": "Start tracking your promises in the Telegram bot to see your progress here.",
+    "explorePromiseLibrary": "Explore Promise Library",
+    "createPromise": "Create promise",
+    "promiseSuggestions": "Promise Suggestions",
+    "authFailed": "Authentication failed. Please log in again.",
+    "loadFailed": "Failed to load your dashboard. Please try again.",
+    "hoursOfHours": "{{spent}}h / {{promised}}h",
+    "tasksThisWeek": "{{count, num}} this week"
+  },
+  "promise": {
+    "noTime": "No time",
+    "noTimeSet": "No time set",
+    "session": "Session",
+    "untitledSession": "Untitled session",
+    "thisWeek": "This week",
+    "weeklyActivity": "Weekly activity",
+    "recent": "Recent",
+    "logged": "Logged",
+    "amountLogged": "{{amount}} logged",
+    "checkIns": "{{done, num}}/{{total, num}} check-ins",
+    "goToClub": "Go to club",
+    "startFocus": "Start focus",
+    "editSession": "Edit session",
+    "addToCalendar": "Add to calendar",
+    "logAndMarkDone": "Log and mark done",
+    "deleteSession": "Delete session",
+    "todayAt": "Today {{time}}",
+    "tomorrowAt": "Tomorrow {{time}}",
+    "tomorrowShortAt": "Tmrw {{time}}"
+  },
+  "play": {
+    "ready": "Ready",
+    "nothingDue": "Nothing due",
+    "newQuestionsToday": "New questions today",
+    "whatNeedsDoingToday": "What needs doing today",
+    "checkIn": "Check in",
+    "logThatYouDidIt": "Log that you did it",
+    "startFocus": "Start focus",
+    "thingsWaiting_one": "{{count, num}} thing waiting",
+    "thingsWaiting_other": "{{count, num}} things waiting"
+  },
+  "checkin": {
+    "checkedIn": "Checked in",
+    "failed": "Failed to check in"
+  },
+  "logTime": {
+    "hours": "Hours",
+    "date": "Date",
+    "time": "Time",
+    "invalidHours": "Enter a valid number of hours",
+    "failed": "Failed to log time",
+    "logging": "Logging…",
+    "saveLog": "Save log"
+  },
+  "weeklyReport": {
+    "weekOf": "Week of {{range}}"
+  },
+  "activity": {
+    "recently": "recently",
+    "today": "today",
+    "daysAgo_one": "{{count, num}} day ago",
+    "daysAgo_other": "{{count, num}} days ago",
+    "weeksAgo_one": "{{count, num}} week ago",
+    "weeksAgo_other": "{{count, num}} weeks ago",
+    "monthsAgo_one": "{{count, num}} month ago",
+    "monthsAgo_other": "{{count, num}} months ago",
+    "yearsAgo_one": "{{count, num}} year ago",
+    "yearsAgo_other": "{{count, num}} years ago",
+    "thisWeek_one": "{{count, num}} activity this week",
+    "thisWeek_other": "{{count, num}} activities this week",
+    "lastActivity": "Last activity {{when}}",
+    "noActivity": "No activity yet"
+  },
+  "challenges": {
+    "loading": "Loading challenges…",
+    "loadFailed": "Failed to load challenges",
+    "notFound": "Challenge not found.",
+    "loadOneFailed": "Could not load this challenge.",
+    "saveFailed": "Could not save your answers.",
+    "playToday": "Play today's set",
+    "startPlaying": "Start playing",
+    "allCaughtUp": "You're all caught up",
+    "noNewSets": "No new sets right now. Come back later for the next one.",
+    "noNewSetsIn": "No new sets right now in {{title}}. Come back later for the next one.",
+    "correctOfTotal": "{{correct, num}} / {{total, num}} correct",
+    "dayStreak": "{{count, num}}-day streak"
+  },
+  "flashcards": {
+    "tryAgain": "Try again",
+    "refresh": "Refresh",
+    "nothingToReview": "Nothing to review right now.",
+    "tapToReveal": "Tap to reveal",
+    "loading": "Loading…",
+    "noMatches": "No matches.",
+    "noCards": "No cards yet.",
+    "search": "Search…",
+    "frontRequired": "Front is required.",
+    "saveFailed": "Save failed.",
+    "deleteFailed": "Delete failed.",
+    "myCards": "My cards",
+    "cardCount_one": "{{count, num}} card",
+    "cardCount_other": "{{count, num}} cards",
+    "deckCount": "{{count, num}} decks",
+    "page": "p. {{page, num}}",
+    "rating": {
+      "again": "Again",
+      "againHint": "forgot",
+      "hard": "Hard",
+      "hardHint": "a struggle",
+      "good": "Good",
+      "goodHint": "knew it",
+      "easy": "Easy",
+      "easyHint": "instant"
+    },
+    "study": "Study",
+    "loadFailed": "Couldn't load your cards.",
+    "ratingFailed": "Couldn't save your rating.",
+    "reviewTab": "Review"
+  },
+  "templates": {
+    "loading": "Loading promise library...",
+    "loadFailed": "Failed to load templates",
+    "emptyTitle": "No habits yet",
+    "emptySubtitle": "Check back soon for ready-made habits to start."
+  },
+  "community": {
+    "loading": "Loading community...",
+    "authRequired": "Authentication required.",
+    "clubs": "Clubs",
+    "clubsSubtitle": "Small circles for shared promises.",
+    "loadingClubs": "Loading clubs...",
+    "noClubs": "No clubs yet.",
+    "createClub": "Create club",
+    "clubName": "Club name",
+    "sharedPromise": "Shared promise",
+    "visibility": "Visibility",
+    "private": "Private",
+    "public": "Public",
+    "perWeek": "Per week",
+    "creating": "Creating..."
+  },
+  "club": {
+    "onTrack": "On track",
+    "building": "Building",
+    "needsPush": "Needs push",
+    "noActivityYet": "No activity yet",
+    "leaderboardFailed": "Failed to load leaderboard.",
+    "noSharedPromise": "No shared promise yet",
+    "member": "Member",
+    "lead": "Lead: {{name}}",
+    "openLeaderboard": "Open leaderboard",
+    "rolling7d": "Rolling 7d"
+  }
+}
