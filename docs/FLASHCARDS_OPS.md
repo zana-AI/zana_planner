@@ -298,6 +298,79 @@ curl -X PATCH .../api/flashcards/decks/<deck_id> -d '{"promise_id": "<promise_uu
 
 ---
 
+## 6c. Cards mined from video
+
+Some cards cite the video they were heard in. Those carry four extra `fields`
+keys, all optional — a card without them is still a perfectly good card:
+
+| Key | Meaning |
+|---|---|
+| `source_url` | the YouTube watch URL |
+| `source_title` | video title, shown under the link |
+| `source_start` | **seconds** into the video where the word is spoken |
+| `source_sentence` | the line as actually said, cleaned up from the captions |
+
+With `source_url` + `source_start`, the answer side offers "Hear it at 2:57",
+linking to `/youtube-watch?video_id=…&start=…&word=…`. The player shows that
+line under the video, highlights the word, follows the speech while playing and
+can replay the line. `source_sentence` replaces `example` on the card when
+present.
+
+### Transcripts must be fetched from a home connection
+
+**YouTube blocks the production IP.** The Contabo VM fails both `yt-dlp`
+("Sign in to confirm you're not a bot") and `youtube_transcript_api`
+(`RequestBlocked`) — it is a datacenter address, not a rate limit. Only
+*discovery* is blocked; caption tracks themselves serve fine from anywhere, but
+reaching them needs a signed URL that expires in ~7 hours, so caching URLs is
+useless. Cache the cues.
+
+So transcripts are fetched on a laptop and pushed into `video_transcript`:
+
+```bash
+pip install youtube-transcript-api yt-dlp        # not in requirements.txt: the server cannot use them
+python scripts/fetch_transcripts.py --from-cards --push        # every video our cards cite
+python scripts/fetch_transcripts.py --push <video_id> ...      # specific videos
+```
+
+**Pace it.** A residential IP gets throttled too: ~16 back-to-back fetches
+earned an hour-plus `IpBlocked`, and retrying prolonged it. The default
+`--delay` is 6s; use 20–45s for a batch. The script falls back between
+`youtube_transcript_api` and `yt-dlp` because the two are throttled
+independently — but a hard burst eventually takes out both (yt-dlp then
+returns HTTP 429).
+
+The server only ever *reads* this table, via `/api/content/{id}/transcript`
+(ownership-checked) or `/api/youtube/{video_id}/transcript` (no content row
+needed — a flashcard cites videos the learner never added).
+
+### Building a video deck
+
+Author a manifest of videos and the words worth learning, then let the importer
+align each word against the cached transcript — it derives the timestamp and
+the spoken sentence, so you only write the word and its definition:
+
+```jsonc
+{"videos": [{"video_id": "dDUd0XcYmBs", "title": "Le goûter (Karambolage)",
+             "words": [{"front": "le goûter", "back": "Petit repas de l'après-midi."}]}]}
+```
+
+```bash
+python scripts/import_video_vocab.py --file cards.json          # dry run, shows alignment
+scp cards.json root@169.58.186.195:/tmp/ && ssh root@169.58.186.195   "docker cp /tmp/cards.json zana-webapp:/tmp/ && docker cp /tmp/import_video_vocab.py zana-webapp:/tmp/ &&    docker exec zana-webapp python3 /tmp/import_video_vocab.py --file /tmp/cards.json --user-id 108648163 --publish"
+```
+
+Decks land under `French::Vidéos::<title>`. Import is idempotent — notes are
+keyed on `(user_id, normalised front)`, so a re-run updates a definition rather
+than duplicating a card or resetting its scheduling.
+
+**Watch the unaligned list.** A word the importer cannot find in the transcript
+still becomes a card, it just cannot link into the video. That usually means the
+word does not literally appear (you wrote the lemma, the speaker used a form the
+stemmer could not reach) — fix the `front` or accept the plain card.
+
+---
+
 ## 7. Related
 
 - `tm_bot/db/alembic/versions/032_flashcards_srs.py` — schema + design rationale
@@ -308,4 +381,9 @@ curl -X PATCH .../api/flashcards/decks/<deck_id> -d '{"promise_id": "<promise_uu
 - `tm_bot/services/flashcard_service.py` — the only place that opens sessions for these
 - `tm_bot/webapp/routers/flashcards.py` — HTTP API
 - `webapp_frontend/src/pages/FlashcardsPage.tsx` — the study UI
+- `tm_bot/db/alembic/versions/036_video_transcript.py` — the transcript cache
+- `tm_bot/repositories/video_transcript_repo.py` — reading and filling that cache
+- `scripts/fetch_transcripts.py` — laptop-side transcript ingest
+- `scripts/import_video_vocab.py` — build a deck from videos + words
+- `tm_bot/webapp/static/youtube_watch.html` — the player, focus line and follow
 - `.claude/skills/vm-ops/SKILL.md` — general VM operations
