@@ -76,14 +76,31 @@
 /* review card */
 
 .fc-progress {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2, 8px);
+  align-items: start;
+  direction: ltr;
   font-size: 0.78rem;
   color: var(--text-muted, #94a3b8);
   margin-bottom: var(--space-2);
 }
 
+.fc-progress > span:first-child {
+  min-width: 0;
+  text-align: start;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+}
+
+.fc-progress > span:last-child {
+  white-space: nowrap;
+  text-align: end;
+}
+
 .fc-card {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--surface, rgba(255, 255, 255, 0.05));
   border: 1px solid var(--border, rgba(148, 163, 184, 0.18));
   border-radius: 18px;
@@ -107,6 +124,7 @@
   font-size: 1.5rem;
   font-weight: 600;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .fc-card.is-revealed .fc-card-front {

@@ -30,9 +30,11 @@ const RATINGS: Array<{ value: FlashcardRating; tone: 'again' | 'hard' | 'good' |
  * Deliberately builds React nodes rather than setting innerHTML: the text is
  * user-authored, so injecting it as markup would be an XSS hole.
  */
-function RichText({ text }: { text: string }): ReactNode {
+function renderRichText(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  // Imported cards contain both Markdown emphasis and legacy HTML emphasis
+  // from the Zotero/vocabulary pipeline. Render both without innerHTML.
+  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|<\s*(?:strong|b|em|i)\s*>[\s\S]*?<\s*\/(?:strong|b|em|i)\s*>|<\s*br\s*\/?>)/gi;
   let last = 0;
   let match: RegExpExecArray | null;
   let key = 0;
@@ -42,13 +44,23 @@ function RichText({ text }: { text: string }): ReactNode {
     const token = match[0];
     if (token.startsWith('**')) {
       nodes.push(<strong key={key++}>{token.slice(2, -2)}</strong>);
+    } else if (/^<\s*br\s*\/?>$/i.test(token)) {
+      nodes.push(<br key={key++} />);
+    } else if (/^<\s*(?:strong|b)\b/i.test(token)) {
+      nodes.push(<strong key={key++}>{renderRichText(token.replace(/^<\s*(?:strong|b)\s*>|<\s*\/\s*(?:strong|b)\s*>$/gi, ''))}</strong>);
+    } else if (/^<\s*(?:em|i)\b/i.test(token)) {
+      nodes.push(<em key={key++}>{renderRichText(token.replace(/^<\s*(?:em|i)\s*>|<\s*\/\s*(?:em|i)\s*>$/gi, ''))}</em>);
     } else {
       nodes.push(<em key={key++}>{token.slice(1, -1)}</em>);
     }
     last = match.index + token.length;
   }
   if (last < text.length) nodes.push(text.slice(last));
-  return <>{nodes}</>;
+  return nodes;
+}
+
+function RichText({ text }: { text: string }): ReactNode {
+  return <>{renderRichText(text)}</>;
 }
 
 function CountsBar({ counts }: { counts: FlashcardCounts | null }) {
