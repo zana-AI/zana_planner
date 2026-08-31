@@ -132,19 +132,19 @@ categories:
             description: Clean one thing each day.
             native_ref: /templates/36a62645-1950-457e-bda9-f88d091ad996
 
-  - id: english
-    title: English
-    icon: bubble-en
+  - id: learning
+    title: Learning
+    icon: book-open
     accent: "#A78BFA"
     order: 40
     published: true
     topics:
-      - id: habits
-        title: Habits
+      - id: languages
+        title: Languages
         order: 10
         published: true
         items:
-          # template_id reads "french-3h-l1" but the row is English — legacy id.
+          # template_id is a legacy id; the content is English study.
           - id: tpl-study-english
             title: Study English
             type: template
