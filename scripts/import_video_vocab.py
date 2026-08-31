@@ -43,21 +43,44 @@ def fold(text: str) -> str:
 
 
 def stem_of(front: str) -> str:
-    """'une décennie' -> 'decenn': drop the article, trim for inflection."""
+    """'une décennie' -> 'decenn': drop the article, trim for inflection.
+
+    The alternation is longest-first on purpose: Python's regex takes the first
+    branch that matches, so `un|une` would strip "un" from "une décennie" and
+    leave the stem as "e", which then matches nearly every line.
+    """
     stem = fold(front)
-    stem = re.sub(r"^(un|une|le|la|les|des|du|de|d'|l')\s*", "", stem)
-    stem = re.split(r"[\s(,/]", stem)[0]
-    return stem[: max(4, len(stem) - 2)] if len(stem) > 4 else stem
+    stripped = re.sub(r"^(une|un|les|le|la|des|du|de|d'|l')\s+", "", stem)
+    stripped = re.split(r"[\s(,/]", stripped)[0]
+    # An article-only or very short remainder is not a usable search key.
+    if len(stripped) < 3:
+        stripped = re.split(r"[\s(,/]", stem)[0]
+    return stripped[: max(4, len(stripped) - 2)] if len(stripped) > 4 else stripped
+
+
+def search_keys(front: str) -> List[str]:
+    """Keys to try, longest first: exact word, then progressively trimmed.
+
+    Trimming is what lets "aggraver" match "aggravation", but a short stem also
+    lets "péril" match "période". Trying the exact word first keeps the precise
+    hit when there is one, and only loosens when the word is genuinely inflected.
+    """
+    full = re.split(r"[\s(,/]", re.sub(r"^(une|un|les|le|la|des|du|de|d'|l')\s+", "", fold(front)))[0]
+    keys = [full]
+    for cut in (1, 2):
+        # Never loosen below five characters: a four-letter key like "peri"
+        # matches "période" and would align a card to the wrong moment.
+        if len(full) - cut >= 5:
+            keys.append(full[: len(full) - cut])
+    return [k for i, k in enumerate(keys) if k and k not in keys[:i]]
 
 
 def locate(front: str, cues: List[Dict[str, Any]]) -> Tuple[Optional[int], str]:
     """Find the cue where the word is spoken; return its index and a sentence."""
-    stem = stem_of(front)
-    if not stem:
-        return None, ""
-    for index, cue in enumerate(cues):
-        if stem in fold(cue.get("text") or ""):
-            return index, build_sentence(cues, index, stem)
+    for key in search_keys(front):
+        for index, cue in enumerate(cues):
+            if key in fold(cue.get("text") or ""):
+                return index, build_sentence(cues, index, key)
     return None, ""
 
 

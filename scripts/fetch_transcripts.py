@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -53,24 +54,107 @@ def fetch(video_id: str, force: bool = False) -> bool:
     if out.exists() and not force:
         print(f"{video_id}: cached")
         return True
+    language, generated = None, True
     try:
         transcript = YouTubeTranscriptApi().fetch(video_id, languages=LANGUAGES)
-    except Exception as exc:                       # noqa: BLE001 - report and continue
+        segments = transcript.to_raw_data()
+        language, generated = transcript.language_code, transcript.is_generated
+    except Exception as exc:                       # noqa: BLE001 - try the other route
         name = type(exc).__name__
-        hint = "  <- run this from a home connection, not a server" if "Blocked" in name else ""
-        print(f"{video_id}: FAILED {name}{hint}")
-        return False
-    segments = transcript.to_raw_data()
+        print(f"{video_id}: {name} from the transcript API, trying yt-dlp")
+        fallback = fetch_via_ytdlp(video_id)
+        if not fallback:
+            hint = "  <- run this from a home connection, not a server" if "Blocked" in name else ""
+            print(f"{video_id}: FAILED {name}{hint}")
+            return False
+        segments = fallback["segments"]
+        language, generated = fallback["language"], fallback["is_generated"]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({
         "video_id": video_id,
-        "language": transcript.language_code,
-        "is_generated": transcript.is_generated,
+        "language": language,
+        "is_generated": generated,
         "segments": segments,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{video_id}: {len(segments)} cues, {transcript.language_code}"
-          f"{' (auto)' if transcript.is_generated else ''} -> {out.name}")
+    print(f"{video_id}: {len(segments)} cues, {language}"
+          f"{' (auto)' if generated else ''} -> {out.name}")
     return True
+
+
+def fetch_via_ytdlp(video_id: str) -> Optional[Dict[str, Any]]:
+    """Second fetcher, used when the transcript API is refused.
+
+    The two libraries reach YouTube by different routes — youtube_transcript_api
+    talks to InnerTube, yt-dlp scrapes the watch page — and they are throttled
+    independently. In practice one still works when the other is blocked, so
+    having both turns a dead batch into a slower one.
+    """
+    try:
+        import yt_dlp
+    except ImportError:
+        return None
+    options = {"quiet": True, "no_warnings": True, "skip_download": True}
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            if not info:
+                return None
+            manual = info.get("subtitles") or {}
+            automatic = info.get("automatic_captions") or {}
+            for language in LANGUAGES:
+                for store, generated in ((manual, False), (automatic, True)):
+                    tracks = store.get(language) or store.get(f"{language}-orig")
+                    if not tracks:
+                        continue
+                    track = next((t for t in tracks if t.get("ext") == "json3"), None) or tracks[0]
+                    raw = ydl.urlopen(track["url"]).read().decode("utf-8", errors="replace")
+                    segments = _parse_json3(raw) if track.get("ext") == "json3" else _parse_vtt(raw)
+                    if segments:
+                        return {"language": language, "is_generated": generated, "segments": segments}
+    except Exception as exc:                       # noqa: BLE001 - report and move on
+        print(f"   yt-dlp fallback failed: {str(exc)[:90]}")
+    return None
+
+
+def _parse_json3(raw: str) -> List[Dict[str, Any]]:
+    """YouTube's json3 caption format: already deduplicated, unlike rolling VTT."""
+    segments = []
+    for event in (json.loads(raw).get("events") or []):
+        text = "".join(s.get("utf8", "") for s in (event.get("segs") or []))
+        text = " ".join(text.split())
+        if not text:
+            continue
+        segments.append({"start": (event.get("tStartMs") or 0) / 1000.0,
+                         "duration": (event.get("dDurationMs") or 0) / 1000.0,
+                         "text": text})
+    return segments
+
+
+def _parse_vtt(raw: str) -> List[Dict[str, Any]]:
+    """Fallback for tracks with no json3: take the timed lines, drop word tags."""
+    def seconds(stamp: str) -> float:
+        parts = stamp.replace(",", ".").split(":")
+        parts = [float(p) for p in parts]
+        while len(parts) < 3:
+            parts.insert(0, 0.0)
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+    segments, seen = [], set()
+    blocks = re.split(r"\n\s*\n", raw.replace("\r\n", "\n"))
+    for block in blocks:
+        match = re.search(r"(\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3})\s+-->\s+(\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3})", block)
+        if not match:
+            continue
+        body = block[match.end():]
+        body = re.sub(r"<[^>]+>", "", body)
+        text = " ".join(body.split())
+        # Auto-captions roll: each cue repeats the previous line. Keep firsts.
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        start = seconds(match.group(1))
+        segments.append({"start": start, "duration": seconds(match.group(2)) - start, "text": text})
+    return segments
 
 
 def fetch_with_backoff(video_id: str, force: bool, delay: float, attempts: int = 4) -> bool:
