@@ -19,6 +19,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -72,6 +73,26 @@ def fetch(video_id: str, force: bool = False) -> bool:
     return True
 
 
+def fetch_with_backoff(video_id: str, force: bool, delay: float, attempts: int = 4) -> bool:
+    """Fetch one transcript, backing off when YouTube starts refusing.
+
+    Even a residential IP gets throttled if you pull transcripts back to back —
+    a batch of ten will trip it. Pace the requests and retry the block with a
+    widening wait rather than failing the whole batch.
+    """
+    wait = delay
+    for attempt in range(1, attempts + 1):
+        if fetch(video_id, force):
+            time.sleep(delay)
+            return True
+        if attempt == attempts:
+            return False
+        wait *= 2
+        print(f"   backing off {wait:.0f}s before retry {attempt + 1}/{attempts}")
+        time.sleep(wait)
+    return False
+
+
 def psql(sql: str) -> str:
     proc = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", HOST, "docker", "exec", "-i",
@@ -123,6 +144,8 @@ def main() -> None:
     ap.add_argument("--from-cards", action="store_true",
                     help="fetch every video referenced by a flashcard")
     ap.add_argument("--force", action="store_true", help="refetch even if cached")
+    ap.add_argument("--delay", type=float, default=6.0,
+                    help="seconds to pause between videos (YouTube throttles bursts)")
     ap.add_argument("--push", action="store_true",
                     help="upload fetched transcripts into the production cache")
     args = ap.parse_args()
@@ -134,7 +157,7 @@ def main() -> None:
         ap.error("give at least one URL, or --from-cards")
 
     unique = list(dict.fromkeys(ids))
-    ok = sum(fetch(v, args.force) for v in unique)
+    ok = sum(fetch_with_backoff(v, args.force, args.delay) for v in unique)
     print(f"\n{ok}/{len(unique)} transcripts available in {OUT_DIR}")
 
     if args.push:
