@@ -158,6 +158,46 @@
   color: var(--text-muted, #94a3b8);
 }
 
+/* Link from a video-mined card to the moment its word is spoken. Sized as a
+   real tap target: it sits among rating buttons on a phone. */
+.fc-moment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: var(--space-3) 0 0;
+  padding: 10px 12px;
+  min-height: 44px;
+  border: 1px solid var(--app-border, rgba(148, 163, 184, 0.28));
+  border-radius: 12px;
+  background: rgba(99, 167, 247, 0.10);
+  color: inherit;
+  text-decoration: none;
+}
+.fc-moment:hover,
+.fc-moment:focus-visible {
+  background: rgba(99, 167, 247, 0.18);
+}
+.fc-moment-play {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--app-accent, #63a7f7);
+}
+.fc-moment-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--app-accent, #63a7f7);
+}
+.fc-moment-title {
+  overflow: hidden;
+  font-size: 0.72rem;
+  color: var(--text-muted, #94a3b8);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ratings */
 
 .fc-show,

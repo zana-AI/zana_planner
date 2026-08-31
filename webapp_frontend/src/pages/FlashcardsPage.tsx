@@ -17,6 +17,27 @@ import './FlashcardsPage.css';
  * content itself carries whatever language the deck is in. Nothing here is
  * specific to French.
  */
+/**
+ * Cards mined from video know the second at which their word is spoken, so the
+ * answer side can offer the clip. The link points at our own watch page rather
+ * than youtube.com: it keeps the viewer inside the app, and that page already
+ * knows how to seek and to record watch progress.
+ */
+function videoMomentUrl(fields: FlashcardFields, language: string): string | null {
+  const url = typeof fields.source_url === 'string' ? fields.source_url : '';
+  const start = typeof fields.source_start === 'number' ? fields.source_start : NaN;
+  const match = url.match(/[?&]v=([\w-]{6,20})/);
+  if (!match || !Number.isFinite(start)) return null;
+  // Start a beat early: seeking exactly on the cue clips the first syllable.
+  const at = Math.max(0, Math.floor(start) - 1);
+  return `/youtube-watch?video_id=${match[1]}&start=${at}&lang=${encodeURIComponent(language)}`;
+}
+
+function formatMoment(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
 const RATINGS: Array<{ value: FlashcardRating; tone: 'again' | 'hard' | 'good' | 'easy' }> = [
   { value: 1, tone: 'again' },
   { value: 2, tone: 'hard' },
@@ -86,7 +107,7 @@ function ReviewPane({
   deckId?: string;
   onCountsChange: (c: FlashcardCounts) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [cards, setCards] = useState<FlashcardQueueCard[]>([]);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -191,6 +212,14 @@ function ReviewPane({
   const isReversed =
     card.note_type !== 'grammar' && Boolean(card.fields.back) && card.reps % 2 === 1;
 
+  const momentUrl = videoMomentUrl(card.fields, i18n.language);
+  // `source_sentence` is the cleaned-up transcript line; `example` is whatever
+  // the original import carried. Prefer the sentence when a card has one.
+  const spokenLine =
+    (typeof card.fields.source_sentence === 'string' ? card.fields.source_sentence : '') ||
+    card.fields.example ||
+    '';
+
   return (
     <div className="fc-review">
       <div className="fc-progress">
@@ -222,14 +251,34 @@ function ReviewPane({
             {/* The example usually contains the target word, so it stays on the
                 answer side in both directions — as a prompt it would give the
                 answer away. */}
-            {card.fields.example ? (
-              <p className="fc-example" dir="auto"><RichText text={card.fields.example} /></p>
+            {spokenLine ? (
+              <p className="fc-example" dir="auto"><RichText text={spokenLine} /></p>
             ) : null}
             {card.fields.note_fa ? (
               <p className="fc-note-fa" dir="auto">{card.fields.note_fa}</p>
             ) : null}
             {card.fields.source_page ? (
               <p className="fc-source">{t('flashcards.page', { page: card.fields.source_page })}</p>
+            ) : null}
+            {/* Words mined from video get the line as it was actually spoken,
+                plus a link to hear it. Hearing the word in its own sentence is
+                the whole reason we kept the timestamp. */}
+            {momentUrl ? (
+              <a
+                className="fc-moment"
+                href={momentUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span className="fc-moment-play" aria-hidden="true">&#9654;</span>
+                <span className="fc-moment-text">
+                  {t('flashcards.watchMoment', { time: formatMoment(card.fields.source_start as number) })}
+                  {card.fields.source_title ? (
+                    <span className="fc-moment-title">{card.fields.source_title as string}</span>
+                  ) : null}
+                </span>
+              </a>
             ) : null}
           </div>
         ) : (

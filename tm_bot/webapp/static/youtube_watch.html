@@ -223,6 +223,9 @@
   var params = new URLSearchParams(window.location.search);
   var videoId = params.get('video_id') || '';
   var contentId = params.get('content_id') || '';
+  // Flashcards mined from this video link straight to the second the word
+  // is spoken, so honour a ?start= offset when opening the player.
+  var startAt = Math.max(0, parseInt(params.get('start') || '0', 10) || 0);
   var language = (params.get('lang') || 'en').toLowerCase().split('-')[0];
   var copy = language === 'fa' ? {
     hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', track: 'ردگیری پیشرفت',
@@ -491,7 +494,8 @@
 
   document.getElementById('yt').src =
     'https://www.youtube.com/embed/' + videoId +
-    '?enablejsapi=1&playsinline=1&origin=' + encodeURIComponent(baseUrl);
+    '?enablejsapi=1&playsinline=1&origin=' + encodeURIComponent(baseUrl) +
+    (startAt > 0 ? '&start=' + startAt : '');
 
   // Fetch video title via YouTube oEmbed (no API key required).
   (function() {
@@ -645,6 +649,9 @@
       events: {
         onReady: function() {
           dlog("player ready");
+          if (startAt > 0) {
+            try { player.seekTo(startAt, true); } catch (e) {}
+          }
           try {
             var dur = player.getDuration();
             if (dur && isFinite(dur) && dur > 0) {

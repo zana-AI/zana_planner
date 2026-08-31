@@ -281,6 +281,7 @@
     "cardCount_other": "{{count, num}} کارت",
     "deckCount": "{{count, num}} دسته",
     "page": "ص. {{page, num}}",
+    "watchMoment": "شنیدن در ویدئو · {{time}}",
     "rating": {
       "again": "دوباره",
       "againHint": "یادم نبود",

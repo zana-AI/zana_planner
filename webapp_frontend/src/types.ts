@@ -857,6 +857,13 @@ export interface FlashcardFields {
   note_fa?: string;
   example?: string;
   source_page?: string;
+  // Cards mined from video (Language Reactor) carry where they came from.
+  // `source_start` is seconds into the video, so the card can link to the
+  // exact moment the word is spoken.
+  source_url?: string;
+  source_title?: string;
+  source_sentence?: string;
+  source_start?: number;
   [key: string]: unknown;
 }
 
