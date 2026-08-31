@@ -140,6 +140,40 @@
   color: var(--text-muted, #94a3b8);
 }
 
+/* Deck chips. Horizontally scrollable: deck count grows with every video
+   imported, and they must never wrap into a wall above the card. */
+.fc-decks {
+  display: flex;
+  gap: 8px;
+  margin-bottom: var(--space-3);
+  padding-bottom: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fc-decks::-webkit-scrollbar { display: none; }
+.fc-decks button {
+  flex: 0 0 auto;
+  max-width: 60vw;
+  padding: 7px 12px;
+  min-height: 36px;
+  border: 1px solid var(--app-border, rgba(148, 163, 184, 0.28));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted, #cbd5e1);
+  font: inherit;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.fc-decks button.is-active {
+  border-color: var(--app-accent, #63a7f7);
+  background: rgba(99, 167, 247, 0.14);
+  color: var(--app-accent, #63a7f7);
+  font-weight: 700;
+}
+
 .fc-definition { margin: 0 0 var(--space-2); line-height: 1.55; }
 .fc-example {
   margin: 0 0 var(--space-2);

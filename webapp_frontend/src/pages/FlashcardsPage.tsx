@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type {
   FlashcardCounts,
+  FlashcardDeck,
   FlashcardFields,
   FlashcardNote,
   FlashcardQueueCard,
@@ -538,13 +539,86 @@ function emptyDraft(deckPath: string) {
   return { front: '', back: '', note_fa: '', example: '', deck_path: deckPath };
 }
 
+/**
+ * Choose which deck to study.
+ *
+ * The queue endpoint has always accepted a deck and expands its whole subtree,
+ * but the only way to pass one was to hand-write a `?deck=` URL — so in
+ * practice every review mixed Édito B1, Lingoda and the video decks together.
+ *
+ * Drill-down rather than a flat list of every deck: decks nest arbitrarily, and
+ * one chip per deck stops being readable as soon as a few videos are imported.
+ * Selecting a deck studies everything beneath it, so stopping at any level is a
+ * valid choice.
+ */
+function DeckPicker({
+  decks,
+  deckId,
+  onSelect,
+}: {
+  decks: FlashcardDeck[];
+  deckId?: string;
+  onSelect: (deck: FlashcardDeck | null) => void;
+}) {
+  const { t } = useTranslation();
+  if (!decks.length) return null;
+
+  const current = decks.find((d) => d.deck_id === deckId) || null;
+  const parent = current?.parent_deck_id
+    ? decks.find((d) => d.deck_id === current.parent_deck_id) || null
+    : null;
+  // With a single root ("French") that root is not a choice, so open on its
+  // children — the level where Édito B1, Lingoda and the videos actually differ.
+  const roots = decks.filter((d) => !d.parent_deck_id);
+  const base = current || (roots.length === 1 ? roots[0] : null);
+  const children = decks.filter(
+    (d) => (d.parent_deck_id || null) === (base?.deck_id || null),
+  );
+
+  // A level with nothing to choose between is just a button that changes nothing.
+  if (!current && children.length < 2) return null;
+
+  return (
+    <div className="fc-decks" role="group" aria-label={t('flashcards.chooseDeck')}>
+      <button
+        type="button"
+        className={!current ? 'is-active' : ''}
+        onClick={() => onSelect(null)}
+      >
+        {t('flashcards.allCards')}
+      </button>
+      {current ? (
+        <button type="button" className="is-active" onClick={() => onSelect(parent)}>
+          {current.name}
+        </button>
+      ) : null}
+      {children.map((deck) => (
+        <button type="button" key={deck.deck_id} onClick={() => onSelect(deck)}>
+          {deck.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // --- page -----------------------------------------------------------------
 
 export function FlashcardsPage() {
   const { t } = useTranslation();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const deckId = params.get('deck') || undefined;
   const deckName = params.get('name') || undefined;
+  const [decks, setDecks] = useState<FlashcardDeck[]>([]);
+
+  useEffect(() => {
+    apiClient.getFlashcardDecks().then(setDecks).catch(() => {
+      /* the picker is an enhancement; studying everything still works */
+    });
+  }, []);
+
+  const selectDeck = useCallback((deck: FlashcardDeck | null) => {
+    setParams(deck ? {deck: deck.deck_id, name: deck.name} : {}, {replace: true});
+  }, [setParams]);
 
   const [tab, setTab] = useState<'review' | 'manage'>('review');
   const [counts, setCounts] = useState<FlashcardCounts | null>(null);
@@ -567,6 +641,8 @@ export function FlashcardsPage() {
           <h1>{deckName || t('flashcards.study')}</h1>
           <CountsBar counts={counts} />
         </header>
+
+        <DeckPicker decks={decks} deckId={deckId} onSelect={selectDeck} />
 
         <div className="fc-tabs">
           <button

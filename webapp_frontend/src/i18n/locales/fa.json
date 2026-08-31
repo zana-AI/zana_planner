@@ -281,6 +281,8 @@
     "cardCount_other": "{{count, num}} کارت",
     "deckCount": "{{count, num}} دسته",
     "page": "ص. {{page, num}}",
+    "allCards": "همهٔ کارت‌ها",
+    "chooseDeck": "انتخاب دسته",
     "watchMoment": "شنیدن در ویدئو · {{time}}",
     "rating": {
       "again": "دوباره",

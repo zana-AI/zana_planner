@@ -281,6 +281,8 @@
     "cardCount_other": "{{count, num}} cards",
     "deckCount": "{{count, num}} decks",
     "page": "p. {{page, num}}",
+    "allCards": "All cards",
+    "chooseDeck": "Choose a deck",
     "watchMoment": "Hear it at {{time}}",
     "rating": {
       "again": "Again",
