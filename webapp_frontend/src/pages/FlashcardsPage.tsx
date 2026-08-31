@@ -30,7 +30,9 @@ function videoMomentUrl(fields: FlashcardFields, language: string): string | nul
   if (!match || !Number.isFinite(start)) return null;
   // Start a beat early: seeking exactly on the cue clips the first syllable.
   const at = Math.max(0, Math.floor(start) - 1);
-  return `/youtube-watch?video_id=${match[1]}&start=${at}&lang=${encodeURIComponent(language)}`;
+  // The word travels too: the player highlights it inside the spoken line.
+  const word = encodeURIComponent(fields.front || '');
+  return `/youtube-watch?video_id=${match[1]}&start=${at}&word=${word}&lang=${encodeURIComponent(language)}`;
 }
 
 function formatMoment(seconds: number): string {

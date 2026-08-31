@@ -14,6 +14,7 @@ Costs ~1.5 MB of traffic per video, almost all of it the watch page.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import subprocess
@@ -71,12 +72,59 @@ def fetch(video_id: str, force: bool = False) -> bool:
     return True
 
 
+def psql(sql: str) -> str:
+    proc = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", HOST, "docker", "exec", "-i",
+         "zana-postgres", "psql", "-U", "zana", "-d", "zana", "-At", "-P", "footer=off"],
+        input=sql, text=True, capture_output=True, encoding="utf-8", check=True)
+    return proc.stdout.strip()
+
+
+def push(video_id: str) -> bool:
+    """Upload a fetched transcript into the video_transcript cache.
+
+    The cues travel base64-encoded: a transcript is tens of kilobytes of French
+    with quotes and apostrophes in it, and base64 survives the trip through ssh
+    and psql without any quoting to get wrong.
+    """
+    path = OUT_DIR / f"{video_id}.json"
+    if not path.exists():
+        print(f"{video_id}: nothing to push (fetch it first)")
+        return False
+    data = json.loads(path.read_text(encoding="utf-8"))
+    cues = [
+        {"start": round(float(s["start"]), 2),
+         "end": round(float(s["start"]) + float(s.get("duration") or 0), 2),
+         "text": " ".join(s["text"].split())}
+        for s in data["segments"] if s.get("text", "").strip()
+    ]
+    blob = base64.b64encode(json.dumps(cues, ensure_ascii=False).encode("utf-8")).decode("ascii")
+    duration = cues[-1]["end"] if cues else 0
+    language = (data.get("language") or "").replace("'", "")
+    generated = str(bool(data.get("is_generated"))).lower()
+    psql(
+        "INSERT INTO video_transcript (video_id, language, is_generated, cues, cue_count,"
+        " duration_seconds, source, fetched_at) VALUES ("
+        f"'{video_id}', '{language}', {generated},"
+        f" convert_from(decode('{blob}', 'base64'), 'UTF8')::jsonb,"
+        f" {len(cues)}, {duration}, 'youtube_transcript_api', now())"
+        " ON CONFLICT (video_id) DO UPDATE SET language = EXCLUDED.language,"
+        " is_generated = EXCLUDED.is_generated, cues = EXCLUDED.cues,"
+        " cue_count = EXCLUDED.cue_count, duration_seconds = EXCLUDED.duration_seconds,"
+        " fetched_at = now();"
+    )
+    print(f"{video_id}: pushed {len(cues)} cues")
+    return True
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("urls", nargs="*", help="YouTube URLs or bare video ids")
     ap.add_argument("--from-cards", action="store_true",
                     help="fetch every video referenced by a flashcard")
     ap.add_argument("--force", action="store_true", help="refetch even if cached")
+    ap.add_argument("--push", action="store_true",
+                    help="upload fetched transcripts into the production cache")
     args = ap.parse_args()
 
     ids = [extract_video_id(u) if "/" in u or "v=" in u else u for u in args.urls]
@@ -85,8 +133,13 @@ def main() -> None:
     if not ids:
         ap.error("give at least one URL, or --from-cards")
 
-    ok = sum(fetch(v, args.force) for v in dict.fromkeys(ids))
-    print(f"\n{ok}/{len(set(ids))} transcripts available in {OUT_DIR}")
+    unique = list(dict.fromkeys(ids))
+    ok = sum(fetch(v, args.force) for v in unique)
+    print(f"\n{ok}/{len(unique)} transcripts available in {OUT_DIR}")
+
+    if args.push:
+        pushed = sum(push(v) for v in unique)
+        print(f"{pushed}/{len(unique)} pushed to the production cache")
     sys.exit(0 if ok else 1)
 
 

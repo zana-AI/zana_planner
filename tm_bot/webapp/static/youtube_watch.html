@@ -67,6 +67,16 @@
     .transcript-cue { display: grid; grid-template-columns: 54px 1fr; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid rgba(170,196,238,.08); background: transparent; color: rgba(237,243,255,.78); text-align: start; font: inherit; font-size: 13px; cursor: pointer; }
     .transcript-cue:hover, .transcript-cue:focus-visible { background: rgba(99,167,247,.12); color: #fff; outline: none; }
     .transcript-time { color: var(--app-accent); font-variant-numeric: tabular-nums; }
+    .transcript-cue.is-active { background: rgba(99,167,247,.18); color: #fff; }
+    .transcript-cue.is-active .transcript-time { font-weight: 800; }
+    /* The line being spoken, kept large and directly under the video so it can
+       be read while watching — the same focus a lyrics view gives a song. */
+    .focus-line { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
+    .focus-text { flex: 1; margin: 0; font-size: 15px; line-height: 1.5; color: #edf3ff; }
+    .focus-text mark { padding: 0 2px; border-radius: 4px; background: rgba(99,167,247,.30); color: #fff; font-weight: 800; }
+    .focus-replay { flex: 0 0 auto; min-height: 40px; padding: 8px 12px; border: 1px solid var(--app-border); border-radius: 10px; background: transparent; color: var(--app-accent); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .focus-replay:hover, .focus-replay:focus-visible { background: rgba(99,167,247,.14); outline: none; }
+    @media (max-width: 420px) { .focus-line { flex-direction: column; align-items: stretch; } .focus-replay { width: 100%; } }
     .hint { font-size: 12px; color: rgba(237,243,255,.58); margin: 10px 2px 0; }
     .controls { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
     .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; white-space: nowrap; }
@@ -196,6 +206,10 @@
     <iframe id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
   <div id="watchProgress" class="progress-container" hidden></div>
+  <div id="focusLine" class="focus-line" hidden>
+    <p id="focusText" class="focus-text" dir="auto"></p>
+    <button id="replayLine" class="focus-replay" type="button"></button>
+  </div>
   <details id="transcript" class="transcript" hidden>
     <summary id="transcriptTitle">Transcript</summary>
     <div id="transcriptList" class="transcript-list"></div>
@@ -226,17 +240,23 @@
   // Flashcards mined from this video link straight to the second the word
   // is spoken, so honour a ?start= offset when opening the player.
   var startAt = Math.max(0, parseInt(params.get('start') || '0', 10) || 0);
+  // A flashcard links here for one word; we highlight it in the spoken line.
+  var focusWord = params.get('word') || '';
   var language = (params.get('lang') || 'en').toLowerCase().split('-')[0];
   var copy = language === 'fa' ? {
     hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', track: 'ردگیری پیشرفت',
-    trackHint: 'بخش‌هایی را که می‌بینید ذخیره می‌کنیم.', full: 'تمام‌صفحه', close: 'بستن و ذخیره', exit: 'خروج'
+    trackHint: 'بخش‌هایی را که می‌بینید ذخیره می‌کنیم.', full: 'تمام‌صفحه', close: 'بستن و ذخیره', exit: 'خروج',
+    replay: '↺ تکرار این جمله'
   } : {
     hint: 'When you’re finished, close this page to save your watch progress.', track: 'Track progress',
-    trackHint: 'Save the parts you watch.', full: 'Full screen', close: 'Close and save', exit: 'Exit'
+    trackHint: 'Save the parts you watch.', full: 'Full screen', close: 'Close and save', exit: 'Exit',
+    replay: '↺ Replay this line'
   };
   document.documentElement.lang = language;
   document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
   document.getElementById('doneHint').textContent = copy.hint;
+  document.getElementById('replayLine').textContent = copy.replay;
+  document.getElementById('replayLine').addEventListener('click', function() { replayCurrentLine(); });
   document.getElementById('trackLabel').textContent = copy.track;
   document.getElementById('trackHint').textContent = copy.trackHint;
   document.getElementById('expandBtn').textContent = copy.full;
@@ -260,6 +280,10 @@
   var statsSent = false;
   var immersiveLandscape = false;
   var videoDuration = 0;
+  var cues = [];
+  var activeCueIndex = -1;
+  var cueButtons = [];
+  var followTimer = null;
   var debugLog = document.getElementById('debugLog');
   if (debug && debugLog) debugLog.hidden = false;
 
@@ -270,15 +294,126 @@
     return minutes + ':' + secs;
   }
 
+  // --- transcript follow -----------------------------------------------
+  // Song-learning apps make the current line the centre of the screen and let
+  // you replay it without hunting the scrubber. That is the whole trick for
+  // learning in context, so the line the player is on is always shown large
+  // above the transcript, and one button repeats it.
+
+  function foldAccents(text) {
+    try { return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+    catch (e) { return text.toLowerCase(); }
+  }
+
+  // "une decennie" -> "decenn": drop the article, keep a stem short enough to
+  // survive French inflection (decennie/decennies, aggraver/aggrave).
+  function wordStem() {
+    var stem = foldAccents(focusWord).replace(/^(un|une|le|la|les|des|du|de|d')\s*/, '').split(/[\s(,]/)[0];
+    return stem.length > 4 ? stem.slice(0, Math.max(4, stem.length - 2)) : stem;
+  }
+
+  // Emphasise the linked word inside its sentence, accent- and case-insensitively.
+  function renderFocusText(text) {
+    var target = document.getElementById('focusText');
+    target.textContent = '';
+    var stem = wordStem();
+    if (!stem) { target.textContent = text; return; }
+    var folded = foldAccents(text);
+    var at = folded.indexOf(stem);
+    if (at < 0) { target.textContent = text; return; }
+    // Grow the match to the whole word so the highlight lands on a word, not a stem.
+    var end = at + stem.length;
+    while (end < text.length && /[\w'’-]/.test(text[end])) end++;
+    var begin = at;
+    while (begin > 0 && /[\w'’-]/.test(text[begin - 1])) begin--;
+    target.appendChild(document.createTextNode(text.slice(0, begin)));
+    var mark = document.createElement('mark');
+    mark.textContent = text.slice(begin, end);
+    target.appendChild(mark);
+    target.appendChild(document.createTextNode(text.slice(end)));
+  }
+
+  function setActiveCue(index) {
+    if (index === activeCueIndex || index < 0 || index >= cues.length) return;
+    if (cueButtons[activeCueIndex]) cueButtons[activeCueIndex].classList.remove('is-active');
+    activeCueIndex = index;
+    var button = cueButtons[index];
+    if (button) {
+      button.classList.add('is-active');
+      // Only chase the line when the panel is open, or we fight the user's scroll.
+      var panel = document.getElementById('transcript');
+      if (panel && panel.open) {
+        try { button.scrollIntoView({block: 'center', behavior: 'smooth'}); } catch (e) {}
+      }
+    }
+    renderFocusText(cues[index].text);
+    document.getElementById('focusLine').hidden = false;
+  }
+
+  function cueIndexAt(seconds) {
+    var lo = 0, hi = cues.length - 1, best = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (cues[mid].start <= seconds) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    return best;
+  }
+
+  // The card links a second early on purpose, and our transcript can drift from
+  // the one the word was mined out of, so find the line that actually says the
+  // word near that point rather than trusting the timestamp alone.
+  function initialCueIndex() {
+    var fallback = cueIndexAt(startAt + 0.5);
+    var stem = wordStem();
+    if (!stem) return fallback;
+    for (var i = 0; i < cues.length; i++) {
+      if (cues[i].start < startAt - 4) continue;
+      if (cues[i].start > startAt + 20) break;
+      if (foldAccents(cues[i].text).indexOf(stem) >= 0) return i;
+    }
+    return fallback;
+  }
+
+  function followTick() {
+    if (!cues.length || !player || typeof player.getCurrentTime !== 'function') return;
+    // Only chase the clock while the video is actually running. Paused, the
+    // line must stay put: it is the one the flashcard linked to, and the
+    // player sits a beat before it by design.
+    try {
+      if (!window.YT || !YT.PlayerState || player.getPlayerState() !== YT.PlayerState.PLAYING) return;
+    } catch (e) { return; }
+    var t;
+    try { t = player.getCurrentTime(); } catch (e) { return; }
+    setActiveCue(cueIndexAt(t));
+  }
+
+  function startFollowing() {
+    if (followTimer) return;
+    // Faster than the 1s stats poll: a caption line can be shorter than a second.
+    followTimer = setInterval(followTick, 250);
+    followTick();
+  }
+
+  function replayCurrentLine() {
+    var cue = cues[activeCueIndex];
+    if (!cue || !player) return;
+    try {
+      player.seekTo(Math.max(0, cue.start - 0.35), true);
+      player.playVideo();
+    } catch (e) {}
+  }
+
   function loadTranscript() {
-    if (!contentId) return;
     var headers = {};
     var token = '';
     try { token = localStorage.getItem('telegram_auth_token') || ''; } catch (_) {}
     var initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
     if (token) headers.Authorization = 'Bearer ' + token;
     else if (initData) headers['X-Telegram-Init-Data'] = initData;
-    fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/transcript', { headers: headers })
+    var endpoint = contentId
+      ? '/api/content/' + encodeURIComponent(contentId) + '/transcript'
+      : '/api/youtube/' + encodeURIComponent(videoId) + '/transcript';
+    fetch(baseUrl + endpoint, { headers: headers })
       .then(function(response) { return response.ok ? response.json() : null; })
       .then(function(data) {
         if (!data || !data.available || !data.cues || !data.cues.length) return;
@@ -287,18 +422,33 @@
         var title = document.getElementById('transcriptTitle');
         title.textContent = (language === 'fa' ? 'زیرنویس' : 'Transcript') + (data.source === 'automatic' ? (language === 'fa' ? ' · خودکار' : ' · automatic') : '');
         list.innerHTML = '';
-        data.cues.forEach(function(cue) {
+        cues = data.cues.map(function(cue) {
+          return {start: Number(cue.start) || 0, end: Number(cue.end) || 0, text: cue.text || ''};
+        });
+        cueButtons = [];
+        cues.forEach(function(cue, index) {
           var button = document.createElement('button');
           button.type = 'button';
           button.className = 'transcript-cue';
           button.innerHTML = '<span class="transcript-time">' + formatCueTime(cue.start) + '</span><span></span>';
           button.querySelector('span:last-child').textContent = cue.text;
           button.addEventListener('click', function() {
-            if (player && typeof player.seekTo === 'function') { player.seekTo(Number(cue.start) || 0, true); player.playVideo(); }
+            if (player && typeof player.seekTo === 'function') { player.seekTo(cue.start, true); player.playVideo(); }
+            setActiveCue(index);
           });
+          cueButtons.push(button);
           list.appendChild(button);
         });
         panel.hidden = false;
+        // Opening the panel should land on the line being spoken, not at 0:00.
+        panel.addEventListener('toggle', function() {
+          if (!panel.open) return;
+          var active = cueButtons[activeCueIndex];
+          if (active) { try { active.scrollIntoView({block: 'center'}); } catch (e) {} }
+        });
+        // Show the linked line immediately, before playback reports a position.
+        if (startAt > 0) setActiveCue(initialCueIndex());
+        startFollowing();
       })
       .catch(function() { /* Captions are optional; keep the player usable. */ });
   }

@@ -217,6 +217,24 @@ async def get_content_heatmap(
     return data
 
 
+def _transcript_for_video(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
+    """Cached transcript first, live fetch only as a fallback.
+
+    In production the live path always fails — YouTube blocks the server's IP —
+    so the cache (filled by scripts/fetch_transcripts.py from a residential
+    connection) is what actually serves users. The live call is kept because it
+    still works in local development, where there is no cache to read.
+    """
+    from repositories.video_transcript_repo import VideoTranscriptRepository
+
+    cached = VideoTranscriptRepository().get(video_id)
+    if cached and cached.get("cues"):
+        return cached
+
+    from utils.youtube_utils import get_video_transcript
+    return get_video_transcript(video_id, url=url, preferred_language=None)
+
+
 @router.get("/content/{content_id}/transcript")
 async def get_youtube_transcript(
     content_id: str,
@@ -229,11 +247,26 @@ async def get_youtube_transcript(
     content = repo.get_content_by_id(content_id) or {}
     if str(content.get("provider") or "").lower() != "youtube":
         return {"available": False, "cues": []}
-    from utils.youtube_utils import extract_video_id, get_video_transcript
+    from utils.youtube_utils import extract_video_id
     video_id = extract_video_id(content.get("original_url") or content.get("canonical_url") or "")
     if not video_id:
         return {"available": False, "cues": []}
-    return get_video_transcript(video_id, url=content.get("original_url"), preferred_language=None)
+    return _transcript_for_video(video_id, url=content.get("original_url"))
+
+
+@router.get("/youtube/{video_id}/transcript")
+async def get_youtube_transcript_by_video(
+    video_id: str,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Return captions for a bare video id, with no content row required.
+
+    A flashcard cites a video the learner may never have added as content, so
+    the watch page needs a way to ask for a transcript by video id alone.
+    """
+    if len(video_id) > 20 or not all(c.isalnum() or c in "_-" for c in video_id):
+        raise HTTPException(status_code=400, detail="Invalid video_id")
+    return _transcript_for_video(video_id)
 
 
 @router.patch("/user-content/{content_id}")
