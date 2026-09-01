@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..dependencies import get_current_user
-from handlers.translator import translate_text
+from handlers.translator import translate_learning_term
 from services import flashcard_service
 from utils.logger import get_logger
 
@@ -67,6 +67,7 @@ class ReviewIn(BaseModel):
 
 class WordLookupIn(BaseModel):
     word: str = Field(min_length=1, max_length=120)
+    context: str = Field(default="", max_length=500)
     source_language: str = Field(default="fr", min_length=2, max_length=5)
     target_language: str = Field(default="fa", min_length=2, max_length=5)
 
@@ -123,13 +124,18 @@ async def lookup_word(
     if not word:
         raise HTTPException(status_code=422, detail="word is required")
 
-    translation = translate_text(word, target_lang=target, source_lang=source)
+    translation = translate_learning_term(
+        word,
+        payload.context,
+        target_lang=target,
+        source_lang=source,
+    )
     return {
         "word": word,
         "translation": translation,
         "source_language": source,
         "target_language": target,
-        "available": bool(translation and translation.strip() and translation != word),
+        "available": bool(translation and translation.strip()),
     }
 
 
@@ -184,6 +190,26 @@ async def create_note(payload: NoteIn, user_id: int = Depends(get_current_user))
     if not payload.fields.get("front"):
         raise HTTPException(status_code=422, detail="fields.front is required")
     return flashcard_service.create_note(
+        str(user_id),
+        deck_path=payload.deck_path,
+        fields=payload.fields,
+        note_type=payload.note_type,
+        references=[r.model_dump() for r in payload.references],
+    )
+
+
+@router.post("/video-notes")
+async def save_video_note(payload: NoteIn, user_id: int = Depends(get_current_user)):
+    """Save a word mined from a subtitle without damaging an existing card.
+
+    Generic authoring intentionally upserts by front text. In the player that
+    would let a one-click save replace an existing definition and move its deck.
+    This path preserves existing content/scheduling and only attaches the new
+    video context; genuinely new words still get a normal card.
+    """
+    if not payload.fields.get("front"):
+        raise HTTPException(status_code=422, detail="fields.front is required")
+    return flashcard_service.save_context_note(
         str(user_id),
         deck_path=payload.deck_path,
         fields=payload.fields,

@@ -15,7 +15,7 @@ const CHALLENGE_ACTIVITY_LABEL: Record<string, string> = {
 };
 
 export function TemplatesPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
   const [challenges, setChallenges] = useState<ChallengeSummary[]>([]);
@@ -57,7 +57,10 @@ export function TemplatesPage() {
   const openExploreItem = (item: ExploreItem) => {
     hapticFeedback('light');
     if (item.url && /^https?:\/\//i.test(item.url)) window.open(item.url, '_blank', 'noopener,noreferrer');
-    else if (item.native_ref?.startsWith('/')) navigate(item.native_ref);
+    else if (item.native_ref?.startsWith('/youtube-watch')) {
+      const separator = item.native_ref.includes('?') ? '&' : '?';
+      window.location.assign(`${item.native_ref}${separator}lang=${encodeURIComponent(i18n.language)}`);
+    } else if (item.native_ref?.startsWith('/')) navigate(item.native_ref);
   };
 
   if (loading) {

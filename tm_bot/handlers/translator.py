@@ -56,6 +56,14 @@ _SYSTEM_PROMPT = (
     "- If the text is already in {target}, return it unchanged."
 )
 
+_LEARNING_TERM_PROMPT = (
+    "You are a concise bilingual dictionary for a language learner.\n"
+    "Translate the term from {source} to {target} using the sentence context to "
+    "choose the intended sense.\n"
+    "Output ONLY the shortest natural translation of the term. No labels, quotes, "
+    "romanization, definition, alternatives, or explanation."
+)
+
 
 def _language_name(code: str) -> str:
     return _LANGUAGE_NAMES.get((code or "").lower().strip(), code)
@@ -105,7 +113,62 @@ def translate_text(text: str, target_lang: str, source_lang: str = "en") -> str:
     return translated
 
 
-def _call_groq(api_key: str, system_prompt: str, text: str) -> Optional[str]:
+def translate_learning_term(
+    term: str,
+    context: str,
+    target_lang: str,
+    source_lang: str = "fr",
+) -> Optional[str]:
+    """Translate one learning term in context, returning None on failure.
+
+    Unlike user-facing UI translation, a failed dictionary lookup must not
+    masquerade as a valid answer by returning the source word. One compact
+    model call is enough here; callers can show a soft unavailable state.
+    """
+    clean_term = " ".join((term or "").strip().split())
+    clean_context = " ".join((context or "").strip().split())[:500]
+    source = (source_lang or "fr").lower().strip()
+    target = (target_lang or "en").lower().strip()
+    if not clean_term or source == target:
+        return clean_term or None
+
+    cache_key = f"learning:{source}:{target}:{clean_term}:{clean_context}"
+    with _cache_lock:
+        cached = _translation_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        _warn_unavailable("GROQ_API_KEY is not set")
+        return None
+
+    system_prompt = _LEARNING_TERM_PROMPT.format(
+        source=_language_name(source),
+        target=_language_name(target),
+    )
+    user_text = f"Term: {clean_term}\nContext: {clean_context or clean_term}"
+    translated = _call_groq(
+        api_key,
+        system_prompt,
+        user_text,
+        models=(_MODEL,),
+        max_tokens=96,
+    )
+    if translated:
+        with _cache_lock:
+            _translation_cache[cache_key] = translated
+    return translated
+
+
+def _call_groq(
+    api_key: str,
+    system_prompt: str,
+    text: str,
+    *,
+    models: tuple[str, ...] = (_MODEL, _FALLBACK_MODEL),
+    max_tokens: Optional[int] = None,
+) -> Optional[str]:
     """One translation call, primary model then fallback. None if both fail."""
     from llms.providers.telemetry import record_usage_safely
     from llms.providers.usage import extract_tokens
@@ -113,9 +176,9 @@ def _call_groq(api_key: str, system_prompt: str, text: str) -> Optional[str]:
     # Translations are roughly length-preserving; give the model room for a
     # longer target script (Persian runs longer than English) plus the hidden
     # reasoning tokens gpt-oss models emit before their answer.
-    max_tokens = min(2048, max(256, len(text) * 2))
+    resolved_max_tokens = max_tokens or min(2048, max(256, len(text) * 2))
 
-    for model in (_MODEL, _FALLBACK_MODEL):
+    for model in models:
         start = time.perf_counter()
         try:
             from openai import OpenAI
@@ -127,7 +190,7 @@ def _call_groq(api_key: str, system_prompt: str, text: str) -> Optional[str]:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text},
                 ],
-                max_tokens=max_tokens,
+                max_tokens=resolved_max_tokens,
                 temperature=0.0,
                 # gpt-oss-* spend part of the budget on hidden chain-of-thought;
                 # "low" keeps enough of it for the actual translation. Same

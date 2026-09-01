@@ -274,12 +274,14 @@
     hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', track: 'ردگیری پیشرفت',
     trackHint: 'بخش‌هایی را که می‌بینید ذخیره می‌کنیم.', full: 'تمام‌صفحه', close: 'بستن و ذخیره', exit: 'خروج',
     replay: '↺ تکرار این جمله', listen: '🔊 تلفظ', save: 'ذخیره کارت', saved: '✓ ذخیره شد',
+    existingKept: 'کارت موجود حفظ شد',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'یک کلمه را انتخاب کنید.',
     signIn: 'برای ذخیره، صفحه را داخل اپ باز کنید.', context: 'جمله'
   } : {
     hint: 'When you’re finished, close this page to save your watch progress.', track: 'Track progress',
     trackHint: 'Save the parts you watch.', full: 'Full screen', close: 'Close and save', exit: 'Exit',
     replay: '↺ Replay this line', listen: '🔊 Listen', save: 'Save card', saved: '✓ Saved',
+    existingKept: 'Existing card kept',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
     signIn: 'Open this page inside the app to save cards.', context: 'line'
   };
@@ -303,6 +305,7 @@
   var selectedCue = null;
   var selectedWordButton = null;
   var lookupCache = Object.create(null);
+  var lookupPending = Object.create(null);
   var lookupTimer = null;
   var lookupRequestId = 0;
   var userToken = params.get('ut') || '';
@@ -387,24 +390,27 @@
     if (status) status.textContent = text || '';
   }
 
-  function lookupWord(word) {
+  function lookupWord(word, context) {
     var target = translationTarget();
-    var key = sourceLanguage + ':' + target + ':' + foldAccents(word);
+    var key = sourceLanguage + ':' + target + ':' + foldAccents(word) + ':' + foldAccents(context || '');
     if (lookupCache[key]) return Promise.resolve(lookupCache[key]);
+    if (lookupPending[key]) return lookupPending[key];
     var headers = authHeaders();
     if (!headers.Authorization && !headers['X-Telegram-Init-Data']) {
       return Promise.resolve({available: false, translation: ''});
     }
-    return fetch(baseUrl + '/api/flashcards/lookup', {
+    var request = fetch(baseUrl + '/api/flashcards/lookup', {
       method: 'POST', headers: headers,
-      body: JSON.stringify({word: word, source_language: sourceLanguage, target_language: target})
+      body: JSON.stringify({word: word, context: context || '', source_language: sourceLanguage, target_language: target})
     }).then(function(response) {
       if (!response.ok) throw new Error('lookup HTTP ' + response.status);
       return response.json();
     }).then(function(data) {
       lookupCache[key] = data;
       return data;
-    });
+    }).finally(function() { delete lookupPending[key]; });
+    lookupPending[key] = request;
+    return request;
   }
 
   function showWordTools(word, cue, wordButton, immediate) {
@@ -432,7 +438,8 @@
 
   function fetchWordTranslation(word) {
     var requestId = ++lookupRequestId;
-    lookupWord(word).then(function(data) {
+    var context = selectedCue ? selectedCue.text : '';
+    lookupWord(word, context).then(function(data) {
       if (requestId !== lookupRequestId || word !== selectedWord) return;
       document.getElementById('wordTranslation').textContent = data && data.available
         ? data.translation : copy.unavailable;
@@ -507,13 +514,14 @@
         source_title: title,
         source_start: selectedCue.start,
         source_url: sourceUrl,
+        source_language: sourceLanguage,
         tags: ['youtube', sourceLanguage]
       },
       references: [{kind: 'url', locator: {url: sourceUrl, start: selectedCue.start}, label: 'YouTube · ' + formatCueTime(selectedCue.start)}]
     };
     var saveButton = document.getElementById('saveWord');
     saveButton.disabled = true;
-    fetch(baseUrl + '/api/flashcards/notes', {
+    fetch(baseUrl + '/api/flashcards/video-notes', {
       method: 'POST', headers: headers, body: JSON.stringify(payload)
     }).then(function(response) {
       if (response.status === 401) throw new Error('auth');
@@ -521,7 +529,7 @@
       return response.json();
     }).then(function(data) {
       saveButton.textContent = copy.saved;
-      setWordStatus(data && data._created === false ? copy.saved + ' · already in your deck' : copy.saved);
+      setWordStatus(data && data._created === false ? copy.saved + ' · ' + copy.existingKept : copy.saved);
       setTimeout(function() { saveButton.textContent = copy.save; }, 1800);
     }).catch(function(error) {
       setWordStatus(error && error.message === 'auth' ? copy.signIn : copy.unavailable);
@@ -530,6 +538,16 @@
 
   document.getElementById('listenWord').addEventListener('click', speakSelectedWord);
   document.getElementById('saveWord').addEventListener('click', saveSelectedWord);
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') closeWordTools();
+  });
+  document.addEventListener('click', function(event) {
+    var tools = document.getElementById('wordTools');
+    var target = event.target;
+    if (!tools || tools.hidden || !target || tools.contains(target)) return;
+    if (target.closest && target.closest('.transcript-word')) return;
+    closeWordTools();
+  });
 
   // Emphasise the linked word inside its sentence, accent- and case-insensitively.
   function renderFocusText(text) {

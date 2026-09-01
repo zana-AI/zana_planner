@@ -22,6 +22,7 @@ from repositories.flashcard_repo import (
     FlashcardDeckRepository,
     FlashcardNoteRepository,
     FlashcardReferenceRepository,
+    normalise_key,
 )
 from repositories.flashcard_review_repo import (
     FlashcardCardRepository,
@@ -300,6 +301,108 @@ def create_note(
         for reference in references or []:
             _refs.add(session, note["note_id"], **reference)
         note["references"] = _refs.list_for_note(session, note["note_id"])
+        return note
+
+
+def save_context_note(
+    user_id: str,
+    deck_path: str,
+    fields: Dict[str, Any],
+    note_type: str = "vocab",
+    references: Optional[List[Dict[str, Any]]] = None,
+) -> dict:
+    """Save a video-mined word while preserving any existing card.
+
+    A normal authoring upsert replaces fields and deck by design. Subtitle
+    mining is additive: if the word already exists, keep its definition, deck,
+    scheduling and primary example, then attach this video as another context.
+    """
+    key = normalise_key(fields.get("front", ""))
+    if not key:
+        raise ValueError("Note must have a non-empty 'front' field")
+
+    with get_db_session() as session:
+        existing = _notes.get_by_source_key(session, user_id, key)
+        if existing is None:
+            deck = _decks.get_or_create_path(session, user_id, deck_path)
+            note = _notes.upsert(
+                session,
+                user_id,
+                deck["deck_id"],
+                fields,
+                note_type,
+                "youtube",
+            )
+            _cards.get_or_create(
+                session, note["note_id"], due=datetime.now(timezone.utc)
+            )
+            context_added = True
+        else:
+            note = existing
+            existing_fields = dict(existing.get("fields") or {})
+            additions: Dict[str, Any] = {}
+
+            # Fill genuinely missing learning content, never replace authored
+            # definitions or examples merely because a word was clicked.
+            for field_name in ("back", "example"):
+                if not existing_fields.get(field_name) and fields.get(field_name):
+                    additions[field_name] = fields[field_name]
+
+            source_names = (
+                "source_sentence",
+                "source_video_id",
+                "source_title",
+                "source_start",
+                "source_url",
+                "source_language",
+            )
+            incoming_context = {
+                name: fields[name] for name in source_names if fields.get(name) is not None
+            }
+            same_primary = (
+                existing_fields.get("source_url") == incoming_context.get("source_url")
+                and existing_fields.get("source_start") == incoming_context.get("source_start")
+            )
+            if not existing_fields.get("source_url"):
+                additions.update(incoming_context)
+                context_added = bool(incoming_context)
+            elif same_primary:
+                context_added = False
+            else:
+                contexts = existing_fields.get("video_contexts")
+                contexts = list(contexts) if isinstance(contexts, list) else []
+                already_listed = any(
+                    isinstance(item, dict)
+                    and item.get("source_url") == incoming_context.get("source_url")
+                    and item.get("source_start") == incoming_context.get("source_start")
+                    for item in contexts
+                )
+                if incoming_context and not already_listed:
+                    contexts.append(incoming_context)
+                    additions["video_contexts"] = contexts
+                    context_added = True
+                else:
+                    context_added = False
+
+            if additions:
+                note = _notes.update_fields(session, existing["note_id"], additions) or existing
+            note["_created"] = False
+
+        current_references = _refs.list_for_note(session, note["note_id"])
+        for reference in references or []:
+            locator = reference.get("locator") or {}
+            duplicate = any(
+                existing_ref.get("kind") == reference.get("kind")
+                and (existing_ref.get("locator") or {}) == locator
+                for existing_ref in current_references
+            )
+            if not duplicate:
+                current_references.append(
+                    _refs.add(session, note["note_id"], **reference)
+                )
+
+        note["references"] = current_references
+        note["_context_added"] = context_added
         return note
 
 

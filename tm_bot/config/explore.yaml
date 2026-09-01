@@ -47,6 +47,19 @@ categories:
             published: true
             description: Q&A to prep the French citizenship interview — study at your own pace.
             native_ref: /challenges/8780918c227541c089498430da290c8d
+      - id: videos
+        title: Interactive videos
+        order: 15
+        published: true
+        items:
+          - id: video-sud-radio-libertinage
+            title: "Olivier : C'est la mère de mon fils qui m'a initié au libertinage"
+            type: video
+            order: 10
+            published: true
+            description: French subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            image: https://img.youtube.com/vi/c4dtEcHyNcc/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=c4dtEcHyNcc
       - id: clubs
         title: Clubs
         order: 20
@@ -152,6 +165,27 @@ categories:
             published: true
             description: Study English a little each day.
             native_ref: /templates/french-3h-l1
+      - id: interactive-videos
+        title: Interactive English videos
+        order: 20
+        published: true
+        items:
+          - id: video-bloomberg-stock-movers
+            title: Apple, oil and transportation stocks — Bloomberg
+            type: video
+            order: 10
+            published: true
+            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            image: https://img.youtube.com/vi/i1rkMaXuiLo/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=i1rkMaXuiLo
+          - id: video-cnn-nepal-flood
+            title: Nepal flood report — CNN
+            type: video
+            order: 20
+            published: true
+            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            image: https://img.youtube.com/vi/zdlb4BPo9kk/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=zdlb4BPo9kk
 
   # Nothing in the database is about piano yet. Kept unpublished so the subject
   # is written down without shipping a category that opens onto an empty screen.
