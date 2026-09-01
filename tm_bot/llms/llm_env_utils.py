@@ -141,11 +141,13 @@ def load_llm_env():
         fallback_provider = "openai"
 
     if fallback_raw is None:
-        # Code-owned fallback defaults:
-        # - always enabled for Groq so preblocked/rate-limited model fallback works
-        #   with only GROQ_API_KEY in env.
-        # - keep existing staged-env default for other providers.
-        fallback_enabled = llm_provider == "groq" or env_name in {"staging", "stage", "test", "testing"}
+        # Code-owned default: on, for every provider and environment.
+        # A single-provider outage or rate-limit should degrade to another model,
+        # not to an error string in front of a club. This used to read
+        # `llm_provider == "groq" or env_name in {...}`, which silently disabled
+        # the whole chain in production the moment the primary provider was
+        # changed away from Groq.
+        fallback_enabled = True
     else:
         fallback_enabled = str(fallback_raw).strip().lower() in ("1", "true", "yes")
 

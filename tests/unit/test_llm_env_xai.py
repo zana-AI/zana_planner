@@ -74,3 +74,35 @@ def test_load_llm_env_auto_uses_xai_when_only_xai_key_present(monkeypatch: pytes
     assert cfg["LLM_PROVIDER"] == "xai"
     assert cfg["LLM_PROVIDER_LAYER_ENABLED"] is True
     assert cfg["LLM_PLANNER_MODEL"] == "grok-4-1-fast-non-reasoning"
+
+
+def test_fallback_stays_enabled_in_production_for_non_groq_providers(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Pinning a non-Groq provider must not silently disable the fallback chain.
+
+    The default used to be `llm_provider == "groq" or env_name in {staging,...}`,
+    so switching production from Groq to xAI left prod with no fallback at all:
+    any xAI outage would surface as an error string in the club group.
+    """
+    _clear_other_llm_keys(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "xai")
+    monkeypatch.setenv("XAI_API_KEY", "test-xai-key")
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("LLM_FALLBACK_ENABLED", raising=False)
+
+    cfg = load_llm_env()
+
+    assert cfg["LLM_PROVIDER"] == "xai"
+    assert cfg["LLM_FALLBACK_ENABLED"] is True
+    assert cfg["LLM_FALLBACK_PROVIDER"] != "xai"
+
+
+def test_explicit_fallback_disable_is_still_respected(monkeypatch: pytest.MonkeyPatch):
+    _clear_other_llm_keys(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "xai")
+    monkeypatch.setenv("XAI_API_KEY", "test-xai-key")
+    monkeypatch.setenv("LLM_FALLBACK_ENABLED", "false")
+
+    assert load_llm_env()["LLM_FALLBACK_ENABLED"] is False
