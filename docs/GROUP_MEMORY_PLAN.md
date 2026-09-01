@@ -10,10 +10,35 @@ The bot has no durable memory of a club's conversations, and no memory at all of
 people in it beyond their name and today's check-in row. Three concrete gaps, all
 verified in the current code:
 
-1. **The transcript is volatile.** `PlannerBot._group_chat_history` is
-   `defaultdict(lambda: deque(maxlen=40))` (`tm_bot/planner_bot.py:117`) — process
-   memory. Every restart and every deploy wipes every club's conversational history.
-   28 messages reach the responder, 4 reach the group router.
+1. **The history is persisted, but the bot reads a volatile copy instead.**
+   *(Corrected 2026-09-01 — an earlier version of this doc claimed group messages
+   were never stored. They are.)*
+
+   Inbound group messages **are** written to the `conversations` table, centrally in
+   `dispatch` (`tm_bot/planner_bot.py:421`), before any group routing. Production holds
+   4,363 group user rows going back to May; Cheenva Club alone has ~3,780.
+
+   But `_get_recent_group_messages` (`planner_bot.py:1495`) returns the last 16 entries
+   of `PlannerBot._group_chat_history` — a `deque(maxlen=40)` in process memory
+   (`planner_bot.py:117`). So every restart and deploy still wipes the bot's working
+   memory, while the real history sits unread in Postgres.
+
+   Three sub-problems, in order of cost to fix:
+
+   a. **Nobody reads the table.** The fix is to load the recent window from
+      `conversations` on a cache miss, not to build new persistence.
+
+   b. **The bot's own messages are not stored.** `_record_group_bot_message`
+      (`planner_bot.py:1469`) only appends to the deque. Production has **5** bot rows
+      against 4,363 user rows, so the stored transcript is one-sided — useless for
+      conversational continuity until the bot's replies are logged too.
+
+   c. **The stored rows are thin.** `conversations` keeps `user_id` but no sender name
+      (names need a join to `users` / `club_members`), and reactions are stored as
+      `[message_reaction]` placeholder rows that would need filtering out.
+
+   Note also that the responder prompt slices `recent_messages[-28:]`, but
+   `_get_recent_group_messages` never supplies more than 16 — so the 28 is dead.
 
 2. **Nothing in the conversation path writes club memory.** `club_memory_write` is
    called from exactly one site — `tm_bot/webapp/routers/community.py:770`, storing the
@@ -25,8 +50,8 @@ verified in the current code:
    from nowhere. `_get_club_memory_block` dumps `MEMORY.md` wholesale into the prompt
    instead.
 
-Net effect: "club memory" today is whatever the owner typed once at setup, plus forty
-volatile messages.
+Net effect: the club's real history is in Postgres and growing, while the bot answers
+from at most 16 messages of process memory that a deploy can erase at any moment.
 
 ## Design principles
 
@@ -42,14 +67,15 @@ volatile messages.
 
 ## Proposed work
 
-### 1. Persist the group transcript
-Write group-visible messages to Postgres instead of (or alongside) the in-RAM deque.
-`_log_structured_event` already exists and already receives these events — reuse that
-path rather than adding a table. Load the recent window from the DB on demand.
+### 1. Read the history that already exists, and store both sides
+No new table and no new persistence: `conversations` already holds the inbound side.
 
-- Fixes restart amnesia at zero LLM cost.
-- Prerequisite for everything below.
-- Retention: keep raw messages ~30 days, then let the digest carry the memory.
+- Log the bot's own group replies (`_record_group_bot_message`) through the same
+  `log_user_message` path with `message_type='bot'`, so the transcript has two sides.
+- On a deque miss, hydrate the recent window from `conversations` filtered by
+  `chat_id`, excluding `[message_reaction]` rows, joined for display names.
+- Fixes restart amnesia at zero LLM cost. Prerequisite for everything below.
+- Retention: keep raw rows ~30 days for prompt use, then let the digest carry it.
 
 ### 2. Rolling club digest
 One cheap LLM call per club per day (or every N new messages, whichever comes first)
