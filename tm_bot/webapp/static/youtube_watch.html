@@ -64,8 +64,13 @@
     .transcript { margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; }
     .transcript summary { cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 800; color: #edf3ff; }
     .transcript-list { max-height: 280px; overflow: auto; border-top: 1px solid var(--app-border); }
-    .transcript-cue { display: grid; grid-template-columns: 54px 1fr; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid rgba(170,196,238,.08); background: transparent; color: rgba(237,243,255,.78); text-align: start; font: inherit; font-size: 13px; cursor: pointer; }
-    .transcript-cue:hover, .transcript-cue:focus-visible { background: rgba(99,167,247,.12); color: #fff; outline: none; }
+    .transcript-cue { display: grid; grid-template-columns: 54px 1fr; gap: 10px; width: 100%; padding: 10px 14px; border-bottom: 1px solid rgba(170,196,238,.08); background: transparent; color: rgba(237,243,255,.78); text-align: start; font: inherit; font-size: 13px; }
+    .transcript-cue:hover, .transcript-cue:focus-within { background: rgba(99,167,247,.12); color: #fff; outline: none; }
+    .transcript-jump { align-self: start; padding: 0; border: 0; background: transparent; color: var(--app-accent); font: inherit; font-size: 12px; text-align: start; cursor: pointer; }
+    .transcript-jump:hover, .transcript-jump:focus-visible { text-decoration: underline; outline: none; }
+    .transcript-text { min-width: 0; line-height: 1.55; }
+    .transcript-word { padding: 1px 2px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+    .transcript-word:hover, .transcript-word:focus-visible, .transcript-word.is-selected { background: rgba(99,167,247,.28); color: #fff; outline: none; }
     .transcript-time { color: var(--app-accent); font-variant-numeric: tabular-nums; }
     .transcript-cue.is-active { background: rgba(99,167,247,.18); color: #fff; }
     .transcript-cue.is-active .transcript-time { font-weight: 800; }
@@ -77,6 +82,16 @@
     .focus-replay { flex: 0 0 auto; min-height: 40px; padding: 8px 12px; border: 1px solid var(--app-border); border-radius: 10px; background: transparent; color: var(--app-accent); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
     .focus-replay:hover, .focus-replay:focus-visible { background: rgba(99,167,247,.14); outline: none; }
     @media (max-width: 420px) { .focus-line { flex-direction: column; align-items: stretch; } .focus-replay { width: 100%; } }
+    .word-tools { margin-top: 10px; padding: 12px 14px; border: 1px solid rgba(99,167,247,.36); border-radius: 12px; background: linear-gradient(135deg, rgba(25,48,88,.98), rgba(15,28,55,.98)); box-shadow: 0 12px 30px rgba(0,0,0,.18); }
+    .word-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .selected-word { font-size: 17px; font-weight: 800; color: #fff; }
+    .word-context { color: rgba(237,243,255,.54); font-size: 11px; white-space: nowrap; }
+    .word-translation { min-height: 22px; margin-top: 5px; color: #d9e8ff; font-size: 14px; line-height: 1.45; }
+    .word-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .word-action { min-height: 34px; padding: 6px 10px; border: 1px solid var(--app-border); border-radius: 8px; background: rgba(99,167,247,.10); color: #dceaff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .word-action:hover, .word-action:focus-visible { background: rgba(99,167,247,.24); outline: none; }
+    .word-action:disabled { cursor: default; opacity: .55; }
+    .word-status { min-height: 16px; margin-top: 7px; color: rgba(237,243,255,.58); font-size: 11px; }
     .hint { font-size: 12px; color: rgba(237,243,255,.58); margin: 10px 2px 0; }
     .controls { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
     .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; white-space: nowrap; }
@@ -210,6 +225,18 @@
     <p id="focusText" class="focus-text" dir="auto"></p>
     <button id="replayLine" class="focus-replay" type="button"></button>
   </div>
+  <div id="wordTools" class="word-tools" hidden>
+    <div class="word-heading">
+      <span id="selectedWord" class="selected-word" dir="auto"></span>
+      <span id="wordContext" class="word-context"></span>
+    </div>
+    <div id="wordTranslation" class="word-translation" dir="auto"></div>
+    <div class="word-actions">
+      <button id="listenWord" class="word-action" type="button"></button>
+      <button id="saveWord" class="word-action" type="button"></button>
+    </div>
+    <div id="wordStatus" class="word-status" role="status"></div>
+  </div>
   <details id="transcript" class="transcript" hidden>
     <summary id="transcriptTitle">Transcript</summary>
     <div id="transcriptList" class="transcript-list"></div>
@@ -242,18 +269,22 @@
   var startAt = Math.max(0, parseInt(params.get('start') || '0', 10) || 0);
   // A flashcard links here for one word; we highlight it in the spoken line.
   var focusWord = params.get('word') || '';
-  var language = (params.get('lang') || 'en').toLowerCase().split('-')[0];
-  var copy = language === 'fa' ? {
+  var uiLanguage = (params.get('lang') || 'en').toLowerCase().split('-')[0];
+  var copy = uiLanguage === 'fa' ? {
     hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', track: 'ردگیری پیشرفت',
     trackHint: 'بخش‌هایی را که می‌بینید ذخیره می‌کنیم.', full: 'تمام‌صفحه', close: 'بستن و ذخیره', exit: 'خروج',
-    replay: '↺ تکرار این جمله'
+    replay: '↺ تکرار این جمله', listen: '🔊 تلفظ', save: 'ذخیره کارت', saved: '✓ ذخیره شد',
+    loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'یک کلمه را انتخاب کنید.',
+    signIn: 'برای ذخیره، صفحه را داخل اپ باز کنید.', context: 'جمله'
   } : {
     hint: 'When you’re finished, close this page to save your watch progress.', track: 'Track progress',
     trackHint: 'Save the parts you watch.', full: 'Full screen', close: 'Close and save', exit: 'Exit',
-    replay: '↺ Replay this line'
+    replay: '↺ Replay this line', listen: '🔊 Listen', save: 'Save card', saved: '✓ Saved',
+    loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
+    signIn: 'Open this page inside the app to save cards.', context: 'line'
   };
-  document.documentElement.lang = language;
-  document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
+  document.documentElement.lang = uiLanguage;
+  document.documentElement.dir = uiLanguage === 'fa' ? 'rtl' : 'ltr';
   document.getElementById('doneHint').textContent = copy.hint;
   document.getElementById('replayLine').textContent = copy.replay;
   document.getElementById('replayLine').addEventListener('click', function() { replayCurrentLine(); });
@@ -264,6 +295,16 @@
   document.getElementById('floatDoneBtn').title = copy.close;
   document.getElementById('floatDoneBtn').setAttribute('aria-label', copy.close);
   document.getElementById('floatExitBtn').textContent = copy.exit;
+  document.getElementById('listenWord').textContent = copy.listen;
+  document.getElementById('saveWord').textContent = copy.save;
+  var sourceLanguage = 'fr';
+  var videoTitleText = '';
+  var selectedWord = '';
+  var selectedCue = null;
+  var selectedWordButton = null;
+  var lookupCache = Object.create(null);
+  var lookupTimer = null;
+  var lookupRequestId = 0;
   var userToken = params.get('ut') || '';
   var promiseId = params.get('pid') || '';
   var debug = params.get('debug') === '1';
@@ -315,6 +356,180 @@
     if (stem.length < 3) stem = folded.split(/[\s(,]/)[0];
     return stem.length > 4 ? stem.slice(0, Math.max(4, stem.length - 2)) : stem;
   }
+
+  function authHeaders() {
+    var headers = {'Content-Type': 'application/json'};
+    var token = '';
+    try { token = localStorage.getItem('telegram_auth_token') || ''; } catch (_) {}
+    var initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+    if (token) headers.Authorization = 'Bearer ' + token;
+    else if (initData) headers['X-Telegram-Init-Data'] = initData;
+    return headers;
+  }
+
+  function translationTarget() {
+    // The app's useful target languages are English and Persian. If the UI is
+    // itself French, use English rather than showing the source unchanged.
+    return uiLanguage === sourceLanguage ? 'en' : (uiLanguage === 'fa' ? 'fa' : 'en');
+  }
+
+  function closeWordTools() {
+    var tools = document.getElementById('wordTools');
+    if (tools) tools.hidden = true;
+    if (selectedWordButton) selectedWordButton.classList.remove('is-selected');
+    selectedWordButton = null;
+    selectedWord = '';
+    selectedCue = null;
+  }
+
+  function setWordStatus(text) {
+    var status = document.getElementById('wordStatus');
+    if (status) status.textContent = text || '';
+  }
+
+  function lookupWord(word) {
+    var target = translationTarget();
+    var key = sourceLanguage + ':' + target + ':' + foldAccents(word);
+    if (lookupCache[key]) return Promise.resolve(lookupCache[key]);
+    var headers = authHeaders();
+    if (!headers.Authorization && !headers['X-Telegram-Init-Data']) {
+      return Promise.resolve({available: false, translation: ''});
+    }
+    return fetch(baseUrl + '/api/flashcards/lookup', {
+      method: 'POST', headers: headers,
+      body: JSON.stringify({word: word, source_language: sourceLanguage, target_language: target})
+    }).then(function(response) {
+      if (!response.ok) throw new Error('lookup HTTP ' + response.status);
+      return response.json();
+    }).then(function(data) {
+      lookupCache[key] = data;
+      return data;
+    });
+  }
+
+  function showWordTools(word, cue, wordButton, immediate) {
+    var clean = (word || '').trim();
+    if (!clean || clean.length < 2) return;
+    if (selectedWordButton && selectedWordButton !== wordButton) selectedWordButton.classList.remove('is-selected');
+    selectedWordButton = wordButton || null;
+    if (selectedWordButton) selectedWordButton.classList.add('is-selected');
+    selectedWord = clean;
+    selectedCue = cue;
+    var tools = document.getElementById('wordTools');
+    document.getElementById('selectedWord').textContent = clean;
+    document.getElementById('wordContext').textContent = formatCueTime(cue.start) + ' · ' + copy.context;
+    document.getElementById('wordTranslation').textContent = copy.loading;
+    document.getElementById('saveWord').disabled = true;
+    setWordStatus('');
+    tools.hidden = false;
+    if (!immediate) {
+      if (lookupTimer) clearTimeout(lookupTimer);
+      lookupTimer = setTimeout(function() { fetchWordTranslation(clean); }, 320);
+    } else {
+      fetchWordTranslation(clean);
+    }
+  }
+
+  function fetchWordTranslation(word) {
+    var requestId = ++lookupRequestId;
+    lookupWord(word).then(function(data) {
+      if (requestId !== lookupRequestId || word !== selectedWord) return;
+      document.getElementById('wordTranslation').textContent = data && data.available
+        ? data.translation : copy.unavailable;
+      document.getElementById('saveWord').disabled = false;
+      if (!data || !data.available) setWordStatus(copy.unavailable);
+    }).catch(function() {
+      if (requestId !== lookupRequestId || word !== selectedWord) return;
+      document.getElementById('wordTranslation').textContent = copy.unavailable;
+      document.getElementById('saveWord').disabled = false;
+      setWordStatus(copy.unavailable);
+    });
+  }
+
+  function renderInteractiveText(target, text, cue) {
+    target.textContent = '';
+    // Keep whitespace and punctuation as text nodes; only lexical tokens are
+    // buttons, so selecting a word never changes the sentence's appearance.
+    var parts = String(text || '').split(/(\p{L}+(?:['’]\p{L}+)?)/gu);
+    parts.forEach(function(part) {
+      if (!part) return;
+      if (/^\p{L}/u.test(part)) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'transcript-word';
+        button.textContent = part;
+        button.title = uiLanguage === 'fa' ? 'ترجمه و ذخیره کارت' : 'Translate and save card';
+        button.addEventListener('mouseenter', function() { showWordTools(part, cue, button, false); });
+        button.addEventListener('focus', function() { showWordTools(part, cue, button, true); });
+        button.addEventListener('click', function(event) {
+          event.stopPropagation();
+          showWordTools(part, cue, button, true);
+        });
+        target.appendChild(button);
+      } else {
+        target.appendChild(document.createTextNode(part));
+      }
+    });
+  }
+
+  function speakSelectedWord() {
+    if (!selectedWord || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      setWordStatus(copy.unavailable);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    var utterance = new SpeechSynthesisUtterance(selectedWord);
+    utterance.lang = sourceLanguage === 'fr' ? 'fr-FR' : (sourceLanguage === 'en' ? 'en-US' : sourceLanguage);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function saveSelectedWord() {
+    if (!selectedWord || !selectedCue) return;
+    var headers = authHeaders();
+    if (!headers.Authorization && !headers['X-Telegram-Init-Data']) {
+      setWordStatus(copy.signIn);
+      return;
+    }
+    var title = videoTitleText || ('YouTube ' + videoId);
+    var deckTitle = title.replace(/[\\/:]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+    var deckPath = (sourceLanguage === 'fr' ? 'French' : sourceLanguage.toUpperCase()) + '::Vidéos::' + deckTitle;
+    var translation = document.getElementById('wordTranslation').textContent;
+    var sourceUrl = 'https://www.youtube.com/watch?v=' + encodeURIComponent(videoId);
+    var payload = {
+      deck_path: deckPath,
+      note_type: 'vocab',
+      fields: {
+        front: selectedWord,
+        back: translation === copy.unavailable || translation === copy.loading ? '' : translation,
+        example: selectedCue.text,
+        source_sentence: selectedCue.text,
+        source_video_id: videoId,
+        source_title: title,
+        source_start: selectedCue.start,
+        source_url: sourceUrl,
+        tags: ['youtube', sourceLanguage]
+      },
+      references: [{kind: 'url', locator: {url: sourceUrl, start: selectedCue.start}, label: 'YouTube · ' + formatCueTime(selectedCue.start)}]
+    };
+    var saveButton = document.getElementById('saveWord');
+    saveButton.disabled = true;
+    fetch(baseUrl + '/api/flashcards/notes', {
+      method: 'POST', headers: headers, body: JSON.stringify(payload)
+    }).then(function(response) {
+      if (response.status === 401) throw new Error('auth');
+      if (!response.ok) throw new Error('save HTTP ' + response.status);
+      return response.json();
+    }).then(function(data) {
+      saveButton.textContent = copy.saved;
+      setWordStatus(data && data._created === false ? copy.saved + ' · already in your deck' : copy.saved);
+      setTimeout(function() { saveButton.textContent = copy.save; }, 1800);
+    }).catch(function(error) {
+      setWordStatus(error && error.message === 'auth' ? copy.signIn : copy.unavailable);
+    }).finally(function() { saveButton.disabled = false; });
+  }
+
+  document.getElementById('listenWord').addEventListener('click', speakSelectedWord);
+  document.getElementById('saveWord').addEventListener('click', saveSelectedWord);
 
   // Emphasise the linked word inside its sentence, accent- and case-insensitively.
   function renderFocusText(text) {
@@ -408,12 +623,7 @@
   }
 
   function loadTranscript() {
-    var headers = {};
-    var token = '';
-    try { token = localStorage.getItem('telegram_auth_token') || ''; } catch (_) {}
-    var initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
-    if (token) headers.Authorization = 'Bearer ' + token;
-    else if (initData) headers['X-Telegram-Init-Data'] = initData;
+    var headers = authHeaders();
     var endpoint = contentId
       ? '/api/content/' + encodeURIComponent(contentId) + '/transcript'
       : '/api/youtube/' + encodeURIComponent(videoId) + '/transcript';
@@ -421,27 +631,40 @@
       .then(function(response) { return response.ok ? response.json() : null; })
       .then(function(data) {
         if (!data || !data.available || !data.cues || !data.cues.length) return;
+        sourceLanguage = (data.language || 'fr').toLowerCase().split('-', 1)[0];
         var panel = document.getElementById('transcript');
         var list = document.getElementById('transcriptList');
         var title = document.getElementById('transcriptTitle');
-        title.textContent = (language === 'fa' ? 'زیرنویس' : 'Transcript') + (data.source === 'automatic' ? (language === 'fa' ? ' · خودکار' : ' · automatic') : '');
+        title.textContent = (uiLanguage === 'fa' ? 'زیرنویس' : 'Transcript') + (data.source === 'automatic' ? (uiLanguage === 'fa' ? ' · خودکار' : ' · automatic') : '');
         list.innerHTML = '';
         cues = data.cues.map(function(cue) {
           return {start: Number(cue.start) || 0, end: Number(cue.end) || 0, text: cue.text || ''};
         });
         cueButtons = [];
         cues.forEach(function(cue, index) {
-          var button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'transcript-cue';
-          button.innerHTML = '<span class="transcript-time">' + formatCueTime(cue.start) + '</span><span></span>';
-          button.querySelector('span:last-child').textContent = cue.text;
-          button.addEventListener('click', function() {
+          var row = document.createElement('div');
+          row.className = 'transcript-cue';
+          var jump = document.createElement('button');
+          jump.type = 'button';
+          jump.className = 'transcript-jump transcript-time';
+          jump.textContent = formatCueTime(cue.start);
+          var text = document.createElement('span');
+          text.className = 'transcript-text';
+          text.dir = 'auto';
+          renderInteractiveText(text, cue.text, cue);
+          row.appendChild(jump);
+          row.appendChild(text);
+          row.addEventListener('click', function() {
             if (player && typeof player.seekTo === 'function') { player.seekTo(cue.start, true); player.playVideo(); }
             setActiveCue(index);
           });
-          cueButtons.push(button);
-          list.appendChild(button);
+          jump.addEventListener('click', function(event) {
+            event.stopPropagation();
+            if (player && typeof player.seekTo === 'function') { player.seekTo(cue.start, true); player.playVideo(); }
+            setActiveCue(index);
+          });
+          cueButtons.push(row);
+          list.appendChild(row);
         });
         panel.hidden = false;
         // Opening the panel should land on the line being spoken, not at 0:00.
@@ -662,9 +885,10 @@
       return r.json();
     }).then(function(data) {
       if (data && data.title) {
-        titleEl.textContent = data.title;
+        videoTitleText = data.title;
+        titleEl.textContent = videoTitleText;
         titleEl.hidden = false;
-        titleEl.title = data.title;
+        titleEl.title = videoTitleText;
         dlog("title: " + data.title);
       }
     }).catch(function(e) {

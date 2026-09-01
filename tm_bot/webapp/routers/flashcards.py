@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..dependencies import get_current_user
+from handlers.translator import translate_text
 from services import flashcard_service
 from utils.logger import get_logger
 
@@ -64,6 +65,15 @@ class ReviewIn(BaseModel):
     duration_ms: Optional[int] = Field(default=None, ge=0)
 
 
+class WordLookupIn(BaseModel):
+    word: str = Field(min_length=1, max_length=120)
+    source_language: str = Field(default="fr", min_length=2, max_length=5)
+    target_language: str = Field(default="fa", min_length=2, max_length=5)
+
+
+_LOOKUP_LANGUAGES = {"en", "fr", "fa"}
+
+
 # --- review loop ----------------------------------------------------------
 
 
@@ -91,6 +101,36 @@ async def submit_review(
     if result is None:
         raise HTTPException(status_code=404, detail="Card not found")
     return result
+
+
+@router.post("/lookup")
+async def lookup_word(
+    payload: WordLookupIn,
+    user_id: int = Depends(get_current_user),
+):
+    """Translate one subtitle word for the in-player learning popover.
+
+    The client debounces and caches requests, while the translator keeps a
+    process cache. Authentication prevents the endpoint becoming an open
+    translation proxy.
+    """
+    source = payload.source_language.strip().lower().split("-", 1)[0]
+    target = payload.target_language.strip().lower().split("-", 1)[0]
+    if source not in _LOOKUP_LANGUAGES or target not in _LOOKUP_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported language")
+
+    word = " ".join(payload.word.strip().split())
+    if not word:
+        raise HTTPException(status_code=422, detail="word is required")
+
+    translation = translate_text(word, target_lang=target, source_lang=source)
+    return {
+        "word": word,
+        "translation": translation,
+        "source_language": source,
+        "target_language": target,
+        "available": bool(translation and translation.strip() and translation != word),
+    }
 
 
 # --- authoring ------------------------------------------------------------
