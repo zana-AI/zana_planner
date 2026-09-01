@@ -32,7 +32,7 @@ from telegram import error as telegram_error, InlineKeyboardButton, InlineKeyboa
 from sqlalchemy.exc import OperationalError as SQLOperationalError
 from sqlalchemy import text
 
-from llms.llm_handler import LLMHandler
+from llms.llm_handler import LLMHandler, extract_group_followup, GROUP_FOLLOWUP_REMIND_PENDING
 from llms.group_router import route_group_message, apply_budget, delay_for, RouterDecision
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
@@ -1308,17 +1308,65 @@ class PlannerBot:
             },
             club.get("club_language"),
         )
-        response_text = str(response_text or "").strip() or "I am having trouble right now. Please try again in a moment."
+        response_text, followup_action = extract_group_followup(str(response_text or ""))
+        response_text = response_text.strip()
+        if not response_text and not followup_action:
+            response_text = "I am having trouble right now. Please try again in a moment."
 
-        if processing_msg:
+        if response_text:
+            delivered = False
+            if processing_msg:
+                try:
+                    await processing_msg.edit_text(text=response_text, parse_mode=None)
+                    self._record_group_bot_message(ctx, response_text, sent_message=processing_msg)
+                    delivered = True
+                except Exception as e:
+                    logger.debug("Could not edit group processing reply: %s", e)
+            if not delivered:
+                await self._reply_to_group_message(ctx, response_text, parse_mode=None)
+        elif processing_msg:
+            # The reply was the action alone; drop the "thinking" placeholder so the
+            # follow-up stands on its own instead of trailing an empty message.
             try:
-                await processing_msg.edit_text(text=response_text, parse_mode=None)
-                self._record_group_bot_message(ctx, response_text, sent_message=processing_msg)
-                return
+                await processing_msg.delete()
             except Exception as e:
-                logger.debug("Could not edit group processing reply: %s", e)
+                logger.debug("Could not clear group processing reply: %s", e)
 
-        await self._reply_to_group_message(ctx, response_text, parse_mode=None)
+        if followup_action:
+            await self._run_group_followup(ctx, followup_action)
+
+    # A reply may ask for one follow-up message; repeated asks inside this window
+    # reuse the first one rather than posting the reminder again.
+    _FOLLOWUP_COOLDOWN_SECONDS = 1800
+
+    async def _run_group_followup(self, ctx: InputContext, action: str) -> None:
+        """Send the second message a reply asked for.
+
+        The group responder has no tools, so "I'll remind them" used to be a
+        promise nothing could keep — it would answer warmly and then never act.
+        It can now request one concrete follow-up, which lands as its own message
+        straight after the reply it was promised in.
+        """
+        if action != GROUP_FOLLOWUP_REMIND_PENDING:
+            logger.debug("group_followup: unknown action %r for chat %s", action, ctx.chat_id)
+            return
+
+        ptb_context = getattr(ctx, "platform_context", None)
+        bot_data = getattr(ptb_context, "bot_data", None)
+        if bot_data is not None:
+            seen = bot_data.setdefault("group_followup_at", {})
+            key = f"{ctx.chat_id}:{action}"
+            now = time.time()
+            if now - float(seen.get(key) or 0.0) < self._FOLLOWUP_COOLDOWN_SECONDS:
+                logger.debug("group_followup: %s cooling down for chat %s", action, ctx.chat_id)
+                return
+            seen[key] = now
+
+        # Short beat so the two messages read as a reply and then an action,
+        # rather than as one wall of text.
+        await asyncio.sleep(2)
+        logger.info("group_followup: running %s for chat %s", action, ctx.chat_id)
+        await self._reply_with_group_club_summary(ctx)
 
     async def _reply_to_group_message(self, ctx: InputContext, text: str, **kwargs):
         record_history = bool(kwargs.pop("record_history", True))

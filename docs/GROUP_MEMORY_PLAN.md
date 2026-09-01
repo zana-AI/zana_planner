@@ -113,6 +113,38 @@ surface rather than by provider.
 Open question for whoever picks this up: whether the allowance is per-user or
 per-user-per-club, and whether club owners get a larger one.
 
+## Follow-up messages (implemented 2026-09-01)
+
+The group responder has no tools, so when a member asked it to remind the others it
+produced the socially natural answer — "I'll remind them" — and then never acted.
+Nothing carries between turns, so the intention evaporated.
+
+It can now request exactly one follow-up. The responder ends its reply with
+`[[ACTION:REMIND_PENDING]]`; `extract_group_followup` strips the marker (wherever it
+appears — a leaked marker is worse than a missed action) and `PlannerBot._run_group_followup`
+posts the existing club reminder, with check-in buttons, as a second message.
+
+Guardrails, all covered by `tests/unit/test_group_followup.py`:
+
+- The action is only *offered* in the prompt when it would do something: somebody is
+  still pending, and the turn is a `FULL_REPLY` (not a one-liner, not proactive).
+- A marker the model emits when it wasn't offered is stripped and ignored.
+- 30-minute per-chat cooldown, so repeated asks don't re-post the reminder.
+- A marker-only reply is honoured as an action with no text, rather than becoming an
+  error string.
+- The prompt now states plainly what the bot *cannot* do — no DMs, no scheduling, no
+  acting later — which also stopped it promising private messages it can't send.
+
+The marker is stripped before the language/script guard runs: it is Latin text and
+would otherwise read as a wrong-alphabet answer in a Persian group.
+
+### Extending it
+Keep the action set tiny and closed. Each new action needs a real implementation on
+the PlannerBot side and its own offer condition; anything not in
+`GROUP_FOLLOWUP_ACTIONS` is something the bot must not promise. The natural next
+candidates are a club leaderboard post and a "show the week so far" summary, both of
+which already have message builders.
+
 ## Already done (2026-09-01)
 
 Applied separately, listed here so this plan reads against the right baseline:

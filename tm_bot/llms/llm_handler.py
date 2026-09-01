@@ -646,6 +646,32 @@ def _resolve_schema_refs(schema: dict) -> dict:
 schemas = [LLMResponse]  # , UserPromise, UserAction]
 
 
+# Follow-up actions the group responder may request. Deliberately a tiny closed
+# set: the group path has no tools, so anything outside this set is something the
+# bot cannot do and must not promise. PlannerBot executes these as a second message.
+GROUP_FOLLOWUP_REMIND_PENDING = "REMIND_PENDING"
+GROUP_FOLLOWUP_ACTIONS = frozenset({GROUP_FOLLOWUP_REMIND_PENDING})
+
+_GROUP_FOLLOWUP_RE = re.compile(r"\[\[\s*ACTION\s*:\s*([A-Z_]+)\s*\]\]")
+
+
+def extract_group_followup(text: str) -> tuple[str, Optional[str]]:
+    """Split a group reply into (visible text, requested follow-up action).
+
+    The marker is stripped wherever it appears, not only at the end: a marker
+    leaking into the chat is worse than a missed follow-up.
+    """
+    raw = text or ""
+    action = None
+    for match in _GROUP_FOLLOWUP_RE.finditer(raw):
+        candidate = match.group(1).strip().upper()
+        if candidate in GROUP_FOLLOWUP_ACTIONS:
+            action = candidate
+            break
+    cleaned = _GROUP_FOLLOWUP_RE.sub("", raw).strip()
+    return cleaned, action
+
+
 class LLMHandler:
     def __init__(
         self,
@@ -3018,6 +3044,16 @@ class LLMHandler:
                         "Use this focused reply context first for short follow-ups; use the transcript only after that.",
                     ]
 
+            # A follow-up is only offered when it would actually do something:
+            # somebody still has to check in, and this is a full reply rather than
+            # a one-liner or an emoji.
+            pending_names = [
+                str(m.get("name") or "").strip()
+                for m in (member_status or [])
+                if m.get("status") != "done" and str(m.get("name") or "").strip()
+            ]
+            followup_offered = bool(pending_names) and response_mode == "FULL_REPLY"
+
             sender_checked_in = bool(group_context.get("sender_checked_in"))
             latest_sender_text = _extract_latest_sender_message(recent_messages, sender_name)
             current_turn_text = user_message or latest_sender_text
@@ -3109,6 +3145,28 @@ class LLMHandler:
                 "  Don't steer every exchange back to the promise; nobody likes a bot that only nags.",
                 "- Never explain interpersonal motives, conflicts, or intentions. If you don't know the reason, say so.",
                 "- Don't take sides in disagreements between members or play mediator; stay light and move on.",
+                "",
+                "WHAT YOU CAN AND CANNOT DO HERE:",
+                "- You cannot send direct messages, schedule anything, or act after this reply.",
+                "  Nothing carries over between turns: if you say you will do something",
+                "  'in a moment' or 'later', it will never happen. Never promise a future",
+                "  action, and never describe yourself as about to do something.",
+                *([
+                    "- You CAN post one check-in reminder to this group right now. It names the",
+                    f"  members who have not checked in yet ({', '.join(pending_names[:8])}) and",
+                    "  carries check-in buttons. To send it, put this exact marker at the very",
+                    "  end of your reply:",
+                    "  [[ACTION:REMIND_PENDING]]",
+                    "  The reminder is sent automatically as a separate message. Do not write",
+                    "  the reminder text yourself, and never mention or explain the marker.",
+                    "  Always write at least one short human line before the marker — never",
+                    "  reply with the marker alone.",
+                    "- If someone asks you to remind, nudge, or call the others: reply with one",
+                    "  short line and add the marker. Do not say you will do it afterwards.",
+                ] if followup_offered else [
+                    "- You have no action available this turn. If someone asks you to remind or",
+                    "  nudge others, say what you can see in the data instead of promising to act.",
+                ]),
                 "",
                 "AUTHORITY HIERARCHY — follow this strictly:",
                 "1. Club-level context below (from the database) is GROUND TRUTH.",
@@ -3203,6 +3261,13 @@ class LLMHandler:
                 content = message_content_to_str(getattr(response, "content", str(response)))
             content = self._strip_internal_reasoning(content).strip()
 
+            # Pull the marker out before the script guard runs: it is Latin text and
+            # would otherwise look like a wrong-alphabet answer in a Persian group and
+            # trigger a pointless retry. It is re-attached to the return value below.
+            content, followup_action = extract_group_followup(content)
+            if not followup_offered:
+                followup_action = None
+
             if content and _has_disallowed_script_for_language(content, effective_language):
                 logger.warning({
                     "event": "group_safe_response_script_guard_retry",
@@ -3233,7 +3298,15 @@ class LLMHandler:
                 if not script_guard_fixed and _has_disallowed_script_for_language(content, effective_language):
                     content = _script_guard_fallback(effective_language)
 
-            return content or _LLM_USER_FACING_ERROR
+            if not content and not followup_action:
+                return _LLM_USER_FACING_ERROR
+            if followup_action:
+                # The model may answer with the action alone. That is a real intent,
+                # not a failure — carry it through and let the caller send only the
+                # follow-up rather than an error string.
+                prefix = content + "\n" if content else ""
+                content = prefix + "[[ACTION:" + followup_action + "]]"
+            return content
         except Exception:
             logger.exception("Unexpected error in get_response_group_safe")
             return _LLM_USER_FACING_ERROR

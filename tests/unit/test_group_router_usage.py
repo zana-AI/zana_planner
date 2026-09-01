@@ -283,3 +283,34 @@ def test_delay_matches_the_action_actually_taken():
         "FULL_REPLY", is_commanded=False
     )
     assert group_router.delay_for("FULL_REPLY", is_commanded=True) == 2
+
+
+# ── group follow-up messages ──────────────────────────────────────────────────
+
+from llms.llm_handler import extract_group_followup  # noqa: E402
+
+
+def test_followup_marker_is_extracted_and_never_leaks():
+    text, action = extract_group_followup("On it.\n[[ACTION:REMIND_PENDING]]")
+    assert (text, action) == ("On it.", "REMIND_PENDING")
+
+
+def test_followup_marker_is_stripped_from_mid_sentence():
+    text, action = extract_group_followup("sure [[ACTION:REMIND_PENDING]] done")
+    assert "[[" not in text
+    assert action == "REMIND_PENDING"
+
+
+def test_unknown_followup_action_is_stripped_but_not_honoured():
+    text, action = extract_group_followup("hi [[ACTION:DELETE_EVERYTHING]]")
+    assert action is None
+    assert "[[" not in text and "DELETE_EVERYTHING" not in text
+
+
+def test_reply_without_marker_is_untouched():
+    assert extract_group_followup("just a normal reply") == ("just a normal reply", None)
+
+
+def test_spaced_and_lowercase_marker_variants():
+    _, action = extract_group_followup("ok\n[[ACTION: REMIND_PENDING ]]")
+    assert action == "REMIND_PENDING"
