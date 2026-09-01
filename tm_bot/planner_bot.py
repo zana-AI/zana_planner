@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Optional
@@ -32,7 +33,7 @@ from sqlalchemy.exc import OperationalError as SQLOperationalError
 from sqlalchemy import text
 
 from llms.llm_handler import LLMHandler
-from llms.group_router import route_group_message, budget_allows, RouterDecision
+from llms.group_router import route_group_message, apply_budget, delay_for, RouterDecision
 from services.planner_api_adapter import PlannerAPIAdapter
 from services.response_service import ResponseService
 from services.club_activity_detection import detect_activity_evidence
@@ -599,28 +600,35 @@ class PlannerBot:
             conversation_state,
             bool(reply_context.get("reply_to_is_bot")),
         )
-        logger.debug("group_router: %s → %s (%s)", sender_name, decision.action, decision.reason)
+        # The daily budget shapes the action rather than gating it: a spontaneous
+        # text reply that no longer fits becomes an emoji reaction, so the bot
+        # gets quieter over the day instead of disappearing mid-conversation.
+        action = apply_budget(bot_data, ctx.chat_id, vibe, decision.action, is_commanded=is_mentioned)
+        logger.debug(
+            "group_router: %s → %s (%s)%s",
+            sender_name,
+            action,
+            decision.reason,
+            "" if action == decision.action else f" [budget: was {decision.action}]",
+        )
 
-        if decision.action == "IGNORE":
+        if action == "IGNORE":
             return
 
-        if decision.action == "REACT_EMOJI":
-            await asyncio.sleep(decision.delay_seconds)
+        delay = delay_for(action, is_commanded=is_mentioned)
+
+        if action == "REACT_EMOJI":
+            await asyncio.sleep(delay)
             await self._send_emoji_reaction(ctx, decision.emoji)
             return
 
-        # SHORT_REPLY or FULL_REPLY — budget gate applies only to text responses
-        if not is_mentioned and not budget_allows(bot_data, ctx.chat_id, vibe, is_commanded=False):
-            logger.debug("group_router: budget exhausted for chat %s, skipping proactive text response", ctx.chat_id)
-            return
-
-        await asyncio.sleep(decision.delay_seconds)
+        await asyncio.sleep(delay)
         if is_mentioned:
             await self._handle_group_llm_message(
                 ctx,
                 member_status=member_status,
                 sender_checked_in=sender_checked_in,
-                short_reply=(decision.action == "SHORT_REPLY"),
+                short_reply=(action == "SHORT_REPLY"),
                 conversation_state=conversation_state,
                 reply_context=reply_context,
                 bot_self_aliases=bot_self_aliases,
@@ -635,12 +643,38 @@ class PlannerBot:
                 bot_self_aliases=bot_self_aliases,
             )
 
-    async def _welcome_group_members(self, ctx: InputContext) -> None:
-        members = ctx.metadata.get("new_chat_members") or []
+    def _claim_welcome(self, ctx: InputContext, members: list) -> list:
+        """Filter `members` down to those not welcomed in this chat yet.
+
+        Telegram announces a join twice — once as a new_chat_members service
+        message, once as a chat_member update — and which of the two arrives
+        depends on the group size and how the person joined. We listen to both
+        so nobody slips in unnoticed, and dedupe here so nobody gets two hellos.
+        """
+        ptb_context = getattr(ctx, "platform_context", None)
+        bot_data = getattr(ptb_context, "bot_data", None)
+        if bot_data is None:
+            return list(members)
+        seen = bot_data.setdefault("welcomed_members", {})
+        now = time.time()
+        for key, stamp in list(seen.items()):
+            if now - stamp > 3600:
+                del seen[key]
+        fresh = []
+        for member in members:
+            key = f"{ctx.chat_id}:{getattr(member, 'id', None)}"
+            if key in seen:
+                continue
+            seen[key] = now
+            fresh.append(member)
+        return fresh
+
+    async def _welcome_group_members(self, ctx: InputContext, members: list | None = None) -> None:
+        members = members if members is not None else (ctx.metadata.get("new_chat_members") or [])
+        members = [m for m in members if not getattr(m, "is_bot", False)]
+        members = self._claim_welcome(ctx, members)
         human_names = []
         for member in members:
-            if getattr(member, "is_bot", False):
-                continue
             name = (getattr(member, "first_name", "") or getattr(member, "username", "") or "").strip()
             if name:
                 human_names.append(name)
@@ -649,6 +683,18 @@ class PlannerBot:
 
         club = self._get_club_for_group_chat(ctx.chat_id)
         if not club:
+            # The group isn't linked to a club yet (setup still in progress).
+            # Say something anyway — an arriving member met by silence is the
+            # worst possible first impression of the bot.
+            await ctx.platform_context.bot.send_message(
+                chat_id=ctx.chat_id,
+                text=(
+                    f"Welcome {', '.join(human_names)}! 👋 I'm Xaana. "
+                    "This group isn't connected to a club yet — once the admin links it, "
+                    "I'll track the shared promise and daily check-ins here."
+                ),
+                parse_mode=None,
+            )
             return
 
         # Sync new members into club_members
@@ -1826,6 +1872,12 @@ class PlannerBot:
             chat_id = getattr(chat, "id", None)
             if chat_id and new_status and member_user:
                 await self._sync_club_member_from_update(chat_id, member_user, new_status)
+                old_status = getattr(getattr(chat_member_update, "old_chat_member", None), "status", None)
+                joined = new_status in ("member", "administrator", "creator") and old_status in (
+                    "left", "kicked", "banned", None,
+                )
+                if joined and not getattr(member_user, "is_bot", False):
+                    await self._welcome_group_members(ctx, members=[member_user])
 
         my_chat_member = getattr(update, "my_chat_member", None)
         if not my_chat_member:

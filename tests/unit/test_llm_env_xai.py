@@ -43,10 +43,13 @@ def test_load_llm_env_accepts_grok_alias_and_returns_xai_config(monkeypatch: pyt
     assert cfg["LLM_PROVIDER_REQUESTED"] == "grok"
     assert cfg["XAI_API_KEY"] == "test-xai-key"
     assert cfg["XAI_BASE_URL"] == "https://api.x.ai/v1"
-    assert cfg["LLM_XAI_ROUTER_MODEL"] == "grok-4.3"
-    assert cfg["LLM_XAI_PLANNER_MODEL"] == "grok-4.3"
-    assert cfg["LLM_XAI_RESPONDER_MODEL"] == "grok-4.3"
+    assert cfg["LLM_XAI_ROUTER_MODEL"] == "grok-4-1-fast-non-reasoning"
+    assert cfg["LLM_XAI_PLANNER_MODEL"] == "grok-4-1-fast-non-reasoning"
+    assert cfg["LLM_XAI_RESPONDER_MODEL"] == "grok-4-1-fast-non-reasoning"
+    # xAI fallback escalates to the slower, heavier model rather than repeating
+    # the primary, so it must differ from the role models above.
     assert cfg["LLM_FALLBACK_XAI_MODEL"] == "grok-4.3"
+    assert cfg["LLM_FALLBACK_XAI_MODEL"] != cfg["LLM_XAI_ROUTER_MODEL"]
 
 
 def test_load_llm_env_accepts_grok_api_key_alias(monkeypatch: pytest.MonkeyPatch):
@@ -70,4 +73,4 @@ def test_load_llm_env_auto_uses_xai_when_only_xai_key_present(monkeypatch: pytes
 
     assert cfg["LLM_PROVIDER"] == "xai"
     assert cfg["LLM_PROVIDER_LAYER_ENABLED"] is True
-    assert cfg["LLM_PLANNER_MODEL"] == "grok-4.3"
+    assert cfg["LLM_PLANNER_MODEL"] == "grok-4-1-fast-non-reasoning"

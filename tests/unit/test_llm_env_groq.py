@@ -67,4 +67,7 @@ def test_load_llm_env_groq_defaults_enable_provider_layer_and_fallback(monkeypat
     assert cfg["LLM_PROVIDER_LAYER_ENABLED"] is True
     assert cfg["LLM_FALLBACK_ENABLED"] is True
     assert cfg["LLM_FALLBACK_PROVIDER"] == "groq"
-    assert cfg["LLM_FALLBACK_GROQ_MODEL"] == "openai/gpt-oss-20b"
+    # The groq fallback must be a genuine escalation: pointing it at the primary
+    # made the first fallback hop retry a model the adapter had just blocked.
+    assert cfg["LLM_FALLBACK_GROQ_MODEL"] == "openai/gpt-oss-120b"
+    assert cfg["LLM_FALLBACK_GROQ_MODEL"] != cfg["LLM_ROUTER_MODEL"]

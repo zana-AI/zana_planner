@@ -56,6 +56,10 @@ class GroqProviderAdapter(ProviderAdapter):
                 return text
         return str(content)
 
+    @staticmethod
+    def _is_reasoning_model(model_name: str) -> bool:
+        return (model_name or "").strip().startswith("openai/gpt-oss")
+
     @classmethod
     def _ordered_candidates(cls, requested_model: str) -> list[str]:
         candidates: list[str] = []
@@ -76,6 +80,14 @@ class GroqProviderAdapter(ProviderAdapter):
         ).strip() or self.CANDIDATE_MODELS[0]
         candidates = self._ordered_candidates(requested_model)
         selected_model = pick_first_available("groq", candidates) or requested_model
+        extra: Dict[str, Any] = {}
+        if self._is_reasoning_model(selected_model):
+            # gpt-oss-* spend part of the completion budget on hidden chain-of-thought
+            # before the visible answer. Left at the default effort they burn 3-5x the
+            # output tokens (and latency) for the same reply, and under a max_tokens cap
+            # the thinking can consume the whole budget and return an empty string.
+            # group_router.py already does this for the routing call.
+            extra["reasoning_effort"] = "low"
         model = ChatOpenAI(
             openai_api_key=base_config.get("groq_api_key", ""),
             base_url=base_config.get("groq_base_url", "https://api.groq.com/openai/v1"),
@@ -84,6 +96,7 @@ class GroqProviderAdapter(ProviderAdapter):
             timeout=base_config.get("request_timeout_seconds"),
             max_retries=base_config.get("max_retries"),
             include_response_headers=True,
+            **extra,
         )
         options = LLMInvokeOptions(
             purpose=role,

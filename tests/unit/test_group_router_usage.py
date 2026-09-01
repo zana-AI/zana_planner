@@ -199,3 +199,87 @@ def test_group_router_pre_routes_address_only_mention_as_reaction(monkeypatch):
 
     assert decision.action == "REACT_EMOJI"
     assert decision.reason == "address-only"
+
+
+def _fresh_bot_data():
+    return {}
+
+
+def test_commanded_turns_are_never_throttled():
+    bot_data = _fresh_bot_data()
+    for _ in range(500):
+        assert group_router.apply_budget(
+            bot_data, -100, "coach", "FULL_REPLY", is_commanded=True
+        ) == "FULL_REPLY"
+    # Commanded turns spend nothing, so the spontaneous budget is untouched.
+    assert bot_data.get("group_budget", {}).get("-100") is None
+
+
+def test_spontaneous_text_flows_freely_below_the_taper(monkeypatch):
+    monkeypatch.setattr(group_router.random, "random", lambda: 0.99)
+    bot_data = _fresh_bot_data()
+    limit = group_router.text_budget_for("coach")
+    below_taper = int(limit * group_router._TAPER_START)
+    for _ in range(below_taper):
+        assert group_router.apply_budget(
+            bot_data, -100, "coach", "FULL_REPLY", is_commanded=False
+        ) == "FULL_REPLY"
+    assert bot_data["group_budget"]["-100"]["count"] == below_taper
+
+
+def test_taper_downgrades_text_to_a_reaction_instead_of_silence(monkeypatch):
+    # random() always loses the taper roll, so every post-taper turn degrades.
+    monkeypatch.setattr(group_router.random, "random", lambda: 0.999)
+    bot_data = _fresh_bot_data()
+    limit = group_router.text_budget_for("coach")
+    entry = group_router._budget_entry(bot_data, -100)
+    spent = int(limit * (group_router._TAPER_START + 0.1))
+    entry["count"] = spent
+
+    action = group_router.apply_budget(bot_data, -100, "coach", "FULL_REPLY", is_commanded=False)
+    assert action == "REACT_EMOJI"
+    assert entry["count"] == spent  # no text spent
+    assert entry["reactions"] == 1
+
+
+def test_taper_shortens_long_replies_near_the_cap(monkeypatch):
+    monkeypatch.setattr(group_router.random, "random", lambda: 0.0)  # always wins the roll
+    bot_data = _fresh_bot_data()
+    limit = group_router.text_budget_for("coach")
+    entry = group_router._budget_entry(bot_data, -100)
+    entry["count"] = int(limit * group_router._SHORTEN_ABOVE)
+
+    assert group_router.apply_budget(
+        bot_data, -100, "coach", "FULL_REPLY", is_commanded=False
+    ) == "SHORT_REPLY"
+
+
+def test_exhausted_text_budget_still_leaves_room_for_reactions():
+    bot_data = _fresh_bot_data()
+    limit = group_router.text_budget_for("coach")
+    entry = group_router._budget_entry(bot_data, -100)
+    entry["count"] = limit
+
+    assert group_router.apply_budget(
+        bot_data, -100, "coach", "FULL_REPLY", is_commanded=False
+    ) == "REACT_EMOJI"
+
+    entry["reactions"] = limit * group_router._REACTION_BUDGET_FACTOR
+    assert group_router.apply_budget(
+        bot_data, -100, "coach", "REACT_EMOJI", is_commanded=False
+    ) == "IGNORE"
+
+
+def test_budget_resets_on_a_new_day():
+    bot_data = {"group_budget": {"-100": {"date": "1999-01-01", "count": 999, "reactions": 999}}}
+    assert group_router.apply_budget(
+        bot_data, -100, "coach", "SHORT_REPLY", is_commanded=False
+    ) == "SHORT_REPLY"
+    assert bot_data["group_budget"]["-100"]["count"] == 1
+
+
+def test_delay_matches_the_action_actually_taken():
+    assert group_router.delay_for("REACT_EMOJI", is_commanded=False) < group_router.delay_for(
+        "FULL_REPLY", is_commanded=False
+    )
+    assert group_router.delay_for("FULL_REPLY", is_commanded=True) == 2

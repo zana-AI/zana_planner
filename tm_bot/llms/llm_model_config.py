@@ -42,9 +42,12 @@ MODEL_CONFIGS = {
         responder="openai/gpt-oss-20b",
     ),
     "xai": RoleModels(
-        router="grok-4.3",
-        planner="grok-4.3",
-        responder="grok-4.3",
+        # grok-4-1-fast-non-reasoning matched grok-4.3 on the club-context and
+        # adversarial ground-truth evals at ~1s instead of 4-6s and 6x lower
+        # input cost, so it is the default; grok-4.3 stays as the fallback.
+        router="grok-4-1-fast-non-reasoning",
+        planner="grok-4-1-fast-non-reasoning",
+        responder="grok-4-1-fast-non-reasoning",
     ),
 }
 
@@ -53,7 +56,9 @@ FALLBACK_MODELS = {
     "gemini": "gemini-2.5-flash-lite",
     "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
-    "groq": "openai/gpt-oss-20b",
+    # Must differ from the groq primary (gpt-oss-20b) or the first fallback hop
+    # is a no-op against a model that was just blocked. See llm_env_utils.
+    "groq": "openai/gpt-oss-120b",
     "xai": "grok-4.3",
 }
 

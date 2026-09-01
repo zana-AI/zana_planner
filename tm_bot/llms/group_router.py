@@ -13,13 +13,17 @@ Decision classes:
   FULL_REPLY    — full LLM response (direct questions, complex club situations)
 
 Response budget:
-  Spontaneous (proactive) responses are capped per day per group, by vibe.
-  Commanded responses (direct @mention, /commands) are always allowed.
+  Spontaneous (proactive) text replies are capped per day per group, by vibe, and
+  taper off well before the cap: past 60% of the budget the chance of answering in
+  text decays to zero, and the losing rolls become emoji reactions instead of
+  silence. Reactions have their own, looser budget so presence outlives speech.
+  Commanded responses (@mention, reply to the bot, /commands) are never throttled.
 """
 from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -38,14 +42,29 @@ _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 ACTIONS = frozenset({"IGNORE", "REACT_EMOJI", "SHORT_REPLY", "FULL_REPLY"})
 
-# Max spontaneous bot replies per day per group, by vibe
-_BUDGET_BY_VIBE: dict[str, int] = {
-    "quiet": 2,
-    "coach": 5,
-    "supportive": 5,
-    "playful": 10,
+# Max spontaneous bot *text* replies per day per group, by vibe.
+# These are ceilings, not targets: the taper below makes the
+# bot talk less and less as it approaches them (see apply_budget), so a group
+# normally lands well under the cap without ever going fully silent.
+_TEXT_BUDGET_BY_VIBE: dict[str, int] = {
+    "quiet": 20,
+    "coach": 60,
+    "supportive": 60,
+    "playful": 100,
 }
-_DEFAULT_BUDGET = 5
+_DEFAULT_TEXT_BUDGET = 60
+
+# Emoji reactions are one cheap router call and no message in the chat, so they
+# get their own, much looser budget. Presence stays alive after text is spent.
+_REACTION_BUDGET_FACTOR = 3
+
+# Fraction of the daily text budget at which the taper starts. Below this the
+# bot replies freely; above it, the chance of a text reply decays linearly to
+# zero at 100%, with the losing rolls downgraded to an emoji reaction.
+_TAPER_START = 0.60
+
+# Above this fraction, long answers stop: proactive FULL_REPLY becomes SHORT_REPLY.
+_SHORTEN_ABOVE = 0.80
 
 # Delay in seconds before sending a response, by action and trigger type
 _DELAY: dict[str, dict[str, int]] = {
@@ -62,35 +81,84 @@ class RouterDecision:
     reason: str = ""
 
 
-# ── budget ─────────────────────────────────────────────────────────────────────
+# ── budget ────────────────────────────────────────────────────────────────────
 
-def budget_allows(
+def _budget_entry(bot_data: dict, chat_id: int | str) -> dict:
+    today = str(date.today())
+    budgets = bot_data.setdefault("group_budget", {})
+    entry = budgets.get(str(chat_id))
+    if not entry or entry.get("date") != today:
+        entry = {"date": today, "count": 0, "reactions": 0}
+        budgets[str(chat_id)] = entry
+    entry.setdefault("count", 0)
+    entry.setdefault("reactions", 0)
+    return entry
+
+
+def text_budget_for(vibe: str) -> int:
+    return _TEXT_BUDGET_BY_VIBE.get((vibe or "").lower().strip(), _DEFAULT_TEXT_BUDGET)
+
+
+def apply_budget(
     bot_data: dict,
     chat_id: int | str,
     vibe: str,
+    action: str,
     is_commanded: bool,
-) -> bool:
+) -> str:
     """
-    Returns True if a spontaneous response is within today's budget.
-    Commanded responses always pass. Consuming budget happens here (side-effect).
+    Shape a routed action to fit today's remaining budget for this group.
+
+    Returns the action to actually perform, which may be a quieter one than the
+    router asked for. Commanded turns (@mention or reply to the bot) are never
+    throttled — staying silent when spoken to reads as broken, not as restraint.
+
+    Spontaneous turns taper: full engagement up to _TAPER_START of the daily
+    text budget, then a linearly decaying chance of answering in text, with the
+    remainder falling back to an emoji reaction rather than to silence.
+
+    Consuming budget is a side effect of this call.
     """
     if is_commanded:
-        return True
+        return action
+    if action == "IGNORE":
+        return action
 
-    today = str(date.today())
-    budgets = bot_data.setdefault("group_budget", {})
-    entry = budgets.get(str(chat_id), {})
-    if entry.get("date") != today:
-        entry = {"date": today, "count": 0}
+    entry = _budget_entry(bot_data, chat_id)
+    limit = text_budget_for(vibe)
 
-    limit = _BUDGET_BY_VIBE.get((vibe or "").lower().strip(), _DEFAULT_BUDGET)
-    if entry["count"] >= limit:
-        logger.debug("group_router: budget exhausted for chat %s (count=%d limit=%d)", chat_id, entry["count"], limit)
-        return False
+    if action == "REACT_EMOJI":
+        return _spend_reaction(entry, limit, chat_id)
 
-    entry["count"] += 1
-    budgets[str(chat_id)] = entry
-    return True
+    used = entry["count"]
+    ratio = used / limit if limit > 0 else 1.0
+
+    if ratio >= 1.0:
+        logger.debug("group_router: text budget spent for chat %s (%d/%d) → emoji", chat_id, used, limit)
+        return _spend_reaction(entry, limit, chat_id)
+
+    if ratio >= _TAPER_START:
+        # Chance of still speaking, decaying from 1.0 at the taper start to 0 at the cap.
+        keep_text = (1.0 - ratio) / (1.0 - _TAPER_START)
+        if random.random() >= keep_text:
+            logger.debug(
+                "group_router: tapered chat %s at %d/%d (p=%.2f) → emoji", chat_id, used, limit, keep_text
+            )
+            return _spend_reaction(entry, limit, chat_id)
+        if ratio >= _SHORTEN_ABOVE:
+            action = "SHORT_REPLY"
+
+    entry["count"] = used + 1
+    return action
+
+
+def _spend_reaction(entry: dict, text_limit: int, chat_id: int | str) -> str:
+    reaction_limit = text_limit * _REACTION_BUDGET_FACTOR
+    if entry["reactions"] >= reaction_limit:
+        logger.debug("group_router: reaction budget spent for chat %s (%d)", chat_id, entry["reactions"])
+        return "IGNORE"
+    entry["reactions"] += 1
+    return "REACT_EMOJI"
 
 
 # ── router prompt ──────────────────────────────────────────────────────────────
@@ -108,18 +176,25 @@ action must be one of:
 - SHORT_REPLY: 1-2 sentence text reply (simple questions, mild engagement, task completions worth a comment)
 - FULL_REPLY: full thoughtful response (club/status/setup/progress questions, complex situations, check-in info needed)
 
+REACT_EMOJI is the workhorse. Aim for roughly 3 reactions per 1 text reply across a
+day: a reaction is warm, costs the group nothing, and never interrupts. Reach for
+text only when words actually add something the emoji cannot.
+
 emoji: pick a fitting Telegram reaction (😂 playful, 😄 friendly, 👏 praise, 🙌 celebration, 🔥 achievements, ✅ done, 👀 curious, ❤️ support, 🤝 agreement, 💪 encouragement, 🎯 focus, 😅 awkward/funny).
 reason: one short clause explaining the decision.
 
 Rules (in priority order):
 1. Insults, mockery, hostile content, deliberate identity bait → IGNORE (never reward hostility)
 2. Direct club/status/setup/progress question or task from @mention/reply-to-bot → FULL_REPLY
-3. Task completion (workout done, score, game result) → REACT_EMOJI if brief; SHORT_REPLY if they seem proud or want acknowledgment
-4. Fake facts or provocations about club stats → SHORT_REPLY to gently correct, nothing more
-5. Casual banter, side chatter, greetings, short acks, emoji-only → REACT_EMOJI or SHORT_REPLY (show presence without interrupting)
-6. Off-topic but friendly conversation → REACT_EMOJI
-7. Match vibe: quiet vibe → prefer REACT_EMOJI over SHORT_REPLY; playful vibe → allow SHORT_REPLY for fun moments
-8. Default when unsure → REACT_EMOJI (presence > silence)
+3. Anything else addressed to you (@mention or reply to you) → SHORT_REPLY; never leave someone
+   who spoke to you without an answer
+4. Task completion (workout done, score, game result) → REACT_EMOJI if brief; SHORT_REPLY if they seem proud or want acknowledgment
+5. Fake facts or provocations about club stats → SHORT_REPLY to gently correct, nothing more
+6. Casual banter, side chatter, greetings, short acks, emoji-only → REACT_EMOJI
+7. Off-topic but friendly conversation → REACT_EMOJI
+8. A message clearly aimed at another member, not at the group → REACT_EMOJI at most
+9. Match vibe: quiet vibe → prefer REACT_EMOJI over SHORT_REPLY; playful vibe → allow SHORT_REPLY for fun moments
+10. Default when unsure → REACT_EMOJI (presence > silence, reaction > interruption)
 """
 
 _USER_TEMPLATE = """Club vibe: {vibe}
@@ -255,6 +330,13 @@ def _parse(raw: str, is_mentioned: bool) -> RouterDecision:
     except Exception as exc:
         logger.debug("group_router: parse failed on %r: %s", raw[:80], exc)
         return _heuristic("", is_mentioned)
+
+
+def delay_for(action: str, is_commanded: bool) -> int:
+    """Seconds to wait before performing `action`, so a downgraded action isn't
+    stuck with the pause its heavier original earned."""
+    kind = "commanded" if is_commanded else "proactive"
+    return _DELAY.get(kind, {}).get(action, 2)
 
 
 def _decision(action: str, reason: str, is_mentioned: bool, emoji: str = "👍") -> RouterDecision:

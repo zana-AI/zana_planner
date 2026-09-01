@@ -63,6 +63,16 @@ MODEL_CAPABILITIES: Dict[str, ModelCapabilities] = {
         max_output_tokens=16_384,
         tokenizer_family="o200k_base",
     ),
+    "grok-4-1-fast-non-reasoning": ModelCapabilities(
+        context_window_tokens=2_000_000,
+        max_output_tokens=32_768,
+        tokenizer_family="o200k_base",
+    ),
+    "grok-4.3": ModelCapabilities(
+        context_window_tokens=256_000,
+        max_output_tokens=32_768,
+        tokenizer_family="o200k_base",
+    ),
     "llama-3.3-70b-versatile": ModelCapabilities(
         context_window_tokens=131_072,
         max_output_tokens=8_192,
