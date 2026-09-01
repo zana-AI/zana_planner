@@ -1,7 +1,18 @@
 import asyncio
+from pathlib import Path
 import types
 
 import pytest
+
+
+def test_transcript_follow_scrolls_only_its_panel():
+    html_path = Path(__file__).parents[2] / "tm_bot" / "webapp" / "static" / "youtube_watch.html"
+    html = html_path.read_text(encoding="utf-8")
+
+    assert "function scrollCueWithinTranscript" in html
+    assert "list.scrollTo({top: targetTop" in html
+    assert "button.scrollIntoView" not in html
+    assert "overscroll-behavior: contain" in html
 
 
 def test_report_stats_logs_time_to_assigned_promise(monkeypatch, tmp_path):

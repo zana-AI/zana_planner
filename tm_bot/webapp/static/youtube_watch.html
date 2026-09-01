@@ -64,7 +64,7 @@
     }
     .transcript { margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; }
     .transcript summary { cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 800; color: #edf3ff; }
-    .transcript-list { max-height: 280px; overflow: auto; border-top: 1px solid var(--app-border); }
+    .transcript-list { max-height: 280px; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; border-top: 1px solid var(--app-border); }
     .transcript-cue { display: grid; grid-template-columns: 54px 1fr; gap: 10px; width: 100%; padding: 10px 14px; border-bottom: 1px solid rgba(170,196,238,.08); background: transparent; color: rgba(237,243,255,.78); text-align: start; font: inherit; font-size: 13px; }
     .transcript-cue:hover, .transcript-cue:focus-within { background: rgba(99,167,247,.12); color: #fff; outline: none; }
     .transcript-jump { align-self: start; padding: 0; border: 0; background: transparent; color: var(--app-accent); font: inherit; font-size: 12px; text-align: start; cursor: pointer; }
@@ -571,6 +571,24 @@
     target.appendChild(document.createTextNode(text.slice(end)));
   }
 
+  function scrollCueWithinTranscript(button, behavior) {
+    var list = document.getElementById('transcriptList');
+    if (!list || !button) return;
+    // scrollIntoView() may also scroll the document, which moves the player
+    // off-screen as captions advance. Move only the transcript's own viewport.
+    var listRect = list.getBoundingClientRect();
+    var buttonRect = button.getBoundingClientRect();
+    var targetTop = list.scrollTop + (buttonRect.top - listRect.top)
+      - ((list.clientHeight - buttonRect.height) / 2);
+    var maxTop = Math.max(0, list.scrollHeight - list.clientHeight);
+    targetTop = Math.max(0, Math.min(maxTop, targetTop));
+    if (typeof list.scrollTo === 'function') {
+      list.scrollTo({top: targetTop, behavior: behavior || 'auto'});
+    } else {
+      list.scrollTop = targetTop;
+    }
+  }
+
   function setActiveCue(index) {
     if (index === activeCueIndex || index < 0 || index >= cues.length) return;
     if (cueButtons[activeCueIndex]) cueButtons[activeCueIndex].classList.remove('is-active');
@@ -581,7 +599,7 @@
       // Only chase the line when the panel is open, or we fight the user's scroll.
       var panel = document.getElementById('transcript');
       if (panel && panel.open) {
-        try { button.scrollIntoView({block: 'center', behavior: 'smooth'}); } catch (e) {}
+        scrollCueWithinTranscript(button, 'smooth');
       }
     }
     renderFocusText(cues[index].text);
@@ -690,7 +708,7 @@
         panel.addEventListener('toggle', function() {
           if (!panel.open) return;
           var active = cueButtons[activeCueIndex];
-          if (active) { try { active.scrollIntoView({block: 'center'}); } catch (e) {} }
+          if (active) scrollCueWithinTranscript(active, 'auto');
         });
         // Show the linked line immediately, before playback reports a position.
         if (startAt > 0) setActiveCue(initialCueIndex());
