@@ -606,3 +606,82 @@ class ConversationRepository:
         except Exception as e:
             logger.warning(f"Failed to get conversation history by importance for user {user_id}: {e}")
             return []
+
+    # Service placeholders written by dispatch for non-text updates. They carry no
+    # conversational meaning and make up roughly half the stored group rows, so a
+    # window that includes them wastes most of its budget on noise.
+    GROUP_HISTORY_NOISE = ("[message_reaction]", "[pinned_message]", "[chat_member]")
+
+    def get_recent_group_history(
+        self,
+        chat_id: int,
+        limit: int = 28,
+    ) -> List[Dict[str, Any]]:
+        """Recent messages in one group chat, oldest first.
+
+        The group handler keeps a short in-process history, which a restart or a
+        deploy erases; this reads the same conversation back from Postgres so the
+        bot can pick up a thread it was already part of. Display names come from
+        `users` because `conversations` only stores the id.
+
+        Returns dicts shaped like the in-memory group history entries so both
+        sources can be used interchangeably.
+        """
+        if not chat_id:
+            return []
+        try:
+            with get_db_session() as session:
+                rows = session.execute(
+                    text(
+                        """
+                        SELECT c.message_id,
+                               c.user_id,
+                               c.message_type,
+                               c.content,
+                               c.created_at_utc,
+                               u.display_name,
+                               u.non_latin_name,
+                               u.latin_name
+                        FROM conversations c
+                        LEFT JOIN users u ON u.user_id = c.user_id
+                        WHERE c.chat_id = :chat_id
+                          AND c.content IS NOT NULL
+                          AND c.content <> ''
+                          AND NOT (c.content = ANY(:noise))
+                        ORDER BY c.created_at_utc DESC
+                        LIMIT :limit
+                        """
+                    ),
+                    {
+                        "chat_id": str(chat_id),
+                        "noise": list(self.GROUP_HISTORY_NOISE),
+                        "limit": int(limit),
+                    },
+                ).mappings().fetchall()
+
+                history: List[Dict[str, Any]] = []
+                for row in reversed(rows):
+                    is_bot = (row["message_type"] or "").strip().lower() == "bot"
+                    name = (
+                        row["display_name"]
+                        or row["non_latin_name"]
+                        or row["latin_name"]
+                        or ("Xaana" if is_bot else "Someone")
+                    )
+                    history.append({
+                        "message_id": row["message_id"],
+                        "sender_user_id": row["user_id"],
+                        "sender_name": str(name).strip()[:80],
+                        "text": str(row["content"] or "").strip()[:800],
+                        "created_at_utc": row["created_at_utc"],
+                        "is_bot": is_bot,
+                        "reply_to_message_id": None,
+                        "reply_to_sender_name": None,
+                        "reply_to_text": None,
+                        "reply_to_is_bot": False,
+                        "from_db": True,
+                    })
+                return history
+        except Exception as e:
+            logger.warning(f"Failed to load group history for chat {chat_id}: {e}")
+            return []

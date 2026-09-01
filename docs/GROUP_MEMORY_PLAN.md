@@ -45,10 +45,13 @@ verified in the current code:
    owner's setup text. The group handler never writes. The bot cannot learn anything
    about anyone from talking to them.
 
-3. **The retrieval layer is dead code.** `club_memory_search` is defined
-   (`tm_bot/memory/club_memory.py:48`), exported in `memory/__init__.py`, and called
-   from nowhere. `_get_club_memory_block` dumps `MEMORY.md` wholesale into the prompt
-   instead.
+3. **The whole memory layer has never run in production.** `club_memory_search` is
+   defined (`tm_bot/memory/club_memory.py:48`), exported, and called from nowhere.
+   Verified on the production VM 2026-09-01: Qdrant holds **0 collections**, and
+   `/srv/zana-users` (a persistent bind mount, so nothing was lost to deploys) holds
+   **0 `MEMORY.md` files** for users or clubs and no `clubs/` directory at all. The
+   markdown memories and the vector store are both wired in code and both empty — it
+   is not that one replaced the other.
 
 Net effect: the club's real history is in Postgres and growing, while the bot answers
 from at most 16 messages of process memory that a deploy can erase at any moment.
@@ -58,7 +61,8 @@ from at most 16 messages of process memory that a deploy can erase at any moment
 - **Cost scales per club per day, not per message.** Distillation happens on a schedule
   or a message-count trigger, never on the hot path.
 - **Retrieve, don't dump.** Inject the few facts relevant to this turn, not the whole
-  memory file.
+  memory file. (At current club sizes "the few facts" and "everything" are the same
+  thing — see "Why RAG was dropped" below.)
 - **Selective member notes.** Only inject notes for people active in the current
   window (typically 1–3), never all members.
 - **Ground truth stays in Postgres.** Memory adds colour and continuity; it must never
@@ -67,7 +71,7 @@ from at most 16 messages of process memory that a deploy can erase at any moment
 
 ## Proposed work
 
-### 1. Read the history that already exists, and store both sides
+### 1. Read the history that already exists, and store both sides — DONE 2026-09-01
 No new table and no new persistence: `conversations` already holds the inbound side.
 
 - Log the bot's own group replies (`_record_group_bot_message`) through the same
@@ -76,6 +80,22 @@ No new table and no new persistence: `conversations` already holds the inbound s
   `chat_id`, excluding `[message_reaction]` rows, joined for display names.
 - Fixes restart amnesia at zero LLM cost. Prerequisite for everything below.
 - Retention: keep raw rows ~30 days for prompt use, then let the digest carry it.
+
+Implemented as `ConversationRepository.get_recent_group_history` (joins `users` for
+display names, drops the service placeholders that were ~48% of stored rows) and
+`PlannerBot._load_group_history` / `_get_recent_group_messages`, which serves the live
+deque when it is full and tops up from Postgres when process memory is cold, deduped by
+`message_id` with a 300s memo so a quiet club does not query every turn. Bot replies are
+now persisted from `_record_group_bot_message`. Window raised 16 -> 28 to match the
+slice the responder prompt was already taking. Covered by
+`tests/unit/test_group_history_window.py`.
+
+### Why RAG was dropped
+Measured on the busiest club: 47 chars per message, 48% of stored rows were reaction
+placeholders, and **137 real messages in the last 30 days** — roughly 4,000 tokens for
+the entire month. Vector search over that is engineering for a problem this product does
+not have, which is also why Qdrant sat at zero collections. If a club ever outgrows a
+single window, add the digest in item 2; do not reach for embeddings first.
 
 ### 2. Rolling club digest
 One cheap LLM call per club per day (or every N new messages, whichever comes first)

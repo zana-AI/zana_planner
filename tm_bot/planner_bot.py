@@ -115,6 +115,8 @@ class PlannerBot:
         self.root_dir = root_dir
         self.miniapp_url = miniapp_url
         self._group_chat_history = defaultdict(lambda: deque(maxlen=40))
+        # chat_id -> (fetched_at, rows) for history read back from Postgres
+        self._group_history_cache: dict[int, tuple[float, list[dict]]] = {}
         
         # Initialize core components
         self.llm_handler = LLMHandler()
@@ -1476,6 +1478,21 @@ class PlannerBot:
             or "Xaana"
         )
         reply_context = self._get_group_reply_context(ctx)
+        # Inbound group messages are logged centrally in dispatch(), but group
+        # replies are sent straight through the Telegram bot object rather than
+        # ResponseService, so without this the stored transcript only ever had
+        # the members' half of the conversation.
+        try:
+            from repositories.conversation_repo import ConversationRepository
+            ConversationRepository().save_message(
+                user_id=getattr(bot, "id", 0) or 0,
+                message_type="bot",
+                content=str(text or "")[:4000],
+                message_id=getattr(sent_message, "message_id", None),
+                chat_id=ctx.chat_id,
+            )
+        except Exception as e:
+            logger.debug("Could not persist group bot message: %s", e)
         self._append_group_history(ctx.chat_id, {
             "message_id": getattr(sent_message, "message_id", None),
             "sender_user_id": getattr(bot, "id", None),
@@ -1489,10 +1506,48 @@ class PlannerBot:
             "reply_to_is_bot": False,
         })
 
+    # The responder prompt already slices recent_messages[-28:]; this used to hand
+    # it 16, so the extra room was never used.
+    GROUP_HISTORY_WINDOW = 28
+    _GROUP_HISTORY_REFETCH_SECONDS = 300
+
     def _get_recent_group_messages(self, ctx: InputContext) -> list[dict]:
         if not ctx.chat_id:
             return []
-        return list(self._group_chat_history.get(ctx.chat_id, []))[-16:]
+        live = list(self._group_chat_history.get(ctx.chat_id, []))
+        if len(live) >= self.GROUP_HISTORY_WINDOW:
+            return live[-self.GROUP_HISTORY_WINDOW:]
+
+        # Process memory is cold — a restart or deploy cleared it, or this club is
+        # quiet. The same conversation is in Postgres, so read it back rather than
+        # answering as if the group had just started talking.
+        stored = self._load_group_history(ctx.chat_id)
+        if not stored:
+            return live
+        seen = {m.get("message_id") for m in live if m.get("message_id") is not None}
+        merged = [m for m in stored if m.get("message_id") not in seen] + live
+        return merged[-self.GROUP_HISTORY_WINDOW:]
+
+    def _load_group_history(self, chat_id: int) -> list[dict]:
+        """Recent stored messages for a group, memoised briefly.
+
+        Guarded by a short TTL so a quiet club — one that never fills the window —
+        doesn't hit the database on every single message.
+        """
+        now = time.time()
+        cached = self._group_history_cache.get(chat_id)
+        if cached and now - cached[0] < self._GROUP_HISTORY_REFETCH_SECONDS:
+            return cached[1]
+        try:
+            from repositories.conversation_repo import ConversationRepository
+            rows = ConversationRepository().get_recent_group_history(
+                chat_id, limit=self.GROUP_HISTORY_WINDOW
+            )
+        except Exception as e:
+            logger.debug("Could not load stored group history for %s: %s", chat_id, e)
+            rows = []
+        self._group_history_cache[chat_id] = (now, rows)
+        return rows
 
     def _get_group_conversation_state(self, ctx: InputContext) -> str:
         if not ctx.chat_id:
