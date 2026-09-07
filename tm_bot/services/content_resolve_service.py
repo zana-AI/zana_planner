@@ -100,10 +100,17 @@ class ContentResolveService:
                 video_id = extract_video_id(url)
                 if video_id:
                     info = get_video_info(video_id, url=url)
+                    metadata["video_id"] = video_id
                     metadata["category"] = info.get("category")
                     metadata["tags"] = info.get("tags")
                     metadata["language"] = info.get("language")
                     metadata["captions_available"] = info.get("captions_available")
+                    resolved_title = str(info.get("title") or "").strip()
+                    if resolved_title and str(title or "").strip().lower() in {"", "youtube video", "untitled"}:
+                        title = resolved_title
+                    author_channel = author_channel or info.get("channel") or None
+                    if duration_seconds is None and info.get("duration_seconds"):
+                        duration_seconds = float(info["duration_seconds"])
                     thumbnail_url = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
             except Exception as e:
                 logger.debug("youtube_utils enrichment in resolve: %s", e)

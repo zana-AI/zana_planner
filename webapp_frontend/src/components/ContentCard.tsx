@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw } from 'lucide-react';
+import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
 import type { UserContentWithDetails } from '../types';
 
@@ -36,6 +38,7 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
 
 export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps) {
   const { t } = useTranslation();
+  const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState('');
   const title = item.title || t('content.untitled');
   const provider = (item.provider || 'other').replace(/_/g, ' ');
   const displayType = getDisplayType(item);
@@ -52,6 +55,35 @@ export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps)
   const buckets = item.buckets ?? [];
   const bucketCount = item.bucket_count ?? 120;
   const source = item.author_channel || (provider === 'youtube' ? 'YouTube' : provider);
+  const thumbnailUrl = item.thumbnail_url || generatedThumbnailUrl;
+  const pdfCoverTitle = title
+    .replace(/\.pdf$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const pageCount = Number(item.metadata_json?.['page_count'] || 0);
+
+  useEffect(() => {
+    if (item.thumbnail_url || !item.thumbnail_asset_id || displayType !== 'pdf') {
+      setGeneratedThumbnailUrl('');
+      return undefined;
+    }
+    let active = true;
+    let objectUrl = '';
+    void apiClient.fetchContentThumbnailBlob(item.content_id || item.id)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setGeneratedThumbnailUrl(objectUrl);
+      })
+      .catch(() => {
+        if (active) setGeneratedThumbnailUrl('');
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [displayType, item.content_id, item.id, item.thumbnail_asset_id, item.thumbnail_url]);
 
   const secondaryStatus = item.status === 'completed'
       ? { label: t('content.resume'), icon: <RotateCcw size={15} />, value: 'in_progress' as const }
@@ -72,8 +104,14 @@ export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps)
       }}
     >
       <div className="content-card-media" aria-hidden="true">
-        {item.thumbnail_url ? (
-          <img src={item.thumbnail_url} alt="" />
+        {thumbnailUrl ? (
+          <img src={thumbnailUrl} alt="" className={displayType === 'pdf' ? 'content-card-pdf-thumbnail' : undefined} />
+        ) : displayType === 'pdf' ? (
+          <div className="content-card-pdf-cover">
+            <FileText size={18} />
+            <strong>{pdfCoverTitle || t('content.types.pdf')}</strong>
+            {pageCount > 0 ? <small>{t('content.pages', { count: pageCount })}</small> : null}
+          </div>
         ) : (
           <div className="content-card-media-fallback">
             <TypeIcon type={displayType} />

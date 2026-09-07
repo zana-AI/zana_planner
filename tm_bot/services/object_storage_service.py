@@ -56,6 +56,15 @@ class ObjectStorageService:
         """
         Upload PDF bytes and return storage URI + ETag length.
         """
+        return self.upload_bytes(key, payload, content_type="application/pdf")
+
+    def upload_bytes(
+        self,
+        key: str,
+        payload: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> Tuple[str, Optional[int]]:
+        """Upload an immutable content asset and return its storage URI and size."""
         normalized_key = key.strip("/").replace("\\", "/")
         if self.mode == "s3":
             client = self._require_client()
@@ -63,7 +72,7 @@ class ObjectStorageService:
                 Bucket=self.bucket,
                 Key=normalized_key,
                 Body=payload,
-                ContentType="application/pdf",
+                ContentType=content_type,
             )
             return f"s3://{self.bucket}/{normalized_key}", len(payload)
 

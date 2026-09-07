@@ -673,6 +673,7 @@ export interface UserContent {
 
 export interface UserContentWithDetails extends Content, UserContent {
   user_content_id?: string;
+  thumbnail_asset_id?: string;
   bucket_count?: number;
   buckets?: number[];
 }

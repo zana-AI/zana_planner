@@ -390,6 +390,10 @@ class ApiClient {
     return this.request<HeatmapData>(`/content/${encodeURIComponent(contentId)}/heatmap`);
   }
 
+  async fetchContentThumbnailBlob(contentId: string): Promise<Blob> {
+    return this.fetchPdfBlob(`/api/content/${encodeURIComponent(contentId)}/thumbnail`);
+  }
+
   /**
    * Update user_content (status, notes, rating).
    */

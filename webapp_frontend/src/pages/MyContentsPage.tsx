@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
+import { BottomSheet } from '../components/ui/BottomSheet';
 import type { MyContentsFacets, UserContentWithDetails } from '../types';
 
 type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed';
@@ -90,6 +91,7 @@ function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
 export function MyContentsPage() {
   const { t, i18n } = useTranslation();
   const [addUrl, setAddUrl] = useState('');
+  const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
   const [items, setItems] = useState<UserContentWithDetails[]>([]);
@@ -163,9 +165,11 @@ export function MyContentsPage() {
       if (!contentId) throw new Error('No content id returned');
       await apiClient.addUserContent(contentId);
       setAddUrl('');
-      setStatus('saved');
-      if (status === 'saved') {
+      setAddOpen(false);
+      if (status === 'all') {
         await loadContents();
+      } else {
+        setStatus('all');
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -236,21 +240,6 @@ export function MyContentsPage() {
   return (
     <main className="content-library-page">
       <section className="content-library-command">
-        <div className="content-library-add">
-          <input
-            type="url"
-            placeholder={t('myContents.pasteAPdfYoutubeArticleOrPodcastUrl')}
-            value={addUrl}
-            onChange={(e) => setAddUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddContent()}
-          />
-          <button type="button" onClick={handleAddContent} disabled={adding || !addUrl.trim()}>
-            <Plus size={16} />
-            <span>{adding ? 'Adding' : 'Add'}</span>
-          </button>
-        </div>
-        {addError && <div className="content-library-error">{addError}</div>}
-
         {/* Search plus one toggle. Status chips, type chips and sort used to sit
             in three permanent rows above the library, so the content itself
             started below the fold — on a phone the filters outweighed what they
@@ -271,9 +260,10 @@ export function MyContentsPage() {
             className={`content-library-filter-toggle${filtersOpen ? ' is-open' : ''}`}
             onClick={() => setFiltersOpen((open) => !open)}
             aria-expanded={filtersOpen}
+            aria-label={t('myContents.filters')}
           >
             <Filter size={15} aria-hidden />
-            <span>{t('myContents.filters')}</span>
+            <span className="content-library-filter-label">{t('myContents.filters')}</span>
             {activeFilterCount > 0 && (
               <span className="content-library-filter-count">{activeFilterCount}</span>
             )}
@@ -364,12 +354,53 @@ export function MyContentsPage() {
           <h2>{t('myContents.noContentHereYet')}</h2>
           <p>{activeFilterCount === 0
             ? t('myContents.emptyLibraryGuide')
-            : t('myContents.pasteALinkAboveOrClearFiltersToBroadenTheLib')}</p>
+            : t('myContents.useAddButtonOrClearFilters')}</p>
           {activeFilterCount > 0 && (
             <button type="button" onClick={resetFilters}>{t('myContents.clearFilters')}</button>
           )}
         </section>
       )}
+
+      <button
+        type="button"
+        className="fab content-library-fab"
+        aria-label={t('myContents.addToLibrary')}
+        onClick={() => {
+          setAddError('');
+          setAddOpen(true);
+        }}
+      >
+        <Plus size={22} />
+      </button>
+
+      <BottomSheet
+        open={addOpen}
+        onClose={() => !adding && setAddOpen(false)}
+        title={t('myContents.addToLibrary')}
+        subtitle={t('myContents.addToLibraryHint')}
+      >
+        <form
+          className="content-library-add-sheet"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleAddContent();
+          }}
+        >
+          <input
+            type="url"
+            inputMode="url"
+            autoFocus
+            placeholder={t('myContents.pasteAPdfYoutubeArticleOrPodcastUrl')}
+            value={addUrl}
+            onChange={(event) => setAddUrl(event.target.value)}
+          />
+          {addError ? <div className="content-library-error">{addError}</div> : null}
+          <button className="btn btn-primary btn-block" type="submit" disabled={adding || !addUrl.trim()}>
+            <Plus size={16} />
+            <span>{adding ? t('myContents.adding') : t('myContents.add')}</span>
+          </button>
+        </form>
+      </BottomSheet>
     </main>
   );
 }

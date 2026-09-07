@@ -338,10 +338,18 @@ class ContentRepository:
                            uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
                            uc.total_consumed_seconds, uc.notes, uc.rating,
                            uc.assigned_promise_id, uc.assigned_at,
-                           r.bucket_count, r.buckets
+                           r.bucket_count, r.buckets,
+                           thumbnail_asset.id AS thumbnail_asset_id
                     FROM user_content uc
                     JOIN content c ON c.id = uc.content_id
                     LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
+                    LEFT JOIN LATERAL (
+                        SELECT a.id
+                        FROM content_asset a
+                        WHERE a.content_id = c.id AND a.asset_type = 'pdf_thumbnail'
+                        ORDER BY a.created_at DESC
+                        LIMIT 1
+                    ) thumbnail_asset ON TRUE
                     WHERE {" AND ".join(conditions)}
                     ORDER BY {order_by}
                     LIMIT :limit

@@ -104,6 +104,7 @@ pydantic-settings==2.12.0
 pydantic_core==2.41.5
 pyee==13.0.0
 pypdf==5.9.0
+pypdfium2==5.13.0
 Pygments==2.19.2
 pyparsing==3.3.1
 pytest==9.0.2

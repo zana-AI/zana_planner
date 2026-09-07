@@ -95,6 +95,10 @@ def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
         "url": url,
     }
 
+    # oEmbed is intentionally first: it is lightweight and remains available
+    # from hosts where YouTube blocks yt-dlp/video-page metadata requests.
+    result = _get_video_info_oembed(video_id, result)
+
     if YT_DLP_AVAILABLE:
         try:
             ydl_opts = {
@@ -139,6 +143,34 @@ def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
     if api_key:
         _enrich_with_youtube_api(video_id, result, api_key)
 
+    return result
+
+
+def _get_video_info_oembed(video_id: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill title/channel from YouTube's public oEmbed endpoint."""
+    if not REQUESTS_AVAILABLE:
+        return result
+    try:
+        response = requests.get(
+            "https://www.youtube.com/oembed",
+            params={
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "format": "json",
+            },
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if response.status_code != 200:
+            return result
+        data = response.json()
+        title = str(data.get("title") or "").strip()
+        author = str(data.get("author_name") or "").strip()
+        if title:
+            result["title"] = title
+        if author:
+            result["channel"] = author
+    except Exception as exc:
+        logger.debug("youtube oEmbed metadata failed for %s: %s", video_id, exc)
     return result
 
 

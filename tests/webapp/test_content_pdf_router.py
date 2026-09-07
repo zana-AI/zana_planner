@@ -259,6 +259,32 @@ def test_local_pdf_open_and_file(monkeypatch, tmp_path):
     assert file_resp.headers["content-type"].startswith("application/pdf")
 
 
+def test_local_pdf_thumbnail_is_ownership_checked(monkeypatch, tmp_path):
+    thumbnail_path = tmp_path / "thumbnail.jpg"
+    thumbnail_path.write_bytes(b"\xff\xd8preview\xff\xd9")
+
+    class ThumbnailRepo(FakeRepo):
+        def get_latest_content_asset(self, content_id, asset_type):
+            if str(content_id) == "content-1" and asset_type == "pdf_thumbnail":
+                return {"id": "thumb-1", "content_id": "content-1", "storage_uri": "local://thumbnail/preview.jpg"}
+            return None
+
+    app = FastAPI()
+    app.include_router(content_router.router)
+    app.dependency_overrides[get_current_user] = lambda: 7
+    monkeypatch.setattr(content_router, "get_content_repo", lambda: ThumbnailRepo())
+    monkeypatch.setattr(content_router, "get_object_storage_service", lambda: LocalStorage(thumbnail_path))
+    client = TestClient(app)
+
+    preview = client.get("/api/content/content-1/thumbnail")
+    missing = client.get("/api/content/not-mine/thumbnail")
+
+    assert preview.status_code == 200
+    assert preview.content == b"\xff\xd8preview\xff\xd9"
+    assert preview.headers["content-type"].startswith("image/jpeg")
+    assert missing.status_code == 404
+
+
 def test_consume_event_logs_assigned_content_time_to_promise(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(content_router.router)

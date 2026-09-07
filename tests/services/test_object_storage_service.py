@@ -48,6 +48,21 @@ def test_upload_and_sign(monkeypatch):
     assert datetime.fromisoformat(expires_at)
 
 
+def test_upload_bytes_preserves_content_type(monkeypatch):
+    fake_client = _FakeS3Client()
+    monkeypatch.setenv("OBJECT_STORAGE_BUCKET", "xaana-assets")
+    monkeypatch.setenv("OBJECT_STORAGE_ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("OBJECT_STORAGE_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setattr("services.object_storage_service.boto3.client", lambda *args, **kwargs: fake_client)
+
+    svc = ObjectStorageService()
+    uri, size_bytes = svc.upload_bytes("thumbnail/content/first.jpg", b"jpeg", "image/jpeg")
+
+    assert uri == "s3://xaana-assets/thumbnail/content/first.jpg"
+    assert size_bytes == 4
+    assert fake_client.put_calls[0]["ContentType"] == "image/jpeg"
+
+
 def test_invalid_storage_uri_raises():
     with pytest.raises(ValueError):
         ObjectStorageService._parse_storage_uri("https://example.com/file.pdf")

@@ -1372,6 +1372,21 @@ class MessageHandlers:
             checksum=checksum,
         )
 
+        # A preview is decorative, so a difficult PDF must still be saved even
+        # if its first page cannot be rendered. The library falls back to a
+        # text cover in that case.
+        try:
+            from services.pdf_thumbnail_service import ensure_pdf_thumbnail
+
+            metadata["thumbnail_asset_id"] = ensure_pdf_thumbnail(
+                content_id,
+                payload,
+                content_repo=self.content_repo,
+                storage=storage,
+            )
+        except Exception as exc:
+            logger.info("Could not create PDF thumbnail for %s: %s", content_id, exc)
+
         copied_result = {"copied": 0, "skipped": 0}
         migration_status = "copied"
         if previous_asset and str(previous_asset.get("id")) != str(new_asset_id):

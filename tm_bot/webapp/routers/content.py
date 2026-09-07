@@ -4,7 +4,7 @@ Content consumption manager API: resolve URL, user library, consume events, heat
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from ..dependencies import get_current_user
 from ..schemas import (
     ResolveContentRequest,
@@ -288,6 +288,40 @@ async def update_user_content(
         rating=body.rating,
     )
     return {"content_id": content_id, "updated": True}
+
+
+@router.get("/content/{content_id}/thumbnail")
+async def get_content_thumbnail(
+    content_id: str,
+    user_id: int = Depends(get_current_user),
+):
+    """Serve the latest generated preview for content in the caller's library."""
+    from services.pdf_thumbnail_service import PDF_THUMBNAIL_ASSET_TYPE
+
+    repo = get_content_repo()
+    if not repo.get_user_content(str(user_id), content_id):
+        raise HTTPException(status_code=404, detail="User content not found")
+    asset = repo.get_latest_content_asset(content_id, PDF_THUMBNAIL_ASSET_TYPE)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Content thumbnail not found")
+
+    storage_uri = str(asset.get("storage_uri") or "")
+    storage = get_object_storage_service()
+    if storage_uri.startswith("local://"):
+        try:
+            path = storage.resolve_local_storage_uri(storage_uri)
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Content thumbnail file missing")
+        return FileResponse(path=str(path), media_type="image/jpeg")
+
+    try:
+        signed_url, _expires_at = storage.build_signed_get_url(storage_uri)
+    except Exception as exc:
+        logger.exception("thumbnail signed url generation failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to open content thumbnail")
+    return RedirectResponse(signed_url, status_code=307)
 
 
 @router.get("/content/{content_id}/pdf")
