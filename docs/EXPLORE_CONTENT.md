@@ -62,6 +62,30 @@ Only globally-valid destinations belong in the catalog:
 
 - **challenges** — `visibility=public`, `status=active`
 - **promise templates** — `is_active=1`
+- **videos and other content** — the `content` row must be
+  `visibility='public'`, not merely listed here
+
+## Listing something is not the same as sharing it
+
+Two independent mechanisms, and a content item needs both:
+
+| | What it does | Where it lives |
+|---|---|---|
+| This catalog | makes an item *appear* in Explore | `explore.yaml` |
+| `content.visibility` | decides who may *save or open* it | the `content` table |
+
+`content.visibility` defaults to `'private'`, and `can_access_content` admits
+only the owner, someone who already holds the item, a member of its club — or
+anyone at all once it is `'public'`. `POST /user-content` enforces that with a
+403, *"This content is not shared with you"*.
+
+So a video listed here whose row is private is half-published: the watch page
+opens, because `/youtube-watch` is a public page that never consults the
+content row, but **＋ Add fails for everyone except the owner**. The card looks
+right up to the moment somebody taps the button.
+
+Every video in this catalog was in that state until 2026-09-07. When you list a
+content item, make its row public in the same change.
 
 **Never list per-user rows.** A `flashcard_deck` belongs to a single `user_id`,
 so putting one in the catalog would show every user a link into someone else's
