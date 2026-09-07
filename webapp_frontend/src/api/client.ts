@@ -1498,12 +1498,12 @@ class ApiClient {
     return this.request('/flashcards/decks');
   }
 
-  /** Top-level decks with due/new/total, for study entry points. */
   /** Every deck with its parent and subtree counts — Library picks the level. */
   async getDeckTree(): Promise<import('../types').LibraryDeck[]> {
-    return this.request('/flashcards/decks');
+    return this.request('/flashcards/decks/tree');
   }
 
+  /** Top-level decks with due/new/total, for study entry points. */
   async getFlashcardSummary(): Promise<import('../types').FlashcardDeckSummary[]> {
     return this.request('/flashcards/summary');
   }

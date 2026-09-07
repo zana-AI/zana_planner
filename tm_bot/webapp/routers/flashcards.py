@@ -153,7 +153,10 @@ async def deck_summary(user_id: int = Depends(get_current_user)):
     return flashcard_service.deck_summary(str(user_id))
 
 
-@router.get("/decks")
+# Not "/decks": that path is already taken by list_decks above, and FastAPI
+# serves the first matching route, so a second GET on it is dead code that
+# silently answers with the other endpoint's shape.
+@router.get("/decks/tree")
 async def deck_tree(user_id: int = Depends(get_current_user)):
     """Every deck with `parent_deck_id` and subtree counts, for Library."""
     return flashcard_service.deck_tree(str(user_id))

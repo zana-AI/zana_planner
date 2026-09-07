@@ -194,9 +194,18 @@ export function MyContentsPage() {
     apiClient
       .getDeckTree()
       .then((tree) => {
-        if (active) setDeckTree(tree);
+        if (!active) return;
+        // A wrong-shaped response drops every deck at the `total > 0` filter and
+        // looks exactly like an empty library, so say so rather than showing
+        // nothing. This is how a shadowed route went unnoticed once already.
+        if (tree.length > 0 && tree.every((deck) => deck.total === undefined)) {
+          console.error('Deck tree came back without counts — wrong endpoint?', tree[0]);
+        }
+        setDeckTree(tree);
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        console.error('Failed to load decks:', err);
+      });
     return () => {
       active = false;
     };
