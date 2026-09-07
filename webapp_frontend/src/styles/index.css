@@ -7449,3 +7449,77 @@ textarea.modal-input {
   padding: 8px 10px;
   gap: 5px;
 }
+
+/* A deck has no poster, so its media slot shows the two things it does have:
+   how many cards it holds, and how far through them you are. A stack of edges
+   behind the face reads as "a deck" without a caption saying so. */
+.deck-media {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(
+    160deg,
+    rgba(167, 243, 208, 0.14),
+    rgba(167, 243, 208, 0.04) 60%
+  );
+}
+
+.deck-stack {
+  position: relative;
+  display: block;
+}
+/* Two offset edges peeking out behind the face. */
+.deck-stack::before,
+.deck-stack::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(167, 243, 208, 0.28);
+  border-radius: 9px;
+  background: rgba(12, 20, 32, 0.55);
+}
+.deck-stack::before { transform: translate(6px, -6px); }
+.deck-stack::after  { transform: translate(3px, -3px); }
+
+.deck-stack-face {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  min-width: 62px;
+  padding: 9px 12px;
+  border: 1px solid rgba(167, 243, 208, 0.5);
+  border-radius: 9px;
+  background: rgba(12, 20, 32, 0.9);
+}
+.deck-stack-count {
+  color: #a7f3d0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.deck-stack-unit {
+  color: rgba(237, 243, 255, 0.62);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.deck-progress {
+  display: block;
+  width: 72px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(237, 243, 255, 0.14);
+  overflow: hidden;
+}
+.deck-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #a7f3d0;
+}

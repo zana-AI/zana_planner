@@ -408,7 +408,8 @@
       "video": "Video",
       "audio": "Audio",
       "text": "Article",
-      "other": "Other"
+      "other": "Other",
+      "deck": "Deck"
     },
     "status": {
       "saved": "Saved",
@@ -427,11 +428,9 @@
     "deckDue_one": "{{count, num}} to review",
     "deckDue_other": "{{count, num}} to review",
     "deckDone": "Caught up",
-    "deckCards_one": "{{count, num}} card",
-    "deckCards_other": "{{count, num}} cards",
-    "deckStudied": "{{percent}}% seen",
     "share": "Share",
-    "linkCopied": "Link copied"
+    "linkCopied": "Link copied",
+    "deckUnit": "cards"
   },
   "createPromise": {
     "newPromise": "New Promise",

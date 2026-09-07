@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { GraduationCap, Layers, Play } from 'lucide-react';
+import { Layers, Play } from 'lucide-react';
 import type { LibraryDeck } from '../types';
 
 interface DeckCardProps {
@@ -14,13 +14,20 @@ interface DeckCardProps {
  * a deck and a video are both things you own and come back to, so a second card
  * shape would say they are different kinds of object when they are not. The
  * badge is the only thing that distinguishes them, which is the badge's job.
+ *
+ * Every fact appears exactly once. A video card's thumbnail carries its
+ * identity, so a deck's carries the two things a deck has instead — how big it
+ * is and how far through it you are. The status slot owns what is waiting, and
+ * the subtitle owns only what the title cannot say: which deck this one is,
+ * when two of them share a name.
  */
 export function DeckCard({ deck, onStudy }: DeckCardProps) {
   const { t } = useTranslation();
   const pending = deck.due + deck.new;
-  // Mirrors the status slot on a content card: what state is this in for me?
   const status = pending > 0 ? t('content.deckDue', { count: pending }) : t('content.deckDone');
-  const studied = deck.total > 0 ? Math.round(((deck.total - deck.new) / deck.total) * 100) : 0;
+  // Cards you have been introduced to. A brand-new deck reads 0, which is
+  // honest and looks like an empty track rather than a broken number.
+  const seenRatio = deck.total > 0 ? (deck.total - deck.new) / deck.total : 0;
 
   return (
     <article
@@ -35,10 +42,16 @@ export function DeckCard({ deck, onStudy }: DeckCardProps) {
         }
       }}
     >
-      <div className="content-card-media" aria-hidden="true">
-        <div className="content-card-media-fallback">
-          <GraduationCap size={17} />
-        </div>
+      <div className="content-card-media deck-media" aria-hidden="true">
+        <span className="deck-stack">
+          <span className="deck-stack-face">
+            <strong className="deck-stack-count">{deck.total}</strong>
+            <span className="deck-stack-unit">{t('content.deckUnit')}</span>
+          </span>
+        </span>
+        <span className="deck-progress">
+          <span className="deck-progress-fill" style={{ width: `${Math.round(seenRatio * 100)}%` }} />
+        </span>
       </div>
 
       <div className="content-card-body">
@@ -50,13 +63,14 @@ export function DeckCard({ deck, onStudy }: DeckCardProps) {
           <span className="content-card-status">{status}</span>
         </div>
         <h3 className="content-card-title" dir="auto">{deck.name}</h3>
-        <div className="content-card-subtitle">
-          {/* Two decks can share a name — there is a "Vidéos" under French and
-              another under EN — so the parent is what tells them apart. */}
-          {deck.parentName ? <span dir="auto">{deck.parentName}</span> : null}
-          <span>{t('content.deckCards', { count: deck.total })}</span>
-          <span>{t('content.deckStudied', { percent: studied })}</span>
-        </div>
+        {/* Two decks can share a name — there is a "Vidéos" under French and
+            another under EN — so the parent is the only thing that tells them
+            apart, and the only thing this line is for. */}
+        {deck.parentName ? (
+          <div className="content-card-subtitle">
+            <span dir="auto">{deck.parentName}</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="content-card-actions" onClick={(event) => event.stopPropagation()}>

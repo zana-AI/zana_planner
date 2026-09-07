@@ -459,7 +459,8 @@
       "video": "ویدئو",
       "audio": "صوتی",
       "text": "مقاله",
-      "other": "سایر"
+      "other": "سایر",
+      "deck": "دسته‌کارت"
     },
     "status": {
       "saved": "ذخیره",
@@ -478,11 +479,9 @@
     "deckDue_one": "{{count, num}} برای مرور",
     "deckDue_other": "{{count, num}} برای مرور",
     "deckDone": "تمام شد",
-    "deckCards_one": "{{count, num}} کارت",
-    "deckCards_other": "{{count, num}} کارت",
-    "deckStudied": "٪{{percent}} دیده",
     "share": "هم‌رسانی",
-    "linkCopied": "پیوند کپی شد"
+    "linkCopied": "پیوند کپی شد",
+    "deckUnit": "کارت"
   },
   "createPromise": {
     "newPromise": "قول تازه",
