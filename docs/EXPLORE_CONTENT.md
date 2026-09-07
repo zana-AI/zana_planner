@@ -12,25 +12,44 @@ available.
 
 ## Organised by subject
 
-**A category is a subject — something a person is working on.** French, Gym &
-Exercise, Care, English. A topic is the *kind* of thing inside that subject:
+**A category is a subject — something a person is working on.** French,
+English, Body, Care. A topic is the *kind* of thing inside that subject:
 a quiz, a club, a habit.
 
 This is deliberately not the other way round. "A French quiz" is not a
-top-level thing; it belongs under French, next to the French clubs and the
-French habits, because someone learning French wants them in one place. A new
+top-level thing; it belongs under French, next to the French videos and the
+French decks, because someone learning French wants them in one place. A new
 kind of content becomes a new topic inside the subjects that have it — never a
 new tab.
 
-Each topic maps to one thing a person can do, so a row needs only one verb:
+## Topic ids are a fixed vocabulary
 
-| Topic | Holds | The action |
-|---|---|---|
-| Daily quiz | challenges | Join, or Continue once joined |
-| Review | flashcard decks | Review |
-| Watch & read | content items | Watch / Read |
-| Clubs | clubs | Join |
-| Habits | promise templates | Promise it |
+A topic id is not free text. It comes from this list, and the `order` that goes
+with it, so that the same five words mean the same thing in every subject and
+the client can render them as filter chips without special-casing a category:
+
+| Topic | order | Holds | The action |
+|---|---|---|---|
+| `courses` | 10 | challenges with a coach and a cadence | Join |
+| `watch` | 20 | videos with subtitles | Watch |
+| `read` | 30 | books, PDFs, articles | Read |
+| `decks` | 40 | self-paced card sets | Study |
+| `habits` | 50 | promise templates | Promise it |
+
+**A course is a deck that a person releases on a cadence, with a leaderboard
+attached.** Anything self-paced is a deck, whatever serves its content: French
+Naturalization Prep sits under `decks` even though the challenge engine holds
+its questions, because nobody releases it. A deck can become a course later by
+gaining a coach and a cadence, with no new object.
+
+## A club is never listed here
+
+A club and its challenge are the same entity at two time scales
+(`docs/CLUBS_MODEL.md` §3). Listing both put "French with Atena" in Explore
+twice, once as a quiz and once as a club, which is the confusion this vocabulary
+exists to prevent. Coach-led clubs appear once, under `courses`, in their
+subject. Peer clubs — a couple going to the gym, six friends — do not appear in
+Explore at all; they live in Community.
 
 ## It is an allowlist, not a mirror
 
@@ -42,14 +61,11 @@ never surface. Curation *is* the feature.
 Only globally-valid destinations belong in the catalog:
 
 - **challenges** — `visibility=public`, `status=active`
-- **clubs** — public clubs only. `/c/<club_id>` returns 404 to anyone who is not
-  a member of a private club, so listing one produces a dead link.
 - **promise templates** — `is_active=1`
 
 **Never list per-user rows.** A `flashcard_deck` belongs to a single `user_id`,
 so putting one in the catalog would show every user a link into someone else's
-deck. The Explore page already lists the caller's own decks from its own
-endpoint.
+deck. Your own decks are not discovery — they live in Library.
 
 ## Schema
 
@@ -63,8 +79,8 @@ categories:
     order: 10
     published: true
     topics:
-      - id: quizzes
-        title: Daily quiz
+      - id: courses
+        title: Courses
         order: 10
         published: true
         items:
@@ -75,13 +91,19 @@ categories:
             published: true
             description: A short daily French quiz — 10 new questions every day.
             native_ref: /challenges/660762b526d849ffa4470a9e690fc2d3
-          - id: french-channel
-            title: Learn French on Telegram
-            type: telegram
-            order: 20
+      - id: watch
+        title: Watch
+        order: 20
+        published: true
+        items:
+          - id: video-sud-radio
+            title: "Olivier : ..."
+            type: video
+            order: 10
             published: true
-            url: https://t.me/example
-            image: https://example.com/cover.jpg
+            description: French subtitles — tap a word to translate and save a card.
+            image: https://img.youtube.com/vi/c4dtEcHyNcc/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=c4dtEcHyNcc
 ```
 
 Each item uses `url` for an external destination or `native_ref` for an
