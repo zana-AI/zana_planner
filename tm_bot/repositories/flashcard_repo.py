@@ -123,6 +123,54 @@ class FlashcardDeckRepository:
         ).mappings().all()
         return [dict(r) for r in rows]
 
+    def list_all_with_counts(
+        self, session: Session, user_id: str, now: datetime
+    ) -> List[dict]:
+        """Every deck, with its parent and counts aggregated over its own subtree.
+
+        `list_roots_with_counts` answers "which subjects does this person
+        study?"; this answers "which decks would they actually pick?". A root
+        like "French" is a container — the thing a person chooses is Édito B1 or
+        Lingoda underneath it — so the caller needs the shape of the tree, not
+        just its tops.
+
+        Notes hang off leaf decks, so every deck's total is summed recursively;
+        a deck whose subtree holds no cards comes back with zeroes rather than
+        being dropped, and the caller decides whether an empty branch is worth
+        showing.
+        """
+        rows = session.execute(
+            text(
+                """
+                WITH RECURSIVE tree AS (
+                    SELECT deck_id AS root_id, deck_id
+                    FROM flashcard_deck
+                    WHERE user_id = :u
+                  UNION ALL
+                    SELECT t.root_id, d.deck_id
+                    FROM flashcard_deck d JOIN tree t ON d.parent_deck_id = t.deck_id
+                )
+                SELECT r.deck_id, r.name, r.parent_deck_id,
+                       count(c.card_id) AS total,
+                       count(c.card_id) FILTER (
+                           WHERE c.suspended = false AND c.reps > 0 AND c.due <= :now
+                       ) AS due,
+                       count(c.card_id) FILTER (
+                           WHERE c.suspended = false AND c.reps = 0
+                       ) AS new
+                FROM flashcard_deck r
+                JOIN tree t ON t.root_id = r.deck_id
+                LEFT JOIN flashcard_note n ON n.deck_id = t.deck_id
+                LEFT JOIN flashcard_card c ON c.note_id = n.note_id
+                WHERE r.user_id = :u
+                GROUP BY r.deck_id, r.name, r.parent_deck_id
+                ORDER BY r.name
+                """
+            ),
+            {"u": str(user_id), "now": now},
+        ).mappings().all()
+        return [dict(r) for r in rows]
+
     def list_by_promise(
         self, session: Session, user_id: str, now: datetime
     ) -> List[dict]:

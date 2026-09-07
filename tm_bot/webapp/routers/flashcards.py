@@ -153,6 +153,12 @@ async def deck_summary(user_id: int = Depends(get_current_user)):
     return flashcard_service.deck_summary(str(user_id))
 
 
+@router.get("/decks")
+async def deck_tree(user_id: int = Depends(get_current_user)):
+    """Every deck with `parent_deck_id` and subtree counts, for Library."""
+    return flashcard_service.deck_tree(str(user_id))
+
+
 @router.patch("/decks/{deck_id}")
 async def update_deck(
     deck_id: str,

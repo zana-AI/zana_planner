@@ -422,7 +422,16 @@
     "pickATime": "Pick a time",
     "planNote": "Blocks {{minutes}} minutes. You can attach it to a promise later.",
     "plannedFor": "Planned for {{when}}.",
-    "planFailed": "Could not plan that. Try again."
+    "planFailed": "Could not plan that. Try again.",
+    "study": "Study",
+    "deckDue_one": "{{count, num}} to review",
+    "deckDue_other": "{{count, num}} to review",
+    "deckDone": "Caught up",
+    "deckCards_one": "{{count, num}} card",
+    "deckCards_other": "{{count, num}} cards",
+    "deckStudied": "{{percent}}% seen",
+    "share": "Share",
+    "linkCopied": "Link copied"
   },
   "createPromise": {
     "newPromise": "New Promise",
@@ -666,13 +675,9 @@
       "pdfs": "PDFs",
       "videos": "Videos",
       "audio": "Audio",
-      "articles": "Articles"
-    },
-    "myDecks": "My decks",
-    "deckPending_one": "{{count, num}} to review",
-    "deckPending_other": "{{count, num}} to review",
-    "deckCards_one": "{{count, num}} card",
-    "deckCards_other": "{{count, num}} cards"
+      "articles": "Articles",
+      "decks": "Decks"
+    }
   },
   "pdfReader": {
     "loadingPdf": "Loading PDF...",

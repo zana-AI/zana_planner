@@ -5,12 +5,14 @@ import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
 import { BottomSheet } from '../components/ui/BottomSheet';
 import { PlanContentSheet } from '../components/sheets/PlanContentSheet';
+import { DeckCard } from '../components/DeckCard';
+import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { useNavigate } from 'react-router-dom';
-import type { FlashcardDeckSummary, MyContentsFacets, UserContentWithDetails } from '../types';
+import type { LibraryDeck, MyContentsFacets, UserContentWithDetails } from '../types';
 import './explore.css';
 
 type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed';
-type TypeFilter = 'all' | 'pdf' | 'video' | 'audio' | 'text';
+type TypeFilter = 'all' | 'deck' | 'pdf' | 'video' | 'audio' | 'text';
 type SortKey = 'recent' | 'added' | 'title' | 'progress';
 
 // "All" leads because it is the default — the selected chip should be the first
@@ -22,8 +24,12 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'completed', label: 'completed' },
 ];
 
+// Decks sit in this list because they are a kind of thing the library holds,
+// not a separate shelf beside it. The count comes from the client rather than
+// the server facets: decks are few and are not paged.
 const TYPE_FILTERS: { key: TypeFilter; label: string }[] = [
   { key: 'all', label: 'allTypes' },
+  { key: 'deck', label: 'decks' },
   { key: 'pdf', label: 'pdfs' },
   { key: 'video', label: 'videos' },
   { key: 'audio', label: 'audio' },
@@ -81,6 +87,24 @@ function getInternalYouTubeWatchUrl(item: UserContentWithDetails): string | null
   return `/youtube-watch?video_id=${encodeURIComponent(videoId)}${contentId ? `&content_id=${encodeURIComponent(contentId)}` : ''}`;
 }
 
+/**
+ * The public address of a video, or null when the item has no public face.
+ *
+ * `/youtube-watch` takes no session and serves anyone — the subtitle reader is
+ * already open to the world — so sharing a video is handing over a URL rather
+ * than changing a permission. A PDF has no equivalent: its reader resolves the
+ * caller's own content row, so there is nothing to share until content gains a
+ * real visibility flag.
+ */
+function getPublicShareUrl(item: UserContentWithDetails): string | null {
+  const metadataVideoId = typeof item.metadata_json?.['video_id'] === 'string'
+    ? item.metadata_json['video_id']
+    : null;
+  const videoId = metadataVideoId || extractYouTubeVideoId(item.original_url || item.canonical_url);
+  if (!videoId) return null;
+  return `${window.location.origin}/youtube-watch?video_id=${encodeURIComponent(videoId)}`;
+}
+
 function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
   const provider = (item.provider || '').toLowerCase();
   const mime = String(item.metadata_json?.['mime_type'] || '').toLowerCase();
@@ -97,9 +121,10 @@ export function MyContentsPage() {
   // Decks are things you own, so this is where they belong. They used to be
   // injected into Explore's French category, which showed per-user rows in a
   // curated catalog and left a deck attached to no promise unreachable.
-  const [decks, setDecks] = useState<FlashcardDeckSummary[]>([]);
+  const [deckTree, setDeckTree] = useState<LibraryDeck[]>([]);
   const [planning, setPlanning] = useState<UserContentWithDetails | null>(null);
   const [plannedToast, setPlannedToast] = useState('');
+  const { hapticFeedback, webApp } = useTelegramWebApp();
   const [addUrl, setAddUrl] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -167,15 +192,56 @@ export function MyContentsPage() {
   useEffect(() => {
     let active = true;
     apiClient
-      .getFlashcardSummary()
-      .then((summary) => {
-        if (active) setDecks(summary.filter((deck) => deck.total > 0));
+      .getDeckTree()
+      .then((tree) => {
+        if (active) setDeckTree(tree);
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
   }, []);
+
+  /**
+   * The decks a person would actually choose, which is the level below a
+   * language root rather than the root itself: "Édito B1" and "Lingoda", not
+   * "French". A root with no children is itself that level, and a branch with
+   * no cards is not worth a card of its own.
+   */
+  const decks = useMemo<LibraryDeck[]>(() => {
+    const byParent = new Map<string, LibraryDeck[]>();
+    for (const deck of deckTree) {
+      if (!deck.parent_deck_id) continue;
+      const siblings = byParent.get(deck.parent_deck_id) ?? [];
+      siblings.push(deck);
+      byParent.set(deck.parent_deck_id, siblings);
+    }
+    const nameById = new Map(deckTree.map((deck) => [deck.deck_id, deck.name]));
+    return deckTree
+      .filter((deck) => !deck.parent_deck_id)
+      .flatMap((root) => {
+        const children = byParent.get(root.deck_id) ?? [];
+        return children.length > 0 ? children : [root];
+      })
+      .filter((deck) => deck.total > 0)
+      .map((deck) => ({
+        ...deck,
+        parentName: deck.parent_deck_id ? nameById.get(deck.parent_deck_id) ?? null : null,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [deckTree]);
+
+  const visibleDecks = useMemo(() => {
+    if (contentType !== 'all' && contentType !== 'deck') return [];
+    if (status !== 'all') return [];
+    const needle = debouncedQuery.trim().toLowerCase();
+    if (!needle) return decks;
+    return decks.filter(
+      (deck) =>
+        deck.name.toLowerCase().includes(needle) ||
+        (deck.parentName || '').toLowerCase().includes(needle),
+    );
+  }, [decks, contentType, status, debouncedQuery]);
 
   const handleAddContent = async () => {
     const url = addUrl.trim();
@@ -203,6 +269,25 @@ export function MyContentsPage() {
     } finally {
       setAdding(false);
     }
+  };
+
+  const shareItem = (item: UserContentWithDetails) => {
+    const url = getPublicShareUrl(item);
+    if (!url) return;
+    hapticFeedback('light');
+    // Inside Telegram, hand the link to Telegram's own share sheet — the user
+    // is already in the app they would send it from.
+    if (webApp?.openTelegramLink) {
+      webApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}`);
+      return;
+    }
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        setPlannedToast(t('content.linkCopied'));
+        window.setTimeout(() => setPlannedToast(''), 3000);
+      })
+      .catch(() => undefined);
   };
 
   const openItem = (item: UserContentWithDetails) => {
@@ -285,8 +370,7 @@ export function MyContentsPage() {
             aria-expanded={filtersOpen}
             aria-label={t('myContents.filters')}
           >
-            <Filter size={15} aria-hidden />
-            <span className="content-library-filter-label">{t('myContents.filters')}</span>
+            <Filter size={16} aria-hidden />
             {activeFilterCount > 0 && (
               <span className="content-library-filter-count">{activeFilterCount}</span>
             )}
@@ -320,9 +404,11 @@ export function MyContentsPage() {
                   onClick={() => setContentType(filter.key)}
                 >
                   {t(`myContents.types.${filter.label}`)}
-                  {filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
-                    <span>{facets.content_type[filter.key]}</span>
-                  )}
+                  {filter.key === 'deck'
+                    ? decks.length > 0 && <span>{decks.length}</span>
+                    : filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
+                        <span>{facets.content_type[filter.key]}</span>
+                      )}
                 </button>
               ))}
             </div>
@@ -344,44 +430,25 @@ export function MyContentsPage() {
         )}
       </section>
 
-      {decks.length > 0 && (
-        <section className="library-decks" aria-label={t('myContents.myDecks')}>
-          <h2 className="library-decks-title">{t('myContents.myDecks')}</h2>
-          <div className="library-decks-row">
-            {decks.map((deck) => {
-              const pending = deck.due + deck.new;
-              return (
-                <button
-                  key={deck.deck_id}
-                  type="button"
-                  className={`library-deck${pending > 0 ? ' is-due' : ''}`}
-                  onClick={() =>
-                    navigate(
-                      `/flashcards?deck=${encodeURIComponent(deck.deck_id)}` +
-                        `&name=${encodeURIComponent(deck.name)}`,
-                    )
-                  }
-                >
-                  <span className="library-deck-name" dir="auto">{deck.name}</span>
-                  <span className="library-deck-meta">
-                    {pending > 0
-                      ? t('myContents.deckPending', { count: pending })
-                      : t('myContents.deckCards', { count: deck.total })}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {error && <div className="content-library-error">{error}</div>}
 
       {loading ? (
         <div className="content-library-state">{t('myContents.loadingLibrary')}</div>
-      ) : items.length > 0 ? (
+      ) : items.length > 0 || visibleDecks.length > 0 ? (
         <>
           <section className="content-library-grid" aria-label={t('myContents.libraryItems')}>
+            {visibleDecks.map((deck) => (
+              <DeckCard
+                key={deck.deck_id}
+                deck={deck}
+                onStudy={() =>
+                  navigate(
+                    `/flashcards?deck=${encodeURIComponent(deck.deck_id)}` +
+                      `&name=${encodeURIComponent(deck.name)}`,
+                  )
+                }
+              />
+            ))}
             {items.map((item) => (
               <ContentCard
                 key={item.user_content_id || item.content_id || item.id}
@@ -389,6 +456,7 @@ export function MyContentsPage() {
                 onClick={() => openItem(item)}
                 onStatusChange={(nextStatus) => updateStatus(item, nextStatus)}
                 onPlan={() => setPlanning(item)}
+                onShare={getPublicShareUrl(item) ? () => shareItem(item) : undefined}
               />
             ))}
           </section>

@@ -946,6 +946,17 @@ export interface FlashcardDeckSummary {
   total: number;
 }
 
+/** A deck as Library shows it: one row of the tree, plus its parent's name. */
+export interface LibraryDeck {
+  deck_id: string;
+  name: string;
+  parent_deck_id: string | null;
+  parentName?: string | null;
+  due: number;
+  new: number;
+  total: number;
+}
+
 export interface CreateFlashcardNoteRequest {
   deck_path?: string;
   note_type?: string;

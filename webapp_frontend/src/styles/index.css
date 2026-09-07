@@ -1277,10 +1277,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
     width: 132px;
   }
 
-  .content-library-filter-label {
-    display: none;
-  }
-
   .content-card-actions {
     grid-column: 1 / -1;
     justify-content: flex-start;
@@ -7439,4 +7435,17 @@ textarea.modal-input {
 
 .card-add-session-button:active {
   transform: translateY(0);
+}
+
+/* A deck is a library item like any other, so it gets the same card and the
+   same badge — only the badge's colour and word differ. */
+.content-card-type--deck {
+  color: #a7f3d0;
+}
+
+/* The filter button is an icon and, when something is on, a count. The word
+   "Filters" cost more width than it earned next to a search field. */
+.content-library-filter-toggle {
+  padding: 8px 10px;
+  gap: 5px;
 }

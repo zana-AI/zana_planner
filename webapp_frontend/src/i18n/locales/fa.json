@@ -447,7 +447,7 @@
   "content": {
     "untitled": "بدون عنوان",
     "resume": "ادامه",
-    "markComplete": "علامت‌گذاری به‌عنوان تمام‌شده",
+    "markComplete": "تمامش کردم",
     "pages": "{{count}} صفحه",
     "readDuration": "{{duration}} مطالعه",
     "progressRead": "{{percent}}٪ مطالعه",
@@ -462,9 +462,9 @@
       "other": "سایر"
     },
     "status": {
-      "saved": "ذخیره‌شده",
-      "in_progress": "در حال مطالعه",
-      "completed": "تمام‌شده"
+      "saved": "ذخیره",
+      "in_progress": "در جریان",
+      "completed": "تمام"
     },
     "planIt": "برنامه‌ریزی",
     "tonight": "امشب",
@@ -473,7 +473,16 @@
     "pickATime": "انتخاب زمان",
     "planNote": "{{minutes}} دقیقه وقت می‌گیرد. بعداً می‌توانید آن را به یک قول وصل کنید.",
     "plannedFor": "برای {{when}} برنامه‌ریزی شد.",
-    "planFailed": "برنامه‌ریزی انجام نشد. دوباره تلاش کنید."
+    "planFailed": "برنامه‌ریزی انجام نشد. دوباره تلاش کنید.",
+    "study": "مرور",
+    "deckDue_one": "{{count, num}} برای مرور",
+    "deckDue_other": "{{count, num}} برای مرور",
+    "deckDone": "تمام شد",
+    "deckCards_one": "{{count, num}} کارت",
+    "deckCards_other": "{{count, num}} کارت",
+    "deckStudied": "٪{{percent}} دیده",
+    "share": "هم‌رسانی",
+    "linkCopied": "پیوند کپی شد"
   },
   "createPromise": {
     "newPromise": "قول تازه",
@@ -564,13 +573,9 @@
       "pdfs": "پی‌دی‌اف‌ها",
       "videos": "ویدئوها",
       "audio": "صوتی",
-      "articles": "مقاله‌ها"
-    },
-    "myDecks": "دسته‌کارت‌های من",
-    "deckPending_one": "{{count, num}} برای مرور",
-    "deckPending_other": "{{count, num}} برای مرور",
-    "deckCards_one": "{{count, num}} کارت",
-    "deckCards_other": "{{count, num}} کارت"
+      "articles": "مقاله‌ها",
+      "decks": "دسته‌کارت‌ها"
+    }
   },
   "pdfReader": {
     "loadingPdf": "در حال بارگذاری پی‌دی‌اف…",

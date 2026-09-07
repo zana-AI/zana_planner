@@ -1,0 +1,10 @@
+﻿deck_id,user_id,name,parent_deck_id,deck_path,created_at,promise_id
+ef137d4e6f3e429486c970bea14afdbe,108648163,French,,French,2026-08-24T15:44:28.463708+00:00,911068fa-27a3-43d5-b402-0ffcfc15deee
+b82b4d80d12649968f6b4327c014887d,108648163,Language Reactor,ef137d4e6f3e429486c970bea14afdbe,French::Language Reactor,2026-08-31T13:52:29.533806+00:00,
+659437789c994277ac55cf5c03384f85,108648163,"Candidate à l’élection présidentielle, Delphine Batho appelle à une écologie capable de gouverner",b82b4d80d12649968f6b4327c014887d,"French::Language Reactor::Candidate à l’élection présidentielle, Delphine Batho appelle à une écologie capable de gouverner",2026-08-31T13:52:29.533806+00:00,
+301f0938b491455a90fa8b83a31a606a,108648163,Rima Hassan est poursuivie pour son engagement contre le génocide à Gaza,b82b4d80d12649968f6b4327c014887d,French::Language Reactor::Rima Hassan est poursuivie pour son engagement contre le génocide à Gaza,2026-08-31T13:52:29.606564+00:00,
+bd25f0af3cf6482b8ef6a8be70db3eb2,108648163,Lingoda,ef137d4e6f3e429486c970bea14afdbe,French::Lingoda,2026-08-31T13:52:33.049427+00:00,
+4fb1f754e8ed41d1ab273011a619b9b3,108648163,Édito B1,ef137d4e6f3e429486c970bea14afdbe,French::Édito B1,2026-08-31T13:52:30.457809+00:00,
+c7daccf838fe4ba6b4a5783d744c814b,108648163,Grammaire,4fb1f754e8ed41d1ab273011a619b9b3,French::Édito B1::Grammaire,2026-08-31T13:52:30.457809+00:00,
+058ce6c9637f47f6933a1f332e6de7e0,108648163,Livre,4fb1f754e8ed41d1ab273011a619b9b3,French::Édito B1::Livre,2026-08-31T13:52:31.410784+00:00,
+5e1580da351246dab91d0a4c915a5bda,108648163,Unité 2,4fb1f754e8ed41d1ab273011a619b9b3,French::Édito B1::Unité 2,2026-08-31T13:52:30.673881+00:00,

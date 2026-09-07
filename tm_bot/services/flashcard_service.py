@@ -224,6 +224,20 @@ def deck_summary(user_id: str) -> List[dict]:
         )
 
 
+def deck_tree(user_id: str) -> List[dict]:
+    """Every deck with its parent and subtree counts, for pickers that need shape.
+
+    Library lists the decks a person would choose to study, which is the level
+    below a language root rather than the root itself — "Édito B1", not
+    "French". That decision needs the tree, so it is made in the client from
+    this, not baked into a second summary endpoint.
+    """
+    with get_db_session() as session:
+        return _decks.list_all_with_counts(
+            session, user_id, datetime.now(timezone.utc)
+        )
+
+
 def decks_by_promise(user_id: str) -> Dict[str, List[dict]]:
     """{promise_uuid: [deck, ...]} for decks attached to a promise.
 

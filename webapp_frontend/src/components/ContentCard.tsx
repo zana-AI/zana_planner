@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
-import { CalendarClock, CheckCircle2, ExternalLink, FileText, Headphones, Play, RotateCcw } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ExternalLink, FileText, Headphones, Play, RotateCcw, Share2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
 import type { UserContentWithDetails } from '../types';
@@ -11,6 +11,8 @@ interface ContentCardProps {
   onStatusChange?: (status: 'saved' | 'in_progress' | 'completed') => void;
   /** Open the "when will you do this?" sheet for this item. */
   onPlan?: () => void;
+  /** Hand out a public link. Only set for items that actually have one. */
+  onShare?: () => void;
 }
 
 function formatDuration(seconds: number | null | undefined): string {
@@ -38,7 +40,7 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
   return <FileText size={17} />;
 }
 
-export function ContentCard({ item, onClick, onStatusChange, onPlan }: ContentCardProps) {
+export function ContentCard({ item, onClick, onStatusChange, onPlan, onShare }: ContentCardProps) {
   const { t } = useTranslation();
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState('');
   const title = item.title || t('content.untitled');
@@ -168,6 +170,17 @@ export function ContentCard({ item, onClick, onStatusChange, onPlan }: ContentCa
           >
             <CalendarClock size={15} />
             <span>{t('content.planIt')}</span>
+          </button>
+        )}
+        {onShare && (
+          <button
+            className="content-card-action"
+            type="button"
+            onClick={onShare}
+            title={t('content.share')}
+          >
+            <Share2 size={15} />
+            <span>{t('content.share')}</span>
           </button>
         )}
       </div>
