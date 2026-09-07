@@ -19,6 +19,7 @@ from ..schemas import (
     SubmitQuizRequest,
 )
 from utils.logger import get_logger
+from utils.admin_utils import is_admin
 from datetime import datetime, timedelta, timezone
 
 if TYPE_CHECKING:
@@ -77,6 +78,14 @@ async def resolve_content(
     try:
         service = get_resolve_service()
         row = service.resolve(body.url)
+        content_id = str(row.get("content_id") or row.get("id") or "")
+        if content_id:
+            repo = get_content_repo()
+            repo.claim_content_owner(content_id, str(user_id))
+            refreshed = repo.get_content_by_id(content_id)
+            if refreshed:
+                refreshed["content_id"] = content_id
+                return refreshed
         return row
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -95,6 +104,9 @@ async def add_user_content(
     content = repo.get_content_by_id(body.content_id)
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
+    if not is_admin(user_id) and not repo.can_access_content(str(user_id), body.content_id):
+        raise HTTPException(status_code=403, detail="This content is not shared with you")
+    repo.claim_content_owner(body.content_id, str(user_id))
     uc_id = repo.add_user_content(str(user_id), body.content_id)
     return {"user_content_id": uc_id, "status": "saved"}
 

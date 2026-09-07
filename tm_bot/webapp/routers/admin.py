@@ -25,7 +25,8 @@ from ..schemas import (
     GenerateTemplateRequest, CreatePromiseForUserRequest, DayReminder,
     RunTestsRequest, TestRunResponse, TestReportResponse,
     AdminClubSetupResponse, AdminClubSetupSummary, UpdateClubTelegramRequest,
-    UpdateClubContextRequest, AdminLLMBackendTestRequest
+    UpdateClubContextRequest, AdminLLMBackendTestRequest, AdminContentResponse,
+    AdminContentItem, AdminContentCreateRequest, AdminContentUpdateRequest,
 )
 from repositories.templates_repo import TemplatesRepository
 from repositories.promises_repo import PromisesRepository
@@ -505,6 +506,430 @@ def _normalize_export_messages(messages: List[Dict[str, Any]]) -> List[Dict[str,
 def _normalize_language_code(value: Optional[str], fallback: str = "en") -> str:
     lang = str(value or fallback).strip().lower()
     return lang if lang else fallback
+
+
+def _validate_content_access(session, visibility: str, club_id: Optional[str]) -> Optional[str]:
+    """Validate and normalize the shared access contract used by both resource types."""
+    if visibility == "club":
+        normalized_club = str(club_id or "").strip()
+        if not normalized_club:
+            raise HTTPException(status_code=422, detail="A club is required for club access")
+        exists = session.execute(
+            text("SELECT 1 FROM clubs WHERE club_id = :club_id AND status = 'active'"),
+            {"club_id": normalized_club},
+        ).scalar()
+        if not exists:
+            raise HTTPException(status_code=422, detail="Club not found")
+        return normalized_club
+    return None
+
+
+@router.get("/content", response_model=AdminContentResponse)
+async def list_admin_content(
+    include_user_content: bool = False,
+    kind: Literal["all", "content", "deck", "challenge"] = "all",
+    visibility: Literal["all", "private", "club", "public"] = "all",
+    q: Optional[str] = None,
+    limit: int = Query(default=500, ge=1, le=2000),
+    admin_id: int = Depends(get_admin_user),
+):
+    """Unified admin inventory for catalog items and spaced-repetition decks."""
+    items: List[AdminContentItem] = []
+    owner_filter = "" if include_user_content else "AND (c.owner_user_id = :admin_id OR c.owner_user_id IS NULL)"
+    deck_owner_filter = "" if include_user_content else "AND d.user_id = :admin_id"
+    visibility_filter = "" if visibility == "all" else "AND c.visibility = :visibility"
+    deck_visibility_filter = "" if visibility == "all" else "AND d.visibility = :visibility"
+    search = str(q or "").strip()
+    search_filter = "" if not search else "AND (c.title ILIKE :search OR c.description ILIKE :search OR c.original_url ILIKE :search)"
+    deck_search_filter = "" if not search else "AND (d.name ILIKE :search OR tree.path ILIKE :search)"
+    params = {
+        "admin_id": str(admin_id),
+        "visibility": visibility,
+        "search": f"%{search}%",
+        "limit": int(limit),
+    }
+    with get_db_session() as session:
+        if kind in ("all", "content"):
+            rows = session.execute(
+                text(
+                    f"""
+                    SELECT c.id, COALESCE(NULLIF(c.title, ''), c.original_url, 'Untitled content') AS title,
+                           c.description, c.content_type, c.provider, c.original_url AS url,
+                           c.owner_user_id, c.visibility, c.club_id, c.updated_at,
+                           COALESCE(NULLIF(u.display_name, ''), NULLIF(u.first_name, ''), NULLIF(u.username, '')) AS owner_name,
+                           cl.name AS club_name,
+                           COUNT(DISTINCT uc.user_id) AS user_count
+                    FROM content c
+                    LEFT JOIN users u ON u.user_id = c.owner_user_id
+                    LEFT JOIN clubs cl ON cl.club_id = c.club_id
+                    LEFT JOIN user_content uc ON uc.content_id = c.id
+                    WHERE 1=1 {owner_filter} {visibility_filter} {search_filter}
+                    GROUP BY c.id, u.display_name, u.first_name, u.username, cl.name
+                    ORDER BY c.updated_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings().all()
+            items.extend(
+                AdminContentItem(
+                    id=str(row["id"]), kind="content", title=str(row["title"]),
+                    description=row.get("description"), content_type=row.get("content_type"),
+                    provider=row.get("provider"), url=row.get("url"),
+                    owner_user_id=str(row["owner_user_id"]) if row.get("owner_user_id") else None,
+                    owner_name=row.get("owner_name"), visibility=str(row.get("visibility") or "private"),
+                    club_id=str(row["club_id"]) if row.get("club_id") else None,
+                    club_name=row.get("club_name"), user_count=int(row.get("user_count") or 0),
+                    updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
+                )
+                for row in rows
+            )
+
+        if kind in ("all", "deck"):
+            rows = session.execute(
+                text(
+                    f"""
+                    WITH RECURSIVE tree AS (
+                        SELECT deck_id, parent_deck_id, name, name::text AS path
+                        FROM flashcard_deck WHERE parent_deck_id IS NULL
+                      UNION ALL
+                        SELECT child.deck_id, child.parent_deck_id, child.name,
+                               (tree.path || ' / ' || child.name)::text
+                        FROM flashcard_deck child JOIN tree ON child.parent_deck_id = tree.deck_id
+                    )
+                    SELECT d.deck_id AS id, d.name AS title, d.parent_deck_id, tree.path,
+                           d.user_id AS owner_user_id, d.visibility, d.club_id, d.created_at AS updated_at,
+                           COALESCE(NULLIF(u.display_name, ''), NULLIF(u.first_name, ''), NULLIF(u.username, '')) AS owner_name,
+                           cl.name AS club_name, COUNT(DISTINCT n.note_id) AS item_count
+                    FROM flashcard_deck d
+                    JOIN tree ON tree.deck_id = d.deck_id
+                    LEFT JOIN users u ON u.user_id = d.user_id
+                    LEFT JOIN clubs cl ON cl.club_id = d.club_id
+                    LEFT JOIN flashcard_note n ON n.deck_id = d.deck_id
+                    WHERE 1=1 {deck_owner_filter} {deck_visibility_filter} {deck_search_filter}
+                    GROUP BY d.deck_id, tree.path, u.display_name, u.first_name, u.username, cl.name
+                    ORDER BY tree.path
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings().all()
+            items.extend(
+                AdminContentItem(
+                    id=str(row["id"]), kind="deck", title=str(row["title"]),
+                    content_type="flashcards", owner_user_id=str(row["owner_user_id"]),
+                    owner_name=row.get("owner_name"), visibility=str(row.get("visibility") or "private"),
+                    club_id=str(row["club_id"]) if row.get("club_id") else None,
+                    club_name=row.get("club_name"), parent_id=str(row["parent_deck_id"]) if row.get("parent_deck_id") else None,
+                    path=row.get("path"), item_count=int(row.get("item_count") or 0),
+                    updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
+                )
+                for row in rows
+            )
+        if kind in ("all", "challenge"):
+            challenge_owner_filter = "" if include_user_content else "AND ch.host_user_id = :admin_id"
+            challenge_visibility_filter = "" if visibility == "all" else "AND ch.visibility = :visibility"
+            challenge_search_filter = "" if not search else "AND (ch.title ILIKE :search OR ch.description ILIKE :search)"
+            rows = session.execute(
+                text(
+                    f"""
+                    SELECT ch.challenge_id AS id, ch.title, ch.description, ch.activity_type,
+                           ch.host_user_id AS owner_user_id, ch.visibility, ch.club_id,
+                           ch.updated_at_utc AS updated_at,
+                           COALESCE(NULLIF(u.display_name, ''), NULLIF(u.first_name, ''), NULLIF(u.username, '')) AS owner_name,
+                           cl.name AS club_name,
+                           COUNT(DISTINCT ci.item_id) AS item_count,
+                           COUNT(DISTINCT cp.user_id) AS user_count
+                    FROM challenges ch
+                    LEFT JOIN users u ON u.user_id = ch.host_user_id
+                    LEFT JOIN clubs cl ON cl.club_id = ch.club_id
+                    LEFT JOIN challenge_decks cd ON cd.challenge_id = ch.challenge_id
+                    LEFT JOIN challenge_items ci ON ci.deck_id = cd.deck_id
+                    LEFT JOIN challenge_participants cp ON cp.challenge_id = ch.challenge_id
+                    WHERE ch.status = 'active' {challenge_owner_filter} {challenge_visibility_filter} {challenge_search_filter}
+                    GROUP BY ch.challenge_id, u.display_name, u.first_name, u.username, cl.name
+                    ORDER BY ch.updated_at_utc DESC
+                    LIMIT :limit
+                    """
+                ), params,
+            ).mappings().all()
+            items.extend(
+                AdminContentItem(
+                    id=str(row["id"]), kind="challenge", title=str(row["title"]),
+                    description=row.get("description"), content_type=str(row.get("activity_type") or "quiz"),
+                    provider="challenge", owner_user_id=str(row["owner_user_id"]),
+                    owner_name=row.get("owner_name"), visibility=str(row.get("visibility") or "private"),
+                    club_id=str(row["club_id"]) if row.get("club_id") else None,
+                    club_name=row.get("club_name"), item_count=int(row.get("item_count") or 0),
+                    user_count=int(row.get("user_count") or 0),
+                    updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
+                )
+                for row in rows
+            )
+    items.sort(key=lambda item: (item.kind, (item.path or item.title).lower()))
+    return AdminContentResponse(items=items[:limit], total=len(items[:limit]), admin_user_id=str(admin_id))
+
+
+@router.get("/content/clubs")
+async def list_admin_content_clubs(admin_id: int = Depends(get_admin_user)):
+    with get_db_session() as session:
+        rows = session.execute(
+            text("SELECT club_id, name FROM clubs WHERE status = 'active' ORDER BY LOWER(name)")
+        ).mappings().all()
+    return {"clubs": [{"club_id": str(row["club_id"]), "name": str(row["name"])} for row in rows]}
+
+
+@router.post("/content")
+async def create_admin_content(
+    body: AdminContentCreateRequest,
+    admin_id: int = Depends(get_admin_user),
+):
+    owner_id = str(body.owner_user_id or admin_id)
+    if body.kind == "content":
+        if not str(body.url or "").strip():
+            raise HTTPException(status_code=422, detail="URL is required")
+        from services.content_resolve_service import ContentResolveService
+        from repositories.content_repo import ContentRepository
+
+        repo = ContentRepository()
+        resolved = ContentResolveService(content_repo=repo).resolve(str(body.url).strip())
+        content_id = str(resolved.get("content_id") or resolved.get("id") or "")
+        if not content_id:
+            raise HTTPException(status_code=500, detail="Content resolver returned no id")
+        with get_db_session() as session:
+            club_id = _validate_content_access(session, body.visibility, body.club_id)
+            session.execute(
+                text(
+                    """
+                    UPDATE content SET owner_user_id = :owner, visibility = :visibility,
+                        club_id = :club_id, title = COALESCE(:title, title), updated_at = :now
+                    WHERE id = :id
+                    """
+                ),
+                {"id": content_id, "owner": owner_id, "visibility": body.visibility,
+                 "club_id": club_id, "title": (body.title or "").strip() or None,
+                 "now": utc_now_iso()},
+            )
+        repo.add_user_content(owner_id, content_id)
+        return {"id": content_id, "kind": "content", "created": True}
+
+    title_value = str(body.title or "").strip()
+    if not title_value:
+        raise HTTPException(status_code=422, detail="Name is required")
+    if body.kind == "challenge":
+        from repositories.challenges_repo import ChallengesRepository
+
+        try:
+            challenge_owner_id = int(owner_id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Challenge owner must have a numeric Telegram user id")
+        with get_db_session() as session:
+            challenge_club_id = _validate_content_access(session, body.visibility, body.club_id)
+        created = ChallengesRepository().create_challenge(
+            challenge_owner_id,
+            {
+                "title": title_value,
+                "description": body.description,
+                "activity_type": "multiple_choice",
+                "cadence": "daily",
+                "visibility": body.visibility,
+                "club_id": challenge_club_id,
+            },
+        )
+        return {"id": str(created["challenge_id"]), "kind": "challenge", "created": True}
+
+    with get_db_session() as session:
+        club_id = _validate_content_access(session, body.visibility, body.club_id)
+        parent_id = str(body.parent_id or "").strip() or None
+        if parent_id:
+            parent = session.execute(
+                text("SELECT 1 FROM flashcard_deck WHERE deck_id = :id AND user_id = :owner"),
+                {"id": parent_id, "owner": owner_id},
+            ).scalar()
+            if not parent:
+                raise HTTPException(status_code=422, detail="Parent deck must belong to the selected owner")
+        deck_id = uuid.uuid4().hex
+        session.execute(
+            text(
+                """
+                INSERT INTO flashcard_deck (deck_id, user_id, name, parent_deck_id, visibility, club_id)
+                VALUES (:id, :owner, :name, :parent, :visibility, :club_id)
+                """
+            ),
+            {"id": deck_id, "owner": owner_id, "name": title_value, "parent": parent_id,
+             "visibility": body.visibility, "club_id": club_id},
+        )
+    return {"id": deck_id, "kind": "deck", "created": True}
+
+
+@router.patch("/content/{kind}/{resource_id}")
+async def update_admin_content(
+    kind: Literal["content", "deck", "challenge"],
+    resource_id: str,
+    body: AdminContentUpdateRequest,
+    admin_id: int = Depends(get_admin_user),
+):
+    provided = getattr(body, "model_fields_set", set())
+    if not provided.intersection({"title", "description", "visibility", "club_id"}):
+        raise HTTPException(status_code=422, detail="No editable field supplied")
+    with get_db_session() as session:
+        table = {"content": "content", "deck": "flashcard_deck", "challenge": "challenges"}[kind]
+        id_col = {"content": "id", "deck": "deck_id", "challenge": "challenge_id"}[kind]
+        existing = session.execute(
+            text(f"SELECT visibility, club_id FROM {table} WHERE {id_col} = :id"),
+            {"id": resource_id},
+        ).mappings().fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Resource not found")
+        next_visibility = body.visibility if "visibility" in provided else str(existing["visibility"])
+        requested_club = body.club_id if "club_id" in provided else existing.get("club_id")
+        club_id = _validate_content_access(session, next_visibility, requested_club)
+
+        if kind == "content":
+            session.execute(
+                text(
+                    """
+                    UPDATE content SET
+                        title = CASE WHEN :set_title THEN :title ELSE title END,
+                        description = CASE WHEN :set_description THEN :description ELSE description END,
+                        visibility = :visibility, club_id = :club_id, updated_at = :now
+                    WHERE id = :id
+                    """
+                ),
+                {"id": resource_id, "set_title": "title" in provided,
+                 "title": (body.title or "").strip() if body.title is not None else None,
+                 "set_description": "description" in provided, "description": body.description,
+                 "visibility": next_visibility, "club_id": club_id, "now": utc_now_iso()},
+            )
+        elif kind == "deck":
+            if "title" in provided and not str(body.title or "").strip():
+                raise HTTPException(status_code=422, detail="Deck name cannot be empty")
+            session.execute(
+                text(
+                    "UPDATE flashcard_deck SET name = CASE WHEN :set_title THEN :title ELSE name END "
+                    "WHERE deck_id = :id"
+                ),
+                {"id": resource_id, "set_title": "title" in provided, "title": str(body.title or "").strip()},
+            )
+            if body.cascade_access:
+                session.execute(
+                    text(
+                        """
+                        WITH RECURSIVE subtree AS (
+                            SELECT deck_id FROM flashcard_deck WHERE deck_id = :id
+                          UNION ALL
+                            SELECT d.deck_id FROM flashcard_deck d JOIN subtree s ON d.parent_deck_id = s.deck_id
+                        )
+                        UPDATE flashcard_deck SET visibility = :visibility, club_id = :club_id
+                        WHERE deck_id IN (SELECT deck_id FROM subtree)
+                        """
+                    ),
+                    {"id": resource_id, "visibility": next_visibility, "club_id": club_id},
+                )
+            else:
+                session.execute(
+                    text("UPDATE flashcard_deck SET visibility = :visibility, club_id = :club_id WHERE deck_id = :id"),
+                    {"id": resource_id, "visibility": next_visibility, "club_id": club_id},
+                )
+        else:
+            if "title" in provided and not str(body.title or "").strip():
+                raise HTTPException(status_code=422, detail="Challenge name cannot be empty")
+            session.execute(
+                text(
+                    """
+                    UPDATE challenges SET
+                        title = CASE WHEN :set_title THEN :title ELSE title END,
+                        description = CASE WHEN :set_description THEN :description ELSE description END,
+                        visibility = :visibility, club_id = :club_id, updated_at_utc = :now
+                    WHERE challenge_id = :id
+                    """
+                ),
+                {"id": resource_id, "set_title": "title" in provided,
+                 "title": str(body.title or "").strip(), "set_description": "description" in provided,
+                 "description": body.description, "visibility": next_visibility,
+                 "club_id": club_id, "now": utc_now_iso()},
+            )
+    return {"id": resource_id, "kind": kind, "updated": True}
+
+
+@router.delete("/content/{kind}/{resource_id}")
+async def delete_admin_content(
+    kind: Literal["content", "deck", "challenge"],
+    resource_id: str,
+    force: bool = False,
+    admin_id: int = Depends(get_admin_user),
+):
+    """Permanently remove a resource. Review/activity deletion requires force."""
+    with get_db_session() as session:
+        if kind == "challenge":
+            exists = session.execute(text("SELECT 1 FROM challenges WHERE challenge_id = :id"), {"id": resource_id}).scalar()
+            if not exists:
+                raise HTTPException(status_code=404, detail="Challenge not found")
+            attempts = int(session.execute(text("SELECT COUNT(*) FROM challenge_attempts WHERE challenge_id = :id"), {"id": resource_id}).scalar() or 0)
+            if attempts and not force:
+                raise HTTPException(status_code=409, detail=f"Challenge has {attempts} answers; repeat with force=true to delete")
+            session.execute(text("UPDATE actions SET challenge_id = NULL WHERE challenge_id = :id"), {"id": resource_id})
+            session.execute(text("DELETE FROM challenge_attempts WHERE challenge_id = :id"), {"id": resource_id})
+            session.execute(text("DELETE FROM challenge_participants WHERE challenge_id = :id"), {"id": resource_id})
+            session.execute(text("DELETE FROM challenge_items WHERE deck_id IN (SELECT deck_id FROM challenge_decks WHERE challenge_id = :id)"), {"id": resource_id})
+            session.execute(text("DELETE FROM challenge_decks WHERE challenge_id = :id"), {"id": resource_id})
+            session.execute(text("DELETE FROM challenges WHERE challenge_id = :id"), {"id": resource_id})
+            return {"id": resource_id, "kind": kind, "deleted": True}
+        if kind == "deck":
+            exists = session.execute(text("SELECT 1 FROM flashcard_deck WHERE deck_id = :id"), {"id": resource_id}).scalar()
+            if not exists:
+                raise HTTPException(status_code=404, detail="Deck not found")
+            activity = int(session.execute(
+                text(
+                    """
+                    WITH RECURSIVE subtree AS (
+                        SELECT deck_id FROM flashcard_deck WHERE deck_id = :id
+                      UNION ALL SELECT d.deck_id FROM flashcard_deck d JOIN subtree s ON d.parent_deck_id = s.deck_id
+                    )
+                    SELECT COUNT(*) FROM flashcard_review_log rl
+                    JOIN flashcard_card fc ON fc.card_id = rl.card_id
+                    JOIN flashcard_note fn ON fn.note_id = fc.note_id
+                    WHERE fn.deck_id IN (SELECT deck_id FROM subtree)
+                    """
+                ), {"id": resource_id}).scalar() or 0)
+            if activity and not force:
+                raise HTTPException(status_code=409, detail=f"Deck has {activity} reviews; repeat with force=true to delete")
+            session.execute(
+                text(
+                    """
+                    WITH RECURSIVE subtree AS (
+                        SELECT deck_id FROM flashcard_deck WHERE deck_id = :id
+                      UNION ALL SELECT d.deck_id FROM flashcard_deck d JOIN subtree s ON d.parent_deck_id = s.deck_id
+                    )
+                    DELETE FROM flashcard_deck WHERE deck_id IN (SELECT deck_id FROM subtree)
+                    """
+                ), {"id": resource_id})
+            return {"id": resource_id, "kind": kind, "deleted": True}
+
+        counts = session.execute(
+            text(
+                """
+                SELECT (SELECT COUNT(*) FROM user_content WHERE content_id = :id) AS users,
+                       (SELECT COUNT(*) FROM content_consumption_event WHERE content_id = :id) AS events
+                """
+            ), {"id": resource_id}).mappings().one()
+        if int(counts["users"] or 0) + int(counts["events"] or 0) and not force:
+            raise HTTPException(status_code=409, detail="Content has user libraries or activity; repeat with force=true to delete")
+        exists = session.execute(text("SELECT 1 FROM content WHERE id = :id"), {"id": resource_id}).scalar()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Content not found")
+        session.execute(text("UPDATE plan_sessions SET content_id = NULL WHERE content_id = :id"), {"id": resource_id})
+        session.execute(text("DELETE FROM flashcard_note_reference WHERE content_id = :id OR asset_id IN (SELECT id FROM content_asset WHERE content_id = :id) OR segment_id IN (SELECT id FROM content_segment WHERE content_id = :id) OR highlight_id IN (SELECT id FROM content_highlight WHERE content_id = :id)"), {"id": resource_id})
+        session.execute(text("DELETE FROM quiz_attempt_answer WHERE attempt_id IN (SELECT qa.id FROM quiz_attempt qa JOIN quiz_set qs ON qs.id = qa.quiz_set_id WHERE qs.content_id = :id) OR question_id IN (SELECT qq.id FROM quiz_question qq JOIN quiz_set qs ON qs.id = qq.quiz_set_id WHERE qs.content_id = :id)"), {"id": resource_id})
+        session.execute(text("DELETE FROM quiz_attempt WHERE quiz_set_id IN (SELECT id FROM quiz_set WHERE content_id = :id)"), {"id": resource_id})
+        session.execute(text("DELETE FROM quiz_question WHERE quiz_set_id IN (SELECT id FROM quiz_set WHERE content_id = :id)"), {"id": resource_id})
+        session.execute(text("DELETE FROM quiz_set WHERE content_id = :id"), {"id": resource_id})
+        session.execute(text("DELETE FROM user_concept_mastery WHERE concept_id IN (SELECT id FROM content_concept WHERE content_id = :id)"), {"id": resource_id})
+        session.execute(text("DELETE FROM content_concept_edge WHERE content_id = :id"), {"id": resource_id})
+        for table_name in ("content_concept", "content_artifact", "content_highlight", "content_segment", "content_asset", "content_ingest_job", "user_content_rollup", "content_consumption_event", "user_content"):
+            session.execute(text(f"DELETE FROM {table_name} WHERE content_id = :id"), {"id": resource_id})
+        session.execute(text("DELETE FROM content WHERE id = :id"), {"id": resource_id})
+    return {"id": resource_id, "kind": kind, "deleted": True}
 
 
 def _get_user_language_map(user_ids: List[int]) -> Dict[int, str]:

@@ -52,7 +52,18 @@ class ChallengesRepository:
     def list_visible(self, user_id: int, include_unlisted: bool = False) -> List[dict]:
         """Public challenge directory, with participant count + whether the user joined."""
         user = str(user_id)
-        visibility_filter = "" if include_unlisted else "AND c.visibility = 'public'"
+        visibility_filter = "" if include_unlisted else """
+            AND (
+                c.visibility = 'public'
+                OR c.host_user_id = :user_id
+                OR EXISTS (SELECT 1 FROM challenge_participants own
+                           WHERE own.challenge_id = c.challenge_id AND own.user_id = :user_id)
+                OR (c.visibility = 'club' AND EXISTS (
+                    SELECT 1 FROM club_members cm
+                    WHERE cm.club_id = c.club_id AND cm.user_id = :user_id AND cm.status = 'active'
+                ))
+            )
+        """
         with get_db_session() as session:
             rows = session.execute(
                 text(f"""
@@ -72,8 +83,20 @@ class ChallengesRepository:
             ).mappings().fetchall()
             return [self._challenge_summary(r) for r in rows]
 
-    def get(self, challenge_id: str, user_id: int) -> Optional[dict]:
+    def get(self, challenge_id: str, user_id: int, include_all: bool = False) -> Optional[dict]:
         user = str(user_id)
+        access_filter = "" if include_all else """
+            AND (
+                c.visibility = 'public'
+                OR c.host_user_id = :user_id
+                OR EXISTS (SELECT 1 FROM challenge_participants own
+                           WHERE own.challenge_id = c.challenge_id AND own.user_id = :user_id)
+                OR (c.visibility = 'club' AND EXISTS (
+                    SELECT 1 FROM club_members cm
+                    WHERE cm.club_id = c.club_id AND cm.user_id = :user_id AND cm.status = 'active'
+                ))
+            )
+        """
         with get_db_session() as session:
             row = session.execute(
                 text(f"""
@@ -86,13 +109,13 @@ class ChallengesRepository:
                               WHERE p.challenge_id = c.challenge_id AND p.user_id = :user_id) AS joined
                     FROM challenges c
                     LEFT JOIN users u ON u.user_id = c.host_user_id
-                    WHERE c.challenge_id = :challenge_id
+                    WHERE c.challenge_id = :challenge_id {access_filter}
                 """),
                 {"challenge_id": challenge_id, "user_id": user},
             ).mappings().fetchone()
             return self._challenge_summary(row) if row else None
 
-    def get_active_by_club(self, club_id: str) -> Optional[dict]:
+    def get_active_by_club(self, club_id: str, include_nonpublic: bool = False) -> Optional[dict]:
         """The active challenge backing a club, if any — no viewer required.
 
         Used by the anonymous public club page, which has no user to compute
@@ -109,10 +132,11 @@ class ChallengesRepository:
                               WHERE p.challenge_id = c.challenge_id) AS participant_count
                     FROM challenges c
                     WHERE c.club_id = :club_id AND c.status = 'active'
+                      AND (c.visibility = 'public' OR :include_nonpublic)
                     ORDER BY c.created_at_utc DESC
                     LIMIT 1
                 """),
-                {"club_id": club_id},
+                {"club_id": club_id, "include_nonpublic": bool(include_nonpublic)},
             ).mappings().fetchone()
             return dict(row) if row else None
 
@@ -159,6 +183,8 @@ class ChallengesRepository:
 
     def join(self, challenge_id: str, user_id: int, source: Optional[str] = None) -> bool:
         """Subscribe the user to the challenge (idempotent). Returns False if challenge missing."""
+        if self.get(challenge_id, user_id) is None:
+            return False
         return self.ensure_subscription(challenge_id, user_id, source) is not None
 
     def challenges_with_reminder_at(self, hhmm: str) -> List[dict]:
@@ -594,8 +620,11 @@ class ChallengesRepository:
             "created_by_user_id": str(host_user_id),
         })
 
-        # Cohort club (no Telegram group — challenges don't need one).
-        club_id = ClubsRepository().create_club(owner_user_id=host_user_id, name=title, visibility="public")
+        # Reuse an explicitly selected club; otherwise create the challenge's
+        # usual backing cohort (no Telegram group required).
+        club_id = data.get("club_id") or ClubsRepository().create_club(
+            owner_user_id=host_user_id, name=title, visibility="public"
+        )
 
         with get_db_session() as session:
             session.execute(

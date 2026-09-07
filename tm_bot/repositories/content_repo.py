@@ -107,7 +107,8 @@ class ContentRepository:
                     SELECT id, canonical_url, original_url, provider, content_type,
                            title, description, author_channel, language, published_at,
                            duration_seconds, estimated_read_seconds, thumbnail_url,
-                           metadata_json, created_at, updated_at
+                           metadata_json, owner_user_id, visibility, club_id,
+                           created_at, updated_at
                     FROM content WHERE id = :content_id
                 """),
                 {"content_id": content_id},
@@ -124,7 +125,8 @@ class ContentRepository:
                     SELECT id, canonical_url, original_url, provider, content_type,
                            title, description, author_channel, language, published_at,
                            duration_seconds, estimated_read_seconds, thumbnail_url,
-                           metadata_json, created_at, updated_at
+                           metadata_json, owner_user_id, visibility, club_id,
+                           created_at, updated_at
                     FROM content WHERE canonical_url = :canonical_url
                 """),
                 {"canonical_url": canonical_url},
@@ -132,6 +134,52 @@ class ContentRepository:
         if not row:
             return None
         return dict(row)
+
+    def claim_content_owner(self, content_id: str, user_id: str) -> None:
+        """Assign the first saver as owner without stealing an existing item."""
+        with get_db_session() as session:
+            session.execute(
+                text(
+                    "UPDATE content SET owner_user_id = :user_id "
+                    "WHERE id = :content_id AND owner_user_id IS NULL"
+                ),
+                {"content_id": str(content_id), "user_id": str(user_id)},
+            )
+
+    def can_access_content(self, user_id: str, content_id: str) -> bool:
+        """Whether a user may save/open content under its current access policy."""
+        with get_db_session() as session:
+            row = session.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM content c
+                        WHERE c.id = :content_id
+                          AND (
+                            c.owner_user_id = :user_id
+                            OR c.visibility = 'public'
+                            OR EXISTS (
+                                SELECT 1 FROM user_content uc
+                                WHERE uc.content_id = c.id AND uc.user_id = :user_id
+                            )
+                            OR (
+                                c.visibility = 'club'
+                                AND c.club_id IS NOT NULL
+                                AND EXISTS (
+                                    SELECT 1 FROM club_members cm
+                                    WHERE cm.club_id = c.club_id
+                                      AND cm.user_id = :user_id
+                                      AND cm.status = 'active'
+                                )
+                            )
+                          )
+                    )
+                    """
+                ),
+                {"content_id": str(content_id), "user_id": str(user_id)},
+            ).scalar()
+        return bool(row)
 
     def add_user_content(
         self,
@@ -334,6 +382,7 @@ class ContentRepository:
                     SELECT c.id AS content_id, c.canonical_url, c.original_url, c.provider, c.content_type,
                            c.title, c.description, c.author_channel, c.language, c.published_at,
                            c.duration_seconds, c.estimated_read_seconds, c.thumbnail_url, c.metadata_json,
+                           c.owner_user_id, c.visibility, c.club_id,
                            uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
                            uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
                            uc.total_consumed_seconds, uc.notes, uc.rating,

@@ -79,7 +79,10 @@ async def join_challenge(
 @router.get("/challenges/{challenge_id}/deck", response_model=ChallengeDeckOut)
 async def get_due_deck(challenge_id: str, user_id: int = Depends(get_current_user)):
     """The next released deck the user hasn't completed. 404 when caught up."""
-    deck = _repo().get_due_deck(challenge_id, user_id)
+    repo = _repo()
+    if not repo.get(challenge_id, user_id):
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    deck = repo.get_due_deck(challenge_id, user_id)
     if deck is None:
         raise HTTPException(status_code=404, detail="No deck due — you're all caught up")
     return deck
@@ -96,6 +99,8 @@ async def complete_deck(
     user_id: int = Depends(get_current_user),
 ):
     repo = _repo()
+    if not repo.get(challenge_id, user_id):
+        raise HTTPException(status_code=404, detail="Challenge not found")
     # Auto-join on first play so the participant count + leaderboard include them.
     repo.join(challenge_id, user_id, source="play")
     answers = [a.model_dump() for a in body.answers]
@@ -104,7 +109,10 @@ async def complete_deck(
 
 @router.get("/challenges/{challenge_id}/leaderboard", response_model=list[ChallengeLeaderboardEntry])
 async def challenge_leaderboard(challenge_id: str, user_id: int = Depends(get_current_user)):
-    return _repo().leaderboard(challenge_id)
+    repo = _repo()
+    if not repo.get(challenge_id, user_id):
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    return repo.leaderboard(challenge_id)
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +134,7 @@ async def admin_add_deck(
     body: ChallengeDeckIn,
     admin_id: int = Depends(get_admin_user),
 ):
-    if not _repo().get(challenge_id, admin_id):
+    if not _repo().get(challenge_id, admin_id, include_all=True):
         raise HTTPException(status_code=404, detail="Challenge not found")
     items = [item.model_dump() for item in body.items]
     return _repo().add_deck(
@@ -141,7 +149,7 @@ async def admin_delete_deck(
     admin_id: int = Depends(get_admin_user),
 ):
     """Cancel a scheduled deck. Only allowed while it hasn't gone live and no one has played it."""
-    if not _repo().get(challenge_id, admin_id):
+    if not _repo().get(challenge_id, admin_id, include_all=True):
         raise HTTPException(status_code=404, detail="Challenge not found")
     if not _repo().delete_deck(deck_id):
         raise HTTPException(

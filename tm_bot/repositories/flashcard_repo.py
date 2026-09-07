@@ -65,7 +65,7 @@ class FlashcardDeckRepository:
     def get(self, session: Session, deck_id: str) -> Optional[dict]:
         row = session.execute(
             text(
-                "SELECT deck_id, user_id, name, parent_deck_id, promise_id "
+                "SELECT deck_id, user_id, name, parent_deck_id, promise_id, visibility, club_id "
                 "FROM flashcard_deck WHERE deck_id = :d"
             ),
             {"d": deck_id},
@@ -75,7 +75,7 @@ class FlashcardDeckRepository:
     def list_for_user(self, session: Session, user_id: str) -> List[dict]:
         rows = session.execute(
             text(
-                "SELECT deck_id, user_id, name, parent_deck_id, promise_id "
+                "SELECT deck_id, user_id, name, parent_deck_id, promise_id, visibility, club_id "
                 "FROM flashcard_deck WHERE user_id = :u ORDER BY name"
             ),
             {"u": str(user_id)},

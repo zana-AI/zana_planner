@@ -423,6 +423,51 @@ class AdminUsersResponse(BaseModel):
     total: int
 
 
+class AdminContentItem(BaseModel):
+    id: str
+    kind: Literal["content", "deck", "challenge"]
+    title: str
+    description: Optional[str] = None
+    content_type: Optional[str] = None
+    provider: Optional[str] = None
+    url: Optional[str] = None
+    owner_user_id: Optional[str] = None
+    owner_name: Optional[str] = None
+    visibility: Literal["private", "club", "public"] = "private"
+    club_id: Optional[str] = None
+    club_name: Optional[str] = None
+    parent_id: Optional[str] = None
+    path: Optional[str] = None
+    item_count: int = 0
+    user_count: int = 0
+    updated_at: Optional[str] = None
+
+
+class AdminContentResponse(BaseModel):
+    items: List[AdminContentItem]
+    total: int
+    admin_user_id: str
+
+
+class AdminContentCreateRequest(BaseModel):
+    kind: Literal["content", "deck", "challenge"]
+    owner_user_id: Optional[str] = None
+    url: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    parent_id: Optional[str] = None
+    visibility: Literal["private", "club", "public"] = "private"
+    club_id: Optional[str] = None
+
+
+class AdminContentUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    visibility: Optional[Literal["private", "club", "public"]] = None
+    club_id: Optional[str] = None
+    cascade_access: bool = True
+
+
 class AdminUserUpdateRequest(BaseModel):
     """Request model for updating curated name fields on a user (admin only)."""
     non_latin_name: Optional[str] = None
@@ -808,7 +853,7 @@ class ChallengeCreateRequest(BaseModel):
     description: Optional[str] = None
     activity_type: Literal["flashcard", "multiple_choice"] = "flashcard"
     cadence: Literal["daily", "weekly"] = "daily"
-    visibility: Literal["public", "unlisted"] = "public"
+    visibility: Literal["private", "club", "public"] = "public"
     source_key: Optional[str] = None
     host_user_id: Optional[int] = None  # defaults to the calling admin
 

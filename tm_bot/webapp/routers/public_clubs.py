@@ -135,10 +135,14 @@ def _build_links(club: dict, is_member: bool) -> List[PublicClubLink]:
     return links
 
 
-def _build_round(club_id: str, leaderboard: dict) -> Optional[PublicClubRound]:
+def _build_round(
+    club_id: str, leaderboard: dict, include_nonpublic: bool = False
+) -> Optional[PublicClubRound]:
     """Today's round: a content deck if the club has one, else its check-in."""
     challenges = ChallengesRepository()
-    challenge = challenges.get_active_by_club(club_id)
+    challenge = challenges.get_active_by_club(
+        club_id, include_nonpublic=include_nonpublic
+    )
 
     if challenge:
         deck = challenges.current_deck_preview(challenge["challenge_id"])
@@ -226,7 +230,7 @@ async def get_public_club(
         logger.exception("Public club page: leaderboard failed for club %s", club_id)
         leaderboard = {}
 
-    challenge = ChallengesRepository().get_active_by_club(club_id)
+    challenge = ChallengesRepository().get_active_by_club(club_id, include_nonpublic=is_member)
 
     return PublicClubProfile(
         club_id=club_id,
@@ -238,7 +242,7 @@ async def get_public_club(
         participant_count=int(challenge["participant_count"]) if challenge else None,
         visibility=str(club.get("visibility") or "public"),
         links=_build_links(club, is_member),
-        today=_build_round(club_id, leaderboard),
+        today=_build_round(club_id, leaderboard, include_nonpublic=is_member),
         leaderboard=_public_rows(leaderboard, club_id),
         window_start=_iso_date(leaderboard.get("window_start")),
         window_end=_iso_date(leaderboard.get("window_end")),

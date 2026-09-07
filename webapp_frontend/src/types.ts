@@ -431,6 +431,39 @@ export interface AdminUsersResponse {
   total: number;
 }
 
+export type ContentVisibility = 'private' | 'club' | 'public';
+
+export interface AdminContentItem {
+  id: string;
+  kind: 'content' | 'deck' | 'challenge';
+  title: string;
+  description?: string;
+  content_type?: string;
+  provider?: string;
+  url?: string;
+  owner_user_id?: string;
+  owner_name?: string;
+  visibility: ContentVisibility;
+  club_id?: string;
+  club_name?: string;
+  parent_id?: string;
+  path?: string;
+  item_count: number;
+  user_count: number;
+  updated_at?: string;
+}
+
+export interface AdminContentResponse {
+  items: AdminContentItem[];
+  total: number;
+  admin_user_id: string;
+}
+
+export interface AdminContentClub {
+  club_id: string;
+  name: string;
+}
+
 export interface ConversationMessage {
   id: number;
   user_id: string;

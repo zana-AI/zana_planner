@@ -12,6 +12,9 @@ import type {
   AdminClubSetupSummary,
   AdminUsersResponse,
   AdminUser,
+  AdminContentResponse,
+  AdminContentClub,
+  ContentVisibility,
   Broadcast,
   CreateBroadcastRequest,
   UpdateBroadcastRequest,
@@ -748,6 +751,51 @@ class ApiClient {
    */
   async getAdminUsers(limit: number = 1000): Promise<AdminUsersResponse> {
     return this.request<AdminUsersResponse>(`/admin/users?limit=${limit}`);
+  }
+
+  async getAdminContent(filters: {
+    include_user_content?: boolean;
+    kind?: 'all' | 'content' | 'deck' | 'challenge';
+    visibility?: 'all' | ContentVisibility;
+    q?: string;
+  } = {}): Promise<AdminContentResponse> {
+    const params = new URLSearchParams();
+    params.set('include_user_content', String(!!filters.include_user_content));
+    if (filters.kind) params.set('kind', filters.kind);
+    if (filters.visibility) params.set('visibility', filters.visibility);
+    if (filters.q) params.set('q', filters.q);
+    return this.request<AdminContentResponse>(`/admin/content?${params.toString()}`);
+  }
+
+  async getAdminContentClubs(): Promise<{ clubs: AdminContentClub[] }> {
+    return this.request<{ clubs: AdminContentClub[] }>('/admin/content/clubs');
+  }
+
+  async createAdminContent(body: {
+    kind: 'content' | 'deck' | 'challenge';
+    owner_user_id?: string;
+    url?: string;
+    title?: string;
+    description?: string;
+    parent_id?: string;
+    visibility: ContentVisibility;
+    club_id?: string;
+  }): Promise<{ id: string; kind: 'content' | 'deck' | 'challenge'; created: boolean }> {
+    return this.request('/admin/content', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async updateAdminContent(
+    kind: 'content' | 'deck' | 'challenge',
+    id: string,
+    body: { title?: string; description?: string | null; visibility?: ContentVisibility; club_id?: string | null },
+  ): Promise<{ id: string; kind: 'content' | 'deck' | 'challenge'; updated: boolean }> {
+    return this.request(`/admin/content/${kind}/${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    });
+  }
+
+  async deleteAdminContent(kind: 'content' | 'deck' | 'challenge', id: string): Promise<void> {
+    await this.request(`/admin/content/${kind}/${encodeURIComponent(id)}?force=true`, { method: 'DELETE' });
   }
 
   async updateAdminUser(

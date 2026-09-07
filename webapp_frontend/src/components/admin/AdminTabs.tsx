@@ -11,7 +11,8 @@ export type TabType =
   | 'createPromise'
   | 'conversations'
   | 'tests'
-  | 'users';
+  | 'users'
+  | 'content';
 
 interface AdminTabsProps {
   activeTab: TabType;
@@ -33,6 +34,7 @@ export function AdminTabs({ activeTab, onTabChange, scheduledCount }: AdminTabsP
         { key: 'llm', label: 'LLM' },
         { key: 'followgraph', label: 'Follow Graph' },
         { key: 'users', label: 'Users' },
+        { key: 'content', label: 'Content' },
       ],
     },
     {
