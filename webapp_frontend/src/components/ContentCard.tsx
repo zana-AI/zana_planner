@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ExternalLink, FileText, Headphones, Play, RotateCcw } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
 import type { UserContentWithDetails } from '../types';
@@ -9,6 +9,8 @@ interface ContentCardProps {
   item: UserContentWithDetails;
   onClick?: () => void;
   onStatusChange?: (status: 'saved' | 'in_progress' | 'completed') => void;
+  /** Open the "when will you do this?" sheet for this item. */
+  onPlan?: () => void;
 }
 
 function formatDuration(seconds: number | null | undefined): string {
@@ -36,7 +38,7 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
   return <FileText size={17} />;
 }
 
-export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps) {
+export function ContentCard({ item, onClick, onStatusChange, onPlan }: ContentCardProps) {
   const { t } = useTranslation();
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState('');
   const title = item.title || t('content.untitled');
@@ -157,9 +159,17 @@ export function ContentCard({ item, onClick, onStatusChange }: ContentCardProps)
             <span>{secondaryStatus.label}</span>
           </button>
         )}
-        <button className="content-card-icon-action" type="button" title={t('content.more')}>
-          <MoreHorizontal size={16} />
-        </button>
+        {onPlan && (
+          <button
+            className="content-card-action"
+            type="button"
+            onClick={onPlan}
+            title={t('content.planIt')}
+          >
+            <CalendarClock size={15} />
+            <span>{t('content.planIt')}</span>
+          </button>
+        )}
       </div>
     </article>
   );

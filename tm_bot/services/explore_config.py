@@ -44,6 +44,10 @@ class ExploreCategory(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(min_length=1)
     title: str = Field(min_length=1)
+    # A glyph and a colour for the subject tile. Both are optional: a category
+    # with neither still renders, just without a face.
+    icon: Optional[str] = None
+    accent: Optional[str] = None
     order: int = 0
     published: bool = True
     topics: list[ExploreTopic] = Field(default_factory=list)

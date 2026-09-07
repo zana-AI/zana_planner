@@ -1,8 +1,19 @@
 version: 1
 
 # Explore is organised by SUBJECT, not by kind of content. A category is
-# something a person is working on (French, Gym); a topic is the kind of thing
-# inside it (quiz, club, habit). See docs/EXPLORE_CONTENT.md.
+# something a person is working on (French, English, Body); a topic is the kind
+# of thing inside it. See docs/EXPLORE_CONTENT.md.
+#
+# Topic ids come from a FIXED vocabulary, in this order, so that the same five
+# words mean the same thing in every subject and the client can render them as
+# filter chips without knowing anything about a particular category:
+#
+#   courses (10) · watch (20) · read (30) · decks (40) · habits (50)
+#
+# A course is a deck that a person releases on a cadence, with a leaderboard.
+# Anything self-paced is a deck, however its content is stored — which is why
+# French Naturalization Prep sits under `decks` even though it is served by the
+# challenge engine: nobody releases it, so there is nothing to wrap.
 #
 # This catalog is an ALLOWLIST, not a mirror of the database. Nothing appears in
 # Explore unless it is written down here, which is what keeps test fixtures and
@@ -10,29 +21,29 @@ version: 1
 #
 # Only globally-valid destinations belong here:
 #   * challenges — visibility=public, status=active
-#   * clubs      — visibility=public only; /c/<id> returns 404 to non-members
-#                  of a private club, so a private club is a dead link
 #   * templates  — promise_templates with is_active=1
 # Per-user rows must NOT be listed: flashcard decks belong to one user_id, and
-# the Explore page already lists the caller's own decks from its own endpoint.
+# your own decks live in Library.
 #
-# `icon` and `accent` are read by nothing yet — ExploreCategory ignores unknown
-# keys. They are here so the tile design has its data when the model gains the
-# fields.
+# `icon` is the glyph on the subject tile and `accent` tints it. Keep the glyph
+# to a single character: the tile sizes it as a face, not as text.
 
 categories:
   - id: french
     title: French
-    icon: bubble-fr
+    icon: "🇫🇷"
     accent: "#22D3EE"
     order: 10
     published: true
     topics:
-      - id: quizzes
-        title: Daily quiz
+      - id: courses
+        title: Courses
         order: 10
         published: true
         items:
+          # The club at /c/9b31b136-… is deliberately NOT listed separately.
+          # It and this challenge are the same thing at two time scales
+          # (docs/CLUBS_MODEL.md §3); listing both put Atena in Explore twice.
           - id: atena-fr
             title: French with Atena 🇫🇷
             type: challenge
@@ -40,16 +51,9 @@ categories:
             published: true
             description: A short daily French quiz — 10 new questions every day.
             native_ref: /challenges/660762b526d849ffa4470a9e690fc2d3
-          - id: fr-naturalization
-            title: French Naturalization Prep 🇫🇷
-            type: challenge
-            order: 20
-            published: true
-            description: Q&A to prep the French citizenship interview — study at your own pace.
-            native_ref: /challenges/8780918c227541c089498430da290c8d
-      - id: videos
-        title: Interactive videos
-        order: 15
+      - id: watch
+        title: Watch
+        order: 20
         published: true
         items:
           - id: video-sud-radio-libertinage
@@ -60,35 +64,76 @@ categories:
             description: French subtitles — tap a word to translate, hear it and save a contextual flashcard.
             image: https://img.youtube.com/vi/c4dtEcHyNcc/mqdefault.jpg
             native_ref: /youtube-watch?video_id=c4dtEcHyNcc
-      - id: clubs
-        title: Clubs
+      - id: decks
+        title: Decks
+        order: 40
+        published: true
+        items:
+          # Self-paced: no coach, no cadence, so it is a deck rather than a
+          # course, even though the challenge engine serves its questions.
+          - id: fr-naturalization
+            title: French Naturalization Prep 🇫🇷
+            type: challenge
+            order: 10
+            published: true
+            description: Q&A to prep the French citizenship interview — study at your own pace.
+            native_ref: /challenges/8780918c227541c089498430da290c8d
+
+  # Was buried inside a category called "Learning", one level deeper than
+  # French, which put the same kind of content at two different depths. English
+  # is a subject, exactly like French; "Learning" was the whole app.
+  - id: english
+    title: English
+    icon: "🇬🇧"
+    accent: "#A78BFA"
+    order: 20
+    published: true
+    topics:
+      - id: watch
+        title: Watch
         order: 20
         published: true
         items:
-          - id: club-french-atena
-            title: French with Atena 🇫🇷
-            type: club
+          - id: video-bloomberg-stock-movers
+            title: Apple, oil and transportation stocks — Bloomberg
+            type: video
             order: 10
             published: true
-            description: Atena's daily French quiz — 10 new questions every day.
-            native_ref: /c/9b31b136-aee6-439e-b93e-51326069c141
-          - id: club-fr-naturalization
-            title: French Naturalization Prep 🇫🇷
-            type: club
+            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            image: https://img.youtube.com/vi/i1rkMaXuiLo/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=i1rkMaXuiLo
+          - id: video-cnn-nepal-flood
+            title: Nepal flood report — CNN
+            type: video
             order: 20
             published: true
-            native_ref: /c/cf20f093-6d94-4d6e-8573-f658723fbcdd
+            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            image: https://img.youtube.com/vi/zdlb4BPo9kk/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=zdlb4BPo9kk
+      - id: habits
+        title: Habits
+        order: 50
+        published: true
+        items:
+          # template_id is a legacy id; the content is English study.
+          - id: tpl-study-english
+            title: Study English
+            type: template
+            order: 10
+            published: true
+            description: Study English a little each day.
+            native_ref: /templates/french-3h-l1
 
-  - id: gym
-    title: Gym & Exercise
-    icon: dumbbell
+  - id: body
+    title: Body
+    icon: "💪"
     accent: "#34D399"
-    order: 20
+    order: 30
     published: true
     topics:
       - id: habits
         title: Habits
-        order: 10
+        order: 50
         published: true
         items:
           - id: tpl-gym
@@ -110,14 +155,14 @@ categories:
 
   - id: care
     title: Care
-    icon: spark
+    icon: "🧘"
     accent: "#F87171"
-    order: 30
+    order: 40
     published: true
     topics:
       - id: habits
         title: Habits
-        order: 10
+        order: 50
         published: true
         items:
           - id: tpl-smile-daily
@@ -145,53 +190,11 @@ categories:
             description: Clean one thing each day.
             native_ref: /templates/36a62645-1950-457e-bda9-f88d091ad996
 
-  - id: learning
-    title: Learning
-    icon: book-open
-    accent: "#A78BFA"
-    order: 40
-    published: true
-    topics:
-      - id: languages
-        title: Languages
-        order: 10
-        published: true
-        items:
-          # template_id is a legacy id; the content is English study.
-          - id: tpl-study-english
-            title: Study English
-            type: template
-            order: 10
-            published: true
-            description: Study English a little each day.
-            native_ref: /templates/french-3h-l1
-      - id: interactive-videos
-        title: Interactive English videos
-        order: 20
-        published: true
-        items:
-          - id: video-bloomberg-stock-movers
-            title: Apple, oil and transportation stocks — Bloomberg
-            type: video
-            order: 10
-            published: true
-            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
-            image: https://img.youtube.com/vi/i1rkMaXuiLo/mqdefault.jpg
-            native_ref: /youtube-watch?video_id=i1rkMaXuiLo
-          - id: video-cnn-nepal-flood
-            title: Nepal flood report — CNN
-            type: video
-            order: 20
-            published: true
-            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
-            image: https://img.youtube.com/vi/zdlb4BPo9kk/mqdefault.jpg
-            native_ref: /youtube-watch?video_id=zdlb4BPo9kk
-
   # Nothing in the database is about piano yet. Kept unpublished so the subject
   # is written down without shipping a category that opens onto an empty screen.
   - id: piano
     title: Piano
-    icon: piano
+    icon: "🎹"
     accent: "#F4B860"
     order: 50
     published: false

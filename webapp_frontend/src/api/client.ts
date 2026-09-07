@@ -1381,6 +1381,19 @@ class ApiClient {
     return this.request('/plan-sessions/upcoming');
   }
 
+  /**
+   * Plan a time without naming a promise first — "watch it tonight".
+   * A promise can be attached later; it is a grouping, not a prerequisite.
+   */
+  async createStandalonePlanSession(
+    body: import('../types').PlanSessionIn,
+  ): Promise<import('../types').PlanSession> {
+    return this.request('/plan-sessions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   async createPlanSession(promiseId: string, data: import('../types').PlanSessionIn): Promise<import('../types').PlanSession> {
     return this.request(`/promises/${promiseId}/plan-sessions`, {
       method: 'POST',

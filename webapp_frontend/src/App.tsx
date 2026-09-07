@@ -5,7 +5,8 @@ import { useTelegramWebApp, getDevInitData } from './hooks/useTelegramWebApp';
 import { useTimezoneDetection } from './hooks/useTimezoneDetection';
 import { useServerLanguageSync } from './i18n/useServerLanguageSync';
 import { DashboardPage } from './pages/DashboardPage';
-import { TemplatesPage } from './pages/TemplatesPage';
+import { ExplorePage } from './pages/ExplorePage';
+import { SubjectPage } from './pages/SubjectPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -212,8 +213,13 @@ function App() {
           }
         />
 
-        {/* Templates Pages */}
-        <Route path="/templates" element={<TemplatesPage />} />
+        {/* Explore — the catalog. The page used to live at `/templates`, which
+            is still sitting in Telegram buttons that were already sent, so that
+            path redirects instead of 404ing. `/templates/:templateId` keeps its
+            name: it really is a promise template's detail page. */}
+        <Route path="/explore" element={<ExplorePage />} />
+        <Route path="/explore/:subjectId" element={<SubjectPage />} />
+        <Route path="/templates" element={<Navigate to="/explore" replace />} />
         <Route path="/templates/:templateId" element={<TemplateDetailPage />} />
         
         {/* Timezone Selector Page */}

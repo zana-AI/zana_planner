@@ -321,10 +321,12 @@ class PlannerAPIAdapter:
     def schedule_sessions(self, user_id, items: List[Dict[str, Any]]) -> str:
         """Schedule MULTIPLE future sessions in ONE call. Use when the user lists 2+ activities to plan.
 
-        Each item: {promise_query: str, when: str, duration_min: int, title?: str}.
-        Internally resolves `when` via resolve_datetime, finds promise_id via search_promises,
-        then calls schedule_session. Items that fail (no matching promise / unparseable time)
-        are reported but don't abort the rest.
+        Each item: {when: str, duration_min: int, title?: str, promise_query?: str}.
+        Internally resolves `when` via resolve_datetime and, when a promise_query is
+        given, finds promise_id via search_promises, then calls schedule_session.
+        promise_query is optional — omit it and the session is simply not filed under
+        a promise. Items that fail (unparseable time / a named promise that does not
+        exist) are reported but don't abort the rest.
 
         Use schedule_session (singular) for a single session.
 
@@ -358,16 +360,19 @@ class PlannerAPIAdapter:
         duration_min = item.get("duration_min") or item.get("planned_duration_min")
         title = item.get("title")
 
-        if not promise_query:
-            return "no promise_query provided."
         if not when:
             return "no 'when' provided."
 
-        promise_id = item.get("promise_id") or _extract_first_promise_id(
-            self.search_promises(user_id, str(promise_query))
-        )
-        if not promise_id:
-            return f"no promise matched '{promise_query}'."
+        # No promise named is a legitimate session — the batch path used to
+        # refuse it, which is the same forcing the singular call has dropped.
+        # A promise that *was* named and does not resolve is still an error.
+        promise_id = None
+        if promise_query:
+            promise_id = item.get("promise_id") or _extract_first_promise_id(
+                self.search_promises(user_id, str(promise_query))
+            )
+            if not promise_id:
+                return f"no promise matched '{promise_query}'."
 
         resolved_when = item.get("planned_start") or self.resolve_datetime(user_id, str(when))
         if resolved_when.lower().startswith(("could not parse", "error")):
@@ -1744,30 +1749,36 @@ class PlannerAPIAdapter:
     def schedule_session(
         self,
         user_id,
-        promise_id: str,
+        promise_id: Optional[str] = None,
         title: Optional[str] = None,
         planned_start: Optional[str] = None,
         planned_duration_min: Optional[int] = None,
         notes: Optional[str] = None,
+        content_id: Optional[str] = None,
     ) -> str:
-        """Schedule a FUTURE work session (time block) tied to an existing promise.
+        """Schedule a FUTURE work session (time block).
 
-        Use when the user wants to plan doing something in the future for a specific
-        duration against a promise they already track. Requires a promise_id.
-        Examples: 'gym tomorrow at 7pm for 1 hour', 'study session Thursday 2h'.
+        Use when the user wants to plan doing something at a future time for a
+        specific duration. Examples: 'gym tomorrow at 7pm for 1 hour', 'study
+        session Thursday 2h', 'watch that video tonight'.
 
-        Never use for past activity (use log_completed_activity) or for one-off
-        reminders with no associated promise (use create_reminder).
+        promise_id is OPTIONAL. Pass it when the session is plainly part of a
+        promise the user already tracks, and leave it out otherwise — a session
+        needs only a time. Never invent a promise to hold a session, and never
+        make the user choose one before saving; a promise can be attached later.
+
+        Never use for past activity (use log_completed_activity).
 
         planned_start must be an ISO datetime string; call resolve_datetime() first.
         planned_duration_min is in minutes (e.g. 60 for 1 hour, 30 for 30 minutes).
 
         Args:
-            promise_id: Promise ID (e.g. 'P10')
+            promise_id: Optional promise ID (e.g. 'P10') this session belongs to
             title: Optional label for this session (e.g. 'Morning run')
             planned_start: ISO datetime string; resolve with resolve_datetime() first
             planned_duration_min: Duration in minutes (integer)
             notes: Optional notes for this session
+            content_id: Optional content item this session is for (a video, a PDF)
         """
         try:
             if planned_start:
@@ -1780,23 +1791,29 @@ class PlannerAPIAdapter:
                     planned_start = parsed_start.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
                 except Exception:
                     pass
-            with get_db_session() as session:
-                p_uuid = resolve_promise_uuid(session, str(user_id), promise_id)
-            if not p_uuid:
-                return f"Promise '{promise_id}' not found."
+            p_uuid = None
+            if promise_id:
+                with get_db_session() as session:
+                    p_uuid = resolve_promise_uuid(session, str(user_id), promise_id)
+                # A named promise that does not exist is worth reporting; no
+                # promise at all is a legitimate session.
+                if not p_uuid:
+                    return f"Promise '{promise_id}' not found."
             data = {
                 "title": title,
                 "planned_start": planned_start,
                 "planned_duration_min": planned_duration_min,
                 "notes": notes,
+                "content_id": content_id,
                 "checklist": [],
             }
             result = self.plan_sessions_repo.create(p_uuid, user_id, data)
             dur_str = f"{planned_duration_min} min" if planned_duration_min else "unspecified duration"
             start_str = planned_start or "no time set"
             session_title = title or "session"
+            scope = f" for promise {promise_id}" if promise_id else ""
             return (
-                f"\u2705 Session #{result['id']} scheduled for promise {promise_id}: "
+                f"\u2705 Session #{result['id']} scheduled{scope}: "
                 f"'{session_title}' on {start_str} ({dur_str})."
             )
         except Exception as e:

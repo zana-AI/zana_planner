@@ -584,29 +584,21 @@ class CallbackHandlers:
         # --- Execute or skip the current item ---
         _step_ok = True  # set to False only on unexpected tool error
         if is_one_time and tool_name in ("schedule_session", "add_plan_session"):
-            # User opted to track the activity as its own one-time promise instead of
-            # attaching the session to the matched promise. Create a non-recurring promise,
-            # then schedule the session against it.
+            # The user chose "just this once" rather than filing the session under
+            # the promise we matched. This used to create a real non-recurring
+            # promise purely as a container — a row that then showed up in every
+            # report that counts promises, for something the user had explicitly
+            # declined to make a promise of. Since migration 037 a session can
+            # simply have no promise, so nothing is invented here any more.
             try:
                 label = str(pending.get("one_time_label") or tool_args.get("title") or "One-time task").strip()
-                create_ret = self.plan_keeper.add_promise(
-                    user_id=user_id,
-                    promise_text=label,
-                    num_hours_promised_per_week=0.0,
-                    recurring=False,
-                )
-                m = re.search(r"#([A-Za-z0-9]+)", str(create_ret or ""))
-                new_pid = m.group(1) if m else None
-                if not new_pid:
-                    raise RuntimeError(f"could not create one-time promise: {create_ret}")
                 sched_args = {k: v for k, v in (tool_args or {}).items() if k != "promise_id"}
-                sched_args["promise_id"] = new_pid
                 if not sched_args.get("title"):
                     sched_args["title"] = label
                 self.plan_keeper.schedule_session(**{**sched_args, "user_id": user_id})
                 step_result = get_message("one_time_scheduled", user_lang)
             except Exception as e:
-                logger.error("Error creating one-time promise for user %s: %s", user_id, e)
+                logger.error("Error scheduling one-time session for user %s: %s", user_id, e)
                 step_result = get_message("error_executing_action", user_lang, error=str(e))
                 _step_ok = False
         elif is_confirm:

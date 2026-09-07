@@ -22,6 +22,7 @@ import { Toast } from '../components/ui/Toast';
 import { useToast } from '../hooks/useToast';
 import { getMockCommunityUsers, getMockWeeklyReport, shouldUseLocalMockData } from '../api/mockData';
 import type { PromiseData, WeeklyReportData, PublicUser, UserInfo, UpcomingPlanSession } from '../types';
+import './explore.css';
 
 type ActivePromise = { id: string; data: PromiseData };
 
@@ -75,6 +76,9 @@ export function DashboardPage() {
   const [showOlderPromises, setShowOlderPromises] = useState(false);
   // Today's planned sessions grouped by promise id, rendered inside each promise card.
   const [sessionsByPromise, setSessionsByPromise] = useState<Record<string, UpcomingPlanSession[]>>({});
+  // Sessions filed under no promise — planning a video no longer requires one
+  // (migration 037), and these would otherwise be dropped on the floor here.
+  const [unfiledSessions, setUnfiledSessions] = useState<UpcomingPlanSession[]>([]);
   const { message: toastMessage, showToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
   const allowLocalMockData = shouldUseLocalMockData();
@@ -436,6 +440,7 @@ export function DashboardPage() {
   useEffect(() => {
     if (!isCurrentWeek || isLocalMockSession) {
       setSessionsByPromise({});
+      setUnfiledSessions([]);
       return;
     }
     let cancelled = false;
@@ -443,13 +448,19 @@ export function DashboardPage() {
       .then(sessions => {
         if (cancelled) return;
         const grouped: Record<string, UpcomingPlanSession[]> = {};
+        const unfiled: UpcomingPlanSession[] = [];
         for (const s of sessions) {
-          if (!s.promise_id) continue;
-          (grouped[s.promise_id] ??= []).push(s);
+          if (s.promise_id) (grouped[s.promise_id] ??= []).push(s);
+          else if (s.planned_start) unfiled.push(s);
         }
         setSessionsByPromise(grouped);
+        setUnfiledSessions(unfiled);
       })
-      .catch(() => { if (!cancelled) setSessionsByPromise({}); });
+      .catch(() => {
+        if (cancelled) return;
+        setSessionsByPromise({});
+        setUnfiledSessions([]);
+      });
     return () => { cancelled = true; };
   }, [reportData, isCurrentWeek, isLocalMockSession]);
 
@@ -606,6 +617,36 @@ export function DashboardPage() {
           </div>
         )}
 
+        {unfiledSessions.length > 0 && (
+          <section className="next-up">
+            <div className="section-head">
+              <h2>{t('dashboard.nextUp')}</h2>
+              <span className="meta">{t('dashboard.nextUpHint')}</span>
+            </div>
+            <div className="next-up-list">
+              {unfiledSessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className="next-up-item"
+                  onClick={() => navigate('/my-contents')}
+                >
+                  <span className="next-up-when">
+                    {new Date(session.planned_start!).toLocaleString(i18n.language, {
+                      weekday: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  <span className="next-up-title" dir="auto">
+                    {session.title || t('content.untitled')}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         {(promisesData || (isCurrentWeek && emptyPromisesData && olderPromiseCount === 0)) && (
           <>
             <div className="section-head">
@@ -695,7 +736,7 @@ export function DashboardPage() {
             <p className="empty-subtitle">
               {t('dashboard.emptySubtitle')}
             </p>
-            <button type="button" className="btn btn-primary" onClick={() => navigate('/templates')}>
+            <button type="button" className="btn btn-primary" onClick={() => navigate('/explore')}>
               {t('dashboard.explorePromiseLibrary')}
             </button>
           </div>

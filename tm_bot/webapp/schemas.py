@@ -685,11 +685,17 @@ class PlanSessionIn(BaseModel):
     reminder_enabled: bool = True
     reminder_offset_min: int = Field(default=10, ge=0, le=1440)
     checklist: List[PlanChecklistItemIn] = []
+    # The content this session is for, when it is for one — a video to watch, a
+    # PDF to read. Sessions created against a promise usually have none.
+    content_id: Optional[str] = None
 
 
 class PlanSessionOut(BaseModel):
     id: int
-    promise_uuid: str
+    # Null for a session that is only about content or only about a time; see
+    # migration 037. A promise is a grouping, not a prerequisite.
+    promise_uuid: Optional[str] = None
+    content_id: Optional[str] = None
     title: Optional[str]
     status: str
     planned_start: Optional[str]
