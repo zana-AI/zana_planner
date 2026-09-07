@@ -4,7 +4,10 @@ import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
 import { BottomSheet } from '../components/ui/BottomSheet';
-import type { MyContentsFacets, UserContentWithDetails } from '../types';
+import { PlanContentSheet } from '../components/sheets/PlanContentSheet';
+import { useNavigate } from 'react-router-dom';
+import type { FlashcardDeckSummary, MyContentsFacets, UserContentWithDetails } from '../types';
+import './explore.css';
 
 type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed';
 type TypeFilter = 'all' | 'pdf' | 'video' | 'audio' | 'text';
@@ -90,6 +93,13 @@ function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
 
 export function MyContentsPage() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  // Decks are things you own, so this is where they belong. They used to be
+  // injected into Explore's French category, which showed per-user rows in a
+  // curated catalog and left a deck attached to no promise unreachable.
+  const [decks, setDecks] = useState<FlashcardDeckSummary[]>([]);
+  const [planning, setPlanning] = useState<UserContentWithDetails | null>(null);
+  const [plannedToast, setPlannedToast] = useState('');
   const [addUrl, setAddUrl] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -153,6 +163,19 @@ export function MyContentsPage() {
   useEffect(() => {
     void loadContents();
   }, [loadContents]);
+
+  useEffect(() => {
+    let active = true;
+    apiClient
+      .getFlashcardSummary()
+      .then((summary) => {
+        if (active) setDecks(summary.filter((deck) => deck.total > 0));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleAddContent = async () => {
     const url = addUrl.trim();
@@ -321,6 +344,37 @@ export function MyContentsPage() {
         )}
       </section>
 
+      {decks.length > 0 && (
+        <section className="library-decks" aria-label={t('myContents.myDecks')}>
+          <h2 className="library-decks-title">{t('myContents.myDecks')}</h2>
+          <div className="library-decks-row">
+            {decks.map((deck) => {
+              const pending = deck.due + deck.new;
+              return (
+                <button
+                  key={deck.deck_id}
+                  type="button"
+                  className={`library-deck${pending > 0 ? ' is-due' : ''}`}
+                  onClick={() =>
+                    navigate(
+                      `/flashcards?deck=${encodeURIComponent(deck.deck_id)}` +
+                        `&name=${encodeURIComponent(deck.name)}`,
+                    )
+                  }
+                >
+                  <span className="library-deck-name" dir="auto">{deck.name}</span>
+                  <span className="library-deck-meta">
+                    {pending > 0
+                      ? t('myContents.deckPending', { count: pending })
+                      : t('myContents.deckCards', { count: deck.total })}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {error && <div className="content-library-error">{error}</div>}
 
       {loading ? (
@@ -334,6 +388,7 @@ export function MyContentsPage() {
                 item={item}
                 onClick={() => openItem(item)}
                 onStatusChange={(nextStatus) => updateStatus(item, nextStatus)}
+                onPlan={() => setPlanning(item)}
               />
             ))}
           </section>
@@ -360,6 +415,22 @@ export function MyContentsPage() {
           )}
         </section>
       )}
+
+      {plannedToast ? (
+        <p className="content-library-planned-toast" role="status">{plannedToast}</p>
+      ) : null}
+
+      <PlanContentSheet
+        open={!!planning}
+        contentId={planning?.content_id || planning?.id || null}
+        title={planning?.title || t('content.untitled')}
+        durationSeconds={planning?.duration_seconds}
+        onClose={() => setPlanning(null)}
+        onPlanned={(whenLabel) => {
+          setPlannedToast(t('content.plannedFor', { when: whenLabel }));
+          window.setTimeout(() => setPlannedToast(''), 4000);
+        }}
+      />
 
       <button
         type="button"

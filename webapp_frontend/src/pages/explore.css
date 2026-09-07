@@ -1,0 +1,309 @@
+/* Explore ------------------------------------------------------------------
+   Two screens: subject tiles at the root, then one chip-filtered list inside a
+   subject. The chips deliberately match Library's filter row — browsing a list
+   should feel the same wherever you are in the app. */
+
+.explore-subjects {
+  display: grid;
+  gap: 10px;
+}
+
+/* A tile, not a row: the root of Explore is a small set of destinations, and a
+   list would invite scrolling past them. */
+.explore-subject {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  text-align: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  color: inherit;
+  cursor: pointer;
+}
+.explore-subject:hover { background: var(--surface-hover); }
+.explore-subject:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+.explore-subject-glyph {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  line-height: 1;
+  border-radius: var(--r-12);
+  /* The accent tints the glyph's backing only. Four fully-coloured tiles in a
+     grid read as four warnings. */
+  background: color-mix(in srgb, var(--subject-accent, var(--accent)) 16%, transparent);
+}
+
+.explore-subject-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.explore-subject-title { font-size: 16px; font-weight: 700; }
+.explore-subject-meta {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+.explore-subject-count {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chips --------------------------------------------------------------------- */
+
+.explore-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.explore-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.explore-chip.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.explore-chip:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+/* Cards --------------------------------------------------------------------- */
+
+.explore-list { display: grid; gap: 10px; }
+
+.explore-card {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+}
+.explore-card-image {
+  display: block;
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: var(--r-8);
+}
+.explore-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.explore-card-title { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.3; }
+.explore-card-kind {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.explore-card-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+.explore-card-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.explore-card-offer { margin: 0; font-size: 12px; color: var(--good-500); }
+.explore-card-error { margin: 0; font-size: 12.5px; color: var(--bad-500); }
+
+.explore-card-actions { display: flex; gap: 8px; margin-top: 1px; }
+.explore-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.explore-action.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+.explore-action.is-done {
+  border-color: var(--good-500);
+  color: var(--good-500);
+  cursor: default;
+}
+.explore-action:disabled { opacity: 0.75; cursor: default; }
+.explore-action:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+.explore-empty {
+  margin: 0;
+  padding: 24px 4px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+/* The subject's own name, because the shell header only says "Explore" — it
+   does not fetch the catalog and so does not know which subject this is. */
+.explore-subject-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* My decks, in Library ------------------------------------------------------
+   A horizontal strip rather than another grid: decks are few, they are entered
+   rather than browsed, and they must not push the library itself off screen. */
+.library-decks { margin-bottom: 14px; }
+.library-decks-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+.library-decks-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.library-decks-row::-webkit-scrollbar { display: none; }
+.library-deck {
+  display: grid;
+  gap: 3px;
+  flex: 0 0 auto;
+  min-width: 132px;
+  max-width: 200px;
+  padding: 10px 12px;
+  text-align: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  color: inherit;
+  cursor: pointer;
+}
+.library-deck.is-due { border-color: var(--accent); background: var(--accent-soft); }
+.library-deck-name {
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.library-deck-meta { font-size: 12px; color: var(--fg-muted); }
+.library-deck.is-due .library-deck-meta { color: var(--accent); font-weight: 600; }
+.library-deck:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+/* Plan it, and what it produces --------------------------------------------- */
+.plan-content-options { display: grid; gap: 8px; }
+.plan-content-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.plan-content-option.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  justify-content: center;
+  font-weight: 700;
+}
+.plan-content-option:disabled { opacity: 0.6; cursor: default; }
+.plan-content-option:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.plan-content-option-label { font-size: 15px; font-weight: 600; }
+.plan-content-option-when { font-size: 12.5px; color: var(--fg-muted); }
+.plan-content-custom { display: grid; gap: 8px; }
+.plan-content-custom input {
+  min-height: 46px;
+  padding: 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  color: var(--fg);
+  font: inherit;
+}
+.plan-content-note { margin: 12px 0 0; font-size: 12.5px; color: var(--fg-subtle); }
+.plan-content-error { margin: 8px 0 0; font-size: 13px; color: var(--bad-500); }
+
+.content-library-planned-toast {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--good-500);
+  border-radius: var(--r-8);
+  color: var(--good-500);
+  font-size: 13.5px;
+}
+
+/* Next up: sessions that belong to a time rather than to a promise. */
+.next-up { margin-bottom: 8px; }
+.next-up-list { display: grid; gap: 8px; }
+.next-up-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.next-up-when {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.next-up-title { font-size: 14px; overflow-wrap: anywhere; }
+.next-up-item:focus-visible { outline: none; box-shadow: var(--ring-focus); }
