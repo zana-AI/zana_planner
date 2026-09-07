@@ -112,3 +112,31 @@ is breaking for the direct-call channels too.
 Implement **P5** first — it is the smallest change that makes every later adapter edit
 self-policing — then **P2/P3** to collapse the drifting denylists into one policy. Both are
 additive and don't change runtime behaviour.
+
+## Recorded contract changes
+
+Kept here until P5 (a checked-in contract snapshot) exists. One entry per edit that
+changes the reflected tool surface.
+
+### 2026-09-07 — `schedule_session` / `schedule_sessions`: the promise becomes optional
+
+Widening, not breaking: every existing call site keeps working.
+
+| | Before | After |
+|---|---|---|
+| `schedule_session(promise_id)` | no default ⇒ **required** | `Optional[str] = None` ⇒ optional |
+| `schedule_session(content_id)` | — | new optional arg |
+| Docstring first line | "Schedule a FUTURE work session (time block) tied to an existing promise." | "Schedule a FUTURE work session (time block)." |
+| `schedule_sessions` item shape | `promise_query` required | `promise_query` optional |
+
+The old description told the model to *never* schedule a session without a promise, and
+the schema enforced it. That is why sharing a link produced odd promise suggestions: the
+model was not choosing badly, it was required to choose, and the handler invented a
+throwaway non-recurring promise when nothing fitted (`callback_handlers.py`, `is_one_time`).
+
+Both surfaces now say a promise is a grouping, not a prerequisite, and instruct the model
+not to invent one or ask for one before saving. A promise that *is* named and does not
+resolve remains an error — that is a mistake worth reporting.
+
+Schema support landed in migration `037_plan_session_optional_promise`; `content_id` has
+been on `plan_sessions` since `023`.

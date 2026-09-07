@@ -68,7 +68,7 @@ def _fire_session_saved_dm(
         bot_token = getattr(request.app.state, "bot_token", None)
         if not bot_token:
             return
-        promise_text, promise_id = _promise_row_for_uuid(session_row.get("promise_uuid"))
+        promise_text, promise_id = _promise_row_for_uuid(session_row.get("promise_uuid") or "")
         miniapp_url = os.getenv("MINIAPP_URL", "https://xaana.club")
 
         from ..notifications import send_plan_session_saved_notification
@@ -165,6 +165,25 @@ async def create_plan_session(
 ):
     p_uuid = _resolve_uuid(user_id, promise_id)
     result = PlanSessionsRepository().create(p_uuid, user_id, _session_payload(body.model_dump(), user_id))
+    _fire_session_saved_dm(request, user_id, result, is_edit=False)
+    return result
+
+
+@router.post("/plan-sessions", response_model=PlanSessionOut, status_code=201)
+async def create_standalone_plan_session(
+    body: PlanSessionIn,
+    request: Request,
+    user_id: int = Depends(get_current_user),
+):
+    """Plan a time without naming a promise first.
+
+    This is what "watch it tonight" needs. Everything used to route through
+    /promises/{id}/plan-sessions, so saving a video for Thursday meant choosing
+    a promise to hang it off — and when none fitted, one was invented. A
+    promise can still be attached later; it is a grouping, not a prerequisite.
+    """
+    payload = _session_payload(body.model_dump(), user_id)
+    result = PlanSessionsRepository().create(None, user_id, payload)
     _fire_session_saved_dm(request, user_id, result, is_edit=False)
     return result
 

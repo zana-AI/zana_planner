@@ -80,7 +80,12 @@ class PlanSessionsRepository:
                 results.append({**_row_to_dict(r), "checklist": checklist})
             return results
 
-    def create(self, promise_uuid: str, user_id: int, data: dict) -> dict:
+    def create(self, promise_uuid: Optional[str], user_id: int, data: dict) -> dict:
+        """Create a planned session.
+
+        `promise_uuid` may be None: since migration 037 a session needs only a
+        time, and may point at content, at a promise, at both, or at neither.
+        """
         user = str(user_id)
         checklist_data = data.pop("checklist", [])
         reminder_enabled = data.get("reminder_enabled", True)
