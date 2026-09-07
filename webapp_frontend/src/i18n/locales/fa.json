@@ -7,6 +7,7 @@
     "retry": "تلاش دوباره",
     "viewAll": "مشاهدهٔ همه",
     "close": "بستن",
+    "startFocus": "شروع تمرکز",
     "saving": "در حال ذخیره…",
     "tryAgain": "تلاش دوباره",
     "somethingWentWrong": "خطایی رخ داد",
@@ -20,24 +21,23 @@
   },
   "nav": {
     "primary": "ناوبری اصلی",
-    "myWeek": "هفتهٔ من",
+    "today": "امروز",
     "community": "همراهان",
-    "content": "محتوا",
+    "library": "کتابخانه",
     "explore": "کاوش",
-    "goToMyWeek": "رفتن به هفتهٔ من",
-    "startFocus": "شروع تمرکز",
+    "goToToday": "رفتن به امروز",
     "openProfileMenu": "باز کردن منوی نمایه"
   },
   "menu": {
-    "myContents": "محتوای من",
+    "library": "کتابخانه",
     "settings": "تنظیمات",
     "adminPanel": "پنل مدیریت",
     "logout": "خروج"
   },
   "shell": {
     "dashboard": {
-      "title": "هفتهٔ من",
-      "subtitle": "قول‌های هفتگی و پیشرفت شما"
+      "title": "امروز",
+      "subtitle": "آنچه اکنون موعد آن رسیده، و روند هفته"
     },
     "community": {
       "title": "همراهان",
@@ -45,7 +45,7 @@
     },
     "explore": {
       "title": "کاوش",
-      "subtitle": "کتابخانهٔ قول‌ها و بازارچه"
+      "subtitle": "دوره‌ها، ویدیوها و دسته‌کارت‌ها، بر اساس موضوع"
     },
     "challenges": {
       "title": "چالش‌ها",
@@ -58,9 +58,9 @@
     "challengeDetail": {
       "title": "چالش"
     },
-    "myContents": {
-      "title": "محتوا",
-      "subtitle": "ویدیو، پی‌دی‌اف و پادکستی که با آن مطالعه می‌کنید"
+    "library": {
+      "title": "کتابخانه",
+      "subtitle": "هر چه ذخیره کرده‌اید، و دسته‌کارت‌های شما"
     },
     "admin": {
       "title": "مدیریت"
@@ -150,7 +150,9 @@
     "exploreCommunity": "گشتی میان همراهان",
     "back": "بازگشت",
     "noUsersFound": "کاربری پیدا نشد",
-    "loading": "در حال بارگذاری…"
+    "loading": "در حال بارگذاری…",
+    "nextUp": "در پیش",
+    "nextUpHint": "برنامه‌ریزی‌شده، هنوز قول نیست"
   },
   "promise": {
     "noTime": "بدون زمان",
@@ -185,7 +187,6 @@
     "whatNeedsDoingToday": "امروز چه کارهایی مانده",
     "checkIn": "ثبت انجام",
     "logThatYouDidIt": "ثبت کنید که انجام شد",
-    "startFocus": "شروع تمرکز",
     "thingsWaiting_one": "{{count, num}} مورد در انتظار",
     "thingsWaiting_other": "{{count, num}} مورد در انتظار",
     "nothingIsWaitingRightNowAddAPromiseOrComeBac": "الان کاری در انتظار نیست. قولی اضافه کنید یا فردا سر بزنید.",
@@ -312,6 +313,34 @@
     "challenges": "چالش‌ها",
     "quickStartHabits": "عادت‌های آمادهٔ شروع"
   },
+  "explore": {
+    "all": "همه",
+    "open": "باز کردن",
+    "add": "افزودن",
+    "adding": "در حال افزودن…",
+    "added": "افزوده شد",
+    "addFailed": "افزودن انجام نشد. دوباره تلاش کنید.",
+    "promiseIt": "قولش را بده",
+    "players_one": "{{count, num}} شرکت‌کننده",
+    "players_other": "{{count, num}} شرکت‌کننده",
+    "noSubjects": "هنوز چیزی برای کاوش نیست. بعداً سر بزنید.",
+    "subjectNotFound": "این موضوع در فهرست نیست.",
+    "backToSubjects": "بازگشت به موضوع‌ها",
+    "topic": {
+      "courses": "دوره‌ها",
+      "watch": "تماشا",
+      "read": "خواندن",
+      "decks": "دسته‌کارت‌ها",
+      "habits": "عادت‌ها"
+    },
+    "kind": {
+      "course": "دوره",
+      "video": "ویدیو",
+      "book": "کتاب",
+      "deck": "دسته‌کارت",
+      "habit": "عادت"
+    }
+  },
   "community": {
     "loading": "در حال بارگذاری همراهان…",
     "authRequired": "برای دیدن این بخش باید وارد شوید.",
@@ -416,8 +445,35 @@
     "thisClubPageIsNotAvailable": "این صفحهٔ باشگاه در دسترس نیست."
   },
   "content": {
+    "untitled": "بدون عنوان",
+    "resume": "ادامه",
+    "markComplete": "علامت‌گذاری به‌عنوان تمام‌شده",
+    "pages": "{{count}} صفحه",
+    "readDuration": "{{duration}} مطالعه",
+    "progressRead": "{{percent}}٪ مطالعه",
+    "readCoverageTimeline": "نوار پوشش مطالعه",
     "open": "باز کردن",
-    "more": "بیشتر"
+    "more": "بیشتر",
+    "types": {
+      "pdf": "پی‌دی‌اف",
+      "video": "ویدئو",
+      "audio": "صوتی",
+      "text": "مقاله",
+      "other": "سایر"
+    },
+    "status": {
+      "saved": "ذخیره‌شده",
+      "in_progress": "در حال مطالعه",
+      "completed": "تمام‌شده"
+    },
+    "planIt": "برنامه‌ریزی",
+    "tonight": "امشب",
+    "tomorrowMorning": "فردا صبح",
+    "thisWeekend": "آخر هفته",
+    "pickATime": "انتخاب زمان",
+    "planNote": "{{minutes}} دقیقه وقت می‌گیرد. بعداً می‌توانید آن را به یک قول وصل کنید.",
+    "plannedFor": "برای {{when}} برنامه‌ریزی شد.",
+    "planFailed": "برنامه‌ریزی انجام نشد. دوباره تلاش کنید."
   },
   "createPromise": {
     "newPromise": "قول تازه",
@@ -497,21 +553,24 @@
     "failedToLoadLibrary": "کتابخانه بارگذاری نشد",
     "failedToUpdateContent": "محتوا به‌روز نشد",
     "emptyLibraryGuide": "پی‌دی‌اف، ویدئوی یوتیوب، پادکست یا مقاله‌ای را از تلگرام بفرستید تا برای یادگیری بعدی اینجا نگه داشته شود.",
-    "status": { "all": "همه", "continue": "ادامه", "saved": "ذخیره‌شده", "completed": "تمام‌شده" },
-    "types": { "allTypes": "همهٔ انواع", "pdfs": "پی‌دی‌اف‌ها", "videos": "ویدئوها", "audio": "صوتی", "articles": "مقاله‌ها" }
-  },
-  "content": {
-    "untitled": "بدون عنوان",
-    "resume": "ادامه",
-    "markComplete": "علامت‌گذاری به‌عنوان تمام‌شده",
-    "pages": "{{count}} صفحه",
-    "readDuration": "{{duration}} مطالعه",
-    "progressRead": "{{percent}}٪ مطالعه",
-    "readCoverageTimeline": "نوار پوشش مطالعه",
-    "open": "باز کردن",
-    "more": "بیشتر",
-    "types": { "pdf": "پی‌دی‌اف", "video": "ویدئو", "audio": "صوتی", "text": "مقاله", "other": "سایر" },
-    "status": { "saved": "ذخیره‌شده", "in_progress": "در حال مطالعه", "completed": "تمام‌شده" }
+    "status": {
+      "all": "همه",
+      "continue": "ادامه",
+      "saved": "ذخیره‌شده",
+      "completed": "تمام‌شده"
+    },
+    "types": {
+      "allTypes": "همهٔ انواع",
+      "pdfs": "پی‌دی‌اف‌ها",
+      "videos": "ویدئوها",
+      "audio": "صوتی",
+      "articles": "مقاله‌ها"
+    },
+    "myDecks": "دسته‌کارت‌های من",
+    "deckPending_one": "{{count, num}} برای مرور",
+    "deckPending_other": "{{count, num}} برای مرور",
+    "deckCards_one": "{{count, num}} کارت",
+    "deckCards_other": "{{count, num}} کارت"
   },
   "pdfReader": {
     "loadingPdf": "در حال بارگذاری پی‌دی‌اف…",

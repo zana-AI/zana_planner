@@ -26,8 +26,13 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
   if (pathname === '/community') {
     return { key: 'community', hasSubtitle: true };
   }
-  if (pathname === '/templates') {
+  if (pathname === '/explore') {
     return { key: 'explore', hasSubtitle: true };
+  }
+  // A subject page keeps Explore's header and adds a back arrow; the subject's
+  // own name is the page's heading, where the catalog title is already known.
+  if (pathname.startsWith('/explore/')) {
+    return { key: 'explore', hasSubtitle: true, showBack: true, fallbackRoute: '/explore' };
   }
   if (pathname === '/challenges') {
     return { key: 'challenges', hasSubtitle: true };
@@ -36,11 +41,11 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { key: 'flashcards', hasSubtitle: true, showBack: true, fallbackRoute: '/dashboard' };
   }
   if (pathname.startsWith('/challenges/')) {
-    return { key: 'challengeDetail', showBack: true, fallbackRoute: '/templates' };
+    return { key: 'challengeDetail', showBack: true, fallbackRoute: '/explore' };
   }
   if (pathname === '/my-contents') {
     // A primary tab now, so no back button — there is nothing to go back to.
-    return { key: 'myContents', hasSubtitle: true };
+    return { key: 'library', hasSubtitle: true };
   }
   if (pathname === '/admin') {
     return { key: 'admin', showBack: true, fallbackRoute: '/dashboard' };
@@ -55,7 +60,7 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { key: 'timezone', hasSubtitle: true, showBack: true, fallbackRoute: '/settings' };
   }
   if (pathname.startsWith('/templates/')) {
-    return { key: 'addPromise', showBack: true, fallbackRoute: '/templates' };
+    return { key: 'addPromise', showBack: true, fallbackRoute: '/explore' };
   }
   if (pathname.startsWith('/users/')) {
     return { key: 'profile', showBack: true, fallbackRoute: '/community' };
@@ -90,10 +95,10 @@ export function Navigation(_props: NavigationProps) {
 
   const navItems = useMemo<AppNavItem[]>(
     () => [
-      { key: 'today', label: t('nav.myWeek'), to: '/dashboard' },
+      { key: 'today', label: t('nav.today'), to: '/dashboard' },
       { key: 'community', label: t('nav.community'), to: '/community' },
-      { key: 'content', label: t('nav.content'), to: '/my-contents' },
-      { key: 'explore', label: t('nav.explore'), to: '/templates' },
+      { key: 'library', label: t('nav.library'), to: '/my-contents' },
+      { key: 'explore', label: t('nav.explore'), to: '/explore' },
     ],
     [t],
   );
@@ -190,7 +195,7 @@ export function Navigation(_props: NavigationProps) {
   return (
     <>
       <header className="app-header-v2">
-        <button type="button" className="brand" onClick={() => navigate('/dashboard')} aria-label={t('nav.goToMyWeek')} />
+        <button type="button" className="brand" onClick={() => navigate('/dashboard')} aria-label={t('nav.goToToday')} />
         {shouldShowBack ? (
           <IconButton label={t('common.back')} icon={<ArrowLeft size={18} className="icon-directional" />} onClick={handleBack} />
         ) : null}
@@ -199,7 +204,7 @@ export function Navigation(_props: NavigationProps) {
           {shellPage.hasSubtitle ? <p>{t(`shell.${shellPage.key}.subtitle`)}</p> : null}
         </div>
         {isDashboard ? (
-          <button type="button" className="icon-btn-v2" onClick={() => navigate('/focus')} aria-label={t('nav.startFocus')}>
+          <button type="button" className="icon-btn-v2" onClick={() => navigate('/focus')} aria-label={t('common.startFocus')}>
             <Timer size={18} />
           </button>
         ) : null}
@@ -215,7 +220,7 @@ export function Navigation(_props: NavigationProps) {
             <div className="profile-menu-v2">
               <button type="button" onClick={() => { navigate('/my-contents'); setShowProfileMenu(false); }}>
                 <Library size={16} />
-                {t('menu.myContents')}
+                {t('menu.library')}
               </button>
               <button type="button" onClick={() => { navigate('/settings'); setShowProfileMenu(false); }}>
                 <Settings size={16} />

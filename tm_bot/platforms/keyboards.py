@@ -371,7 +371,7 @@ def navigation_kb(mini_app_url: str) -> Keyboard:
     )
     explore_button = create_button(
         text="🔍 Explore",
-        web_app_url=f"{mini_app_url}/templates"
+        web_app_url=f"{mini_app_url}/explore"
     )
     
     # Add all buttons in a single row

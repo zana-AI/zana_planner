@@ -7,6 +7,7 @@
     "retry": "Try again",
     "viewAll": "View all",
     "close": "Close",
+    "startFocus": "Start focus",
     "saving": "Saving...",
     "tryAgain": "Try Again",
     "somethingWentWrong": "Something went wrong",
@@ -20,24 +21,23 @@
   },
   "nav": {
     "primary": "Primary navigation",
-    "myWeek": "My Week",
+    "today": "Today",
     "community": "Community",
-    "content": "Content",
+    "library": "Library",
     "explore": "Explore",
-    "goToMyWeek": "Go to My Week",
-    "startFocus": "Start focus",
+    "goToToday": "Go to Today",
     "openProfileMenu": "Open profile menu"
   },
   "menu": {
-    "myContents": "My Contents",
+    "library": "Library",
     "settings": "Settings",
     "adminPanel": "Admin Panel",
     "logout": "Logout"
   },
   "shell": {
     "dashboard": {
-      "title": "My Week",
-      "subtitle": "Your weekly promises and progress"
+      "title": "Today",
+      "subtitle": "What is due now, and how the week is going"
     },
     "community": {
       "title": "Community",
@@ -45,7 +45,7 @@
     },
     "explore": {
       "title": "Explore",
-      "subtitle": "Promise library and marketplace"
+      "subtitle": "Courses, videos and decks, by subject"
     },
     "challenges": {
       "title": "Challenges",
@@ -58,9 +58,9 @@
     "challengeDetail": {
       "title": "Challenge"
     },
-    "myContents": {
-      "title": "Content",
-      "subtitle": "Videos, PDFs and podcasts you study from"
+    "library": {
+      "title": "Library",
+      "subtitle": "Everything you saved, and your decks"
     },
     "admin": {
       "title": "Admin"
@@ -125,7 +125,7 @@
     "previousWeek": "Previous week",
     "nextWeek": "Next week",
     "overallProgress": "Overall progress",
-    "play": "Play",
+    "play": "Start",
     "promises": "Promises",
     "activeCount": "{{count, num}} active",
     "hideOlderPromises": "Hide older promises",
@@ -150,7 +150,9 @@
     "viewSuggestions": "View Suggestions",
     "exploreCommunity": "Explore Community",
     "back": "Back",
-    "noUsersFound": "No users found"
+    "noUsersFound": "No users found",
+    "nextUp": "Next up",
+    "nextUpHint": "Planned, not yet a promise"
   },
   "promise": {
     "noTime": "No time",
@@ -185,12 +187,11 @@
     "whatNeedsDoingToday": "What needs doing today",
     "checkIn": "Check in",
     "logThatYouDidIt": "Log that you did it",
-    "startFocus": "Start focus",
     "thingsWaiting_one": "{{count, num}} thing waiting",
     "thingsWaiting_other": "{{count, num}} things waiting",
     "nothingIsWaitingRightNowAddAPromiseOrComeBac": "Nothing is waiting right now. Add a promise, or come back tomorrow.",
     "seeAllPromises": "See all promises",
-    "play": "Play"
+    "play": "Start"
   },
   "checkin": {
     "checkedIn": "Checked in",
@@ -312,6 +313,34 @@
     "challenges": "Challenges",
     "quickStartHabits": "Quick-start habits"
   },
+  "explore": {
+    "all": "All",
+    "open": "Open",
+    "add": "Add",
+    "adding": "Adding...",
+    "added": "Added",
+    "addFailed": "Could not add that. Try again.",
+    "promiseIt": "Promise it",
+    "players_one": "{{count, num}} player",
+    "players_other": "{{count, num}} players",
+    "noSubjects": "Nothing to explore yet. Check back soon.",
+    "subjectNotFound": "That subject is not in the catalog.",
+    "backToSubjects": "Back to subjects",
+    "topic": {
+      "courses": "Courses",
+      "watch": "Watch",
+      "read": "Read",
+      "decks": "Decks",
+      "habits": "Habits"
+    },
+    "kind": {
+      "course": "Course",
+      "video": "Video",
+      "book": "Book",
+      "deck": "Deck",
+      "habit": "Habit"
+    }
+  },
   "community": {
     "loading": "Loading community...",
     "authRequired": "Authentication required.",
@@ -365,8 +394,35 @@
     "openClubSettings": "Open club settings"
   },
   "content": {
+    "untitled": "Untitled",
+    "resume": "Resume",
+    "markComplete": "Mark complete",
+    "pages": "{{count}} pages",
+    "readDuration": "{{duration}} read",
+    "progressRead": "{{percent}}% read",
+    "readCoverageTimeline": "Read coverage timeline",
     "open": "Open",
-    "more": "More"
+    "more": "More",
+    "types": {
+      "pdf": "PDF",
+      "video": "Video",
+      "audio": "Audio",
+      "text": "Article",
+      "other": "Other"
+    },
+    "status": {
+      "saved": "Saved",
+      "in_progress": "In progress",
+      "completed": "Completed"
+    },
+    "planIt": "Plan it",
+    "tonight": "Tonight",
+    "tomorrowMorning": "Tomorrow morning",
+    "thisWeekend": "This weekend",
+    "pickATime": "Pick a time",
+    "planNote": "Blocks {{minutes}} minutes. You can attach it to a promise later.",
+    "plannedFor": "Planned for {{when}}.",
+    "planFailed": "Could not plan that. Try again."
   },
   "createPromise": {
     "newPromise": "New Promise",
@@ -599,21 +655,24 @@
     "libraryItems": "Library items",
     "failedToLoadLibrary": "Failed to load library",
     "failedToUpdateContent": "Failed to update content",
-    "status": { "all": "All", "continue": "Continue", "saved": "Saved", "completed": "Completed" },
-    "types": { "allTypes": "All types", "pdfs": "PDFs", "videos": "Videos", "audio": "Audio", "articles": "Articles" }
-  },
-  "content": {
-    "untitled": "Untitled",
-    "resume": "Resume",
-    "markComplete": "Mark complete",
-    "pages": "{{count}} pages",
-    "readDuration": "{{duration}} read",
-    "progressRead": "{{percent}}% read",
-    "readCoverageTimeline": "Read coverage timeline",
-    "open": "Open",
-    "more": "More",
-    "types": { "pdf": "PDF", "video": "Video", "audio": "Audio", "text": "Article", "other": "Other" },
-    "status": { "saved": "Saved", "in_progress": "In progress", "completed": "Completed" }
+    "status": {
+      "all": "All",
+      "continue": "Continue",
+      "saved": "Saved",
+      "completed": "Completed"
+    },
+    "types": {
+      "allTypes": "All types",
+      "pdfs": "PDFs",
+      "videos": "Videos",
+      "audio": "Audio",
+      "articles": "Articles"
+    },
+    "myDecks": "My decks",
+    "deckPending_one": "{{count, num}} to review",
+    "deckPending_other": "{{count, num}} to review",
+    "deckCards_one": "{{count, num}} card",
+    "deckCards_other": "{{count, num}} cards"
   },
   "pdfReader": {
     "loadingPdf": "Loading PDF...",

@@ -83,7 +83,7 @@ export interface TelegramUser {
 
 // Session and navigation UI contracts
 export type SessionMode = 'telegram_mini_app' | 'browser_token' | 'unauthenticated';
-export type AppNavKey = 'today' | 'community' | 'explore' | 'content';
+export type AppNavKey = 'today' | 'community' | 'explore' | 'library';
 
 export interface AppNavItem {
   key: AppNavKey;
@@ -509,7 +509,7 @@ export type TemplateDetail = PromiseTemplate;
 
 export interface ExploreItem { id: string; title: string; type: string; order: number; published: boolean; url?: string | null; native_ref?: string | null; image?: string | null; description?: string | null; class_offer?: string | null; }
 export interface ExploreTopic { id: string; title: string; order: number; published: boolean; items: ExploreItem[]; }
-export interface ExploreCategory { id: string; title: string; order: number; published: boolean; topics: ExploreTopic[]; }
+export interface ExploreCategory { id: string; title: string; icon?: string | null; accent?: string | null; order: number; published: boolean; topics: ExploreTopic[]; }
 export interface ExploreCatalog { version: number; categories: ExploreCategory[]; }
 
 export interface SubscribeTemplateRequest {
@@ -800,7 +800,10 @@ export interface PlanChecklistItem {
 
 export interface PlanSession {
   id: number;
-  promise_uuid: string;
+  /** Null for a session that is not filed under a promise — see migration 037. */
+  promise_uuid: string | null;
+  /** The content this session is for, when it is for one. */
+  content_id?: string | null;
   title: string | null;
   status: 'planned' | 'done' | 'skipped';
   planned_start: string | null;       // ISO datetime
@@ -820,6 +823,7 @@ export interface UpcomingPlanSession extends PlanSession {
 
 export interface PlanSessionIn {
   title?: string;
+  content_id?: string;
   planned_start?: string;
   planned_duration_min?: number;
   notes?: string;

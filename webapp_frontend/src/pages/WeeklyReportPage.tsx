@@ -189,7 +189,7 @@ export function WeeklyReportPage() {
           {isTasksView ? 'One-time Tasks' : 'Promises'}
         </h1>
         <button
-          onClick={() => navigate('/templates')}
+          onClick={() => navigate('/explore')}
           style={{
             padding: '0.5rem 1rem',
             backgroundColor: '#4CAF50',

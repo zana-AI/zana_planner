@@ -110,7 +110,7 @@ export function PlaySheet({ open, promises, onClose, onStartFocus, onCheckIn }: 
       } else if ((data.hours_promised || 0) > 0) {
         actions.push({
           key: `focus-${id}`,
-          label: t('play.startFocus'),
+          label: t('common.startFocus'),
           detail: '25-minute timer',
           icon: <Timer size={18} aria-hidden />,
           waiting: false,
