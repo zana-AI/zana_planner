@@ -64,6 +64,34 @@ categories:
             description: French subtitles — tap a word to translate, hear it and save a contextual flashcard.
             image: https://img.youtube.com/vi/c4dtEcHyNcc/mqdefault.jpg
             native_ref: /youtube-watch?video_id=c4dtEcHyNcc
+          # Transcripts for all of these are cached in video_transcript, which
+          # is what the subtitle reader needs — YouTube blocks the VM, so a
+          # video with no cached cues opens without its captions. Fetched with
+          # scripts/fetch_transcripts.py from a residential connection.
+          - id: video-naturalisation-200-questions
+            title: "200 questions d'entretien de naturalisation"
+            type: video
+            order: 20
+            published: true
+            description: The full interview question set, read aloud — 57 minutes with French subtitles you can tap.
+            image: https://img.youtube.com/vi/SM1GSh80SOA/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=SM1GSh80SOA
+          - id: video-spoken-french-masterclass
+            title: "1 Hour Intensive Spoken French Masterclass"
+            type: video
+            order: 30
+            published: true
+            description: 41 minutes of spoken French — follow the subtitles and save the words you did not catch.
+            image: https://img.youtube.com/vi/ansuNvUgazE/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=ansuNvUgazE
+          - id: video-whats-in-my-bag
+            title: "What's in my bag ? — vocabulaire du quotidien"
+            type: video
+            order: 40
+            published: true
+            description: A short everyday-vocabulary lesson, 13 minutes, subtitled in French.
+            image: https://img.youtube.com/vi/WiThSUgzvqA/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=WiThSUgzvqA
       - id: decks
         title: Decks
         order: 40
