@@ -52,7 +52,6 @@ def test_group_router_logs_successful_raw_groq_call(monkeypatch):
         sender="Javad",
         vibe="coach",
         is_mentioned=False,
-        sender_checked_in=True,
         recent_messages=[],
         groq_api_key="test-key",
     )
@@ -86,7 +85,6 @@ def test_group_router_logs_failed_attempts_without_breaking_heuristic(monkeypatc
         sender="Javad",
         vibe="coach",
         is_mentioned=True,
-        sender_checked_in=False,
         recent_messages=[],
         groq_api_key="test-key",
     )
@@ -112,7 +110,6 @@ def test_group_router_pre_routes_emoji_only_without_groq(monkeypatch):
         sender="Homa",
         vibe="playful",
         is_mentioned=False,
-        sender_checked_in=False,
         recent_messages=[],
         groq_api_key="test-key",
     )
@@ -132,7 +129,6 @@ def test_group_router_pre_routes_persian_short_ack_without_groq(monkeypatch):
         sender="Mahmoud",
         vibe="playful",
         is_mentioned=False,
-        sender_checked_in=False,
         recent_messages=[],
         groq_api_key="test-key",
     )
@@ -152,7 +148,6 @@ def test_group_router_pre_routes_one_character_noise_without_groq(monkeypatch):
         sender="Mahmoud",
         vibe="playful",
         is_mentioned=False,
-        sender_checked_in=False,
         recent_messages=[],
         groq_api_key="test-key",
     )
@@ -172,7 +167,6 @@ def test_group_router_pre_routes_direct_status_question_without_groq(monkeypatch
         sender="Javad",
         vibe="coach",
         is_mentioned=True,
-        sender_checked_in=False,
         recent_messages=[],
         groq_api_key="test-key",
     )
@@ -192,13 +186,165 @@ def test_group_router_pre_routes_address_only_mention_as_reaction(monkeypatch):
         sender="Mahmoud",
         vibe="playful",
         is_mentioned=True,
-        sender_checked_in=False,
         recent_messages=[],
         groq_api_key="test-key",
     )
 
     assert decision.action == "REACT_EMOJI"
     assert decision.reason == "address-only"
+
+
+# ── who the message was aimed at ──────────────────────────────────
+
+
+def test_reply_to_another_member_never_reaches_the_router(monkeypatch):
+    """Two members talking to each other: Telegram states the fact, so no LLM call."""
+    def _fail_openai(*_args, **_kwargs):
+        raise AssertionError("Groq should not be called for a reply aimed at another member")
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_fail_openai))
+
+    decision = group_router.route_group_message(
+        message="Daily life, though I am not sure",
+        sender="Ali",
+        vibe="coach",
+        is_mentioned=False,
+        recent_messages=[],
+        reply_to_sender_name="Javad",
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "REACT_EMOJI"
+    assert decision.reason == "reply aimed at another member"
+
+
+def test_reply_to_the_bot_is_still_answered(monkeypatch):
+    calls = []
+
+    class _Message:
+        content = '{"action":"FULL_REPLY","emoji":"🎯","reason":"asked me"}'
+
+    class _Response:
+        choices = [types.SimpleNamespace(message=_Message())]
+        usage = types.SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+
+    class _Client:
+        def __init__(self, **_kwargs):
+            self.chat = types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=lambda **kwargs: (calls.append(kwargs), _Response())[1]
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_Client))
+    monkeypatch.setattr(group_router, "record_usage_safely", lambda **kwargs: None)
+
+    decision = group_router.route_group_message(
+        message="what about a B2 quiz?",
+        sender="Ali",
+        vibe="coach",
+        is_mentioned=True,
+        recent_messages=[],
+        reply_to_bot=True,
+        reply_to_sender_name="Xaana",
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "FULL_REPLY"
+    assert calls, "a message addressed to the bot must still be routed"
+
+
+def test_mention_wins_over_a_reply_to_another_member(monkeypatch):
+    calls = []
+
+    class _Message:
+        content = '{"action":"SHORT_REPLY","emoji":"👍","reason":"asked"}'
+
+    class _Response:
+        choices = [types.SimpleNamespace(message=_Message())]
+        usage = types.SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+
+    class _Client:
+        def __init__(self, **_kwargs):
+            self.chat = types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=lambda **kwargs: (calls.append(kwargs), _Response())[1]
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_Client))
+    monkeypatch.setattr(group_router, "record_usage_safely", lambda **kwargs: None)
+
+    decision = group_router.route_group_message(
+        message="@xaana_bot is Ali right about this?",
+        sender="Javad",
+        vibe="coach",
+        is_mentioned=True,
+        recent_messages=[],
+        reply_to_sender_name="Ali",
+        groq_api_key="test-key",
+    )
+
+    assert decision.action == "SHORT_REPLY"
+
+
+def test_prompt_names_the_reply_target_and_the_roster(monkeypatch):
+    captured = {}
+
+    class _Message:
+        content = '{"action":"REACT_EMOJI","emoji":"👀","reason":"side chat"}'
+
+    class _Response:
+        choices = [types.SimpleNamespace(message=_Message())]
+        usage = types.SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+
+    def _create(**kwargs):
+        captured.update(kwargs)
+        return _Response()
+
+    class _Client:
+        def __init__(self, **_kwargs):
+            self.chat = types.SimpleNamespace(
+                completions=types.SimpleNamespace(create=_create)
+            )
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_Client))
+    monkeypatch.setattr(group_router, "record_usage_safely", lambda **kwargs: None)
+
+    group_router.route_group_message(
+        message="Ali, how is it going these days?",
+        sender="Javad",
+        vibe="coach",
+        is_mentioned=False,
+        recent_messages=[],
+        member_names=["Ali/علی", "Javad"],
+        groq_api_key="test-key",
+    )
+
+    user_prompt = captured["messages"][1]["content"]
+    roster_line = next(
+        line for line in user_prompt.splitlines()
+        if line.startswith("Other members in this group:")
+    )
+    # The sender is not in their own roster, so "addressed to another member" stays decidable.
+    assert roster_line == "Other members in this group: Ali/علی"
+    assert "Current message replies to: nothing (not a reply)" in user_prompt
+
+
+def test_roster_drops_the_sender_and_duplicates():
+    assert group_router._fmt_members(["Ali", "ali", "Javad", ""], "javad") == "Ali"
+    assert group_router._fmt_members([], "Javad") == "(unknown)"
+
+
+def test_transcript_marks_the_bots_own_lines_and_reply_targets():
+    rendered = group_router._fmt_transcript([
+        {"sender_name": "Javad", "text": "what did you read today?"},
+        {"sender_name": "Xaana", "text": "nice work", "is_bot": True,
+         "reply_to_sender_name": "Javad"},
+    ])
+
+    assert "Javad: what did you read today?" in rendered
+    assert "Xaana [you] reply to Javad: nice work" in rendered
 
 
 def _fresh_bot_data():

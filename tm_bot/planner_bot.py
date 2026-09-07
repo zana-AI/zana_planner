@@ -590,17 +590,21 @@ class PlannerBot:
             for m in member_status
         )
 
-        # Call Groq router for every text message — it decides IGNORE/REACT_EMOJI/SHORT_REPLY/FULL_REPLY
+        # Call Groq router for every text message — it decides IGNORE/REACT_EMOJI/SHORT_REPLY/FULL_REPLY.
+        # It needs to know who the message was aimed at: without the reply target
+        # and the roster it can only reason about whether the bot itself was
+        # addressed, and answers every side conversation as if it were invited.
         decision: RouterDecision = await asyncio.to_thread(
             route_group_message,
             router_message,
             sender_name,
             vibe,
             is_mentioned,
-            sender_checked_in,
-            self._get_recent_group_messages(ctx),
-            conversation_state,
-            bool(reply_context.get("reply_to_is_bot")),
+            self._group_transcript_before_current(ctx),
+            conversation_state=conversation_state,
+            reply_to_bot=bool(reply_context.get("reply_to_is_bot")),
+            reply_to_sender_name=reply_context.get("reply_to_sender_name"),
+            member_names=self._group_member_names(member_status, ctx.user_id),
         )
         # The daily budget shapes the action rather than gating it: a spontaneous
         # text reply that no longer fits becomes an emoji reaction, so the bot
@@ -640,6 +644,7 @@ class PlannerBot:
                 ctx,
                 member_status=member_status,
                 sender_checked_in=sender_checked_in,
+                short_reply=(action == "SHORT_REPLY"),
                 conversation_state=conversation_state,
                 reply_context=reply_context,
                 bot_self_aliases=bot_self_aliases,
@@ -1197,6 +1202,7 @@ class PlannerBot:
         ctx: InputContext,
         member_status: list | None = None,
         sender_checked_in: bool = False,
+        short_reply: bool = False,
         conversation_state: str = "cold",
         reply_context: dict | None = None,
         bot_self_aliases: list[str] | None = None,
@@ -1216,9 +1222,11 @@ class PlannerBot:
         if member_status is None:
             member_status = self._get_today_checkin_status(club.get("club_id", ""), club.get("club_language"))
 
+        # Neutral framing on purpose: "shared" read as a completion claim, so an
+        # aside about a bug or a link came back congratulated as a check-in.
         response = await asyncio.to_thread(
             self.llm_handler.get_response_group_safe,
-            f"{sender_name} shared: {text}",
+            f"{sender_name} wrote in the group: {text}",
             {
                 "chat_id": ctx.chat_id,
                 "club_name": club.get("club_name"),
@@ -1234,6 +1242,7 @@ class PlannerBot:
                 "sender_name": sender_name,
                 "sender_checked_in": sender_checked_in,
                 "proactive": True,
+                "short_reply": short_reply,
                 "conversation_state": conversation_state,
                 "reply_context": reply_context or {},
                 "bot_self_aliases": bot_self_aliases or [],
@@ -1527,6 +1536,44 @@ class PlannerBot:
         seen = {m.get("message_id") for m in live if m.get("message_id") is not None}
         merged = [m for m in stored if m.get("message_id") not in seen] + live
         return merged[-self.GROUP_HISTORY_WINDOW:]
+
+    def _group_transcript_before_current(self, ctx: InputContext) -> list[dict]:
+        """Recent group history with the message being routed removed.
+
+        The incoming message is recorded before routing so reply lookups can
+        find it, which meant the router was handed its own input back as the
+        last line of the "recent" conversation — a wasted slot out of four.
+        """
+        if ctx.message_id is None:
+            return self._get_recent_group_messages(ctx)
+        return [
+            m for m in self._get_recent_group_messages(ctx)
+            if m.get("message_id") != ctx.message_id
+        ]
+
+    def _group_member_names(self, member_status: list | None, sender_user_id=None) -> list[str]:
+        """Roster for the router, sender excluded.
+
+        Each member collapses to their aliases joined by "/" so a message that
+        opens with a Persian first name still matches the Latin display name.
+        """
+        names: list[str] = []
+        for member in member_status or []:
+            if not isinstance(member, dict):
+                continue
+            if sender_user_id is not None and str(member.get("user_id") or "") == str(sender_user_id):
+                continue
+            aliases: list[str] = []
+            for key in ("name", "non_latin_name", "latin_name"):
+                value = str(member.get(key) or "").strip()
+                if value and value not in aliases:
+                    aliases.append(value)
+            username = str(member.get("username") or "").strip().lstrip("@")
+            if username:
+                aliases.append(f"@{username}")
+            if aliases:
+                names.append("/".join(aliases[:4]))
+        return names
 
     def _load_group_history(self, chat_id: int) -> list[dict]:
         """Recent stored messages for a group, memoised briefly.

@@ -6,6 +6,12 @@ main LLM call, using a fast Groq model (openai/gpt-oss-20b). This separates
 "should I respond?" from "how should I respond?" — keeping the expensive
 responder model out of noise, bait, and side-chatter.
 
+Who the message was aimed at:
+  The router is told the reply target and the member roster, not just whether the
+  bot itself was addressed. A message Telegram marks as a reply to another member
+  is capped at an emoji before any model call — two members talking to each other
+  are not talking to the bot, and text there reads as interrupting.
+
 Decision classes:
   IGNORE        — do nothing
   REACT_EMOJI   — add emoji reaction to the triggering message, no text
@@ -188,11 +194,14 @@ Rules (in priority order):
 2. Direct club/status/setup/progress question or task from @mention/reply-to-bot → FULL_REPLY
 3. Anything else addressed to you (@mention or reply to you) → SHORT_REPLY; never leave someone
    who spoke to you without an answer
-4. Task completion (workout done, score, game result) → REACT_EMOJI if brief; SHORT_REPLY if they seem proud or want acknowledgment
-5. Fake facts or provocations about club stats → SHORT_REPLY to gently correct, nothing more
-6. Casual banter, side chatter, greetings, short acks, emoji-only → REACT_EMOJI
-7. Off-topic but friendly conversation → REACT_EMOJI
-8. A message clearly aimed at another member, not at the group → REACT_EMOJI at most
+4. Aimed at another member, not at you: the message replies to a member, or opens by addressing
+   one by name from the roster, or answers a question another member just asked → REACT_EMOJI at
+   most, never text. Two members talking to each other are not talking to you, whatever the topic
+   — even their club, their progress, or you. Joining uninvited reads as interrupting.
+5. Task completion (workout done, score, game result) → REACT_EMOJI if brief; SHORT_REPLY if they seem proud or want acknowledgment
+6. Fake facts or provocations about club stats → SHORT_REPLY to gently correct, nothing more
+7. Casual banter, side chatter, greetings, short acks, emoji-only → REACT_EMOJI
+8. Off-topic but friendly conversation → REACT_EMOJI
 9. Match vibe: quiet vibe → prefer REACT_EMOJI over SHORT_REPLY; playful vibe → allow SHORT_REPLY for fun moments
 10. Default when unsure → REACT_EMOJI (presence > silence, reaction > interruption)
 """
@@ -200,9 +209,11 @@ Rules (in priority order):
 _USER_TEMPLATE = """Club vibe: {vibe}
 Bot was @mentioned: {mentioned}
 Message replied to Xaana: {reply_to_bot}
+Current message replies to: {reply_target}
+Other members in this group: {members}
 Conversation state: {conversation_state}
 
-Recent conversation (last 4 compact messages):
+Recent conversation (last 4 compact messages, current message excluded):
 {transcript}
 
 Current message from {sender}:
@@ -230,17 +241,30 @@ def route_group_message(
     sender: str,
     vibe: str,
     is_mentioned: bool,
-    sender_checked_in: bool,
     recent_messages: List[dict],
     conversation_state: Optional[str] = None,
     reply_to_bot: bool = False,
+    reply_to_sender_name: Optional[str] = None,
+    member_names: Optional[List[str]] = None,
     groq_api_key: Optional[str] = None,
 ) -> RouterDecision:
     """
     Call the Groq router and return a RouterDecision.
     Falls back to simple heuristics if Groq is unavailable or fails.
+
+    `reply_to_sender_name` is who the current message replies to, and is the
+    single most useful signal here: Telegram states it as a fact, so a side
+    conversation between two members never has to be guessed at.
     """
-    pre_decision = _pre_route(message, is_mentioned=is_mentioned, reply_to_bot=reply_to_bot)
+    replies_to_member = bool(
+        (reply_to_sender_name or "").strip() and not reply_to_bot and not is_mentioned
+    )
+    pre_decision = _pre_route(
+        message,
+        is_mentioned=is_mentioned,
+        reply_to_bot=reply_to_bot,
+        replies_to_member=replies_to_member,
+    )
     if pre_decision is not None:
         return pre_decision
 
@@ -253,6 +277,8 @@ def route_group_message(
         vibe=vibe or "coach",
         mentioned="yes" if is_mentioned else "no",
         reply_to_bot="yes" if reply_to_bot else "no",
+        reply_target=_fmt_reply_target(reply_to_sender_name, reply_to_bot),
+        members=_fmt_members(member_names, sender),
         conversation_state=(conversation_state or "unknown"),
         transcript=transcript,
         sender=sender or "Member",
@@ -368,7 +394,12 @@ def _is_direct_status_question(message: str) -> bool:
     return bool(cleaned) and bool(_STATUS_RE.search(cleaned))
 
 
-def _pre_route(message: str, is_mentioned: bool, reply_to_bot: bool = False) -> Optional[RouterDecision]:
+def _pre_route(
+    message: str,
+    is_mentioned: bool,
+    reply_to_bot: bool = False,
+    replies_to_member: bool = False,
+) -> Optional[RouterDecision]:
     cleaned = _message_without_mentions(message)
     if not cleaned:
         if is_mentioned or reply_to_bot:
@@ -381,6 +412,11 @@ def _pre_route(message: str, is_mentioned: bool, reply_to_bot: bool = False) -> 
         return _decision("IGNORE", "one-character noise", is_mentioned, "👍")
     if (is_mentioned or reply_to_bot) and _is_direct_status_question(cleaned):
         return _decision("FULL_REPLY", "direct club/status question", is_mentioned, "🎯")
+    if replies_to_member:
+        # Telegram already told us this message answers another member, so there
+        # is nothing for the router model to weigh up: text here is an
+        # interruption. Presence still costs the group nothing, so react.
+        return _decision("REACT_EMOJI", "reply aimed at another member", is_mentioned, "👀")
     if _is_emoji_only(cleaned):
         return _decision("REACT_EMOJI", "emoji-only", is_mentioned, "😂")
     if _is_short_ack(cleaned):
@@ -403,7 +439,34 @@ def _fmt_transcript(recent_messages: List[dict]) -> str:
         sender = str(m.get("sender_name") or "?")[:30]
         text = str(m.get("text") or "")[:120]
         if text:
+            marker = " [you]" if m.get("is_bot") else ""
             reply_to = str(m.get("reply_to_sender_name") or "").strip()
-            prefix = f"{sender} reply to {reply_to}: " if reply_to else f"{sender}: "
+            prefix = (
+                f"{sender}{marker} reply to {reply_to}: " if reply_to else f"{sender}{marker}: "
+            )
             lines.append(f"{prefix}{text}")
     return "\n".join(lines) or "(no recent messages)"
+
+
+def _fmt_reply_target(reply_to_sender_name: Optional[str], reply_to_bot: bool) -> str:
+    name = (reply_to_sender_name or "").strip()
+    if reply_to_bot:
+        return f"you (Xaana), quoted as {name}" if name else "you (Xaana)"
+    if name:
+        return f"{name} — another member, NOT you"
+    return "nothing (not a reply)"
+
+
+def _fmt_members(member_names: Optional[List[str]], sender: str) -> str:
+    """The roster minus the sender, so 'addressed to another member' is decidable."""
+    sender_key = (sender or "").strip().casefold()
+    seen: set = set()
+    others: List[str] = []
+    for raw in member_names or []:
+        name = str(raw or "").strip()[:40]
+        key = name.casefold()
+        if not name or key == sender_key or key in seen:
+            continue
+        seen.add(key)
+        others.append(name)
+    return ", ".join(others[:12]) or "(unknown)"

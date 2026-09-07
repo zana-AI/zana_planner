@@ -38,6 +38,8 @@ class _Bot:
     _GROUP_HISTORY_REFETCH_SECONDS = PlannerBot._GROUP_HISTORY_REFETCH_SECONDS
     _get_recent_group_messages = PlannerBot._get_recent_group_messages
     _load_group_history = PlannerBot._load_group_history
+    _group_transcript_before_current = PlannerBot._group_transcript_before_current
+    _group_member_names = PlannerBot._group_member_names
 
     def __init__(self, live=(), stored=()):
         self._group_chat_history = defaultdict(lambda: deque(maxlen=40))
@@ -62,8 +64,8 @@ def patched_repo(monkeypatch):
     return holder
 
 
-def _ctx(chat_id=-100):
-    return types.SimpleNamespace(chat_id=chat_id)
+def _ctx(chat_id=-100, message_id=None):
+    return types.SimpleNamespace(chat_id=chat_id, message_id=message_id)
 
 
 def test_full_live_history_never_touches_the_database(patched_repo):
@@ -151,3 +153,44 @@ def test_database_failure_degrades_to_live_history(monkeypatch):
 
 def test_missing_chat_id_returns_nothing():
     assert _Bot()._get_recent_group_messages(_ctx(chat_id=None)) == []
+
+
+# -- what the router is allowed to see -----------------------------------------
+
+
+def test_router_transcript_excludes_the_message_being_routed(patched_repo):
+    """It is recorded before routing, so without this the router read its own input back."""
+    bot = _Bot(live=[_msg(1, "earlier"), _msg(2, "the one being routed")])
+    patched_repo["bot"] = bot
+
+    out = bot._group_transcript_before_current(_ctx(message_id=2))
+
+    assert [m["text"] for m in out] == ["earlier"]
+
+
+def test_router_transcript_is_untouched_without_a_message_id(patched_repo):
+    bot = _Bot(live=[_msg(1, "earlier")])
+    patched_repo["bot"] = bot
+
+    assert len(bot._group_transcript_before_current(_ctx())) == 1
+
+
+def test_roster_collapses_aliases_and_omits_the_sender():
+    member_status = [
+        {"user_id": "7", "name": "Javad", "non_latin_name": "جواد",
+         "latin_name": "Javad", "username": "javad"},
+        {"user_id": "9", "name": "Ali", "non_latin_name": "علی",
+         "latin_name": "", "username": ""},
+    ]
+
+    assert _Bot()._group_member_names(member_status, sender_user_id="7") == [
+        "Ali/علی"
+    ]
+    assert _Bot()._group_member_names(member_status, sender_user_id="9") == [
+        "Javad/جواد/@javad"
+    ]
+
+
+def test_roster_survives_a_clubless_group():
+    assert _Bot()._group_member_names([], sender_user_id="7") == []
+    assert _Bot()._group_member_names(None) == []
