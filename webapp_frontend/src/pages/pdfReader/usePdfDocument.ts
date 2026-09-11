@@ -45,6 +45,10 @@ export function usePdfDocument({
       useWasm: false,
       useWorkerFetch: false,
       useSystemFonts: true,
+      // Some PDFs printed through Firefox/Cairo contain embedded subset fonts
+      // whose browser FontFace metrics are wrong. Let pdf.js paint those glyphs
+      // as vector paths instead, so their measured layout stays faithful.
+      disableFontFace: true,
       // Required for non-Latin scripts (Persian/Arabic/CJK). Without these,
       // CID-font PDFs render glyphs but selection/copy yields garbled text.
       // Files are copied to dist/pdfjs/ by vite-plugin-static-copy.
