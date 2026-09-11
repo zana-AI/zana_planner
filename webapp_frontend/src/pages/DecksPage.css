@@ -1,0 +1,8 @@
+.decks-page { max-width: 720px; margin: 0 auto; padding: 18px 16px 32px; }
+.decks-page header { display:flex; gap:12px; align-items:flex-start; margin-bottom:18px; }
+.decks-page header button { margin-top:3px; width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--border); border-radius:var(--r-8); background:var(--surface); color:var(--fg); }
+.decks-page h1,.decks-page h2,.decks-page p { margin:0; }
+.decks-page h1 { font-size:24px; }.decks-page header p,.decks-card p,.decks-card small { color:var(--fg-muted); }
+.decks-search { display:flex; align-items:center; gap:8px; padding:0 12px; min-height:44px; border:1px solid var(--border); border-radius:var(--r-12); background:var(--surface); color:var(--fg-muted); }
+.decks-search input { border:0; outline:0; background:transparent; color:var(--fg); font:inherit; width:100%; }
+.decks-list { display:grid; gap:10px; margin-top:14px; }.decks-card { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px; border:1px solid var(--border); border-radius:var(--r-12); background:var(--surface); }.decks-card h2 { font-size:16px; }.decks-card p { font-size:13px; margin-top:3px; }.decks-card small { display:block; margin-top:8px; }.decks-card button,.content-library-decks { display:inline-flex; align-items:center; justify-content:center; gap:7px; border:0; background:var(--accent); color:var(--fg-on-accent); font:inherit; font-weight:700; border-radius:var(--r-12); cursor:pointer; }.decks-card button { min-height:38px; padding:0 12px; }.content-library-decks { width:100%; min-height:54px; padding:0 16px; justify-content:space-between; margin-bottom:14px; }.content-library-decks span { display:inline-flex; align-items:center; gap:9px; font-size:16px; }

@@ -224,6 +224,7 @@ async def save_video_note(payload: NoteIn, user_id: int = Depends(get_current_us
         fields=payload.fields,
         note_type=payload.note_type,
         references=[r.model_dump() for r in payload.references],
+        source="youtube",
     )
 
 

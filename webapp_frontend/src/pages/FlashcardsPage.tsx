@@ -36,6 +36,13 @@ function videoMomentUrl(fields: FlashcardFields, language: string): string | nul
   return `/youtube-watch?video_id=${match[1]}&start=${at}&word=${word}&lang=${encodeURIComponent(language)}`;
 }
 
+function pdfSourceUrl(card: FlashcardQueueCard): string | null {
+  const reference = card.references.find((item) => item.content_id && typeof item.locator?.page === 'number');
+  if (!reference?.content_id) return null;
+  const page = Number(reference.locator.page);
+  return `/pdf-reader?content_id=${encodeURIComponent(reference.content_id)}${Number.isFinite(page) ? `&page=${Math.max(1, Math.floor(page))}` : ''}`;
+}
+
 function formatMoment(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
@@ -105,9 +112,11 @@ function CountsBar({ counts }: { counts: FlashcardCounts | null }) {
 
 function ReviewPane({
   deckId,
+  direction,
   onCountsChange,
 }: {
   deckId?: string;
+  direction: 'recognition' | 'production';
   onCountsChange: (c: FlashcardCounts) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -212,10 +221,10 @@ function ReviewPane({
   // Recognising a word and producing it are different skills, so a single
   // stability value is a blend of the two. That is the accepted cost of not
   // splitting them into separate cards.
-  const isReversed =
-    card.note_type !== 'grammar' && Boolean(card.fields.back) && card.reps % 2 === 1;
+  const isReversed = card.note_type !== 'grammar' && Boolean(card.fields.back) && direction === 'production';
 
   const momentUrl = videoMomentUrl(card.fields, i18n.language);
+  const pdfUrl = pdfSourceUrl(card);
   // `source_sentence` is the cleaned-up transcript line; `example` is whatever
   // the original import carried. Prefer the sentence when a card has one.
   const spokenLine =
@@ -281,6 +290,12 @@ function ReviewPane({
                     <span className="fc-moment-title">{card.fields.source_title as string}</span>
                   ) : null}
                 </span>
+              </a>
+            ) : null}
+            {pdfUrl ? (
+              <a className="fc-moment" href={pdfUrl} onClick={(event) => event.stopPropagation()}>
+                <span className="fc-moment-play" aria-hidden="true">↗</span>
+                <span className="fc-moment-text">Open source PDF</span>
               </a>
             ) : null}
           </div>
@@ -608,6 +623,7 @@ export function FlashcardsPage() {
   const [params, setParams] = useSearchParams();
   const deckId = params.get('deck') || undefined;
   const deckName = params.get('name') || undefined;
+  const direction = params.get('direction') === 'production' ? 'production' : 'recognition';
   const [decks, setDecks] = useState<FlashcardDeck[]>([]);
 
   useEffect(() => {
@@ -619,6 +635,12 @@ export function FlashcardsPage() {
   const selectDeck = useCallback((deck: FlashcardDeck | null) => {
     setParams(deck ? {deck: deck.deck_id, name: deck.name} : {}, {replace: true});
   }, [setParams]);
+
+  const selectDirection = (nextDirection: 'recognition' | 'production') => {
+    const next = new URLSearchParams(params);
+    if (nextDirection === 'recognition') next.delete('direction'); else next.set('direction', nextDirection);
+    setParams(next, { replace: true });
+  };
 
   const [tab, setTab] = useState<'review' | 'manage'>('review');
   const [counts, setCounts] = useState<FlashcardCounts | null>(null);
@@ -643,6 +665,10 @@ export function FlashcardsPage() {
         </header>
 
         <DeckPicker decks={decks} deckId={deckId} onSelect={selectDeck} />
+        <div className="fc-decks" role="group" aria-label="Study direction">
+          <button type="button" className={direction === 'recognition' ? 'is-active' : ''} onClick={() => selectDirection('recognition')}>French → meaning</button>
+          <button type="button" className={direction === 'production' ? 'is-active' : ''} onClick={() => selectDirection('production')}>Meaning → French</button>
+        </div>
 
         <div className="fc-tabs">
           <button
@@ -660,7 +686,7 @@ export function FlashcardsPage() {
         </div>
 
         {tab === 'review' ? (
-          <ReviewPane deckId={deckId} onCountsChange={setCounts} />
+          <ReviewPane deckId={deckId} direction={direction} onCountsChange={setCounts} />
         ) : (
           <ManagePane
             deckId={deckId}

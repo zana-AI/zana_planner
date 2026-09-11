@@ -50,6 +50,7 @@ export function PdfReaderPage() {
   const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
+  const requestedPage = Number(params.get('page'));
 
   const [assetId, setAssetId] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
@@ -113,6 +114,12 @@ export function PdfReaderPage() {
     pendingScrollFractionRef,
     setError,
   });
+
+  useEffect(() => {
+    if (Number.isInteger(requestedPage) && requestedPage >= 1 && pageCount > 0) {
+      setPageNumber(Math.min(pageCount, requestedPage));
+    }
+  }, [pageCount, requestedPage, setPageNumber]);
 
   const { selectionDraft, setSelectionDraft } = useTextSelection({
     pageFrameRef,

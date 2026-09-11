@@ -1,18 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Filter, Plus, Search } from 'lucide-react';
+import { ArrowRight, Filter, Layers, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
 import { BottomSheet } from '../components/ui/BottomSheet';
 import { PlanContentSheet } from '../components/sheets/PlanContentSheet';
-import { DeckCard } from '../components/DeckCard';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { useNavigate } from 'react-router-dom';
-import type { LibraryDeck, MyContentsFacets, UserContentWithDetails } from '../types';
+import type { MyContentsFacets, UserContentWithDetails } from '../types';
 import './explore.css';
 
 type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed';
-type TypeFilter = 'all' | 'deck' | 'pdf' | 'video' | 'audio' | 'text';
+type TypeFilter = 'all' | 'pdf' | 'video' | 'audio' | 'text';
 type SortKey = 'recent' | 'added' | 'title' | 'progress';
 
 // "All" leads because it is the default — the selected chip should be the first
@@ -29,7 +28,6 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 // the server facets: decks are few and are not paged.
 const TYPE_FILTERS: { key: TypeFilter; label: string }[] = [
   { key: 'all', label: 'allTypes' },
-  { key: 'deck', label: 'decks' },
   { key: 'pdf', label: 'pdfs' },
   { key: 'video', label: 'videos' },
   { key: 'audio', label: 'audio' },
@@ -118,10 +116,6 @@ function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
 export function MyContentsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  // Decks are things you own, so this is where they belong. They used to be
-  // injected into Explore's French category, which showed per-user rows in a
-  // curated catalog and left a deck attached to no promise unreachable.
-  const [deckTree, setDeckTree] = useState<LibraryDeck[]>([]);
   const [planning, setPlanning] = useState<UserContentWithDetails | null>(null);
   const [plannedToast, setPlannedToast] = useState('');
   const { hapticFeedback, webApp } = useTelegramWebApp();
@@ -189,68 +183,6 @@ export function MyContentsPage() {
     void loadContents();
   }, [loadContents]);
 
-  useEffect(() => {
-    let active = true;
-    apiClient
-      .getDeckTree()
-      .then((tree) => {
-        if (!active) return;
-        // A wrong-shaped response drops every deck at the `total > 0` filter and
-        // looks exactly like an empty library, so say so rather than showing
-        // nothing. This is how a shadowed route went unnoticed once already.
-        if (tree.length > 0 && tree.every((deck) => deck.total === undefined)) {
-          console.error('Deck tree came back without counts — wrong endpoint?', tree[0]);
-        }
-        setDeckTree(tree);
-      })
-      .catch((err) => {
-        console.error('Failed to load decks:', err);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  /**
-   * The decks a person would actually choose, which is the level below a
-   * language root rather than the root itself: "Édito B1" and "Lingoda", not
-   * "French". A root with no children is itself that level, and a branch with
-   * no cards is not worth a card of its own.
-   */
-  const decks = useMemo<LibraryDeck[]>(() => {
-    const byParent = new Map<string, LibraryDeck[]>();
-    for (const deck of deckTree) {
-      if (!deck.parent_deck_id) continue;
-      const siblings = byParent.get(deck.parent_deck_id) ?? [];
-      siblings.push(deck);
-      byParent.set(deck.parent_deck_id, siblings);
-    }
-    const nameById = new Map(deckTree.map((deck) => [deck.deck_id, deck.name]));
-    return deckTree
-      .filter((deck) => !deck.parent_deck_id)
-      .flatMap((root) => {
-        const children = byParent.get(root.deck_id) ?? [];
-        return children.length > 0 ? children : [root];
-      })
-      .filter((deck) => deck.total > 0)
-      .map((deck) => ({
-        ...deck,
-        parentName: deck.parent_deck_id ? nameById.get(deck.parent_deck_id) ?? null : null,
-      }))
-      .sort((a, b) => b.total - a.total);
-  }, [deckTree]);
-
-  const visibleDecks = useMemo(() => {
-    if (contentType !== 'all' && contentType !== 'deck') return [];
-    if (status !== 'all') return [];
-    const needle = debouncedQuery.trim().toLowerCase();
-    if (!needle) return decks;
-    return decks.filter(
-      (deck) =>
-        deck.name.toLowerCase().includes(needle) ||
-        (deck.parentName || '').toLowerCase().includes(needle),
-    );
-  }, [decks, contentType, status, debouncedQuery]);
 
   const handleAddContent = async () => {
     const url = addUrl.trim();
@@ -356,6 +288,10 @@ export function MyContentsPage() {
 
   return (
     <main className="content-library-page">
+      <button type="button" className="content-library-decks" onClick={() => navigate('/decks')}>
+        <span><Layers size={20} aria-hidden="true" /> Decks</span>
+        <ArrowRight size={20} aria-hidden="true" />
+      </button>
       <section className="content-library-command">
         {/* Search plus one toggle. Status chips, type chips and sort used to sit
             in three permanent rows above the library, so the content itself
@@ -413,9 +349,7 @@ export function MyContentsPage() {
                   onClick={() => setContentType(filter.key)}
                 >
                   {t(`myContents.types.${filter.label}`)}
-                  {filter.key === 'deck'
-                    ? decks.length > 0 && <span>{decks.length}</span>
-                    : filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
+                  {filter.key !== 'all' && facets.content_type?.[filter.key] != null && (
                         <span>{facets.content_type[filter.key]}</span>
                       )}
                 </button>
@@ -443,21 +377,9 @@ export function MyContentsPage() {
 
       {loading ? (
         <div className="content-library-state">{t('myContents.loadingLibrary')}</div>
-      ) : items.length > 0 || visibleDecks.length > 0 ? (
+      ) : items.length > 0 ? (
         <>
           <section className="content-library-grid" aria-label={t('myContents.libraryItems')}>
-            {visibleDecks.map((deck) => (
-              <DeckCard
-                key={deck.deck_id}
-                deck={deck}
-                onStudy={() =>
-                  navigate(
-                    `/flashcards?deck=${encodeURIComponent(deck.deck_id)}` +
-                      `&name=${encodeURIComponent(deck.name)}`,
-                  )
-                }
-              />
-            ))}
             {items.map((item) => (
               <ContentCard
                 key={item.user_content_id || item.content_id || item.id}

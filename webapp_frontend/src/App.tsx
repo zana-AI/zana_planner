@@ -18,6 +18,7 @@ import { MyContentsPage } from './pages/MyContentsPage';
 import { PdfReaderPage } from './pages/PdfReaderPage';
 import { ChallengesPage } from './pages/ChallengesPage';
 import { FlashcardsPage } from './pages/FlashcardsPage';
+import { DecksPage } from './pages/DecksPage';
 import { ChallengeDetailPage } from './pages/ChallengeDetailPage';
 import { ChallengePlayPage } from './pages/ChallengePlayPage';
 import { useChallengeDeepLink } from './hooks/useChallengeDeepLink';
@@ -212,6 +213,7 @@ function App() {
             )
           }
         />
+        <Route path="/decks" element={isAuthenticated ? <DecksPage /> : <Navigate to="/" replace />} />
 
         {/* Explore — the catalog. The page used to live at `/templates`, which
             is still sitting in Telegram buttons that were already sent, so that

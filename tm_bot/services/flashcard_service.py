@@ -324,6 +324,7 @@ def save_context_note(
     fields: Dict[str, Any],
     note_type: str = "vocab",
     references: Optional[List[Dict[str, Any]]] = None,
+    source: str = "context",
 ) -> dict:
     """Save a video-mined word while preserving any existing card.
 
@@ -345,7 +346,7 @@ def save_context_note(
                 deck["deck_id"],
                 fields,
                 note_type,
-                "youtube",
+                source,
             )
             _cards.get_or_create(
                 session, note["note_id"], due=datetime.now(timezone.utc)
