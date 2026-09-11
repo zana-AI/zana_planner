@@ -912,20 +912,20 @@ export function PdfReaderPage() {
 
   return (
     <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}${isFullscreen && !fullscreenControlsVisible ? ' pdf-reader-page--chrome-hidden' : ''}`}>
-      <section className="pdf-reader-viewer">
+      <section className="pdf-reader-viewer" dir="ltr">
         <div className="pdf-reader-toolbar">
           <button className="pdf-reader-icon-btn" onClick={() => window.history.back()} title={t('pdfReader.backToLibrary')} type="button">
             <ArrowLeft size={18} className="icon-directional" />
           </button>
           <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber - 1)} disabled={!pageCount || pageNumber <= 1} title={t('pdfReader.previousPage')} type="button">
-            <ChevronLeft size={18} className="icon-directional" />
+            <ChevronLeft size={18} />
           </button>
           <label className="pdf-reader-page-count" title={t('pdfReader.jumpToPage')}>
             <input type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
             <span>/ {pageCount || 0}</span>
           </label>
           <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber + 1)} disabled={!pageCount || pageNumber >= pageCount} title={t('pdfReader.nextPage')} type="button">
-            <ChevronRight size={18} className="icon-directional" />
+            <ChevronRight size={18} />
           </button>
           <div className="pdf-reader-toolbar-spacer" />
           <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.25)} disabled={scale <= 0.65} title={t('pdfReader.zoomOut')} type="button">
@@ -1022,7 +1022,7 @@ export function PdfReaderPage() {
                   type="button"
                   aria-label={t('pdfReader.previousPage')}
                 >
-                  <ChevronLeft size={18} className="icon-directional" />
+                  <ChevronLeft size={18} />
                 </button>
                 <button
                   className="pdf-reader-page-zone pdf-reader-page-zone--next"
@@ -1034,7 +1034,7 @@ export function PdfReaderPage() {
                   type="button"
                   aria-label={t('pdfReader.nextPage')}
                 >
-                  <ChevronRight size={18} className="icon-directional" />
+                  <ChevronRight size={18} />
                 </button>
                 <div className="pdf-reader-fullscreen-toast">{t('pdfReader.tapEdgesToTurnPage')}</div>
               </>

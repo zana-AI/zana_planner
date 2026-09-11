@@ -35,6 +35,7 @@ export function HeatmapBar({
   return (
     <div
       className={className}
+      dir="ltr"
       style={{
         position: 'relative',
         width: '100%',
