@@ -348,7 +348,15 @@ async def get_pdf_content_open(
     repo = get_content_repo()
     uc = repo.get_user_content(uid, content_id)
     if not uc:
-        raise HTTPException(status_code=404, detail="User content not found")
+        # A public or club-shared PDF may be opened from a link before the
+        # recipient has explicitly saved it. Saving on first open makes that
+        # link useful while preserving the existing access policy.
+        if not repo.can_access_content(uid, content_id):
+            raise HTTPException(status_code=404, detail="User content not found")
+        repo.add_user_content(uid, content_id)
+        uc = repo.get_user_content(uid, content_id)
+        if not uc:
+            raise HTTPException(status_code=404, detail="User content not found")
 
     asset = repo.get_latest_content_asset(content_id, asset_type="pdf_source")
     if not asset:
@@ -404,7 +412,9 @@ async def get_pdf_content_file(
     repo = get_content_repo()
     uc = repo.get_user_content(uid, content_id)
     if not uc:
-        raise HTTPException(status_code=404, detail="User content not found")
+        if not repo.can_access_content(uid, content_id):
+            raise HTTPException(status_code=404, detail="User content not found")
+        repo.add_user_content(uid, content_id)
 
     resolved_asset_id = asset_id
     if not resolved_asset_id:
