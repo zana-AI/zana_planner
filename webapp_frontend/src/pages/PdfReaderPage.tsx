@@ -928,11 +928,11 @@ export function PdfReaderPage() {
             <ChevronRight size={18} className="icon-directional" />
           </button>
           <div className="pdf-reader-toolbar-spacer" />
-          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.15)} disabled={scale <= 0.65} title={t('pdfReader.zoomOut')} type="button">
+          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.25)} disabled={scale <= 0.65} title={t('pdfReader.zoomOut')} type="button">
             <ZoomOut size={18} />
           </button>
           <div className="pdf-reader-zoom">{Math.round(scale * 100)}%</div>
-          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(0.15)} disabled={scale >= 3} title={t('pdfReader.zoomIn')} type="button">
+          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(0.25)} disabled={scale >= MAX_PDF_SCALE} title={t('pdfReader.zoomIn')} type="button">
             <ZoomIn size={18} />
           </button>
           <button className="pdf-reader-icon-btn" onClick={fitToWidth} disabled={!pageSize.width} title={t('pdfReader.fitWidth')} type="button">
