@@ -185,6 +185,16 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   -webkit-overflow-scrolling: touch;
 }
 
+.pdf-reader-canvas-shell:focus-visible {
+  outline: 2px solid var(--accent, #63a7f7);
+  outline-offset: -2px;
+}
+
+.pdf-reader-canvas-shell--panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .pdf-reader-canvas {
   display: block;
   margin: 0;

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { useSearchParams } from 'react-router-dom';
@@ -18,6 +18,7 @@ import type { ViewportAnchor } from './pdfReader/types';
 const PDF_READ_BUCKET_COUNT = 120;
 const PDF_READ_DWELL_SECONDS = 15;
 const MAX_CANVAS_PIXELS = 16_000_000;
+const MAX_PDF_SCALE = 4;
 
 type PageRasterCacheEntry = {
   scale: number;
@@ -94,6 +95,8 @@ export function PdfReaderPage() {
   const queuedProgressRef = useRef<number | null>(null);
   const fullscreenChromeTimeoutRef = useRef<number | null>(null);
   const pageRasterCacheRef = useRef<Map<number, PageRasterCacheEntry>>(new Map());
+  const panRef = useRef<{ pointerId: number; clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
 
   const canOpen = Boolean(contentId);
   const authData = initData || getDevInitData();
@@ -787,16 +790,70 @@ export function PdfReaderPage() {
     if (unscaledWidth <= 0) return;
     pendingViewportAnchorRef.current = captureViewportAnchor();
     const nextScale = (shell.clientWidth - 28) / unscaledWidth;
-    setScale(Math.min(3, Math.max(0.55, Number(nextScale.toFixed(2)))));
+    setScale(Math.min(MAX_PDF_SCALE, Math.max(0.55, Number(nextScale.toFixed(2)))));
   };
 
   const zoomBy = (delta: number) => {
     pendingViewportAnchorRef.current = captureViewportAnchor();
-    setScale((current) => Math.min(2.5, Math.max(0.65, Number((current + delta).toFixed(2)))));
+    setScale((current) => Math.min(MAX_PDF_SCALE, Math.max(0.65, Number((current + delta).toFixed(2)))));
   };
 
   const handleReaderScroll = () => {
     updateProgressFromReader();
+  };
+
+  const handleReaderWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const shell = shellRef.current;
+    if (!shell || (!event.shiftKey && event.deltaX === 0)) return;
+    const horizontalDelta = event.deltaX || event.deltaY;
+    if (shell.scrollWidth <= shell.clientWidth || horizontalDelta === 0) return;
+    event.preventDefault();
+    shell.scrollLeft += horizontalDelta;
+  };
+
+  const handleReaderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const shell = shellRef.current;
+    if (!shell || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+    const verticalStep = Math.max(80, Math.round(shell.clientHeight * 0.82));
+    const horizontalStep = Math.max(80, Math.round(shell.clientWidth * 0.72));
+    const move = (left: number, top: number) => {
+      event.preventDefault();
+      shell.scrollBy({ left, top, behavior: 'smooth' });
+    };
+    if (event.key === 'ArrowDown') move(0, verticalStep);
+    else if (event.key === 'ArrowUp') move(0, -verticalStep);
+    else if (event.key === 'PageDown' || event.key === ' ') move(0, verticalStep);
+    else if (event.key === 'PageUp') move(0, -verticalStep);
+    else if (event.key === 'ArrowRight') move(horizontalStep, 0);
+    else if (event.key === 'ArrowLeft') move(-horizontalStep, 0);
+    else return;
+  };
+
+  const startMousePan = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 1) return;
+    const shell = shellRef.current;
+    if (!shell) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    panRef.current = {
+      pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
+      scrollLeft: shell.scrollLeft, scrollTop: shell.scrollTop,
+    };
+    setIsPanning(true);
+  };
+
+  const moveMousePan = (event: PointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current;
+    const shell = shellRef.current;
+    if (!pan || !shell || pan.pointerId !== event.pointerId) return;
+    shell.scrollLeft = pan.scrollLeft - (event.clientX - pan.clientX);
+    shell.scrollTop = pan.scrollTop - (event.clientY - pan.clientY);
+  };
+
+  const endMousePan = (event: PointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId !== event.pointerId) return;
+    panRef.current = null;
+    setIsPanning(false);
   };
 
   const saveSelectionHighlight = async () => {
@@ -910,13 +967,20 @@ export function PdfReaderPage() {
         ) : pdfUrl ? (
           <div
             ref={shellRef}
-            className="pdf-reader-canvas-shell"
+            className={`pdf-reader-canvas-shell${isPanning ? ' pdf-reader-canvas-shell--panning' : ''}`}
             onScroll={handleReaderScroll}
+            onWheel={handleReaderWheel}
+            onKeyDown={handleReaderKeyDown}
+            onPointerDown={startMousePan}
+            onPointerMove={moveMousePan}
+            onPointerUp={endMousePan}
+            onPointerCancel={endMousePan}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onClick={revealFullscreenControls}
+            tabIndex={0}
           >
             <div
               ref={pageFrameRef}
