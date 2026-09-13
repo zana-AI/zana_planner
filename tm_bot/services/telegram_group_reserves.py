@@ -57,6 +57,24 @@ async def inspect_reserve(bot: Bot, chat_id: int, caretaker_user_id: int) -> dic
     return {"chat_id": chat_id, "title": chat.title, "bot_user_id": me.id, "member_count": member_count}
 
 
+async def revoke_legacy_primary_link(bot: Bot, chat_id: int) -> None:
+    """Retire every primary invite link handed out before registration.
+
+    ``export_chat_invite_link`` mints a fresh primary link and revokes the
+    previous one, which is the only way a bot can retire a link it did not
+    create itself. The new URL is deliberately discarded: a dormant reserve
+    must never hold a bearer link, and allocation mints its own join-request
+    link anyway. Named links created by other admins cannot be enumerated over
+    the Bot API, so the operator still confirms those by hand.
+    """
+    try:
+        await bot.export_chat_invite_link(chat_id)
+    except TelegramError as error:
+        raise ReserveValidationError(
+            f"Could not revoke the group's existing primary invite link: {error}"
+        ) from error
+
+
 async def register_reserve(bot: Bot, chat_id: int, actor_user_id: int, label: str) -> dict[str, Any]:
     """Register a clean group after a configured Xaana admin attests it."""
     label = label.strip().upper()
@@ -70,6 +88,7 @@ async def register_reserve(bot: Bot, chat_id: int, actor_user_id: int, label: st
     checked = await inspect_reserve(bot, chat_id, caretaker_user_id)
     if checked["title"].strip().upper() != label:
         raise ReserveValidationError("Group title must match its reserve label")
+    await revoke_legacy_primary_link(bot, chat_id)
     now = utc_now_iso()
     with get_db_session() as session:
         existing = session.execute(
@@ -124,6 +143,7 @@ async def register_reserve(bot: Bot, chat_id: int, actor_user_id: int, label: st
     return {
         "chat_id": chat_id, "label": label, "title": checked["title"],
         "caretaker_user_id": caretaker_user_id, "status": "available",
+        "primary_link_revoked": True,
     }
 
 

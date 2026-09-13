@@ -1958,14 +1958,16 @@ class PlannerBot:
         if not bot or self._is_group_chat(ctx) or not is_admin(ctx.user_id):
             return
         if len(ctx.command_args) != 3 or ctx.command_args[2].upper() != "CLEAN":
-            message = "Use /reserve_add C0002 -100... CLEAN after revoking old links and checking group history."
+            message = "Use /reserve_add C0002 -100... CLEAN after checking group history and any extra named invite links."
         else:
             try:
                 chat_id = int(ctx.command_args[1])
                 result = await register_reserve(bot, chat_id, ctx.user_id, ctx.command_args[0])
                 message = (
                     f"Reserve {result['label']} is available. Chat ID: {result['chat_id']}. "
-                    f"Caretaker ID: {result['caretaker_user_id']}. No invite link stored."
+                    f"Caretaker ID: {result['caretaker_user_id']}. No invite link stored. "
+                    "The group's previous primary invite link has been revoked; "
+                    "named links made by other admins still need a manual check."
                 )
             except (ValueError, telegram_error.TelegramError) as error:
                 message = f"Reserve registration rejected: {error}"

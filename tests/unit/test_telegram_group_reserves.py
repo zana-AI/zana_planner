@@ -13,6 +13,8 @@ TM_BOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..",
 if TM_BOT_DIR not in sys.path:
     sys.path.append(TM_BOT_DIR)
 
+from telegram.error import TelegramError  # noqa: E402
+
 from services import telegram_group_reserves as reserves  # noqa: E402
 
 
@@ -29,6 +31,7 @@ def _candidate_bot(*, member_count=2, can_promote=True, caretaker_id=101):
             SimpleNamespace(user=SimpleNamespace(id=caretaker_id, is_bot=False), status="creator")
         ]),
         get_chat_member_count=AsyncMock(return_value=member_count),
+        export_chat_invite_link=AsyncMock(return_value="https://t.me/+rotated"),
     )
     return bot
 
@@ -71,6 +74,57 @@ def test_admin_can_register_group_owned_by_different_caretaker(monkeypatch):
     assert result["caretaker_user_id"] == 101
     assert inserted[0]["actor"] == 1086
     assert inserted[0]["caretaker"] == 101
+
+
+def test_registration_revokes_any_previously_issued_primary_link(monkeypatch):
+    """Links handed out before registration must not survive into the pool."""
+    inserted = []
+
+    class Session:
+        def execute(self, statement, params=None):
+            if "INSERT INTO telegram_group_reserves" in str(statement):
+                inserted.append(params)
+            return _QueryResult(None)
+
+    class Context:
+        def __enter__(self):
+            return Session()
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(reserves, "get_db_session", lambda: Context())
+    bot = _candidate_bot()
+    result = asyncio.run(reserves.register_reserve(bot, -100200, 1086, "C0002"))
+    bot.export_chat_invite_link.assert_awaited_once_with(-100200)
+    assert result["primary_link_revoked"] is True
+    # The rotated URL is discarded, never persisted onto the dormant reserve.
+    assert not any("t.me" in str(value) for value in inserted[0].values())
+
+
+def test_registration_is_refused_when_primary_link_cannot_be_revoked(monkeypatch):
+    """A group whose old links may still admit strangers stays out of the pool."""
+    inserted = []
+
+    class Session:
+        def execute(self, statement, params=None):
+            if "INSERT INTO telegram_group_reserves" in str(statement):
+                inserted.append(params)
+            return _QueryResult(None)
+
+    class Context:
+        def __enter__(self):
+            return Session()
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(reserves, "get_db_session", lambda: Context())
+    bot = _candidate_bot()
+    bot.export_chat_invite_link = AsyncMock(side_effect=TelegramError("not enough rights"))
+    with pytest.raises(reserves.ReserveValidationError):
+        asyncio.run(reserves.register_reserve(bot, -100200, 1086, "C0002"))
+    assert inserted == []
 
 
 class _QueryResult:

@@ -12,17 +12,24 @@ API calls from the web process while its single poller receives updates.
    prior club conversations.
 2. Make Xaana an admin with Change Info, Invite Users, Add New Admins, Delete
    Messages, and Ban Users. The group must be a supergroup.
-3. Revoke **all** old invite links, including Telegram's primary link and any
-   bot-created links from the previous setup flow. Bot API cannot enumerate
-   older links. Check the group's history-visibility setting and remove setup
-   messages that future members should not see.
+3. Registration revokes the group's **primary** invite link for you: it calls
+   `exportChatInviteLink`, which mints a fresh primary link and retires the
+   previous one, then discards the new URL. That is the only way a bot can
+   retire a link it did not create, and it neutralises every primary link
+   handed out before registration.
+   You still handle what the Bot API cannot see: **named** invite links created
+   by other admins are not enumerable, so open *Manage Group -> Invite Links*
+   and revoke any that are listed. Also check the group's history-visibility
+   setting and remove setup messages that future members should not see.
 4. From a Xaana admin account configured in `ADMIN_IDS`, privately message
    `@xaana_bot` with `/reserve_add C0002 -100... CLEAN`, substituting the
    group's numeric chat ID. The admin account need not be a group member or
    owner. `CLEAN` is an explicit attestation of steps 1–3. The bot verifies
    the actual group owner/caretaker, member count, and rights, then DMs the
-   result. No registration message is posted to the group. Old-link revocation
-   and history visibility still need human confirmation.
+   result. No registration message is posted to the group. `CLEAN` attests to
+   the named-link and history checks in step 3; the primary link is handled
+   automatically, and registration is refused outright if that revocation
+   call fails.
 5. Send `/reserve_list` privately to `@xaana_bot`, or check
    `GET /api/admin/clubs/reserves` as an authenticated Xaana admin. It
    lists labels, chat IDs, status, and attestation, never an invite URL. If a
@@ -53,7 +60,8 @@ club creator to group admin, then asks the caretaker to leave. The club stays
 only then is it `connected`. An unknown member entering through some other
 link is removed; an unexpected join while a group is still `available` also
 quarantines that reserve. This mitigation is not a substitute for revoking old
-links: an unapproved join could briefly view visible history before removal.
+links: a stale named link could still admit someone, and an unapproved join
+could briefly view visible history before removal.
 Xaana suppresses group welcomes, replies, and scheduled group reminders during
 the `ready` handoff window; legacy non-reserve clubs keep their prior behavior.
 
