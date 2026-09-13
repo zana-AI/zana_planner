@@ -26,6 +26,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
     CallbackQueryHandler,
+    ChatJoinRequestHandler,
 )
 from telegram.request import HTTPXRequest
 from telegram import error as telegram_error, InlineKeyboardButton, InlineKeyboardMarkup
@@ -47,6 +48,13 @@ from utils.admin_utils import get_admin_ids, is_admin
 from utils.logger import get_logger, configure_admin_error_notifications
 from db.postgres_db import get_db_session, utc_now_iso
 from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns, get_club_columns
+from services.telegram_group_reserves import (
+    handle_reserve_join_request,
+    note_reserve_member_left,
+    register_reserve,
+    reserve_handoff_pending,
+    reserve_join_policy,
+)
 
 logger = get_logger(__name__)
 CLUB_TELEGRAM_CONFIRM_PREFIX = "clubtg_confirm:"
@@ -510,6 +518,7 @@ class PlannerBot:
             if ctx.input_type == "left_chat_member":
                 left_user = ctx.metadata.get("left_chat_member")
                 if left_user and not getattr(left_user, "is_bot", False):
+                    await note_reserve_member_left(ctx.platform_context.bot, ctx.chat_id, left_user.id)
                     club = self._get_club_for_group_chat(ctx.chat_id)
                     if club:
                         user_id = getattr(left_user, "id", None)
@@ -536,6 +545,18 @@ class PlannerBot:
         """Keep group behavior club-scoped and avoid personal assistant routing."""
         if ctx.input_type == "new_chat_members":
             await self._welcome_group_members(ctx)
+            return
+
+        if ctx.input_type == "left_chat_member":
+            left_user = ctx.metadata.get("left_chat_member")
+            if left_user and not getattr(left_user, "is_bot", False):
+                await note_reserve_member_left(ctx.platform_context.bot, ctx.chat_id, left_user.id)
+                club = self._get_club_for_group_chat(ctx.chat_id)
+                if club:
+                    ClubsRepository().remove_member(club["club_id"], left_user.id)
+            return
+
+        if reserve_handoff_pending(ctx.chat_id):
             return
 
         if ctx.input_type == "text":
@@ -650,6 +671,30 @@ class PlannerBot:
                 bot_self_aliases=bot_self_aliases,
             )
 
+    async def _on_chat_join_request_update(self, update, context) -> None:
+        """Join requests have no normal message, so handle them outside dispatch()."""
+        request = getattr(update, "chat_join_request", None)
+        bot = getattr(context, "bot", None)
+        if not request or not bot:
+            return
+        try:
+            result = await handle_reserve_join_request(bot, request)
+            logger.info("Reserve join request %s for chat %s", result, request.chat.id)
+        except Exception as error:
+            logger.exception(
+                "Reserve join request failed for chat %s and user %s: %s",
+                request.chat.id, request.from_user.id, type(error).__name__,
+            )
+            await self._notify_admins_about_group_setup(
+                bot=bot,
+                message=(
+                    "Reserve join request needs attention.\n"
+                    f"Chat ID: {request.chat.id}\n"
+                    f"Requester ID: {request.from_user.id}\n"
+                    f"Failure: {type(error).__name__}. Check the new member's role before the caretaker leaves."
+                ),
+            )
+
     def _claim_welcome(self, ctx: InputContext, members: list) -> list:
         """Filter `members` down to those not welcomed in this chat yet.
 
@@ -679,6 +724,19 @@ class PlannerBot:
     async def _welcome_group_members(self, ctx: InputContext, members: list | None = None) -> None:
         members = members if members is not None else (ctx.metadata.get("new_chat_members") or [])
         members = [m for m in members if not getattr(m, "is_bot", False)]
+        allowed_members = []
+        for member in members:
+            if reserve_join_policy(ctx.chat_id, member.id) is False:
+                try:
+                    await ctx.platform_context.bot.ban_chat_member(ctx.chat_id, member.id)
+                    await ctx.platform_context.bot.unban_chat_member(ctx.chat_id, member.id, only_if_banned=True)
+                except Exception as error:
+                    logger.warning("Could not remove unauthorized reserve join in %s: %s", ctx.chat_id, type(error).__name__)
+                continue
+            allowed_members.append(member)
+        members = allowed_members
+        if reserve_handoff_pending(ctx.chat_id):
+            return
         members = self._claim_welcome(ctx, members)
         human_names = []
         for member in members:
@@ -1878,6 +1936,12 @@ class PlannerBot:
 
     async def _route_command(self, ctx: InputContext) -> None:
         """Route command to the corresponding MessageHandlers method."""
+        if (ctx.command or "").split("@", 1)[0] == "reserve_add":
+            await self._handle_private_reserve_add(ctx)
+            return
+        if (ctx.command or "").split("@", 1)[0] == "reserve_list":
+            await self._handle_private_reserve_list(ctx)
+            return
         handler_name = COMMAND_ROUTE_MAP.get(ctx.command)
         if not handler_name:
             logger.warning("Unknown command: %s", ctx.command)
@@ -1887,6 +1951,48 @@ class PlannerBot:
             logger.warning("Handler not found for command %s: %s", ctx.command, handler_name)
             return
         await handler(ctx.platform_update, ctx.platform_context)
+
+    async def _handle_private_reserve_add(self, ctx: InputContext) -> None:
+        """Register a caretaker-owned group from a configured admin's private DM."""
+        bot = getattr(ctx.platform_context, "bot", None)
+        if not bot or self._is_group_chat(ctx) or not is_admin(ctx.user_id):
+            return
+        if len(ctx.command_args) != 3 or ctx.command_args[2].upper() != "CLEAN":
+            message = "Use /reserve_add C0002 -100... CLEAN after revoking old links and checking group history."
+        else:
+            try:
+                chat_id = int(ctx.command_args[1])
+                result = await register_reserve(bot, chat_id, ctx.user_id, ctx.command_args[0])
+                message = (
+                    f"Reserve {result['label']} is available. Chat ID: {result['chat_id']}. "
+                    f"Caretaker ID: {result['caretaker_user_id']}. No invite link stored."
+                )
+            except (ValueError, telegram_error.TelegramError) as error:
+                message = f"Reserve registration rejected: {error}"
+            except Exception as error:
+                logger.exception("Private reserve registration failed for admin %s", ctx.user_id)
+                message = f"Reserve registration failed ({type(error).__name__}). Check migration/status."
+        await bot.send_message(ctx.user_id, message)
+
+    async def _handle_private_reserve_list(self, ctx: InputContext) -> None:
+        """Show the admin current pool state without returning invite links."""
+        bot = getattr(ctx.platform_context, "bot", None)
+        if not bot or self._is_group_chat(ctx) or not is_admin(ctx.user_id):
+            return
+        with get_db_session() as session:
+            rows = session.execute(text("""
+                SELECT label, chat_id, status, club_id
+                FROM telegram_group_reserves ORDER BY label
+            """)).mappings().fetchall()
+        lines = ["Telegram reserves:"]
+        lines.extend(
+            f"{row['label']} — {row['status']} — {row['chat_id']}"
+            + (f" — club {row['club_id']}" if row['club_id'] else "")
+            for row in rows
+        )
+        if not rows:
+            lines.append("None registered yet.")
+        await bot.send_message(ctx.user_id, "\n".join(lines))
 
     async def _route_callback(self, ctx: InputContext) -> None:
         """Delegate callback to CallbackHandlers."""
@@ -2021,11 +2127,25 @@ class PlannerBot:
             chat = getattr(chat_member_update, "chat", None)
             chat_id = getattr(chat, "id", None)
             if chat_id and new_status and member_user:
-                await self._sync_club_member_from_update(chat_id, member_user, new_status)
                 old_status = getattr(getattr(chat_member_update, "old_chat_member", None), "status", None)
                 joined = new_status in ("member", "administrator", "creator") and old_status in (
                     "left", "kicked", "banned", None,
                 )
+                if joined and not getattr(member_user, "is_bot", False):
+                    policy = reserve_join_policy(chat_id, member_user.id)
+                    if policy is False:
+                        bot = getattr(ctx.platform_context, "bot", None)
+                        if bot:
+                            try:
+                                await bot.ban_chat_member(chat_id, member_user.id)
+                                await bot.unban_chat_member(chat_id, member_user.id, only_if_banned=True)
+                                logger.warning("Removed unauthorized join from reserve group %s", chat_id)
+                            except Exception as error:
+                                logger.warning("Could not remove unauthorized reserve join in %s: %s", chat_id, type(error).__name__)
+                        return
+                await self._sync_club_member_from_update(chat_id, member_user, new_status)
+                if new_status in ("left", "kicked", "banned") and not member_user.is_bot:
+                    await note_reserve_member_left(ctx.platform_context.bot, chat_id, member_user.id)
                 if joined and not getattr(member_user, "is_bot", False):
                     await self._welcome_group_members(ctx, members=[member_user])
 
@@ -2053,70 +2173,17 @@ class PlannerBot:
 
         chat_id = getattr(chat, "id", None)
         chat_title = (getattr(chat, "title", "") or "").strip()
-        actor_id = ctx.user_id
         if not chat_id:
-            return
-
-        invite_link = None
-        try:
-            created_invite = await bot.create_chat_invite_link(chat_id=chat_id)
-            invite_link = (getattr(created_invite, "invite_link", "") or "").strip()
-        except Exception as e:
-            logger.warning("Could not create invite link for chat %s: %s", chat_id, e)
-
-        if not invite_link:
-            await self._notify_admins_about_group_setup(
-                bot=bot,
-                message=(
-                    "Club group detected but invite-link creation failed.\n"
-                    f"Group: \"{chat_title or chat_id}\"\n"
-                    f"Chat ID: {chat_id}\n"
-                    "Please ensure @xaana_bot has 'Invite users via link' permission."
-                ),
-            )
-            return
-
-        proposed = await self._stage_club_group_candidate(
-            chat_id=chat_id,
-            chat_title=chat_title,
-            actor_user_id=actor_id,
-            invite_link=invite_link,
-        )
-
-        if proposed:
-            setup_state = str(proposed.get("telegram_status") or "")
-            intro = (
-                "Telegram group detected for an approved club.\n"
-                if setup_state == "ready"
-                else "Telegram group detected for a pending club.\n"
-            )
-            await self._notify_admins_about_group_setup(
-                bot=bot,
-                message=(
-                    intro +
-                    "Please confirm before Xaana links it.\n"
-                    f"Suggested club: \"{proposed.get('club_name', chat_title)}\"\n"
-                    f"Group: \"{chat_title or chat_id}\"\n"
-                    f"Chat ID: {chat_id}\n"
-                    f"Invite: {invite_link}"
-                ),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
-                        "Confirm club link",
-                        callback_data=f"{CLUB_TELEGRAM_CONFIRM_PREFIX}{proposed['club_id']}",
-                    )
-                ]]),
-            )
             return
 
         await self._notify_admins_about_group_setup(
             bot=bot,
             message=(
-                "Group invite link was created but no pending club could be auto-matched.\n"
+                "Telegram group detected; no invite link was created.\n"
                 f"Group: \"{chat_title or chat_id}\"\n"
                 f"Chat ID: {chat_id}\n"
-                f"Invite: {invite_link}\n"
-                "Please connect it manually in Admin > Clubs Telegram Setup."
+                "After revoking old links and checking the group is clean, "
+                "register it from a Xaana admin's private chat with /reserve_add."
             ),
         )
 
@@ -2344,6 +2411,7 @@ class PlannerBot:
 
         # Callback query handler -> dispatch
         self.application.add_handler(CallbackQueryHandler(self.dispatch))
+        self.application.add_handler(ChatJoinRequestHandler(self._on_chat_join_request_update))
 
         # Poll answers (when users vote) -> dispatch
         from telegram.ext import PollAnswerHandler
@@ -2526,7 +2594,7 @@ class PlannerBot:
                 allowed = [
                     "message", "edited_message", "channel_post", "edited_channel_post",
                     "callback_query", "poll", "poll_answer",
-                    "my_chat_member", "chat_member",
+                    "my_chat_member", "chat_member", "chat_join_request",
                     "message_reaction", "message_reaction_count",
                 ]
                 logger.info("run_polling with allowed_updates: %s", allowed)

@@ -1045,6 +1045,40 @@ async def list_club_telegram_setup(
         raise HTTPException(status_code=500, detail=f"Failed to load club setup queue: {str(e)}")
 
 
+@router.get("/clubs/reserves")
+async def list_telegram_group_reserves(admin_id: int = Depends(get_admin_user)):
+    """Show reserve inventory without exposing any bearer invite URL."""
+    with get_db_session() as session:
+        rows = session.execute(
+            text("""
+                SELECT label, chat_id, original_title, status, club_id,
+                       caretaker_user_id, member_count_at_check,
+                       verified_at_utc, cleanliness_attested_at_utc,
+                       cleanliness_attested_by_user_id, allocated_at_utc, last_error
+                FROM telegram_group_reserves
+                ORDER BY label
+            """),
+        ).mappings().fetchall()
+    return {"reserves": [dict(row) for row in rows], "total": len(rows)}
+
+
+@router.post("/clubs/reserves/{label}/disable")
+async def disable_telegram_group_reserve(label: str, admin_id: int = Depends(get_admin_user)):
+    """Quarantine an unused reserve immediately if its membership or links are suspect."""
+    with get_db_session() as session:
+        result = session.execute(
+            text("""
+                UPDATE telegram_group_reserves
+                SET status = 'disabled', last_error = 'Disabled by Xaana admin'
+                WHERE label = :label AND status IN ('available', 'needs_review')
+            """),
+            {"label": label.strip().upper()},
+        )
+        if result.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Reserve unavailable or already assigned")
+    return {"label": label.strip().upper(), "status": "disabled"}
+
+
 @router.patch("/clubs/{club_id}/context", response_model=AdminClubSetupSummary)
 async def update_club_context(
     request: Request,

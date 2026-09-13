@@ -175,6 +175,7 @@ async def send_club_telegram_ready_notification(
     club_name: str,
     invite_link: str,
     club_id: str = None,
+    handoff_pending: bool = False,
 ) -> None:
     """Notify the club creator that the Telegram group is ready, then ask onboarding questions."""
     try:
@@ -188,7 +189,14 @@ async def send_club_telegram_ready_notification(
         ])
         await bot.send_message(
             chat_id=user_id,
-            text=f"Your club Telegram group is ready: {club_name}\n\nUse the button below to join it.",
+            text=(
+                f"Your club Telegram group is ready: {club_name}\n\n"
+                "Use the button below to request access. Xaana will verify your club membership "
+                "and make you a group admin. Please wait for the caretaker to leave before "
+                "sharing private club messages."
+                if handoff_pending else
+                f"Your club Telegram group is ready: {club_name}\n\nUse the button below to join it."
+            ),
             reply_markup=keyboard,
             parse_mode=None,
         )

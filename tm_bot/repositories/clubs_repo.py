@@ -431,19 +431,22 @@ class ClubsRepository:
             rows = session.execute(
                 text("""
                     SELECT
-                        club_id,
-                        owner_user_id,
-                        name,
-                        telegram_chat_id,
-                        COALESCE(reminder_time, '21:00') AS reminder_time,
-                        language,
-                        timezone,
-                        leaderboard_time
-                    FROM clubs
-                    WHERE telegram_status IN ('ready', 'connected')
-                      AND NULLIF(trim(COALESCE(telegram_chat_id, '')), '') IS NOT NULL
-                      AND COALESCE(status, 'active') = 'active'
-                    ORDER BY created_at_utc ASC;
+                        c.club_id,
+                        c.owner_user_id,
+                        c.name,
+                        c.telegram_chat_id,
+                        COALESCE(c.reminder_time, '21:00') AS reminder_time,
+                        c.language,
+                        c.timezone,
+                        c.leaderboard_time
+                    FROM clubs c
+                    LEFT JOIN telegram_group_reserves r
+                      ON r.club_id = c.club_id AND r.status = 'allocated'
+                    WHERE c.telegram_status IN ('ready', 'connected')
+                      AND (r.chat_id IS NULL OR c.telegram_status = 'connected')
+                      AND NULLIF(trim(COALESCE(c.telegram_chat_id, '')), '') IS NOT NULL
+                      AND COALESCE(c.status, 'active') = 'active'
+                    ORDER BY c.created_at_utc ASC;
                 """),
             ).mappings().fetchall()
             return [dict(row) for row in rows]

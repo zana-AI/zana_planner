@@ -2,6 +2,7 @@
 /.idea
 /.codex
 *.env*
+!scripts/telegram_reserve_group_probe/.env.example
 env.*
 *.json
 !webapp_frontend/package.json
@@ -13,6 +14,7 @@ env.*
 !webapp_frontend/src/i18n/locales/*.json
 *.txt
 *.md
+!scripts/telegram_reserve_group_probe/README.md
 !.claude/skills/**/*.md
 !docs/**/*.md
 # The agent guidance file must be tracked — it replaced CLAUDE.md.

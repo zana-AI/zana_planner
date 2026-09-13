@@ -41,10 +41,16 @@ from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
 from services.reports import ReportsService
 from services.club_leaderboard_service import compute_club_leaderboard
+from services.telegram_group_reserves import (
+    allocate_reserve_to_club,
+    notify_low_reserve_stock,
+    revoke_allocated_club_link,
+)
 from db.postgres_db import get_db_session, resolve_promise_uuid, utc_now_iso, date_to_iso
 from ..notifications import (
     send_club_pending_notification,
     send_club_telegram_setup_request,
+    send_club_telegram_ready_notification,
     send_suggestion_notifications,
 )
 from utils.logger import get_logger
@@ -566,24 +572,41 @@ async def create_club(
             promise_text=promise_text,
             target_count_per_week=club_request.target_count_per_week,
         )
-        asyncio.create_task(
-            send_club_telegram_setup_request(
-                bot_token=request.app.state.bot_token,
-                club_id=club_id,
-                club_name=name,
-                creator_user_id=user_id,
-                promise_text=promise_text,
-                miniapp_url=os.getenv("MINIAPP_URL", "https://xaana.club"),
+        allocation = await allocate_reserve_to_club(club_id, request.app.state.bot_token)
+        if allocation:
+            asyncio.create_task(notify_low_reserve_stock(
+                request.app.state.bot_token,
+                allocation["label"],
+            ))
+            asyncio.create_task(
+                send_club_telegram_ready_notification(
+                    bot_token=request.app.state.bot_token,
+                    user_id=user_id,
+                    club_name=name,
+                    invite_link=allocation["invite_link"],
+                    club_id=club_id,
+                    handoff_pending=True,
+                )
             )
-        )
-        asyncio.create_task(
-            send_club_pending_notification(
-                bot_token=request.app.state.bot_token,
-                user_id=user_id,
-                club_id=club_id,
-                club_name=name,
+        else:
+            asyncio.create_task(
+                send_club_telegram_setup_request(
+                    bot_token=request.app.state.bot_token,
+                    club_id=club_id,
+                    club_name=name,
+                    creator_user_id=user_id,
+                    promise_text=promise_text,
+                    miniapp_url=os.getenv("MINIAPP_URL", "https://xaana.club"),
+                )
             )
-        )
+            asyncio.create_task(
+                send_club_pending_notification(
+                    bot_token=request.app.state.bot_token,
+                    user_id=user_id,
+                    club_id=club_id,
+                    club_name=name,
+                )
+            )
         clubs = _list_user_clubs(user_id)
         created = next((club for club in clubs if club.club_id == club_id), None)
         if not created:
@@ -996,6 +1019,7 @@ async def sync_club_description(
 @router.delete("/clubs/{club_id}", response_model=ClubActionResponse)
 async def remove_my_club(
     club_id: str,
+    request: Request,
     user_id: int = Depends(get_current_user),
 ):
     """Cancel a pending owner-created club, or leave a club as a non-owner."""
@@ -1030,6 +1054,12 @@ async def remove_my_club(
             # depend on the Telegram group still existing (it may have been removed).
             if not clubs_repo.archive_club(club_id, user_id):
                 raise HTTPException(status_code=409, detail="Club could not be deleted.")
+            if club.get("telegram_chat_id") and club.get("telegram_invite_link"):
+                asyncio.create_task(revoke_allocated_club_link(
+                    request.app.state.bot_token,
+                    str(club["telegram_chat_id"]),
+                    str(club["telegram_invite_link"]),
+                ))
             return ClubActionResponse(status="deleted", club_id=club_id, message="Club deleted.")
 
         if not clubs_repo.remove_member(club_id, user_id):
