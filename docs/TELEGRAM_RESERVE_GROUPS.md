@@ -25,6 +25,10 @@ is nobody to hand off from.
    primary link and retires the previous one, then discards the new URL. That
    is the only way a bot can retire a link it did not create.
 4. **Leave the group.** Registration requires exactly one member, the bot.
+   As soon as you are the last one out, Xaana DMs every `ADMIN_IDS` account the
+   exact command to run, chat ID already filled in — so you never have to look
+   an ID up. If the group is not named like a reserve label it says to rename it
+   first.
    Note that Telegram's `creator` status is unrecoverable — once you leave you
    can be re-added as an admin but never as owner again. That is fine here, and
    is the same end state the group would reach anyway.

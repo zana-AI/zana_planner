@@ -396,10 +396,30 @@ export interface AdminClubSetupSummary extends ClubSummary {
   club_goal?: string;
   vibe?: string;
   checkin_what_counts?: string;
+  club_status?: string;
 }
 
 export interface AdminClubSetupResponse {
   clubs: AdminClubSetupSummary[];
+  total: number;
+}
+
+export interface AdminReserveGroup {
+  label: string;
+  chat_id: number;
+  original_title: string;
+  status: 'available' | 'assigning' | 'allocated' | 'needs_review' | 'disabled';
+  club_id?: string | null;
+  member_count_at_check: number;
+  verified_at_utc?: string | null;
+  cleanliness_attested_at_utc?: string | null;
+  cleanliness_attested_by_user_id?: number | null;
+  allocated_at_utc?: string | null;
+  last_error?: string | null;
+}
+
+export interface AdminReserveGroupResponse {
+  reserves: AdminReserveGroup[];
   total: number;
 }
 

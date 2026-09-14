@@ -49,8 +49,10 @@ from utils.logger import get_logger, configure_admin_error_notifications
 from db.postgres_db import get_db_session, utc_now_iso
 from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns, get_club_columns
 from services.telegram_group_reserves import (
+    RESERVE_LABEL_RE,
     handle_reserve_join_request,
     register_reserve,
+    reserve_is_known,
     reserve_join_policy,
 )
 
@@ -516,6 +518,7 @@ class PlannerBot:
             if ctx.input_type == "left_chat_member":
                 left_user = ctx.metadata.get("left_chat_member")
                 if left_user and not getattr(left_user, "is_bot", False):
+                    await self._maybe_offer_reserve_registration(ctx.platform_context.bot, ctx.chat_id)
                     club = self._get_club_for_group_chat(ctx.chat_id)
                     if club:
                         user_id = getattr(left_user, "id", None)
@@ -547,6 +550,7 @@ class PlannerBot:
         if ctx.input_type == "left_chat_member":
             left_user = ctx.metadata.get("left_chat_member")
             if left_user and not getattr(left_user, "is_bot", False):
+                await self._maybe_offer_reserve_registration(ctx.platform_context.bot, ctx.chat_id)
                 club = self._get_club_for_group_chat(ctx.chat_id)
                 if club:
                     ClubsRepository().remove_member(club["club_id"], left_user.id)
@@ -2136,6 +2140,8 @@ class PlannerBot:
                                 logger.warning("Could not remove unauthorized reserve join in %s: %s", chat_id, type(error).__name__)
                         return
                 await self._sync_club_member_from_update(chat_id, member_user, new_status)
+                if new_status in ("left", "kicked", "banned") and not member_user.is_bot:
+                    await self._maybe_offer_reserve_registration(ctx.platform_context.bot, chat_id)
                 if joined and not getattr(member_user, "is_bot", False):
                     await self._welcome_group_members(ctx, members=[member_user])
 
@@ -2172,8 +2178,54 @@ class PlannerBot:
                 "Telegram group detected; no invite link was created.\n"
                 f"Group: \"{chat_title or chat_id}\"\n"
                 f"Chat ID: {chat_id}\n"
-                "After revoking old links and checking the group is clean, "
-                "register it from a Xaana admin's private chat with /reserve_add."
+                "To make this a reserve: remove any named invite links, check the "
+                "group history, then leave the group. Xaana will message you the "
+                "exact registration command once you are the last one out."
+            ),
+        )
+
+    async def _maybe_offer_reserve_registration(self, bot, chat_id) -> None:
+        """DM admins the ready-to-send command the moment a group becomes eligible.
+
+        Registration needs a bot-only group, so the useful moment is when the last
+        human leaves -- not when the bot is promoted, which is while admins are
+        still inside. Echoing the chat ID back means nobody has to hunt for it.
+        """
+        try:
+            chat_id = int(chat_id)
+        except (TypeError, ValueError):
+            return
+        if chat_id >= 0 or reserve_is_known(chat_id) or self._get_club_for_group_chat(chat_id):
+            return
+        try:
+            if await bot.get_chat_member_count(chat_id) != 1:
+                return
+            me = await bot.get_me()
+            if (await bot.get_chat_member(chat_id, me.id)).status != "administrator":
+                return
+            title = ((await bot.get_chat(chat_id)).title or "").strip()
+        except Exception as error:
+            logger.debug("Could not assess reserve candidacy for %s: %s", chat_id, type(error).__name__)
+            return
+
+        label = title.upper()
+        if RESERVE_LABEL_RE.fullmatch(label):
+            instruction = f"/reserve_add {label} {chat_id} CLEAN"
+        else:
+            instruction = (
+                "Rename the group to a reserve label such as C0006 first, then send "
+                f"/reserve_add <LABEL> {chat_id} CLEAN"
+            )
+        await self._notify_admins_about_group_setup(
+            bot=bot,
+            message=(
+                f'Group "{title or chat_id}" is now bot-only and Xaana has the rights it needs.'
+                + chr(10)
+                + "To add it to the reserve pool, send:"
+                + chr(10)
+                + instruction
+                + chr(10)
+                + "CLEAN confirms you removed any named invite links and checked the group history."
             ),
         )
 

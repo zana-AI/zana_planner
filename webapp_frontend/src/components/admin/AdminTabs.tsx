@@ -6,6 +6,7 @@ export type TabType =
   | 'scheduled'
   | 'templates'
   | 'clubs'
+  | 'clubsOverview'
   | 'promote'
   | 'devtools'
   | 'createPromise'
@@ -34,6 +35,7 @@ export function AdminTabs({ activeTab, onTabChange, scheduledCount }: AdminTabsP
         { key: 'llm', label: 'LLM' },
         { key: 'followgraph', label: 'Follow Graph' },
         { key: 'users', label: 'Users' },
+        { key: 'clubsOverview', label: 'Clubs' },
         { key: 'content', label: 'Content' },
       ],
     },

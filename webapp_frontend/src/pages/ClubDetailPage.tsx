@@ -7,6 +7,10 @@ import type { ClubSummary } from '../types';
 import { Button } from '../components/ui/Button';
 import { formatPromiseText } from '../utils/activityFormat';
 
+// Mirrors VIBE_CHOICES in tm_bot/llms/group_router.py — the only values that
+// change how often the bot speaks. The API rejects anything else.
+const VIBE_CHOICES = ['quiet', 'coach', 'supportive', 'playful'];
+
 const LANG_LABELS: Record<string, string> = {
   en: 'English',
   fa: 'Persian',
@@ -206,7 +210,10 @@ export function ClubDetailPage() {
     if (!club) return;
     setEditDescription(club.description || '');
     setEditGoal(club.club_goal || '');
-    setEditVibe(club.vibe || '');
+    // Legacy clubs stored free prose here, which never matched a real vibe.
+    // Show those as unset rather than silently keeping a value the bot ignores.
+    const storedVibe = (club.vibe || '').toLowerCase().trim();
+    setEditVibe(VIBE_CHOICES.includes(storedVibe) ? storedVibe : '');
     setEditCheckinCounts(club.checkin_what_counts || '');
   };
 
@@ -515,13 +522,18 @@ export function ClubDetailPage() {
                     rows={4}
                   />
                   <label className="club-detail-field-label">{t('clubDetail.vibe')}</label>
-                  <textarea
-                    className="club-detail-edit-input club-detail-edit-textarea"
-                    value={editVibe}
+                  <select
+                    className="club-detail-edit-input"
+                    value={VIBE_CHOICES.includes(editVibe) ? editVibe : ''}
                     onChange={(e) => setEditVibe(e.target.value)}
-                    maxLength={500}
-                    rows={2}
-                  />
+                  >
+                    <option value="">{t('clubDetail.vibeUnset')}</option>
+                    <option value="quiet">{t('clubDetail.vibeQuiet')}</option>
+                    <option value="coach">{t('clubDetail.vibeCoach')}</option>
+                    <option value="supportive">{t('clubDetail.vibeSupportive')}</option>
+                    <option value="playful">{t('clubDetail.vibePlayful')}</option>
+                  </select>
+                  <p className="club-detail-field-help">{t('clubDetail.vibeHelp')}</p>
                   <label className="club-detail-field-label">{t('clubDetail.whatCountsAsACheckIn')}</label>
                   <textarea
                     className="club-detail-edit-input club-detail-edit-textarea"

@@ -39,6 +39,7 @@ from repositories.suggestions_repo import SuggestionsRepository
 from repositories.templates_repo import TemplatesRepository
 from repositories.promises_repo import PromisesRepository
 from repositories.actions_repo import ActionsRepository
+from llms.group_router import VIBE_CHOICES
 from services.reports import ReportsService
 from services.club_leaderboard_service import compute_club_leaderboard
 from services.telegram_group_reserves import (
@@ -696,6 +697,17 @@ async def update_club_context(
             if field_name in provided:
                 raw_value = getattr(body, field_name)
                 values[field_name] = "" if raw_value is None else str(raw_value).strip()
+
+        # Only the known vibes change how the bot behaves; storing anything else
+        # looks like a setting but silently lands on the default budget.
+        vibe_value = values.get("vibe", "").lower()
+        if vibe_value and vibe_value not in VIBE_CHOICES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"vibe must be one of: {', '.join(VIBE_CHOICES)}",
+            )
+        if "vibe" in values:
+            values["vibe"] = vibe_value
 
         clubs_repo.update_club_context(
             club_id=club_id,

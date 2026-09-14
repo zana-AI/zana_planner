@@ -11,6 +11,7 @@ export { CreatePromiseTab } from './CreatePromiseTab';
 export { ConversationsTab } from './ConversationsTab';
 export { TestsTab } from './TestsTab';
 export { ClubsTelegramSetupTab } from './ClubsTelegramSetupTab';
+export { ClubsOverviewTab } from './ClubsOverviewTab';
 export { TemplateForm } from './TemplateForm';
 export { DeleteConfirmModal } from './DeleteConfirmModal';
 export { UserSelector } from './UserSelector';

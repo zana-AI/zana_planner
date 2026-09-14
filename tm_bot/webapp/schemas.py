@@ -275,6 +275,7 @@ class AdminClubSetupSummary(ClubSummary):
     club_goal: Optional[str] = None
     vibe: Optional[str] = None
     checkin_what_counts: Optional[str] = None
+    club_status: str = "active"
 
 
 class AdminClubSetupResponse(BaseModel):

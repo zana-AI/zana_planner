@@ -18,6 +18,7 @@ import {
   TestsTab,
   FollowGraphTab,
   ClubsTelegramSetupTab,
+  ClubsOverviewTab,
   UsersTab,
   ContentAdminTab,
 } from './admin';
@@ -275,6 +276,8 @@ export function AdminPanel() {
           onError={setError}
         />
       )}
+
+      {activeTab === 'clubsOverview' && <ClubsOverviewTab />}
 
       {activeTab === 'promote' && (
         <PromoteTab onError={setError} />

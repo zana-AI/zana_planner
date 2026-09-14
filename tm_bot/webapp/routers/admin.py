@@ -151,6 +151,7 @@ def _admin_club_setup_from_row(row: Dict[str, Any]) -> AdminClubSetupSummary:
         club_goal=str(row["club_goal"]) if row.get("club_goal") else None,
         vibe=str(row["vibe"]) if row.get("vibe") else None,
         checkin_what_counts=str(row["checkin_what_counts"]) if row.get("checkin_what_counts") else None,
+        club_status=str(row["club_status"] or "active"),
     )
 
 
@@ -1007,6 +1008,7 @@ async def list_club_telegram_setup(
                         c.vibe,
                         c.checkin_what_counts,
                         c.visibility,
+                        COALESCE(c.status, 'active') AS club_status,
                         c.telegram_status,
                         c.telegram_invite_link,
                         c.created_at_utc,

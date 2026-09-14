@@ -4455,6 +4455,32 @@ textarea.modal-input {
   color: #86efac;
 }
 
+/* Reserve-pool states, reusing the club status pill. */
+.admin-club-status-available,
+.admin-club-status-connected {
+  border-color: rgba(34, 197, 94, 0.35);
+  background:
+    linear-gradient(180deg, rgba(74, 222, 128, 0.22), rgba(34, 197, 94, 0.07)),
+    rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+
+.admin-club-status-assigning {
+  border-color: rgba(245, 158, 11, 0.35);
+  background:
+    linear-gradient(180deg, rgba(251, 191, 36, 0.22), rgba(245, 158, 11, 0.07)),
+    rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+}
+
+.admin-club-status-needs_review {
+  border-color: rgba(239, 68, 68, 0.35);
+  background:
+    linear-gradient(180deg, rgba(248, 113, 113, 0.22), rgba(239, 68, 68, 0.07)),
+    rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
 .admin-club-status-pending_admin_setup {
   border-color: rgba(245, 158, 11, 0.35);
   background:
@@ -6577,6 +6603,13 @@ textarea.modal-input {
   font-weight: 600;
   color: var(--text-secondary, #888);
   margin-bottom: 4px;
+}
+
+.club-detail-field-help {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary, #888);
+  margin: -4px 0 10px;
 }
 
 /* Redesigned header */

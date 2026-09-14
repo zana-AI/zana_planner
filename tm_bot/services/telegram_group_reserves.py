@@ -138,6 +138,15 @@ async def register_reserve(bot: Bot, chat_id: int, actor_user_id: int, label: st
     }
 
 
+def reserve_is_known(chat_id: int) -> bool:
+    """True if this group is already tracked, in any state."""
+    with get_db_session() as session:
+        return bool(session.execute(
+            text("SELECT 1 FROM telegram_group_reserves WHERE chat_id = :chat_id LIMIT 1"),
+            {"chat_id": chat_id},
+        ).fetchone())
+
+
 def _claim_oldest_reserve(club_id: str) -> dict[str, Any] | None:
     """Commit a row-level claim so concurrent club requests cannot share a group."""
     with get_db_session() as session:

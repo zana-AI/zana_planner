@@ -401,3 +401,21 @@ def test_failed_allocation_restores_title_and_quarantines_reserve(monkeypatch):
     assert result is None
     assert bot.title == "C0002"
     assert quarantined == [(-100200, "RuntimeError")]
+
+
+def test_reserve_is_known_reports_tracked_groups(monkeypatch):
+    monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext((1,)))
+    assert reserves.reserve_is_known(-100200) is True
+    monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(None))
+    assert reserves.reserve_is_known(-100200) is False
+
+
+@pytest.mark.parametrize("label,valid", [
+    ("C0002", True),
+    ("C000234", True),
+    ("c0002", False),      # the caller upper-cases before matching
+    ("C002", False),       # too few digits
+    ("FK friends", False), # an allocated group's new title is not a label
+])
+def test_reserve_label_pattern(label, valid):
+    assert bool(reserves.RESERVE_LABEL_RE.fullmatch(label)) is valid

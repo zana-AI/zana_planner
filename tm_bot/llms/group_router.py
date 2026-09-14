@@ -58,6 +58,10 @@ _TEXT_BUDGET_BY_VIBE: dict[str, int] = {
     "supportive": 60,
     "playful": 100,
 }
+
+# The only values that change bot behaviour. Anything else silently falls back
+# to the default budget, so the API rejects it rather than storing dead text.
+VIBE_CHOICES: tuple[str, ...] = tuple(_TEXT_BUDGET_BY_VIBE)
 _DEFAULT_TEXT_BUDGET = 60
 
 # Emoji reactions are one cheap router call and no message in the chat, so they

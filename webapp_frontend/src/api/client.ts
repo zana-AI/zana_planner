@@ -10,6 +10,7 @@ import type {
   CreateClubRequest,
   AdminClubSetupResponse,
   AdminClubSetupSummary,
+  AdminReserveGroupResponse,
   AdminUsersResponse,
   AdminUser,
   AdminContentResponse,
@@ -816,6 +817,16 @@ class ApiClient {
 
   async getAdminClubTelegramSetup(status: 'pending' | 'ready' | 'all' = 'pending'): Promise<AdminClubSetupResponse> {
     return this.request<AdminClubSetupResponse>(`/admin/clubs/telegram-setup?status=${status}`);
+  }
+
+  async getAdminClubReserves(): Promise<AdminReserveGroupResponse> {
+    return this.request<AdminReserveGroupResponse>('/admin/clubs/reserves');
+  }
+
+  async disableAdminClubReserve(label: string): Promise<{ status: string }> {
+    return this.request<{ status: string }>(`/admin/clubs/reserves/${encodeURIComponent(label)}/disable`, {
+      method: 'POST',
+    });
   }
 
   async updateAdminClubTelegramLink(clubId: string, telegramInviteLink: string): Promise<AdminClubSetupSummary> {
