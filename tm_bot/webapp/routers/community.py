@@ -585,7 +585,6 @@ async def create_club(
                     club_name=name,
                     invite_link=allocation["invite_link"],
                     club_id=club_id,
-                    handoff_pending=True,
                 )
             )
         else:

@@ -18,7 +18,7 @@ from telegram.error import TelegramError  # noqa: E402
 from services import telegram_group_reserves as reserves  # noqa: E402
 
 
-def _candidate_bot(*, member_count=2, can_promote=True, caretaker_id=101):
+def _candidate_bot(*, member_count=1, can_promote=True):
     bot = SimpleNamespace(
         get_chat=AsyncMock(return_value=SimpleNamespace(type="supergroup", title="C0002")),
         get_me=AsyncMock(return_value=SimpleNamespace(id=999)),
@@ -27,33 +27,30 @@ def _candidate_bot(*, member_count=2, can_promote=True, caretaker_id=101):
             can_promote_members=can_promote, can_delete_messages=True,
             can_restrict_members=True,
         )),
-        get_chat_administrators=AsyncMock(return_value=[
-            SimpleNamespace(user=SimpleNamespace(id=caretaker_id, is_bot=False), status="creator")
-        ]),
         get_chat_member_count=AsyncMock(return_value=member_count),
         export_chat_invite_link=AsyncMock(return_value="https://t.me/+rotated"),
     )
     return bot
 
 
-def test_inspect_reserve_accepts_only_caretaker_and_bot():
-    result = asyncio.run(reserves.inspect_reserve(_candidate_bot(), -100200, 101))
+def test_inspect_reserve_accepts_a_bot_only_group():
+    result = asyncio.run(reserves.inspect_reserve(_candidate_bot(), -100200))
     assert result["title"] == "C0002"
     assert result["bot_user_id"] == 999
-    assert result["member_count"] == 2
+    assert result["member_count"] == 1
 
 
 @pytest.mark.parametrize("kwargs", [
+    {"member_count": 2},  # a human is still inside, so the group is not free
     {"member_count": 3},
-    {"can_promote": False},
-    {"caretaker_id": 222},
+    {"can_promote": False},  # cannot promote the club creator later
 ])
 def test_inspect_reserve_rejects_unclean_or_unmanageable_group(kwargs):
     with pytest.raises(reserves.ReserveValidationError):
-        asyncio.run(reserves.inspect_reserve(_candidate_bot(**kwargs), -100200, 101))
+        asyncio.run(reserves.inspect_reserve(_candidate_bot(**kwargs), -100200))
 
 
-def test_admin_can_register_group_owned_by_different_caretaker(monkeypatch):
+def test_admin_can_register_a_bot_only_group(monkeypatch):
     inserted = []
 
     class Session:
@@ -71,9 +68,9 @@ def test_admin_can_register_group_owned_by_different_caretaker(monkeypatch):
 
     monkeypatch.setattr(reserves, "get_db_session", lambda: Context())
     result = asyncio.run(reserves.register_reserve(_candidate_bot(), -100200, 1086, "c0002"))
-    assert result["caretaker_user_id"] == 101
+    assert result["label"] == "C0002"
     assert inserted[0]["actor"] == 1086
-    assert inserted[0]["caretaker"] == 101
+    assert "caretaker" not in inserted[0]
 
 
 def test_registration_revokes_any_previously_issued_primary_link(monkeypatch):
@@ -172,7 +169,7 @@ def _join_request(link="https://t.me/+guarded", user_id=501):
 def test_guarded_join_rejects_leaked_link_for_nonmember(monkeypatch):
     row = {
         "club_id": "club-1", "owner_user_id": "501", "telegram_invite_link": "https://t.me/+guarded",
-        "telegram_status": "ready", "member_status": None, "caretaker_user_id": 101,
+        "telegram_status": "ready", "member_status": None,
     }
     monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(row))
     bot = SimpleNamespace(
@@ -187,7 +184,7 @@ def test_guarded_join_rejects_leaked_link_for_nonmember(monkeypatch):
 def test_guarded_join_rejects_different_invite_even_for_member(monkeypatch):
     row = {
         "club_id": "club-1", "owner_user_id": "501", "telegram_invite_link": "https://t.me/+guarded",
-        "telegram_status": "ready", "member_status": "active", "caretaker_user_id": 101,
+        "telegram_status": "ready", "member_status": "active",
     }
     monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(row))
     bot = SimpleNamespace(
@@ -201,7 +198,7 @@ def test_guarded_join_rejects_different_invite_even_for_member(monkeypatch):
 def test_guarded_join_approves_active_member_without_promoting(monkeypatch):
     row = {
         "club_id": "club-1", "owner_user_id": "501", "telegram_invite_link": "https://t.me/+guarded",
-        "telegram_status": "connected", "member_status": "active", "caretaker_user_id": 101,
+        "telegram_status": "connected", "member_status": "active",
     }
     monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(row))
     bot = SimpleNamespace(
@@ -214,34 +211,36 @@ def test_guarded_join_approves_active_member_without_promoting(monkeypatch):
     bot.promote_chat_member.assert_not_awaited()
 
 
-def test_caretaker_cannot_rejoin_after_handoff(monkeypatch):
+def test_join_policy_rejects_a_stranger_in_an_allocated_group(monkeypatch):
     row = {
-        "status": "allocated", "caretaker_user_id": 101,
-        "telegram_status": "connected", "club_status": "active",
+        "status": "allocated", "telegram_status": "connected", "club_status": "active",
+        "member_status": None, "owner_user_id": "501",
+    }
+    monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(row))
+    assert reserves.reserve_join_policy(-100200, 777) is False
+
+
+def test_join_policy_admits_an_active_club_member(monkeypatch):
+    row = {
+        "status": "allocated", "telegram_status": "connected", "club_status": "active",
         "member_status": "active", "owner_user_id": "501",
     }
     monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(row))
-    assert reserves.reserve_join_policy(-100200, 101) is False
+    assert reserves.reserve_join_policy(-100200, 501) is True
 
 
-def test_group_content_is_held_while_caretaker_handoff_pending(monkeypatch):
-    monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext((1,)))
-    assert reserves.reserve_handoff_pending(-100200) is True
-    monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(None))
-    assert reserves.reserve_handoff_pending(-100200) is False
-
-
-def test_creator_is_promoted_but_waits_for_caretaker_exit(monkeypatch):
+def test_creator_promotion_completes_setup_with_no_handoff_wait(monkeypatch):
     row = {
         "club_id": "club-1", "owner_user_id": "501", "telegram_invite_link": "https://t.me/+guarded",
-        "telegram_status": "ready", "member_status": "active", "caretaker_user_id": 101,
+        "telegram_status": "ready", "member_status": "active",
     }
+    connected = []
 
     class Session(_FakeSession):
         def execute(self, statement, params=None):
-            if "SELECT caretaker_user_id" in str(statement):
-                return _QueryResult(101)
-            assert "UPDATE clubs" not in str(statement), "Connected must wait for caretaker departure"
+            if "UPDATE clubs" in str(statement):
+                connected.append(params)
+                return _QueryResult(None, rowcount=1)
             return _QueryResult(row)
 
     class Context(_FakeSessionContext):
@@ -258,18 +257,24 @@ def test_creator_is_promoted_but_waits_for_caretaker_exit(monkeypatch):
     outcome = asyncio.run(reserves.handle_reserve_join_request(bot, _join_request()))
     assert outcome == "owner_promoted"
     bot.promote_chat_member.assert_awaited_once()
-    bot.send_message.assert_awaited_once()
-    assert bot.send_message.await_args.args[0] == 101
+    # Nobody has to leave first, so the club is connected in the same step.
+    assert len(connected) == 1
+    assert connected[0]["club_id"] == "club-1"
+    assert bot.send_message.await_args.args[0] == 501
 
 
-def test_caretaker_exit_completes_handoff_only_with_new_admin(monkeypatch):
-    row = {"caretaker_user_id": 101, "club_id": "club-1", "owner_user_id": "501"}
-    updates = []
+def test_setup_is_not_completed_when_promotion_is_not_confirmed(monkeypatch):
+    """A creator Telegram never confirms as admin must not read as connected."""
+    row = {
+        "club_id": "club-1", "owner_user_id": "501", "telegram_invite_link": "https://t.me/+guarded",
+        "telegram_status": "ready", "member_status": "active",
+    }
+    connected = []
 
     class Session(_FakeSession):
         def execute(self, statement, params=None):
             if "UPDATE clubs" in str(statement):
-                updates.append(params)
+                connected.append(params)
                 return _QueryResult(None, rowcount=1)
             return _QueryResult(row)
 
@@ -279,26 +284,20 @@ def test_caretaker_exit_completes_handoff_only_with_new_admin(monkeypatch):
 
     monkeypatch.setattr(reserves, "get_db_session", lambda: Context(row))
     bot = SimpleNamespace(
-        get_chat_member=AsyncMock(return_value=SimpleNamespace(status="administrator")),
+        approve_chat_join_request=AsyncMock(), decline_chat_join_request=AsyncMock(),
+        promote_chat_member=AsyncMock(),
+        get_chat_member=AsyncMock(return_value=SimpleNamespace(status="member")),
         send_message=AsyncMock(),
     )
-    assert asyncio.run(reserves.note_reserve_member_left(bot, -100200, 101)) is True
-    assert len(updates) == 1
-    bot.send_message.assert_awaited_once()
-
-
-def test_non_caretaker_exit_does_not_complete_handoff(monkeypatch):
-    row = {"caretaker_user_id": 101, "club_id": "club-1", "owner_user_id": "501"}
-    monkeypatch.setattr(reserves, "get_db_session", lambda: _FakeSessionContext(row))
-    bot = SimpleNamespace(get_chat_member=AsyncMock())
-    assert asyncio.run(reserves.note_reserve_member_left(bot, -100200, 777)) is False
-    bot.get_chat_member.assert_not_awaited()
+    with pytest.raises(RuntimeError):
+        asyncio.run(reserves.handle_reserve_join_request(bot, _join_request()))
+    assert connected == []
 
 
 def test_allocation_renames_then_creates_guarded_link_and_commits(monkeypatch):
     club = {"club_id": "club-123", "owner_user_id": "501", "name": "Practice Persian"}
     reserve = {
-        "chat_id": -100200, "label": "C0002", "caretaker_user_id": 101,
+        "chat_id": -100200, "label": "C0002",
         "original_title": "C0002",
     }
     updates = []
@@ -341,11 +340,8 @@ def test_allocation_renames_then_creates_guarded_link_and_commits(monkeypatch):
                 can_delete_messages=True, can_restrict_members=True,
             )
 
-        async def get_chat_administrators(self, chat_id):
-            return [SimpleNamespace(user=SimpleNamespace(id=101), status="creator")]
-
         async def get_chat_member_count(self, chat_id):
-            return 2
+            return 1
 
         async def set_chat_title(self, chat_id, title):
             self.title = title
@@ -369,7 +365,7 @@ def test_allocation_renames_then_creates_guarded_link_and_commits(monkeypatch):
 def test_failed_allocation_restores_title_and_quarantines_reserve(monkeypatch):
     club = {"club_id": "club-123", "owner_user_id": "501", "name": "Practice Persian"}
     reserve = {
-        "chat_id": -100200, "label": "C0002", "caretaker_user_id": 101,
+        "chat_id": -100200, "label": "C0002",
         "original_title": "C0002",
     }
     quarantined = []

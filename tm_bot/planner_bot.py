@@ -50,9 +50,7 @@ from db.postgres_db import get_db_session, utc_now_iso
 from repositories.clubs_repo import ClubsRepository, ensure_club_telegram_columns, get_club_columns
 from services.telegram_group_reserves import (
     handle_reserve_join_request,
-    note_reserve_member_left,
     register_reserve,
-    reserve_handoff_pending,
     reserve_join_policy,
 )
 
@@ -518,7 +516,6 @@ class PlannerBot:
             if ctx.input_type == "left_chat_member":
                 left_user = ctx.metadata.get("left_chat_member")
                 if left_user and not getattr(left_user, "is_bot", False):
-                    await note_reserve_member_left(ctx.platform_context.bot, ctx.chat_id, left_user.id)
                     club = self._get_club_for_group_chat(ctx.chat_id)
                     if club:
                         user_id = getattr(left_user, "id", None)
@@ -550,13 +547,9 @@ class PlannerBot:
         if ctx.input_type == "left_chat_member":
             left_user = ctx.metadata.get("left_chat_member")
             if left_user and not getattr(left_user, "is_bot", False):
-                await note_reserve_member_left(ctx.platform_context.bot, ctx.chat_id, left_user.id)
                 club = self._get_club_for_group_chat(ctx.chat_id)
                 if club:
                     ClubsRepository().remove_member(club["club_id"], left_user.id)
-            return
-
-        if reserve_handoff_pending(ctx.chat_id):
             return
 
         if ctx.input_type == "text":
@@ -691,7 +684,7 @@ class PlannerBot:
                     "Reserve join request needs attention.\n"
                     f"Chat ID: {request.chat.id}\n"
                     f"Requester ID: {request.from_user.id}\n"
-                    f"Failure: {type(error).__name__}. Check the new member's role before the caretaker leaves."
+                    f"Failure: {type(error).__name__}. Check the new member's role in the group."
                 ),
             )
 
@@ -735,8 +728,6 @@ class PlannerBot:
                 continue
             allowed_members.append(member)
         members = allowed_members
-        if reserve_handoff_pending(ctx.chat_id):
-            return
         members = self._claim_welcome(ctx, members)
         human_names = []
         for member in members:
@@ -1953,21 +1944,20 @@ class PlannerBot:
         await handler(ctx.platform_update, ctx.platform_context)
 
     async def _handle_private_reserve_add(self, ctx: InputContext) -> None:
-        """Register a caretaker-owned group from a configured admin's private DM."""
+        """Register a clean bot-only group from a configured admin's private DM."""
         bot = getattr(ctx.platform_context, "bot", None)
         if not bot or self._is_group_chat(ctx) or not is_admin(ctx.user_id):
             return
         if len(ctx.command_args) != 3 or ctx.command_args[2].upper() != "CLEAN":
-            message = "Use /reserve_add C0002 -100... CLEAN after checking group history and any extra named invite links."
+            message = "Use /reserve_add C0002 -100... CLEAN once you have left the group, checked its history and removed any extra named invite links."
         else:
             try:
                 chat_id = int(ctx.command_args[1])
                 result = await register_reserve(bot, chat_id, ctx.user_id, ctx.command_args[0])
                 message = (
                     f"Reserve {result['label']} is available. Chat ID: {result['chat_id']}. "
-                    f"Caretaker ID: {result['caretaker_user_id']}. No invite link stored. "
-                    "The group's previous primary invite link has been revoked; "
-                    "named links made by other admins still need a manual check."
+                    "No invite link stored. The group's previous primary invite link "
+                    "has been revoked; named links made by other admins still need a manual check."
                 )
             except (ValueError, telegram_error.TelegramError) as error:
                 message = f"Reserve registration rejected: {error}"
@@ -2146,8 +2136,6 @@ class PlannerBot:
                                 logger.warning("Could not remove unauthorized reserve join in %s: %s", chat_id, type(error).__name__)
                         return
                 await self._sync_club_member_from_update(chat_id, member_user, new_status)
-                if new_status in ("left", "kicked", "banned") and not member_user.is_bot:
-                    await note_reserve_member_left(ctx.platform_context.bot, chat_id, member_user.id)
                 if joined and not getattr(member_user, "is_bot", False):
                     await self._welcome_group_members(ctx, members=[member_user])
 

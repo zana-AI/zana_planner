@@ -1052,7 +1052,7 @@ async def list_telegram_group_reserves(admin_id: int = Depends(get_admin_user)):
         rows = session.execute(
             text("""
                 SELECT label, chat_id, original_title, status, club_id,
-                       caretaker_user_id, member_count_at_check,
+                       member_count_at_check,
                        verified_at_utc, cleanliness_attested_at_utc,
                        cleanliness_attested_by_user_id, allocated_at_utc, last_error
                 FROM telegram_group_reserves
