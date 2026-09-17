@@ -921,7 +921,7 @@ export function PdfReaderPage() {
             <ChevronLeft size={18} />
           </button>
           <label className="pdf-reader-page-count" title={t('pdfReader.jumpToPage')}>
-            <input type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
+            <input aria-label={t('pdfReader.jumpToPage')} type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
             <span>/ {pageCount || 0}</span>
           </label>
           <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber + 1)} disabled={!pageCount || pageNumber >= pageCount} title={t('pdfReader.nextPage')} type="button">

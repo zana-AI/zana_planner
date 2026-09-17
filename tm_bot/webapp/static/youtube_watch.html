@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Watch in Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
@@ -94,8 +94,12 @@
     .word-action:disabled { cursor: default; opacity: .55; }
     .word-status { min-height: 16px; margin-top: 7px; color: rgba(237,243,255,.58); font-size: 11px; }
     .hint { font-size: 12px; color: rgba(237,243,255,.58); margin: 10px 2px 0; }
-    .controls { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
     .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+    .toggle { min-height:44px; }
+    .controls .expand-btn { min-height:44px; }
+    .word-action, .focus-replay { min-height:44px; }
+    .transcript-jump { min-height:44px; }
     .toggle input { width: 18px; height: 18px; }
     .debug {
       margin-top: 10px;
@@ -219,7 +223,7 @@
 <body>
   <div id="videoTitle" class="video-title" hidden></div>
   <div class="video-wrap">
-    <iframe id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    <iframe title="YouTube video player" id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
   <div id="watchProgress" class="progress-container" hidden></div>
   <div id="focusLine" class="focus-line" hidden>

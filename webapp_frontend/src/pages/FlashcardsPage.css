@@ -486,3 +486,21 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* Study setup is disclosed on demand; the card is the primary surface. */
+.fc-session-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:8px; }
+.fc-session-heading { min-width:0; }
+.fc-session-heading h1 { margin:0; font-size:1.2rem; line-height:1.4; overflow-wrap:anywhere; }
+.fc-setup { margin-bottom:16px; border-bottom:1px solid var(--border); }
+.fc-setup summary { min-height:44px; display:flex; align-items:center; gap:10px; cursor:pointer; font-size:.8rem; color:var(--text-muted); list-style:none; }
+.fc-setup summary::-webkit-details-marker { display:none; }
+.fc-setup summary::after { content:'+'; margin-inline-start:auto; font-size:1.2rem; }
+.fc-setup[open] summary::after { content:'−'; }
+.fc-ready-count { color:var(--accent); font-variant-numeric:tabular-nums; font-size:.8rem; white-space:nowrap; }
+.fc-setup-body { display:grid; gap:12px; padding:8px 0 16px; }
+.fc-setup-body .fc-decks { margin:0; }
+.fc-setup-body .fc-decks button, .fc-tabs button { min-height:44px; }
+.fc-setup-body .fc-counts { margin:0; }
+.fc-search { min-width:0; }
+.fc-item-actions button { width:44px; height:44px; }
+.fc-page :is(button, select, summary):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }

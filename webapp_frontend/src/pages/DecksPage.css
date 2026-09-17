@@ -6,3 +6,13 @@
 .decks-search { display:flex; align-items:center; gap:8px; padding:0 12px; min-height:44px; border:1px solid var(--border); border-radius:var(--r-12); background:var(--surface); color:var(--fg-muted); }
 .decks-search input { border:0; outline:0; background:transparent; color:var(--fg); font:inherit; width:100%; }
 .decks-list { display:grid; gap:10px; margin-top:14px; }.decks-card { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px; border:1px solid var(--border); border-radius:var(--r-12); background:var(--surface); }.decks-card h2 { font-size:16px; }.decks-card p { font-size:13px; margin-top:3px; }.decks-card small { display:block; margin-top:8px; }.decks-card button,.content-library-decks { display:inline-flex; align-items:center; justify-content:center; gap:7px; border:0; background:var(--accent); color:var(--fg-on-accent); font:inherit; font-weight:700; border-radius:var(--r-12); cursor:pointer; }.decks-card button { min-height:38px; padding:0 12px; }.content-library-decks { width:100%; min-height:54px; padding:0 16px; justify-content:space-between; margin-bottom:14px; }.content-library-decks span { display:inline-flex; align-items:center; gap:9px; font-size:16px; }
+
+.decks-page { padding-bottom:calc(var(--bottom-nav-height, 72px) + 24px); }
+.decks-page header button,.decks-card button { min-width:44px; min-height:44px; flex-shrink:0; }
+.decks-card-copy { min-width:0; }
+.decks-card h2,.decks-card p { overflow-wrap:anywhere; }
+.decks-filters { display:flex; gap:8px; margin-top:12px; }
+.decks-filters button { min-height:44px; padding:8px 14px; border:1px solid var(--border); border-radius:999px; background:transparent; color:var(--fg-muted); font:inherit; cursor:pointer; }
+.decks-filters button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); background:var(--surface); }
+.decks-empty { padding:32px 12px; text-align:center; color:var(--fg-muted); }
+.decks-page :is(button,input):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }

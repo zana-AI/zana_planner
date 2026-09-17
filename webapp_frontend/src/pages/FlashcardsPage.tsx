@@ -176,8 +176,9 @@ function ReviewPane({
   // Space reveals, 1-4 rates — the keyboard shortcuts Anki users expect.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!card) return;
+      if (!card || (e.target instanceof HTMLElement && e.target.closest('input, select, textarea, summary, a, [contenteditable]'))) return;
       if (e.code === 'Space' || e.code === 'Enter') {
+        if (e.target instanceof HTMLElement && e.target.closest('button')) return;
         e.preventDefault();
         if (!revealed) setRevealed(true);
         return;
@@ -566,52 +567,24 @@ function emptyDraft(deckPath: string) {
  * Selecting a deck studies everything beneath it, so stopping at any level is a
  * valid choice.
  */
-function DeckPicker({
-  decks,
-  deckId,
-  onSelect,
-}: {
+function DeckPicker({ decks, deckId, onSelect }: {
   decks: FlashcardDeck[];
   deckId?: string;
   onSelect: (deck: FlashcardDeck | null) => void;
 }) {
   const { t } = useTranslation();
   if (!decks.length) return null;
-
-  const current = decks.find((d) => d.deck_id === deckId) || null;
-  const parent = current?.parent_deck_id
-    ? decks.find((d) => d.deck_id === current.parent_deck_id) || null
-    : null;
-  // With a single root ("French") that root is not a choice, so open on its
-  // children — the level where Édito B1, Lingoda and the videos actually differ.
-  const roots = decks.filter((d) => !d.parent_deck_id);
+  const current = decks.find((deck) => deck.deck_id === deckId) || null;
+  const parent = decks.find((deck) => deck.deck_id === current?.parent_deck_id) || null;
+  const roots = decks.filter((deck) => !deck.parent_deck_id);
   const base = current || (roots.length === 1 ? roots[0] : null);
-  const children = decks.filter(
-    (d) => (d.parent_deck_id || null) === (base?.deck_id || null),
-  );
-
-  // A level with nothing to choose between is just a button that changes nothing.
+  const children = decks.filter((deck) => (deck.parent_deck_id || null) === (base?.deck_id || null));
   if (!current && children.length < 2) return null;
-
   return (
     <div className="fc-decks" role="group" aria-label={t('flashcards.chooseDeck')}>
-      <button
-        type="button"
-        className={!current ? 'is-active' : ''}
-        onClick={() => onSelect(null)}
-      >
-        {t('flashcards.allCards')}
-      </button>
-      {current ? (
-        <button type="button" className="is-active" onClick={() => onSelect(parent)}>
-          {current.name}
-        </button>
-      ) : null}
-      {children.map((deck) => (
-        <button type="button" key={deck.deck_id} onClick={() => onSelect(deck)}>
-          {deck.name}
-        </button>
-      ))}
+      <button type="button" className={!current ? 'is-active' : ''} onClick={() => onSelect(null)}>{t('flashcards.allCards')}</button>
+      {current && <button type="button" className="is-active" onClick={() => onSelect(parent)}>{current.name}</button>}
+      {children.map((deck) => <button type="button" key={deck.deck_id} onClick={() => onSelect(deck)}>{deck.name}</button>)}
     </div>
   );
 }
@@ -633,8 +606,12 @@ export function FlashcardsPage() {
   }, []);
 
   const selectDeck = useCallback((deck: FlashcardDeck | null) => {
-    setParams(deck ? {deck: deck.deck_id, name: deck.name} : {}, {replace: true});
-  }, [setParams]);
+    const next = new URLSearchParams(params);
+    if (deck) { next.set('deck', deck.deck_id); next.set('name', deck.name); }
+    else { next.delete('deck'); next.delete('name'); }
+    setCounts(null);
+    setParams(next, {replace: true});
+  }, [params, setParams]);
 
   const selectDirection = (nextDirection: 'recognition' | 'production') => {
     const next = new URLSearchParams(params);
@@ -659,34 +636,34 @@ export function FlashcardsPage() {
   return (
     <div className="fc-page">
       <div className="fc-container">
-        <header className="fc-header">
-          <h1>{deckName || t('flashcards.study')}</h1>
-          <CountsBar counts={counts} />
+        <header className="fc-session-header">
+          <div className="fc-session-heading">
+            <h1 dir="auto">{deckName || t('flashcards.allCards')}</h1>
+          </div>
+          {counts && <span className="fc-ready-count">{t('flashcards.dueCount', { count: counts.due })}</span>}
         </header>
-
-        <DeckPicker decks={decks} deckId={deckId} onSelect={selectDeck} />
-        <div className="fc-decks" role="group" aria-label="Study direction">
-          <button type="button" className={direction === 'recognition' ? 'is-active' : ''} onClick={() => selectDirection('recognition')}>French → meaning</button>
-          <button type="button" className={direction === 'production' ? 'is-active' : ''} onClick={() => selectDirection('production')}>Meaning → French</button>
-        </div>
+        <details className="fc-setup">
+          <summary>
+            <span>{t('flashcards.studyOptions')}</span>
+            <span>{t(`flashcards.${direction}`)}</span>
+          </summary>
+          <div className="fc-setup-body">
+            <DeckPicker decks={decks} deckId={deckId} onSelect={selectDeck} />
+            <div className="fc-decks" role="group" aria-label={t('flashcards.studyDirection')}>
+              <button type="button" aria-pressed={direction === 'recognition'} className={direction === 'recognition' ? 'is-active' : ''} onClick={() => selectDirection('recognition')}>{t('flashcards.recognition')}</button>
+              <button type="button" aria-pressed={direction === 'production'} className={direction === 'production' ? 'is-active' : ''} onClick={() => selectDirection('production')}>{t('flashcards.production')}</button>
+            </div>
+            <CountsBar counts={counts} />
+          </div>
+        </details>
 
         <div className="fc-tabs">
-          <button
-            className={tab === 'review' ? 'is-active' : ''}
-            onClick={() => setTab('review')}
-          >
-            {t('flashcards.reviewTab')}
-          </button>
-          <button
-            className={tab === 'manage' ? 'is-active' : ''}
-            onClick={() => setTab('manage')}
-          >
-            {t('flashcards.myCards')}
-          </button>
+          <button className={tab === 'review' ? 'is-active' : ''} aria-pressed={tab === 'review'} onClick={() => setTab('review')}>{t('flashcards.reviewTab')}</button>
+          <button className={tab === 'manage' ? 'is-active' : ''} aria-pressed={tab === 'manage'} onClick={() => setTab('manage')}>{t('flashcards.myCards')}</button>
         </div>
 
         {tab === 'review' ? (
-          <ReviewPane deckId={deckId} direction={direction} onCountsChange={setCounts} />
+          <ReviewPane key={deckId || 'all'} deckId={deckId} direction={direction} onCountsChange={setCounts} />
         ) : (
           <ManagePane
             deckId={deckId}

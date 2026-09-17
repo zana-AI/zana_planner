@@ -1,4 +1,17 @@
 {
+  "deckBrowser": {
+    "back": "Back to library",
+    "title": "Decks",
+    "subtitle": "Choose a deck or study a whole language.",
+    "search": "Search decks or languages",
+    "all": "All decks",
+    "ready": "Ready to study",
+    "study": "Study",
+    "counts": "{{due}} due · {{fresh}} new · {{total}} cards",
+    "noMatch": "No decks match your search.",
+    "caughtUp": "All caught up. Choose All decks to browse your cards.",
+    "empty": "Your decks will appear here when you add cards."
+},
   "common": {
     "loading": "Loading...",
     "back": "Back",
@@ -52,6 +65,7 @@
       "subtitle": "Join a challenge and play"
     },
     "flashcards": {
+
       "title": "Quiz",
       "subtitle": "Review what you are about to forget"
     },
@@ -266,6 +280,11 @@
     "showAnswer": "Show answer"
   },
   "flashcards": {
+    "studyOptions": "Study options",
+    "studyDirection": "Direction",
+    "recognition": "Word → meaning",
+    "production": "Meaning → word",
+    "dueCount": "{{count}} due",
     "tryAgain": "Try again",
     "refresh": "Refresh",
     "nothingToReview": "Nothing to review right now.",
