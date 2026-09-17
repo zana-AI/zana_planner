@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
-import { CalendarClock, CheckCircle2, ExternalLink, FileText, Headphones, Play, RotateCcw, Share2 } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw, Share2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
+import { BottomSheet } from './ui/BottomSheet';
 import type { UserContentWithDetails } from '../types';
 
 interface ContentCardProps {
@@ -43,6 +44,7 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
 export function ContentCard({ item, onClick, onStatusChange, onPlan, onShare }: ContentCardProps) {
   const { t } = useTranslation();
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState('');
+  const [actionsOpen, setActionsOpen] = useState(false);
   const title = item.title || t('content.untitled');
   const provider = (item.provider || 'other').replace(/_/g, ' ');
   const displayType = getDisplayType(item);
@@ -93,14 +95,20 @@ export function ContentCard({ item, onClick, onStatusChange, onPlan, onShare }: 
       ? { label: t('content.resume'), icon: <RotateCcw size={15} />, value: 'in_progress' as const }
     : { label: t('content.markComplete'), icon: <CheckCircle2 size={15} />, value: 'completed' as const };
 
+  const runAction = (action?: () => void) => {
+    setActionsOpen(false);
+    action?.();
+  };
+
   return (
-    <article
+    <>
+      <article
       className="content-card"
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={(event) => {
-        if (!onClick) return;
+        if (!onClick || event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onClick();
@@ -146,44 +154,44 @@ export function ContentCard({ item, onClick, onStatusChange, onPlan, onShare }: 
       </div>
 
       <div className="content-card-actions" onClick={(event) => event.stopPropagation()}>
-        <button className="content-card-action" type="button" onClick={onClick} title={t('content.open')}>
-          <ExternalLink size={15} />
-          <span>{t('content.open')}</span>
+        <button
+          className="content-card-icon-action"
+          type="button"
+          onClick={() => setActionsOpen(true)}
+          aria-label={t('content.actions')}
+          title={t('content.actions')}
+        >
+          <MoreHorizontal size={18} />
         </button>
-        {onStatusChange && (
-          <button
-            className="content-card-action"
-            type="button"
-            onClick={() => onStatusChange(secondaryStatus.value)}
-            title={secondaryStatus.label}
-          >
-            {secondaryStatus.icon}
-            <span>{secondaryStatus.label}</span>
-          </button>
-        )}
-        {onPlan && (
-          <button
-            className="content-card-action"
-            type="button"
-            onClick={onPlan}
-            title={t('content.planIt')}
-          >
-            <CalendarClock size={15} />
-            <span>{t('content.planIt')}</span>
-          </button>
-        )}
-        {onShare && (
-          <button
-            className="content-card-action"
-            type="button"
-            onClick={onShare}
-            title={t('content.share')}
-          >
-            <Share2 size={15} />
-            <span>{t('content.share')}</span>
-          </button>
-        )}
       </div>
-    </article>
+      </article>
+
+      <BottomSheet open={actionsOpen} onClose={() => setActionsOpen(false)} title={title} subtitle={t('content.actions')}>
+        <div className="content-card-action-sheet">
+          <button type="button" className="content-card-menu-action" onClick={() => runAction(onClick)}>
+            <ExternalLink size={18} aria-hidden="true" />
+            <span>{t('content.open')}</span>
+          </button>
+          {onStatusChange && (
+            <button type="button" className="content-card-menu-action" onClick={() => runAction(() => onStatusChange(secondaryStatus.value))}>
+              {secondaryStatus.icon}
+              <span>{secondaryStatus.label}</span>
+            </button>
+          )}
+          {onPlan && (
+            <button type="button" className="content-card-menu-action" onClick={() => runAction(onPlan)}>
+              <CalendarClock size={18} aria-hidden="true" />
+              <span>{t('content.planIt')}</span>
+            </button>
+          )}
+          {onShare && (
+            <button type="button" className="content-card-menu-action" onClick={() => runAction(onShare)}>
+              <Share2 size={18} aria-hidden="true" />
+              <span>{t('content.share')}</span>
+            </button>
+          )}
+        </div>
+      </BottomSheet>
+    </>
   );
 }

@@ -422,6 +422,7 @@
     "readCoverageTimeline": "Read coverage timeline",
     "open": "Open",
     "more": "More",
+    "actions": "Actions",
     "types": {
       "pdf": "PDF",
       "video": "Video",
@@ -431,7 +432,7 @@
       "deck": "Deck"
     },
     "status": {
-      "saved": "Saved",
+      "saved": "For later",
       "in_progress": "In progress",
       "completed": "Completed"
     },
@@ -691,7 +692,7 @@
     "status": {
       "all": "All",
       "continue": "Continue",
-      "saved": "Saved",
+      "saved": "For later",
       "completed": "Completed"
     },
     "types": {

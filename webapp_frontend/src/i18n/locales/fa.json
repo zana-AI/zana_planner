@@ -479,6 +479,7 @@
     "readCoverageTimeline": "نوار پوشش مطالعه",
     "open": "باز کردن",
     "more": "بیشتر",
+    "actions": "گزینه‌ها",
     "types": {
       "pdf": "پی‌دی‌اف",
       "video": "ویدئو",
@@ -488,7 +489,7 @@
       "deck": "دسته‌کارت"
     },
     "status": {
-      "saved": "ذخیره",
+      "saved": "برای بعد",
       "in_progress": "در جریان",
       "completed": "تمام"
     },
@@ -589,7 +590,7 @@
     "status": {
       "all": "همه",
       "continue": "ادامه",
-      "saved": "ذخیره‌شده",
+      "saved": "برای بعد",
       "completed": "تمام‌شده"
     },
     "types": {
