@@ -730,6 +730,7 @@
     "failedToSaveSelectedHighlight": "Failed to save selected highlight",
     "failedToDeleteHighlight": "Failed to delete highlight",
     "highlight": "Highlight",
+    "saveChanges": "Save changes",
     "cancel": "Cancel",
     "addNoteOptional": "Add note (optional)",
     "highlightColor": "Highlight color"

@@ -1,6 +1,7 @@
 import type { PdfHighlightRect } from '../../types';
 
 export interface SelectionDraft {
+  highlightId?: string;
   text: string;
   rects: PdfHighlightRect[];
   // Selection bounds in page-relative pixels. The popover hook measures the

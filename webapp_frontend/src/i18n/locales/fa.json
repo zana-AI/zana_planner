@@ -628,6 +628,7 @@
     "failedToSaveSelectedHighlight": "هایلایت انتخاب‌شده ذخیره نشد",
     "failedToDeleteHighlight": "هایلایت حذف نشد",
     "highlight": "هایلایت",
+    "saveChanges": "ذخیرهٔ تغییرات",
     "cancel": "انصراف",
     "addNoteOptional": "افزودن یادداشت (اختیاری)",
     "highlightColor": "رنگ هایلایت"

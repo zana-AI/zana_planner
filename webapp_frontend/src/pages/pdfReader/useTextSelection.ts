@@ -118,6 +118,7 @@ const sortAndMergeSelectionRects = (rects: SelectionClientRect[], pageDirection:
 interface UseTextSelectionOptions {
   pageFrameRef: RefObject<HTMLDivElement>;
   textLayerRef: RefObject<HTMLDivElement>;
+  popoverRef: RefObject<HTMLDivElement>;
   pageNumber: number;
   scale: number;
   color: string;
@@ -126,6 +127,7 @@ interface UseTextSelectionOptions {
 export function useTextSelection({
   pageFrameRef,
   textLayerRef,
+  popoverRef,
   pageNumber,
   scale,
   color,
@@ -138,14 +140,19 @@ export function useTextSelection({
     const textLayer = textLayerRef.current;
     if (!selection || selection.rangeCount === 0 || !pageFrame || !textLayer) return;
 
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    const isInsidePopover = (node: Node | null) => Boolean(
+      node && popoverRef.current?.contains(node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement),
+    );
+    if (isInsidePopover(anchorNode) || isInsidePopover(focusNode)) return;
+
     const text = selection.toString().trim();
     if (!text) {
       setSelectionDraft(null);
       return;
     }
 
-    const anchorNode = selection.anchorNode;
-    const focusNode = selection.focusNode;
     if (
       (anchorNode && !textLayer.contains(anchorNode)) ||
       (focusNode && !textLayer.contains(focusNode))
@@ -203,7 +210,7 @@ export function useTextSelection({
       note: '',
       color,
     });
-  }, [color, pageFrameRef, textLayerRef]);
+  }, [color, pageFrameRef, popoverRef, textLayerRef]);
 
   useEffect(() => {
     let selectionTimer: number | null = null;
@@ -216,7 +223,8 @@ export function useTextSelection({
         selectionTimer = null;
       }, 180);
     };
-    const handlePointerUp = () => {
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.target instanceof Node && popoverRef.current?.contains(event.target)) return;
       // Fast taps often finish before the debounced selectionchange handler runs.
       window.requestAnimationFrame(() => {
         captureTextSelection();
@@ -231,7 +239,7 @@ export function useTextSelection({
         window.clearTimeout(selectionTimer);
       }
     };
-  }, [captureTextSelection, pageNumber, scale]);
+  }, [captureTextSelection, pageNumber, popoverRef, scale]);
 
   return { selectionDraft, setSelectionDraft, clearNativeSelection };
 }

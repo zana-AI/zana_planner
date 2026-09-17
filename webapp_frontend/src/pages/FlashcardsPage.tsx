@@ -24,6 +24,11 @@ import './FlashcardsPage.css';
  * than youtube.com: it keeps the viewer inside the app, and that page already
  * knows how to seek and to record watch progress.
  */
+function currentAppPath() {
+  if (typeof window === 'undefined') return '/my-contents';
+  return `${window.location.pathname}${window.location.search}`;
+}
+
 function videoMomentUrl(fields: FlashcardFields, language: string): string | null {
   const url = typeof fields.source_url === 'string' ? fields.source_url : '';
   const start = typeof fields.source_start === 'number' ? fields.source_start : NaN;
@@ -33,14 +38,14 @@ function videoMomentUrl(fields: FlashcardFields, language: string): string | nul
   const at = Math.max(0, Math.floor(start) - 1);
   // The word travels too: the player highlights it inside the spoken line.
   const word = encodeURIComponent(fields.front || '');
-  return `/youtube-watch?video_id=${match[1]}&start=${at}&word=${word}&lang=${encodeURIComponent(language)}`;
+  return `/youtube-watch?video_id=${match[1]}&start=${at}&word=${word}&lang=${encodeURIComponent(language)}&return_to=${encodeURIComponent(currentAppPath())}`;
 }
 
 function pdfSourceUrl(card: FlashcardQueueCard): string | null {
   const reference = card.references.find((item) => item.content_id && typeof item.locator?.page === 'number');
   if (!reference?.content_id) return null;
   const page = Number(reference.locator.page);
-  return `/pdf-reader?content_id=${encodeURIComponent(reference.content_id)}${Number.isFinite(page) ? `&page=${Math.max(1, Math.floor(page))}` : ''}`;
+  return `/pdf-reader?content_id=${encodeURIComponent(reference.content_id)}${Number.isFinite(page) ? `&page=${Math.max(1, Math.floor(page))}` : ''}&return_to=${encodeURIComponent(currentAppPath())}`;
 }
 
 function formatMoment(seconds: number): string {

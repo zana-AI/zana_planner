@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { HeatmapBar } from '../components/HeatmapBar';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
@@ -49,8 +49,10 @@ const applyRasterCacheToCanvas = (target: HTMLCanvasElement, entry: PageRasterCa
 export function PdfReaderPage() {
   const { t } = useTranslation();
   const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
+  const navigate = useNavigate();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
+  const returnTo = params.get('return_to') || '';
   const requestedPage = Number(params.get('page'));
 
   const [assetId, setAssetId] = useState('');
@@ -96,6 +98,7 @@ export function PdfReaderPage() {
   const fullscreenChromeTimeoutRef = useRef<number | null>(null);
   const pageRasterCacheRef = useRef<Map<number, PageRasterCacheEntry>>(new Map());
   const panRef = useRef<{ pointerId: number; clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const wheelPageTurnLockUntilRef = useRef(0);
   const [isPanning, setIsPanning] = useState(false);
 
   const canOpen = Boolean(contentId);
@@ -127,6 +130,7 @@ export function PdfReaderPage() {
   const { selectionDraft, setSelectionDraft } = useTextSelection({
     pageFrameRef,
     textLayerRef,
+    popoverRef,
     pageNumber,
     scale,
     color,
@@ -778,6 +782,18 @@ export function PdfReaderPage() {
     void syncProgress(nextRatio);
   };
 
+  const returnToLibrary = () => {
+    const historyIndex = Number(window.history.state?.idx);
+    if (Number.isFinite(historyIndex) && historyIndex > 0) {
+      navigate(-1);
+      return;
+    }
+    const safeReturnPath = returnTo.startsWith('/') && !returnTo.startsWith('//')
+      ? returnTo
+      : '/my-contents';
+    navigate(safeReturnPath, { replace: true });
+  };
+
   const turnFullscreenPage = (direction: -1 | 1) => {
     revealFullscreenControls();
     goToPage(pageNumber + direction);
@@ -804,11 +820,24 @@ export function PdfReaderPage() {
 
   const handleReaderWheel = (event: WheelEvent<HTMLDivElement>) => {
     const shell = shellRef.current;
-    if (!shell || (!event.shiftKey && event.deltaX === 0)) return;
-    const horizontalDelta = event.deltaX || event.deltaY;
-    if (shell.scrollWidth <= shell.clientWidth || horizontalDelta === 0) return;
-    event.preventDefault();
-    shell.scrollLeft += horizontalDelta;
+    if (!shell) return;
+
+    const horizontalIntent = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+    if (horizontalIntent) return;
+
+    if (event.deltaY === 0 || event.ctrlKey || event.metaKey || event.altKey) return;
+    const maxScrollTop = Math.max(0, shell.scrollHeight - shell.clientHeight);
+    const tolerance = 2;
+    const direction = event.deltaY > 0 ? 1 : -1;
+    const atBoundary = direction > 0
+      ? shell.scrollTop >= maxScrollTop - tolerance
+      : shell.scrollTop <= tolerance;
+    if (!atBoundary || pageNumber + direction < 1 || pageNumber + direction > pageCount) return;
+    if (Date.now() < wheelPageTurnLockUntilRef.current) {
+      return;
+    }
+    wheelPageTurnLockUntilRef.current = Date.now() + 280;
+    goToPage(pageNumber + direction);
   };
 
   const handleReaderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -860,14 +889,21 @@ export function PdfReaderPage() {
     if (!contentId || !assetId || !selectionDraft) return;
     setError('');
     try {
-      await apiClient.createPdfHighlight(contentId, {
-        asset_id: assetId,
-        page_index: pageNumber - 1,
-        rects: selectionDraft.rects,
-        selected_text: selectionDraft.text,
-        note: selectionDraft.note || undefined,
-        color: selectionDraft.color,
-      });
+      if (selectionDraft.highlightId) {
+        await apiClient.updatePdfHighlight(contentId, selectionDraft.highlightId, {
+          note: selectionDraft.note,
+          color: selectionDraft.color,
+        });
+      } else {
+        await apiClient.createPdfHighlight(contentId, {
+          asset_id: assetId,
+          page_index: pageNumber - 1,
+          rects: selectionDraft.rects,
+          selected_text: selectionDraft.text,
+          note: selectionDraft.note || undefined,
+          color: selectionDraft.color,
+        });
+      }
       setSelectionDraft(null);
       clearNativeSelection();
       const h = await apiClient.getPdfHighlights(contentId, assetId);
@@ -879,6 +915,25 @@ export function PdfReaderPage() {
         setError(t('pdfReader.failedToSaveSelectedHighlight'));
       }
     }
+  };
+
+  const openHighlightEditor = (highlight: PdfHighlight) => {
+    const frame = pageFrameRef.current;
+    const rects = highlight.rects_json || [];
+    if (!frame || rects.length === 0) return;
+    const left = Math.min(...rects.map((rect) => rect.x * frame.clientWidth));
+    const right = Math.max(...rects.map((rect) => (rect.x + rect.width) * frame.clientWidth));
+    const top = Math.min(...rects.map((rect) => rect.y * frame.clientHeight));
+    const bottom = Math.max(...rects.map((rect) => (rect.y + rect.height) * frame.clientHeight));
+    clearNativeSelection();
+    setSelectionDraft({
+      highlightId: highlight.id,
+      text: highlight.selected_text || '',
+      rects,
+      bounds: { top, bottom, centerX: (left + right) / 2 },
+      note: highlight.note || '',
+      color: highlight.color || '#ffe066',
+    });
   };
 
   const deleteHighlight = async (highlightId: string) => {
@@ -914,7 +969,7 @@ export function PdfReaderPage() {
     <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}${isFullscreen && !fullscreenControlsVisible ? ' pdf-reader-page--chrome-hidden' : ''}`}>
       <section className="pdf-reader-viewer" dir="ltr">
         <div className="pdf-reader-toolbar">
-          <button className="pdf-reader-icon-btn" onClick={() => window.history.back()} title={t('pdfReader.backToLibrary')} type="button">
+          <button className="pdf-reader-icon-btn" onClick={returnToLibrary} title={t('pdfReader.backToLibrary')} type="button">
             <ArrowLeft size={18} className="icon-directional" />
           </button>
           <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber - 1)} disabled={!pageCount || pageNumber <= 1} title={t('pdfReader.previousPage')} type="button">
@@ -968,8 +1023,8 @@ export function PdfReaderPage() {
           <div
             ref={shellRef}
             className={`pdf-reader-canvas-shell${isPanning ? ' pdf-reader-canvas-shell--panning' : ''}`}
-            onScroll={handleReaderScroll}
             onWheel={handleReaderWheel}
+            onScroll={handleReaderScroll}
             onKeyDown={handleReaderKeyDown}
             onPointerDown={startMousePan}
             onPointerMove={moveMousePan}
@@ -993,7 +1048,7 @@ export function PdfReaderPage() {
             >
               <canvas ref={canvasRef} className="pdf-reader-canvas" />
               <div ref={textLayerRef} className="pdf-reader-text-layer textLayer" />
-              <HighlightLayer highlights={highlights} pageIndex={pageNumber - 1} />
+              <HighlightLayer highlights={highlights} pageIndex={pageNumber - 1} onHighlightClick={openHighlightEditor} />
               {selectionDraft && (
                 <HighlightPopover
                   draft={selectionDraft}

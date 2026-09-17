@@ -51,7 +51,7 @@ export function HighlightPopover({
           value={draft.color}
           onChange={(event) => onColorChange(event.target.value)}
         />
-        <button type="button" onClick={onSave}>{t('pdfReader.highlight')}</button>
+        <button type="button" onClick={onSave}>{draft.highlightId ? t('pdfReader.saveChanges') : t('pdfReader.highlight')}</button>
         <button type="button" onClick={onCancel}>{t('pdfReader.cancel')}</button>
       </div>
     </div>

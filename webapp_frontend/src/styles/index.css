@@ -300,15 +300,24 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
 }
 
 .pdf-reader-highlight-layer {
-  z-index: 1;
+  z-index: 3;
   pointer-events: none;
 }
 
 .pdf-reader-highlight-rect {
   position: absolute;
+  border: 0;
   border-radius: 2px;
   opacity: 0.36;
   mix-blend-mode: multiply;
+  cursor: pointer;
+  padding: 0;
+  pointer-events: auto;
+}
+
+.pdf-reader-highlight-rect:focus-visible {
+  outline: 2px solid var(--accent, #63a7f7);
+  outline-offset: 2px;
 }
 
 .pdf-reader-selection-popover {

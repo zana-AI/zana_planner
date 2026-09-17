@@ -33,7 +33,15 @@
       background: var(--app-bg);
       color: #edf3ff;
     }
+    .watch-header { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+    .watch-back {
+      flex: 0 0 auto; min-width: 34px; min-height: 34px; padding: 0 9px;
+      border: 1px solid var(--app-border); border-radius: 9px; background: transparent;
+      color: #edf3ff; font: inherit; font-size: 18px; cursor: pointer;
+    }
+    .watch-back:hover, .watch-back:focus-visible { background: rgba(99,167,247,.14); outline: none; }
     .video-title {
+      flex: 1;
       font-size: 15px;
       font-weight: 600;
       padding: 0 0 6px;
@@ -138,12 +146,12 @@
       z-index: 10;
       background: #000;
     }
-    body.landscape .video-title,
+    body.landscape .watch-header,
     body.landscape .progress-container,
     body.landscape .hint,
     body.landscape .controls,
     body.landscape .debug,
-    body.desktop-fullscreen .video-title,
+    body.desktop-fullscreen .watch-header,
     body.desktop-fullscreen .progress-container,
     body.desktop-fullscreen .hint,
     body.desktop-fullscreen .controls,
@@ -221,7 +229,10 @@
   </style>
 </head>
 <body>
-  <div id="videoTitle" class="video-title" hidden></div>
+  <div class="watch-header">
+    <button id="backBtn" class="watch-back" type="button" aria-label="Back">←</button>
+    <div id="videoTitle" class="video-title" hidden></div>
+  </div>
   <div class="video-wrap">
     <iframe title="YouTube video player" id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
@@ -274,16 +285,17 @@
   var startAt = Math.max(0, parseInt(params.get('start') || '0', 10) || 0);
   // A flashcard links here for one word; we highlight it in the spoken line.
   var focusWord = params.get('word') || '';
+  var returnTo = params.get('return_to') || '';
   var uiLanguage = (params.get('lang') || 'en').toLowerCase().split('-')[0];
   var copy = uiLanguage === 'fa' ? {
-    hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', track: 'ردگیری پیشرفت',
+    hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', back: 'بازگشت', track: 'ردگیری پیشرفت',
     trackHint: 'بخش‌هایی را که می‌بینید ذخیره می‌کنیم.', full: 'تمام‌صفحه', close: 'بستن و ذخیره', exit: 'خروج',
     replay: '↺ تکرار این جمله', listen: '🔊 تلفظ', save: 'ذخیره کارت', saved: '✓ ذخیره شد',
     existingKept: 'کارت موجود حفظ شد',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'یک کلمه را انتخاب کنید.',
     signIn: 'برای ذخیره، صفحه را داخل اپ باز کنید.', context: 'جمله'
   } : {
-    hint: 'When you’re finished, close this page to save your watch progress.', track: 'Track progress',
+    hint: 'When you’re finished, close this page to save your watch progress.', back: 'Back', track: 'Track progress',
     trackHint: 'Save the parts you watch.', full: 'Full screen', close: 'Close and save', exit: 'Exit',
     replay: '↺ Replay this line', listen: '🔊 Listen', save: 'Save card', saved: '✓ Saved',
     existingKept: 'Existing card kept',
@@ -293,6 +305,8 @@
   document.documentElement.lang = uiLanguage;
   document.documentElement.dir = uiLanguage === 'fa' ? 'rtl' : 'ltr';
   document.getElementById('doneHint').textContent = copy.hint;
+  document.getElementById('backBtn').title = copy.back;
+  document.getElementById('backBtn').setAttribute('aria-label', copy.back);
   document.getElementById('replayLine').textContent = copy.replay;
   document.getElementById('replayLine').addEventListener('click', function() { replayCurrentLine(); });
   document.getElementById('trackLabel').textContent = copy.track;
@@ -1198,6 +1212,25 @@
       if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
     });
   }
+
+  function returnToApp() {
+    sendBeaconStats('back');
+    if (returnTo.charAt(0) === '/' && returnTo.charAt(1) !== '/') {
+      window.location.replace(returnTo);
+      return;
+    }
+    var cameFromThisApp = false;
+    try {
+      cameFromThisApp = Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin;
+    } catch (e) {}
+    if (cameFromThisApp || (window.history.state && Number(window.history.state.idx) > 0)) {
+      window.history.back();
+    } else {
+      window.location.replace('/my-contents');
+    }
+  }
+
+  document.getElementById('backBtn').addEventListener('click', returnToApp);
 
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
