@@ -50,97 +50,87 @@ select:focus {
   background-color: var(--surface-hover);
 }
 
-/* PDF reader */
+/* PDF reader — one immersive layout on every screen: a slim bar, the page,
+   and a slim footer. There is no separate full-screen mode any more; the app
+   header and tabs are hidden on this route (Navigation.tsx). */
 .pdf-reader-page {
-  display: grid;
-  gap: 16px;
-  min-height: calc(100dvh - 72px);
-  padding: 16px;
-  padding-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
-}
-
-.pdf-reader-page--fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 2147483000;
-  display: block;
-  min-height: 100dvh;
-  padding: 0;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: #05070e;
-  overflow: hidden;
-}
-
-body.pdf-reader-fullscreen-active {
-  overflow: hidden;
-}
-
-body.pdf-reader-fullscreen-active .app-shell-header,
-body.pdf-reader-fullscreen-active .ui-bottom-nav {
-  display: none !important;
-}
-
-.pdf-reader-page--fullscreen .pdf-reader-viewer {
-  width: 100%;
-  height: 100dvh;
-  border: 0;
-  border-radius: 0;
-}
-
-.pdf-reader-page--fullscreen .pdf-reader-tools {
-  display: none;
-}
-
-.pdf-reader-page--fullscreen .pdf-reader-toolbar {
-  position: absolute;
-  top: max(8px, env(safe-area-inset-top));
-  left: max(8px, env(safe-area-inset-left));
-  right: max(8px, env(safe-area-inset-right));
-  z-index: 4;
-  border: 1px solid rgba(237, 243, 255, 0.12);
-  /* 22px matches the 44px single-row height, so this still reads as a pill,
-     but degrades to a rounded rectangle when the toolbar wraps (#111). */
-  border-radius: 22px;
-  background: rgba(5, 7, 14, 0.72);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(14px);
-  transition: opacity 0.22s ease, transform 0.22s ease;
-}
-
-.pdf-reader-page--fullscreen .pdf-reader-canvas-shell {
-  height: 100dvh;
-  background: #05070e;
-}
-
-.pdf-reader-page--chrome-hidden .pdf-reader-toolbar {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-12px);
-}
-
-.pdf-reader-page--chrome-hidden .pdf-reader-fullscreen-toast {
-  opacity: 0.72;
-}
-
-.pdf-reader-viewer,
-.pdf-reader-tools {
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 8px;
 }
 
 .pdf-reader-viewer {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   min-width: 0;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
 }
 
-.pdf-reader-toolbar {
+.pdf-reader-bar {
+  position: relative;
+  z-index: 6;
   display: flex;
   align-items: center;
-  min-height: 44px;
+  gap: 6px;
+  min-height: 48px;
   padding: 6px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(9, 15, 31, 0.86);
+  border-bottom: 1px solid rgba(237, 243, 255, 0.08);
+  background: rgba(9, 15, 31, 0.92);
+}
+
+.pdf-reader-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Zoom and fit live behind "more": pinch already zooms on a phone. */
+.pdf-reader-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-end: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 196px;
+  padding: 8px;
+  border: 1px solid rgba(237, 243, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(9, 15, 31, 0.97);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.pdf-reader-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid rgba(237, 243, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(237, 243, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdf-reader-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .pdf-reader-icon-btn {
@@ -171,12 +161,10 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   white-space: nowrap;
 }
 
-.pdf-reader-toolbar-spacer {
-  flex: 1 1 auto;
-}
-
 .pdf-reader-canvas-shell {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
   overflow: auto;
   background: #1f1f1f;
@@ -424,24 +412,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   padding: 6px 9px;
 }
 
-.pdf-reader-fullscreen-toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(18px + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  z-index: 3;
-  border: 1px solid rgba(237, 243, 255, 0.12);
-  border-radius: 999px;
-  background: rgba(5, 7, 14, 0.72);
-  color: rgba(237, 243, 255, 0.78);
-  font-size: 12px;
-  font-weight: 700;
-  opacity: 0;
-  padding: 7px 11px;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-
 .pdf-reader-page-zone {
   position: fixed;
   top: 50%;
@@ -484,147 +454,6 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   color: #ff6b6b;
 }
 
-.pdf-reader-tools {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.pdf-reader-progress-card {
-  display: grid;
-  gap: 8px;
-  border: 1px solid rgba(237, 243, 255, 0.12);
-  border-radius: 10px;
-  padding: 10px;
-  background: rgba(9, 15, 31, 0.42);
-}
-
-.pdf-reader-progress-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.pdf-reader-progress-row strong {
-  color: var(--text);
-  font-size: 16px;
-}
-
-.pdf-reader-progress-track {
-  position: relative;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(237, 243, 255, 0.1);
-  overflow: hidden;
-}
-
-.pdf-reader-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
-  transition: width 0.2s ease;
-}
-
-.pdf-reader-sync-status {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.pdf-reader-sync-status--saved {
-  color: #86efac;
-}
-
-.pdf-reader-sync-status--pending,
-.pdf-reader-sync-status--saving {
-  color: #fbbf24;
-}
-
-.pdf-reader-sync-status--error {
-  color: #fca5a5;
-}
-
-.pdf-reader-sync-note {
-  color: rgba(237, 243, 255, 0.52);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-@media (max-width: 767px) {
-  .pdf-reader-page {
-    display: flex;
-    flex-direction: column;
-    min-height: auto;
-    padding: 10px;
-    padding-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
-  }
-
-  .pdf-reader-viewer {
-    width: 100%;
-    min-height: 58dvh;
-    order: 1;
-  }
-
-  .pdf-reader-toolbar {
-    gap: 6px;
-    padding-inline: 6px;
-  }
-
-  .pdf-reader-icon-btn {
-    width: 32px;
-    height: 32px;
-  }
-
-  .pdf-reader-tools {
-    order: 2;
-    width: 100%;
-  }
-
-  .pdf-reader-page--fullscreen {
-    display: block;
-    padding: 0;
-  }
-}
-
-/* ⚠ The .pdf-reader-* rules below are TOP LEVEL, not inside the
-   @media (max-width: 767px) block that ends just above. Media queries add no
-   specificity, so these override the mobile rules too — .pdf-reader-toolbar
-   gap is 7px on phones, not the 6px declared in the media block. Two known
-   consequences are tracked in #111; do not merge these into the base rules
-   without re-checking the cascade, because source order is load-bearing here
-   (.pdf-reader-page{position:relative} below currently beats
-   .pdf-reader-page--fullscreen{position:fixed} for the same reason). */
-.pdf-reader-page {
-  grid-template-columns: minmax(0, 1fr);
-  position: relative;
-}
-
-/* The toolbar carries ~11 controls and does not fit a phone width. It used to
-   scroll horizontally with the scrollbar explicitly hidden, so the controls
-   that overflowed were unreachable and gave no hint they existed (#111).
-   Wrapping instead keeps every control reachable without a scroll gesture; the
-   spacer takes the rest of its row, which groups page-nav and tools onto
-   separate rows on narrow screens. overflow-x is kept only as a fallback for a
-   single item wider than the toolbar. */
-.pdf-reader-toolbar {
-  gap: 7px;
-  flex-wrap: wrap;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-/* Controls keep their intended size instead of being squeezed thinner as the
-   toolbar fills up. */
-.pdf-reader-toolbar > *:not(.pdf-reader-toolbar-spacer) {
-  flex: 0 0 auto;
-}
-
 .pdf-reader-icon-btn--with-badge {
   position: relative;
 }
@@ -665,43 +494,16 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   text-align: center;
 }
 
-.pdf-reader-timeline-panel {
-  display: grid;
-  gap: 6px;
-  padding: 8px 10px 10px;
-  border-bottom: 1px solid rgba(237, 243, 255, 0.1);
-  background: rgba(9, 15, 31, 0.7);
-}
-
-.pdf-reader-timeline {
-  height: 7px !important;
-  border-radius: 999px !important;
-}
-
-.pdf-reader-timeline-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: rgba(237, 243, 255, 0.64);
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .pdf-reader-inline-error {
   color: #fca5a5;
   font-size: 12px;
-}
-
-.pdf-reader-canvas-shell {
-  height: calc(100dvh - 172px);
 }
 
 .pdf-reader-highlights-drawer {
   position: absolute;
   top: 16px;
   inset-inline-end: 16px;
-  bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
+  bottom: calc(64px + env(safe-area-inset-bottom));
   z-index: 8;
   display: flex;
   flex-direction: column;
@@ -901,46 +703,99 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   justify-content: flex-end;
 }
 
-.pdf-reader-page--fullscreen .pdf-reader-timeline-panel {
-  position: absolute;
-  top: calc(max(8px, env(safe-area-inset-top)) + 54px);
-  left: max(12px, env(safe-area-inset-left));
-  right: max(12px, env(safe-area-inset-right));
-  z-index: 4;
-  border: 1px solid rgba(237, 243, 255, 0.1);
-  border-radius: 8px;
-  background: rgba(5, 7, 14, 0.66);
-  backdrop-filter: blur(12px);
-  transition: opacity 0.22s ease, transform 0.22s ease;
+.pdf-reader-footer {
+  display: grid;
+  gap: 4px;
+  padding: 6px 12px 8px;
+  border-top: 1px solid rgba(237, 243, 255, 0.08);
+  background: rgba(9, 15, 31, 0.92);
 }
 
-.pdf-reader-page--chrome-hidden .pdf-reader-timeline-panel {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-12px);
+.pdf-reader-timeline {
+  height: 4px !important;
+  border-radius: 999px !important;
 }
 
-.pdf-reader-page--fullscreen .pdf-reader-highlights-drawer {
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
-  bottom: max(12px, env(safe-area-inset-bottom));
+.pdf-reader-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(237, 243, 255, 0.6);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pdf-reader-footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #63a7f7);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdf-reader-words {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(237, 243, 255, 0.1);
+}
+
+.pdf-reader-words-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pdf-reader-words-head h3 {
+  margin: 0;
+  color: rgba(237, 243, 255, 0.62);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pdf-reader-word-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pdf-reader-word-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid rgba(126, 224, 161, 0.35);
+  border-radius: 999px;
+  background: rgba(126, 224, 161, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pdf-reader-word-chip-back {
+  overflow: hidden;
+  color: rgba(237, 243, 255, 0.6);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 767px) {
-  .pdf-reader-canvas-shell {
-    min-height: 58dvh;
-    height: 58dvh;
-  }
-
-  .pdf-reader-timeline-meta {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 3px;
-  }
-
   .pdf-reader-highlights-drawer {
     position: fixed;
-    inset: auto 10px calc(var(--bottom-nav-height) + 10px + env(safe-area-inset-bottom)) 10px;
+    inset: auto 10px calc(64px + env(safe-area-inset-bottom)) 10px;
     max-height: 64dvh;
     width: auto;
   }

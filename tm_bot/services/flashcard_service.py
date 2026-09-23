@@ -325,6 +325,25 @@ def list_video_words(user_id: str, video_id: str) -> List[dict]:
     return items
 
 
+def list_content_words(user_id: str, content_id: str) -> List[dict]:
+    """Words this user saved from one content item (a PDF), in page order."""
+    with get_db_session() as session:
+        notes = _notes.list_for_content(session, user_id, content_id)
+    items = [
+        {
+            "note_id": note["note_id"],
+            "front": (note.get("fields") or {}).get("front", ""),
+            "back": (note.get("fields") or {}).get("back", ""),
+            "page": note.get("page"),
+            "deck_id": note["deck_id"],
+            "deck_name": note["deck_name"],
+        }
+        for note in notes
+    ]
+    items.sort(key=lambda item: (item["page"] is None, item["page"] or 0, item["front"]))
+    return items
+
+
 def create_note(
     user_id: str,
     deck_path: str,

@@ -180,8 +180,11 @@ export function Navigation(_props: NavigationProps) {
   // header, shown to visitors who may not have an account. App chrome there
   // would frame it as an app screen and distract from its single CTA.
   const isPublicClubPage = location.pathname.startsWith('/c/');
+  // The PDF reader is an immersive page, like the video player: its own slim
+  // bar has Back, and the app header and tabs would only take reading space.
+  const isImmersiveReader = location.pathname === '/pdf-reader';
 
-  if (!isAuthenticated || location.pathname === '/' || isScreenshotRoute || isPublicClubPage) return null;
+  if (!isAuthenticated || location.pathname === '/' || isScreenshotRoute || isPublicClubPage || isImmersiveReader) return null;
 
   const displayName =
     userInfo?.first_name ||

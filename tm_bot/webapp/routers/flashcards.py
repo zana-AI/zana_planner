@@ -252,6 +252,14 @@ async def _with_card_enrichment(payload: NoteIn) -> Dict[str, Any]:
     return fields
 
 
+@router.get("/content-notes")
+async def list_content_notes(content_id: str, user_id: int = Depends(get_current_user)):
+    """Words the caller saved from one content item (a PDF), in page order."""
+    if not content_id or len(content_id) > 64:
+        raise HTTPException(status_code=422, detail="content_id is required")
+    return {"items": flashcard_service.list_content_words(str(user_id), content_id)}
+
+
 @router.get("/video-notes")
 async def list_video_notes(video_id: str, user_id: int = Depends(get_current_user)):
     """Words the caller saved from one YouTube video, in spoken order."""
