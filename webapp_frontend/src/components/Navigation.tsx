@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
-import { ArrowLeft, Library, LogOut, Settings, Shield, Timer } from 'lucide-react';
+import { ArrowLeft, LogOut, Settings, Shield } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { shouldUseLocalMockData } from '../api/mockData';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
@@ -156,7 +156,6 @@ export function Navigation(_props: NavigationProps) {
   }, [currentRoute, navigationType]);
 
   const shellPage = getShellPageMeta(location.pathname);
-  const isDashboard = location.pathname === '/dashboard';
   const isAdminRoute = location.pathname === '/admin';
   const shouldShowBack = canGoBack || !!shellPage.showBack;
 
@@ -203,11 +202,6 @@ export function Navigation(_props: NavigationProps) {
           <h1>{t(`shell.${shellPage.key}.title`)}</h1>
           {shellPage.hasSubtitle ? <p>{t(`shell.${shellPage.key}.subtitle`)}</p> : null}
         </div>
-        {isDashboard ? (
-          <button type="button" className="icon-btn-v2" onClick={() => navigate('/focus')} aria-label={t('common.startFocus')}>
-            <Timer size={18} />
-          </button>
-        ) : null}
         <div style={{ position: 'relative' }} ref={menuRef}>
           <button type="button" className="avatar" onClick={() => setShowProfileMenu((prev) => !prev)} aria-label={t('nav.openProfileMenu')}>
             {telegramUser?.photo_url ? (
@@ -218,10 +212,6 @@ export function Navigation(_props: NavigationProps) {
           </button>
           {showProfileMenu ? (
             <div className="profile-menu-v2">
-              <button type="button" onClick={() => { navigate('/my-contents'); setShowProfileMenu(false); }}>
-                <Library size={16} />
-                {t('menu.library')}
-              </button>
               <button type="button" onClick={() => { navigate('/settings'); setShowProfileMenu(false); }}>
                 <Settings size={16} />
                 {t('menu.settings')}
