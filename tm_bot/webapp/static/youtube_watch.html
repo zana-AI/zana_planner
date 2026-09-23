@@ -327,7 +327,10 @@
   var trackingEnabled = true;
   var pollTimer = null;
   var lastPlayerTime = null;
-  var statsSent = false;
+  // Watched ranges not yet reported. The server adds up every report (watch
+  // segments and time logged to the promise), so each report carries only
+  // what is new since the last one — that is what makes reporting often safe.
+  var unsentSegments = [];
   var immersiveLandscape = false;
   var videoDuration = 0;
   var cues = [];
@@ -953,6 +956,12 @@
     if (typeof start !== "number" || typeof end !== "number") return;
     if (!isFinite(start) || !isFinite(end)) return;
     if (end <= start) return;
+    var lastUnsent = unsentSegments.length ? unsentSegments[unsentSegments.length - 1] : null;
+    if (lastUnsent && start <= (lastUnsent[1] + 1.5) && start >= lastUnsent[0]) {
+      lastUnsent[1] = Math.max(lastUnsent[1], end);
+    } else {
+      unsentSegments.push([start, end]);
+    }
     var last = segments.length ? segments[segments.length - 1] : null;
     if (last && typeof last[0] === "number" && typeof last[1] === "number" && start <= (last[1] + 1.5)) {
       last[0] = Math.min(last[0], start);
@@ -1115,6 +1124,7 @@
             try { markPlaying(player.getCurrentTime()); } catch (e) { markPlaying(); }
           } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
             try { markNotPlaying(player.getCurrentTime()); } catch (e) { markNotPlaying(); }
+            flushStats('pause');
           }
         },
         onError: function(event) {
@@ -1124,38 +1134,28 @@
     });
   };
 
-  function finalizeSegments() {
-    try {
-      if (player && typeof player.getCurrentTime === "function") {
-        markNotPlaying(player.getCurrentTime());
-      }
-    } catch (e) {
-      markNotPlaying();
-    }
+  // Close the range being watched right now at the current time, without
+  // stopping playback, so it can be reported; watching carries on from here.
+  function cutOpenSegment() {
+    if (!currentlyPlaying || currentStart == null) return;
+    var t;
+    try { t = player.getCurrentTime(); } catch (e) { return; }
+    if (typeof t !== "number" || !isFinite(t)) return;
+    pushSegment(currentStart, t);
+    currentStart = t;
   }
 
-  function getPayload(closedVia) {
-    finalizeSegments();
-    var normalized = [];
-    segments.forEach(function(seg) {
-      if (seg && seg.length >= 2 && isFinite(seg[0]) && isFinite(seg[1])) {
-        var start = Math.min(seg[0], seg[1]);
-        var end = Math.max(seg[0], seg[1]);
-        if (end > start) normalized.push([start, end]);
-      }
-    });
-    normalized.sort(function(a, b) { return a[0] - b[0]; });
-    var merged = [];
-    normalized.forEach(function(seg) {
-      var last = merged.length ? merged[merged.length - 1] : null;
-      if (!last || seg[0] > last[1]) {
-        merged.push([seg[0], seg[1]]);
-      } else {
-        last[1] = Math.max(last[1], seg[1]);
-      }
-    });
+  // Report whatever has been watched since the last report. Called often —
+  // on pause, when the app goes to the background, every couple of minutes,
+  // and on close — because a phone can kill the page without any "closing"
+  // event, and progress used to be saved only on close.
+  function takeStatsPayload(reason) {
+    cutOpenSegment();
+    if (!unsentSegments.length) return null;
+    var pending = unsentSegments;
+    unsentSegments = [];
     var watchedSeconds = 0;
-    merged.forEach(function(seg) { watchedSeconds += (seg[1] - seg[0]); });
+    pending.forEach(function(seg) { watchedSeconds += Math.max(0, seg[1] - seg[0]); });
     return {
       init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : '',
       user_token: userToken,
@@ -1164,57 +1164,47 @@
         promise_id: promiseId,
         time_spent_seconds: watchedSeconds,
         page_open_seconds: (Date.now() - openTime) / 1000,
-        segments: segments,
-        closed_via: closedVia
+        segments: pending,
+        closed_via: reason
       }
     };
   }
 
-  function sendBeaconStats(closedVia) {
-    if (statsSent) return;
-    statsSent = true;
-    var payload = getPayload(closedVia);
+  function flushStats(reason) {
+    var payload = takeStatsPayload(reason);
+    if (!payload) return;
+    var body = JSON.stringify(payload);
+    var sent = false;
+    // sendBeacon survives the page being torn down; fetch keepalive is the fallback.
     try {
-      var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-      navigator.sendBeacon(baseUrl + '/api/youtube/report_stats', blob);
-      dlog("beacon sent: " + closedVia);
-    } catch (e) {
+      sent = navigator.sendBeacon(baseUrl + '/api/youtube/report_stats', new Blob([body], { type: "application/json" }));
+    } catch (e) {}
+    if (!sent) {
       try {
-        navigator.sendBeacon(baseUrl + '/api/youtube/report_stats', JSON.stringify(payload));
-        dlog("beacon sent (string): " + closedVia);
-      } catch (e2) {
-        dlog("beacon failed: " + e2);
-      }
+        fetch(baseUrl + '/api/youtube/report_stats', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true
+        });
+        sent = true;
+      } catch (e) {}
     }
+    dlog("stats " + reason + ": " + payload.stats.time_spent_seconds.toFixed(1) + "s " + (sent ? "sent" : "FAILED"));
   }
 
+  setInterval(function() { flushStats('interval'); }, 120000);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') flushStats('hidden');
+  });
   window.addEventListener('pagehide', function() {
-    sendBeaconStats('beacon');
+    flushStats('pagehide');
     stopPolling();
   });
 
   // ── Helper: perform the "Done" action (send stats + close mini app) ──────────
   function handleDone() {
-    if (statsSent) {
-      if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
-      return;
-    }
-    statsSent = true;
     // Disable floating button immediately to prevent accidental double-taps
     if (floatDoneBtn) floatDoneBtn.disabled = true;
-    var payload = getPayload('done');
-    fetch(baseUrl + '/api/youtube/report_stats', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).then(function() {
-      dlog("fetch sent: done");
-      if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
-    }).catch(function() {
-      dlog("fetch failed; falling back to beacon");
-      sendBeaconStats('done_beacon');
-      if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
-    });
+    flushStats('done');
+    if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
   }
 
   function applySavedMarks() {
@@ -1282,12 +1272,12 @@
   // Leave the player for another app route, keeping the session the same way
   // the Back button does (Telegram Desktop may not re-send initData).
   function openAppPath(path) {
-    sendBeaconStats('navigate');
+    flushStats('navigate');
     window.location.assign(path + (sessionToken ? '#session_token=' + encodeURIComponent(sessionToken) : ''));
   }
 
   function returnToApp() {
-    sendBeaconStats('back');
+    flushStats('back');
     var appDestination = returnTo.charAt(0) === '/' && returnTo.charAt(1) !== '/'
       ? returnTo
       : '/my-contents';
