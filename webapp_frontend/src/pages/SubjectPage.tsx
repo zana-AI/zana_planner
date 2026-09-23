@@ -213,44 +213,44 @@ export function SubjectPage() {
 
           return (
             <article key={item.id} className="explore-card">
-              {item.image ? (
-                <img className="explore-card-image" src={item.image} alt="" loading="lazy" />
-              ) : null}
-              <div className="explore-card-head">
-                <h3 className="explore-card-title" dir="auto">{item.title}</h3>
-                {kind ? <span className="explore-card-kind">{t(`explore.kind.${kind}`)}</span> : null}
+              <div className="explore-card-media" aria-hidden="true">
+                {item.image ? <img src={item.image} alt="" loading="lazy" /> : null}
               </div>
-              {item.description ? (
-                <p className="explore-card-description" dir="auto">{item.description}</p>
-              ) : null}
-              {challenge ? (
-                <p className="explore-card-stat">
-                  <Users size={14} aria-hidden />
-                  {t('explore.players', { count: challenge.participant_count })}
-                </p>
-              ) : null}
-              {item.class_offer ? <p className="explore-card-offer">{item.class_offer}</p> : null}
-              <div className="explore-card-actions">
-                <button type="button" className="explore-action is-primary" onClick={() => open(item)}>
-                  {topicId === 'habits' ? t('explore.promiseIt') : t('explore.open')}
-                </button>
-                {addable ? (
-                  <button
-                    type="button"
-                    className={`explore-action${alreadyMine ? ' is-done' : ''}`}
-                    disabled={state === 'adding' || alreadyMine}
-                    onClick={() => void add({ item, topicId, kind })}
-                  >
-                    {alreadyMine ? <Check size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
-                    {alreadyMine
-                      ? t('explore.added')
-                      : state === 'adding'
-                        ? t('explore.adding')
-                        : t('explore.add')}
-                  </button>
+              <div className="explore-card-body">
+                <div className="explore-card-head">
+                  <h3 className="explore-card-title" dir="auto">{item.title}</h3>
+                  {kind ? <span className="explore-card-kind">{t(`explore.kind.${kind}`)}</span> : null}
+                </div>
+                {item.description ? <p className="explore-card-description" dir="auto">{item.description}</p> : null}
+                {challenge ? (
+                  <p className="explore-card-stat">
+                    <Users size={14} aria-hidden />
+                    {t('explore.players', { count: challenge.participant_count })}
+                  </p>
                 ) : null}
+                {item.class_offer ? <p className="explore-card-offer">{item.class_offer}</p> : null}
+                <div className="explore-card-actions">
+                  <button type="button" className="explore-action is-primary" onClick={() => open(item)}>
+                    {topicId === 'habits' ? t('explore.promiseIt') : t('explore.open')}
+                  </button>
+                  {addable ? (
+                    <button
+                      type="button"
+                      className={`explore-action${alreadyMine ? ' is-done' : ''}`}
+                      disabled={state === 'adding' || alreadyMine}
+                      onClick={() => void add({ item, topicId, kind })}
+                    >
+                      {alreadyMine ? <Check size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
+                      {alreadyMine
+                        ? t('explore.added')
+                        : state === 'adding'
+                          ? t('explore.adding')
+                          : t('explore.add')}
+                    </button>
+                  ) : null}
+                </div>
+                {state === 'failed' ? <p className="explore-card-error">{t('explore.addFailed')}</p> : null}
               </div>
-              {state === 'failed' ? <p className="explore-card-error">{t('explore.addFailed')}</p> : null}
             </article>
           );
         })}
