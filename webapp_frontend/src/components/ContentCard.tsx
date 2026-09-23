@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { useEffect, useState } from 'react';
-import { CalendarClock, Captions, CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw, Share2 } from 'lucide-react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { CalendarClock, Captions, FileText, Headphones, Play, Share2, Trash2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
-import { BottomSheet } from './ui/BottomSheet';
+import { RemoveContentConfirmModal } from './RemoveContentConfirmModal';
 import type { UserContentWithDetails } from '../types';
 
 interface ContentCardProps {
@@ -14,7 +14,17 @@ interface ContentCardProps {
   onPlan?: () => void;
   /** Hand out a public link. Only set for items that actually have one. */
   onShare?: () => void;
+  /** Swipe-to-delete, confirmed. Archives the item — it can't be restored
+   *  from the UI yet, so this always asks first. */
+  onArchive?: () => void;
 }
+
+/** Pixels the card slides to reveal the delete action. Matches the button's
+ * own width plus its side padding, so the reveal stops exactly at its edge. */
+const REVEAL_WIDTH = 72;
+// A move shorter than this is a tap, not a swipe — keeps a slightly shaky
+// finger from accidentally starting a drag.
+const SWIPE_START_THRESHOLD = 8;
 
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || seconds <= 0) return '';
@@ -41,10 +51,10 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
   return <FileText size={17} />;
 }
 
-export function ContentCard({ item, onClick, onStatusChange, onPlan, onShare }: ContentCardProps) {
+export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: ContentCardProps) {
   const { t } = useTranslation();
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState('');
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const title = item.title || t('content.untitled');
   const provider = (item.provider || 'other').replace(/_/g, ' ');
   const displayType = getDisplayType(item);
@@ -91,115 +101,178 @@ export function ContentCard({ item, onClick, onStatusChange, onPlan, onShare }: 
     };
   }, [displayType, item.content_id, item.id, item.thumbnail_asset_id, item.thumbnail_url]);
 
-  const secondaryStatus = item.status === 'completed'
-      ? { label: t('content.resume'), icon: <RotateCcw size={15} />, value: 'in_progress' as const }
-    : { label: t('content.markComplete'), icon: <CheckCircle2 size={15} />, value: 'completed' as const };
+  // --- swipe-to-reveal-delete --------------------------------------------
+  // A card slides to the trailing side (negative X) to reveal one fixed
+  // delete button behind it — the same gesture as a mail app's swipe. It
+  // only ever *reveals* the button; deleting still needs a tap and a
+  // confirmation, since this can't be undone from the UI yet.
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const revealedRef = useRef(false);
+  // The authoritative position lives here, not in `dragX` state: several
+  // pointermove events can fire before React commits the re-render they
+  // triggered, so a release handler reading `dragX` from its own closure can
+  // see a stale (often still-zero) value. `dragX` state exists only to
+  // trigger the re-render that paints the transform.
+  const dragXRef = useRef(0);
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; axis: 'x' | 'y' | null; pointerId: number } | null>(null);
 
-  const runAction = (action?: () => void) => {
-    setActionsOpen(false);
-    action?.();
+  const snapTo = (x: number) => {
+    revealedRef.current = x !== 0;
+    dragXRef.current = x;
+    setDragX(x);
+  };
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Pointer Events cover touch and mouse the same way, so a click-drag
+    // reveals the delete button on a trackpad exactly as a swipe does on a
+    // phone — there's no separate button for non-touch to keep in sync.
+    if (!onArchive) return;
+    dragRef.current = { startX: event.clientX, startY: event.clientY, originX: dragXRef.current, axis: null, pointerId: event.pointerId };
+  };
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (drag.axis === null) {
+      if (Math.abs(dx) < SWIPE_START_THRESHOLD && Math.abs(dy) < SWIPE_START_THRESHOLD) return;
+      drag.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (drag.axis === 'x') {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setDragging(true);
+      }
+    }
+    if (drag.axis !== 'x') return;
+    event.preventDefault();
+    const next = Math.min(0, Math.max(-REVEAL_WIDTH - 24, drag.originX + dx));
+    dragXRef.current = next;
+    setDragX(next);
+  };
+
+  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setDragging(false);
+    if (!drag || drag.axis !== 'x') return;
+    snapTo(dragXRef.current < -REVEAL_WIDTH / 2 ? -REVEAL_WIDTH : 0);
+  };
+
+  const handleCardClick = () => {
+    if (revealedRef.current) {
+      snapTo(0);
+      return;
+    }
+    onClick?.();
   };
 
   return (
     <>
-      <article
-      className="content-card"
-      onClick={onClick}
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onKeyDown={(event) => {
-        if (!onClick || event.target !== event.currentTarget) return;
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onClick();
-        }
-      }}
-    >
-      <div className="content-card-media" aria-hidden="true">
-        {thumbnailUrl ? (
-          <img src={thumbnailUrl} alt="" className={displayType === 'pdf' ? 'content-card-pdf-thumbnail' : undefined} />
-        ) : displayType === 'pdf' ? (
-          <div className="content-card-pdf-cover">
-            <FileText size={18} />
-            <strong>{pdfCoverTitle || t('content.types.pdf')}</strong>
-            {pageCount > 0 ? <small>{t('content.pages', { count: pageCount })}</small> : null}
-          </div>
-        ) : (
-          <div className="content-card-media-fallback">
-            <TypeIcon type={displayType} />
-          </div>
-        )}
-      </div>
-
-      <div className="content-card-body">
-        <div className="content-card-meta-row">
-          <div className="content-card-meta-tags">
-            <span className={`content-card-type content-card-type--${displayType}`}>
-              <TypeIcon type={displayType} />
-              {t(`content.types.${displayType}`)}
-            </span>
-            {item.has_subtitles && displayType === 'video' ? (
-              <span className="content-card-subtitles" title={t('content.subtitlesAvailable')}>
-                <Captions size={14} aria-hidden="true" />
-                {t('content.subtitlesAvailable')}
-              </span>
-            ) : null}
-          </div>
-          <span className="content-card-status">{t(`content.status.${item.status}`, item.status.replace('_', ' '))}</span>
-        </div>
-        <h3 className="content-card-title">{title}</h3>
-        <div className="content-card-subtitle">
-          <span>{source}</span>
-          {durationLabel && <span>{durationLabel}</span>}
-          <span>{t('content.progressRead', { percent: Math.round(progressRatio * 100) })}</span>
-        </div>
-        <HeatmapBar
-          data={{ bucket_count: bucketCount, buckets }}
-          markerRatio={markerRatio}
-          ariaLabel={t('content.readCoverageTimeline')}
-          className="content-card-timeline"
-        />
-      </div>
-
-      <div className="content-card-actions" onClick={(event) => event.stopPropagation()}>
-        <button
-          className="content-card-icon-action"
-          type="button"
-          onClick={() => setActionsOpen(true)}
-          aria-label={t('content.actions')}
-          title={t('content.actions')}
-        >
-          <MoreHorizontal size={18} />
-        </button>
-      </div>
-      </article>
-
-      <BottomSheet open={actionsOpen} onClose={() => setActionsOpen(false)} title={title} subtitle={t('content.actions')}>
-        <div className="content-card-action-sheet">
-          <button type="button" className="content-card-menu-action" onClick={() => runAction(onClick)}>
-            <ExternalLink size={18} aria-hidden="true" />
-            <span>{t('content.open')}</span>
+      <div className="content-card-swipe">
+        {/* Mounted only while dragging/revealed: the card's own background is
+            translucent by design, so a button sitting behind it at rest would
+            tint the card's edge with red even when nothing is happening. */}
+        {onArchive && dragX !== 0 && (
+          <button
+            type="button"
+            className="content-card-swipe-delete"
+            style={{ width: REVEAL_WIDTH }}
+            onClick={() => { snapTo(0); setConfirmingRemove(true); }}
+            aria-label={t('content.removeFromLibrary')}
+          >
+            <Trash2 size={18} />
           </button>
-          {onStatusChange && (
-            <button type="button" className="content-card-menu-action" onClick={() => runAction(() => onStatusChange(secondaryStatus.value))}>
-              {secondaryStatus.icon}
-              <span>{secondaryStatus.label}</span>
-            </button>
-          )}
-          {onPlan && (
-            <button type="button" className="content-card-menu-action" onClick={() => runAction(onPlan)}>
-              <CalendarClock size={18} aria-hidden="true" />
-              <span>{t('content.planIt')}</span>
-            </button>
-          )}
-          {onShare && (
-            <button type="button" className="content-card-menu-action" onClick={() => runAction(onShare)}>
-              <Share2 size={18} aria-hidden="true" />
-              <span>{t('content.share')}</span>
-            </button>
-          )}
-        </div>
-      </BottomSheet>
+        )}
+        <article
+          className="content-card"
+          onClick={handleCardClick}
+          role={onClick ? 'button' : undefined}
+          tabIndex={onClick ? 0 : undefined}
+          onKeyDown={(event) => {
+            if (!onClick || event.target !== event.currentTarget) return;
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onClick();
+            }
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          style={{ transform: dragX ? `translateX(${dragX}px)` : undefined, transition: dragging ? 'none' : undefined }}
+        >
+          <div className="content-card-media-col">
+            <div className="content-card-media" aria-hidden="true">
+              {thumbnailUrl ? (
+                <img src={thumbnailUrl} alt="" className={displayType === 'pdf' ? 'content-card-pdf-thumbnail' : undefined} />
+              ) : displayType === 'pdf' ? (
+                <div className="content-card-pdf-cover">
+                  <FileText size={18} />
+                  <strong>{pdfCoverTitle || t('content.types.pdf')}</strong>
+                  {pageCount > 0 ? <small>{t('content.pages', { count: pageCount })}</small> : null}
+                </div>
+              ) : (
+                <div className="content-card-media-fallback">
+                  <TypeIcon type={displayType} />
+                </div>
+              )}
+            </div>
+            {/* The two actions worth a permanent slot: everything else is a
+                tap on the card (open), a swipe (delete), or not needed. */}
+            {(onPlan || onShare) && (
+              <div className="content-card-quick-actions" onClick={(event) => event.stopPropagation()}>
+                {onPlan && (
+                  <button type="button" onClick={onPlan} aria-label={t('content.planIt')} title={t('content.planIt')}>
+                    <CalendarClock size={15} />
+                  </button>
+                )}
+                {onShare && (
+                  <button type="button" onClick={onShare} aria-label={t('content.share')} title={t('content.share')}>
+                    <Share2 size={15} />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="content-card-body">
+            <div className="content-card-meta-row">
+              <div className="content-card-meta-tags">
+                <span className={`content-card-type content-card-type--${displayType}`}>
+                  <TypeIcon type={displayType} />
+                  {t(`content.types.${displayType}`)}
+                </span>
+                {item.has_subtitles && displayType === 'video' ? (
+                  <span className="content-card-subtitles" title={t('content.subtitlesAvailable')}>
+                    <Captions size={14} aria-hidden="true" />
+                    {t('content.subtitlesAvailable')}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <h3 className="content-card-title">{title}</h3>
+            <div className="content-card-subtitle">
+              <span>{source}</span>
+              {durationLabel && <span>{durationLabel}</span>}
+              <span>{t('content.progressRead', { percent: Math.round(progressRatio * 100) })}</span>
+            </div>
+            <HeatmapBar
+              data={{ bucket_count: bucketCount, buckets }}
+              markerRatio={markerRatio}
+              ariaLabel={t('content.readCoverageTimeline')}
+              className="content-card-timeline"
+            />
+          </div>
+        </article>
+      </div>
+
+      <RemoveContentConfirmModal
+        isOpen={confirmingRemove}
+        title={title}
+        onCancel={() => setConfirmingRemove(false)}
+        onConfirm={() => { setConfirmingRemove(false); onArchive?.(); }}
+      />
     </>
   );
 }

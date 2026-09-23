@@ -451,7 +451,9 @@
     "deckDone": "Caught up",
     "share": "Share",
     "linkCopied": "Link copied",
-    "deckUnit": "cards"
+    "deckUnit": "cards",
+    "removeFromLibrary": "Remove from library",
+    "removeConfirmMessage": "Remove this from your library? Any cards or highlights you made from it are kept."
   },
   "createPromise": {
     "newPromise": "New Promise",
