@@ -1993,6 +1993,10 @@ class MessageHandlers:
                     try:
                         resolved = resolver.resolve(source_url)
                         resolved_content_id = resolved.get("content_id") or resolved.get("id")
+                        if resolved_content_id:
+                            # Receiving a video is an explicit intent to use
+                            # it: prepare captions before any keyboard choice.
+                            self.content_repo.request_youtube_transcript(str(resolved_content_id))
                     except Exception as e:
                         logger.warning("youtube content resolve failed for url=%s: %s", source_url, e)
 

@@ -221,7 +221,29 @@ class ContentRepository:
                 text("SELECT id FROM user_content WHERE user_id = :user_id AND content_id = :content_id"),
                 {"user_id": user_id, "content_id": content_id},
             ).mappings().fetchone()
-            return str(row["id"]) if row else uc_id
+            saved_id = str(row["id"]) if row else uc_id
+        self.request_youtube_transcript(content_id)
+        return saved_id
+
+    def request_youtube_transcript(self, content_id: str) -> None:
+        """Queue captions for a saved YouTube item, without blocking the save."""
+        try:
+            content = self.get_content_by_id(content_id) or {}
+            if str(content.get("provider") or "").lower() != "youtube":
+                return
+            metadata = content.get("metadata_json") or {}
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+            video_id = metadata.get("video_id") if isinstance(metadata, dict) else None
+            if not video_id:
+                from utils.youtube_utils import extract_video_id
+                video_id = extract_video_id(content.get("original_url") or content.get("canonical_url") or "")
+            if not video_id:
+                return
+            from repositories.video_transcript_fetch_queue_repo import VideoTranscriptFetchQueueRepository
+            VideoTranscriptFetchQueueRepository().enqueue(str(video_id))
+        except Exception as exc:
+            logger.debug("Could not queue transcript for content %s: %s", content_id, exc)
 
     def assign_user_content_to_promise(self, user_id: str, content_id: str, promise_id: str) -> str:
         """Ensure content is saved and linked to a promise/task.

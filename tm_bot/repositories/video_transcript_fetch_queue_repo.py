@@ -7,6 +7,11 @@ from db.postgres_db import get_db_session
 class VideoTranscriptFetchQueueRepository:
     def enqueue(self, video_id: str) -> None:
         """Idempotently request a fetch, reopening a previously failed job."""
+        from repositories.video_transcript_repo import VideoTranscriptRepository
+
+        cached = VideoTranscriptRepository().get(video_id)
+        if cached and cached.get("cues"):
+            return
         with get_db_session() as session:
             session.execute(text("""
                 INSERT INTO video_transcript_fetch_jobs (video_id, status, priority, available_at)

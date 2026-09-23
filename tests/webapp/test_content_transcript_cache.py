@@ -83,3 +83,46 @@ def test_failed_live_transcript_is_queued_for_residential_worker(monkeypatch):
 
     assert content_router._transcript_for_video("dQw4w9WgXcQ") is unavailable
     assert queued == ["dQw4w9WgXcQ"]
+
+
+def test_saving_youtube_content_requests_transcript_queue(monkeypatch):
+    from repositories.content_repo import ContentRepository
+    import repositories.video_transcript_fetch_queue_repo as queue_repo_module
+
+    queued = []
+
+    class FakeQueueRepository:
+        def enqueue(self, video_id):
+            queued.append(video_id)
+
+    repo = ContentRepository()
+    monkeypatch.setattr(
+        repo,
+        "get_content_by_id",
+        lambda _content_id: {
+            "provider": "youtube",
+            "metadata_json": {"video_id": "dQw4w9WgXcQ"},
+        },
+    )
+    monkeypatch.setattr(queue_repo_module, "VideoTranscriptFetchQueueRepository", FakeQueueRepository)
+
+    repo.request_youtube_transcript("content-id")
+
+    assert queued == ["dQw4w9WgXcQ"]
+
+
+def test_queue_does_not_requeue_cached_transcript(monkeypatch):
+    import repositories.video_transcript_fetch_queue_repo as queue_repo_module
+
+    class FakeTranscriptRepository:
+        def get(self, _video_id):
+            return {"cues": [{"start": 0, "end": 1, "text": "Cached"}]}
+
+    def unexpected_session():
+        pytest.fail("Cached transcript must not create a queue job")
+
+    monkeypatch.setattr(queue_repo_module, "get_db_session", unexpected_session)
+    import repositories.video_transcript_repo as transcript_repo_module
+    monkeypatch.setattr(transcript_repo_module, "VideoTranscriptRepository", FakeTranscriptRepository)
+
+    queue_repo_module.VideoTranscriptFetchQueueRepository().enqueue("dQw4w9WgXcQ")
