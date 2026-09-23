@@ -395,8 +395,18 @@ class ContentRepository:
                     LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
                     LEFT JOIN video_transcript transcript ON transcript.video_id = COALESCE(
                         NULLIF(c.metadata_json->>'video_id', ''),
-                        substring(c.canonical_url FROM '(?:v=|youtu\\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})'),
-                        substring(c.original_url FROM '(?:v=|youtu\\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})')
+                        CASE
+                            WHEN c.canonical_url LIKE '%youtu.be/%' THEN split_part(split_part(c.canonical_url, 'youtu.be/', 2), '?', 1)
+                            WHEN c.canonical_url LIKE '%/shorts/%' THEN split_part(split_part(c.canonical_url, '/shorts/', 2), '?', 1)
+                            WHEN c.canonical_url LIKE '%/embed/%' THEN split_part(split_part(c.canonical_url, '/embed/', 2), '?', 1)
+                            WHEN c.canonical_url LIKE '%v=%' THEN split_part(split_part(c.canonical_url, 'v=', 2), '&', 1)
+                        END,
+                        CASE
+                            WHEN c.original_url LIKE '%youtu.be/%' THEN split_part(split_part(c.original_url, 'youtu.be/', 2), '?', 1)
+                            WHEN c.original_url LIKE '%/shorts/%' THEN split_part(split_part(c.original_url, '/shorts/', 2), '?', 1)
+                            WHEN c.original_url LIKE '%/embed/%' THEN split_part(split_part(c.original_url, '/embed/', 2), '?', 1)
+                            WHEN c.original_url LIKE '%v=%' THEN split_part(split_part(c.original_url, 'v=', 2), '&', 1)
+                        END
                     )
                     LEFT JOIN LATERAL (
                         SELECT a.id
