@@ -1,7 +1,33 @@
 import asyncio
 import types
+from urllib.parse import parse_qs, urlparse
 
 import pytest
+
+
+@pytest.mark.handler
+def test_authenticated_miniapp_url_uses_fragment_session_token(monkeypatch):
+    from utils.miniapp_urls import authenticated_miniapp_url
+
+    class FakeSessionRepository:
+        def create_session(self, **kwargs):
+            assert kwargs["user_id"] == 42
+            assert kwargs["auth_method"] == "inline_web_app"
+            return types.SimpleNamespace(session_token="session-token")
+
+    monkeypatch.setattr("utils.miniapp_urls.AuthSessionRepository", FakeSessionRepository)
+
+    url = authenticated_miniapp_url(
+        "https://xaana.club",
+        42,
+        "/my-contents",
+        {"content_id": "content-1"},
+    )
+    parsed = urlparse(url)
+
+    assert parsed.path == "/my-contents"
+    assert parse_qs(parsed.query) == {"content_id": ["content-1"]}
+    assert parse_qs(parsed.fragment) == {"session_token": ["session-token"]}
 
 
 @pytest.mark.handler

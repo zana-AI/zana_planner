@@ -40,7 +40,21 @@ function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
 function App() {
   const { t } = useTranslation();
   const { initData, isReady } = useTelegramWebApp();
-  const [hasSessionToken, setHasSessionToken] = useState(false);
+  const [hasSessionToken, setHasSessionToken] = useState(() => {
+    // Inline keyboard Web Apps on Telegram Desktop can have an empty initData.
+    // The bot puts a short-lived session in the fragment, which never reaches
+    // the web server, and it must be installed before child pages fetch data.
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const inlineSessionToken = params.get('session_token');
+    if (inlineSessionToken) {
+      apiClient.setAuthToken(inlineSessionToken);
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      return true;
+    }
+    const existingToken = localStorage.getItem('telegram_auth_token');
+    if (existingToken) apiClient.setAuthToken(existingToken);
+    return !!existingToken;
+  });
   
   // Automatically detect and set timezone when Mini App loads (only if authenticated)
   const allowLocalMockData = shouldUseLocalMockData();

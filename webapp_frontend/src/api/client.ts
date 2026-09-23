@@ -408,6 +408,13 @@ class ApiClient {
     });
   }
 
+  async assignUserContent(contentId: string, promiseId: string): Promise<{ content_id: string; promise_id: string; assigned: boolean }> {
+    return this.request(`/user-content/${encodeURIComponent(contentId)}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ promise_id: promiseId }),
+    });
+  }
+
   /**
    * Open PDF content (latest asset + signed URL + resume fields).
    */

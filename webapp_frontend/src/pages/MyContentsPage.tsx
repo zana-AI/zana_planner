@@ -5,8 +5,9 @@ import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
 import { BottomSheet } from '../components/ui/BottomSheet';
 import { PlanContentSheet } from '../components/sheets/PlanContentSheet';
+import { AssignContentSheet } from '../components/sheets/AssignContentSheet';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { MyContentsFacets, UserContentWithDetails } from '../types';
 import './explore.css';
 
@@ -116,7 +117,9 @@ function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
 export function MyContentsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [planning, setPlanning] = useState<UserContentWithDetails | null>(null);
+  const [assigning, setAssigning] = useState<UserContentWithDetails | null>(null);
   const [plannedToast, setPlannedToast] = useState('');
   const { hapticFeedback, webApp } = useTelegramWebApp();
   const [addUrl, setAddUrl] = useState('');
@@ -138,6 +141,22 @@ export function MyContentsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const requestedContentId = searchParams.get('content_id');
+
+  useEffect(() => {
+    if (!requestedContentId || assigning) return;
+    const matchingItem = items.find((item) => (item.content_id || item.id) === requestedContentId);
+    if (matchingItem) setAssigning(matchingItem);
+  }, [assigning, items, requestedContentId]);
+
+  const closeAssignment = () => {
+    setAssigning(null);
+    if (requestedContentId) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('content_id');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedQuery(query.trim()), 220);
@@ -428,6 +447,18 @@ export function MyContentsPage() {
         onPlanned={(whenLabel) => {
           setPlannedToast(t('content.plannedFor', { when: whenLabel }));
           window.setTimeout(() => setPlannedToast(''), 4000);
+        }}
+      />
+
+      <AssignContentSheet
+        open={!!assigning}
+        contentId={assigning?.content_id || assigning?.id || null}
+        contentTitle={assigning?.title || t('content.untitled')}
+        onClose={closeAssignment}
+        onAssigned={(promiseId) => {
+          setPlannedToast(`Assigned to #${promiseId}`);
+          window.setTimeout(() => setPlannedToast(''), 4000);
+          closeAssignment();
         }}
       />
 

@@ -635,6 +635,11 @@ class AddUserContentRequest(BaseModel):
     content_id: str
 
 
+class AssignUserContentRequest(BaseModel):
+    """Assign an item in the caller's library to one of their tasks."""
+    promise_id: str
+
+
 class ConsumeEventRequest(BaseModel):
     """Request model for recording a consumption segment."""
     content_id: str

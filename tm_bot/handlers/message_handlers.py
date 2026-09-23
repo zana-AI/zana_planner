@@ -45,6 +45,7 @@ from services.avatar_service import AvatarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from utils.miniapp_urls import authenticated_miniapp_url
 
 logger = get_logger(__name__)
 if TYPE_CHECKING:
@@ -1434,12 +1435,16 @@ class MessageHandlers:
         if self.miniapp_url:
             reader_url = f"{self.miniapp_url}/pdf-reader?content_id={content_id}"
             keyboard_rows.append([InlineKeyboardButton("📄 Open PDF Reader", web_app=WebAppInfo(url=reader_url))])
-        keyboard_rows.append(
-            [
-                InlineKeyboardButton("Assign to Task", callback_data=encode_cb("cat", c=content_id)),
-                InlineKeyboardButton("New One-Time Task", callback_data=encode_cb("cct", c=content_id)),
-            ]
-        )
+        if self.miniapp_url:
+            assign_button = InlineKeyboardButton(
+                "Assign to Task",
+                web_app=WebAppInfo(url=authenticated_miniapp_url(
+                    self.miniapp_url, user_id, "/my-contents", {"content_id": str(content_id)},
+                )),
+            )
+        else:
+            assign_button = InlineKeyboardButton("Assign to Task", callback_data=encode_cb("cat", c=content_id))
+        keyboard_rows.append([assign_button, InlineKeyboardButton("New One-Time Task", callback_data=encode_cb("cct", c=content_id))])
 
         summary_lines = [
             "🆕 PDF added to your contents",
@@ -2032,6 +2037,14 @@ class MessageHandlers:
                 keyboard_rows.append(
                     [
                         InlineKeyboardButton(
+                            "🎯 Assign to Task",
+                            web_app=WebAppInfo(url=authenticated_miniapp_url(
+                                self.miniapp_url,
+                                user_id,
+                                "/my-contents",
+                                {"content_id": str(resolved_content_id or "")},
+                            )),
+                        ) if self.miniapp_url else InlineKeyboardButton(
                             "🎯 Assign to Task",
                             callback_data=(
                                 encode_cb("cat", c=resolved_content_id)

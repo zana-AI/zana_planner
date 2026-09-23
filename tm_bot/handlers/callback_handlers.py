@@ -87,6 +87,7 @@ from cbdata import encode_cb, decode_cb, is_session_callback_action, normalize_c
 from utils.admin_utils import is_admin
 from utils.bot_utils import BotUtils
 from utils.logger import get_logger
+from utils.miniapp_urls import authenticated_miniapp_url
 
 logger = get_logger(__name__)
 if TYPE_CHECKING:
@@ -2238,39 +2239,22 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         if not resolved_content_id:
             await query.answer("Content context expired. Please share it again.", show_alert=True)
             return
-        promises = self.plan_keeper.get_promises(user_id) or []
-        context = self._get_content_context(resolved_content_id, url_id)
-        if not promises:
-            await query.answer("No tasks found. Creating one now.", show_alert=False)
-            await self._handle_content_create_task(query, user_id, resolved_content_id, url_id)
+        if not self.miniapp_url:
+            await query.answer("Mini App is not available right now.", show_alert=True)
             return
-        rows = []
-        for p in self._rank_promises_for_content(user_id, promises, context)[:3]:
-            label = f"#{p['id']} - {p['text'][:32]}"
-            rows.append([
-                InlineKeyboardButton(
-                    label,
-                    callback_data=encode_cb(CONTENT_ASSIGN_PICK_ACTION, pid=p["id"], c=resolved_content_id),
-                )
-            ])
-        rows.append([
-            InlineKeyboardButton(
-                "New one-time task",
-                callback_data=encode_cb(CONTENT_CREATE_TASK_ACTION, c=resolved_content_id),
-            )
-        ])
-        if self.miniapp_url:
-            rows.append([
-                InlineKeyboardButton(
-                    "More tasks in Mini App →",
-                    web_app=WebAppInfo(url=f"{self.miniapp_url}/my-contents"),
-                )
-            ])
-        await query.message.reply_text(
-            "Best matching tasks for this content:",
-            reply_markup=InlineKeyboardMarkup(rows),
+        miniapp_url = authenticated_miniapp_url(
+            self.miniapp_url,
+            user_id,
+            "/my-contents",
+            {"content_id": str(resolved_content_id)},
         )
-        await query.answer("Select a task")
+        await query.message.reply_text(
+            "Choose a task in the Mini App:",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🎯 Assign to Task", web_app=WebAppInfo(url=miniapp_url)),
+            ]]),
+        )
+        await query.answer("Open the Mini App")
 
     async def _handle_content_assign_pick(
         self,
@@ -2385,31 +2369,17 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
         if content_id:
             await self._handle_content_assign_task(query, user_id, str(content_id), _url_id)
             return
-        promises = self.plan_keeper.get_promises(user_id) or []
-        if not promises:
-            await query.answer("No tasks found. Creating one now.", show_alert=False)
-            await self._handle_video_create_task(query, user_id, video_id, _url_id)
+        if not self.miniapp_url:
+            await query.answer("Mini App is not available right now.", show_alert=True)
             return
-        rows = []
-        for p in promises[:3]:
-            promise_id = str(p.get("id") or "").strip()
-            text = str(p.get("text") or promise_id).replace("_", " ")
-            if not promise_id:
-                continue
-            rows.append([InlineKeyboardButton(f"#{promise_id} · {text[:32]}", callback_data=encode_cb("video_assign_pick", vid=video_id, pid=promise_id))])
-        rows.append([InlineKeyboardButton("📝 New One-Time Task", callback_data=encode_cb("video_create_task", vid=video_id))])
-        if self.miniapp_url:
-            rows.append([
-                InlineKeyboardButton(
-                    "More tasks in Mini App →",
-                    web_app=WebAppInfo(url=f"{self.miniapp_url}/my-contents"),
-                )
-            ])
+        miniapp_url = authenticated_miniapp_url(self.miniapp_url, user_id, "/my-contents")
         await query.message.reply_text(
-            "Choose a task to link this video watch time:",
-            reply_markup=InlineKeyboardMarkup(rows),
+            "Choose a task in the Mini App:",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🎯 Assign to Task", web_app=WebAppInfo(url=miniapp_url)),
+            ]]),
         )
-        await query.answer("Select a task")
+        await query.answer("Open the Mini App")
 
     async def _handle_video_assign_pick(self, query, user_id: int, video_id: Optional[str], promise_id: Optional[str]) -> None:
         if not video_id or not promise_id:

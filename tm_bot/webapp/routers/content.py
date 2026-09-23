@@ -9,6 +9,7 @@ from ..dependencies import get_current_user
 from ..schemas import (
     ResolveContentRequest,
     AddUserContentRequest,
+    AssignUserContentRequest,
     ConsumeEventRequest,
     UpdateUserContentRequest,
     CreateHighlightRequest,
@@ -163,6 +164,31 @@ async def get_my_contents(
         "next_cursor": next_cursor,
         "facets": repo.get_user_content_facets(str(user_id), q=q),
     }
+
+
+@router.post("/user-content/{content_id}/assign")
+async def assign_user_content(
+    content_id: str,
+    body: AssignUserContentRequest,
+    request: Request,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Link a library item to one of the authenticated user's tasks."""
+    repo = get_content_repo()
+    if not repo.get_user_content(str(user_id), content_id):
+        raise HTTPException(status_code=404, detail="User content not found")
+
+    from services.planner_api_adapter import PlannerAPIAdapter
+
+    root_dir = getattr(request.app.state, "root_dir", None)
+    if not root_dir:
+        raise HTTPException(status_code=503, detail="Task service is unavailable")
+    promise = PlannerAPIAdapter(root_dir=root_dir).get_promise(user_id, body.promise_id)
+    if not promise:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    repo.assign_user_content_to_promise(str(user_id), content_id, str(body.promise_id))
+    return {"content_id": content_id, "promise_id": str(body.promise_id), "assigned": True}
 
 
 @router.post("/consume-event")
