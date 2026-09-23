@@ -40,7 +40,9 @@ def claim(lease_seconds: int) -> Optional[Tuple[str, int]]:
         " FROM candidate WHERE job.video_id = candidate.video_id"
         " RETURNING job.video_id, job.attempt_count;"
     )
-    if not result:
+    # psql prints the command tag ("UPDATE 0") for an UPDATE ... RETURNING
+    # statement that claimed nothing, rather than an empty string.
+    if not result or result.startswith("UPDATE "):
         return None
     video_id, attempts = result.split("|", 1)
     if not VIDEO_ID.fullmatch(video_id):
