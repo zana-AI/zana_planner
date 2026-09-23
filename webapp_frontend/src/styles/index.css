@@ -192,7 +192,14 @@ select:focus {
 
 .pdf-reader-page-frame {
   position: relative;
-  margin: 12px auto;
+  /* No vertical margin: fitToWidth sizes the page to the shell's own height
+     via clientWidth/clientHeight, so any vertical margin here is pure extra
+     height the shell never accounted for — it used to leave a permanent,
+     functionally dead 24px of "scroll" (a visible scrollbar over a page that
+     was already fully in view; dragging it only revealed blank margin).
+     Horizontal centering (auto/auto) is kept for a page narrower than the
+     shell. */
+  margin: 0 auto;
   background: white;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   transform-origin: center center;
@@ -559,50 +566,49 @@ select:focus {
   text-transform: uppercase;
 }
 
-.pdf-reader-highlight-card {
-  display: grid;
-  gap: 7px;
+/* One row per highlight: a color dot, the text (tap to jump to its page),
+   then icon-only actions. Replaces a card that spent three full-width
+   text buttons ("Open page" / "Add to deck" / "Delete") on one highlight. */
+.pdf-reader-highlight-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid rgba(237, 243, 255, 0.12);
   border-radius: 8px;
   background: rgba(237, 243, 255, 0.055);
-  padding: 9px;
+  padding: 6px 6px 6px 10px;
 }
 
-.pdf-reader-highlight-card button {
-  justify-self: start;
+.pdf-reader-highlight-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
 }
 
-.pdf-reader-highlight-card > button:first-child,
-.pdf-reader-highlight-delete {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid rgba(237, 243, 255, 0.12);
-  border-radius: 7px;
-  background: rgba(237, 243, 255, 0.08);
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 800;
-  padding: 5px 8px;
-}
-
-.pdf-reader-highlight-card p {
-  margin: 0;
-  color: rgba(237, 243, 255, 0.78);
+.pdf-reader-highlight-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: rgba(237, 243, 255, 0.85);
+  font: inherit;
   font-size: 12px;
   line-height: 1.4;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .pdf-reader-highlight-note {
-  color: rgba(237, 243, 255, 0.58) !important;
-}
-
-.pdf-reader-highlight-delete {
-  color: #fca5a5;
+  color: rgba(237, 243, 255, 0.55);
 }
 
 .pdf-reader-highlight-author {
-  justify-self: start;
+  display: inline-block;
+  margin-inline-end: 6px;
   border-radius: 999px;
   background: rgba(99, 167, 247, 0.16);
   color: #9fc4fb;
@@ -610,21 +616,36 @@ select:focus {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  padding: 2px 8px;
+  padding: 1px 7px;
 }
 
-.pdf-reader-highlight-add-to-deck {
+.pdf-reader-highlight-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.pdf-reader-highlight-actions button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 1px solid rgba(99, 167, 247, 0.36);
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
   border-radius: 7px;
-  background: rgba(99, 167, 247, 0.1);
-  color: #dceaff;
-  font-size: 12px;
-  font-weight: 800;
-  padding: 5px 8px;
-  justify-self: start;
+  background: transparent;
+  color: rgba(237, 243, 255, 0.7);
+  cursor: pointer;
+}
+
+.pdf-reader-highlight-actions button:hover,
+.pdf-reader-highlight-actions button:focus-visible {
+  background: rgba(237, 243, 255, 0.1);
+  outline: none;
+}
+
+.pdf-reader-highlight-actions button:last-child {
+  color: #fca5a5;
 }
 
 /* A co-reader's highlight (teacher during a live session, or the teacher's
