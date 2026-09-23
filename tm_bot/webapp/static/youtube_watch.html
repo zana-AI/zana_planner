@@ -54,6 +54,10 @@
     }
     .video-wrap { position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border: 1px solid var(--app-border); border-radius: 14px; background: #000; box-shadow: 0 18px 48px rgba(0,0,0,.28); }
     .video-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    /* Shown until the YouTube player reports ready. Where YouTube is blocked
+       the frame would otherwise stay black with no explanation. It never
+       takes pointer events, so a slow-but-working player is never covered. */
+    .video-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; color: rgba(237,243,255,.72); font-size: 13px; line-height: 1.5; background: #000; pointer-events: none; z-index: 1; }
     .progress-container {
       margin-top: 6px;
       position: relative;
@@ -72,43 +76,35 @@
     }
     .transcript { margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; }
     .transcript summary { cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 800; color: #edf3ff; }
-    .transcript-list { max-height: 280px; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; border-top: 1px solid var(--app-border); }
-    .transcript-cue { display: grid; grid-template-columns: 54px 1fr; gap: 10px; width: 100%; padding: 10px 14px; border-bottom: 1px solid rgba(170,196,238,.08); background: transparent; color: rgba(237,243,255,.78); text-align: start; font: inherit; font-size: 13px; }
+    .transcript-list { max-height: min(46vh, 420px); overflow: auto; overscroll-behavior: contain; overflow-anchor: none; border-top: 1px solid var(--app-border); }
+    .transcript-cue { display: grid; grid-template-columns: 44px 1fr; gap: 8px; width: 100%; padding: 6px 12px; border-bottom: 1px solid rgba(170,196,238,.08); background: transparent; color: rgba(237,243,255,.78); text-align: start; font: inherit; font-size: 13px; }
     .transcript-cue:hover, .transcript-cue:focus-within { background: rgba(99,167,247,.12); color: #fff; outline: none; }
     .transcript-jump { align-self: start; padding: 0; border: 0; background: transparent; color: var(--app-accent); font: inherit; font-size: 12px; text-align: start; cursor: pointer; }
     .transcript-jump:hover, .transcript-jump:focus-visible { text-decoration: underline; outline: none; }
-    .transcript-text { min-width: 0; line-height: 1.55; }
+    .transcript-text { min-width: 0; line-height: 1.45; }
     .transcript-word { padding: 1px 2px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
-    .transcript-word:hover, .transcript-word:focus-visible, .transcript-word.is-selected { background: rgba(99,167,247,.28); color: #fff; outline: none; }
+    /* Hover only hints that a word is tappable; nothing opens until a click. */
+    .transcript-word:hover { text-decoration: underline; text-decoration-color: rgba(99,167,247,.6); text-underline-offset: 3px; }
+    .transcript-word:focus-visible, .transcript-word.is-selected { background: rgba(99,167,247,.28); color: #fff; outline: none; }
+    .transcript-word.is-focus { background: rgba(99,167,247,.30); color: #fff; font-weight: 800; }
     .transcript-time { color: var(--app-accent); font-variant-numeric: tabular-nums; }
     .transcript-cue.is-active { background: rgba(99,167,247,.18); color: #fff; }
     .transcript-cue.is-active .transcript-time { font-weight: 800; }
-    /* The line being spoken, kept large and directly under the video so it can
-       be read while watching — the same focus a lyrics view gives a song. */
-    .focus-line { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
-    .focus-text { flex: 1; margin: 0; font-size: 15px; line-height: 1.5; color: #edf3ff; }
-    .focus-text mark { padding: 0 2px; border-radius: 4px; background: rgba(99,167,247,.30); color: #fff; font-weight: 800; }
-    .focus-replay { flex: 0 0 auto; min-height: 40px; padding: 8px 12px; border: 1px solid var(--app-border); border-radius: 10px; background: transparent; color: var(--app-accent); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-    .focus-replay:hover, .focus-replay:focus-visible { background: rgba(99,167,247,.14); outline: none; }
-    @media (max-width: 420px) { .focus-line { flex-direction: column; align-items: stretch; } .focus-replay { width: 100%; } }
-    .word-tools { margin-top: 10px; padding: 12px 14px; border: 1px solid rgba(99,167,247,.36); border-radius: 12px; background: linear-gradient(135deg, rgba(25,48,88,.98), rgba(15,28,55,.98)); box-shadow: 0 12px 30px rgba(0,0,0,.18); }
-    .word-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-    .selected-word { font-size: 17px; font-weight: 800; color: #fff; }
-    .word-context { color: rgba(237,243,255,.54); font-size: 11px; white-space: nowrap; }
-    .word-translation { min-height: 22px; margin-top: 5px; color: #d9e8ff; font-size: 14px; line-height: 1.45; }
-    .word-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .word-action { min-height: 34px; padding: 6px 10px; border: 1px solid var(--app-border); border-radius: 8px; background: rgba(99,167,247,.10); color: #dceaff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    /* Compact word card: word + translation on the left, icon actions on the
+       right, one row. Status text only takes space when there is something to say. */
+    .word-tools { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 8px 8px 12px; border: 1px solid rgba(99,167,247,.36); border-radius: 12px; background: rgba(20,38,72,.98); }
+    .word-body { flex: 1; min-width: 0; }
+    .word-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .selected-word { font-size: 16px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .word-context { color: rgba(237,243,255,.46); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .word-translation { margin-top: 1px; color: #d9e8ff; font-size: 13px; line-height: 1.4; }
+    .word-status { margin-top: 2px; color: rgba(237,243,255,.58); font-size: 11px; }
+    .word-status:empty { display: none; }
+    .word-actions { display: flex; flex: 0 0 auto; gap: 4px; }
+    .word-action { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--app-border); border-radius: 10px; background: rgba(99,167,247,.10); color: #dceaff; font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
     .word-action:hover, .word-action:focus-visible { background: rgba(99,167,247,.24); outline: none; }
     .word-action:disabled { cursor: default; opacity: .55; }
-    .word-status { min-height: 16px; margin-top: 7px; color: rgba(237,243,255,.58); font-size: 11px; }
-    .hint { font-size: 12px; color: rgba(237,243,255,.58); margin: 10px 2px 0; }
-    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
-    .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; white-space: nowrap; }
-    .toggle { min-height:44px; }
-    .controls .expand-btn { min-height:44px; }
-    .word-action, .focus-replay { min-height:44px; }
-    .transcript-jump { min-height:44px; }
-    .toggle input { width: 18px; height: 18px; }
+    .word-action.is-close { background: transparent; color: rgba(237,243,255,.7); }
     .debug {
       margin-top: 10px;
       padding: 10px;
@@ -125,15 +121,13 @@
     }
     /* Landscape / immersive mode: mobile only */
     /* Desktop fullscreen mode shares the same immersive layout */
-    body.landscape,
-    body.desktop-fullscreen {
+    body.landscape {
       min-height: var(--watch-viewport-height);
       padding: 0;
       background: #000;
       overflow: hidden;
     }
-    body.landscape .video-wrap,
-    body.desktop-fullscreen .video-wrap {
+    body.landscape .video-wrap {
       position: fixed;
       inset:
         var(--player-safe-top)
@@ -148,14 +142,7 @@
     }
     body.landscape .watch-header,
     body.landscape .progress-container,
-    body.landscape .hint,
-    body.landscape .controls,
-    body.landscape .debug,
-    body.desktop-fullscreen .watch-header,
-    body.desktop-fullscreen .progress-container,
-    body.desktop-fullscreen .hint,
-    body.desktop-fullscreen .controls,
-    body.desktop-fullscreen .debug { display: none; }
+    body.landscape .debug { display: none; }
     /* App controls live outside the iframe so they do not cover YouTube controls. */
     .immersive-controls {
       display: none;
@@ -172,12 +159,8 @@
       gap: 10px;
       pointer-events: none;
     }
-    body.landscape .immersive-controls,
-    body.desktop-fullscreen .immersive-controls {
+    body.landscape .immersive-controls {
       display: flex;
-    }
-    body.desktop-fullscreen .immersive-controls {
-      justify-content: space-between;
     }
     .float-btn {
       display: none;
@@ -201,8 +184,6 @@
     }
     .float-btn:active { transform: translateY(1px); }
     body.landscape #floatDoneBtn { display: block; }
-    body.desktop-fullscreen #floatDoneBtn { display: block; }
-    body.desktop-fullscreen #floatExitBtn { display: block; }
     @media (max-height: 380px) and (orientation: landscape) {
       :root { --player-control-rail: 54px; }
       .immersive-controls { gap: 8px; width: 48px; }
@@ -212,20 +193,6 @@
         font-size: 12px;
       }
     }
-    /* Expand / fullscreen toggle button — shown in the controls bar */
-    .expand-btn {
-      padding: 5px 10px;
-      background: transparent;
-      color: var(--app-accent);
-      border: 1px solid currentColor;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      line-height: 1.2;
-      white-space: nowrap;
-    }
-    .expand-btn:hover { opacity: 0.75; }
   </style>
 </head>
 <body>
@@ -235,44 +202,33 @@
   </div>
   <div class="video-wrap">
     <iframe title="YouTube video player" id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    <div id="videoStatus" class="video-status" role="status"></div>
   </div>
   <div id="watchProgress" class="progress-container" hidden></div>
-  <div id="focusLine" class="focus-line" hidden>
-    <p id="focusText" class="focus-text" dir="auto"></p>
-    <button id="replayLine" class="focus-replay" type="button"></button>
-  </div>
   <div id="wordTools" class="word-tools" hidden>
-    <div class="word-heading">
-      <span id="selectedWord" class="selected-word" dir="auto"></span>
-      <span id="wordContext" class="word-context"></span>
+    <div class="word-body">
+      <div class="word-heading">
+        <span id="selectedWord" class="selected-word" dir="auto"></span>
+        <span id="wordContext" class="word-context"></span>
+      </div>
+      <div id="wordTranslation" class="word-translation" dir="auto"></div>
+      <div id="wordStatus" class="word-status" role="status"></div>
     </div>
-    <div id="wordTranslation" class="word-translation" dir="auto"></div>
     <div class="word-actions">
-      <button id="listenWord" class="word-action" type="button"></button>
-      <button id="saveWord" class="word-action" type="button"></button>
+      <button id="listenWord" class="word-action" type="button">🔊</button>
+      <button id="saveWord" class="word-action" type="button">＋</button>
+      <button id="closeWord" class="word-action is-close" type="button">✕</button>
     </div>
-    <div id="wordStatus" class="word-status" role="status"></div>
   </div>
-  <details id="transcript" class="transcript" hidden>
+  <details id="transcript" class="transcript" open hidden>
     <summary id="transcriptTitle">Transcript</summary>
     <div id="transcriptList" class="transcript-list"></div>
   </details>
-  <p id="doneHint" class="hint">When you’re finished, close this page to save your watch progress.</p>
-  <div class="controls">
-    <label class="toggle">
-      <input type="checkbox" id="trackToggle" checked>
-      <span id="trackLabel">Track progress</span>
-    </label>
-    <span id="trackHint" class="hint">Save the parts you watch.</span>
-    <button id="expandBtn" class="expand-btn" hidden>Full screen</button>
-  </div>
   <pre id="debugLog" class="debug" hidden></pre>
 
   <div id="immersiveControls" class="immersive-controls" aria-label="Player controls">
-    <!-- Floating Done button: shown beside the video in landscape / fullscreen modes -->
+    <!-- Floating Done button: shown beside the video in landscape mode -->
     <button id="floatDoneBtn" class="float-btn" title="Close and save" aria-label="Close and save">Close</button>
-    <!-- Floating Exit button: shown beside the video in desktop fullscreen mode -->
-    <button id="floatExitBtn" class="float-btn" title="Exit full screen" aria-label="Exit full screen">Exit</button>
   </div>
 
   <script>
@@ -295,36 +251,36 @@
   var returnTo = params.get('return_to') || '';
   var uiLanguage = (params.get('lang') || 'en').toLowerCase().split('-')[0];
   var copy = uiLanguage === 'fa' ? {
-    hint: 'پس از پایان، این صفحه را ببندید تا پیشرفت تماشا ذخیره شود.', back: 'بازگشت', track: 'ردگیری پیشرفت',
-    trackHint: 'بخش‌هایی را که می‌بینید ذخیره می‌کنیم.', full: 'تمام‌صفحه', close: 'بستن و ذخیره', exit: 'خروج',
-    replay: '↺ تکرار این جمله', listen: '🔊 تلفظ', save: 'ذخیره کارت', saved: '✓ ذخیره شد',
+    back: 'بازگشت', close: 'بستن و ذخیره', closeWord: 'بستن',
+    listen: 'تلفظ', save: 'ذخیره کارت', saved: 'ذخیره شد',
+    connecting: 'در حال اتصال به یوتیوب…',
+    videoUnavailable: 'ویدیو اینجا بارگذاری نشد. زیرنویس پایین همچنان کار می‌کند.',
     existingKept: 'کارت موجود حفظ شد',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'یک کلمه را انتخاب کنید.',
     signIn: 'برای ذخیره، صفحه را داخل اپ باز کنید.', context: 'جمله'
   } : {
-    hint: 'When you’re finished, close this page to save your watch progress.', back: 'Back', track: 'Track progress',
-    trackHint: 'Save the parts you watch.', full: 'Full screen', close: 'Close and save', exit: 'Exit',
-    replay: '↺ Replay this line', listen: '🔊 Listen', save: 'Save card', saved: '✓ Saved',
+    back: 'Back', close: 'Close and save', closeWord: 'Close',
+    listen: 'Listen', save: 'Save card', saved: 'Saved',
+    connecting: 'Connecting to YouTube…',
+    videoUnavailable: 'The video couldn’t load here. The subtitles below still work.',
     existingKept: 'Existing card kept',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
     signIn: 'Open this page inside the app to save cards.', context: 'line'
   };
   document.documentElement.lang = uiLanguage;
   document.documentElement.dir = uiLanguage === 'fa' ? 'rtl' : 'ltr';
-  document.getElementById('doneHint').textContent = copy.hint;
   document.getElementById('backBtn').title = copy.back;
   document.getElementById('backBtn').setAttribute('aria-label', copy.back);
-  document.getElementById('replayLine').textContent = copy.replay;
-  document.getElementById('replayLine').addEventListener('click', function() { replayCurrentLine(); });
-  document.getElementById('trackLabel').textContent = copy.track;
-  document.getElementById('trackHint').textContent = copy.trackHint;
-  document.getElementById('expandBtn').textContent = copy.full;
   document.getElementById('floatDoneBtn').textContent = copy.close;
   document.getElementById('floatDoneBtn').title = copy.close;
   document.getElementById('floatDoneBtn').setAttribute('aria-label', copy.close);
-  document.getElementById('floatExitBtn').textContent = copy.exit;
-  document.getElementById('listenWord').textContent = copy.listen;
-  document.getElementById('saveWord').textContent = copy.save;
+  // Icon buttons: the label lives in title/aria-label, not the glyph.
+  [['listenWord', copy.listen], ['saveWord', copy.save], ['closeWord', copy.closeWord]].forEach(function(pair) {
+    var button = document.getElementById(pair[0]);
+    button.title = pair[1];
+    button.setAttribute('aria-label', pair[1]);
+  });
+  document.getElementById('videoStatus').textContent = copy.connecting;
   var sourceLanguage = 'fr';
   var videoTitleText = '';
   var selectedWord = '';
@@ -343,8 +299,8 @@
   var currentStart = null;
   var player = null;
   var currentlyPlaying = false;
-  var trackToggle = document.getElementById('trackToggle');
-  var trackingEnabled = trackToggle ? !!trackToggle.checked : true;
+  // Watch progress is always tracked; there is no opt-out toggle any more.
+  var trackingEnabled = true;
   var pollTimer = null;
   var lastPlayerTime = null;
   var statsSent = false;
@@ -365,10 +321,9 @@
   }
 
   // --- transcript follow -----------------------------------------------
-  // Song-learning apps make the current line the centre of the screen and let
-  // you replay it without hunting the scrubber. That is the whole trick for
-  // learning in context, so the line the player is on is always shown large
-  // above the transcript, and one button repeats it.
+  // The transcript is open by default and keeps the line being spoken
+  // centred, so it doubles as the "current line" view. Tapping a line seeks
+  // to it, which is also how a line is replayed — no separate card needed.
 
   function foldAccents(text) {
     try { return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -492,7 +447,8 @@
         button.className = 'transcript-word';
         button.textContent = part;
         button.title = uiLanguage === 'fa' ? 'ترجمه و ذخیره کارت' : 'Translate and save card';
-        button.addEventListener('mouseenter', function() { showWordTools(part, cue, button, false); });
+        // No hover trigger: passing the mouse over a line must not open the
+        // card and fire a translation for every word it crosses.
         button.addEventListener('focus', function() { showWordTools(part, cue, button, true); });
         button.addEventListener('click', function(event) {
           event.stopPropagation();
@@ -554,9 +510,9 @@
       if (!response.ok) throw new Error('save HTTP ' + response.status);
       return response.json();
     }).then(function(data) {
-      saveButton.textContent = copy.saved;
+      saveButton.textContent = '✓';
       setWordStatus(data && data._created === false ? copy.saved + ' · ' + copy.existingKept : copy.saved);
-      setTimeout(function() { saveButton.textContent = copy.save; }, 1800);
+      setTimeout(function() { saveButton.textContent = '＋'; }, 1800);
     }).catch(function(error) {
       setWordStatus(error && error.message === 'auth' ? copy.signIn : copy.unavailable);
     }).finally(function() { saveButton.disabled = false; });
@@ -564,6 +520,7 @@
 
   document.getElementById('listenWord').addEventListener('click', speakSelectedWord);
   document.getElementById('saveWord').addEventListener('click', saveSelectedWord);
+  document.getElementById('closeWord').addEventListener('click', closeWordTools);
   document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape') closeWordTools();
   });
@@ -575,25 +532,15 @@
     closeWordTools();
   });
 
-  // Emphasise the linked word inside its sentence, accent- and case-insensitively.
-  function renderFocusText(text) {
-    var target = document.getElementById('focusText');
-    target.textContent = '';
+  // A flashcard links here for one word: emphasise it in its transcript line,
+  // accent- and case-insensitively, so it is visible without a separate card.
+  function markFocusWord(index) {
     var stem = wordStem();
-    if (!stem) { target.textContent = text; return; }
-    var folded = foldAccents(text);
-    var at = folded.indexOf(stem);
-    if (at < 0) { target.textContent = text; return; }
-    // Grow the match to the whole word so the highlight lands on a word, not a stem.
-    var end = at + stem.length;
-    while (end < text.length && /[\w'’-]/.test(text[end])) end++;
-    var begin = at;
-    while (begin > 0 && /[\w'’-]/.test(text[begin - 1])) begin--;
-    target.appendChild(document.createTextNode(text.slice(0, begin)));
-    var mark = document.createElement('mark');
-    mark.textContent = text.slice(begin, end);
-    target.appendChild(mark);
-    target.appendChild(document.createTextNode(text.slice(end)));
+    var row = cueButtons[index];
+    if (!stem || !row) return;
+    Array.prototype.forEach.call(row.querySelectorAll('.transcript-word'), function(word) {
+      if (foldAccents(word.textContent).indexOf(stem) >= 0) word.classList.add('is-focus');
+    });
   }
 
   function scrollCueWithinTranscript(button, behavior) {
@@ -627,8 +574,6 @@
         scrollCueWithinTranscript(button, 'smooth');
       }
     }
-    renderFocusText(cues[index].text);
-    document.getElementById('focusLine').hidden = false;
   }
 
   function cueIndexAt(seconds) {
@@ -673,15 +618,6 @@
     // Faster than the 1s stats poll: a caption line can be shorter than a second.
     followTimer = setInterval(followTick, 250);
     followTick();
-  }
-
-  function replayCurrentLine() {
-    var cue = cues[activeCueIndex];
-    if (!cue || !player) return;
-    try {
-      player.seekTo(Math.max(0, cue.start - 0.35), true);
-      player.playVideo();
-    } catch (e) {}
   }
 
   var transcriptPolls = 0;
@@ -744,7 +680,11 @@
           if (active) scrollCueWithinTranscript(active, 'auto');
         });
         // Show the linked line immediately, before playback reports a position.
-        if (startAt > 0) setActiveCue(initialCueIndex());
+        if (startAt > 0) {
+          var firstCue = initialCueIndex();
+          setActiveCue(firstCue);
+          markFocusWord(firstCue);
+        }
         startFollowing();
       })
       .catch(function() { /* Captions are optional; keep the player usable. */ });
@@ -1069,22 +1009,25 @@
     dlog("poll: stopped");
   }
 
-  if (trackToggle) {
-    trackToggle.addEventListener("change", function() {
-      trackingEnabled = !!trackToggle.checked;
-      dlog("trackingEnabled=" + trackingEnabled);
-      if (!trackingEnabled) {
-        stopPolling();
-        markNotPlaying();
-      } else {
-        startPolling();
-      }
-    });
-  }
   if (trackingEnabled) startPolling();
+
+  // Placeholder over the frame until the player reports ready. Where YouTube
+  // is unreachable (blocked network, slow link) the frame would otherwise
+  // stay black with no explanation, so after a grace period say so plainly.
+  var videoStatus = document.getElementById('videoStatus');
+  var playerReady = false;
+  function showVideoUnavailable() {
+    if (playerReady || !videoStatus) return;
+    videoStatus.textContent = copy.videoUnavailable;
+  }
+  var videoStatusTimer = setTimeout(showVideoUnavailable, 12000);
 
   var tag = document.createElement('script');
   tag.src = 'https://www.youtube.com/iframe_api';
+  tag.onerror = function() {
+    dlog("YT API script failed to load");
+    showVideoUnavailable();
+  };
   var firstScriptTag = document.getElementsByTagName('script')[0];
   firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
   setTimeout(function() {
@@ -1097,6 +1040,9 @@
       events: {
         onReady: function() {
           dlog("player ready");
+          playerReady = true;
+          clearTimeout(videoStatusTimer);
+          if (videoStatus) videoStatus.hidden = true;
           if (startAt > 0) {
             try { player.seekTo(startAt, true); } catch (e) {}
           }
@@ -1264,69 +1210,21 @@
     window.Telegram.WebApp.MainButton.setText(copy.close).show().onClick(handleDone);
   }
 
-  // ── Floating Done button (landscape / desktop-fullscreen overlay) ────────────
+  // ── Floating Done button (landscape overlay) ─────────────────────────────
   var floatDoneBtn = document.getElementById('floatDoneBtn');
   if (floatDoneBtn) {
     floatDoneBtn.addEventListener('click', handleDone);
   }
 
-  // ── Expand / fullscreen button (desktop) ─────────────────────────────────────
-  var expandBtn = document.getElementById('expandBtn');
-  var floatExitBtn = document.getElementById('floatExitBtn');
-
-  function enterDesktopFullscreen() {
-    if (!requestTelegramFullscreen()) requestBrowserFullscreen();
-    document.body.classList.add('desktop-fullscreen');
-    // Hide the Telegram MainButton while the page is in its own fullscreen state.
-    try {
-      if (window.Telegram && window.Telegram.WebApp) {
-        window.Telegram.WebApp.MainButton.hide();
-      }
-    } catch (e) {}
-    dlog("desktop: entered fullscreen");
-  }
-
-  function exitDesktopFullscreen() {
-    if (!exitTelegramFullscreen()) exitBrowserFullscreen();
-    document.body.classList.remove('desktop-fullscreen');
-    // Restore the Telegram MainButton.
-    try {
-      if (window.Telegram && window.Telegram.WebApp) {
-        window.Telegram.WebApp.MainButton.show();
-      }
-    } catch (e) {}
-    dlog("desktop: exited fullscreen");
-  }
-
-  if (!isMobileDevice && expandBtn) {
-    expandBtn.hidden = false;
-    expandBtn.addEventListener('click', function() {
-      enterDesktopFullscreen();
-    });
-  }
-
-  if (floatExitBtn) {
-    floatExitBtn.addEventListener('click', function() {
-      exitDesktopFullscreen();
-    });
-  }
+  // There is no app-level full-screen button: YouTube's own control in the
+  // frame does that, and a second one overlapped and fought it. Rotating a
+  // phone still switches to the immersive landscape layout automatically.
 
   loadTranscript();
 
-  // Keep desktop-fullscreen class in sync with the browser's actual fullscreen state.
-  function onFullscreenChange() {
-    syncTelegramLayoutVars();
-    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-      document.body.classList.remove('desktop-fullscreen');
-      try {
-        if (window.Telegram && window.Telegram.WebApp) {
-          window.Telegram.WebApp.MainButton.show();
-        }
-      } catch (e) {}
-    }
-  }
-  document.addEventListener('fullscreenchange', onFullscreenChange);
-  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+  // Safe-area insets change when the frame enters or leaves full screen.
+  document.addEventListener('fullscreenchange', syncTelegramLayoutVars);
+  document.addEventListener('webkitfullscreenchange', syncTelegramLayoutVars);
 })();
   </script>
 </body>
