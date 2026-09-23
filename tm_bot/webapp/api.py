@@ -570,8 +570,10 @@ def create_webapp_api(
             """Handle 404s by checking for static files or serving index.html."""
             path = request.url.path
             
-            # For API routes, return proper JSON error response
-            if path.startswith("/api/"):
+            # For API routes — and pdf.js runtime assets, which must never be
+            # answered with index.html (pdf.js would parse the page as font or
+            # CMap data) — return a proper JSON error response.
+            if path.startswith("/api/") or path.startswith("/pdfjs/"):
                 return JSONResponse(
                     status_code=exc.status_code,
                     content={"detail": exc.detail if hasattr(exc, 'detail') else "Error"}
