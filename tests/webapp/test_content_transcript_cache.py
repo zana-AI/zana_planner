@@ -57,3 +57,29 @@ def test_cached_transcript_skips_live_fetch(monkeypatch):
     monkeypatch.setattr(youtube_utils, "get_video_transcript", lambda *_args, **_kwargs: pytest.fail("live fetch"))
 
     assert content_router._transcript_for_video("dQw4w9WgXcQ") is cached
+
+
+def test_failed_live_transcript_is_queued_for_residential_worker(monkeypatch):
+    pytest.importorskip("fastapi")
+    from webapp.routers import content as content_router
+    import repositories.video_transcript_repo as transcript_repo_module
+    import repositories.video_transcript_fetch_queue_repo as queue_repo_module
+    import utils.youtube_utils as youtube_utils
+
+    queued = []
+
+    class FakeTranscriptRepository:
+        def get(self, _video_id):
+            return None
+
+    class FakeQueueRepository:
+        def enqueue(self, video_id):
+            queued.append(video_id)
+
+    unavailable = {"available": False, "cues": []}
+    monkeypatch.setattr(transcript_repo_module, "VideoTranscriptRepository", FakeTranscriptRepository)
+    monkeypatch.setattr(queue_repo_module, "VideoTranscriptFetchQueueRepository", FakeQueueRepository)
+    monkeypatch.setattr(youtube_utils, "get_video_transcript", lambda *_args, **_kwargs: unavailable)
+
+    assert content_router._transcript_for_video("dQw4w9WgXcQ") is unavailable
+    assert queued == ["dQw4w9WgXcQ"]

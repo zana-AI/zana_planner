@@ -42,7 +42,7 @@ def video_ids_from_cards() -> list[str]:
     """Every distinct video cited by a flashcard, so ingest follows the content."""
     proc = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", HOST, "docker", "exec", "-i",
-         "zana-postgres", "psql", "-U", "zana", "-d", "zana", "-At", "-P", "footer=off"],
+         "zana-postgres", "psql", "-v", "ON_ERROR_STOP=1", "-U", "zana", "-d", "zana", "-At", "-P", "footer=off"],
         input="SELECT DISTINCT fields->>'source_url' FROM flashcard_note "
               f"WHERE user_id='{USER_ID}' AND fields ? 'source_url';",
         text=True, capture_output=True, encoding="utf-8", check=True)

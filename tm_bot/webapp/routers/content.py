@@ -285,6 +285,16 @@ def _transcript_for_video(video_id: str, url: Optional[str] = None) -> Dict[str,
             )
         except Exception as exc:
             logger.warning("Could not cache live transcript for %s: %s", video_id, exc)
+    else:
+        # Do not retry from the cloud request path. Record one durable request
+        # for the residential worker instead; it has a different IP reputation
+        # and deliberately paces YouTube requests.
+        try:
+            from repositories.video_transcript_fetch_queue_repo import VideoTranscriptFetchQueueRepository
+            VideoTranscriptFetchQueueRepository().enqueue(video_id)
+        except Exception as exc:
+            # This stays non-fatal until the queue migration is applied.
+            logger.warning("Could not queue transcript fetch for %s: %s", video_id, exc)
     return transcript
 
 
