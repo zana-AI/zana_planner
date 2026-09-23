@@ -748,7 +748,14 @@
     "coReaders": "Class",
     "viewingOwnHighlights": "Your highlights",
     "teacherHighlights": "Teacher's highlights",
-    "noCoReadersYet": "No one in your club has opened this yet."
+    "noCoReadersYet": "No one in your club has opened this yet.",
+    "percentRead": "{{percent}}% read",
+    "highlightsCount_one": "{{count}} highlight",
+    "highlightsCount_other": "{{count}} highlights",
+    "wordsCount_one": "{{count}} word saved",
+    "wordsCount_other": "{{count}} words saved",
+    "reviewWords": "Review →",
+    "pageNumber": "Page {{page}}"
   },
   "templateDetail": {
     "loadingTemplate": "Loading template...",

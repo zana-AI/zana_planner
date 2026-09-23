@@ -1,12 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, MoreHorizontal, PanelRight, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { HeatmapBar } from '../components/HeatmapBar';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { ContentCoReader, PdfHighlight } from '../types';
+import type { ContentCoReader, ContentWord, PdfHighlight } from '../types';
 import { AddToDeckSheet } from './pdfReader/AddToDeckSheet';
 import { HighlightLayer } from './pdfReader/HighlightLayer';
 import { HighlightPopover } from './pdfReader/HighlightPopover';
@@ -47,9 +47,20 @@ const applyRasterCacheToCanvas = (target: HTMLCanvasElement, entry: PageRasterCa
   }
 };
 
+/** The deck most of a document's words were saved into, for "Review". */
+function mostCommonDeck(words: ContentWord[]): ContentWord | null {
+  const counts = new Map<string, number>();
+  words.forEach((word) => counts.set(word.deck_id, (counts.get(word.deck_id) || 0) + 1));
+  let best: ContentWord | null = null;
+  words.forEach((word) => {
+    if (!best || (counts.get(word.deck_id) || 0) > (counts.get(best.deck_id) || 0)) best = word;
+  });
+  return best;
+}
+
 export function PdfReaderPage() {
   const { t } = useTranslation();
-  const { webApp, initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
+  const { initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
@@ -71,8 +82,8 @@ export function PdfReaderPage() {
   const [error, setError] = useState('');
   const [scale, setScale] = useState(1);
   const [rendering, setRendering] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [savedWords, setSavedWords] = useState<ContentWord[]>([]);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
   const [highlightsOpen, setHighlightsOpen] = useState(false);
@@ -113,7 +124,6 @@ export function PdfReaderPage() {
   const autoSaveTimeoutRef = useRef<number | null>(null);
   const isSavingProgressRef = useRef(false);
   const queuedProgressRef = useRef<number | null>(null);
-  const fullscreenChromeTimeoutRef = useRef<number | null>(null);
   const pageRasterCacheRef = useRef<Map<number, PageRasterCacheEntry>>(new Map());
   const panRef = useRef<{ pointerId: number; clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const wheelPageTurnLockUntilRef = useRef(0);
@@ -359,6 +369,39 @@ export function PdfReaderPage() {
     load();
   }, [contentId, canLoadApi, isReady, isTelegramMiniApp, authData, hasBrowserToken]);
 
+  // The reader is always the immersive layout now; give it the full height.
+  useEffect(() => {
+    expand();
+  }, [expand]);
+
+  // Open a document fitted to the screen width when its page is wider than
+  // the screen (every A4 page on a phone), instead of cutting the text off.
+  // Only once per document, so a later manual zoom is respected.
+  const autoFittedRef = useRef(false);
+  useEffect(() => {
+    autoFittedRef.current = false;
+  }, [contentId]);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (autoFittedRef.current || !shell || !pageSize.width) return;
+    autoFittedRef.current = true;
+    if (pageSize.width > shell.clientWidth - 8) fitToWidth();
+  }, [pageSize.width]);
+
+  const loadSavedWords = () => {
+    if (!contentId || !canLoadApi) return;
+    apiClient
+      .getContentWords(contentId)
+      .then((res) => setSavedWords(res.items || []))
+      .catch(() => {
+        /* the list is a convenience; the reader keeps working without it */
+      });
+  };
+
+  useEffect(() => {
+    loadSavedWords();
+  }, [contentId, canLoadApi]);
+
   // Re-fetch highlights whenever the teacher switches which student's marks
   // they're looking at.
   useEffect(() => {
@@ -445,45 +488,6 @@ export function PdfReaderPage() {
     const timeout = window.setTimeout(() => setPageTurnDirection(null), 240);
     return () => window.clearTimeout(timeout);
   }, [pageTurnDirection, pageNumber]);
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      if (!document.fullscreenElement) {
-        setIsFullscreen(false);
-      }
-    };
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
-  }, []);
-
-  useEffect(() => {
-    if (!isFullscreen) {
-      document.body.classList.remove('pdf-reader-fullscreen-active');
-      setFullscreenControlsVisible(true);
-      if (fullscreenChromeTimeoutRef.current != null) {
-        window.clearTimeout(fullscreenChromeTimeoutRef.current);
-        fullscreenChromeTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    document.body.classList.add('pdf-reader-fullscreen-active');
-    if (fullscreenChromeTimeoutRef.current != null) {
-      window.clearTimeout(fullscreenChromeTimeoutRef.current);
-    }
-    fullscreenChromeTimeoutRef.current = window.setTimeout(() => {
-      setFullscreenControlsVisible(false);
-      fullscreenChromeTimeoutRef.current = null;
-    }, 2200);
-
-    return () => {
-      document.body.classList.remove('pdf-reader-fullscreen-active');
-      if (fullscreenChromeTimeoutRef.current != null) {
-        window.clearTimeout(fullscreenChromeTimeoutRef.current);
-        fullscreenChromeTimeoutRef.current = null;
-      }
-    };
-  }, [isFullscreen, fullscreenControlsVisible, pageNumber, scale]);
 
   useEffect(() => {
     pageRasterCacheRef.current.clear();
@@ -763,19 +767,6 @@ export function PdfReaderPage() {
   }, [coverageBucketCount, isPinchingRef, isRendering, loading, pageCount, pageNumber, pageTurnDirection, pdfDoc, scale]);
 
   const progressPct = useMemo(() => Math.round(progressRatio * 100), [progressRatio]);
-  const expiresLabel = useMemo(() => {
-    if (!expiresAt) return '';
-    const d = new Date(expiresAt);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString();
-  }, [expiresAt]);
-  const syncLabel = useMemo(() => {
-    if (saving || syncStatus === 'saving') return 'Saving position...';
-    if (syncStatus === 'pending') return 'Position queued';
-    if (syncStatus === 'error') return 'Position sync failed';
-    if (syncStatus === 'saved') return `Position saved at ${Math.round(resumeRatio * 100)}%`;
-    return 'Tracking read coverage';
-  }, [resumeRatio, saving, syncStatus]);
   const highlightGroups = useMemo(() => {
     const byPage = new Map<number, PdfHighlight[]>();
     [...highlights]
@@ -787,46 +778,6 @@ export function PdfReaderPage() {
       });
     return Array.from(byPage.entries()).map(([pageIndex, items]) => ({ pageIndex, items }));
   }, [highlights]);
-
-  const enterFullscreen = async () => {
-    setIsFullscreen(true);
-    setFullscreenControlsVisible(true);
-    expand();
-    try {
-      webApp?.requestFullscreen?.();
-    } catch {
-      // Telegram fullscreen is best-effort across client versions.
-    }
-    try {
-      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-      }
-    } catch {
-      // Telegram iOS may reject the browser Fullscreen API; CSS reader mode still fills the viewport.
-    }
-  };
-
-  const exitFullscreen = async () => {
-    setIsFullscreen(false);
-    setFullscreenControlsVisible(true);
-    try {
-      webApp?.exitFullscreen?.();
-    } catch {
-      // Ignore unsupported Telegram fullscreen exit.
-    }
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      }
-    } catch {
-      // Ignore unsupported browser fullscreen exit.
-    }
-  };
-
-  const revealFullscreenControls = () => {
-    if (!isFullscreen) return;
-    setFullscreenControlsVisible(true);
-  };
 
   const goToPage = (nextPage: number) => {
     if (!pageCount) return;
@@ -860,11 +811,6 @@ export function PdfReaderPage() {
       ? returnTo
       : '/my-contents';
     navigate(safeReturnPath, { replace: true });
-  };
-
-  const turnFullscreenPage = (direction: -1 | 1) => {
-    revealFullscreenControls();
-    goToPage(pageNumber + direction);
   };
 
   const fitToWidth = () => {
@@ -1063,33 +1009,19 @@ export function PdfReaderPage() {
   }
 
   return (
-    <div className={`pdf-reader-page${isFullscreen ? ' pdf-reader-page--fullscreen' : ''}${isFullscreen && !fullscreenControlsVisible ? ' pdf-reader-page--chrome-hidden' : ''}`}>
+    <div className="pdf-reader-page">
       <section className="pdf-reader-viewer" dir="ltr">
-        <div className="pdf-reader-toolbar">
+        {/* One slim row: everything else lives in the "more" menu, the footer,
+            or the edge buttons, so the page gets the screen. */}
+        <header className="pdf-reader-bar">
           <button className="pdf-reader-icon-btn" onClick={returnToLibrary} title={t('pdfReader.backToLibrary')} type="button">
             <ArrowLeft size={18} className="icon-directional" />
           </button>
-          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber - 1)} disabled={!pageCount || pageNumber <= 1} title={t('pdfReader.previousPage')} type="button">
-            <ChevronLeft size={18} />
-          </button>
+          <div className="pdf-reader-title" dir="auto" title={contentTitle}>{contentTitle}</div>
           <label className="pdf-reader-page-count" title={t('pdfReader.jumpToPage')}>
             <input aria-label={t('pdfReader.jumpToPage')} type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
             <span>/ {pageCount || 0}</span>
           </label>
-          <button className="pdf-reader-icon-btn" onClick={() => goToPage(pageNumber + 1)} disabled={!pageCount || pageNumber >= pageCount} title={t('pdfReader.nextPage')} type="button">
-            <ChevronRight size={18} />
-          </button>
-          <div className="pdf-reader-toolbar-spacer" />
-          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.25)} disabled={scale <= 0.65} title={t('pdfReader.zoomOut')} type="button">
-            <ZoomOut size={18} />
-          </button>
-          <div className="pdf-reader-zoom">{Math.round(scale * 100)}%</div>
-          <button className="pdf-reader-icon-btn" onClick={() => zoomBy(0.25)} disabled={scale >= MAX_PDF_SCALE} title={t('pdfReader.zoomIn')} type="button">
-            <ZoomIn size={18} />
-          </button>
-          <button className="pdf-reader-icon-btn" onClick={fitToWidth} disabled={!pageSize.width} title={t('pdfReader.fitWidth')} type="button">
-            <ScanLine size={18} />
-          </button>
           {isTeacher && (
             <button
               className="pdf-reader-icon-btn"
@@ -1100,30 +1032,31 @@ export function PdfReaderPage() {
               <Users size={18} />
             </button>
           )}
-          <button className="pdf-reader-icon-btn pdf-reader-icon-btn--with-badge" onClick={() => setHighlightsOpen((open) => !open)} title={t('pdfReader.highlights')} type="button">
-            <PanelRight size={18} />
-            {highlights.length > 0 && <span>{highlights.length}</span>}
-          </button>
-          <button className="pdf-reader-icon-btn" onClick={isFullscreen ? exitFullscreen : enterFullscreen} title={isFullscreen ? 'Exit reader mode' : 'Reader fullscreen'} type="button">
-            {isFullscreen ? <X size={18} /> : <Maximize2 size={18} />}
-          </button>
-          <button className="pdf-reader-icon-btn" title={t('pdfReader.more')} type="button">
+          <button
+            className="pdf-reader-icon-btn"
+            onClick={() => setMenuOpen((open) => !open)}
+            title={t('pdfReader.more')}
+            aria-expanded={menuOpen}
+            type="button"
+          >
             <MoreHorizontal size={18} />
           </button>
-        </div>
-        <div className="pdf-reader-timeline-panel">
-          <HeatmapBar
-            data={{ bucket_count: coverageBucketCount, buckets: coverageBuckets }}
-            markerRatio={resumeRatio}
-            ariaLabel="PDF read coverage timeline"
-            className="pdf-reader-timeline"
-          />
-          <div className="pdf-reader-timeline-meta">
-            <span>{progressPct}% read</span>
-            <span>{syncLabel}</span>
-          </div>
-          {error && <div className="pdf-reader-inline-error">{error}</div>}
-        </div>
+          {menuOpen && (
+            <div className="pdf-reader-menu" role="menu">
+              <button className="pdf-reader-icon-btn" onClick={() => zoomBy(-0.25)} disabled={scale <= 0.65} title={t('pdfReader.zoomOut')} type="button">
+                <ZoomOut size={18} />
+              </button>
+              <div className="pdf-reader-zoom">{Math.round(scale * 100)}%</div>
+              <button className="pdf-reader-icon-btn" onClick={() => zoomBy(0.25)} disabled={scale >= MAX_PDF_SCALE} title={t('pdfReader.zoomIn')} type="button">
+                <ZoomIn size={18} />
+              </button>
+              <button className="pdf-reader-menu-item" onClick={() => { fitToWidth(); setMenuOpen(false); }} disabled={!pageSize.width} type="button">
+                <ScanLine size={16} />
+                <span>{t('pdfReader.fitWidth')}</span>
+              </button>
+            </div>
+          )}
+        </header>
         {loading ? (
           <div className="pdf-reader-empty">{t('pdfReader.loadingPdf')}</div>
         ) : pdfUrl ? (
@@ -1141,7 +1074,7 @@ export function PdfReaderPage() {
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
-            onClick={revealFullscreenControls}
+            onClick={() => setMenuOpen(false)}
             tabIndex={0}
           >
             <div
@@ -1173,39 +1106,56 @@ export function PdfReaderPage() {
               )}
             </div>
             {isRendering && <div className="pdf-reader-rendering">{t('pdfReader.rendering')}</div>}
-            {isFullscreen && (
-              <>
-                <button
-                  className="pdf-reader-page-zone pdf-reader-page-zone--prev"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    turnFullscreenPage(-1);
-                  }}
-                  disabled={pageNumber <= 1}
-                  type="button"
-                  aria-label={t('pdfReader.previousPage')}
-                >
-                  <ChevronLeft size={18} />
-                </button>
-                <button
-                  className="pdf-reader-page-zone pdf-reader-page-zone--next"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    turnFullscreenPage(1);
-                  }}
-                  disabled={pageNumber >= pageCount}
-                  type="button"
-                  aria-label={t('pdfReader.nextPage')}
-                >
-                  <ChevronRight size={18} />
-                </button>
-                <div className="pdf-reader-fullscreen-toast">{t('pdfReader.tapEdgesToTurnPage')}</div>
-              </>
-            )}
           </div>
         ) : (
           <div className="pdf-reader-empty pdf-reader-empty--error">{t('pdfReader.pdfUrlUnavailable')}</div>
         )}
+        {/* Page turns: edge buttons, always visible (no swipe — it fights
+            text selection and panning). */}
+        {pdfUrl && !loading && (
+          <>
+            <button
+              className="pdf-reader-page-zone pdf-reader-page-zone--prev"
+              onClick={() => goToPage(pageNumber - 1)}
+              disabled={pageNumber <= 1}
+              type="button"
+              aria-label={t('pdfReader.previousPage')}
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              className="pdf-reader-page-zone pdf-reader-page-zone--next"
+              onClick={() => goToPage(pageNumber + 1)}
+              disabled={pageNumber >= pageCount}
+              type="button"
+              aria-label={t('pdfReader.nextPage')}
+            >
+              <ChevronRight size={18} />
+            </button>
+          </>
+        )}
+        {/* Same idea as the bar under a video: where you have read, and what
+            you kept from it, one tap from the list. */}
+        <footer className="pdf-reader-footer">
+          <HeatmapBar
+            data={{ bucket_count: coverageBucketCount, buckets: coverageBuckets }}
+            markerRatio={resumeRatio}
+            ariaLabel="PDF read coverage timeline"
+            className="pdf-reader-timeline"
+          />
+          <div className="pdf-reader-footer-row">
+            <span>{t('pdfReader.percentRead', { percent: progressPct })}</span>
+            {syncStatus === 'error' && <span className="pdf-reader-inline-error">{t('pdfReader.failedToSyncReadingProgress')}</span>}
+            <button className="pdf-reader-footer-link" type="button" onClick={() => setHighlightsOpen((open) => !open)}>
+              <PanelRight size={14} />
+              <span>
+                {t('pdfReader.highlightsCount', { count: highlights.length })}
+                {savedWords.length > 0 ? ` · ${t('pdfReader.wordsCount', { count: savedWords.length })}` : ''}
+              </span>
+            </button>
+          </div>
+          {error && <div className="pdf-reader-inline-error">{error}</div>}
+        </footer>
       </section>
 
       {highlightsOpen && (
@@ -1213,13 +1163,44 @@ export function PdfReaderPage() {
           <header>
             <div>
               <h2>{t('pdfReader.highlights')}</h2>
-              <p>{highlights.length} saved {expiresLabel ? `- URL expires ${expiresLabel}` : ''}</p>
+              <p>{t('pdfReader.highlightsCount', { count: highlights.length })}</p>
             </div>
             <button className="pdf-reader-icon-btn" type="button" onClick={() => setHighlightsOpen(false)} title={t('pdfReader.closeHighlights')}>
               <X size={18} />
             </button>
           </header>
           <div className="pdf-reader-highlights-list">
+            {savedWords.length > 0 && (
+              <section className="pdf-reader-words">
+                <div className="pdf-reader-words-head">
+                  <h3>{t('pdfReader.wordsCount', { count: savedWords.length })}</h3>
+                  <button
+                    type="button"
+                    className="pdf-reader-footer-link"
+                    onClick={() => {
+                      const deck = mostCommonDeck(savedWords);
+                      if (deck) navigate(`/flashcards?deck=${encodeURIComponent(deck.deck_id)}&name=${encodeURIComponent(deck.deck_name)}`);
+                    }}
+                  >
+                    {t('pdfReader.reviewWords')}
+                  </button>
+                </div>
+                <div className="pdf-reader-word-chips">
+                  {savedWords.map((word) => (
+                    <button
+                      key={word.note_id}
+                      type="button"
+                      className="pdf-reader-word-chip"
+                      onClick={() => { if (word.page != null) goToPage(word.page + 1); }}
+                      title={word.page != null ? t('pdfReader.pageNumber', { page: word.page + 1 }) : undefined}
+                    >
+                      <span dir="auto">{word.front}</span>
+                      {word.back && <span className="pdf-reader-word-chip-back" dir="auto">{word.back}</span>}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
             {highlightGroups.map((group) => (
               <section key={group.pageIndex} className="pdf-reader-highlight-group">
                 <h3>Page {group.pageIndex + 1}</h3>
@@ -1305,6 +1286,7 @@ export function PdfReaderPage() {
           pageIndex={addToDeckDraft.pageIndex}
           sourceTitle={contentTitle}
           language={contentLanguage}
+          onSaved={loadSavedWords}
         />
       )}
     </div>

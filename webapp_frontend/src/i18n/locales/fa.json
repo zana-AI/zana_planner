@@ -646,7 +646,14 @@
     "coReaders": "کلاس",
     "viewingOwnHighlights": "هایلایت‌های شما",
     "teacherHighlights": "هایلایت‌های معلم",
-    "noCoReadersYet": "هنوز کسی در کلاب شما این را باز نکرده است."
+    "noCoReadersYet": "هنوز کسی در کلاب شما این را باز نکرده است.",
+    "percentRead": "{{percent}}٪ خوانده شده",
+    "highlightsCount_one": "{{count}} هایلایت",
+    "highlightsCount_other": "{{count}} هایلایت",
+    "wordsCount_one": "{{count}} واژه ذخیره شد",
+    "wordsCount_other": "{{count}} واژه ذخیره شد",
+    "reviewWords": "مرور ←",
+    "pageNumber": "صفحه {{page}}"
   },
   "planSessions": {
     "noSessionsYet": "هنوز جلسه‌ای نیست.",

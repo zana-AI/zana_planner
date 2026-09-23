@@ -775,6 +775,16 @@ export interface PdfOpenResponse {
   is_teacher?: boolean;
 }
 
+/** A word saved to a deck from one document; `page` is 0-based. */
+export interface ContentWord {
+  note_id: string;
+  front: string;
+  back: string;
+  page: number | null;
+  deck_id: string;
+  deck_name: string;
+}
+
 /** One club member's engagement with a shared content item, for the teacher's roster view. */
 export interface ContentCoReader {
   user_id: string;

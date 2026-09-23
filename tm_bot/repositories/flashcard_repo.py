@@ -388,6 +388,28 @@ class FlashcardNoteRepository:
         ).mappings().all()
         return [_decode_json(dict(r), "fields") for r in rows]
 
+    def list_for_content(self, session: Session, user_id: str, content_id: str) -> List[dict]:
+        """Notes that cite one content item (e.g. words saved from a PDF).
+
+        Follows `flashcard_note_reference`, which is where a PDF card records
+        its page; `page` is the lowest cited page, for "jump to" links.
+        """
+        rows = session.execute(
+            text(
+                """
+                SELECT n.note_id, n.deck_id, d.name AS deck_name, n.fields,
+                       min((r.locator->>'page')::int) AS page
+                FROM flashcard_note n
+                JOIN flashcard_deck d ON d.deck_id = n.deck_id
+                JOIN flashcard_note_reference r ON r.note_id = n.note_id
+                WHERE n.user_id = :u AND r.content_id = :cid
+                GROUP BY n.note_id, n.deck_id, d.name, n.fields
+                """
+            ),
+            {"u": str(user_id), "cid": str(content_id)},
+        ).mappings().all()
+        return [_decode_json(dict(r), "fields") for r in rows]
+
     def upsert(
         self,
         session: Session,

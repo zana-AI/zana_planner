@@ -1626,6 +1626,11 @@ class ApiClient {
     });
   }
 
+  /** Words the user saved to decks from one document, in page order. */
+  async getContentWords(contentId: string): Promise<{ items: import('../types').ContentWord[] }> {
+    return this.request(`/flashcards/content-notes?content_id=${encodeURIComponent(contentId)}`);
+  }
+
   /**
    * Translate a word or phrase for the "add to deck" sheet. Same endpoint the
    * video player's word tools use — kept generic so the PDF reader can reuse it.
