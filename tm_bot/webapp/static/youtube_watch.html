@@ -276,7 +276,7 @@
     connecting: 'در حال اتصال به یوتیوب…',
     videoUnavailable: 'ویدیو اینجا بارگذاری نشد. زیرنویس پایین همچنان کار می‌کند.',
     existingKept: 'کارت موجود حفظ شد',
-    savedTitle: 'ذخیره‌شده از این ویدیو', review: 'مرور ←',
+    savedTitle: 'ذخیره‌شده از این ویدیو', review: 'مرور ←', building: 'در حال ساخت کارت…',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'یک کلمه را انتخاب کنید.',
     signIn: 'برای ذخیره، صفحه را داخل اپ باز کنید.', context: 'جمله'
   } : {
@@ -285,7 +285,7 @@
     connecting: 'Connecting to YouTube…',
     videoUnavailable: 'The video couldn’t load here. The subtitles below still work.',
     existingKept: 'Existing card kept',
-    savedTitle: 'Saved from this video', review: 'Review →',
+    savedTitle: 'Saved from this video', review: 'Review →', building: 'Building card…',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
     signIn: 'Open this page inside the app to save cards.', context: 'line'
   };
@@ -446,7 +446,8 @@
 
   function fetchWordTranslation(word) {
     var requestId = ++lookupRequestId;
-    var context = selectedCue ? selectedCue.text : '';
+    // The whole sentence, not one caption line, so the gloss picks the right sense.
+    var context = selectedCue ? sentenceAround(selectedCue) : '';
     lookupWord(word, context).then(function(data) {
       if (requestId !== lookupRequestId || word !== selectedWord) return;
       document.getElementById('wordTranslation').textContent = data && data.available
@@ -517,6 +518,15 @@
     return cues.slice(first, last + 1).map(function(c) { return c.text.trim(); }).join(' ').replace(/\s+/g, ' ');
   }
 
+  // A few lines either side, sent only to build the card (never stored):
+  // enough for the model to recognise the expression a word belongs to.
+  function passageAround(cue) {
+    var index = cues.indexOf(cue);
+    if (index < 0) return cue.text;
+    return cues.slice(Math.max(0, index - 3), index + 4)
+      .map(function(c) { return c.text.trim(); }).join(' ').replace(/\s+/g, ' ').slice(0, 1100);
+  }
+
   function saveSelectedWord() {
     if (!selectedWord || !selectedCue) return;
     var headers = authHeaders();
@@ -544,10 +554,14 @@
         source_language: sourceLanguage,
         tags: ['youtube', sourceLanguage]
       },
-      references: [{kind: 'url', locator: {url: sourceUrl, start: selectedCue.start}, label: 'YouTube · ' + formatCueTime(selectedCue.start)}]
+      references: [{kind: 'url', locator: {url: sourceUrl, start: selectedCue.start}, label: 'YouTube · ' + formatCueTime(selectedCue.start)}],
+      context: passageAround(selectedCue),
+      target_language: translationTarget()
     };
     var saveButton = document.getElementById('saveWord');
     saveButton.disabled = true;
+    // Building the card takes a model call (a few seconds); say so.
+    setWordStatus(copy.building);
     fetch(baseUrl + '/api/flashcards/video-notes', {
       method: 'POST', headers: headers, body: JSON.stringify(payload)
     }).then(function(response) {

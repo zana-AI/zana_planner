@@ -95,6 +95,14 @@ function renderRichText(text: string): ReactNode[] {
   return nodes;
 }
 
+/** Bold the first occurrence of the card's word inside its sentence. */
+function boldTerm(sentence: string, term: string): string {
+  const clean = term.trim();
+  if (!clean) return sentence;
+  const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return sentence.replace(new RegExp(escaped, 'i'), (match) => `<b>${match}</b>`);
+}
+
 function RichText({ text }: { text: string }): ReactNode {
   return <>{renderRichText(text)}</>;
 }
@@ -237,6 +245,13 @@ function ReviewPane({
     (typeof card.fields.source_sentence === 'string' ? card.fields.source_sentence : '') ||
     card.fields.example ||
     '';
+  // Recognition cards are asked in context: the sentence sits on the front
+  // with the word in bold. It would give the answer away when producing the
+  // word, so there it stays on the back as before.
+  const sentenceOnFront = !isReversed && Boolean(spokenLine) && !/<\s*(?:b|strong)\b/i.test(spokenLine);
+  // "battre en brèche · loc. verbale": what to memorise, which is the whole
+  // idiom when the tapped word belongs to one.
+  const headwordLine = [card.fields.headword, card.fields.grammar].filter(Boolean).join(' · ');
 
   return (
     <div className="fc-review">
@@ -258,19 +273,32 @@ function ReviewPane({
         <div className="fc-card-front" dir="auto">
           <RichText text={isReversed ? card.fields.back! : card.fields.front} />
         </div>
+        {sentenceOnFront ? (
+          <p className="fc-front-sentence" dir="auto">
+            <RichText text={boldTerm(spokenLine, card.fields.front)} />
+          </p>
+        ) : null}
 
         {revealed ? (
           <div className="fc-card-back">
+            {card.fields.headword ? (
+              <p className="fc-headword" dir="auto">{headwordLine}</p>
+            ) : null}
             {isReversed ? (
               <p className="fc-definition" dir="auto"><RichText text={card.fields.front} /></p>
             ) : card.fields.back ? (
               <p className="fc-definition" dir="auto"><RichText text={card.fields.back} /></p>
             ) : null}
-            {/* The example usually contains the target word, so it stays on the
-                answer side in both directions — as a prompt it would give the
-                answer away. */}
-            {spokenLine ? (
+            {/* In production mode the example contains the answer, so it only
+                ever appears on the back there. */}
+            {spokenLine && !sentenceOnFront ? (
               <p className="fc-example" dir="auto"><RichText text={spokenLine} /></p>
+            ) : null}
+            {card.fields.sentence_translation ? (
+              <p className="fc-sentence-translation" dir="auto">{card.fields.sentence_translation}</p>
+            ) : null}
+            {card.fields.usage_note ? (
+              <p className="fc-note-fa" dir="auto">{card.fields.usage_note}</p>
             ) : null}
             {card.fields.note_fa ? (
               <p className="fc-note-fa" dir="auto">{card.fields.note_fa}</p>

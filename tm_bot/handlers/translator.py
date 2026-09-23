@@ -13,6 +13,7 @@ exception. The unreachable-service case is logged once per process rather than
 once per message, so a misconfiguration is visible without flooding the log.
 """
 
+import json
 import os
 import threading
 import time
@@ -159,6 +160,108 @@ def translate_learning_term(
         with _cache_lock:
             _translation_cache[cache_key] = translated
     return translated
+
+
+_CARD_PROMPT = (
+    "You write flashcards for a {source} learner whose own language is {target}.\n"
+    "Given a term the learner tapped and the passage it appeared in, reply with ONE "
+    "JSON object and nothing else, with these keys in this order:\n"
+    '  "sentence": the one sentence from the passage that contains the term, copied '
+    "exactly (automatic subtitles may lack punctuation; keep the words as they are).\n"
+    '  "sentence_translation": that sentence translated naturally into {target}.\n'
+    '  "headword": what the learner should memorise. Decide first whether the term is '
+    "part of a multi-word expression in this sentence: an idiom, a fixed locution, or "
+    "a verb that only has this meaning with its preposition or object. If it is, give "
+    "the WHOLE expression in dictionary form (verb in the infinitive, pronominal verbs "
+    "with se). Example: the term \"compte\" in \"il s'est rendu compte\" gives "
+    "\"se rendre compte\". An expression keeps its verb: never return a fragment "
+    "such as a preposition plus a noun without the verb it belongs to. Otherwise "
+    "give the single word in dictionary form, with the "
+    "article for nouns (le/la/l').\n"
+    '  "grammar": a short {source} label such as "n.f.", "n.m.", "v.", "adj.", "adv.", '
+    '"loc. verbale", "expr.".\n'
+    '  "translation": the meaning of the headword as used here, in {target}, a few '
+    "words at most.\n"
+    '  "usage_note": one short line in {target} on register or usage, or "".\n'
+    "No other keys, no markdown, no commentary."
+)
+_CARD_KEYS = ("headword", "grammar", "translation", "sentence", "sentence_translation", "usage_note")
+# The small model returns clean JSON but misses idioms ("brèche" alone for
+# "battre en brèche"), which is most of what this call is for. The card is
+# built once, at save time, so the larger model's extra second is affordable.
+_CARD_MODELS = ("openai/gpt-oss-120b", _MODEL)
+
+
+def enrich_learning_card(
+    term: str,
+    passage: str,
+    target_lang: str,
+    source_lang: str = "fr",
+) -> Optional[dict]:
+    """Build the learning fields of a flashcard in one model call.
+
+    The in-player lookup is deliberately a bare gloss for speed. At save time
+    there is time for one structured call that recovers what a gloss loses:
+    the dictionary form, the idiom a word belongs to ("brèche" in "battre en
+    brèche"), and a translation of the whole sentence. Returns None on any
+    failure so the caller saves the card exactly as it would have without it.
+    """
+    clean_term = " ".join((term or "").strip().split())
+    clean_passage = " ".join((passage or "").strip().split())[:900]
+    source = (source_lang or "fr").lower().strip()
+    target = (target_lang or "en").lower().strip()
+    if not clean_term or source == target:
+        return None
+
+    cache_key = f"card:{source}:{target}:{clean_term}:{clean_passage}"
+    with _cache_lock:
+        cached = _translation_cache.get(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        _warn_unavailable("GROQ_API_KEY is not set")
+        return None
+
+    raw = _call_groq(
+        api_key,
+        _CARD_PROMPT.format(source=_language_name(source), target=_language_name(target)),
+        f"Term: {clean_term}\nPassage: {clean_passage or clean_term}",
+        models=_CARD_MODELS,
+        max_tokens=900,
+    )
+    card = _parse_card_json(raw)
+    if card:
+        with _cache_lock:
+            _translation_cache[cache_key] = card
+    return card
+
+
+def _parse_card_json(raw: Optional[str]) -> Optional[dict]:
+    """Keep only known, non-empty string fields; None if nothing usable."""
+    if not raw:
+        return None
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text[text.find("{"):] if "{" in text else text
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start:end + 1])
+    except ValueError:
+        logger.warning("enrich_learning_card: model returned invalid JSON")
+        return None
+    if not isinstance(data, dict):
+        return None
+    card = {
+        key: " ".join(str(data[key]).split())[:400]
+        for key in _CARD_KEYS
+        if isinstance(data.get(key), str) and data[key].strip()
+    }
+    return card if card.get("headword") and card.get("translation") else None
 
 
 def _call_groq(
