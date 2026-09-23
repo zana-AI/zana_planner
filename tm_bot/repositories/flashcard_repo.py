@@ -363,6 +363,31 @@ class FlashcardNoteRepository:
         rows = session.execute(text(sql), params).mappings().all()
         return [_decode_json(dict(r), "fields") for r in rows]
 
+    def list_for_video(self, session: Session, user_id: str, video_id: str) -> List[dict]:
+        """Notes mined from one YouTube video, oldest moment first.
+
+        A word first saved from this video carries it in `source_video_id`; a
+        word that already existed keeps its own primary source and gets this
+        video appended to `video_contexts` instead — both count as "saved from
+        this video". Deck name comes along so the player can link to review.
+        """
+        rows = session.execute(
+            text(
+                """
+                SELECT n.note_id, n.deck_id, d.name AS deck_name, n.fields
+                FROM flashcard_note n
+                JOIN flashcard_deck d ON d.deck_id = n.deck_id
+                WHERE n.user_id = :u
+                  AND (
+                    n.fields->>'source_video_id' = :vid
+                    OR n.fields->'video_contexts' @> CAST(:ctx AS jsonb)
+                  )
+                """
+            ),
+            {"u": str(user_id), "vid": str(video_id), "ctx": json.dumps([{"source_video_id": str(video_id)}])},
+        ).mappings().all()
+        return [_decode_json(dict(r), "fields") for r in rows]
+
     def upsert(
         self,
         session: Session,
