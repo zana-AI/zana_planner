@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, MoreHorizontal, PanelRight, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, MoreHorizontal, PanelRight, Plus, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
@@ -1203,33 +1203,47 @@ export function PdfReaderPage() {
             )}
             {highlightGroups.map((group) => (
               <section key={group.pageIndex} className="pdf-reader-highlight-group">
-                <h3>Page {group.pageIndex + 1}</h3>
+                <h3>{t('pdfReader.pageNumber', { page: group.pageIndex + 1 })}</h3>
                 {group.items.map((h) => (
-                  <article key={h.id} className="pdf-reader-highlight-card">
-                    {!h.is_mine && h.author_name && (
-                      <span className="pdf-reader-highlight-author">
-                        {h.is_teacher_author ? t('pdfReader.teacherHighlights') : h.author_name}
+                  // One row per highlight: a color dot, the text (note inline
+                  // after it, if any), then icon-only actions. The old card
+                  // spent three full-width text buttons on what a tap and a
+                  // trash icon can do.
+                  <article key={h.id} className="pdf-reader-highlight-row">
+                    <span className="pdf-reader-highlight-dot" style={{ background: h.color || '#ffe066' }} aria-hidden="true" />
+                    <button
+                      type="button"
+                      className="pdf-reader-highlight-text"
+                      onClick={() => goToPage(h.page_index + 1)}
+                      title={t('pdfReader.openPage')}
+                    >
+                      {!h.is_mine && h.author_name && (
+                        <span className="pdf-reader-highlight-author">
+                          {h.is_teacher_author ? t('pdfReader.teacherHighlights') : h.author_name}
+                        </span>
+                      )}
+                      <span dir="auto">
+                        {h.selected_text}
+                        {h.note && <span className="pdf-reader-highlight-note"> — {h.note}</span>}
                       </span>
-                    )}
-                    <button type="button" onClick={() => goToPage(h.page_index + 1)}>
-                      <FileText size={14} />
-                      <span>{t('pdfReader.openPage')}</span>
                     </button>
-                    {h.selected_text && <p>{h.selected_text}</p>}
-                    {h.note && <p className="pdf-reader-highlight-note">{h.note}</p>}
-                    {h.is_mine !== false && h.selected_text && (
-                      <button
-                        type="button"
-                        className="pdf-reader-highlight-add-to-deck"
-                        onClick={() => setAddToDeckDraft({ text: h.selected_text || '', pageIndex: h.page_index, highlightId: h.id })}
-                      >
-                        {t('pdfReader.addToDeck')}
-                      </button>
-                    )}
-                    {h.is_mine !== false && (
-                      <button className="pdf-reader-highlight-delete" onClick={() => deleteHighlight(h.id)} type="button">
-                        <Trash2 size={14} />{t('pdfReader.delete')}</button>
-                    )}
+                    <div className="pdf-reader-highlight-actions">
+                      {h.is_mine !== false && h.selected_text && (
+                        <button
+                          type="button"
+                          onClick={() => setAddToDeckDraft({ text: h.selected_text || '', pageIndex: h.page_index, highlightId: h.id })}
+                          title={t('pdfReader.addToDeck')}
+                          aria-label={t('pdfReader.addToDeck')}
+                        >
+                          <Plus size={14} />
+                        </button>
+                      )}
+                      {h.is_mine !== false && (
+                        <button onClick={() => deleteHighlight(h.id)} type="button" title={t('pdfReader.delete')} aria-label={t('pdfReader.delete')}>
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </article>
                 ))}
               </section>
