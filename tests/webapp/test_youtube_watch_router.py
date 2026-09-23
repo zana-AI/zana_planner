@@ -15,6 +15,15 @@ def test_transcript_follow_scrolls_only_its_panel():
     assert "overscroll-behavior: contain" in html
 
 
+def test_back_navigation_preserves_inline_web_app_session():
+    html_path = Path(__file__).parents[2] / "tm_bot" / "webapp" / "static" / "youtube_watch.html"
+    html = html_path.read_text(encoding="utf-8")
+
+    assert "var sessionToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('session_token')" in html
+    assert "localStorage.setItem('telegram_auth_token', sessionToken)" in html
+    assert "appDestination + '#session_token=' + encodeURIComponent(sessionToken)" in html
+
+
 def test_report_stats_logs_time_to_assigned_promise(monkeypatch, tmp_path):
     pytest.importorskip("fastapi")
     pytest.importorskip("telegram")
@@ -33,13 +42,6 @@ def test_report_stats_logs_time_to_assigned_promise(monkeypatch, tmp_path):
         def add_action(self, user_id, promise_id, time_spent, notes=None, action_datetime=None):
             calls["add_action"] = (user_id, promise_id, time_spent, notes)
             return "ok"
-
-    class FakeBot:
-        def __init__(self, token):
-            self.token = token
-
-        async def send_message(self, chat_id, text):
-            return None
 
     class FakeRequest:
         def __init__(self):
@@ -62,9 +64,7 @@ def test_report_stats_logs_time_to_assigned_promise(monkeypatch, tmp_path):
 
     monkeypatch.setattr(router_mod, "validate_init_data", lambda _init_data, _bot_token: (True, 42))
     monkeypatch.setattr(router_mod, "append_stats", lambda **kwargs: None)
-    monkeypatch.setattr(router_mod, "format_summary_message", lambda *_args, **_kwargs: "summary")
     monkeypatch.setattr(router_mod, "PlannerAPIAdapter", FakePlanner)
-    monkeypatch.setattr("telegram.Bot", FakeBot)
 
     response = asyncio.run(router_mod.report_stats(FakeRequest()))
 
@@ -96,13 +96,6 @@ def test_report_stats_skips_logging_for_tiny_watch_time(monkeypatch, tmp_path):
             calls["add_action"] += 1
             return "ok"
 
-    class FakeBot:
-        def __init__(self, token):
-            self.token = token
-
-        async def send_message(self, chat_id, text):
-            return None
-
     class FakeRequest:
         def __init__(self):
             self.app = types.SimpleNamespace(state=types.SimpleNamespace(bot_token="token", root_dir=str(tmp_path)))
@@ -124,9 +117,7 @@ def test_report_stats_skips_logging_for_tiny_watch_time(monkeypatch, tmp_path):
 
     monkeypatch.setattr(router_mod, "validate_init_data", lambda _init_data, _bot_token: (True, 42))
     monkeypatch.setattr(router_mod, "append_stats", lambda **kwargs: None)
-    monkeypatch.setattr(router_mod, "format_summary_message", lambda *_args, **_kwargs: "summary")
     monkeypatch.setattr(router_mod, "PlannerAPIAdapter", FakePlanner)
-    monkeypatch.setattr("telegram.Bot", FakeBot)
 
     response = asyncio.run(router_mod.report_stats(FakeRequest()))
 

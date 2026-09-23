@@ -2070,20 +2070,31 @@ class MessageHandlers:
                     )
 
                 if self.miniapp_url:
-                    web_app_url = f"{self.miniapp_url}/youtube-watch?video_id={video_id}"
                     assigned_map = self.application.bot_data.get("youtube_video_task_assignments") or {}
                     assigned_pid = assigned_map.get(f"{user_id}:{video_id}")
-                    if assigned_pid:
-                        web_app_url += f"&pid={assigned_pid}"
+                    watch_query = {
+                        "video_id": video_id,
+                        "pid": str(assigned_pid or ""),
+                        # The watcher owns a session token in its fragment. On
+                        # Telegram Desktop that token survives a Back navigation
+                        # even when Telegram does not expose initData.
+                        "return_to": "/my-contents",
+                    }
                     bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
                     if bot_token:
                         try:
                             from webapp.youtube_watch_stats import create_user_token
                             ut = create_user_token(user_id, bot_token)
                             if ut:
-                                web_app_url += f"&ut={ut}"
+                                watch_query["ut"] = ut
                         except Exception as e:
                             logger.debug("youtube ut token: %s", e)
+                    web_app_url = authenticated_miniapp_url(
+                        self.miniapp_url,
+                        user_id,
+                        "/youtube-watch",
+                        watch_query,
+                    )
                     keyboard_rows.append(
                         [InlineKeyboardButton("▶️ Watch in Mini App", web_app=WebAppInfo(url=web_app_url))]
                     )

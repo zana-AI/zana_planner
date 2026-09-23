@@ -9,7 +9,7 @@ from typing import Optional
 
 from utils.logger import get_logger
 from ..telegram_init_data import validate_init_data
-from ..youtube_watch_stats import append_stats, format_summary_message, verify_user_token
+from ..youtube_watch_stats import append_stats, verify_user_token
 
 router = APIRouter(tags=["youtube_watch"])
 logger = get_logger(__name__)
@@ -42,7 +42,7 @@ async def youtube_watch_page(request: Request, video_id: Optional[str] = None):
 async def report_stats(request: Request):
     """
     Accept stats from the Mini App (init_data + stats).
-    Validate init_data, append to JSONL, send Telegram message to user.
+    Validate init_data, append to JSONL, and update content/task progress.
     """
     logger.info("youtube report_stats: request received")
     try:
@@ -171,16 +171,4 @@ async def report_stats(request: Request):
                 logger.info("youtube report_stats: skipping unknown promise_id=%s for user_id=%s", promise_id, user_id)
         except Exception as e:
             logger.warning("youtube report_stats: failed to log time for promise_id=%s: %s", promise_id, e)
-    if time_spent >= MIN_WATCH_SECONDS_FOR_TASK_LOG:
-        summary = format_summary_message(video_id, time_spent, segments)
-        try:
-            from telegram import Bot
-            bot = Bot(token=bot_token)
-            await bot.send_message(chat_id=user_id, text=summary)
-            logger.info("youtube report_stats: Telegram message sent to user_id=%s", user_id)
-        except Exception as e:
-            logger.warning("youtube report_stats: Failed to send Telegram message to user_id=%s: %s", user_id, e)
-    else:
-        logger.info("youtube report_stats: skipping summary (time_spent=%.1f < %.1f)", time_spent, MIN_WATCH_SECONDS_FOR_TASK_LOG)
-
     return JSONResponse(content={"ok": True})

@@ -278,6 +278,13 @@
   <script>
 (function() {
   var params = new URLSearchParams(window.location.search);
+  // Telegram Desktop can omit WebApp.initData for inline buttons. Watch links
+  // carry the short-lived browser session in the URL fragment, so preserve it
+  // locally and hand it back to the React Mini App when the user taps Back.
+  var sessionToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('session_token') || '';
+  if (sessionToken) {
+    try { localStorage.setItem('telegram_auth_token', sessionToken); } catch (_) {}
+  }
   var videoId = params.get('video_id') || '';
   var contentId = params.get('content_id') || '';
   // Flashcards mined from this video link straight to the second the word
@@ -1215,6 +1222,15 @@
 
   function returnToApp() {
     sendBeaconStats('back');
+    var appDestination = returnTo.charAt(0) === '/' && returnTo.charAt(1) !== '/'
+      ? returnTo
+      : '/my-contents';
+    if (sessionToken) {
+      // Go to a known authenticated route instead of relying on the Telegram
+      // webview history, which may reopen the Mini App without initData.
+      window.location.replace(appDestination + '#session_token=' + encodeURIComponent(sessionToken));
+      return;
+    }
     if (returnTo.charAt(0) === '/' && returnTo.charAt(1) !== '/') {
       window.location.replace(returnTo);
       return;
