@@ -145,6 +145,30 @@ async def lookup_word(
     }
 
 
+class CardEnrichIn(BaseModel):
+    word: str = Field(min_length=1, max_length=120)
+    context: str = Field(default="", max_length=1200)
+    source_language: str = Field(default="fr", min_length=2, max_length=5)
+    target_language: str = Field(default="fa", min_length=2, max_length=5)
+
+
+@router.post("/enrich")
+async def enrich_card(payload: CardEnrichIn, user_id: int = Depends(get_current_user)):
+    """Build a card's learning fields for preview, without saving anything.
+
+    The PDF save sheet shows the card before it is saved, so the learner
+    edits what will actually be stored. Same model call the video save uses.
+    """
+    source = payload.source_language.strip().lower().split("-", 1)[0]
+    target = payload.target_language.strip().lower().split("-", 1)[0]
+    if source not in _LOOKUP_LANGUAGES or target not in _LOOKUP_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported language")
+    card = await asyncio.to_thread(
+        enrich_learning_card, payload.word.strip(), payload.context, target, source
+    )
+    return {"available": bool(card), **(card or {})}
+
+
 # --- authoring ------------------------------------------------------------
 
 

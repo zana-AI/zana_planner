@@ -59,7 +59,7 @@ function mostCommonDeck(words: ContentWord[]): ContentWord | null {
 }
 
 export function PdfReaderPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { initData, isReady, isTelegramMiniApp, expand } = useTelegramWebApp();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -70,14 +70,12 @@ export function PdfReaderPage() {
   const [assetId, setAssetId] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
-  const [expiresAt, setExpiresAt] = useState('');
   const [progressRatio, setProgressRatio] = useState(0);
   const [resumeRatio, setResumeRatio] = useState(0);
   const [coverageBuckets, setCoverageBuckets] = useState<number[]>(() => Array(PDF_READ_BUCKET_COUNT).fill(0));
   const [coverageBucketCount, setCoverageBucketCount] = useState(PDF_READ_BUCKET_COUNT);
   const [highlights, setHighlights] = useState<PdfHighlight[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState('');
   const [scale, setScale] = useState(1);
@@ -101,6 +99,7 @@ export function PdfReaderPage() {
   const [coReadersOpen, setCoReadersOpen] = useState(false);
   const [addToDeckDraft, setAddToDeckDraft] = useState<{
     text: string;
+    passage?: string;
     pageIndex: number;
     highlightId?: string;
   } | null>(null);
@@ -248,7 +247,6 @@ export function PdfReaderPage() {
     }
 
     isSavingProgressRef.current = true;
-    setSaving(true);
     setSyncStatus('saving');
     setError('');
     try {
@@ -270,7 +268,6 @@ export function PdfReaderPage() {
       }
     } finally {
       isSavingProgressRef.current = false;
-      setSaving(false);
     }
 
     const queuedRatio = queuedProgressRef.current;
@@ -328,7 +325,6 @@ export function PdfReaderPage() {
       setIsTeacher(Boolean(open.is_teacher));
       const blob = await apiClient.fetchPdfBlob(open.pdf_url);
       setPdfBytes(new Uint8Array(await blob.arrayBuffer()));
-      setExpiresAt(open.expires_at);
       const resume = Number(open.last_position ?? 0);
       const boundedResume = clampRatio(resume);
       resumeRatioRef.current = boundedResume;
@@ -931,6 +927,18 @@ export function PdfReaderPage() {
     }
   };
 
+  // The words around a selection, for the card builder: enough for it to see
+  // the sentence and any idiom the word belongs to. Only the page on screen
+  // has its text laid out, so a highlight from another page gets none.
+  const passageAround = (text: string, pageIndex: number): string | undefined => {
+    if (pageIndex !== pageNumber - 1) return undefined;
+    const pageText = (textLayerRef.current?.innerText || '').replace(/\s+/g, ' ');
+    const needle = text.replace(/\s+/g, ' ').trim();
+    const at = needle ? pageText.indexOf(needle) : -1;
+    if (at < 0) return undefined;
+    return pageText.slice(Math.max(0, at - 300), at + needle.length + 300);
+  };
+
   // "Add to deck" from an in-progress selection: the highlight is saved
   // first (or reused if editing an existing one) so the card always keeps a
   // reference back to a real highlight, then the save sheet opens on top.
@@ -952,7 +960,7 @@ export function PdfReaderPage() {
         const h = await apiClient.getPdfHighlights(contentId, assetId, viewingUserId || undefined);
         setHighlights(h.items || []);
       }
-      setAddToDeckDraft({ text: selectionDraft.text, pageIndex: pageNumber - 1, highlightId });
+      setAddToDeckDraft({ text: selectionDraft.text, passage: passageAround(selectionDraft.text, pageNumber - 1), pageIndex: pageNumber - 1, highlightId });
       setSelectionDraft(null);
       clearNativeSelection();
     } catch (err) {
@@ -1014,8 +1022,11 @@ export function PdfReaderPage() {
         {/* One slim row: everything else lives in the "more" menu, the footer,
             or the edge buttons, so the page gets the screen. */}
         <header className="pdf-reader-bar">
+          {/* Always points left, like the video player's back button — it
+              means "return", not "previous in reading order", so it doesn't
+              flip with right-to-left text. */}
           <button className="pdf-reader-icon-btn" onClick={returnToLibrary} title={t('pdfReader.backToLibrary')} type="button">
-            <ArrowLeft size={18} className="icon-directional" />
+            <ArrowLeft size={18} />
           </button>
           <div className="pdf-reader-title" dir="auto" title={contentTitle}>{contentTitle}</div>
           <label className="pdf-reader-page-count" title={t('pdfReader.jumpToPage')}>
@@ -1144,11 +1155,14 @@ export function PdfReaderPage() {
             className="pdf-reader-timeline"
           />
           <div className="pdf-reader-footer-row">
-            <span>{t('pdfReader.percentRead', { percent: progressPct })}</span>
+            <span>{progressPct}%</span>
             {syncStatus === 'error' && <span className="pdf-reader-inline-error">{t('pdfReader.failedToSyncReadingProgress')}</span>}
             <button className="pdf-reader-footer-link" type="button" onClick={() => setHighlightsOpen((open) => !open)}>
               <PanelRight size={14} />
-              <span>
+              {/* The reader frame is forced LTR for the page; this label is UI
+                  text, so let it take its own direction or a Persian phrase
+                  with numbers in it gets its words reordered. */}
+              <span dir={i18n.dir()}>
                 {t('pdfReader.highlightsCount', { count: highlights.length })}
                 {savedWords.length > 0 ? ` · ${t('pdfReader.wordsCount', { count: savedWords.length })}` : ''}
               </span>
@@ -1231,7 +1245,7 @@ export function PdfReaderPage() {
                       {h.is_mine !== false && h.selected_text && (
                         <button
                           type="button"
-                          onClick={() => setAddToDeckDraft({ text: h.selected_text || '', pageIndex: h.page_index, highlightId: h.id })}
+                          onClick={() => setAddToDeckDraft({ text: h.selected_text || '', passage: passageAround(h.selected_text || '', h.page_index), pageIndex: h.page_index, highlightId: h.id })}
                           title={t('pdfReader.addToDeck')}
                           aria-label={t('pdfReader.addToDeck')}
                         >
@@ -1294,6 +1308,7 @@ export function PdfReaderPage() {
           open={!!addToDeckDraft}
           onClose={() => setAddToDeckDraft(null)}
           text={addToDeckDraft.text}
+          passage={addToDeckDraft.passage}
           contentId={contentId}
           assetId={assetId}
           highlightId={addToDeckDraft.highlightId}

@@ -608,7 +608,6 @@
   "pdfReader": {
     "loadingPdf": "در حال بارگذاری پی‌دی‌اف…",
     "rendering": "در حال آماده‌سازی…",
-    "tapEdgesToTurnPage": "برای ورق زدن، کناره‌ها را لمس کنید",
     "pdfUrlUnavailable": "نشانی پی‌دی‌اف در دسترس نیست.",
     "highlights": "هایلایت‌ها",
     "openPage": "باز کردن صفحه",
@@ -649,7 +648,6 @@
     "viewingOwnHighlights": "هایلایت‌های شما",
     "teacherHighlights": "هایلایت‌های معلم",
     "noCoReadersYet": "هنوز کسی در کلاب شما این را باز نکرده است.",
-    "percentRead": "{{percent}}٪ خوانده شده",
     "highlightsCount_one": "{{count}} هایلایت",
     "highlightsCount_other": "{{count}} هایلایت",
     "wordsCount_one": "{{count}} واژه ذخیره شد",

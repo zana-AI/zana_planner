@@ -1626,6 +1626,27 @@ class ApiClient {
     });
   }
 
+  /** Build a card (headword, grammar, meaning, sentence + translation) for preview. */
+  async enrichFlashcard(payload: {
+    word: string;
+    context?: string;
+    source_language?: string;
+    target_language?: string;
+  }): Promise<{
+    available: boolean;
+    headword?: string;
+    grammar?: string;
+    translation?: string;
+    sentence?: string;
+    sentence_translation?: string;
+    usage_note?: string;
+  }> {
+    return this.request('/flashcards/enrich', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   /** Words the user saved to decks from one document, in page order. */
   async getContentWords(contentId: string): Promise<{ items: import('../types').ContentWord[] }> {
     return this.request(`/flashcards/content-notes?content_id=${encodeURIComponent(contentId)}`);

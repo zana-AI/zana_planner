@@ -9,7 +9,6 @@ import type { UserContentWithDetails } from '../types';
 interface ContentCardProps {
   item: UserContentWithDetails;
   onClick?: () => void;
-  onStatusChange?: (status: 'saved' | 'in_progress' | 'completed') => void;
   /** Open the "when will you do this?" sheet for this item. */
   onPlan?: () => void;
   /** Hand out a public link. Only set for items that actually have one. */
@@ -102,7 +101,7 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
   }, [displayType, item.content_id, item.id, item.thumbnail_asset_id, item.thumbnail_url]);
 
   // --- swipe-to-reveal-delete --------------------------------------------
-  // A card slides to the trailing side (negative X) to reveal one fixed
+  // A card slides away from its inline-end edge to reveal one fixed
   // delete button behind it — the same gesture as a mail app's swipe. It
   // only ever *reveals* the button; deleting still needs a tap and a
   // confirmation, since this can't be undone from the UI yet.
@@ -115,7 +114,10 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
   // see a stale (often still-zero) value. `dragX` state exists only to
   // trigger the re-render that paints the transform.
   const dragXRef = useRef(0);
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; axis: 'x' | 'y' | null; pointerId: number } | null>(null);
+  // `sign` is the direction the card slides to uncover the button, which
+  // sits on the inline-end edge: the right in LTR, so the card slides left
+  // (-1); the left in RTL, so it slides right (+1).
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; axis: 'x' | 'y' | null; pointerId: number; sign: 1 | -1 } | null>(null);
 
   const snapTo = (x: number) => {
     revealedRef.current = x !== 0;
@@ -128,7 +130,8 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
     // reveals the delete button on a trackpad exactly as a swipe does on a
     // phone — there's no separate button for non-touch to keep in sync.
     if (!onArchive) return;
-    dragRef.current = { startX: event.clientX, startY: event.clientY, originX: dragXRef.current, axis: null, pointerId: event.pointerId };
+    const sign = getComputedStyle(event.currentTarget).direction === 'rtl' ? 1 : -1;
+    dragRef.current = { startX: event.clientX, startY: event.clientY, originX: dragXRef.current, axis: null, pointerId: event.pointerId, sign };
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -146,7 +149,9 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
     }
     if (drag.axis !== 'x') return;
     event.preventDefault();
-    const next = Math.min(0, Math.max(-REVEAL_WIDTH - 24, drag.originX + dx));
+    // Distance slid toward the button's side, clamped to [0, a little past it].
+    const progress = Math.min(REVEAL_WIDTH + 24, Math.max(0, drag.sign * (drag.originX + dx)));
+    const next = drag.sign * progress;
     dragXRef.current = next;
     setDragX(next);
   };
@@ -156,7 +161,7 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
     dragRef.current = null;
     setDragging(false);
     if (!drag || drag.axis !== 'x') return;
-    snapTo(dragXRef.current < -REVEAL_WIDTH / 2 ? -REVEAL_WIDTH : 0);
+    snapTo(Math.abs(dragXRef.current) > REVEAL_WIDTH / 2 ? drag.sign * REVEAL_WIDTH : 0);
   };
 
   const handleCardClick = () => {

@@ -695,6 +695,27 @@ select:focus {
   color: var(--text);
 }
 
+.add-to-deck-headword {
+  margin-top: 2px;
+  color: var(--accent, #63a7f7);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.add-to-deck-sentence {
+  display: grid;
+  gap: 4px;
+  border-inline-start: 2px solid rgba(99, 167, 247, 0.4);
+  padding-inline-start: 10px;
+}
+
+.add-to-deck-sentence p {
+  margin: 0;
+  color: rgba(237, 243, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .add-to-deck-field {
   display: grid;
   gap: 5px;
@@ -1044,9 +1065,11 @@ select:focus {
 }
 
 .content-card {
+  /* One width for the thumbnail column; the phone media query overrides it. */
+  --content-card-media-width: 132px;
   position: relative;
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: var(--content-card-media-width) minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
   min-height: 112px;
@@ -1073,11 +1096,11 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 96px;
+  width: var(--content-card-media-width);
 }
 
 .content-card-media {
-  width: 96px;
+  width: 100%;
   aspect-ratio: 16 / 9;
   border-radius: 7px;
   background: rgba(237, 243, 255, 0.07);
@@ -1314,13 +1337,8 @@ select:focus {
   }
 
   .content-card {
-    grid-template-columns: 110px minmax(0, 1fr) 32px;
+    --content-card-media-width: 104px;
     gap: 10px;
-    align-items: start;
-  }
-
-  .content-card-media {
-    width: 110px;
   }
 }
 
