@@ -5,11 +5,17 @@ import { BottomSheet } from '../../components/ui/BottomSheet';
 
 const LAST_DECK_KEY = 'xaana:pdfReader:lastDeckPath';
 
+// Root deck names the video player already uses. A different spelling makes
+// a second, unrelated root ("FR" next to "French"), so keep these in step.
+const LANGUAGE_DECK: Record<string, string> = { fr: 'French', en: 'English', fa: 'Persian' };
+
 interface AddToDeckSheetProps {
   open: boolean;
   onClose: () => void;
   /** The selected/highlighted text — the card's front. */
   text: string;
+  /** Text around the selection on its page, for the card builder only. */
+  passage?: string;
   contentId: string;
   assetId: string;
   highlightId?: string;
@@ -20,30 +26,37 @@ interface AddToDeckSheetProps {
   onSaved?: () => void;
 }
 
+interface BuiltCard {
+  headword?: string;
+  grammar?: string;
+  sentence?: string;
+  sentence_translation?: string;
+  usage_note?: string;
+}
+
 function defaultDeckPath(language?: string): string {
-  const stored = (() => {
-    try {
-      return localStorage.getItem(LAST_DECK_KEY) || '';
-    } catch {
-      return '';
-    }
-  })();
-  if (stored) return stored;
-  const label = language ? language.toUpperCase() : 'French';
-  return label;
+  try {
+    const stored = localStorage.getItem(LAST_DECK_KEY);
+    if (stored) return stored;
+  } catch {
+    /* storage unavailable: fall through to the language deck */
+  }
+  const code = (language || 'fr').toLowerCase().split('-')[0];
+  return LANGUAGE_DECK[code] || code.toUpperCase();
 }
 
 /**
- * One save sheet shared by the PDF reader and (eventually) the video player:
- * translate the selection, let the learner edit the back side, pick a deck
- * (defaulting to one deck per language, not one per content item — see the
- * UX discussion this was born from), and attach a reference back to where
- * the word came from.
+ * The PDF reader's save sheet. Shows the card as it will be stored: a quick
+ * gloss appears at once, then one model call fills in the headword (the whole
+ * idiom when the word belongs to one), grammar, and the sentence with its
+ * translation — the same card the video player builds. The learner can edit
+ * the meaning before saving; a hand edit is never overwritten.
  */
 export function AddToDeckSheet({
   open,
   onClose,
   text,
+  passage,
   contentId,
   assetId,
   highlightId,
@@ -52,37 +65,54 @@ export function AddToDeckSheet({
   language,
   onSaved,
 }: AddToDeckSheetProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [back, setBack] = useState('');
+  const [card, setCard] = useState<BuiltCard>({});
   const [deckPath, setDeckPath] = useState(() => defaultDeckPath(language));
-  const [loadingTranslation, setLoadingTranslation] = useState(false);
+  const [building, setBuilding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const lookupRequestRef = useRef(0);
+  const requestRef = useRef(0);
+  const backEditedRef = useRef(false);
+
+  const source = (language || 'fr').toLowerCase().split('-')[0];
+  const uiLanguage = (i18n.language || 'en').toLowerCase().split('-')[0];
+  const target = uiLanguage === 'fa' && source !== 'fa' ? 'fa' : 'en';
 
   useEffect(() => {
     if (!open) return;
     setBack('');
+    setCard({});
     setSaved(false);
     setError('');
     setDeckPath(defaultDeckPath(language));
-    if (!text.trim()) return;
-    const requestId = ++lookupRequestRef.current;
-    setLoadingTranslation(true);
+    backEditedRef.current = false;
+    const term = text.trim();
+    if (!term) return;
+    const requestId = ++requestRef.current;
+    setBuilding(true);
+    const context = passage || term;
     apiClient
-      .lookupFlashcardWord({ word: text.trim(), source_language: language || 'fr', target_language: 'fa' })
+      // The quick gloss endpoint caps context at 500 characters.
+      .lookupFlashcardWord({ word: term, context: context.slice(0, 480), source_language: source, target_language: target })
       .then((data) => {
-        if (requestId !== lookupRequestRef.current) return;
-        if (data.available && data.translation) setBack(data.translation);
+        if (requestId !== requestRef.current || backEditedRef.current) return;
+        if (data.available && data.translation) setBack((current) => current || data.translation || '');
       })
-      .catch(() => {
-        /* translation is a convenience; an empty back field is still editable */
+      .catch(() => undefined);
+    apiClient
+      .enrichFlashcard({ word: term, context, source_language: source, target_language: target })
+      .then((data) => {
+        if (requestId !== requestRef.current || !data.available) return;
+        setCard(data);
+        if (!backEditedRef.current && data.translation) setBack(data.translation);
       })
+      .catch(() => undefined)
       .finally(() => {
-        if (requestId === lookupRequestRef.current) setLoadingTranslation(false);
+        if (requestId === requestRef.current) setBuilding(false);
       });
-  }, [open, text, language]);
+  }, [open, text, passage, language, source, target]);
 
   const save = async () => {
     if (!text.trim() || !deckPath.trim()) return;
@@ -95,6 +125,13 @@ export function AddToDeckSheet({
         fields: {
           front: text.trim(),
           back: back.trim() || undefined,
+          headword: card.headword,
+          grammar: card.grammar,
+          example: card.sentence,
+          source_sentence: card.sentence,
+          sentence_translation: card.sentence_translation,
+          usage_note: card.usage_note,
+          translation_language: target,
           source_page: String(pageIndex + 1),
           source_title: sourceTitle,
         },
@@ -124,20 +161,34 @@ export function AddToDeckSheet({
     }
   };
 
+  const headwordLine = [card.headword, card.grammar].filter(Boolean).join(' · ');
+
   return (
     <BottomSheet open={open} onClose={onClose} title={t('pdfReader.addToDeck')}>
       <div className="add-to-deck-sheet">
-        <div className="add-to-deck-front" dir="auto">{text}</div>
+        <div>
+          <div className="add-to-deck-front" dir="auto">{text}</div>
+          {headwordLine && <div className="add-to-deck-headword" dir="auto">{headwordLine}</div>}
+        </div>
         <label className="add-to-deck-field">
           <span>{t('pdfReader.translation')}</span>
           <textarea
             value={back}
-            onChange={(event) => setBack(event.target.value)}
-            placeholder={loadingTranslation ? t('pdfReader.translating') : t('pdfReader.translationOptional')}
+            onChange={(event) => {
+              backEditedRef.current = true;
+              setBack(event.target.value);
+            }}
+            placeholder={building ? t('pdfReader.translating') : t('pdfReader.translationOptional')}
             rows={2}
             dir="auto"
           />
         </label>
+        {card.sentence && (
+          <div className="add-to-deck-sentence">
+            <p dir="auto">{card.sentence}</p>
+            {card.sentence_translation && <p dir="auto">{card.sentence_translation}</p>}
+          </div>
+        )}
         <label className="add-to-deck-field">
           <span>{t('pdfReader.deck')}</span>
           <input

@@ -550,7 +550,17 @@ def create_webapp_api(
     # Serve static files if directory is provided
     if static_dir and os.path.isdir(static_dir):
         logger.info(f"[VERSION_CHECK] v2.0 - Registering static file serving, static_dir={static_dir}")
-        
+
+        # pdf.js loads its standard fonts and character maps at runtime from
+        # /pdfjs/ (copied into dist/ by vite-plugin-static-copy). Without an
+        # explicit mount, the SPA catch-all below answered those requests with
+        # index.html, so PDFs relying on standard fonts or CMaps (non-embedded
+        # fonts, Persian/Arabic/CJK text) fell back to device system fonts.
+        # Mounted before the catch-all route so it wins the match.
+        pdfjs_dir = os.path.join(static_dir, "pdfjs")
+        if os.path.isdir(pdfjs_dir):
+            app.mount("/pdfjs", StaticFiles(directory=pdfjs_dir), name="pdfjs")
+
         # Custom exception handler to serve static files or index.html
         from starlette.exceptions import HTTPException as StarletteHTTPException
         from starlette.requests import Request
