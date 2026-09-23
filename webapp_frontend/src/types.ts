@@ -944,6 +944,13 @@ export interface FlashcardFields {
   source_title?: string;
   source_sentence?: string;
   source_start?: number;
+  // Built by one model call when a word is saved from a video: the form to
+  // memorise (the whole idiom when the word belongs to one), a grammar label,
+  // and the sentence in the learner's language.
+  headword?: string;
+  grammar?: string;
+  sentence_translation?: string;
+  usage_note?: string;
   [key: string]: unknown;
 }
 

@@ -9,13 +9,14 @@ Request/response models are declared here rather than in webapp/schemas.py to
 keep this feature self-contained.
 """
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..dependencies import get_current_user
-from handlers.translator import translate_learning_term
+from handlers.translator import enrich_learning_card, translate_learning_term
 from services import flashcard_service
 from utils.logger import get_logger
 
@@ -47,6 +48,11 @@ class NoteIn(BaseModel):
     # {front, back, note_fa, example, source_page, tags}
     fields: Dict[str, Any]
     references: List[ReferenceIn] = Field(default_factory=list)
+    # Wider passage around the term, for building the card only — never
+    # stored. The card keeps one sentence; the model needs a few lines either
+    # side to tell an idiom ("battre en brèche") from the bare word.
+    context: Optional[str] = Field(default=None, max_length=1200)
+    target_language: Optional[str] = Field(default=None, max_length=5)
 
 
 class NoteUpdateIn(BaseModel):
@@ -207,6 +213,45 @@ async def create_note(payload: NoteIn, user_id: int = Depends(get_current_user))
     )
 
 
+async def _with_card_enrichment(payload: NoteIn) -> Dict[str, Any]:
+    """Fill a mined card's learning fields with one model call.
+
+    Adds the headword (the whole idiom when the tapped word belongs to one),
+    a grammar label, the in-context meaning, and a translation of the
+    sentence. The model's reading of the headword wins over the in-player
+    gloss, which only ever translated the bare word. Any failure returns the
+    fields unchanged, so saving never depends on the model.
+    """
+    fields = dict(payload.fields)
+    source = str(fields.get("source_language") or "fr").lower().split("-", 1)[0]
+    target = str(payload.target_language or "fa").lower().split("-", 1)[0]
+    passage = payload.context or fields.get("source_sentence") or fields.get("example") or ""
+    if source not in _LOOKUP_LANGUAGES or target not in _LOOKUP_LANGUAGES or not passage:
+        return fields
+    try:
+        card = await asyncio.to_thread(
+            enrich_learning_card, str(fields["front"]), passage, target, source
+        )
+    except Exception as exc:  # never block a save on the model
+        logger.warning("card enrichment failed: %s", exc)
+        return fields
+    if not card:
+        return fields
+    fields["headword"] = card["headword"]
+    fields["back"] = card["translation"]
+    for key in ("grammar", "sentence_translation", "usage_note"):
+        if card.get(key):
+            fields[key] = card[key]
+    # Prefer the model's single sentence when it found one inside the
+    # passage; the client's version may run across two sentences.
+    sentence = card.get("sentence")
+    if sentence and str(fields["front"]).lower() in sentence.lower():
+        fields["source_sentence"] = sentence
+        fields["example"] = sentence
+    fields["translation_language"] = target
+    return fields
+
+
 @router.get("/video-notes")
 async def list_video_notes(video_id: str, user_id: int = Depends(get_current_user)):
     """Words the caller saved from one YouTube video, in spoken order."""
@@ -226,10 +271,11 @@ async def save_video_note(payload: NoteIn, user_id: int = Depends(get_current_us
     """
     if not payload.fields.get("front"):
         raise HTTPException(status_code=422, detail="fields.front is required")
+    fields = await _with_card_enrichment(payload)
     return flashcard_service.save_context_note(
         str(user_id),
         deck_path=payload.deck_path,
-        fields=payload.fields,
+        fields=fields,
         note_type=payload.note_type,
         references=[r.model_dump() for r in payload.references],
         source="youtube",

@@ -389,9 +389,13 @@ def save_context_note(
 
             # Fill genuinely missing learning content, never replace authored
             # definitions or examples merely because a word was clicked.
-            for field_name in ("back", "example"):
+            for field_name in ("back", "example", "headword", "grammar", "usage_note"):
                 if not existing_fields.get(field_name) and fields.get(field_name):
                     additions[field_name] = fields[field_name]
+            # A sentence translation only belongs with its own sentence: add
+            # it only when this save is also the one supplying the example.
+            if "example" in additions and fields.get("sentence_translation"):
+                additions["sentence_translation"] = fields["sentence_translation"]
 
             source_names = (
                 "source_sentence",
