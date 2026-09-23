@@ -278,23 +278,20 @@ export function MyContentsPage() {
     if (url) window.open(url, '_blank');
   };
 
-  const updateStatus = async (item: UserContentWithDetails, nextStatus: 'saved' | 'in_progress' | 'completed') => {
+  // "Delete" from the library is really archiving: the row survives (any
+  // flashcards or highlights made from it keep their references), it just
+  // stops showing up. Removed from `items` immediately so the swipe gesture
+  // feels instant; a failure puts it back and surfaces the error.
+  const archiveItem = async (item: UserContentWithDetails) => {
     const contentId = item.content_id || item.id;
     if (!contentId) return;
     setError('');
-    setItems((prev) => prev.map((existing) => (
-      (existing.content_id || existing.id) === contentId ? { ...existing, status: nextStatus } : existing
-    )));
+    setItems((prev) => prev.filter((existing) => (existing.content_id || existing.id) !== contentId));
     try {
-      await apiClient.updateUserContent(contentId, { status: nextStatus });
-      await loadContents();
+      await apiClient.updateUserContent(contentId, { status: 'archived' });
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message || 'Failed to update content');
-      } else {
-        setError(t('myContents.failedToUpdateContent'));
-      }
-      await loadContents();
+      setItems((prev) => [item, ...prev]);
+      setError(err instanceof ApiError ? err.message : t('myContents.failedToUpdateContent'));
     }
   };
 
@@ -415,9 +412,9 @@ export function MyContentsPage() {
                 key={item.user_content_id || item.content_id || item.id}
                 item={item}
                 onClick={() => openItem(item)}
-                onStatusChange={(nextStatus) => updateStatus(item, nextStatus)}
                 onPlan={() => setPlanning(item)}
                 onShare={getPublicShareUrl(item) ? () => shareItem(item) : undefined}
+                onArchive={() => archiveItem(item)}
               />
             ))}
           </section>

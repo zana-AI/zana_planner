@@ -1022,17 +1022,40 @@ select:focus {
   gap: 12px;
 }
 
-.content-card {
+/* Swipe wrapper: clips the card to its rounded corners and holds the delete
+   button that the card slides away from (see ContentCard's pointer handlers).
+   The button sits behind the card at all times; only a swipe reveals it. */
+.content-card-swipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.content-card-swipe-delete {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
   display: grid;
-  grid-template-columns: 148px minmax(0, 1fr) 32px;
+  place-items: center;
+  border: 0;
+  background: #7f1d1d;
+  color: #fecaca;
+  cursor: pointer;
+}
+
+.content-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
   gap: 12px;
-  align-items: center;
+  align-items: stretch;
   min-height: 112px;
   border: 1px solid rgba(237, 243, 255, 0.11);
   border-radius: 8px;
   background: rgba(18, 31, 63, 0.58);
   padding: 10px;
   cursor: pointer;
+  touch-action: pan-y;
   transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
 }
 
@@ -1041,15 +1064,49 @@ select:focus {
   border-color: rgba(99, 167, 247, 0.42);
   background: rgba(22, 39, 76, 0.74);
   outline: none;
-  transform: translateY(-1px);
+}
+
+/* Thumbnail plus, in the height a 16:9 crop leaves free at this narrower
+   width, the two actions worth a permanent slot — reclaimed instead of a
+   third grid column that only ever held a "..." button. */
+.content-card-media-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 96px;
 }
 
 .content-card-media {
-  width: 148px;
+  width: 96px;
   aspect-ratio: 16 / 9;
   border-radius: 7px;
   background: rgba(237, 243, 255, 0.07);
   overflow: hidden;
+}
+
+.content-card-quick-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.content-card-quick-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  height: 26px;
+  border: 1px solid rgba(237, 243, 255, 0.13);
+  border-radius: 6px;
+  background: rgba(237, 243, 255, 0.07);
+  color: rgba(237, 243, 255, 0.8);
+  cursor: pointer;
+}
+
+.content-card-quick-actions button:hover,
+.content-card-quick-actions button:focus-visible {
+  border-color: rgba(99, 167, 247, 0.42);
+  color: var(--text);
+  outline: none;
 }
 
 .content-card-media img,
@@ -1130,7 +1187,6 @@ select:focus {
 .content-card-meta-row,
 .content-card-meta-tags,
 .content-card-subtitle,
-.content-card-actions,
 .content-card-type {
   display: flex;
   align-items: center;
@@ -1145,8 +1201,7 @@ select:focus {
   min-width: 0;
 }
 
-.content-card-type,
-.content-card-status {
+.content-card-type {
   border: 1px solid rgba(237, 243, 255, 0.12);
   border-radius: 7px;
   color: rgba(237, 243, 255, 0.72);
@@ -1198,61 +1253,6 @@ select:focus {
 .content-card-timeline {
   height: 6px !important;
   border-radius: 999px !important;
-}
-
-.content-card-actions {
-  align-self: start;
-  justify-content: flex-end;
-  max-width: none;
-}
-
-.content-card-action,
-.content-card-icon-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-height: 30px;
-  border: 1px solid rgba(237, 243, 255, 0.13);
-  border-radius: 7px;
-  background: rgba(237, 243, 255, 0.07);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 800;
-  padding: 0 8px;
-}
-
-.content-card-icon-action {
-  width: 30px;
-  padding: 0;
-}
-
-.content-card-action-sheet {
-  display: grid;
-  gap: 8px;
-}
-
-.content-card-menu-action {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 46px;
-  border: 1px solid rgba(237, 243, 255, 0.13);
-  border-radius: 9px;
-  background: rgba(237, 243, 255, 0.07);
-  color: var(--text);
-  font: inherit;
-  font-weight: 750;
-  padding: 0 14px;
-  text-align: start;
-}
-
-.content-card-menu-action:hover,
-.content-card-menu-action:focus-visible {
-  border-color: rgba(99, 167, 247, 0.5);
-  background: rgba(99, 167, 247, 0.14);
-  outline: none;
 }
 
 .content-library-state,

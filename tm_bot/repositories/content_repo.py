@@ -345,6 +345,11 @@ class ContentRepository:
         if status and status != "all":
             conditions.append("uc.status = :status")
             params["status"] = status
+        else:
+            # "All" means every real status, not the soft-deleted ones. There
+            # is no UI path to ask for archived items back yet — restoring
+            # one is a direct DB fix until that's built.
+            conditions.append("uc.status != 'archived'")
         if content_type and content_type != "all":
             if content_type == "pdf":
                 conditions.append(
@@ -449,7 +454,7 @@ class ContentRepository:
     def get_user_content_facets(self, user_id: str, q: Optional[str] = None) -> Dict[str, Dict[str, int]]:
         """Return lightweight facet counts for the user's library."""
         params: Dict[str, Any] = {"user_id": user_id}
-        where = ["uc.user_id = :user_id"]
+        where = ["uc.user_id = :user_id", "uc.status != 'archived'"]
         if q and q.strip():
             params["q"] = f"%{q.strip()}%"
             where.append(

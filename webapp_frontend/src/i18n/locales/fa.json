@@ -508,7 +508,9 @@
     "deckDone": "تمام شد",
     "share": "هم‌رسانی",
     "linkCopied": "پیوند کپی شد",
-    "deckUnit": "کارت"
+    "deckUnit": "کارت",
+    "removeFromLibrary": "حذف از کتابخانه",
+    "removeConfirmMessage": "این مورد از کتابخانه شما حذف شود؟ کارت‌ها یا هایلایت‌هایی که از آن ساخته‌اید حفظ می‌شوند."
   },
   "createPromise": {
     "newPromise": "قول تازه",
