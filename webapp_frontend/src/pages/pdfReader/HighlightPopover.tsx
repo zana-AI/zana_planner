@@ -10,6 +10,7 @@ interface HighlightPopoverProps {
   onColorChange: (color: string) => void;
   onSave: () => void;
   onCancel: () => void;
+  onAddToDeck?: () => void;
 }
 
 export function HighlightPopover({
@@ -20,6 +21,7 @@ export function HighlightPopover({
   onColorChange,
   onSave,
   onCancel,
+  onAddToDeck,
 }: HighlightPopoverProps) {
   const { t } = useTranslation();
   return (
@@ -52,6 +54,9 @@ export function HighlightPopover({
           onChange={(event) => onColorChange(event.target.value)}
         />
         <button type="button" onClick={onSave}>{draft.highlightId ? t('pdfReader.saveChanges') : t('pdfReader.highlight')}</button>
+        {onAddToDeck && draft.text.trim() && (
+          <button type="button" onClick={onAddToDeck}>{t('pdfReader.addToDeck')}</button>
+        )}
         <button type="button" onClick={onCancel}>{t('pdfReader.cancel')}</button>
       </div>
     </div>

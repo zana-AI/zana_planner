@@ -799,6 +799,108 @@ body.pdf-reader-fullscreen-active .ui-bottom-nav {
   color: #fca5a5;
 }
 
+.pdf-reader-highlight-author {
+  justify-self: start;
+  border-radius: 999px;
+  background: rgba(99, 167, 247, 0.16);
+  color: #9fc4fb;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+}
+
+.pdf-reader-highlight-add-to-deck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(99, 167, 247, 0.36);
+  border-radius: 7px;
+  background: rgba(99, 167, 247, 0.1);
+  color: #dceaff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 8px;
+  justify-self: start;
+}
+
+/* A co-reader's highlight (teacher during a live session, or the teacher's
+   pre-marked passage) keeps its own author-chosen fill color but gets a
+   dashed outline so it reads as someone else's mark, not the viewer's own. */
+.pdf-reader-highlight-rect--other {
+  outline: 2px dashed rgba(237, 243, 255, 0.55);
+  outline-offset: -1px;
+}
+
+.pdf-reader-coreaders-drawer .pdf-reader-coreader-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid rgba(237, 243, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(237, 243, 255, 0.055);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 10px;
+  text-align: start;
+}
+
+.pdf-reader-coreaders-drawer .pdf-reader-coreader-row.is-active {
+  border-color: rgba(99, 167, 247, 0.5);
+  background: rgba(99, 167, 247, 0.14);
+}
+
+.pdf-reader-coreader-stats {
+  color: rgba(237, 243, 255, 0.58);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.add-to-deck-sheet {
+  display: grid;
+  gap: 12px;
+}
+
+.add-to-deck-front {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.add-to-deck-field {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(237, 243, 255, 0.58);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.add-to-deck-field textarea,
+.add-to-deck-field input {
+  border: 1px solid rgba(237, 243, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(237, 243, 255, 0.08);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 8px;
+}
+
+.add-to-deck-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .pdf-reader-page--fullscreen .pdf-reader-timeline-panel {
   position: absolute;
   top: calc(max(8px, env(safe-area-inset-top)) + 54px);

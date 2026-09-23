@@ -70,6 +70,22 @@ def get_object_storage_service() -> "ObjectStorageService":
     return ObjectStorageService()
 
 
+def _club_teacher_for_content(content: Dict[str, Any]) -> Optional[str]:
+    """Return the club-owner user_id for club-shared content, else None.
+
+    A club's owner is its teacher for this content-sharing feature — see
+    AGENTS.md's teacher/club-owner assumption. Content that isn't shared to a
+    club (visibility != 'club', or no club_id) has no teacher.
+    """
+    if not content or content.get("visibility") != "club" or not content.get("club_id"):
+        return None
+    from repositories.clubs_repo import ClubsRepository
+
+    club = ClubsRepository().get_club(str(content["club_id"]))
+    owner = club.get("owner_user_id") if club else None
+    return str(owner) if owner else None
+
+
 @router.post("/content/resolve")
 async def resolve_content(
     body: ResolveContentRequest,
@@ -417,6 +433,9 @@ async def get_pdf_content_open(
         else 0.0
     )
 
+    content = repo.get_content_by_id(content_id)
+    teacher_id = _club_teacher_for_content(content or {})
+
     return {
         "content_id": content_id,
         "asset_id": asset["id"],
@@ -424,6 +443,10 @@ async def get_pdf_content_open(
         "expires_at": expires_at,
         "last_position": uc.get("last_position"),
         "progress_ratio": read_progress_ratio,
+        "title": (content or {}).get("title"),
+        "language": (content or {}).get("language"),
+        "club_id": (content or {}).get("club_id") if teacher_id else None,
+        "is_teacher": bool(teacher_id) and teacher_id == uid,
     }
 
 
@@ -480,9 +503,16 @@ async def get_pdf_content_file(
 async def get_pdf_highlights(
     content_id: str,
     asset_id: Optional[str] = None,
+    as_user_id: Optional[str] = None,
     user_id: int = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """List highlights for a user/content and asset version."""
+    """List highlights for a user/content and asset version.
+
+    On content shared to a club, this also returns the club owner's (the
+    teacher's) highlights alongside the caller's own — so a co-reading
+    session or a pre-highlighted passage shows up for everyone. The teacher
+    may pass `as_user_id` to look at one specific student's highlights.
+    """
     uid = str(user_id)
     repo = get_content_repo()
     uc = repo.get_user_content(uid, content_id)
@@ -500,8 +530,46 @@ async def get_pdf_highlights(
     if not asset:
         raise HTTPException(status_code=404, detail="PDF asset not found")
 
-    items = repo.list_highlights(uid, content_id, str(resolved_asset_id))
+    content = repo.get_content_by_id(content_id)
+    teacher_id = _club_teacher_for_content(content or {})
+    try:
+        items = repo.list_visible_highlights(
+            viewer_user_id=uid,
+            content_id=content_id,
+            asset_id=str(resolved_asset_id),
+            teacher_user_id=teacher_id,
+            as_user_id=as_user_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     return {"asset_id": str(resolved_asset_id), "items": items, "count": len(items)}
+
+
+@router.get("/content/{content_id}/co-readers")
+async def get_content_co_readers(
+    content_id: str,
+    user_id: int = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Roster + engagement for a club-shared content item — teacher-only.
+
+    Powers the "who's read this, how far, and how much have they
+    highlighted" view for a teacher's class material.
+    """
+    uid = str(user_id)
+    repo = get_content_repo()
+    content = repo.get_content_by_id(content_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    teacher_id = _club_teacher_for_content(content)
+    if not teacher_id or teacher_id != uid:
+        raise HTTPException(status_code=403, detail="Only the club owner can view the class roster")
+
+    from repositories.clubs_repo import ClubsRepository
+
+    members = ClubsRepository().get_members(str(content["club_id"]))
+    member_ids = [str(m["user_id"]) for m in members if str(m["user_id"]) != uid]
+    items = repo.list_co_readers(content_id, member_ids)
+    return {"items": items}
 
 
 @router.post("/content/{content_id}/highlights")

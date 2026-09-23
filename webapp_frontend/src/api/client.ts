@@ -442,11 +442,27 @@ class ApiClient {
   /**
    * List highlights for a PDF content version.
    */
-  async getPdfHighlights(contentId: string, assetId?: string): Promise<{ asset_id: string; items: PdfHighlight[]; count: number }> {
-    const q = assetId ? `?asset_id=${encodeURIComponent(assetId)}` : '';
+  async getPdfHighlights(
+    contentId: string,
+    assetId?: string,
+    asUserId?: string,
+  ): Promise<{ asset_id: string; items: PdfHighlight[]; count: number }> {
+    const query = new URLSearchParams();
+    if (assetId) query.set('asset_id', assetId);
+    if (asUserId) query.set('as_user_id', asUserId);
+    const q = query.toString();
     return this.request<{ asset_id: string; items: PdfHighlight[]; count: number }>(
-      `/content/${encodeURIComponent(contentId)}/highlights${q}`
+      `/content/${encodeURIComponent(contentId)}/highlights${q ? `?${q}` : ''}`
     );
+  }
+
+  /**
+   * Roster for a shared (club) content item: each member's read progress,
+   * time spent, and how many highlights they've made. Teacher-only — the
+   * server 403s a non-owner caller.
+   */
+  async getContentCoReaders(contentId: string): Promise<{ items: import('../types').ContentCoReader[] }> {
+    return this.request(`/content/${encodeURIComponent(contentId)}/co-readers`);
   }
 
   /**
@@ -1605,6 +1621,22 @@ class ApiClient {
     payload: import('../types').CreateFlashcardNoteRequest
   ): Promise<import('../types').FlashcardNote> {
     return this.request('/flashcards/notes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Translate a word or phrase for the "add to deck" sheet. Same endpoint the
+   * video player's word tools use — kept generic so the PDF reader can reuse it.
+   */
+  async lookupFlashcardWord(payload: {
+    word: string;
+    context?: string;
+    source_language?: string;
+    target_language?: string;
+  }): Promise<{ available: boolean; translation?: string }> {
+    return this.request('/flashcards/lookup', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

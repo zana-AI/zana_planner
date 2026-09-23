@@ -780,6 +780,102 @@ class ContentRepository:
             )
         return highlight_id
 
+    def list_visible_highlights(
+        self,
+        viewer_user_id: str,
+        content_id: str,
+        asset_id: str,
+        teacher_user_id: Optional[str] = None,
+        as_user_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Highlights the viewer is allowed to see on a (possibly shared) content item.
+
+        On private content `teacher_user_id` is None and this behaves exactly
+        like `list_highlights` — own highlights only. On club-shared content:
+          - a member always sees their own highlights plus the teacher's
+            (so a teacher can pre-highlight a passage before class);
+          - the teacher additionally sees any one student's highlights on
+            request (`as_user_id`), never several students blended together,
+            so one card never gets crowded with a whole class's marks.
+        Never lets a non-teacher view another student's highlights.
+        """
+        viewer = str(viewer_user_id)
+        teacher = str(teacher_user_id) if teacher_user_id else None
+        target = str(as_user_id) if as_user_id else None
+
+        if target and target != viewer:
+            if teacher is None or viewer != teacher:
+                raise PermissionError("Only the club owner may view another member's highlights")
+            visible_ids = [target]
+        elif teacher:
+            visible_ids = sorted({viewer, teacher})
+        else:
+            visible_ids = [viewer]
+
+        with get_db_session() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT h.id, h.user_id, h.content_id, h.asset_id, h.page_index, h.rects_json,
+                           h.selected_text, h.note, h.color, h.created_at, h.updated_at,
+                           h.copied_from_highlight_id, h.migration_status,
+                           COALESCE(u.first_name, u.username, 'User') AS author_name
+                    FROM content_highlight h
+                    LEFT JOIN users u ON u.user_id = h.user_id
+                    WHERE h.content_id = :content_id AND h.asset_id = :asset_id
+                      AND h.user_id = ANY(:user_ids)
+                    ORDER BY h.page_index ASC, h.created_at ASC
+                    """
+                ),
+                {"content_id": str(content_id), "asset_id": str(asset_id), "user_ids": visible_ids},
+            ).mappings().fetchall()
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            rects = item.get("rects_json")
+            item["rects_json"] = rects if isinstance(rects, list) else json.loads(rects) if isinstance(rects, str) else []
+            item["is_mine"] = str(item["user_id"]) == viewer
+            item["is_teacher_author"] = teacher is not None and str(item["user_id"]) == teacher
+            out.append(item)
+        return out
+
+    def list_co_readers(self, content_id: str, member_user_ids: List[str]) -> List[Dict[str, Any]]:
+        """Per-member progress, time spent, and highlight count for a shared content item.
+
+        Used by the teacher's roster view. `member_user_ids` is the caller's
+        already-verified club roster — this method does no membership checks
+        of its own.
+        """
+        ids = [str(uid) for uid in member_user_ids]
+        if not ids:
+            return []
+        with get_db_session() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT
+                        u.user_id,
+                        COALESCE(u.first_name, u.username, 'User') AS name,
+                        COALESCE(uc.progress_ratio, 0) AS progress_ratio,
+                        COALESCE(uc.total_consumed_seconds, 0) AS total_consumed_seconds,
+                        uc.last_interaction_at,
+                        COALESCE(hc.highlight_count, 0) AS highlight_count
+                    FROM unnest(:user_ids) AS u(user_id)
+                    LEFT JOIN users ON users.user_id = u.user_id
+                    LEFT JOIN user_content uc ON uc.user_id = u.user_id AND uc.content_id = :content_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS highlight_count
+                        FROM content_highlight
+                        WHERE content_id = :content_id
+                        GROUP BY user_id
+                    ) hc ON hc.user_id = u.user_id
+                    ORDER BY name ASC
+                    """
+                ),
+                {"content_id": str(content_id), "user_ids": ids},
+            ).mappings().fetchall()
+        return [dict(row) for row in rows]
+
     def list_highlights(self, user_id: str, content_id: str, asset_id: str) -> List[Dict[str, Any]]:
         """Return highlights for one user/content/version."""
         with get_db_session() as session:

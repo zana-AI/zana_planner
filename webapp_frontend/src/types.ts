@@ -767,6 +767,22 @@ export interface PdfOpenResponse {
   expires_at: string;
   last_position?: number;
   progress_ratio: number;
+  title?: string;
+  language?: string;
+  /** Set when this content is shared to a club — the reader uses it to poll for co-readers' highlights. */
+  club_id?: string | null;
+  /** True when the caller owns the club this content is shared to (i.e. is the teacher). */
+  is_teacher?: boolean;
+}
+
+/** One club member's engagement with a shared content item, for the teacher's roster view. */
+export interface ContentCoReader {
+  user_id: string;
+  name: string;
+  progress_ratio: number;
+  total_consumed_seconds: number;
+  highlight_count: number;
+  last_interaction_at?: string | null;
 }
 
 export interface PdfHighlightRect {
@@ -790,6 +806,10 @@ export interface PdfHighlight {
   updated_at: string;
   copied_from_highlight_id?: string;
   migration_status?: string;
+  /** Present on shared (club) content: who made it and whether it's the viewer's own. */
+  author_name?: string;
+  is_mine?: boolean;
+  is_teacher_author?: boolean;
 }
 
 export interface CreatePdfHighlightRequest {
