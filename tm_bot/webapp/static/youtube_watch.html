@@ -105,6 +105,19 @@
     .word-action:hover, .word-action:focus-visible { background: rgba(99,167,247,.24); outline: none; }
     .word-action:disabled { cursor: default; opacity: .55; }
     .word-action.is-close { background: transparent; color: rgba(237,243,255,.7); }
+    /* Words saved from this video: proof the ＋ worked, a way back to each
+       moment, and a link to review them. Saved words are also underlined in
+       the transcript itself. */
+    .transcript-word.is-saved { text-decoration: underline; text-decoration-color: #7ee0a1; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+    .saved-words { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
+    .saved-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .saved-title { font-size: 13px; font-weight: 800; color: #edf3ff; }
+    .saved-review { color: var(--app-accent); font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+    .saved-review:hover, .saved-review:focus-visible { text-decoration: underline; outline: none; }
+    .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .saved-chip { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; padding: 5px 9px; border: 1px solid rgba(126,224,161,.35); border-radius: 999px; background: rgba(126,224,161,.08); color: #edf3ff; font: inherit; font-size: 13px; cursor: pointer; }
+    .saved-chip:hover, .saved-chip:focus-visible { background: rgba(126,224,161,.18); outline: none; }
+    .saved-chip-back { color: rgba(237,243,255,.6); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .debug {
       margin-top: 10px;
       padding: 10px;
@@ -224,6 +237,13 @@
     <summary id="transcriptTitle">Transcript</summary>
     <div id="transcriptList" class="transcript-list"></div>
   </details>
+  <section id="savedWords" class="saved-words" hidden>
+    <div class="saved-head">
+      <span id="savedTitle" class="saved-title"></span>
+      <a id="savedReview" class="saved-review" href="#"></a>
+    </div>
+    <div id="savedList" class="saved-list"></div>
+  </section>
   <pre id="debugLog" class="debug" hidden></pre>
 
   <div id="immersiveControls" class="immersive-controls" aria-label="Player controls">
@@ -256,6 +276,7 @@
     connecting: 'در حال اتصال به یوتیوب…',
     videoUnavailable: 'ویدیو اینجا بارگذاری نشد. زیرنویس پایین همچنان کار می‌کند.',
     existingKept: 'کارت موجود حفظ شد',
+    savedTitle: 'ذخیره‌شده از این ویدیو', review: 'مرور ←',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'یک کلمه را انتخاب کنید.',
     signIn: 'برای ذخیره، صفحه را داخل اپ باز کنید.', context: 'جمله'
   } : {
@@ -264,6 +285,7 @@
     connecting: 'Connecting to YouTube…',
     videoUnavailable: 'The video couldn’t load here. The subtitles below still work.',
     existingKept: 'Existing card kept',
+    savedTitle: 'Saved from this video', review: 'Review →',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
     signIn: 'Open this page inside the app to save cards.', context: 'line'
   };
@@ -287,6 +309,8 @@
   var selectedCue = null;
   var selectedWordButton = null;
   var lookupCache = Object.create(null);
+  // Folded fronts of words already saved from this video, for underlines.
+  var savedKeys = Object.create(null);
   var lookupPending = Object.create(null);
   var lookupTimer = null;
   var lookupRequestId = 0;
@@ -454,6 +478,7 @@
           event.stopPropagation();
           showWordTools(part, cue, button, true);
         });
+        if (savedKeys[foldAccents(part)]) button.classList.add('is-saved');
         target.appendChild(button);
       } else {
         target.appendChild(document.createTextNode(part));
@@ -470,6 +495,23 @@
     var utterance = new SpeechSynthesisUtterance(selectedWord);
     utterance.lang = sourceLanguage === 'fr' ? 'fr-FR' : (sourceLanguage === 'en' ? 'en-US' : sourceLanguage);
     window.speechSynthesis.speak(utterance);
+  }
+
+  // Automatic captions cut sentences into short lines ("frontières" alone),
+  // so one line is often too little context to learn from. Grow the line
+  // backwards and forwards to the nearest sentence boundary, capped so an
+  // unpunctuated auto-caption stream still yields a readable snippet.
+  function sentenceAround(cue) {
+    var index = cues.indexOf(cue);
+    if (index < 0) return cue.text;
+    var ends = /[.!?…»"]\s*$/;
+    var first = index, last = index;
+    var length = function() {
+      return cues.slice(first, last + 1).map(function(c) { return c.text; }).join(' ').length;
+    };
+    while (first > 0 && index - first < 2 && !ends.test(cues[first - 1].text) && length() < 160) first--;
+    while (last < cues.length - 1 && last - index < 2 && !ends.test(cues[last].text) && length() < 200) last++;
+    return cues.slice(first, last + 1).map(function(c) { return c.text.trim(); }).join(' ').replace(/\s+/g, ' ');
   }
 
   function saveSelectedWord() {
@@ -490,8 +532,8 @@
       fields: {
         front: selectedWord,
         back: translation === copy.unavailable || translation === copy.loading ? '' : translation,
-        example: selectedCue.text,
-        source_sentence: selectedCue.text,
+        example: sentenceAround(selectedCue),
+        source_sentence: sentenceAround(selectedCue),
         source_video_id: videoId,
         source_title: title,
         source_start: selectedCue.start,
@@ -513,6 +555,7 @@
       saveButton.textContent = '✓';
       setWordStatus(data && data._created === false ? copy.saved + ' · ' + copy.existingKept : copy.saved);
       setTimeout(function() { saveButton.textContent = '＋'; }, 1800);
+      loadSavedWords();
     }).catch(function(error) {
       setWordStatus(error && error.message === 'auth' ? copy.signIn : copy.unavailable);
     }).finally(function() { saveButton.disabled = false; });
@@ -1174,6 +1217,75 @@
     });
   }
 
+  function applySavedMarks() {
+    Array.prototype.forEach.call(document.querySelectorAll('.transcript-word'), function(word) {
+      word.classList.toggle('is-saved', !!savedKeys[foldAccents(word.textContent)]);
+    });
+  }
+
+  function loadSavedWords() {
+    var headers = authHeaders();
+    if (!headers.Authorization && !headers['X-Telegram-Init-Data']) return;
+    fetch(baseUrl + '/api/flashcards/video-notes?video_id=' + encodeURIComponent(videoId), { headers: headers })
+      .then(function(response) { return response.ok ? response.json() : null; })
+      .then(function(data) {
+        var items = (data && data.items) || [];
+        savedKeys = Object.create(null);
+        items.forEach(function(item) { if (item.front) savedKeys[foldAccents(item.front)] = true; });
+        applySavedMarks();
+        var section = document.getElementById('savedWords');
+        var list = document.getElementById('savedList');
+        list.innerHTML = '';
+        section.hidden = items.length === 0;
+        if (!items.length) return;
+        document.getElementById('savedTitle').textContent = copy.savedTitle + ' (' + items.length + ')';
+        items.forEach(function(item) {
+          var chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'saved-chip';
+          var front = document.createElement('span');
+          front.dir = 'auto';
+          front.textContent = item.front;
+          chip.appendChild(front);
+          if (item.back) {
+            var back = document.createElement('span');
+            back.className = 'saved-chip-back';
+            back.dir = 'auto';
+            back.textContent = item.back;
+            chip.appendChild(back);
+          }
+          if (typeof item.start === 'number') {
+            chip.title = formatCueTime(item.start);
+            chip.addEventListener('click', function() {
+              if (player && typeof player.seekTo === 'function') { player.seekTo(Math.max(0, item.start - 0.5), true); player.playVideo(); }
+              setActiveCue(cueIndexAt(item.start));
+            });
+          }
+          list.appendChild(chip);
+        });
+        // Review the deck most of these words live in (a word saved earlier
+        // from elsewhere keeps its own deck, so pick the majority).
+        var counts = {};
+        items.forEach(function(item) { counts[item.deck_id] = (counts[item.deck_id] || 0) + 1; });
+        var deckId = Object.keys(counts).sort(function(a, b) { return counts[b] - counts[a]; })[0];
+        var deck = items.filter(function(item) { return item.deck_id === deckId; })[0];
+        var review = document.getElementById('savedReview');
+        review.textContent = copy.review;
+        review.onclick = function(event) {
+          event.preventDefault();
+          openAppPath('/flashcards?deck=' + encodeURIComponent(deck.deck_id) + '&name=' + encodeURIComponent(deck.deck_name));
+        };
+      })
+      .catch(function() { /* the strip is optional; the player keeps working */ });
+  }
+
+  // Leave the player for another app route, keeping the session the same way
+  // the Back button does (Telegram Desktop may not re-send initData).
+  function openAppPath(path) {
+    sendBeaconStats('navigate');
+    window.location.assign(path + (sessionToken ? '#session_token=' + encodeURIComponent(sessionToken) : ''));
+  }
+
   function returnToApp() {
     sendBeaconStats('back');
     var appDestination = returnTo.charAt(0) === '/' && returnTo.charAt(1) !== '/'
@@ -1221,6 +1333,7 @@
   // phone still switches to the immersive landscape layout automatically.
 
   loadTranscript();
+  loadSavedWords();
 
   // Safe-area insets change when the frame enters or leaves full screen.
   document.addEventListener('fullscreenchange', syncTelegramLayoutVars);

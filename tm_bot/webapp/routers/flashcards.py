@@ -207,6 +207,14 @@ async def create_note(payload: NoteIn, user_id: int = Depends(get_current_user))
     )
 
 
+@router.get("/video-notes")
+async def list_video_notes(video_id: str, user_id: int = Depends(get_current_user)):
+    """Words the caller saved from one YouTube video, in spoken order."""
+    if not video_id or len(video_id) > 20:
+        raise HTTPException(status_code=422, detail="video_id is required")
+    return {"items": flashcard_service.list_video_words(str(user_id), video_id)}
+
+
 @router.post("/video-notes")
 async def save_video_note(payload: NoteIn, user_id: int = Depends(get_current_user)):
     """Save a word mined from a subtitle without damaging an existing card.

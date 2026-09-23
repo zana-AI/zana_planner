@@ -295,6 +295,36 @@ def list_notes(
         return notes
 
 
+def list_video_words(user_id: str, video_id: str) -> List[dict]:
+    """Words this user saved from one video, in the order they are spoken.
+
+    Powers the player's "saved from this video" strip and its saved-word
+    underlines. `start` is the moment *in this video*, which for a word that
+    already existed lives in `video_contexts`, not the primary source fields.
+    """
+    with get_db_session() as session:
+        notes = _notes.list_for_video(session, user_id, video_id)
+    items = []
+    for note in notes:
+        fields = note.get("fields") or {}
+        start = fields.get("source_start") if fields.get("source_video_id") == video_id else None
+        if start is None:
+            for context in fields.get("video_contexts") or []:
+                if isinstance(context, dict) and context.get("source_video_id") == video_id:
+                    start = context.get("source_start")
+                    break
+        items.append({
+            "note_id": note["note_id"],
+            "front": fields.get("front", ""),
+            "back": fields.get("back", ""),
+            "start": float(start) if isinstance(start, (int, float)) else None,
+            "deck_id": note["deck_id"],
+            "deck_name": note["deck_name"],
+        })
+    items.sort(key=lambda item: (item["start"] is None, item["start"] or 0))
+    return items
+
+
 def create_note(
     user_id: str,
     deck_path: str,
