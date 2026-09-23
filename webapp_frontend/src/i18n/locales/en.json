@@ -419,6 +419,7 @@
     "pages": "{{count}} pages",
     "readDuration": "{{duration}} read",
     "progressRead": "{{percent}}% read",
+    "subtitlesAvailable": "Subtitles",
     "readCoverageTimeline": "Read coverage timeline",
     "open": "Open",
     "more": "More",

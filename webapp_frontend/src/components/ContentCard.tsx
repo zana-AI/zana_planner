@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
-import { CalendarClock, CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw, Share2 } from 'lucide-react';
+import { CalendarClock, Captions, CheckCircle2, ExternalLink, FileText, Headphones, MoreHorizontal, Play, RotateCcw, Share2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
 import { BottomSheet } from './ui/BottomSheet';
@@ -133,10 +133,18 @@ export function ContentCard({ item, onClick, onStatusChange, onPlan, onShare }: 
 
       <div className="content-card-body">
         <div className="content-card-meta-row">
-          <span className={`content-card-type content-card-type--${displayType}`}>
-            <TypeIcon type={displayType} />
-            {t(`content.types.${displayType}`)}
-          </span>
+          <div className="content-card-meta-tags">
+            <span className={`content-card-type content-card-type--${displayType}`}>
+              <TypeIcon type={displayType} />
+              {t(`content.types.${displayType}`)}
+            </span>
+            {item.has_subtitles && displayType === 'video' ? (
+              <span className="content-card-subtitles" title={t('content.subtitlesAvailable')}>
+                <Captions size={14} aria-hidden="true" />
+                {t('content.subtitlesAvailable')}
+              </span>
+            ) : null}
+          </div>
           <span className="content-card-status">{t(`content.status.${item.status}`, item.status.replace('_', ' '))}</span>
         </div>
         <h3 className="content-card-title">{title}</h3>

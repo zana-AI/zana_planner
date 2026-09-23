@@ -727,6 +727,8 @@ export interface UserContent {
 export interface UserContentWithDetails extends Content, UserContent {
   user_content_id?: string;
   thumbnail_asset_id?: string;
+  /** A cached YouTube transcript with at least one subtitle cue is available. */
+  has_subtitles?: boolean;
   bucket_count?: number;
   buckets?: number[];
 }

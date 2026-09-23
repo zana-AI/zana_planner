@@ -388,10 +388,16 @@ class ContentRepository:
                            uc.total_consumed_seconds, uc.notes, uc.rating,
                            uc.assigned_promise_id, uc.assigned_at,
                            r.bucket_count, r.buckets,
-                           thumbnail_asset.id AS thumbnail_asset_id
+                           thumbnail_asset.id AS thumbnail_asset_id,
+                           CASE WHEN transcript.cue_count > 0 THEN TRUE ELSE FALSE END AS has_subtitles
                     FROM user_content uc
                     JOIN content c ON c.id = uc.content_id
                     LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
+                    LEFT JOIN video_transcript transcript ON transcript.video_id = COALESCE(
+                        NULLIF(c.metadata_json->>'video_id', ''),
+                        substring(c.canonical_url FROM '(?:v=|youtu\\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})'),
+                        substring(c.original_url FROM '(?:v=|youtu\\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})')
+                    )
                     LEFT JOIN LATERAL (
                         SELECT a.id
                         FROM content_asset a

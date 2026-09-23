@@ -476,6 +476,7 @@
     "pages": "{{count}} صفحه",
     "readDuration": "{{duration}} مطالعه",
     "progressRead": "{{percent}}٪ مطالعه",
+    "subtitlesAvailable": "زیرنویس دارد",
     "readCoverageTimeline": "نوار پوشش مطالعه",
     "open": "باز کردن",
     "more": "بیشتر",
