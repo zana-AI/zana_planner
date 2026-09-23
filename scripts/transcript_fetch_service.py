@@ -44,7 +44,9 @@ def claim(lease_seconds: int) -> Optional[Tuple[str, int]]:
     # statement that claimed nothing, rather than an empty string.
     if not result or result.startswith("UPDATE "):
         return None
-    video_id, attempts = result.split("|", 1)
+    # With RETURNING, psql emits the returned row followed by its command tag
+    # ("UPDATE 1"). Only the first line is queue data.
+    video_id, attempts = result.splitlines()[0].split("|", 1)
     if not VIDEO_ID.fullmatch(video_id):
         raise RuntimeError(f"queue returned invalid video id: {video_id!r}")
     return video_id, int(attempts)

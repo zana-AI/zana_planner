@@ -20,6 +20,6 @@ def test_claim_treats_postgres_update_zero_as_an_empty_queue(monkeypatch):
 
 def test_claim_returns_the_video_and_attempt_count(monkeypatch):
     service = _service_module()
-    monkeypatch.setattr(service, "sql", lambda _statement: "dQw4w9WgXcQ|2")
+    monkeypatch.setattr(service, "sql", lambda _statement: "dQw4w9WgXcQ|2\nUPDATE 1")
 
     assert service.claim(900) == ("dQw4w9WgXcQ", 2)
