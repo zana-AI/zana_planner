@@ -1,0 +1,33 @@
+[Unit]
+Description=Xaana Caption Relay
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=xaana-caption
+Group=xaana-caption
+ExecStart=/opt/xaana-caption-relay/venv/bin/xaana-caption-relay run --config /var/lib/xaana-caption-relay/device.json
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=2
+StateDirectory=xaana-caption-relay
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=384M
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target

@@ -684,6 +684,9 @@
     } catch (e) {}
   }
 
+  var transcriptPolls = 0;
+  var transcriptPollTimer = null;
+  window.addEventListener('pagehide', function() { clearTimeout(transcriptPollTimer); });
   function loadTranscript() {
     var headers = authHeaders();
     var endpoint = contentId
@@ -692,7 +695,12 @@
     fetch(baseUrl + endpoint, { headers: headers })
       .then(function(response) { return response.ok ? response.json() : null; })
       .then(function(data) {
-        if (!data || !data.available || !data.cues || !data.cues.length) return;
+        if (!data || !data.available || !data.cues || !data.cues.length) {
+          if (data && data.pending && transcriptPolls++ < 90) {
+            transcriptPollTimer = setTimeout(loadTranscript, 10000);
+          }
+          return;
+        }
         sourceLanguage = (data.language || 'fr').toLowerCase().split('-', 1)[0];
         var panel = document.getElementById('transcript');
         var list = document.getElementById('transcriptList');

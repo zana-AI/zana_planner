@@ -256,46 +256,24 @@ async def get_content_heatmap(
 
 
 def _transcript_for_video(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
-    """Cached transcript first, then persist a successful live fallback.
-
-    In production the live path normally fails because YouTube blocks the
-    server's IP, so the residentially-filled cache serves almost all users.
-    Rare live successes are cached here rather than being discarded.
-    """
+    """Read the cache or request a durable fetch; never scrape in an HTTP request."""
     from repositories.video_transcript_repo import VideoTranscriptRepository
 
     cached = VideoTranscriptRepository().get(video_id)
     if cached and cached.get("cues"):
         return cached
 
-    from utils.youtube_utils import get_video_transcript
-    transcript = get_video_transcript(video_id, url=url, preferred_language=None)
-    cues = transcript.get("cues") or []
-    if transcript.get("available") and cues:
-        # Cloud fetches are uncommon and slow, but when YouTube does allow one
-        # through, make the next watch and the Library subtitle badge instant.
-        # A cache-write failure must never hide a successful transcript from
-        # the person already watching it.
-        try:
-            VideoTranscriptRepository().upsert(
-                video_id=video_id,
-                cues=cues,
-                language=transcript.get("language"),
-                is_generated=transcript.get("source") == "automatic",
-            )
-        except Exception as exc:
-            logger.warning("Could not cache live transcript for %s: %s", video_id, exc)
-    else:
-        # Do not retry from the cloud request path. Record one durable request
-        # for the residential worker instead; it has a different IP reputation
-        # and deliberately paces YouTube requests.
-        try:
-            from repositories.video_transcript_fetch_queue_repo import VideoTranscriptFetchQueueRepository
-            VideoTranscriptFetchQueueRepository().enqueue(video_id)
-        except Exception as exc:
-            # This stays non-fatal until the queue migration is applied.
-            logger.warning("Could not queue transcript fetch for %s: %s", video_id, exc)
-    return transcript
+    from repositories.video_transcript_fetch_queue_repo import VideoTranscriptFetchQueueRepository
+    try:
+        queue = VideoTranscriptFetchQueueRepository()
+        queue.enqueue(video_id)
+        pending = queue.status(video_id) in ("queued", "processing")
+    except ValueError:
+        raise HTTPException(400, "Invalid video ID")
+    except Exception:
+        logger.warning("Could not queue transcript fetch for %s", video_id, exc_info=True)
+        pending = False
+    return {"available": False, "cues": [], "pending": pending}
 
 
 @router.get("/content/{content_id}/transcript")

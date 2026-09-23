@@ -16,7 +16,7 @@ from repositories.auth_session_repo import AuthSessionRepository
 from utils.logger import get_logger
 
 # Import all routers
-from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer, youtube_watch, content, plan_sessions, challenges, oauth_consent, flashcards, public_clubs, explore
+from .routers import health, auth, users, promises, templates, distractions, admin, community, focus_timer, youtube_watch, content, plan_sessions, challenges, oauth_consent, flashcards, public_clubs, explore, caption_relay
 
 logger = get_logger(__name__)
 
@@ -105,6 +105,7 @@ def create_webapp_api(
     app.include_router(flashcards.router)
     app.include_router(public_clubs.router)
     app.include_router(explore.router)
+    app.include_router(caption_relay.router)
 
     # Startup event to log registered routes and fetch bot username
     @app.on_event("startup")
@@ -148,6 +149,8 @@ def create_webapp_api(
         
         # Start background task for session cleanup
         import asyncio
+        from services.caption_dispatcher import run as run_caption_dispatcher
+        app.state.caption_dispatcher = asyncio.create_task(run_caption_dispatcher())
         async def cleanup_task():
             while True:
                 await asyncio.sleep(3600)  # Run every hour
@@ -337,6 +340,13 @@ def create_webapp_api(
 
     @app.on_event("shutdown")
     async def shutdown_event():
+        import asyncio
+        from contextlib import suppress
+        caption_task = getattr(app.state, "caption_dispatcher", None)
+        if caption_task:
+            caption_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await caption_task
         try:
             worker = getattr(app.state, "learning_pipeline_worker", None)
             if worker:

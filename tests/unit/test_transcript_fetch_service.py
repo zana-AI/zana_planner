@@ -1,25 +1,38 @@
 import importlib.util
 from pathlib import Path
+import pytest
 
 
-def _service_module():
-    path = Path(__file__).parents[2] / "scripts" / "transcript_fetch_service.py"
-    spec = importlib.util.spec_from_file_location("transcript_fetch_service_test", path)
-    assert spec and spec.loader
+def client():
+    spec = importlib.util.spec_from_file_location("relay_client", Path(__file__).parents[2] / "scripts/caption_relay/client.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_claim_treats_postgres_update_zero_as_an_empty_queue(monkeypatch):
-    service = _service_module()
-    monkeypatch.setattr(service, "sql", lambda _statement: "UPDATE 0")
+@pytest.mark.parametrize("server", ["http://xaana.club", "https://name:password@xaana.club", "https://xaana.club/?token=x"])
+def test_credentials_never_sent_to_unsafe_origin(server):
+    with pytest.raises(ValueError):
+        client().api(server, "claim", "secret")
 
-    assert service.claim(900) is None
+
+def test_fetch_rejects_urls_and_shell_fragments():
+    with pytest.raises(ValueError):
+        client().fetch("https://example.com/")
 
 
-def test_claim_returns_the_video_and_attempt_count(monkeypatch):
-    service = _service_module()
-    monkeypatch.setattr(service, "sql", lambda _statement: "dQw4w9WgXcQ|2\nUPDATE 1")
+def test_pair_does_not_overwrite_existing_credentials(tmp_path):
+    mod = client()
+    path = tmp_path / "device.json"
+    mod.save_config(path, {"token": "first"})
+    with pytest.raises(FileExistsError):
+        mod.save_config(path, {"token": "second"})
+    assert "first" in path.read_text()
 
-    assert service.claim(900) == ("dQw4w9WgXcQ", 2)
+
+def test_subprocess_timeout_returns_retryable_result(monkeypatch):
+    mod = client()
+    def timeout(*args, **kwargs):
+        raise mod.subprocess.TimeoutExpired("fetch", 90)
+    monkeypatch.setattr(mod.subprocess, "run", timeout)
+    assert mod.fetch("dQw4w9WgXcQ") == {"error": "timeout"}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
+import { CaptionRelayTab } from './admin/CaptionRelayTab';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import type { AdminUser, Broadcast, PromiseTemplate } from '../types';
 import {
@@ -35,7 +36,7 @@ export function AdminPanel() {
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
   const initialTabParam = searchParams.get('tab');
   const initialTab: TabType =
-    initialTabParam === 'clubs' ? 'clubs' : initialTabParam === 'llm' ? 'llm' : initialTabParam === 'content' ? 'content' : 'stats';
+    initialTabParam === 'captionRelay' ? 'captionRelay' : initialTabParam === 'clubs' ? 'clubs' : initialTabParam === 'llm' ? 'llm' : initialTabParam === 'content' ? 'content' : 'stats';
   const highlightedClubId = searchParams.get('club_id');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [stats, setStats] = useState<{ total_users: number; active_users: number; total_promises: number } | null>(null);
@@ -321,6 +322,7 @@ export function AdminPanel() {
         />
       )}
 
+      {activeTab === 'captionRelay' && <CaptionRelayTab />}
       {activeTab === 'content' && (
         <ContentAdminTab users={users} onError={setError} />
       )}

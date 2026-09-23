@@ -13,7 +13,8 @@ export type TabType =
   | 'conversations'
   | 'tests'
   | 'users'
-  | 'content';
+  | 'content'
+  | 'captionRelay';
 
 interface AdminTabsProps {
   activeTab: TabType;
@@ -60,6 +61,7 @@ export function AdminTabs({ activeTab, onTabChange, scheduledCount }: AdminTabsP
       items: [
         { key: 'tests', label: 'Test Runner' },
         { key: 'devtools', label: 'Dev Tools' },
+        { key: 'captionRelay', label: 'Caption Relay' },
         { key: 'promote', label: 'Promote' },
       ],
     },

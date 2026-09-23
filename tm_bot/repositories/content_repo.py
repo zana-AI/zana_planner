@@ -226,7 +226,7 @@ class ContentRepository:
         return saved_id
 
     def request_youtube_transcript(self, content_id: str) -> None:
-        """Queue captions for a saved YouTube item, without blocking the save."""
+        """Queue a server-first caption fetch; queue errors never fail the save."""
         try:
             content = self.get_content_by_id(content_id) or {}
             if str(content.get("provider") or "").lower() != "youtube":
@@ -243,7 +243,7 @@ class ContentRepository:
             from repositories.video_transcript_fetch_queue_repo import VideoTranscriptFetchQueueRepository
             VideoTranscriptFetchQueueRepository().enqueue(str(video_id))
         except Exception as exc:
-            logger.debug("Could not queue transcript for content %s: %s", content_id, exc)
+            logger.warning("Could not queue transcript for content %s: %s", content_id, exc)
 
     def assign_user_content_to_promise(self, user_id: str, content_id: str, promise_id: str) -> str:
         """Ensure content is saved and linked to a promise/task.

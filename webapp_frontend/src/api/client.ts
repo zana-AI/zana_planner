@@ -294,6 +294,23 @@ class ApiClient {
     return response.blob();
   }
 
+  async getCaptionRelays() {
+    return this.request<{
+      devices: Array<{ id: string; name: string; activated_at: string | null; revoked_at: string | null; last_seen_at: string | null; pairing_expires_at: string | null }>;
+      queue: Array<{ fetch_stage: string; status: string; count: number }>;
+    }>('/caption-relay/devices');
+  }
+
+  async createCaptionRelay(name: string) {
+    return this.request<{ id: string; pairing_code: string; expires_in: number }>('/caption-relay/devices', {
+      method: 'POST', body: JSON.stringify({ name }),
+    });
+  }
+
+  async revokeCaptionRelay(id: string) {
+    return this.request<void>('/caption-relay/devices/' + encodeURIComponent(id), { method: 'DELETE' });
+  }
+
   /**
    * Get weekly report for the authenticated user.
    */

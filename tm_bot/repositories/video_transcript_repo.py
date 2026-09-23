@@ -1,9 +1,7 @@
 """
 Repository for cached YouTube transcripts (see migration 036_video_transcript).
 
-Read-only in production: the server cannot fetch transcripts itself because
-YouTube blocks its IP, so rows arrive from scripts/fetch_transcripts.py run on a
-residential connection.
+Populated by the server dispatcher or an authenticated Xaana Caption Relay.
 """
 import json
 from typing import Any, Dict, List, Optional
