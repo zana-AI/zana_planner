@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xaana-caption-relay"
-version = "1.0.0"
+version = "1.0.1"
 description = "Scoped residential caption fetching for Xaana"
 requires-python = ">=3.10"
 dependencies = ["youtube-transcript-api>=1.2,<2", "yt-dlp>=2026.3.17", "certifi>=2025.10.5"]

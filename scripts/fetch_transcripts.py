@@ -24,11 +24,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from youtube_transcript_api import YouTubeTranscriptApi
+from caption_relay.fetch import api_source_tracks, ytdlp_source_tracks
 
 USER_ID = "108648163"
 HOST = "root@169.58.186.195"
 OUT_DIR = Path(__file__).resolve().parent.parent / "exports" / "transcripts"
-LANGUAGES = ["fr", "en"]
 
 
 def extract_video_id(url: str) -> str:
@@ -56,7 +56,10 @@ def fetch(video_id: str, force: bool = False) -> bool:
         return True
     language, generated = None, True
     try:
-        transcript = YouTubeTranscriptApi().fetch(video_id, languages=LANGUAGES)
+        tracks = api_source_tracks(list(YouTubeTranscriptApi().list(video_id)))
+        if not tracks:
+            raise ValueError("Source language needs audio metadata")
+        transcript = tracks[0].fetch()
         segments = transcript.to_raw_data()
         language, generated = transcript.language_code, transcript.is_generated
     except Exception as exc:                       # noqa: BLE001 - try the other route
@@ -99,18 +102,12 @@ def fetch_via_ytdlp(video_id: str) -> Optional[Dict[str, Any]]:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
             if not info:
                 return None
-            manual = info.get("subtitles") or {}
-            automatic = info.get("automatic_captions") or {}
-            for language in LANGUAGES:
-                for store, generated in ((manual, False), (automatic, True)):
-                    tracks = store.get(language) or store.get(f"{language}-orig")
-                    if not tracks:
-                        continue
-                    track = next((t for t in tracks if t.get("ext") == "json3"), None) or tracks[0]
-                    raw = ydl.urlopen(track["url"]).read().decode("utf-8", errors="replace")
-                    segments = _parse_json3(raw) if track.get("ext") == "json3" else _parse_vtt(raw)
-                    if segments:
-                        return {"language": language, "is_generated": generated, "segments": segments}
+            for language, generated, tracks in ytdlp_source_tracks(info):
+                track = tracks[0]
+                raw = ydl.urlopen(track["url"]).read().decode("utf-8", errors="replace")
+                segments = _parse_json3(raw)
+                if segments:
+                    return {"language": language, "is_generated": generated, "segments": segments}
     except Exception as exc:                       # noqa: BLE001 - report and move on
         print(f"   yt-dlp fallback failed: {str(exc)[:90]}")
     return None

@@ -6,6 +6,15 @@ on failure → cache. A cached video never needs another download. Viewer reques
 only query the cache/queue and poll while pending. The bot queues on receipt,
 save and assignment; these requests are idempotent.
 
+Caption language follows the video's source audio, not the viewer/UI language.
+The fetcher uses the native ASR language or yt-dlp's original-audio metadata,
+prefers uploaded captions in that language, and falls back only to same-language
+auto-captions. Machine-translated tracks (`tlang`) are excluded. If the source
+language is ambiguous, fetching fails rather than caching a guessed translation.
+Previously cached captions are not automatically purged; incorrect entries need
+a targeted repair. Relay devices installed as packages must upgrade to 1.0.1+
+to receive this selection fix (the cloud uses the same fetcher).
+
 The server dispatcher runs in the webapp, claims with PostgreSQL row locks,
 and performs no network work inside a database transaction. An expired cloud
 lease falls through to the residential stage. Each relay handles one job at a
