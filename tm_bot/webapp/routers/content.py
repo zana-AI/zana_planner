@@ -256,12 +256,11 @@ async def get_content_heatmap(
 
 
 def _transcript_for_video(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
-    """Cached transcript first, live fetch only as a fallback.
+    """Cached transcript first, then persist a successful live fallback.
 
-    In production the live path always fails — YouTube blocks the server's IP —
-    so the cache (filled by scripts/fetch_transcripts.py from a residential
-    connection) is what actually serves users. The live call is kept because it
-    still works in local development, where there is no cache to read.
+    In production the live path normally fails because YouTube blocks the
+    server's IP, so the residentially-filled cache serves almost all users.
+    Rare live successes are cached here rather than being discarded.
     """
     from repositories.video_transcript_repo import VideoTranscriptRepository
 
@@ -270,7 +269,23 @@ def _transcript_for_video(video_id: str, url: Optional[str] = None) -> Dict[str,
         return cached
 
     from utils.youtube_utils import get_video_transcript
-    return get_video_transcript(video_id, url=url, preferred_language=None)
+    transcript = get_video_transcript(video_id, url=url, preferred_language=None)
+    cues = transcript.get("cues") or []
+    if transcript.get("available") and cues:
+        # Cloud fetches are uncommon and slow, but when YouTube does allow one
+        # through, make the next watch and the Library subtitle badge instant.
+        # A cache-write failure must never hide a successful transcript from
+        # the person already watching it.
+        try:
+            VideoTranscriptRepository().upsert(
+                video_id=video_id,
+                cues=cues,
+                language=transcript.get("language"),
+                is_generated=transcript.get("source") == "automatic",
+            )
+        except Exception as exc:
+            logger.warning("Could not cache live transcript for %s: %s", video_id, exc)
+    return transcript
 
 
 @router.get("/content/{content_id}/transcript")

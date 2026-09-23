@@ -202,6 +202,17 @@ export function MyContentsPage() {
     void loadContents();
   }, [loadContents]);
 
+  // Returning from the standalone video page can restore this tab from the
+  // browser's back-forward cache. Refresh once in that case so a transcript
+  // cached during the watch is reflected by its Library badge immediately.
+  useEffect(() => {
+    const refreshAfterRestore = (event: PageTransitionEvent) => {
+      if (event.persisted) void loadContents();
+    };
+    window.addEventListener('pageshow', refreshAfterRestore);
+    return () => window.removeEventListener('pageshow', refreshAfterRestore);
+  }, [loadContents]);
+
 
   const handleAddContent = async () => {
     const url = addUrl.trim();
