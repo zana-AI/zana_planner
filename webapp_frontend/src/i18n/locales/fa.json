@@ -633,7 +633,20 @@
     "saveChanges": "ذخیرهٔ تغییرات",
     "cancel": "انصراف",
     "addNoteOptional": "افزودن یادداشت (اختیاری)",
-    "highlightColor": "رنگ هایلایت"
+    "highlightColor": "رنگ هایلایت",
+    "addToDeck": "افزودن به دسته",
+    "translation": "ترجمه",
+    "translating": "در حال ترجمه...",
+    "translationOptional": "ترجمه (اختیاری)",
+    "deck": "دسته",
+    "saveCard": "ذخیره کارت",
+    "saving": "در حال ذخیره...",
+    "saved": "ذخیره شد",
+    "failedToSaveCard": "ذخیره کارت ناموفق بود",
+    "coReaders": "کلاس",
+    "viewingOwnHighlights": "هایلایت‌های شما",
+    "teacherHighlights": "هایلایت‌های معلم",
+    "noCoReadersYet": "هنوز کسی در کلاب شما این را باز نکرده است."
   },
   "planSessions": {
     "noSessionsYet": "هنوز جلسه‌ای نیست.",

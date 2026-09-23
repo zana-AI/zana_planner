@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize2, MoreHorizontal, PanelRight, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { HeatmapBar } from '../components/HeatmapBar';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { PdfHighlight } from '../types';
+import type { ContentCoReader, PdfHighlight } from '../types';
+import { AddToDeckSheet } from './pdfReader/AddToDeckSheet';
 import { HighlightLayer } from './pdfReader/HighlightLayer';
 import { HighlightPopover } from './pdfReader/HighlightPopover';
 import { useHighlightPopover } from './pdfReader/useHighlightPopover';
@@ -75,6 +76,23 @@ export function PdfReaderPage() {
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
   const [highlightsOpen, setHighlightsOpen] = useState(false);
+
+  // Content sharing context (club_id set only when this PDF is shared to a
+  // club). Drives the co-reading poll and the teacher's roster/switch-student
+  // panel — see the annotation-sharing design in the UX review this came
+  // from: teacher = club owner, students never see each other's highlights.
+  const [contentTitle, setContentTitle] = useState('');
+  const [contentLanguage, setContentLanguage] = useState('');
+  const [clubId, setClubId] = useState<string | null>(null);
+  const [isTeacher, setIsTeacher] = useState(false);
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [coReaders, setCoReaders] = useState<ContentCoReader[]>([]);
+  const [coReadersOpen, setCoReadersOpen] = useState(false);
+  const [addToDeckDraft, setAddToDeckDraft] = useState<{
+    text: string;
+    pageIndex: number;
+    highlightId?: string;
+  } | null>(null);
 
   const [color, setColor] = useState('#ffe066');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -294,6 +312,10 @@ export function PdfReaderPage() {
       const open = await apiClient.getPdfOpen(contentId);
       setAssetId(open.asset_id);
       setPdfUrl(open.pdf_url);
+      setContentTitle(open.title || '');
+      setContentLanguage(open.language || '');
+      setClubId(open.club_id || null);
+      setIsTeacher(Boolean(open.is_teacher));
       const blob = await apiClient.fetchPdfBlob(open.pdf_url);
       setPdfBytes(new Uint8Array(await blob.arrayBuffer()));
       setExpiresAt(open.expires_at);
@@ -315,7 +337,7 @@ export function PdfReaderPage() {
       setCoverageBuckets(normalizedBuckets);
       setProgressRatio(computeCoverageRatio(normalizedBuckets));
 
-      const h = await apiClient.getPdfHighlights(contentId, open.asset_id);
+      const h = await apiClient.getPdfHighlights(contentId, open.asset_id, viewingUserId || undefined);
       setHighlights(h.items || []);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -336,6 +358,52 @@ export function PdfReaderPage() {
     }
     load();
   }, [contentId, canLoadApi, isReady, isTelegramMiniApp, authData, hasBrowserToken]);
+
+  // Re-fetch highlights whenever the teacher switches which student's marks
+  // they're looking at.
+  useEffect(() => {
+    if (!contentId || !assetId || !canLoadApi) return;
+    apiClient
+      .getPdfHighlights(contentId, assetId, viewingUserId || undefined)
+      .then((h) => setHighlights(h.items || []))
+      .catch(() => {
+        /* keep showing the last-known highlights on a transient failure */
+      });
+  }, [viewingUserId]);
+
+  // Live co-reading: on club-shared content, poll for the other side's
+  // highlights every few seconds so a teacher and student marking up the
+  // same page in parallel see each other show up without a manual refresh.
+  // Polling (not a socket) keeps this to a plain HTTP endpoint for a class
+  // of a handful of people; paused when the tab isn't visible.
+  useEffect(() => {
+    if (!clubId || !contentId || !assetId || !canLoadApi) return;
+    let cancelled = false;
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return;
+      apiClient
+        .getPdfHighlights(contentId, assetId, viewingUserId || undefined)
+        .then((h) => {
+          if (!cancelled) setHighlights(h.items || []);
+        })
+        .catch(() => {
+          /* skip this tick; try again on the next one */
+        });
+    };
+    const interval = window.setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [clubId, contentId, assetId, canLoadApi, viewingUserId]);
+
+  useEffect(() => {
+    if (!isTeacher || !contentId || !coReadersOpen) return;
+    apiClient
+      .getContentCoReaders(contentId)
+      .then((res) => setCoReaders(res.items || []))
+      .catch(() => setCoReaders([]));
+  }, [isTeacher, contentId, coReadersOpen]);
 
   useEffect(() => {
     const flushProgress = () => {
@@ -906,7 +974,7 @@ export function PdfReaderPage() {
       }
       setSelectionDraft(null);
       clearNativeSelection();
-      const h = await apiClient.getPdfHighlights(contentId, assetId);
+      const h = await apiClient.getPdfHighlights(contentId, assetId, viewingUserId || undefined);
       setHighlights(h.items || []);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -914,6 +982,35 @@ export function PdfReaderPage() {
       } else {
         setError(t('pdfReader.failedToSaveSelectedHighlight'));
       }
+    }
+  };
+
+  // "Add to deck" from an in-progress selection: the highlight is saved
+  // first (or reused if editing an existing one) so the card always keeps a
+  // reference back to a real highlight, then the save sheet opens on top.
+  const handleAddToDeckFromSelection = async () => {
+    if (!contentId || !assetId || !selectionDraft) return;
+    setError('');
+    try {
+      let highlightId = selectionDraft.highlightId;
+      if (!highlightId) {
+        const created = await apiClient.createPdfHighlight(contentId, {
+          asset_id: assetId,
+          page_index: pageNumber - 1,
+          rects: selectionDraft.rects,
+          selected_text: selectionDraft.text,
+          note: selectionDraft.note || undefined,
+          color: selectionDraft.color,
+        });
+        highlightId = created.highlight_id;
+        const h = await apiClient.getPdfHighlights(contentId, assetId, viewingUserId || undefined);
+        setHighlights(h.items || []);
+      }
+      setAddToDeckDraft({ text: selectionDraft.text, pageIndex: pageNumber - 1, highlightId });
+      setSelectionDraft(null);
+      clearNativeSelection();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('pdfReader.failedToSaveSelectedHighlight'));
     }
   };
 
@@ -993,6 +1090,16 @@ export function PdfReaderPage() {
           <button className="pdf-reader-icon-btn" onClick={fitToWidth} disabled={!pageSize.width} title={t('pdfReader.fitWidth')} type="button">
             <ScanLine size={18} />
           </button>
+          {isTeacher && (
+            <button
+              className="pdf-reader-icon-btn"
+              onClick={() => setCoReadersOpen((open) => !open)}
+              title={t('pdfReader.coReaders')}
+              type="button"
+            >
+              <Users size={18} />
+            </button>
+          )}
           <button className="pdf-reader-icon-btn pdf-reader-icon-btn--with-badge" onClick={() => setHighlightsOpen((open) => !open)} title={t('pdfReader.highlights')} type="button">
             <PanelRight size={18} />
             {highlights.length > 0 && <span>{highlights.length}</span>}
@@ -1057,6 +1164,7 @@ export function PdfReaderPage() {
                   onNoteChange={(note) => setSelectionDraft((draft) => draft ? { ...draft, note } : draft)}
                   onColorChange={(nextColor) => setSelectionDraft((draft) => draft ? { ...draft, color: nextColor } : draft)}
                   onSave={saveSelectionHighlight}
+                  onAddToDeck={handleAddToDeckFromSelection}
                   onCancel={() => {
                     setSelectionDraft(null);
                     clearNativeSelection();
@@ -1117,14 +1225,30 @@ export function PdfReaderPage() {
                 <h3>Page {group.pageIndex + 1}</h3>
                 {group.items.map((h) => (
                   <article key={h.id} className="pdf-reader-highlight-card">
+                    {!h.is_mine && h.author_name && (
+                      <span className="pdf-reader-highlight-author">
+                        {h.is_teacher_author ? t('pdfReader.teacherHighlights') : h.author_name}
+                      </span>
+                    )}
                     <button type="button" onClick={() => goToPage(h.page_index + 1)}>
                       <FileText size={14} />
                       <span>{t('pdfReader.openPage')}</span>
                     </button>
                     {h.selected_text && <p>{h.selected_text}</p>}
                     {h.note && <p className="pdf-reader-highlight-note">{h.note}</p>}
-                    <button className="pdf-reader-highlight-delete" onClick={() => deleteHighlight(h.id)} type="button">
-                      <Trash2 size={14} />{t('pdfReader.delete')}</button>
+                    {h.is_mine !== false && h.selected_text && (
+                      <button
+                        type="button"
+                        className="pdf-reader-highlight-add-to-deck"
+                        onClick={() => setAddToDeckDraft({ text: h.selected_text || '', pageIndex: h.page_index, highlightId: h.id })}
+                      >
+                        {t('pdfReader.addToDeck')}
+                      </button>
+                    )}
+                    {h.is_mine !== false && (
+                      <button className="pdf-reader-highlight-delete" onClick={() => deleteHighlight(h.id)} type="button">
+                        <Trash2 size={14} />{t('pdfReader.delete')}</button>
+                    )}
                   </article>
                 ))}
               </section>
@@ -1132,6 +1256,56 @@ export function PdfReaderPage() {
             {highlights.length === 0 && <div className="pdf-reader-empty">{t('pdfReader.selectTextInThePdfToSaveAHighlight')}</div>}
           </div>
         </aside>
+      )}
+
+      {coReadersOpen && (
+        <aside className="pdf-reader-highlights-drawer pdf-reader-coreaders-drawer" aria-label={t('pdfReader.coReaders')}>
+          <header>
+            <div>
+              <h2>{t('pdfReader.coReaders')}</h2>
+            </div>
+            <button className="pdf-reader-icon-btn" type="button" onClick={() => setCoReadersOpen(false)} title={t('pdfReader.closeHighlights')}>
+              <X size={18} />
+            </button>
+          </header>
+          <div className="pdf-reader-highlights-list">
+            <button
+              type="button"
+              className={`pdf-reader-coreader-row${viewingUserId === null ? ' is-active' : ''}`}
+              onClick={() => setViewingUserId(null)}
+            >
+              <span>{t('pdfReader.viewingOwnHighlights')}</span>
+            </button>
+            {coReaders.map((reader) => (
+              <button
+                key={reader.user_id}
+                type="button"
+                className={`pdf-reader-coreader-row${viewingUserId === reader.user_id ? ' is-active' : ''}`}
+                onClick={() => setViewingUserId(reader.user_id)}
+              >
+                <span>{reader.name}</span>
+                <span className="pdf-reader-coreader-stats">
+                  {Math.round((reader.progress_ratio || 0) * 100)}% · {Math.round((reader.total_consumed_seconds || 0) / 60)}m · {reader.highlight_count}
+                </span>
+              </button>
+            ))}
+            {coReaders.length === 0 && <div className="pdf-reader-empty">{t('pdfReader.noCoReadersYet')}</div>}
+          </div>
+        </aside>
+      )}
+
+      {addToDeckDraft && (
+        <AddToDeckSheet
+          open={!!addToDeckDraft}
+          onClose={() => setAddToDeckDraft(null)}
+          text={addToDeckDraft.text}
+          contentId={contentId}
+          assetId={assetId}
+          highlightId={addToDeckDraft.highlightId}
+          pageIndex={addToDeckDraft.pageIndex}
+          sourceTitle={contentTitle}
+          language={contentLanguage}
+        />
       )}
     </div>
   );
