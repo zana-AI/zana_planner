@@ -218,6 +218,7 @@
     <div id="videoStatus" class="video-status" role="status"></div>
   </div>
   <div id="watchProgress" class="progress-container" hidden></div>
+  <p id="watchSaveStatus" role="status" hidden></p>
   <div id="wordTools" class="word-tools" hidden>
     <div class="word-body">
       <div class="word-heading">
@@ -370,8 +371,8 @@
 
   function authHeaders() {
     var headers = {'Content-Type': 'application/json'};
-    var token = '';
-    try { token = localStorage.getItem('telegram_auth_token') || ''; } catch (_) {}
+    var token = sessionToken || '';
+    try { token = localStorage.getItem('telegram_auth_token') || token; } catch (_) {}
     var initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
     if (token) headers.Authorization = 'Bearer ' + token;
     else if (initData) headers['X-Telegram-Init-Data'] = initData;
@@ -1174,7 +1175,10 @@
       init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : '',
       user_token: userToken,
       stats: {
+        report_id: crypto.randomUUID(),
         video_id: videoId,
+        content_id: contentId || null,
+        duration_seconds: videoDuration || null,
         promise_id: promiseId,
         time_spent_seconds: watchedSeconds,
         page_open_seconds: (Date.now() - openTime) / 1000,
@@ -1184,27 +1188,76 @@
     };
   }
 
-  function flushStats(reason) {
-    var payload = takeStatsPayload(reason);
-    if (!payload) return;
-    var body = JSON.stringify(payload);
-    var sent = false;
-    // sendBeacon survives the page being torn down; fetch keepalive is the fallback.
-    try {
-      sent = navigator.sendBeacon(baseUrl + '/api/youtube/report_stats', new Blob([body], { type: "application/json" }));
-    } catch (e) {}
-    if (!sent) {
-      try {
-        fetch(baseUrl + '/api/youtube/report_stats', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true
-        });
-        sent = true;
-      } catch (e) {}
-    }
-    dlog("stats " + reason + ": " + payload.stats.time_spent_seconds.toFixed(1) + "s " + (sent ? "sent" : "FAILED"));
+  // WATCH_REPORT_OUTBOX_START (also exercised by the offline JS tests)
+  var watchOutbox = [];
+  var watchSending = null;
+  var watchStorageKey = '';
+  function watchAuthScope() {
+    var h = authHeaders();
+    return h.Authorization || h['X-Telegram-Init-Data'] || userToken || '';
   }
+  var watchInitialScope = watchAuthScope();
+  var watchOutboxReady = crypto.subtle.digest('SHA-256', new TextEncoder().encode(watchInitialScope)).then(function(hash) {
+    var fingerprint = Array.from(new Uint8Array(hash)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+    // Tab-scoped and account-bound: never replay somebody else's saved queue.
+    // Only stats are persisted, never credentials.
+    watchStorageKey = 'xaana-watch:' + fingerprint + ':' + videoId + ':' + contentId;
+    try { watchOutbox = JSON.parse(sessionStorage.getItem(watchStorageKey) || '[]'); } catch (_) {}
+    if (!Array.isArray(watchOutbox)) watchOutbox = [];
+  }).catch(function() { /* in-memory retries still work without storage */ });
+  function persistWatchOutbox() {
+    try { if (watchStorageKey) sessionStorage.setItem(watchStorageKey, JSON.stringify(watchOutbox)); } catch (_) {}
+  }
+  function watchSaveStatus(failed) {
+    var el = document.getElementById('watchSaveStatus');
+    if (!el) return;
+    el.hidden = !failed;
+    el.textContent = uiLanguage === 'fa'
+      ? 'پیشرفت هنوز ذخیره نشده؛ با اتصال و ورود دوباره تلاش می‌کنیم.'
+      : 'Progress not saved yet. Retrying when connected and signed in.';
+  }
+  function flushStats(reason) {
+    // Capture before awaiting anything: pagehide may be our final opportunity.
+    var payload = takeStatsPayload(reason);
+    return watchOutboxReady.then(function() {
+      if (payload) { watchOutbox.push(payload.stats); persistWatchOutbox(); }
+      if (watchSending) return watchSending;
+      watchSending = (async function() {
+        while (watchOutbox.length) {
+          if (!watchInitialScope || watchAuthScope() !== watchInitialScope) {
+            watchSaveStatus(true);
+            return false;
+          }
+          var stats = watchOutbox[0];
+          var controller = new AbortController();
+          var timeout = setTimeout(function() { controller.abort(); }, 15000);
+          try {
+            var response = await fetch(baseUrl + '/api/youtube/report_stats', {
+              method: 'POST', headers: authHeaders(), keepalive: true, signal: controller.signal,
+              body: JSON.stringify({stats: stats, user_token: userToken,
+                init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : ''})
+            });
+            if (!response.ok || !(await response.json()).ok) throw new Error('save rejected');
+            watchOutbox.shift();
+            persistWatchOutbox();
+            watchSaveStatus(false);
+          } catch (_) {
+            watchSaveStatus(true);
+            return false;
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
+        return true;
+      })().finally(function() { watchSending = null; });
+      return watchSending;
+    });
+  }
+  // WATCH_REPORT_OUTBOX_END
 
-  setInterval(function() { flushStats('interval'); }, 120000);
+  setInterval(function() { flushStats('interval'); }, 30000);
+  window.addEventListener('online', function() { flushStats('online'); });
+  watchOutboxReady.then(function() { flushStats('retry'); });
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'hidden') flushStats('hidden');
   });
@@ -1217,8 +1270,10 @@
   function handleDone() {
     // Disable floating button immediately to prevent accidental double-taps
     if (floatDoneBtn) floatDoneBtn.disabled = true;
-    flushStats('done');
-    if (window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
+    flushStats('done').then(function(saved) {
+      if (saved && window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
+      else if (floatDoneBtn) floatDoneBtn.disabled = false;
+    });
   }
 
   function applySavedMarks() {
@@ -1286,12 +1341,13 @@
   // Leave the player for another app route, keeping the session the same way
   // the Back button does (Telegram Desktop may not re-send initData).
   function openAppPath(path) {
-    flushStats('navigate');
-    window.location.assign(path + (sessionToken ? '#session_token=' + encodeURIComponent(sessionToken) : ''));
+    flushStats('navigate').then(function(saved) {
+      if (saved) window.location.assign(path + (sessionToken ? '#session_token=' + encodeURIComponent(sessionToken) : ''));
+    });
   }
 
-  function returnToApp() {
-    flushStats('back');
+  async function returnToApp() {
+    if (!(await flushStats('back'))) return;
     var appDestination = returnTo.charAt(0) === '/' && returnTo.charAt(1) !== '/'
       ? returnTo
       : '/my-contents';

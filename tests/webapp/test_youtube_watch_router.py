@@ -1,125 +1,104 @@
-import asyncio
 from pathlib import Path
-import types
+from types import SimpleNamespace
+import uuid
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from webapp.routers import youtube_watch as route
+from webapp.youtube_watch_stats import create_user_token
+from repositories.content_repo import ContentRepository
+from repositories.youtube_progress_repo import YoutubeProgressRepository, coverage
 
 
 def test_transcript_follow_scrolls_only_its_panel():
-    html_path = Path(__file__).parents[2] / "tm_bot" / "webapp" / "static" / "youtube_watch.html"
-    html = html_path.read_text(encoding="utf-8")
-
-    assert "function scrollCueWithinTranscript" in html
-    assert "list.scrollTo({top: targetTop" in html
-    assert "button.scrollIntoView" not in html
-    assert "overscroll-behavior: contain" in html
-
-
-def test_back_navigation_preserves_inline_web_app_session():
-    html_path = Path(__file__).parents[2] / "tm_bot" / "webapp" / "static" / "youtube_watch.html"
-    html = html_path.read_text(encoding="utf-8")
-
-    assert "var sessionToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('session_token')" in html
+    html = (Path(__file__).parents[2] / 'tm_bot/webapp/static/youtube_watch.html').read_text(encoding='utf-8')
+    assert 'list.scrollTo({top: targetTop' in html
+    assert 'button.scrollIntoView' not in html
     assert "localStorage.setItem('telegram_auth_token', sessionToken)" in html
     assert "appDestination + '#session_token=' + encodeURIComponent(sessionToken)" in html
 
 
-def test_report_stats_logs_time_to_assigned_promise(monkeypatch, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("telegram")
-
-    from webapp.routers import youtube_watch as router_mod
-
-    calls = {"add_action": None}
-
-    class FakePlanner:
-        def __init__(self, root_dir):
-            assert root_dir == str(tmp_path)
-
-        def get_promise(self, user_id, promise_id):
-            return types.SimpleNamespace(id=promise_id) if user_id == 42 and promise_id == "T01" else None
-
-        def add_action(self, user_id, promise_id, time_spent, notes=None, action_datetime=None):
-            calls["add_action"] = (user_id, promise_id, time_spent, notes)
-            return "ok"
-
-    class FakeRequest:
-        def __init__(self):
-            self.app = types.SimpleNamespace(state=types.SimpleNamespace(bot_token="token", root_dir=str(tmp_path)))
-
-        async def json(self):
-            return {
-                "init_data": "ok",
-                "stats": {
-                    "video_id": "dQw4w9WgXcQ",
-                    "promise_id": "T01",
-                    "time_spent_seconds": 180,
-                    "segments": [[0, 180]],
-                    "closed_via": "done",
-                },
-            }
-
-        async def body(self):
-            return b"{}"
-
-    monkeypatch.setattr(router_mod, "validate_init_data", lambda _init_data, _bot_token: (True, 42))
-    monkeypatch.setattr(router_mod, "append_stats", lambda **kwargs: None)
-    monkeypatch.setattr(router_mod, "PlannerAPIAdapter", FakePlanner)
-
-    response = asyncio.run(router_mod.report_stats(FakeRequest()))
-
-    assert response.status_code == 200
-    assert calls["add_action"] is not None
-    user_id, promise_id, time_spent, notes = calls["add_action"]
-    assert user_id == 42
-    assert promise_id == "T01"
-    assert time_spent == pytest.approx(180 / 3600.0, rel=1e-6)
-    assert "dQw4w9WgXcQ" in (notes or "")
+@pytest.fixture
+def client(monkeypatch, tmp_path):
+    app = FastAPI()
+    app.state.bot_token = 'test-token'
+    app.state.root_dir = str(tmp_path)
+    app.state.auth_session_repo = SimpleNamespace(get_session=lambda token: SimpleNamespace(user_id=42) if token == 'browser-session' else None)
+    app.include_router(route.router)
+    calls = []
+    item = {'id': 'library-alias', 'canonical_url': 'https://youtu.be/du-G1B785Fs?si=abc'}
+    monkeypatch.setattr(ContentRepository, 'get_content_by_id', lambda self, cid: item)
+    monkeypatch.setattr(ContentRepository, 'get_content_by_canonical_url', lambda self, url: item)
+    monkeypatch.setattr(ContentRepository, 'can_access_content', lambda self, uid, cid: uid == '42')
+    monkeypatch.setattr(YoutubeProgressRepository, 'record', lambda self, *args: calls.append(args) or {'ok': True, 'duplicate': False})
+    return TestClient(app), calls
 
 
-def test_report_stats_skips_logging_for_tiny_watch_time(monkeypatch, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("telegram")
+def payload():
+    return {'stats': {'report_id': str(uuid.uuid4()), 'video_id': 'du-G1B785Fs',
+                     'content_id': 'library-alias', 'duration_seconds': 383,
+                     'segments': [[0, 30]], 'promise_id': 'T01'}}
 
-    from webapp.routers import youtube_watch as router_mod
 
-    calls = {"add_action": 0}
+def test_browser_session_saves_actual_library_item_and_duration(client):
+    http, calls = client
+    result = http.post('/api/youtube/report_stats', json=payload(), headers={'Authorization': 'Bearer browser-session'})
+    assert result.status_code == 200
+    assert calls[0][0:3] == (42, 'library-alias', 'du-G1B785Fs')
+    assert calls[0][4:] == ([[0, 30]], 383, 'T01')
 
-    class FakePlanner:
-        def __init__(self, root_dir):
-            assert root_dir == str(tmp_path)
 
-        def get_promise(self, user_id, promise_id):
-            return types.SimpleNamespace(id=promise_id)
+def test_legacy_signed_token_still_works(client):
+    http, calls = client
+    body = payload()
+    body['user_token'] = create_user_token(42, 'test-token')
+    assert http.post('/api/youtube/report_stats', json=body).status_code == 200
+    assert calls[0][0] == 42
 
-        def add_action(self, user_id, promise_id, time_spent, notes=None, action_datetime=None):
-            calls["add_action"] += 1
-            return "ok"
 
-    class FakeRequest:
-        def __init__(self):
-            self.app = types.SimpleNamespace(state=types.SimpleNamespace(bot_token="token", root_dir=str(tmp_path)))
+def test_legacy_init_data_still_works(client, monkeypatch):
+    monkeypatch.setattr(route, 'validate_init_data', lambda *args: (True, 42))
+    http, calls = client
+    assert http.post('/api/youtube/report_stats', json=payload()).status_code == 200
+    assert calls[0][0] == 42
 
-        async def json(self):
-            return {
-                "init_data": "ok",
-                "stats": {
-                    "video_id": "dQw4w9WgXcQ",
-                    "promise_id": "T01",
-                    "time_spent_seconds": 1.5,
-                    "segments": [[0, 1.5]],
-                    "closed_via": "done",
-                },
-            }
 
-        async def body(self):
-            return b"{}"
+def test_missing_invalid_auth_and_claimed_user_id_are_rejected(client):
+    http, calls = client
+    body = payload()
+    body['user_id'] = 42
+    for headers in ({}, {'Authorization': 'Bearer invalid'}):
+        assert http.post('/api/youtube/report_stats', json=body, headers=headers).status_code == 401
+    assert calls == []
 
-    monkeypatch.setattr(router_mod, "validate_init_data", lambda _init_data, _bot_token: (True, 42))
-    monkeypatch.setattr(router_mod, "append_stats", lambda **kwargs: None)
-    monkeypatch.setattr(router_mod, "PlannerAPIAdapter", FakePlanner)
 
-    response = asyncio.run(router_mod.report_stats(FakeRequest()))
+def test_save_failure_is_not_acknowledged(client, monkeypatch):
+    def fail(*args): raise RuntimeError('database down')
+    monkeypatch.setattr(YoutubeProgressRepository, 'record', fail)
+    assert client[0].post('/api/youtube/report_stats', json=payload(), headers={'Authorization': 'Bearer browser-session'}).status_code == 503
 
-    assert response.status_code == 200
-    assert calls["add_action"] == 0
+
+def test_audit_file_failure_does_not_undo_db_save(client, monkeypatch):
+    def fail(**kwargs): raise OSError('disk full')
+    monkeypatch.setattr(route, 'append_stats', fail)
+    assert client[0].post('/api/youtube/report_stats', json=payload(), headers={'Authorization': 'Bearer browser-session'}).status_code == 200
+
+
+@pytest.mark.parametrize('bad', [{'segments': [[0, -1]]}, {'duration_seconds': 'NaN'}, {'segments': [[0, 'Infinity']]},
+                                 {'report_id': 'not-a-uuid'}, {'video_id': 'bad'}, {'segments': 'bad'}])
+def test_invalid_reports_rejected(client, bad):
+    body = payload()
+    body['stats'].update(bad)
+    assert client[0].post('/api/youtube/report_stats', json=body, headers={'Authorization': 'Bearer browser-session'}).status_code == 400
+    assert client[1] == []
+
+
+def test_content_video_mismatch_rejected(client):
+    body = payload()
+    body['stats']['video_id'] = 'q_r7L1wsY2U'
+    assert client[0].post('/api/youtube/report_stats', json=body, headers={'Authorization': 'Bearer browser-session'}).status_code == 400
+
+
+def test_replays_and_seeks_do_not_inflate_unique_coverage():
+    assert coverage([[0, 30], [20, 40], [80, 120]], 100) == ([[0, 40], [80, 100]], 60)

@@ -1,174 +1,121 @@
-"""
-YouTube watch Mini App: serve watch page and accept stats report.
-"""
-
+"""YouTube viewer and authenticated, acknowledged watch-progress reports."""
+import math
 import os
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+import re
+import uuid
 from typing import Optional
 
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from utils.logger import get_logger
+from ..dependencies import get_current_user
 from ..telegram_init_data import validate_init_data
 from ..youtube_watch_stats import append_stats, verify_user_token
 
 router = APIRouter(tags=["youtube_watch"])
 logger = get_logger(__name__)
-MIN_WATCH_SECONDS_FOR_TASK_LOG = 2.0
-SECONDS_PER_HOUR = 3600.0
-PlannerAPIAdapter = None
 
 
-def _get_html_path() -> str:
+def _get_html_path():
     return os.path.join(os.path.dirname(__file__), "..", "static", "youtube_watch.html")
 
 
 @router.get("/youtube-watch", response_class=HTMLResponse)
 async def youtube_watch_page(request: Request, video_id: Optional[str] = None):
-    """Serve the YouTube Mini App HTML (Telegram + iframe + tracking)."""
-    if not video_id or not video_id.strip():
-        raise HTTPException(status_code=400, detail="video_id is required")
-    # Basic sanity: video_id should be alphanumeric + _ -
-    if len(video_id) > 20 or not all(c.isalnum() or c in "_-" for c in video_id):
-        raise HTTPException(status_code=400, detail="Invalid video_id")
-    html_path = _get_html_path()
-    if not os.path.isfile(html_path):
-        raise HTTPException(status_code=500, detail="Mini App template not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+    if not video_id or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        raise HTTPException(400, "Invalid video_id")
+    with open(_get_html_path(), encoding="utf-8") as stream:
+        return HTMLResponse(stream.read(), headers={"Cache-Control": "no-store"})
+
+
+def validate_stats(stats):
+    if not isinstance(stats, dict) or not re.fullmatch(r"[A-Za-z0-9_-]{11}", str(stats.get("video_id", ""))):
+        raise HTTPException(400, "Invalid video_id")
+    try:
+        report_id = str(uuid.UUID(stats["report_id"])) if stats.get("report_id") else str(uuid.uuid4())
+        duration = float(stats.get("duration_seconds") or 0)
+        if not math.isfinite(duration) or not 0 <= duration <= 604800:
+            raise ValueError()
+        raw = stats.get("segments") or []
+        if not isinstance(raw, list) or len(raw) > 1000:
+            raise ValueError()
+        segments = []
+        for seg in raw:
+            if not isinstance(seg, (list, tuple)) or len(seg) != 2:
+                raise ValueError()
+            start, end = map(float, seg)
+            if not (math.isfinite(start) and math.isfinite(end) and 0 <= start <= end <= 604800):
+                raise ValueError()
+            if duration:
+                start, end = min(start, duration), min(end, duration)
+            if end > start:
+                segments.append([start, end])
+    except (ValueError, TypeError, KeyError):
+        raise HTTPException(400, "Invalid watch report")
+    return report_id, segments, duration or None
 
 
 @router.post("/api/youtube/report_stats")
 async def report_stats(request: Request):
-    """
-    Accept stats from the Mini App (init_data + stats).
-    Validate init_data, append to JSONL, and update content/task progress.
-    """
-    logger.info("youtube report_stats: request received")
+    if len(await request.body()) > 60000:
+        raise HTTPException(413, "Watch report too large")
     try:
         body = await request.json()
-    except Exception as e:
-        logger.warning("youtube report_stats: request.json() failed, trying body: %s", e)
-        raw = await request.body()
-        try:
-            import json as _json
-            body = _json.loads(raw.decode("utf-8"))
-        except Exception as e2:
-            logger.warning("youtube report_stats: body parse failed: %s", e2)
-            raise HTTPException(status_code=400, detail="Invalid JSON body")
-    init_data = body.get("init_data") or ""
-    user_token = body.get("user_token") or ""
-    stats = body.get("stats") or {}
-    if not isinstance(stats, dict):
-        raise HTTPException(status_code=400, detail="stats must be an object")
-    video_id = stats.get("video_id") or ""
-    promise_id = str(stats.get("promise_id") or "").strip()
-    time_spent = float(stats.get("time_spent_seconds") or 0)
-    segments = stats.get("segments") or []
-    if not isinstance(segments, list):
-        segments = []
-    closed_via = stats.get("closed_via") or "unknown"
-
-    logger.info(
-        "youtube report_stats: video_id=%s time_spent=%.1f segments=%s closed_via=%s init_data_len=%s user_token=%s",
-        video_id, time_spent, len(segments), closed_via, len(init_data), "yes" if user_token else "no",
-    )
-
-    bot_token = getattr(request.app.state, "bot_token", None)
-    if not bot_token:
-        logger.error("youtube report_stats: bot_token not configured")
-        raise HTTPException(status_code=500, detail="Bot token not configured")
-    root_dir = getattr(request.app.state, "root_dir", None)
-    if not root_dir or not os.path.isdir(root_dir):
-        logger.error("youtube report_stats: root_dir not set or not a dir: %s", root_dir)
-        raise HTTPException(status_code=500, detail="root_dir not configured")
-
-    valid, user_id = validate_init_data(init_data, bot_token)
-    if not valid or user_id is None:
-        user_id = verify_user_token(user_token, bot_token)
-        if user_id is not None:
-            logger.info("youtube report_stats: using user_id from user_token (init_data empty/invalid)")
-        else:
-            logger.warning(
-                "youtube report_stats: init_data invalid and no valid user_token (valid=%s). "
-                "If init_data is empty, Mini App may have been opened from inline button.",
-                valid,
-            )
-            return JSONResponse(status_code=401, content={"error": "Invalid or expired init_data"})
-
-    logger.info("youtube report_stats: validated user_id=%s, appending stats", user_id)
-    append_stats(
-        root_dir=root_dir,
-        user_id=user_id,
-        video_id=video_id,
-        time_spent_seconds=time_spent,
-        segments=segments,
-        closed_via=closed_via,
-    )
-    # Bridge to content consumption manager: resolve video and record segments
+    except ValueError:
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Invalid watch report")
+    # Browser sessions use the same authentication as Library/flashcards.
+    # Legacy Telegram links retain their signed token/initData fallback.
+    bot_token = request.app.state.bot_token
     try:
+        user_id = await get_current_user(request, request.headers.get("X-Telegram-Init-Data"),
+                                         request.headers.get("Authorization"))
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+        valid, user_id = validate_init_data(body.get("init_data") or "", bot_token)
+        if not valid or user_id is None:
+            user_id = verify_user_token(body.get("user_token") or "", bot_token)
+        if user_id is None:
+            raise HTTPException(401, "Sign in to save watch progress")
+
+    stats = body.get("stats")
+    report_id, segments, duration = validate_stats(stats)
+    if not segments:
+        return JSONResponse({"ok": True, "empty": True})
+    video_id = stats["video_id"]
+    from repositories.content_repo import ContentRepository
+    from repositories.youtube_progress_repo import YoutubeProgressRepository
+    from utils.youtube_utils import extract_video_id
+    repo = ContentRepository()
+    # Update the actual Library item, including old youtu.be aliases. Never
+    # refetch metadata on each heartbeat for an already-known item.
+    content_id = stats.get("content_id")
+    content = repo.get_content_by_id(content_id) if content_id else repo.get_content_by_canonical_url(
+        f"https://www.youtube.com/watch?v={video_id}")
+    if content_id and (not content or extract_video_id(content["canonical_url"]) != video_id):
+        raise HTTPException(400, "Content does not match video")
+    if not content:
         from services.content_resolve_service import ContentResolveService
-        from services.content_progress_service import ContentProgressService
-        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-        resolve_svc = ContentResolveService()
-        resolved = resolve_svc.resolve(youtube_url)
-        content_id = resolved.get("id") or resolved.get("content_id")
-        if content_id:
-            if promise_id:
-                try:
-                    from repositories.content_repo import ContentRepository
-
-                    ContentRepository().assign_user_content_to_promise(str(user_id), str(content_id), str(promise_id))
-                except Exception as assign_exc:
-                    logger.debug("youtube report_stats: content assignment bridge failed: %s", assign_exc)
-            progress_svc = ContentProgressService()
-            if segments:
-                for seg in segments:
-                    if isinstance(seg, (list, tuple)) and len(seg) >= 2:
-                        start_s, end_s = float(seg[0]), float(seg[1])
-                        progress_svc.record_consumption(
-                            user_id=str(user_id),
-                            content_id=content_id,
-                            start_position=start_s,
-                            end_position=end_s,
-                            position_unit="seconds",
-                            client="telegram_web",
-                        )
-            elif time_spent >= 2:
-                progress_svc.record_consumption(
-                    user_id=str(user_id),
-                    content_id=content_id,
-                    start_position=0,
-                    end_position=time_spent,
-                    position_unit="seconds",
-                    client="telegram_web",
-                )
-    except Exception as e:
-        logger.debug("youtube report_stats: content manager bridge failed (tables may not exist): %s", e)
-    if promise_id and time_spent >= MIN_WATCH_SECONDS_FOR_TASK_LOG:
+        content = ContentResolveService().resolve(f"https://www.youtube.com/watch?v={video_id}")
+        repo.claim_content_owner(content["id"], str(user_id))
+    content_id = content["id"]
+    if not repo.can_access_content(str(user_id), content_id):
+        raise HTTPException(403, "Content access denied")
+    try:
+        result = YoutubeProgressRepository().record(
+            user_id, content_id, video_id, report_id, segments, duration,
+            str(stats.get("promise_id") or "").strip())
+    except Exception:
+        logger.exception("YouTube progress save failed: video_id=%s", video_id)
+        raise HTTPException(503, "Progress not saved; retry this report")
+    if not result["duplicate"]:
         try:
-            global PlannerAPIAdapter
-            if PlannerAPIAdapter is None:
-                from services.planner_api_adapter import PlannerAPIAdapter as _PlannerAPIAdapter
-                PlannerAPIAdapter = _PlannerAPIAdapter
-
-            planner = PlannerAPIAdapter(root_dir=root_dir)
-            if planner.get_promise(user_id, promise_id):
-                hours_spent = round(time_spent / SECONDS_PER_HOUR, 4)
-                planner.add_action(
-                    user_id=user_id,
-                    promise_id=promise_id,
-                    time_spent=hours_spent,
-                    notes=f"YouTube watch {video_id}",
-                )
-                logger.info(
-                    "youtube report_stats: logged %.4f hours for user_id=%s promise_id=%s",
-                    hours_spent,
-                    user_id,
-                    promise_id,
-                )
-            else:
-                logger.info("youtube report_stats: skipping unknown promise_id=%s for user_id=%s", promise_id, user_id)
-        except Exception as e:
-            logger.warning("youtube report_stats: failed to log time for promise_id=%s: %s", promise_id, e)
-    return JSONResponse(content={"ok": True})
+            append_stats(root_dir=request.app.state.root_dir, user_id=user_id, video_id=video_id,
+                         time_spent_seconds=sum(end-start for start, end in segments), segments=segments,
+                         closed_via=str(stats.get("closed_via") or "unknown")[:40])
+        except Exception:
+            # The database committed; an optional audit file must not undo its acknowledgement.
+            logger.warning("YouTube watch audit unavailable: video_id=%s", video_id)
+    return JSONResponse(result)
