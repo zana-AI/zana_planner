@@ -7,12 +7,15 @@ import os
 from pathlib import Path
 import random
 import re
+import ssl
 import subprocess
 import sys
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHandler
+
+import certifi
 
 LOG = logging.getLogger("xaana-caption-relay")
 DEFAULT_CONFIG = Path.home() / ".config" / "xaana-caption-relay" / "device.json"
@@ -33,7 +36,8 @@ def api(base, path, token=None, body=None):
     req = Request(base.rstrip("/") + "/api/caption-relay/" + path,
                   data=json.dumps(body or {}).encode(), headers=headers, method="POST")
     # Never forward credentials on redirects, including HTTPS -> HTTP.
-    with build_opener(NoRedirect).open(req, timeout=25) as response:
+    tls = HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where()))
+    with build_opener(NoRedirect, tls).open(req, timeout=25) as response:
         data = response.read(2_000_001)
         if len(data) > 2_000_000:
             raise ValueError("Response too large")
