@@ -21,7 +21,6 @@
       --app-panel: #0f1c37;
       --app-border: rgba(170, 196, 238, 0.16);
       --app-accent: #63a7f7;
-      --player-control-rail: clamp(64px, 9vw, 82px);
       --watch-viewport-height: 100dvh;
     }
     body {
@@ -144,7 +143,7 @@
       position: fixed;
       inset:
         var(--player-safe-top)
-        calc(var(--player-control-rail) + var(--player-safe-right))
+        var(--player-safe-right)
         var(--player-safe-bottom)
         var(--player-safe-left);
       width: auto;
@@ -156,56 +155,6 @@
     body.landscape .watch-header,
     body.landscape .progress-container,
     body.landscape .debug { display: none; }
-    /* App controls live outside the iframe so they do not cover YouTube controls. */
-    .immersive-controls {
-      display: none;
-      position: fixed;
-      z-index: 200;
-      top: var(--player-safe-top);
-      right: var(--player-safe-right);
-      bottom: var(--player-safe-bottom);
-      width: calc(var(--player-control-rail) - 8px);
-      min-width: 48px;
-      flex-direction: column;
-      align-items: stretch;
-      justify-content: center;
-      gap: 10px;
-      pointer-events: none;
-    }
-    body.landscape .immersive-controls {
-      display: flex;
-    }
-    .float-btn {
-      display: none;
-      position: static;
-      width: 100%;
-      min-height: 44px;
-      padding: 0 8px;
-      background: rgba(0, 0, 0, 0.55);
-      color: #fff;
-      border: 1.5px solid rgba(255, 255, 255, 0.45);
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      touch-action: manipulation;
-      pointer-events: auto;
-      line-height: 1.1;
-      white-space: normal;
-    }
-    .float-btn:active { transform: translateY(1px); }
-    body.landscape #floatDoneBtn { display: block; }
-    @media (max-height: 380px) and (orientation: landscape) {
-      :root { --player-control-rail: 54px; }
-      .immersive-controls { gap: 8px; width: 48px; }
-      .float-btn {
-        min-height: 40px;
-        padding: 0 5px;
-        font-size: 12px;
-      }
-    }
   </style>
 </head>
 <body>
@@ -247,11 +196,6 @@
   </section>
   <pre id="debugLog" class="debug" hidden></pre>
 
-  <div id="immersiveControls" class="immersive-controls" aria-label="Player controls">
-    <!-- Floating Done button: shown beside the video in landscape mode -->
-    <button id="floatDoneBtn" class="float-btn" title="Close and save" aria-label="Close and save">Close</button>
-  </div>
-
   <script>
 (function() {
   var params = new URLSearchParams(window.location.search);
@@ -272,7 +216,7 @@
   var returnTo = params.get('return_to') || '';
   var uiLanguage = (params.get('lang') || 'en').toLowerCase().split('-')[0];
   var copy = uiLanguage === 'fa' ? {
-    back: 'بازگشت', close: 'بستن و ذخیره', closeWord: 'بستن',
+    back: 'بازگشت', closeWord: 'بستن',
     listen: 'تلفظ', save: 'ذخیره کارت', saved: 'ذخیره شد',
     connecting: 'در حال اتصال به یوتیوب…',
     videoUnavailable: 'ویدیو اینجا بارگذاری نشد. زیرنویس پایین همچنان کار می‌کند.',
@@ -281,7 +225,7 @@
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'یک کلمه را انتخاب کنید.',
     signIn: 'برای ذخیره، صفحه را داخل اپ باز کنید.', context: 'جمله'
   } : {
-    back: 'Back', close: 'Close and save', closeWord: 'Close',
+    back: 'Back', closeWord: 'Close',
     listen: 'Listen', save: 'Save card', saved: 'Saved',
     connecting: 'Connecting to YouTube…',
     videoUnavailable: 'The video couldn’t load here. The subtitles below still work.',
@@ -294,9 +238,6 @@
   document.documentElement.dir = uiLanguage === 'fa' ? 'rtl' : 'ltr';
   document.getElementById('backBtn').title = copy.back;
   document.getElementById('backBtn').setAttribute('aria-label', copy.back);
-  document.getElementById('floatDoneBtn').textContent = copy.close;
-  document.getElementById('floatDoneBtn').title = copy.close;
-  document.getElementById('floatDoneBtn').setAttribute('aria-label', copy.close);
   // Icon buttons: the label lives in title/aria-label, not the glyph.
   [['listenWord', copy.listen], ['saveWord', copy.save], ['closeWord', copy.closeWord]].forEach(function(pair) {
     var button = document.getElementById(pair[0]);
@@ -897,25 +838,12 @@
       if (!requestTelegramFullscreen()) {
         requestBrowserFullscreen();
       }
-      // Hide the Telegram MainButton in landscape — it takes too much space.
-      // A small floating Done button is shown via CSS instead.
-      try {
-        if (window.Telegram && window.Telegram.WebApp) {
-          window.Telegram.WebApp.MainButton.hide();
-        }
-      } catch (e) {}
       dlog("orientation: landscape immersive=on");
     } else {
       document.body.classList.remove("landscape");
       if (!exitTelegramFullscreen()) {
         exitBrowserFullscreen();
       }
-      // Restore the Telegram MainButton when returning to portrait.
-      try {
-        if (window.Telegram && window.Telegram.WebApp) {
-          window.Telegram.WebApp.MainButton.show();
-        }
-      } catch (e) {}
       dlog("orientation: portrait immersive=off");
     }
   }
@@ -1266,16 +1194,6 @@
     stopPolling();
   });
 
-  // ── Helper: perform the "Done" action (send stats + close mini app) ──────────
-  function handleDone() {
-    // Disable floating button immediately to prevent accidental double-taps
-    if (floatDoneBtn) floatDoneBtn.disabled = true;
-    flushStats('done').then(function(saved) {
-      if (saved && window.Telegram && window.Telegram.WebApp) window.Telegram.WebApp.close();
-      else if (floatDoneBtn) floatDoneBtn.disabled = false;
-    });
-  }
-
   function applySavedMarks() {
     Array.prototype.forEach.call(document.querySelectorAll('.transcript-word'), function(word) {
       word.classList.toggle('is-saved', !!savedKeys[foldAccents(word.textContent)]);
@@ -1377,15 +1295,9 @@
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
+    window.Telegram.WebApp.MainButton.hide();
     syncTelegramLayoutVars();
     setTimeout(updateOrientationMode, 60);
-    window.Telegram.WebApp.MainButton.setText(copy.close).show().onClick(handleDone);
-  }
-
-  // ── Floating Done button (landscape overlay) ─────────────────────────────
-  var floatDoneBtn = document.getElementById('floatDoneBtn');
-  if (floatDoneBtn) {
-    floatDoneBtn.addEventListener('click', handleDone);
   }
 
   // There is no app-level full-screen button: YouTube's own control in the
