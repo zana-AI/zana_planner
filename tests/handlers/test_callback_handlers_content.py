@@ -34,7 +34,7 @@ def test_authenticated_miniapp_url_uses_fragment_session_token(monkeypatch):
 @pytest.mark.parametrize('existing,other_actions,language,label', [
     (False, True, None, '✓ Saved to Library'),
     (True, True, None, '✓ Saved to Library'),
-    (False, False, 'fa', '✓ ذخیره‌شده در کتابخانه'),
+    (False, False, 'fa', '✓ در کتابخانه ذخیره شد'),
     (True, False, 'fr', '✓ Enregistré dans la bibliothèque'),
 ])
 def test_handle_add_content_updates_original_card_without_new_message(monkeypatch, existing, other_actions, language, label):

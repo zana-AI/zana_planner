@@ -1,9 +1,50 @@
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 
 from models.models import Broadcast
 from services import broadcast_service
+
+
+def test_personalized_greeting_is_safe_and_optional():
+    render = broadcast_service.personalize_broadcast_message
+    assert render("{{greeting_fa}} 👋\nBody", "علی") == "سلام علی! 👋\nBody"
+    assert render("{{greeting_fa}} 👋\nBody", "  ") == "سلام! 👋\nBody"
+    assert render("{{greeting_fa}}", "A_*[x]`\nB") == "سلام A\\_\\*\\[x]\\` B!"
+    assert render("Unchanged *message*", "علی") == "Unchanged *message*"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("direct_bot", [False, True])
+async def test_broadcast_personalizes_each_recipient(monkeypatch, direct_bot):
+    class NamesRepo:
+        def get_recipient_first_names(self, ids):
+            assert ids == [1, 2]
+            return {1: "علی"}
+
+    monkeypatch.setattr(broadcast_service, "BroadcastsRepository", NamesRepo)
+    delivery = AsyncMock()
+    if direct_bot:
+        import telegram
+        monkeypatch.setattr(telegram, "Bot", lambda **kwargs: delivery)
+    result = await broadcast_service.send_broadcast(
+        None if direct_bot else delivery, [1, 2], "{{greeting_fa}}\nBody",
+        rate_limit_delay=0, bot_token="test-token" if direct_bot else None,
+    )
+    calls = (delivery.send_message if direct_bot else delivery.send_text).call_args_list
+    assert [call.kwargs['text'] for call in calls] == ["سلام علی!\nBody", "سلام!\nBody"]
+    assert result == {"success": 2, "failed": 0}
+
+
+@pytest.mark.asyncio
+async def test_plain_broadcast_does_not_lookup_names(monkeypatch):
+    def unexpected_lookup():
+        raise AssertionError("Plain broadcasts need no name lookup")
+    monkeypatch.setattr(broadcast_service, "BroadcastsRepository", unexpected_lookup)
+    delivery = AsyncMock()
+    await broadcast_service.send_broadcast(delivery, [1], "hello", rate_limit_delay=0)
+    assert delivery.send_text.call_args.kwargs['text'] == 'hello'
 
 
 class _FakeBroadcastsRepo:

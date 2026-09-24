@@ -2120,7 +2120,7 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
             return
 
         saved_label = {
-            Language.FA: "✓ ذخیره‌شده در کتابخانه",
+            Language.FA: "✓ در کتابخانه ذخیره شد",
             Language.FR: "✓ Enregistré dans la bibliothèque",
         }.get(user_lang, "✓ Saved to Library")
         # Keep the confirmation on the original card. A no-op status button

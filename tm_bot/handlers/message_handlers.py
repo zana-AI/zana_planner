@@ -32,6 +32,7 @@ from utils.time_utils import get_week_range
 from utils.calendar_utils import generate_google_calendar_link, suggest_time_slot
 from utils.formatting import format_response_html
 from ui.messages import weekly_report_text
+from ui.content_copy import youtube_actions, persian_video_card
 from ui.keyboards import weekly_report_kb, pomodoro_kb, preping_kb, language_selection_kb, voice_mode_selection_kb, content_actions_kb, mini_app_kb, navigation_kb
 from cbdata import encode_cb
 from infra.scheduler import schedule_user_daily, schedule_once
@@ -2042,13 +2043,15 @@ class MessageHandlers:
                     if resolved_content_id
                     else encode_cb("add_content", url_id=url_id)
                 )
+                video_ui_language = getattr(user_lang, "value", user_lang) or "en"
+                video_labels = youtube_actions(video_ui_language)
                 keyboard_rows = [
-                    [InlineKeyboardButton("➕ Add to My Contents", callback_data=add_callback_data)]
+                    [InlineKeyboardButton(video_labels["save"], callback_data=add_callback_data)]
                 ]
                 keyboard_rows.append(
                     [
                         InlineKeyboardButton(
-                            "🎯 Assign to Task",
+                            video_labels["assign"],
                             web_app=WebAppInfo(url=authenticated_miniapp_url(
                                 self.miniapp_url,
                                 user_id,
@@ -2056,7 +2059,7 @@ class MessageHandlers:
                                 {"content_id": str(resolved_content_id or "")},
                             )),
                         ) if self.miniapp_url else InlineKeyboardButton(
-                            "🎯 Assign to Task",
+                            video_labels["assign"],
                             callback_data=(
                                 encode_cb("cat", c=resolved_content_id)
                                 if resolved_content_id
@@ -2064,7 +2067,7 @@ class MessageHandlers:
                             ),
                         ),
                         InlineKeyboardButton(
-                            "📝 New One-Time Task",
+                            video_labels["new_task"],
                             callback_data=(
                                 encode_cb("cct", c=resolved_content_id)
                                 if resolved_content_id
@@ -2077,7 +2080,7 @@ class MessageHandlers:
                 if content_info.get("captions_available"):
                     transcript_cb = encode_cb("youtube_transcript", url_id=url_id, vid=video_id)
                     keyboard_rows.append(
-                        [InlineKeyboardButton("Get Transcript", callback_data=transcript_cb)]
+                        [InlineKeyboardButton(video_labels["transcript"], callback_data=transcript_cb)]
                     )
 
                 if self.miniapp_url:
@@ -2085,6 +2088,7 @@ class MessageHandlers:
                     assigned_pid = assigned_map.get(f"{user_id}:{video_id}")
                     watch_query = {
                         "video_id": video_id,
+                        "lang": video_ui_language,
                         "pid": str(assigned_pid or ""),
                         # The watcher owns a session token in its fragment. On
                         # Telegram Desktop that token survives a Back navigation
@@ -2106,17 +2110,20 @@ class MessageHandlers:
                         "/youtube-watch",
                         watch_query,
                     )
-                    keyboard_rows.append(
-                        [InlineKeyboardButton("▶️ Watch in Mini App", web_app=WebAppInfo(url=web_app_url))]
+                    keyboard_rows.insert(0,
+                        [InlineKeyboardButton(video_labels["watch"], web_app=WebAppInfo(url=web_app_url))]
                     )
 
-                reply_text = self._build_new_content_message(content_info)
+                reply_text = (persian_video_card(content_info) if video_ui_language == "fa"
+                              else self._build_new_content_message(content_info))
                 await self.response_service.send_message(
                     context,
                     chat_id=update.effective_chat.id,
                     text=reply_text,
                     user_id=user_id,
                     reply_markup=InlineKeyboardMarkup(keyboard_rows),
+                    user_lang=user_lang,
+                    auto_translate=video_ui_language != "fa",
                 )
                 return
 

@@ -21,6 +21,18 @@ logger = get_logger(__name__)
 _broadcast_execution_lock = asyncio.Lock()
 _broadcasts_in_flight: set[str] = set()
 _BROADCAST_MEDIA_DIR = Path(tempfile.gettempdir()) / "zana_broadcast_media"
+PERSIAN_GREETING_TOKEN = "{{greeting_fa}}"
+
+
+def personalize_broadcast_message(message: str, first_name: str = "") -> str:
+    """Opt-in Persian greeting; names are text, never Telegram Markdown."""
+    if PERSIAN_GREETING_TOKEN not in message:
+        return message
+    from telegram.helpers import escape_markdown
+
+    name = " ".join((first_name or "").split())[:64]
+    greeting = f"سلام {escape_markdown(name, version=1)}!" if name else "سلام!"
+    return message.replace(PERSIAN_GREETING_TOKEN, greeting)
 
 # Try to import dateparser for natural language parsing
 try:
@@ -113,6 +125,13 @@ async def send_broadcast(
     if response_service is None and not bot_token:
         raise ValueError("Either response_service or bot_token must be provided to send broadcasts")
 
+    # Fetch once before sending, not once per recipient. If lookup fails, leave
+    # the scheduled broadcast pending rather than partially sending a template.
+    first_names = (
+        BroadcastsRepository().get_recipient_first_names(user_ids)
+        if PERSIAN_GREETING_TOKEN in message else {}
+    )
+
     success_count = 0
     failed_count = 0
     has_image_media = media_type == "image" and bool(media_url)
@@ -158,6 +177,7 @@ async def send_broadcast(
             return {"success": 0, "failed": len(user_ids)}
     
     for user_id in user_ids:
+        recipient_message = personalize_broadcast_message(message, first_names.get(user_id, ""))
         try:
             if bot and has_image_media:
                 if image_bytes is not None:
@@ -166,21 +186,21 @@ async def send_broadcast(
                     await bot.send_photo(
                         chat_id=user_id,
                         photo=image_file,
-                        caption=message,
+                        caption=recipient_message,
                         parse_mode='Markdown'
                     )
                 else:
                     await bot.send_photo(
                         chat_id=user_id,
                         photo=media_url,
-                        caption=message,
+                        caption=recipient_message,
                         parse_mode='Markdown'
                     )
             elif bot:
                 # Use the custom bot token directly
                 await bot.send_message(
                     chat_id=user_id,
-                    text=message,
+                    text=recipient_message,
                     parse_mode='Markdown'
                 )
             elif has_image_media:
@@ -191,7 +211,7 @@ async def send_broadcast(
                         user_id=user_id,
                         chat_id=user_id,
                         photo=image_file,
-                        caption=message,
+                        caption=recipient_message,
                         parse_mode='Markdown'
                     )
                 else:
@@ -199,7 +219,7 @@ async def send_broadcast(
                         user_id=user_id,
                         chat_id=user_id,
                         photo=media_url,
-                        caption=message,
+                        caption=recipient_message,
                         parse_mode='Markdown'
                     )
             else:
@@ -207,7 +227,7 @@ async def send_broadcast(
                 await response_service.send_text(
                     user_id=user_id,
                     chat_id=user_id,  # For Telegram, chat_id == user_id for private chats
-                    text=message,
+                    text=recipient_message,
                     parse_mode='Markdown'
                 )
             success_count += 1

@@ -3,7 +3,7 @@ from datetime import datetime
 import json
 import uuid
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from db.postgres_db import (
     get_db_session,
@@ -24,6 +24,17 @@ class BroadcastsRepository:
 
     def __init__(self) -> None:
         pass
+
+    def get_recipient_first_names(self, user_ids: List[int]) -> dict[int, str]:
+        """Read only the names needed for an explicitly personalized broadcast."""
+        if not user_ids:
+            return {}
+        query = text(
+            "SELECT user_id, first_name FROM users WHERE user_id IN :user_ids"
+        ).bindparams(bindparam("user_ids", expanding=True))
+        with get_db_session() as session:
+            rows = session.execute(query, {"user_ids": [str(uid) for uid in user_ids]})
+            return {int(row[0]): row[1] or "" for row in rows}
 
     @staticmethod
     def _has_bot_token_column(session) -> bool:
