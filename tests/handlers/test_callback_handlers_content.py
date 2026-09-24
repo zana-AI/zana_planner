@@ -31,19 +31,26 @@ def test_authenticated_miniapp_url_uses_fragment_session_token(monkeypatch):
 
 
 @pytest.mark.handler
-def test_handle_add_content_adds_to_library_and_removes_add_button(monkeypatch):
+@pytest.mark.parametrize('existing,other_actions,language,label', [
+    (False, True, None, '✓ Saved to Library'),
+    (True, True, None, '✓ Saved to Library'),
+    (False, False, 'fa', '✓ ذخیره‌شده در کتابخانه'),
+    (True, False, 'fr', '✓ Enregistré dans la bibliothèque'),
+])
+def test_handle_add_content_updates_original_card_without_new_message(monkeypatch, existing, other_actions, language, label):
     pytest.importorskip("telegram")
 
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     import repositories.content_repo as content_repo_mod
     from handlers.callback_handlers import CallbackHandlers
+    from handlers.messages_store import Language
 
     calls = {}
 
     class FakeContentRepository:
         def get_user_content(self, user_id, content_id):
             calls["lookup"] = (user_id, content_id)
-            return None
+            return {'id': 'uc-1'} if existing else None
 
         def add_user_content(self, user_id, content_id):
             calls["added"] = (user_id, content_id)
@@ -58,12 +65,12 @@ def test_handle_add_content_adds_to_library_and_removes_add_button(monkeypatch):
 
     class FakeMessage:
         def __init__(self):
-            self.reply_markup = InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("➕ Add to My Contents", callback_data="a=add_content&cid=content-1")],
-                    [InlineKeyboardButton("▶️ Watch in Mini App", url="https://xaana.club")],
-                ]
-            )
+            self.text = 'Original title, channel and duration'
+            rows = [[InlineKeyboardButton("➕ Add to My Contents", callback_data="a=add_content&cid=content-1")]]
+            if other_actions:
+                rows.append([InlineKeyboardButton("▶️ Watch in Mini App", url="https://xaana.club"),
+                             InlineKeyboardButton("Assign to Task", callback_data="a=cat&c=content-1")])
+            self.reply_markup = InlineKeyboardMarkup(rows)
             self.replies = []
 
         async def reply_text(self, text, **_kwargs):
@@ -88,13 +95,50 @@ def test_handle_add_content_adds_to_library_and_removes_add_button(monkeypatch):
     )
 
     query = FakeQuery()
-    asyncio.run(callback_handler._handle_add_content(query, user_id=42, content_id="content-1", url_id=None, user_lang=None))
+    asyncio.run(callback_handler._handle_add_content(query, user_id=42, content_id="content-1", url_id=None,
+                                                    user_lang=Language(language) if language else None))
 
-    assert calls["added"] == ("42", "content-1")
-    assert query.message.replies and "Added to your contents" in query.message.replies[0]
+    assert calls.get("added") == (None if existing else ("42", "content-1"))
+    assert query.message.replies == []
+    assert query.message.text == 'Original title, channel and duration'
     assert calls["edited_markup"] is not None
     flat_buttons = [btn for row in calls["edited_markup"].inline_keyboard for btn in row]
     assert all("a=add_content" not in (btn.callback_data or "") for btn in flat_buttons)
+    assert flat_buttons[0].text == label
+    assert flat_buttons[0].callback_data == 'a=noop'
+    assert calls['edited_markup'].inline_keyboard[1:] == query.message.reply_markup.inline_keyboard[1:]
+    assert query.answers[-1] == (label, False)
+
+
+@pytest.mark.handler
+@pytest.mark.parametrize('failure', ['save', 'edit'])
+def test_add_content_failure_never_sends_new_confirmation(monkeypatch, failure):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from handlers.callback_handlers import CallbackHandlers
+    from unittest.mock import AsyncMock, Mock
+
+    repo = Mock()
+    repo.get_user_content.return_value = None
+    if failure == 'save':
+        repo.add_user_content.side_effect = RuntimeError('Database unavailable')
+    monkeypatch.setattr('repositories.content_repo.ContentRepository', lambda: repo)
+    response = types.SimpleNamespace(edit_message_reply_markup=AsyncMock(side_effect=RuntimeError('Message unavailable')))
+    query = types.SimpleNamespace(
+        message=types.SimpleNamespace(
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Add', callback_data='a=add_content&cid=content-1')]]),
+            reply_text=AsyncMock()),
+        answer=AsyncMock())
+    handler = CallbackHandlers(
+        plan_keeper=types.SimpleNamespace(settings_service=types.SimpleNamespace(get_user_timezone=lambda _uid: 'UTC')),
+        application=types.SimpleNamespace(bot_data={}), response_service=response, miniapp_url='https://xaana.club')
+    asyncio.run(handler._handle_add_content(query, 42, 'content-1', None, None))
+    query.message.reply_text.assert_not_called()
+    if failure == 'save':
+        response.edit_message_reply_markup.assert_not_called()
+        assert query.answer.call_args.kwargs['show_alert'] is True
+    else:
+        repo.add_user_content.assert_called_once_with('42', 'content-1')
+        query.answer.assert_awaited_once_with('✓ Saved to Library')
 
 
 @pytest.mark.handler

@@ -2112,37 +2112,33 @@ Return ONLY a valid JSON array with this exact shape, no extra text:
                 return
 
             existing = content_repo.get_user_content(str(user_id), str(resolved_content_id))
-            if existing:
-                confirmation = "ℹ️ This content is already in your library."
-            else:
+            if not existing:
                 content_repo.add_user_content(str(user_id), str(resolved_content_id))
-                confirmation = "✅ Added to your contents."
-
-            # Remove the add button after action to avoid duplicate taps.
-            if query.message and query.message.reply_markup and query.message.reply_markup.inline_keyboard:
-                new_rows = []
-                for row in query.message.reply_markup.inline_keyboard:
-                    filtered = [
-                        button
-                        for button in row
-                        if not (
-                            getattr(button, "callback_data", None)
-                            and "a=add_content" in str(button.callback_data)
-                        )
-                    ]
-                    if filtered:
-                        new_rows.append(filtered)
-                if new_rows:
-                    await self.response_service.edit_message_reply_markup(
-                        query,
-                        reply_markup=InlineKeyboardMarkup(new_rows),
-                    )
-
-            await query.message.reply_text(confirmation)
-            await query.answer("Done")
         except Exception as e:
             logger.error(f"Error adding content from callback for user {user_id}: {e}")
             await query.answer("Failed to add this content. Please try again.", show_alert=True)
+            return
+
+        saved_label = {
+            Language.FA: "✓ ذخیره‌شده در کتابخانه",
+            Language.FR: "✓ Enregistré dans la bibliothèque",
+        }.get(user_lang, "✓ Saved to Library")
+        # Keep the confirmation on the original card. A no-op status button
+        # prevents duplicate saves without removing the other content actions.
+        try:
+            if query.message and query.message.reply_markup:
+                rows = [
+                    [InlineKeyboardButton(saved_label, callback_data=encode_cb("noop"))
+                     if dict(parse_qsl(button.callback_data or "")).get("a") == "add_content"
+                     else button for button in row]
+                    for row in query.message.reply_markup.inline_keyboard
+                ]
+                await self.response_service.edit_message_reply_markup(
+                    query, reply_markup=InlineKeyboardMarkup(rows))
+        except Exception as e:
+            # The save succeeded even if Telegram can no longer edit this card.
+            logger.warning("Could not update saved content card for user %s: %s", user_id, e)
+        await query.answer(saved_label)
 
     def _attach_promise_to_watch_url(self, web_app_url: str, promise_id: str) -> str:
         parsed = urlparse(web_app_url)
