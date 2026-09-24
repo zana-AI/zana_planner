@@ -32,6 +32,22 @@
 }
 
 .app-header-v2 .titles { flex: 1; min-width: 0; }
+.header-review {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.header-review:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 .app-header-v2 .titles h1 {
   margin: 0;
   font-size: 17px;

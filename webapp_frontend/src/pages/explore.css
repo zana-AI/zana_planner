@@ -1,7 +1,72 @@
-/* Explore ------------------------------------------------------------------
-   Two screens: subject tiles at the root, then one chip-filtered list inside a
-   subject. The chips deliberately match Library's filter row — browsing a list
-   should feel the same wherever you are in the app. */
+/* Content-first discovery; old subject links apply a filter to this same list. */
+.explore-page { max-width: 1100px; margin-inline: auto; }
+.explore-club-tools p { color: var(--fg-muted); margin: 0 0 14px; }
+/* One swipeable row in either direction; overflow stays here, not on the page. */
+.explore-filter-bar { display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; padding: 4px; margin-bottom: 12px; }
+.explore-subject-select { display: flex; flex: 0 0 auto; align-items: center; font-size: 13px; color: var(--fg-muted); }
+.explore-subject-select select { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--fg); padding: 8px; font: inherit; min-height: 44px; }
+.explore-subject-select select:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.explore-filter-bar .explore-chips { flex: 0 0 auto; flex-wrap: nowrap; margin: 0; }
+.explore-filter-bar .explore-chip { flex: 0 0 auto; min-height: 44px; }
+.explore-club-tools { margin-bottom: 16px; }
+.explore-card { --kind-accent: #67e8f9; border-inline-start: 3px solid var(--kind-accent) !important; }
+.explore-card[data-kind="course"] { --kind-accent: #c4b5fd; }
+.explore-card[data-kind="deck"] { --kind-accent: #86efac; }
+.explore-card[data-kind="club"] { --kind-accent: #fcd34d; }
+.explore-card[data-kind="habit"] { --kind-accent: #cbd5e1; }
+.explore-card[data-kind="book"] { --kind-accent: #f9a8d4; }
+.explore-card .explore-card-media { display: grid; place-items: center; color: var(--kind-accent); }
+.explore-card .explore-card-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--kind-accent); background: color-mix(in srgb, var(--kind-accent) 12%, transparent); }
+.explore-card-labels, .explore-learning-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 11px; color: var(--fg-muted); }
+.explore-learning-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+.explore-learning-meta .is-ready { color: #86efac; }
+.explore-card .explore-card-description { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.explore-card-creator { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explore-card-labels { flex-wrap: nowrap; gap: 6px; }
+.explore-card-labels > span:not(.explore-card-creator) { flex-shrink: 0; }
+.explore-card-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.explore-card-footer .explore-learning-meta { flex: 1 1 180px; gap: 4px 8px; }
+.explore-card-footer .explore-card-actions { margin-inline-start: auto; }
+.explore-card .explore-card-actions { flex-wrap: wrap; }
+.explore-card .explore-action { min-height: 44px; }
+.explore-save { width: 44px; padding: 0; justify-content: center; }
+.explore-card.is-compact { grid-template-columns: 48px minmax(0, 1fr); }
+.explore-card.is-compact .explore-card-media { aspect-ratio: 1; border: 1px solid color-mix(in srgb, var(--kind-accent) 25%, transparent); background: linear-gradient(145deg, color-mix(in srgb, var(--kind-accent) 20%, transparent), transparent); border-radius: 14px; }
+.explore-card.is-compact .explore-card-media svg { width: 23px; height: 23px; }
+.explore-card.is-compact .explore-card-body { grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; }
+.explore-card.is-compact .explore-card-labels, .explore-card.is-compact .explore-card-title, .explore-card.is-compact .explore-card-description { grid-column: 1; }
+.explore-card.is-compact .explore-card-footer, .explore-card.is-compact .explore-card-body > .explore-card-actions { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+.explore-card.is-compact .explore-action { max-width: 110px; padding-inline: 10px; text-align: center; justify-content: center; }
+.learning-start { margin-block: 16px; }
+.learning-start-intro { padding: 4px 0; }
+.learning-start-intro h2 { font-size: clamp(22px, 4vw, 27px); line-height: 1.3; margin: 0 0 8px; }
+.learning-start-intro p { max-width: 650px; color: var(--fg-muted); line-height: 1.6; margin: 0; }
+.learning-start-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.learning-start-picks { margin-top: 24px; }
+.learning-picks-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.learning-picks-heading h3 { font-size: 15px; margin: 0; }
+.learning-browse-more { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+.learning-routine-card { margin-top: 24px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.learning-routine-card h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; }
+.learning-routine-card h3 svg { color: var(--accent); flex-shrink: 0; }
+.learning-routine-card > p { font-size: 13px; line-height: 1.6; color: var(--fg-muted); margin: 8px 0 14px; }
+.learning-routine-examples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.learning-routine-examples button { display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; text-align: start; cursor: pointer; }
+.learning-routine-examples button:hover { border-color: var(--accent); }
+.learning-routine-examples button > svg { flex-shrink: 0; color: var(--accent); }
+.learning-routine-examples button > span { flex: 1; min-width: 0; }
+.learning-routine-examples strong, .learning-routine-examples small { display: block; }
+.learning-routine-examples strong { font-size: 13px; }
+.learning-routine-examples small { margin-top: 3px; font-size: 11px; color: var(--fg-muted); }
+.learning-custom-routine { margin-top: 12px; min-height: 40px; }
+.learning-browse-more:focus-visible, .learning-routine-examples button:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+@media (max-width: 680px) { .learning-routine-examples { grid-template-columns: 1fr; } }
+.clubs-only-layout { display: block !important; }
+.dashboard.app { display: block; }
+.dashboard-main { width: 100%; box-sizing: border-box; }
+@media (min-width: 1000px) {
+  .explore-page > .explore-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .explore-subjects {
   display: grid;
@@ -93,8 +158,7 @@
   display: grid;
   grid-template-columns: 148px minmax(0, 1fr);
   gap: 12px;
-  align-items: stretch;
-  min-height: 112px;
+  align-items: start;
   padding: 10px;
   background: rgba(18, 31, 63, 0.58);
   border: 1px solid rgba(237, 243, 255, 0.11);
@@ -117,7 +181,7 @@
 .explore-card-body {
   display: grid;
   align-content: center;
-  gap: 7px;
+  gap: 5px;
   min-width: 0;
 }
 .explore-card-head {
@@ -202,6 +266,12 @@
 
 @media (max-width: 680px) {
   .explore-card { grid-template-columns: 110px minmax(0, 1fr); gap: 10px; }
+}
+@media (max-width: 480px) {
+  .explore-card { grid-template-columns: 92px minmax(0, 1fr); gap: 8px; }
+  .explore-card[data-kind="video"] .explore-card-description { display: none; }
+  .explore-card.is-compact { grid-template-columns: 36px minmax(0, 1fr); }
+  .explore-card.is-compact .explore-action { max-width: 82px; font-size: 12px; }
 }
 
 /* The subject's own name, because the shell header only says "Explore" — it

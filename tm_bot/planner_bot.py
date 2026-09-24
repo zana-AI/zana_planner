@@ -87,6 +87,7 @@ def _is_staging_or_test_mode() -> bool:
 # Command name -> MessageHandlers method for central routing
 COMMAND_ROUTE_MAP = {
     "start": "start",
+    "login": "cmd_login",
     "me": "cmd_me",
     "promises": "list_promises",
     "nightly": "nightly_reminders",

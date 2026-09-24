@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
-import { ArrowLeft, LogOut, Settings, Shield } from 'lucide-react';
+import { ArrowLeft, Layers, LogOut, Settings, Shield } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { shouldUseLocalMockData } from '../api/mockData';
 import { getDevInitData, useTelegramWebApp } from '../hooks/useTelegramWebApp';
@@ -24,7 +24,7 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { key: 'dashboard', hasSubtitle: true };
   }
   if (pathname === '/community') {
-    return { key: 'community', hasSubtitle: true };
+    return { key: 'clubs', showBack: true, fallbackRoute: '/explore?type=clubs' };
   }
   if (pathname === '/explore') {
     return { key: 'explore', hasSubtitle: true };
@@ -38,7 +38,13 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { key: 'challenges', hasSubtitle: true };
   }
   if (pathname === '/flashcards') {
-    return { key: 'flashcards', hasSubtitle: true, showBack: true, fallbackRoute: '/dashboard' };
+    return { key: 'flashcards', hasSubtitle: true, showBack: true, fallbackRoute: '/decks' };
+  }
+  if (pathname === '/decks') {
+    return { key: 'review', showBack: true, fallbackRoute: '/my-contents' };
+  }
+  if (pathname === '/clubs') {
+    return { key: 'clubs', showBack: true, fallbackRoute: '/explore?type=clubs' };
   }
   if (pathname.startsWith('/challenges/')) {
     return { key: 'challengeDetail', showBack: true, fallbackRoute: '/explore' };
@@ -66,7 +72,7 @@ function getShellPageMeta(pathname: string): ShellPageMeta {
     return { key: 'profile', showBack: true, fallbackRoute: '/community' };
   }
   if (pathname.startsWith('/clubs/')) {
-    return { key: 'club', showBack: true, fallbackRoute: '/community' };
+    return { key: 'club', showBack: true, fallbackRoute: '/explore?type=clubs' };
   }
   return { key: 'fallback' };
 }
@@ -96,7 +102,6 @@ export function Navigation(_props: NavigationProps) {
   const navItems = useMemo<AppNavItem[]>(
     () => [
       { key: 'today', label: t('nav.today'), to: '/dashboard' },
-      { key: 'community', label: t('nav.community'), to: '/community' },
       { key: 'library', label: t('nav.library'), to: '/my-contents' },
       { key: 'explore', label: t('nav.explore'), to: '/explore' },
     ],
@@ -205,6 +210,11 @@ export function Navigation(_props: NavigationProps) {
           <h1>{t(`shell.${shellPage.key}.title`)}</h1>
           {shellPage.hasSubtitle ? <p>{t(`shell.${shellPage.key}.subtitle`)}</p> : null}
         </div>
+        {location.pathname === '/my-contents' && (
+          <button type="button" className="header-review" onClick={() => navigate('/decks')}>
+            <Layers size={17} aria-hidden="true" />{t('learning.review')}
+          </button>
+        )}
         <div style={{ position: 'relative' }} ref={menuRef}>
           <button type="button" className="avatar" onClick={() => setShowProfileMenu((prev) => !prev)} aria-label={t('nav.openProfileMenu')}>
             {telegramUser?.photo_url ? (

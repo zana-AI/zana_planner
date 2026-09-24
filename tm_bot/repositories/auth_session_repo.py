@@ -83,6 +83,7 @@ class AuthSessionRepository:
                     SELECT user_id, created_at, expires_at, telegram_auth_date
                     FROM auth_sessions
                     WHERE session_token = :token
+                      AND auth_method IS DISTINCT FROM 'browser_login_code'
                       AND expires_at > :now
                     LIMIT 1;
                 """),
@@ -132,7 +133,8 @@ class AuthSessionRepository:
                 text("""
                     SELECT session_token, created_at, expires_at, telegram_auth_date
                     FROM auth_sessions
-                    WHERE user_id = :user_id AND expires_at > :now;
+                    WHERE user_id = :user_id AND expires_at > :now
+                      AND auth_method IS DISTINCT FROM 'browser_login_code';
                 """),
                 {"user_id": str(user_id), "now": now_iso},
             ).mappings().fetchall()

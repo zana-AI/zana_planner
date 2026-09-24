@@ -1249,6 +1249,13 @@
 
   setInterval(function() { flushStats('interval'); }, 30000);
   window.addEventListener('online', function() { flushStats('online'); });
+  window.addEventListener('storage', function(event) {
+    if (event.key !== 'telegram_auth_token' || event.oldValue === event.newValue) return;
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) return;
+    // Preserve pending progress in its old-account outbox, then leave the old
+    // account's content. flushStats refuses to send it with the new identity.
+    flushStats('account-switch').finally(function() { window.location.replace('/dashboard'); });
+  });
   watchOutboxReady.then(function() { flushStats('retry'); });
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'hidden') flushStats('hidden');

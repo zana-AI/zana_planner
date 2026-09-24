@@ -3,20 +3,22 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { useModalBodyLock } from '../hooks/useModalBodyLock';
+import type { RoutineDraft } from '../utils/learningActions';
 
 interface CreatePromiseModalProps {
   onClose: () => void;
   onSuccess: () => void;
+  initialValues?: RoutineDraft;
 }
 
 function getDefaultEndDate(): string {
   return `${new Date().getFullYear()}-12-31`;
 }
 
-export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalProps) {
+export function CreatePromiseModal({ onClose, onSuccess, initialValues }: CreatePromiseModalProps) {
   const { t } = useTranslation();
-  const [text, setText] = useState('');
-  const [hoursPerWeek, setHoursPerWeek] = useState('1');
+  const [text, setText] = useState(initialValues?.text ?? '');
+  const [hoursPerWeek, setHoursPerWeek] = useState(String(initialValues?.hoursPerWeek ?? 1));
   const [endDate, setEndDate] = useState(getDefaultEndDate);
   const [visibility, setVisibility] = useState<'private' | 'public'>('private');
   const [saving, setSaving] = useState(false);
@@ -61,9 +63,9 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content create-promise-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className="modal-content create-promise-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-promise-title">
         <div className="modal-header">
-          <h2 className="modal-title">{t('createPromise.newPromise')}</h2>
+          <h2 className="modal-title" id="create-promise-title">{t('learning.routineSetup')}</h2>
           <button className="modal-close" type="button" onClick={onClose} aria-label={t('createPromise.closeNewPromiseDialog')} disabled={saving}>
             <X size={18} />
           </button>
@@ -77,12 +79,12 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
           }}
         >
           <div className="modal-form-group">
-            <label className="modal-label" htmlFor="create-promise-text">{t('createPromise.promise')}</label>
+            <label className="modal-label" htmlFor="create-promise-text">{t('learning.routineActivity')}</label>
             <textarea
               id="create-promise-text"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="e.g., Practice guitar"
+              placeholder={t('learning.routinePlaceholder')}
               rows={3}
               className="modal-input"
               disabled={saving}
@@ -106,7 +108,7 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
 
           <div className="modal-form-group">
             <label className="modal-label" htmlFor="create-promise-end-date">
-              End date (optional)
+              {t('learning.routineEndDate')}
             </label>
             <input
               id="create-promise-end-date"
@@ -137,7 +139,7 @@ export function CreatePromiseModal({ onClose, onSuccess }: CreatePromiseModalPro
           <div className="modal-actions">
             <button className="modal-button modal-button-secondary" type="button" onClick={onClose} disabled={saving}>{t('createPromise.cancel')}</button>
             <button className="modal-button modal-button-primary" type="submit" disabled={saving}>
-              {saving ? 'Creating...' : 'Create Promise'}
+              {t(saving ? 'learning.creatingRoutine' : 'learning.confirmRoutine')}
             </button>
           </div>
         </form>

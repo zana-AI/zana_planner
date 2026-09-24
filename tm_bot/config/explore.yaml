@@ -31,6 +31,7 @@ version: 1
 categories:
   - id: french
     title: French
+    language: fr
     icon: "🇫🇷"
     accent: "#22D3EE"
     order: 10
@@ -56,24 +57,45 @@ categories:
         order: 20
         published: true
         items:
+          # User-approved starter picks. Metadata verified 2026-09-24;
+          # captions must still be present in the runtime cache for Today.
+          - id: video-jamy-baguette
+            starter: true
+            title: "BAGUETTE : Le Grand Mystère"
+            creator: Jamy - Epicurieux
+            type: video
+            order: 1
+            published: true
+            description: Where did the baguette come from? Discover the story behind a French icon.
+            duration_seconds: 460
+            image: https://img.youtube.com/vi/vMIed3rlZtg/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=vMIed3rlZtg
+          - id: video-easy-french-happiness
+            starter: true
+            title: The Secrets of French Happiness
+            creator: Easy French
+            type: video
+            order: 2
+            published: true
+            description: What makes people happy? Listen to real conversations on the streets of Paris.
+            duration_seconds: 535
+            image: https://img.youtube.com/vi/flS3MVNXWbw/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=flS3MVNXWbw
           - id: video-sud-radio-libertinage
             title: "Olivier : C'est la mère de mon fils qui m'a initié au libertinage"
             type: video
             order: 10
             published: true
-            description: French subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            description: A French radio interview about relationships.
             image: https://img.youtube.com/vi/c4dtEcHyNcc/mqdefault.jpg
             native_ref: /youtube-watch?video_id=c4dtEcHyNcc
-          # Transcripts for all of these are cached in video_transcript, which
-          # is what the subtitle reader needs — YouTube blocks the VM, so a
-          # video with no cached cues opens without its captions. Fetched with
-          # scripts/fetch_transcripts.py from a residential connection.
+          # Readiness always comes from the DB. Unverified durations stay absent.
           - id: video-naturalisation-200-questions
             title: "200 questions d'entretien de naturalisation"
             type: video
             order: 20
             published: true
-            description: The full interview question set, read aloud — 57 minutes with French subtitles you can tap.
+            description: French citizenship interview questions, read aloud.
             image: https://img.youtube.com/vi/SM1GSh80SOA/mqdefault.jpg
             native_ref: /youtube-watch?video_id=SM1GSh80SOA
           - id: video-spoken-french-masterclass
@@ -81,7 +103,7 @@ categories:
             type: video
             order: 30
             published: true
-            description: 41 minutes of spoken French — follow the subtitles and save the words you did not catch.
+            description: Practise listening to spoken French.
             image: https://img.youtube.com/vi/ansuNvUgazE/mqdefault.jpg
             native_ref: /youtube-watch?video_id=ansuNvUgazE
           - id: video-whats-in-my-bag
@@ -89,7 +111,7 @@ categories:
             type: video
             order: 40
             published: true
-            description: A short everyday-vocabulary lesson, 13 minutes, subtitled in French.
+            description: Everyday French vocabulary through the things in a bag.
             image: https://img.youtube.com/vi/WiThSUgzvqA/mqdefault.jpg
             native_ref: /youtube-watch?video_id=WiThSUgzvqA
       - id: decks
@@ -112,6 +134,7 @@ categories:
   # is a subject, exactly like French; "Learning" was the whole app.
   - id: english
     title: English
+    language: en
     icon: "🇬🇧"
     accent: "#A78BFA"
     order: 20
@@ -122,12 +145,56 @@ categories:
         order: 20
         published: true
         items:
+          - id: video-ted-ed-procrastination
+            starter: true
+            title: Why you procrastinate even when it feels bad
+            creator: TED-Ed
+            type: video
+            order: 1
+            published: true
+            description: Why do we put things off? Explore the psychology behind a familiar habit.
+            duration_seconds: 345
+            image: https://img.youtube.com/vi/FWTNMzK9vG4/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=FWTNMzK9vG4
+          - id: video-ted-ed-music-brain
+            starter: true
+            title: How playing an instrument benefits your brain
+            creator: TED-Ed · Anita Collins
+            type: video
+            order: 2
+            published: true
+            description: What happens in your brain when you play music? A short animated exploration.
+            duration_seconds: 285
+            image: https://img.youtube.com/vi/R0JKCYZ8hng/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=R0JKCYZ8hng
+          # Official Friends channel, original English automatic captions.
+          # Metadata checked 2026-09-24; live readiness still comes from the DB.
+          - id: video-friends-joey-food
+            title: Joey Doesn't Share Food | Friends
+            creator: Friends · Official channel
+            type: video
+            order: 3
+            published: true
+            description: A short restaurant scene with Joey — everyday English, food and comedy.
+            duration_seconds: 169
+            image: https://img.youtube.com/vi/dGLObch14e4/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=dGLObch14e4
+          - id: video-friends-pivot
+            title: Ross Can't Get His New Couch up the Stairs | Friends
+            creator: Friends · Official channel
+            type: video
+            order: 4
+            published: true
+            description: "Pivot! Follow Ross, Rachel and Chandler's famously awkward furniture move."
+            duration_seconds: 289
+            image: https://img.youtube.com/vi/UJHa8Bjjy1k/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=UJHa8Bjjy1k
           - id: video-bloomberg-stock-movers
             title: Apple, oil and transportation stocks — Bloomberg
             type: video
             order: 10
             published: true
-            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            description: Business and markets news in English.
             image: https://img.youtube.com/vi/i1rkMaXuiLo/mqdefault.jpg
             native_ref: /youtube-watch?video_id=i1rkMaXuiLo
           - id: video-cnn-nepal-flood
@@ -135,7 +202,7 @@ categories:
             type: video
             order: 20
             published: true
-            description: English subtitles — tap a word to translate, hear it and save a contextual flashcard.
+            description: A news report in English about flooding in Nepal.
             image: https://img.youtube.com/vi/zdlb4BPo9kk/mqdefault.jpg
             native_ref: /youtube-watch?video_id=zdlb4BPo9kk
       - id: habits

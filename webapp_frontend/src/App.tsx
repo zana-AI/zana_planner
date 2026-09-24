@@ -10,7 +10,6 @@ import { SubjectPage } from './pages/SubjectPage';
 import { TemplateDetailPage } from './pages/TemplateDetailPage';
 import { TimezoneSelectorPage } from './pages/TimezoneSelectorPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { UserDetailPage } from './pages/UserDetailPage';
 import { ClubDetailPage } from './pages/ClubDetailPage';
 import { ClubProfilePage } from './pages/ClubProfilePage';
 import { FocusPage } from './pages/FocusPage';
@@ -30,6 +29,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { Navigation } from './components/Navigation';
 import { apiClient } from './api/client';
 import { shouldUseLocalMockData } from './api/mockData';
+import { BrowserLoginPage } from './pages/BrowserLoginPage';
 
 // Handles channel-post deep links (?startapp=<source_key>) — must live inside the Router.
 function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
@@ -37,7 +37,7 @@ function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
   return null;
 }
 
-function App() {
+function MainApp() {
   const { t } = useTranslation();
   const { initData, isReady } = useTelegramWebApp();
   const [hasSessionToken, setHasSessionToken] = useState(() => {
@@ -76,7 +76,12 @@ function App() {
     // Listen for storage changes (e.g., logout)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'telegram_auth_token') {
-        checkToken();
+        // Changing accounts in another browser tab must also discard this
+        // tab's API token and account-specific React state. Mini Apps instead
+        // use the identity supplied by their Telegram client.
+        if (!window.Telegram?.WebApp?.initData && e.oldValue !== e.newValue) {
+          window.location.reload();
+        }
       }
     };
     
@@ -147,19 +152,21 @@ function App() {
           path="/community"
           element={
             isAuthenticated ? (
-              <UsersPage />
+              <UsersPage clubsOnly />
             ) : (
               <Navigate to="/" replace />
             )
           }
         />
         
-        {/* User Detail Page - authenticated only */}
+        <Route path="/clubs" element={isAuthenticated ? <UsersPage clubsOnly /> : <Navigate to="/" replace />} />
+
+        {/* Legacy people links no longer open a people directory. APIs are retained. */}
         <Route
           path="/users/:userId"
           element={
             isAuthenticated ? (
-              <UserDetailPage />
+              <Navigate to="/explore?type=clubs" replace />
             ) : (
               <Navigate to="/" replace />
             )
@@ -340,4 +347,7 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  // No authenticated hooks/pages run behind the sign-in confirmation screen.
+  return window.location.pathname === '/login' ? <BrowserLoginPage /> : <MainApp />;
+}

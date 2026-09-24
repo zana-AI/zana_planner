@@ -1,120 +1,72 @@
-import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { UsersRound } from 'lucide-react';
 import { apiClient } from '../api/client';
-import type { ExploreCategory } from '../types';
-import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import { topicLabel } from './exploreVocabulary';
+import { ExploreCard } from '../components/ExploreCard';
+import type { ExploreCatalog } from '../types';
+import { catalogEntries, exploreFilter, exploreFilterParams, EXPLORE_FILTERS } from '../utils/exploreLearning';
 import './explore.css';
 
-/**
- * The root of Explore: subject tiles, and nothing else.
- *
- * Everything used to render on one scroll — every category, every topic, every
- * item — which was already long at eleven items. A subject is the only thing
- * that belongs at the root, because it is the only question a person can answer
- * before they know what is inside: what am I working on?
- */
 export function ExplorePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { hapticFeedback } = useTelegramWebApp();
-  const [categories, setCategories] = useState<ExploreCategory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { subjectId } = useParams();
+  const [params, setParams] = useSearchParams();
+  const subject = subjectId || params.get('subject') || 'all';
+  const filter = exploreFilter(params.get('type'));
+  const [catalog, setCatalog] = useState<ExploreCatalog | null>(null);
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
-    apiClient
-      .getExploreCatalog()
-      .then((catalog) => {
-        if (!active) return;
-        setCategories(catalog.categories.filter((category) => category.topics.some((topic) => topic.items.length > 0)));
-        hapticFeedback('success');
-      })
-      .catch((err) => {
-        console.error('Failed to load Explore:', err);
-        if (!active) return;
-        setError(t('templates.loadFailed'));
-        hapticFeedback('error');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [hapticFeedback, t]);
+    setError(false);
+    apiClient.getExploreCatalog().then(data => { if (active) setCatalog(data); }).catch(() => { if (active) setError(true); });
+    return () => { active = false; };
+  }, [attempt]);
 
-  if (loading) {
-    return (
-      <div className="app">
-        <div className="loading">
-          <div className="loading-spinner" />
-          <div className="loading-text">{t('templates.loading')}</div>
-        </div>
-      </div>
-    );
-  }
+  const updateFilter = (type: string, nextSubject = subject) => {
+    const next = exploreFilterParams(type, nextSubject);
+    if (subjectId) navigate('/explore?' + next);
+    else setParams(next);
+  };
+  if (error) return <main className="app"><p role="alert">{t('templates.loadFailed')}</p><button className="explore-action" onClick={() => setAttempt(a => a + 1)}>{t('common.tryAgain')}</button></main>;
+  if (!catalog) return <main className="app"><p role="status">{t('common.loading')}</p></main>;
 
-  if (error) {
-    return (
-      <div className="app">
-        <div className="error">
-          <div className="error-icon">!</div>
-          <h1 className="error-title">{t('common.somethingWentWrong')}</h1>
-          <p className="error-message">{error}</p>
-          <button className="retry-button" onClick={() => window.location.reload()}>
-            {t('common.tryAgain')}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (categories.length === 0) {
-    return (
-      <div className="app">
-        <p className="explore-empty">{t('explore.noSubjects')}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="app">
-      <div className="explore-subjects">
-        {categories.map((category) => {
-          const kinds = category.topics
-            .filter((topic) => topic.items.length > 0)
-            .map((topic) => topicLabel(t, topic));
-          const total = category.topics.reduce((sum, topic) => sum + topic.items.length, 0);
-          return (
-            <button
-              key={category.id}
-              type="button"
-              className="explore-subject"
-              // The accent tints only the glyph's backing, never the tile: four
-              // fully-coloured tiles in a grid read as four warnings.
-              style={category.accent ? ({ '--subject-accent': category.accent } as React.CSSProperties) : undefined}
-              onClick={() => {
-                hapticFeedback('light');
-                navigate(`/explore/${encodeURIComponent(category.id)}`);
-              }}
-            >
-              <span className="explore-subject-glyph" aria-hidden>
-                {category.icon || category.title.charAt(0)}
-              </span>
-              <span className="explore-subject-body">
-                <span className="explore-subject-title" dir="auto">{category.title}</span>
-                <span className="explore-subject-meta" dir="auto">
-                  {kinds.join(' · ')}
-                </span>
-              </span>
-              <span className="explore-subject-count">{total}</span>
-            </button>
-          );
-        })}
+  const allEntries = catalogEntries(catalog);
+  const entries = allEntries.filter(e => (subject === 'all' || subject === e.subjectId) && (filter === 'all' || filter === e.topicId))
+    .sort((a, b) => Number(!!b.item.starter) - Number(!!a.item.starter) || a.item.order - b.item.order);
+  const showClubs = filter === 'clubs' || (filter === 'all' && subject === 'all');
+  const clubs = showClubs ? catalog.clubs || [] : [];
+  const visibleFilters = EXPLORE_FILTERS.filter(f => ['all', 'clubs', filter].includes(f) || allEntries.some(e => e.topicId === f));
+  return <main className="app explore-page">
+    <div className="explore-filter-bar">
+      <label className="explore-subject-select">
+        <select aria-label={t('learning.subject')} value={subject} onChange={event => updateFilter(filter === 'clubs' ? 'watch' : filter, event.target.value)}>
+          <option value="all">{t('learning.allSubjects')}</option>
+          {catalog.categories.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
+      </label>
+      <div className="explore-chips" role="group" aria-label={t('learning.contentTypes')}>
+        {visibleFilters.map(f => <button type="button" key={f} className={'explore-chip' + (filter === f ? ' is-active' : '')}
+          aria-pressed={filter === f} onClick={() => updateFilter(f)}>{t(f === 'all' ? 'explore.all' : f === 'clubs' ? 'community.clubs' : 'explore.topic.' + f)}</button>)}
       </div>
     </div>
-  );
+    {filter === 'clubs' && <div className="explore-club-tools"><p>{t('learning.clubsHint')}</p><button type="button" className="explore-action" onClick={() => navigate('/clubs')}>{t('learning.manageClubs')}</button></div>}
+    <div className="explore-list">
+      {entries.map(entry => <ExploreCard key={entry.subjectId + ':' + entry.item.id} entry={entry} />)}
+      {clubs.map(club => <article key={club.club_id} className="explore-card is-compact" data-kind="club">
+        <div className="explore-card-media" aria-hidden="true"><UsersRound size={30} /></div>
+        <div className="explore-card-body">
+          <div className="explore-card-labels"><span className="explore-card-kind"><UsersRound size={13} aria-hidden="true" />{t('learning.club')}</span>{club.joined && <span>{t('learning.joinedClub')}</span>}</div>
+          <h3 className="explore-card-title" dir="auto">{club.name}</h3>
+          {club.description && <p className="explore-card-description" dir="auto">{club.description}</p>}
+          <div className="explore-card-actions"><button type="button" className="explore-action" onClick={() => navigate('/' + (club.joined ? 'clubs' : 'c') + '/' + encodeURIComponent(club.club_id))}>{t('learning.viewClub')}</button></div>
+        </div>
+      </article>)}
+    </div>
+    {showClubs && catalog.clubs_available === false && <p role="status">{t('learning.clubsUnavailable')}</p>}
+    {entries.length + clubs.length === 0 && !(showClubs && catalog.clubs_available === false) && <p className="explore-empty">{t('learning.noResults')}</p>}
+  </main>;
 }

@@ -22,7 +22,9 @@ export function BottomNav({ items }: BottomNavProps) {
   return (
     <nav className="ui-bottom-nav" aria-label={t('nav.primary')}>
       {items.map((item) => {
-        const isActive = location.pathname === item.to || (item.to !== '/dashboard' && location.pathname.startsWith(item.to));
+        const isActive = location.pathname === item.to || (item.to !== '/dashboard' && location.pathname.startsWith(item.to))
+          || (item.key === 'library' && ['/decks', '/flashcards'].includes(location.pathname))
+          || (item.key === 'explore' && location.pathname.startsWith('/clubs'));
         return (
           <button
             key={item.key}

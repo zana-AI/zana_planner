@@ -84,7 +84,7 @@ function buildMomentumActivity(users: PublicUser[]): CommunityFeedItem[] {
     }));
 }
 
-export function UsersPage() {
+export function UsersPage({ clubsOnly = false }: { clubsOnly?: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -149,7 +149,7 @@ export function UsersPage() {
   const followingIds = useMemo(() => new Set(following.map((person) => person.user_id)), [following]);
 
   const fetchSocialData = useCallback(async () => {
-    if (!currentUserId) return;
+    if (clubsOnly || !currentUserId) return;
     setFollowersLoading(true);
     setFollowingLoading(true);
     try {
@@ -168,7 +168,7 @@ export function UsersPage() {
       setFollowersLoading(false);
       setFollowingLoading(false);
     }
-  }, [currentUserId, authData]);
+  }, [clubsOnly, currentUserId, authData]);
 
   useEffect(() => {
     fetchSocialData();
@@ -187,8 +187,8 @@ export function UsersPage() {
       }
 
       const [activityRes, usersRes, clubsRes] = await Promise.all([
-        apiClient.getPublicActivity(ACTIVITY_FETCH_COUNT),
-        apiClient.getPublicUsers(24),
+        clubsOnly ? Promise.resolve({ items: [] }) : apiClient.getPublicActivity(ACTIVITY_FETCH_COUNT),
+        clubsOnly ? Promise.resolve({ users: [] }) : apiClient.getPublicUsers(24),
         apiClient.getMyClubs().catch(() => ({ clubs: [], total: 0 })),
       ]);
 
@@ -214,7 +214,7 @@ export function UsersPage() {
       setActivityLoading(false);
       setClubsLoading(false);
     }
-  }, [isReady, isAuthenticated, authData, currentUserId, navigate]);
+  }, [clubsOnly, isReady, isAuthenticated, authData, currentUserId, navigate]);
 
   useEffect(() => {
     fetchCommunityData();
@@ -351,7 +351,7 @@ export function UsersPage() {
       ) : null}
 
       {!error ? (
-        <div className="community-v2-layout">
+        <div className={`community-v2-layout${clubsOnly ? ' clubs-only-layout' : ''}`}>
           <section className="community-v2-section community-v2-clubs-section">
             <div className="community-v2-section-header">
               <div>
@@ -492,6 +492,7 @@ export function UsersPage() {
             </div>
           ) : null}
 
+          {!clubsOnly && <>
           <section className="community-v2-section community-v2-people-section">
             <div className="community-v2-section-header">
               <h3 className="community-v2-title">{t('community.discoverActiveUsers')}</h3>
@@ -643,6 +644,7 @@ export function UsersPage() {
               </div>
             )}
           </section>
+          </>}
         </div>
       ) : null}
     </div>

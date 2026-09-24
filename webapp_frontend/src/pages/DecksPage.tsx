@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Play, Search } from 'lucide-react';
+import { Play, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type { LibraryDeck } from '../types';
@@ -32,8 +32,7 @@ export function DecksPage() {
   return (
     <main className="decks-page">
       <header>
-        <button type="button" onClick={() => navigate('/my-contents')} aria-label={t('deckBrowser.back')}><ArrowLeft size={20} className="icon-directional" /></button>
-        <div><h1>{t('deckBrowser.title')}</h1><p>{t('deckBrowser.subtitle')}</p></div>
+        <p>{t('learning.reviewHint')}</p>
       </header>
       <label className="decks-search"><Search size={17}/><input aria-label={t('deckBrowser.search')} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('deckBrowser.search')} /></label>
       <div className="decks-filters">
@@ -48,7 +47,9 @@ export function DecksPage() {
             </div>
             <button type="button" onClick={() => study(deck)} aria-label={`${t('deckBrowser.study')} ${deck.name}`}><Play size={16}/>{t('deckBrowser.study')}</button>
           </article>)}
-          {visible.length === 0 && <p className="decks-empty">{t(query ? 'deckBrowser.noMatch' : readyOnly ? 'deckBrowser.caughtUp' : 'deckBrowser.empty')}</p>}
+          {visible.length === 0 && <div className="decks-empty"><p>{t(query ? 'deckBrowser.noMatch' : readyOnly ? 'deckBrowser.caughtUp' : 'learning.reviewEmpty')}</p>
+            {!query && !readyOnly && <button type="button" className="explore-action" onClick={() => navigate('/explore?type=watch')}>{t('learning.exploreVideos')}</button>}
+          </div>}
         </section>
       )}
     </main>

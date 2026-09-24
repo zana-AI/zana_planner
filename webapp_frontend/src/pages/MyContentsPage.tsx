@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Filter, Layers, Plus, Search } from 'lucide-react';
+import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
 import { BottomSheet } from '../components/ui/BottomSheet';
@@ -315,10 +315,6 @@ export function MyContentsPage() {
 
   return (
     <main className="content-library-page">
-      <button type="button" className="content-library-decks" onClick={() => navigate('/decks')}>
-        <span><Layers size={20} aria-hidden="true" /> Decks</span>
-        <ArrowRight size={20} aria-hidden="true" />
-      </button>
       <section className="content-library-command">
         {/* Search plus one toggle. Status chips, type chips and sort used to sit
             in three permanent rows above the library, so the content itself
@@ -330,11 +326,21 @@ export function MyContentsPage() {
             <Search size={16} />
             <input
               type="search"
+              aria-label={t('myContents.searchYourLibrary')}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t('myContents.searchYourLibrary')}
             />
           </label>
+          <button
+            type="button"
+            className="content-library-filter-toggle content-library-add-toggle"
+            aria-label={t('myContents.addToLibrary')}
+            title={t('myContents.addToLibrary')}
+            onClick={() => { setAddError(''); setAddOpen(true); }}
+          >
+            <Plus size={18} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className={`content-library-filter-toggle${filtersOpen ? ' is-open' : ''}`}
@@ -429,7 +435,7 @@ export function MyContentsPage() {
             </button>
           )}
         </>
-      ) : (
+      ) : !error ? (
         <section className="content-library-empty">
           <div className="content-library-empty-icon" aria-hidden="true"><Plus size={22} /></div>
           <h2>{t('myContents.noContentHereYet')}</h2>
@@ -439,8 +445,11 @@ export function MyContentsPage() {
           {activeFilterCount > 0 && (
             <button type="button" onClick={resetFilters}>{t('myContents.clearFilters')}</button>
           )}
+          {activeFilterCount === 0 && (
+            <button type="button" onClick={() => navigate('/explore')}>{t('learning.exploreVideos')}</button>
+          )}
         </section>
-      )}
+      ) : null}
 
       {plannedToast ? (
         <p className="content-library-planned-toast" role="status">{plannedToast}</p>
@@ -469,18 +478,6 @@ export function MyContentsPage() {
           closeAssignment();
         }}
       />
-
-      <button
-        type="button"
-        className="fab content-library-fab"
-        aria-label={t('myContents.addToLibrary')}
-        onClick={() => {
-          setAddError('');
-          setAddOpen(true);
-        }}
-      >
-        <Plus size={22} />
-      </button>
 
       <BottomSheet
         open={addOpen}

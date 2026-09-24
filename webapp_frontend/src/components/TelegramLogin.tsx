@@ -73,11 +73,9 @@ export function TelegramLogin({
 
     console.log('Loading Telegram Login Widget for bot:', botUsername);
 
-    // Clean up any existing script
-    const existingScript = containerRef.current.querySelector('script[data-telegram-login]');
-    if (existingScript) {
-      existingScript.remove();
-    }
+    // Remove the iframe too when rebuilding the widget (including StrictMode).
+    const container = containerRef.current;
+    container.replaceChildren();
 
     // Set a timeout to check if widget rendered
     const timeoutId = setTimeout(() => {
@@ -90,7 +88,6 @@ export function TelegramLogin({
 
     // Define global callback function
     (window as any).onTelegramAuth = async (user: any) => {
-      console.log('Telegram auth callback received:', user);
       try {
         // Send auth data to backend
         const response = await fetch('/api/auth/telegram-login', {
@@ -152,9 +149,7 @@ export function TelegramLogin({
     return () => {
       // Cleanup
       clearTimeout(timeoutId);
-      if (containerRef.current && script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
+      container.replaceChildren();
       delete (window as any).onTelegramAuth;
     };
   }, [botUsername, loading, buttonSize, cornerRadius, requestAccess, onAuthSuccess]);
@@ -178,16 +173,10 @@ export function TelegramLogin({
   }
 
   return (
-    <div 
-      ref={containerRef} 
-      className="telegram-login-container" 
-      style={{ 
-        minHeight: '60px',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center'
-      }} 
-    />
+    <div className="telegram-login-options">
+      <div ref={containerRef} className="telegram-login-container" />
+      <a href="/login">{t('accountSwitch.title')}</a>
+    </div>
   );
 }
 

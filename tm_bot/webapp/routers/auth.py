@@ -3,7 +3,9 @@ Authentication endpoints.
 """
 
 import time
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field
+from repositories.browser_login_repo import BrowserLoginRepository
 from ..auth import validate_telegram_widget_auth, extract_user_id
 from ..schemas import TelegramLoginRequest, TelegramLoginResponse
 from utils.dev_auth import get_dev_admin_user_id, is_dev_auth_enabled
@@ -11,6 +13,32 @@ from utils.logger import get_logger
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = get_logger(__name__)
+
+
+class BrowserLoginCode(BaseModel):
+    code: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
+class BrowserLoginConfirmation(BrowserLoginCode):
+    expected_user_id: int = Field(gt=0)
+
+
+@router.post("/browser-login/preview")
+def preview_browser_login(body: BrowserLoginCode, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    account = BrowserLoginRepository().preview(body.code)
+    if not account:
+        raise HTTPException(401, "Sign-in link expired or already used. Request a new link with /login.")
+    return account
+
+
+@router.post("/browser-login/redeem", response_model=TelegramLoginResponse)
+def redeem_browser_login(body: BrowserLoginConfirmation, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    session = BrowserLoginRepository().redeem(body.code, body.expected_user_id)
+    if not session:
+        raise HTTPException(401, "Sign-in link expired or already used. Request a new link with /login.")
+    return session
 
 
 @router.post("/dev-admin-login")

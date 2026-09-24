@@ -1,4 +1,81 @@
 {
+  "learning": {
+    "routineActivity": "Activity",
+    "saveToLibrary": "Save to Library",
+    "savingToLibrary": "Saving…",
+    "savedToLibrary": "Saved in Library",
+    "saveHint": "Keep this video in your Library. This does not schedule a session.",
+    "join": "Join",
+    "joining": "Joining…",
+    "joined": "Joined",
+    "startWithPicks": "Start with a video below. Watch now, or save it to your Library for later.",
+    "browseMore": "Browse more",
+    "routineTitle": "What would you like to learn?",
+    "routineHint": "Choose a topic, then adjust your weekly learning goal. Nothing is created until you confirm.",
+    "minutesPerWeek": "{{count}} min / week",
+    "customRoutine": "Choose another topic",
+    "routineSetup": "Set up your routine",
+    "routinePlaceholder": "e.g., Practise listening in French",
+    "routineEndDate": "End date (optional)",
+    "creatingRoutine": "Creating…",
+    "confirmRoutine": "Create routine",
+    "routines": {
+      "english": "Learn English",
+      "french": "Learn French"
+    },
+    "reviewEmpty": "Save a word while watching a subtitled video. Your cards will be here to review.",
+    "review": "Review",
+    "reviewHint": "Revisit words and ideas you have saved.",
+    "exploreVideos": "Explore videos",
+    "openLibrary": "Open Library",
+    "startTitle": "A little learning, today",
+    "startHint": "Find a video to watch, or pick something you have saved in your Library.",
+    "readyToWatch": "Ready to watch",
+    "createRoutine": "Want a routine? Add a task or promise",
+    "subject": "Subject",
+    "allSubjects": "All subjects",
+    "contentTypes": "Content types",
+    "subtitlesReady": "{{language}} subtitles ready",
+    "captionsReady": "Subtitles ready",
+    "notCached": "Subtitles not saved yet",
+    "captionStatusUnknown": "Subtitle status unavailable",
+    "watch": "Watch",
+    "club": "Club",
+    "joinedClub": "Your club",
+    "viewClub": "View club",
+    "viewCourse": "View course",
+    "viewPractice": "View practice",
+    "setUpRoutine": "Set up routine",
+    "clubsHint": "Learn and practise together around a shared goal.",
+    "manageClubs": "Manage or create clubs",
+    "clubsUnavailable": "Clubs are temporarily unavailable. Your content is still here.",
+    "noResults": "Nothing here yet. Try another subject or type.",
+    "languages": {
+      "fr": "French",
+      "en": "English",
+      "fa": "Persian"
+    }
+  },
+  "accountSwitch": {
+    "title": "Use another Telegram account",
+    "description": "Sign in through the Xaana bot without using the account remembered by this browser. Your current Xaana account stays signed in until you confirm the new one.",
+    "chooseAccount": "In Telegram, switch to the account you want to use.",
+    "requestLink": "Open the Xaana bot with that account and send /login (or tap Start).",
+    "openLink": "Open the sign-in link here in this browser, or paste it below.",
+    "openBot": "Open Xaana in Telegram",
+    "linkSafety": "Links expire in 5 minutes and work once. Only use a link you requested yourself. Do not share it.",
+    "pasteLink": "Paste the sign-in link from the bot",
+    "checkLink": "Check account",
+    "changeLink": "Use a different sign-in link",
+    "telegramAccount": "Telegram account",
+    "telegramId": "Telegram ID: {{id}}",
+    "confirmHint": "Is this your intended account? Continuing replaces the Xaana account in this browser, including other open Xaana tabs.",
+    "confirm": "Continue with this account",
+    "invalid": "Paste a valid Xaana sign-in link from the bot.",
+    "expired": "This link expired or was already used. Send /login to the bot for a new one.",
+    "failed": "Could not complete sign-in. Please try again, or request a new link with /login.",
+    "miniApp": "Inside Telegram, the Mini App follows your active Telegram account. Close it, switch accounts in Telegram, then reopen Xaana. Use this sign-in link in a regular browser."
+  },
   "deckBrowser": {
     "back": "Back to library",
     "title": "Decks",
@@ -48,6 +125,8 @@
     "logout": "Logout"
   },
   "shell": {
+    "review": { "title": "Review" },
+    "clubs": { "title": "Clubs" },
     "dashboard": {
       "title": "Today",
       "subtitle": "What is due now, and how the week is going"
@@ -58,7 +137,7 @@
     },
     "explore": {
       "title": "Explore",
-      "subtitle": "Courses, videos and decks, by subject"
+      "subtitle": "Videos, courses, practice and clubs"
     },
     "challenges": {
       "title": "Challenges",
@@ -74,7 +153,7 @@
     },
     "library": {
       "title": "Library",
-      "subtitle": "Everything you saved, and your decks"
+      "subtitle": "Your saved content, ready when you are"
     },
     "admin": {
       "title": "Admin"
@@ -349,15 +428,15 @@
       "courses": "Courses",
       "watch": "Watch",
       "read": "Read",
-      "decks": "Decks",
-      "habits": "Habits"
+      "decks": "Practice",
+      "habits": "Routines"
     },
     "kind": {
       "course": "Course",
       "video": "Video",
       "book": "Book",
-      "deck": "Deck",
-      "habit": "Habit"
+      "deck": "Practice",
+      "habit": "Routine"
     }
   },
   "community": {

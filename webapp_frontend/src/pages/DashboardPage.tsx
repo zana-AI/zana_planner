@@ -6,9 +6,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTelegramWebApp, getDevInitData } from '../hooks/useTelegramWebApp';
 import { apiClient, ApiError } from '../api/client';
 import { WeeklyReport } from '../components/WeeklyReport';
-import { UserCard } from '../components/UserCard';
-import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
-import { SuggestionsInbox } from '../components/SuggestionsInbox';
+import { LearningStart } from '../components/LearningStart';
+import type { RoutineDraft } from '../utils/learningActions';
 import { FocusBar } from '../components/FocusBar';
 import { CreatePromiseModal } from '../components/CreatePromiseModal';
 import { CheckinSheet } from '../components/sheets/CheckinSheet';
@@ -20,8 +19,8 @@ import { PromiseDetailSheet } from '../components/sheets/PromiseDetailSheet';
 import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
 import { Toast } from '../components/ui/Toast';
 import { useToast } from '../hooks/useToast';
-import { getMockCommunityUsers, getMockWeeklyReport, shouldUseLocalMockData } from '../api/mockData';
-import type { PromiseData, WeeklyReportData, PublicUser, UserInfo, UpcomingPlanSession } from '../types';
+import { getMockWeeklyReport, shouldUseLocalMockData } from '../api/mockData';
+import type { PromiseData, WeeklyReportData, UpcomingPlanSession } from '../types';
 import './explore.css';
 
 type ActivePromise = { id: string; data: PromiseData };
@@ -52,20 +51,14 @@ export function DashboardPage() {
   const i18nLanguage = i18n.language;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, initData, isReady, hapticFeedback } = useTelegramWebApp();
+  const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
-  const [communityUsers, setCommunityUsers] = useState<PublicUser[]>([]);
-  const [communityLoading, setCommunityLoading] = useState(false);
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   // Single source of truth: derive ref_time from URL
   const currentRefTime = searchParams.get('ref_time') || undefined;
-  const [showSuggestModal, setShowSuggestModal] = useState(false);
-  const [suggestToUserId, setSuggestToUserId] = useState<string>('');
-  const [suggestToUserName, setSuggestToUserName] = useState<string>('');
-  const [showSuggestionsInbox, setShowSuggestionsInbox] = useState(false);
   const [showCreatePromiseModal, setShowCreatePromiseModal] = useState(false);
+  const [routineDraft, setRoutineDraft] = useState<RoutineDraft>();
   const [detailPromise, setDetailPromise] = useState<ActivePromise | null>(null);
   const [editPromise, setEditPromise] = useState<ActivePromise | null>(null);
   const [logPromise, setLogPromise] = useState<ActivePromise | null>(null);
@@ -191,67 +184,6 @@ export function DashboardPage() {
     };
   }, [allowLocalMockData, isReady, initData, navigate, fetchReport, currentRefTime]);
 
-  // Fetch userInfo for browser login users
-  useEffect(() => {
-    const hasToken = !!localStorage.getItem('telegram_auth_token');
-    if (hasToken && !initData) {
-      // Browser login - fetch user info to get user_id
-      apiClient.getUserInfo()
-        .then(setUserInfo)
-        .catch(() => {
-          console.error('Failed to fetch user info');
-        });
-    }
-  }, [initData]);
-
-  // Fetch community users for sidebar
-  useEffect(() => {
-    const fetchCommunityUsers = async () => {
-      setCommunityLoading(true);
-      try {
-        const authData = initData || getDevInitData();
-        if (!authData && !localStorage.getItem('telegram_auth_token') && allowLocalMockData) {
-          setCommunityUsers(getMockCommunityUsers());
-          return;
-        }
-        if (authData) {
-          apiClient.setInitData(authData);
-        }
-        const response = await apiClient.getPublicUsers(8); // Top 8 users
-        // Filter out current user from the list
-        // Use user?.id for Telegram Mini App, or userInfo?.user_id for browser login
-        const currentUserId = user?.id?.toString() || userInfo?.user_id?.toString();
-        const filteredUsers = response.users.filter(
-          u => u.user_id !== currentUserId
-        );
-        setCommunityUsers(filteredUsers);
-      } catch (err) {
-        console.error('Failed to fetch community users:', err);
-        if (allowLocalMockData) {
-          setCommunityUsers(getMockCommunityUsers());
-        }
-      } finally {
-        setCommunityLoading(false);
-      }
-    };
-
-    if (isReady && (initData || localStorage.getItem('telegram_auth_token') || allowLocalMockData)) {
-      fetchCommunityUsers();
-    }
-  }, [allowLocalMockData, isReady, initData, user, userInfo]);
-
-  // Expose suggest promise handler globally for UserCard
-  useEffect(() => {
-    (window as any).onSuggestPromise = (userId: string, userName: string) => {
-      setSuggestToUserId(userId);
-      setSuggestToUserName(userName);
-      setShowSuggestModal(true);
-    };
-    return () => {
-      delete (window as any).onSuggestPromise;
-    };
-  }, []);
-
   useEffect(() => {
     setShowOlderPromises(false);
   }, [reportData?.week_start]);
@@ -358,16 +290,6 @@ export function DashboardPage() {
     const authData = initData || getDevInitData();
     fetchReport(authData || '', currentRefTime);
   }, [initData, fetchReport, currentRefTime]);
-
-  const emptyPromisesData = useMemo(() => {
-    if (!reportData) return null;
-    return {
-      ...reportData,
-      promises: {},
-      total_promised: 0,
-      total_spent: 0,
-    };
-  }, [reportData]);
 
   const overallProgress = useMemo(() => {
     if (!currentReportData) {
@@ -558,10 +480,10 @@ export function DashboardPage() {
     );
   }
 
-  const currentUserId = user?.id?.toString();
   
   // Determine if user is authenticated
   const isAuthenticated = !!(initData || getDevInitData() || localStorage.getItem('telegram_auth_token') || allowLocalMockData);
+  const showLearningStart = isCurrentWeek && promiseCount + taskCount + distractionCount === 0 && unfiledSessions.length === 0;
   const shouldShowOlderPromises = !!olderPromisesData && (showOlderPromises || promiseCount === 0);
 
   return (
@@ -586,6 +508,8 @@ export function DashboardPage() {
             <ChevronRight size={16} aria-hidden className="icon-directional" />
           </button>
         </div>
+
+        {showLearningStart && <LearningStart onCreateRoutine={draft => { setRoutineDraft(draft); setShowCreatePromiseModal(true); }} />}
 
         {currentReportData && currentReportData.total_promised > 0 && (
           <div className="overall">
@@ -647,7 +571,7 @@ export function DashboardPage() {
           </section>
         )}
 
-        {(promisesData || (isCurrentWeek && emptyPromisesData && olderPromiseCount === 0)) && (
+        {promisesData && (
           <>
             <div className="section-head">
               <h2>{t('dashboard.promises')}</h2>
@@ -656,7 +580,7 @@ export function DashboardPage() {
               </span>
             </div>
             <WeeklyReport
-              data={promisesData || emptyPromisesData!}
+              data={promisesData}
               onRefresh={handleRefresh}
               hideHeader
               hideProgress
@@ -743,143 +667,9 @@ export function DashboardPage() {
         )}
       </main>
 
-      {/* Right Sidebar - Community */}
-      <aside style={{
-        flex: '0 0 280px',
-        display: 'block',
-        position: 'sticky',
-        top: '1rem',
-        maxHeight: 'calc(100vh - 2rem)',
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        padding: '1rem',
-        background: 'rgba(15, 23, 48, 0.5)',
-        border: '1px solid rgba(232, 238, 252, 0.1)',
-        borderRadius: '12px'
-      }}
-      className="community-sidebar"
-      >
-        <div style={{ marginBottom: '1rem' }}>
-          <h3 style={{ 
-            fontSize: '1.1rem', 
-            fontWeight: '700', 
-            color: '#fff', 
-            marginBottom: '0.5rem' 
-          }}>{t('dashboard.community')}</h3>
-          <p style={{ 
-            fontSize: '0.8rem', 
-            color: 'rgba(232, 238, 252, 0.6)',
-            marginBottom: '1rem'
-          }}>{t('dashboard.activeUsersOnXaana')}</p>
-        </div>
-
-        {communityLoading ? (
-          <div style={{ 
-            padding: '2rem', 
-            textAlign: 'center',
-            color: 'rgba(232, 238, 252, 0.6)',
-            fontSize: '0.9rem'
-          }}>{t('dashboard.loading')}</div>
-        ) : communityUsers.length > 0 ? (
-          <>
-            {!showSuggestionsInbox ? (
-              <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {communityUsers.map((communityUser) => (
-                    <UserCard 
-                      key={communityUser.user_id} 
-                      user={communityUser} 
-                      currentUserId={currentUserId}
-                      showFollowButton={true}
-                    />
-                  ))}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem' }}>
-                  <button
-                    onClick={() => setShowSuggestionsInbox(true)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: 'rgba(91, 163, 245, 0.1)',
-                      border: '1px solid rgba(91, 163, 245, 0.3)',
-                      borderRadius: '8px',
-                      color: '#5ba3f5',
-                      fontSize: '0.9rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.2)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
-                    }}
-                  >{t('dashboard.viewSuggestions')}</button>
-                  <button
-                    onClick={() => navigate('/community')}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: 'rgba(91, 163, 245, 0.1)',
-                      border: '1px solid rgba(91, 163, 245, 0.3)',
-                      borderRadius: '8px',
-                      color: '#5ba3f5',
-                      fontSize: '0.9rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.2)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(91, 163, 245, 0.1)';
-                    }}
-                  >{t('dashboard.exploreCommunity')}</button>
-                </div>
-              </>
-            ) : (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h4 style={{ color: '#fff', margin: 0 }}>{t('dashboard.promiseSuggestions')}</h4>
-                  <button
-                    className="button-secondary"
-                    onClick={() => setShowSuggestionsInbox(false)}
-                    style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
-                  >{t('dashboard.back')}</button>
-                </div>
-                <SuggestionsInbox />
-              </div>
-            )}
-          </>
-        ) : (
-          <div style={{ 
-            padding: '1rem', 
-            textAlign: 'center',
-            color: 'rgba(232, 238, 252, 0.6)',
-            fontSize: '0.85rem'
-          }}>{t('dashboard.noUsersFound')}</div>
-        )}
-      </aside>
-
-      {showSuggestModal && (
-        <SuggestPromiseModal
-          toUserId={suggestToUserId}
-          toUserName={suggestToUserName}
-          onClose={() => {
-            setShowSuggestModal(false);
-            setSuggestToUserId('');
-            setSuggestToUserName('');
-          }}
-          onSuccess={() => {
-            hapticFeedback('success');
-          }}
-        />
-      )}
-
       {showCreatePromiseModal && (
         <CreatePromiseModal
+          initialValues={routineDraft}
           onClose={() => setShowCreatePromiseModal(false)}
           onSuccess={() => {
             hapticFeedback('success');
@@ -888,8 +678,8 @@ export function DashboardPage() {
         />
       )}
 
-      {isCurrentWeek ? (
-        <button type="button" className="fab" aria-label={t('dashboard.createPromise')} onClick={() => setShowCreatePromiseModal(true)}>
+      {isCurrentWeek && !showLearningStart ? (
+        <button type="button" className="fab" aria-label={t('dashboard.createPromise')} onClick={() => { setRoutineDraft(undefined); setShowCreatePromiseModal(true); }}>
           <Plus size={22} />
         </button>
       ) : null}

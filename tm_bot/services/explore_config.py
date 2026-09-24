@@ -28,7 +28,13 @@ class ExploreItem(BaseModel):
     native_ref: Optional[str] = None
     image: Optional[str] = None
     description: Optional[str] = None
+    creator: Optional[str] = None
+    # Optional verified video length; fresher DB metadata takes precedence.
+    # Never use the last subtitle cue as a duration fallback.
+    duration_seconds: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
     class_offer: Optional[str] = None
+    # Editorial eligibility for Today; runtime cache readiness is also required.
+    starter: bool = False
 
 
 class ExploreTopic(BaseModel):
@@ -48,6 +54,7 @@ class ExploreCategory(BaseModel):
     # with neither still renders, just without a face.
     icon: Optional[str] = None
     accent: Optional[str] = None
+    language: Optional[str] = None
     order: int = 0
     published: bool = True
     topics: list[ExploreTopic] = Field(default_factory=list)

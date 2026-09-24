@@ -376,6 +376,9 @@ class MessageHandlers:
 
         # Handle invite deep links: /start invite_{club_id}
         args = context.args or []
+        if args and args[0] == "browser_login":
+            await self.cmd_login(update, context)
+            return
         if args and args[0].startswith("invite_"):
             club_id = args[0][len("invite_"):]
             await self._handle_club_invite(update, club_id)
@@ -434,6 +437,10 @@ class MessageHandlers:
             name_prefix="nightly"
         )
         logger.info(f"Scheduled nightly reminders at 22:59 {tzname} for user {user_id}")
+
+    async def cmd_login(self, update: Update, context: CallbackContext) -> None:
+        from handlers.browser_login import send_browser_login
+        await send_browser_login(update, self.miniapp_url)
 
     async def _handle_club_invite(self, update: Update, club_id: str) -> None:
         from repositories.clubs_repo import ClubsRepository
