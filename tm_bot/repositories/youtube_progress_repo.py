@@ -22,6 +22,15 @@ def coverage(ranges, duration):
 
 
 class YoutubeProgressRepository:
+    def get_progress(self, user_id, content_id, duration):
+        with get_db_session() as session:
+            ranges = session.execute(text("""
+                SELECT start_position,end_position FROM content_consumption_event
+                WHERE user_id=:uid AND content_id=:cid AND position_unit='seconds'
+            """), {"uid": str(user_id), "cid": str(content_id)}).all()
+        merged, _ = coverage(ranges, duration)
+        return {"duration_seconds": duration, "segments": merged}
+
     def record(self, user_id, content_id, video_id, report_id, segments,
                duration=None, promise_id="", client="youtube_viewer"):
         user_id, content_id = str(user_id), str(content_id)

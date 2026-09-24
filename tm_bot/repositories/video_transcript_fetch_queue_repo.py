@@ -26,9 +26,13 @@ class VideoTranscriptFetchQueueRepository:
             """), {"video_id": video_id})
 
     def status(self, video_id):
+        return self.fetch_state(video_id)["status"]
+
+    def fetch_state(self, video_id):
         with get_db_session() as session:
-            return session.execute(text("SELECT status FROM video_transcript_fetch_jobs WHERE video_id=:id"),
-                                   {"id": video_id}).scalar() or "queued"
+            row = session.execute(text("SELECT status,last_error FROM video_transcript_fetch_jobs WHERE video_id=:id"),
+                                  {"id": video_id}).mappings().first()
+            return dict(row) if row else {"status": "queued", "last_error": None}
 
     def claim(self, worker_id=None):
         stage = "relay" if worker_id else "server"

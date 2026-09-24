@@ -283,13 +283,23 @@ def _transcript_for_video(video_id: str, url: Optional[str] = None) -> Dict[str,
     try:
         queue = VideoTranscriptFetchQueueRepository()
         queue.enqueue(video_id)
-        pending = queue.status(video_id) in ("queued", "processing")
+        state = queue.fetch_state(video_id)
+        if state["status"] == "completed":
+            # The worker may have published captions after our first cache read.
+            cached = VideoTranscriptRepository().get(video_id)
+            if cached and cached.get("cues"):
+                return cached
+        pending = state["status"] in ("queued", "processing")
+        # Expose only a stable public reason, never worker/third-party errors.
+        status = "pending" if pending else (
+            "unavailable" if state.get("last_error") in ("no_captions", "unavailable") else "failed")
     except ValueError:
         raise HTTPException(400, "Invalid video ID")
     except Exception:
         logger.warning("Could not queue transcript fetch for %s", video_id, exc_info=True)
         pending = False
-    return {"available": False, "cues": [], "pending": pending}
+        status = "failed"
+    return {"available": False, "cues": [], "pending": pending, "status": status}
 
 
 @router.get("/content/{content_id}/transcript")

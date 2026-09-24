@@ -27,7 +27,7 @@ def client(monkeypatch, tmp_path):
     app.state.auth_session_repo = SimpleNamespace(get_session=lambda token: SimpleNamespace(user_id=42) if token == 'browser-session' else None)
     app.include_router(route.router)
     calls = []
-    item = {'id': 'library-alias', 'canonical_url': 'https://youtu.be/du-G1B785Fs?si=abc'}
+    item = {'id': 'library-alias', 'canonical_url': 'https://youtu.be/du-G1B785Fs?si=abc', 'duration_seconds': 383}
     monkeypatch.setattr(ContentRepository, 'get_content_by_id', lambda self, cid: item)
     monkeypatch.setattr(ContentRepository, 'get_content_by_canonical_url', lambda self, url: item)
     monkeypatch.setattr(ContentRepository, 'can_access_content', lambda self, uid, cid: uid == '42')
@@ -102,3 +102,37 @@ def test_content_video_mismatch_rejected(client):
 
 def test_replays_and_seeks_do_not_inflate_unique_coverage():
     assert coverage([[0, 30], [20, 40], [80, 120]], 100) == ([[0, 40], [80, 100]], 60)
+
+
+def test_load_saved_progress_before_playback(client, monkeypatch):
+    reads = []
+    monkeypatch.setattr(YoutubeProgressRepository, 'get_progress', lambda _, *args:
+                        reads.append(args) or {'duration_seconds': 383, 'segments': [[0, 30]]})
+    response = client[0].get('/api/youtube/du-G1B785Fs/progress?content_id=library-alias',
+                             headers={'Authorization': 'Bearer browser-session'})
+    assert response.status_code == 200
+    assert response.json() == {'duration_seconds': 383, 'segments': [[0, 30]]}
+    assert response.headers['cache-control'] == 'no-store'
+    assert reads == [(42, 'library-alias', 383)]
+    assert client[1] == []  # Reading must not create watch events.
+
+
+def test_progress_read_requires_auth_and_content_access(client, monkeypatch):
+    url = '/api/youtube/du-G1B785Fs/progress?content_id=library-alias'
+    assert client[0].get(url).status_code == 401
+    monkeypatch.setattr(ContentRepository, 'can_access_content', lambda *_: False)
+    assert client[0].get(url, headers={'Authorization': 'Bearer browser-session'}).status_code == 403
+
+
+def test_progress_read_rejects_mismatched_video(client):
+    assert client[0].get('/api/youtube/q_r7L1wsY2U/progress?content_id=library-alias',
+                         headers={'Authorization': 'Bearer browser-session'}).status_code == 400
+
+
+def test_progress_missing_content_is_read_only_and_supports_legacy_token(client, monkeypatch):
+    monkeypatch.setattr(ContentRepository, 'get_content_by_canonical_url', lambda *_: None)
+    response = client[0].get('/api/youtube/du-G1B785Fs/progress',
+                             headers={'X-YouTube-User-Token': create_user_token(42, 'test-token')})
+    assert response.status_code == 200
+    assert response.json() == {'duration_seconds': None, 'segments': []}
+    assert client[1] == []

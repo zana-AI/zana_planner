@@ -74,6 +74,16 @@ def test_missing_duration_does_not_mark_first_segment_complete(db):
     assert report(repo, [[20, 30]], duration=100)['progress_ratio'] == .3
 
 
+def test_saved_coverage_is_user_scoped_and_replays_remain_in_events(db):
+    conn, repo = db
+    report(repo, [[0, 30], [10, 20], [80, 100]])
+    assert repo.get_progress('42', 'item', 100) == {
+        'duration_seconds': 100, 'segments': [[0, 30], [80, 100]]}
+    assert repo.get_progress('other-user', 'item', 100)['segments'] == []
+    assert conn.execute(text('SELECT count(*) FROM content_consumption_event')).scalar() == 3
+    assert conn.execute(text('SELECT total_consumed_seconds FROM user_content')).scalar() == 60
+
+
 def test_failure_rolls_back_events_and_receipt_for_retry(db, monkeypatch):
     conn, repo = db
     rid = str(uuid.uuid4())

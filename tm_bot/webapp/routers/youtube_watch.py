@@ -55,6 +55,50 @@ def validate_stats(stats):
     return report_id, segments, duration or None
 
 
+async def _watch_user(request, init_data="", user_token=""):
+    """Browser/Telegram auth, with compatibility for older signed watch links."""
+    try:
+        return await get_current_user(request, request.headers.get("X-Telegram-Init-Data"),
+                                      request.headers.get("Authorization"))
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+        bot_token = request.app.state.bot_token
+        valid, user_id = validate_init_data(init_data, bot_token)
+        if not valid or user_id is None:
+            user_id = verify_user_token(user_token, bot_token)
+        if user_id is None:
+            raise HTTPException(401, "Sign in to access watch progress")
+        return user_id
+
+
+def _watch_content(repo, video_id, content_id):
+    from utils.youtube_utils import extract_video_id
+    content = repo.get_content_by_id(content_id) if content_id else repo.get_content_by_canonical_url(
+        f"https://www.youtube.com/watch?v={video_id}")
+    if content_id and (not content or extract_video_id(content["canonical_url"]) != video_id):
+        raise HTTPException(400, "Content does not match video")
+    return content
+
+
+@router.get("/api/youtube/{video_id}/progress")
+async def watch_progress(request: Request, video_id: str, content_id: Optional[str] = None):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        raise HTTPException(400, "Invalid video_id")
+    user_id = await _watch_user(request, user_token=request.headers.get("X-YouTube-User-Token", ""))
+    from repositories.content_repo import ContentRepository
+    from repositories.youtube_progress_repo import YoutubeProgressRepository
+    repo = ContentRepository()
+    content = _watch_content(repo, video_id, content_id)
+    if not content:
+        data = {"duration_seconds": None, "segments": []}
+    else:
+        if not repo.can_access_content(str(user_id), content["id"]):
+            raise HTTPException(403, "Content access denied")
+        data = YoutubeProgressRepository().get_progress(user_id, content["id"], content.get("duration_seconds"))
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+
 @router.post("/api/youtube/report_stats")
 async def report_stats(request: Request):
     if len(await request.body()) > 60000:
@@ -65,20 +109,7 @@ async def report_stats(request: Request):
         raise HTTPException(400, "Invalid JSON")
     if not isinstance(body, dict):
         raise HTTPException(400, "Invalid watch report")
-    # Browser sessions use the same authentication as Library/flashcards.
-    # Legacy Telegram links retain their signed token/initData fallback.
-    bot_token = request.app.state.bot_token
-    try:
-        user_id = await get_current_user(request, request.headers.get("X-Telegram-Init-Data"),
-                                         request.headers.get("Authorization"))
-    except HTTPException as exc:
-        if exc.status_code != 401:
-            raise
-        valid, user_id = validate_init_data(body.get("init_data") or "", bot_token)
-        if not valid or user_id is None:
-            user_id = verify_user_token(body.get("user_token") or "", bot_token)
-        if user_id is None:
-            raise HTTPException(401, "Sign in to save watch progress")
+    user_id = await _watch_user(request, body.get("init_data") or "", body.get("user_token") or "")
 
     stats = body.get("stats")
     report_id, segments, duration = validate_stats(stats)
@@ -87,15 +118,11 @@ async def report_stats(request: Request):
     video_id = stats["video_id"]
     from repositories.content_repo import ContentRepository
     from repositories.youtube_progress_repo import YoutubeProgressRepository
-    from utils.youtube_utils import extract_video_id
     repo = ContentRepository()
     # Update the actual Library item, including old youtu.be aliases. Never
     # refetch metadata on each heartbeat for an already-known item.
     content_id = stats.get("content_id")
-    content = repo.get_content_by_id(content_id) if content_id else repo.get_content_by_canonical_url(
-        f"https://www.youtube.com/watch?v={video_id}")
-    if content_id and (not content or extract_video_id(content["canonical_url"]) != video_id):
-        raise HTTPException(400, "Content does not match video")
+    content = _watch_content(repo, video_id, content_id)
     if not content:
         from services.content_resolve_service import ContentResolveService
         content = ContentResolveService().resolve(f"https://www.youtube.com/watch?v={video_id}")
