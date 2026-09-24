@@ -531,6 +531,10 @@
     "share": "Share",
     "linkCopied": "Link copied",
     "deckUnit": "cards",
+    "archive": "Archive",
+    "restoreToLibrary": "Restore to Library",
+    "archivedNotice": "Archived. You can restore it from Filters → Archived.",
+    "restoredNotice": "Restored to Library. Your progress is unchanged.",
     "removeFromLibrary": "Remove from library",
     "removeConfirmMessage": "Remove this from your library? Any cards or highlights you made from it are kept."
   },
@@ -756,6 +760,8 @@
     "clear": "Clear",
     "loadingLibrary": "Loading library...",
     "noContentHereYet": "No content here yet",
+    "archiveEmpty": "No archived items found",
+    "archiveEmptyHint": "Archive content you've finished with. It stays here with your progress, ready to restore whenever you want.",
     "emptyLibraryGuide": "Send a PDF, YouTube video, podcast, or article to Xaana in Telegram and keep it here for later learning.",
     "pasteALinkAboveOrClearFiltersToBroadenTheLib": "Paste a link above, or clear filters to broaden the library.",
     "useAddButtonOrClearFilters": "Use the + button, or clear filters to broaden the library.",
@@ -775,7 +781,8 @@
       "all": "All",
       "continue": "Continue",
       "saved": "For later",
-      "completed": "Completed"
+      "completed": "Completed",
+      "archived": "Archived"
     },
     "types": {
       "allTypes": "All types",

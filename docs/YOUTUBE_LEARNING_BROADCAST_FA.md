@@ -1,6 +1,15 @@
 # YouTube learning announcement — approved Persian campaign
 
-Status: **APPROVED — deployment and scheduling requested; not yet scheduled or sent.** Prepared 2026-09-24.
+Status: **SCHEDULED — pending, not sent yet.** Verified 2026-09-24 11:52 UTC.
+
+- Production release: `856e793c2a9b0db858f8f7146519c3e7f3d16407` (web app and bot), health verified.
+- Staging/webapp workflow: https://github.com/zana-AI/zana_planner/actions/runs/35995085243
+- Production promotion: https://github.com/zana-AI/zana_planner/actions/runs/35995405003
+- Broadcast ID: `a61c1edb-701d-400c-a3a2-f35f6f6f7e05` in the production broadcast scheduler.
+- Delivery: 2026-09-24 17:00 UTC / 19:00 Paris / 20:30 Tehran, via `@xaana_bot`.
+- Recipient snapshot: 193 registered private-chat IDs; 57 named greetings and 136 plain greetings at setup. Names are resolved again at send time. No recipient IDs or names are stored in this document.
+- Approved template SHA-256 (UTF-8, LF): `3061614d5cbdd8a4acac1419601dd0c82224e0020385150129c69e38d70a0ca1`.
+- Exactly one matching campaign; future timestamp and pending status read back after creation. No immediate message was sent.
 
 ## Approved message template
 
@@ -23,9 +32,8 @@ Status: **APPROVED — deployment and scheduling requested; not yet scheduled or
 
 - One Persian text message to all eligible registered private-chat users of the production Xaana bot; 193 positive numeric user IDs at the read-only check. This is not a promise that all users are reachable: blocked/deleted chats can fail delivery.
 - Scheduled target: 2026-09-24 20:30 Asia/Tehran = 19:00 Europe/Paris = 17:00 UTC, using the previously proposed evening time. Never silently shift a past time to the next day.
-- Use the existing admin broadcast scheduler, not a separate cron or Codex reminder. Set `source_language=fa`, `translate_to_user_language=false` so approved Persian is not machine-rewritten.
-- No message or pending broadcast record was created. Current production pending-broadcast count: zero at the check.
-- Before scheduling, deploy and verify the accompanying bot/viewer labels so the instructions match what users actually see. The earlier redesign commit `fddcfc6` was still local at this check (production bot `47b3125`, new discovery backend absent).
+- Scheduled through `BroadcastsRepository`, the same backend used by the Admin scheduler, with the unchanged approved Persian message. No translation step, separate cron, or Codex reminder. The production webapp dispatcher checks due broadcasts every 15 seconds.
+- The bot/viewer wording and new design were deployed and verified before creating the pending record. All six curated videos have cached original-language subtitles and verified duration metadata.
 - User approved the final copy and requested deployment plus broadcast setup. Snapshot recipient IDs in the broadcast record, check for an existing matching campaign to avoid duplicates, and read back scheduled UTC time and recipients. Do not send an extra test message to all users.
 - Do not put user-specific session tokens in a shared broadcast. The deliberately simple call to action is to send a YouTube link in the same chat; no new login or deep-link routing is needed.
 

@@ -178,7 +178,7 @@ async def get_my_contents(
         "items": items,
         "count": len(items),
         "next_cursor": next_cursor,
-        "facets": repo.get_user_content_facets(str(user_id), q=q),
+        "facets": repo.get_user_content_facets(str(user_id), q=q, status=resolved_status),
     }
 
 

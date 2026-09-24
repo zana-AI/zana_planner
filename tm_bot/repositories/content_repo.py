@@ -346,9 +346,8 @@ class ContentRepository:
             conditions.append("uc.status = :status")
             params["status"] = status
         else:
-            # "All" means every real status, not the soft-deleted ones. There
-            # is no UI path to ask for archived items back yet — restoring
-            # one is a direct DB fix until that's built.
+            # The main Library excludes archived items. They remain available
+            # through the explicit Archived filter, with all learning data.
             conditions.append("uc.status != 'archived'")
         if content_type and content_type != "all":
             if content_type == "pdf":
@@ -451,10 +450,10 @@ class ContentRepository:
             ).mappings().fetchall()
         return [dict(r) for r in rows]
 
-    def get_user_content_facets(self, user_id: str, q: Optional[str] = None) -> Dict[str, Dict[str, int]]:
+    def get_user_content_facets(self, user_id: str, q: Optional[str] = None, status: Optional[str] = None) -> Dict[str, Dict[str, int]]:
         """Return lightweight facet counts for the user's library."""
         params: Dict[str, Any] = {"user_id": user_id}
-        where = ["uc.user_id = :user_id", "uc.status != 'archived'"]
+        where = ["uc.user_id = :user_id"]
         if q and q.strip():
             params["q"] = f"%{q.strip()}%"
             where.append(
@@ -485,6 +484,13 @@ class ContentRepository:
         for row in rows:
             status_value = str(row.get("status") or "saved")
             status_counts[status_value] = status_counts.get(status_value, 0) + 1
+            # Status counts include Archived, but type counts describe the
+            # selected shelf rather than leaking archived items into All.
+            if status and status != "all":
+                if status_value != status:
+                    continue
+            elif status_value == "archived":
+                continue
             metadata = row.get("metadata_json")
             if isinstance(metadata, str):
                 try:
@@ -518,7 +524,7 @@ class ContentRepository:
                         last_position = COALESCE(:last_position, last_position),
                         position_unit = COALESCE(:position_unit, position_unit),
                         progress_ratio = COALESCE(:progress_ratio, progress_ratio),
-                        status = COALESCE(:status, status),
+                        status = CASE WHEN status = 'archived' THEN status ELSE COALESCE(:status, status) END,
                         total_consumed_seconds = COALESCE(:total_consumed_seconds, total_consumed_seconds),
                         completed_at = COALESCE(:completed_at, completed_at)
                     WHERE user_id = :user_id AND content_id = :content_id

@@ -14,6 +14,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SAVED = {}
+CONTENT_UPDATES = {}
 ROUTINES = {}
 CONTROLS = r"""
 const query = new URLSearchParams(location.search);
@@ -64,8 +65,16 @@ def sample_contents():
                  canonical_url='https://www.youtube.com/watch?v=' + i['native_ref'].split('video_id=')[1],
                  metadata_json={'video_id': i['native_ref'].split('video_id=')[1]},
                  thumbnail_url=i['image'], has_subtitles=True, duration_seconds=i['duration_seconds'],
-                 status='in_progress' if n == 0 else 'saved', progress_ratio=0.35 if n == 0 else 0,
-                 bucket_count=20, buckets=[0.6 if n == 0 and b < 7 else 0 for b in range(20)]) for n, i in enumerate(items)]
+                 status='in_progress' if n == 0 else 'completed' if n == 1 else 'saved', progress_ratio=0.35 if n == 0 else 1 if n == 1 else 0,
+                 bucket_count=20, buckets=[1 if n == 1 else 0.6 if n == 0 and b < 7 else 0 for b in range(20)]) for n, i in enumerate(items)]
+
+
+def library_items(token):
+    items = {i['id']: i for i in copy.deepcopy(sample_contents() if 'returning' in token else [])}
+    items.update(copy.deepcopy(SAVED.get(token, {})))
+    for key, item in items.items():
+        item.update(CONTENT_UPDATES.get(token, {}).get(key, {}))
+    return list(items.values())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -107,11 +116,14 @@ class Handler(BaseHTTPRequestHandler):
             promises.update(ROUTINES.get(token, {}))
             return self.send(dict(week_start=monday.isoformat(), week_end=(monday+timedelta(days=6)).isoformat(), total_promised=sum(p['hours_promised'] for p in promises.values()), total_spent=sum(p['hours_spent'] for p in promises.values()), promises=promises))
         if path == '/api/my-contents':
-            items = copy.deepcopy(sample_contents() if returning else []) + list(SAVED.get(token, {}).values())
-            for key in ('status', 'content_type'):
-                if query.get(key): items = [i for i in items if i.get(key) == query[key][0]]
+            items = library_items(token)
             if query.get('q'): items = [i for i in items if query['q'][0].lower() in i['title'].lower()]
-            return self.send(dict(items=items, total=len(items), next_cursor=None, facets={}))
+            statuses = {value: sum(i['status'] == value for i in items) for value in ('saved', 'in_progress', 'completed', 'archived')}
+            if not query.get('status') or query['status'][0] == 'all':
+                items = [i for i in items if i['status'] != 'archived']
+            for key in ('status', 'content_type'):
+                if query.get(key) and query[key][0] != 'all': items = [i for i in items if i.get(key) == query[key][0]]
+            return self.send(dict(items=items, total=len(items), next_cursor=None, facets={'status': statuses}))
         if path == '/api/flashcards/decks/tree':
             return self.send([dict(deck_id='design-deck', name='French vocabulary', parent_deck_id=None, total=12, due=3, new=2)] if returning else [])
         if path in ('/api/challenges', '/api/plan-sessions/upcoming', '/api/flashcards/summary', '/api/flashcards/decks'):
@@ -151,6 +163,20 @@ class Handler(BaseHTTPRequestHandler):
                 SAVED.setdefault(token, {})[item['id']] = dict(item, status='saved', progress_ratio=0, buckets=[])
                 return self.send(dict(user_content_id=item['id'], status='saved'))
         return self.send({'detail': 'This action is not connected in the design preview. Production is untouched.'}, 501)
+
+    def do_PATCH(self):
+        path = urlparse(self.path).path
+        token = self.headers.get('Authorization', '')
+        body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))) or '{}')
+        if path.startswith('/api/user-content/'):
+            content_id = path.rsplit('/', 1)[1]
+            if not any(i['id'] == content_id for i in library_items(token)):
+                return self.send({'detail': 'Content not found'}, 404)
+            if body.get('status') not in ('saved', 'in_progress', 'completed', 'archived'):
+                return self.send({'detail': 'Invalid status'}, 422)
+            CONTENT_UPDATES.setdefault(token, {})[content_id] = {'status': body['status']}
+            return self.send({'content_id': content_id, 'updated': True})
+        return self.send({'detail': 'Not connected in the design preview'}, 501)
 
 
 if __name__ == '__main__':

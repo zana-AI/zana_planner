@@ -1043,7 +1043,7 @@ select:focus {
   gap: 12px;
 }
 
-/* Swipe wrapper: clips the card to its rounded corners and holds the delete
+/* Swipe wrapper: clips the card to its rounded corners and holds the archive
    button that the card slides away from (see ContentCard's pointer handlers).
    The button sits behind the card at all times; only a swipe reveals it. */
 .content-card-swipe {
@@ -1052,15 +1052,15 @@ select:focus {
   border-radius: 8px;
 }
 
-.content-card-swipe-delete {
+.content-card-swipe-archive {
   position: absolute;
   inset-block: 0;
   inset-inline-end: 0;
   display: grid;
   place-items: center;
   border: 0;
-  background: #7f1d1d;
-  color: #fecaca;
+  background: #123746;
+  color: #9eeafa;
   cursor: pointer;
 }
 
@@ -1218,6 +1218,31 @@ select:focus {
 
 .content-card-meta-row {
   justify-content: space-between;
+}
+
+.content-card-archive-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(237, 243, 255, 0.13);
+  border-radius: 7px;
+  background: rgba(237, 243, 255, 0.05);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.content-card-archive-action:hover,
+.content-card-archive-action:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.content-card-archive-action:disabled {
+  opacity: 0.45;
+  cursor: wait;
 }
 
 .content-card-meta-tags {

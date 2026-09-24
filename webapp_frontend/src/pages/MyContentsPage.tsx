@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
@@ -9,9 +9,10 @@ import { AssignContentSheet } from '../components/sheets/AssignContentSheet';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { MyContentsFacets, UserContentWithDetails } from '../types';
+import { restoredLibraryStatus } from '../utils/libraryArchive';
 import './explore.css';
 
-type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed';
+type StatusFilter = 'all' | 'in_progress' | 'saved' | 'completed' | 'archived';
 type TypeFilter = 'all' | 'pdf' | 'video' | 'audio' | 'text';
 type SortKey = 'recent' | 'added' | 'title' | 'progress';
 
@@ -22,6 +23,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'in_progress', label: 'continue' },
   { key: 'saved', label: 'saved' },
   { key: 'completed', label: 'completed' },
+  { key: 'archived', label: 'archived' },
 ];
 
 // Decks sit in this list because they are a kind of thing the library holds,
@@ -141,6 +143,10 @@ export function MyContentsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const mutationInFlight = useRef(false);
+  const loadSequence = useRef(0);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const requestedContentId = searchParams.get('content_id');
 
   useEffect(() => {
@@ -164,6 +170,7 @@ export function MyContentsPage() {
   }, [query]);
 
   const loadContents = useCallback(async (cursor?: string | null) => {
+    const sequence = ++loadSequence.current;
     const isMore = Boolean(cursor);
     if (isMore) {
       setLoadingMore(true);
@@ -183,24 +190,29 @@ export function MyContentsPage() {
           sort,
         },
       );
+      if (sequence !== loadSequence.current) return;
       setItems((prev) => (isMore ? [...prev, ...response.items] : response.items));
       setNextCursor(response.next_cursor || null);
       setFacets(response.facets || {});
     } catch (err) {
+      if (sequence !== loadSequence.current) return;
       if (err instanceof ApiError) {
         setError(err.message || 'Failed to load library');
       } else {
         setError(t('myContents.failedToLoadLibrary'));
       }
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (sequence === loadSequence.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [contentType, debouncedQuery, sort, status]);
 
   useEffect(() => {
     void loadContents();
-  }, [loadContents]);
+    return () => { loadSequence.current += 1; };
+  }, [loadContents, refreshVersion]);
 
   // Returning from the standalone video page can restore this tab from the
   // browser's back-forward cache. Refresh once in that case so a transcript
@@ -278,20 +290,26 @@ export function MyContentsPage() {
     if (url) window.open(url, '_blank');
   };
 
-  // "Delete" from the library is really archiving: the row survives (any
-  // flashcards or highlights made from it keep their references), it just
-  // stops showing up. Removed from `items` immediately so the swipe gesture
-  // feels instant; a failure puts it back and surfaces the error.
-  const archiveItem = async (item: UserContentWithDetails) => {
+  // Archiving changes only Library visibility. Restore derives its status
+  // from the existing progress; neither action deletes learning data.
+  const setArchived = async (item: UserContentWithDetails, archived: boolean) => {
     const contentId = item.content_id || item.id;
-    if (!contentId) return;
+    if (!contentId || mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    setUpdatingId(contentId);
     setError('');
-    setItems((prev) => prev.filter((existing) => (existing.content_id || existing.id) !== contentId));
     try {
-      await apiClient.updateUserContent(contentId, { status: 'archived' });
+      await apiClient.updateUserContent(contentId, { status: archived ? 'archived' : restoredLibraryStatus(item) });
+      setItems((prev) => prev.filter((existing) => (existing.content_id || existing.id) !== contentId));
+      setPlannedToast(t(archived ? 'content.archivedNotice' : 'content.restoredNotice'));
+      window.setTimeout(() => setPlannedToast(''), 4000);
+      // Refetch the current filter and its counts/cursor, not a stale snapshot.
+      setRefreshVersion((version) => version + 1);
     } catch (err) {
-      setItems((prev) => [item, ...prev]);
       setError(err instanceof ApiError ? err.message : t('myContents.failedToUpdateContent'));
+    } finally {
+      mutationInFlight.current = false;
+      setUpdatingId(null);
     }
   };
 
@@ -418,9 +436,11 @@ export function MyContentsPage() {
                 key={item.user_content_id || item.content_id || item.id}
                 item={item}
                 onClick={() => openItem(item)}
-                onPlan={() => setPlanning(item)}
+                onPlan={item.status !== 'archived' ? () => setPlanning(item) : undefined}
                 onShare={getPublicShareUrl(item) ? () => shareItem(item) : undefined}
-                onArchive={() => archiveItem(item)}
+                onArchive={item.status !== 'archived' ? () => setArchived(item, true) : undefined}
+                onRestore={item.status === 'archived' ? () => setArchived(item, false) : undefined}
+                updating={updatingId !== null}
               />
             ))}
           </section>
@@ -438,8 +458,8 @@ export function MyContentsPage() {
       ) : !error ? (
         <section className="content-library-empty">
           <div className="content-library-empty-icon" aria-hidden="true"><Plus size={22} /></div>
-          <h2>{t('myContents.noContentHereYet')}</h2>
-          <p>{activeFilterCount === 0
+          <h2>{t(status === 'archived' ? 'myContents.archiveEmpty' : 'myContents.noContentHereYet')}</h2>
+          <p>{status === 'archived' ? t('myContents.archiveEmptyHint') : activeFilterCount === 0
             ? t('myContents.emptyLibraryGuide')
             : t('myContents.useAddButtonOrClearFilters')}</p>
           {activeFilterCount > 0 && (

@@ -1,9 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { CalendarClock, Captions, FileText, Headphones, Play, Share2, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, CalendarClock, Captions, FileText, Headphones, Play, Share2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
-import { RemoveContentConfirmModal } from './RemoveContentConfirmModal';
 import type { UserContentWithDetails } from '../types';
 
 interface ContentCardProps {
@@ -13,12 +12,13 @@ interface ContentCardProps {
   onPlan?: () => void;
   /** Hand out a public link. Only set for items that actually have one. */
   onShare?: () => void;
-  /** Swipe-to-delete, confirmed. Archives the item — it can't be restored
-   *  from the UI yet, so this always asks first. */
+  /** Non-destructive: available by button or swipe, reversible in Archived. */
   onArchive?: () => void;
+  onRestore?: () => void;
+  updating?: boolean;
 }
 
-/** Pixels the card slides to reveal the delete action. Matches the button's
+/** Pixels the card slides to reveal the archive action. Matches the button's
  * own width plus its side padding, so the reveal stops exactly at its edge. */
 const REVEAL_WIDTH = 72;
 // A move shorter than this is a tap, not a swipe — keeps a slightly shaky
@@ -50,10 +50,9 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
   return <FileText size={17} />;
 }
 
-export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: ContentCardProps) {
+export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onRestore, updating = false }: ContentCardProps) {
   const { t } = useTranslation();
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState('');
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const title = item.title || t('content.untitled');
   const provider = (item.provider || 'other').replace(/_/g, ' ');
   const displayType = getDisplayType(item);
@@ -100,11 +99,10 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
     };
   }, [displayType, item.content_id, item.id, item.thumbnail_asset_id, item.thumbnail_url]);
 
-  // --- swipe-to-reveal-delete --------------------------------------------
+  // --- swipe-to-reveal-archive -------------------------------------------
   // A card slides away from its inline-end edge to reveal one fixed
-  // delete button behind it — the same gesture as a mail app's swipe. It
-  // only ever *reveals* the button; deleting still needs a tap and a
-  // confirmation, since this can't be undone from the UI yet.
+  // archive button behind it. The gesture only reveals the action; it never
+  // archives by itself. Archived items can be restored from Library filters.
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const revealedRef = useRef(false);
@@ -127,9 +125,8 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     // Pointer Events cover touch and mouse the same way, so a click-drag
-    // reveals the delete button on a trackpad exactly as a swipe does on a
-    // phone — there's no separate button for non-touch to keep in sync.
-    if (!onArchive) return;
+    // reveals the archive button on a trackpad exactly as a swipe on a phone.
+    if (!onArchive || updating || (event.target as HTMLElement).closest('button')) return;
     const sign = getComputedStyle(event.currentTarget).direction === 'rtl' ? 1 : -1;
     dragRef.current = { startX: event.clientX, startY: event.clientY, originX: dragXRef.current, axis: null, pointerId: event.pointerId, sign };
   };
@@ -177,16 +174,17 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
       <div className="content-card-swipe">
         {/* Mounted only while dragging/revealed: the card's own background is
             translucent by design, so a button sitting behind it at rest would
-            tint the card's edge with red even when nothing is happening. */}
+            tint the card's edge even when nothing is happening. */}
         {onArchive && dragX !== 0 && (
           <button
             type="button"
-            className="content-card-swipe-delete"
+            className="content-card-swipe-archive"
             style={{ width: REVEAL_WIDTH }}
-            onClick={() => { snapTo(0); setConfirmingRemove(true); }}
-            aria-label={t('content.removeFromLibrary')}
+            onClick={() => { snapTo(0); onArchive(); }}
+            disabled={updating}
+            aria-label={t('content.archive')}
           >
-            <Trash2 size={18} />
+            <Archive size={18} />
           </button>
         )}
         <article
@@ -223,8 +221,8 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
                 </div>
               )}
             </div>
-            {/* The two actions worth a permanent slot: everything else is a
-                tap on the card (open), a swipe (delete), or not needed. */}
+            {/* Planning/sharing remain below the thumbnail; archive/restore
+                has a visible slot in the metadata row on every card. */}
             {(onPlan || onShare) && (
               <div className="content-card-quick-actions" onClick={(event) => event.stopPropagation()}>
                 {onPlan && (
@@ -255,6 +253,22 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
                   </span>
                 ) : null}
               </div>
+              {(onArchive || onRestore) && (
+                <button
+                  type="button"
+                  className="content-card-archive-action"
+                  disabled={updating}
+                  aria-label={t(onRestore ? 'content.restoreToLibrary' : 'content.archive')}
+                  title={t(onRestore ? 'content.restoreToLibrary' : 'content.archive')}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    snapTo(0);
+                    (onRestore || onArchive)?.();
+                  }}
+                >
+                  {onRestore ? <ArchiveRestore size={17} aria-hidden="true" /> : <Archive size={17} aria-hidden="true" />}
+                </button>
+              )}
             </div>
             <h3 className="content-card-title">{title}</h3>
             <div className="content-card-subtitle">
@@ -272,12 +286,6 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive }: Conte
         </article>
       </div>
 
-      <RemoveContentConfirmModal
-        isOpen={confirmingRemove}
-        title={title}
-        onCancel={() => setConfirmingRemove(false)}
-        onConfirm={() => { setConfirmingRemove(false); onArchive?.(); }}
-      />
     </>
   );
 }
