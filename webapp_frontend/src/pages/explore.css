@@ -9,23 +9,25 @@
 .explore-filter-bar .explore-chips { flex: 0 0 auto; flex-wrap: nowrap; margin: 0; }
 .explore-filter-bar .explore-chip { flex: 0 0 auto; min-height: 44px; }
 .explore-club-tools { margin-bottom: 16px; }
-.explore-card { --kind-accent: #67e8f9; border-inline-start: 3px solid var(--kind-accent) !important; }
+.explore-card { --kind-accent: #67e8f9; }
+.explore-card:not([data-kind="video"]) { border-inline-start: 3px solid var(--kind-accent); }
 .explore-card[data-kind="course"] { --kind-accent: #c4b5fd; }
 .explore-card[data-kind="deck"] { --kind-accent: #86efac; }
 .explore-card[data-kind="club"] { --kind-accent: #fcd34d; }
 .explore-card[data-kind="habit"] { --kind-accent: #cbd5e1; }
 .explore-card[data-kind="book"] { --kind-accent: #f9a8d4; }
 .explore-card .explore-card-media { display: grid; place-items: center; color: var(--kind-accent); }
-.explore-card .explore-card-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--kind-accent); background: color-mix(in srgb, var(--kind-accent) 12%, transparent); }
+.explore-card .explore-card-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--kind-accent); background: transparent; }
 .explore-card-labels, .explore-learning-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 11px; color: var(--fg-muted); }
 .explore-learning-meta > span { display: inline-flex; align-items: center; gap: 4px; }
-.explore-learning-meta .is-ready { color: #86efac; }
+.explore-card-subject { flex-shrink: 0; text-transform: none; font-weight: 700; white-space: nowrap; }
+.explore-learning-meta .content-card-subtitles { gap: 4px; }
 .explore-card .explore-card-description { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .explore-card-creator { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .explore-card-labels { flex-wrap: nowrap; gap: 6px; }
 .explore-card-labels > span:not(.explore-card-creator) { flex-shrink: 0; }
 .explore-card-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
-.explore-card-footer .explore-learning-meta { flex: 1 1 180px; gap: 4px 8px; }
+.explore-card-footer .explore-learning-meta { flex: 1 1 auto; min-width: 0; gap: 4px 8px; }
 .explore-card-footer .explore-card-actions { margin-inline-start: auto; }
 .explore-card .explore-card-actions { flex-wrap: wrap; }
 .explore-card .explore-action { min-height: 44px; }
@@ -155,6 +157,7 @@
 .explore-list { display: grid; gap: 10px; }
 
 .explore-card {
+  position: relative;
   display: grid;
   grid-template-columns: 148px minmax(0, 1fr);
   gap: 12px;
@@ -164,13 +167,43 @@
   border: 1px solid rgba(237, 243, 255, 0.11);
   border-radius: 8px;
 }
+.explore-card.is-openable { transition: border-color 0.18s ease, background 0.18s ease; }
+.explore-card.is-openable:hover,
+.explore-card.is-openable:focus-within {
+  border-color: rgba(99, 167, 247, 0.42);
+  background: rgba(22, 39, 76, 0.74);
+}
+.explore-card-open {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.explore-card-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.explore-card.is-openable .explore-card-actions { position: relative; z-index: 2; }
 .explore-card-media {
+  position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
   align-self: center;
   overflow: hidden;
   border-radius: 7px;
   background: rgba(237, 243, 255, 0.07);
+}
+.explore-video-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.65));
+  pointer-events: none;
 }
 .explore-card-media img {
   display: block;
@@ -202,13 +235,11 @@
 }
 .explore-card-kind {
   flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: var(--r-pill);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
+  padding: 3px 6px;
+  border: 1px solid rgba(237, 243, 255, 0.12);
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 900;
   text-transform: uppercase;
 }
 .explore-card-description {

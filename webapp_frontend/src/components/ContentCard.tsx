@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Archive, ArchiveRestore, CalendarClock, Captions, FileText, Headphones, Play, Share2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
+import { YouTubeThumbnailMark } from './YouTubeThumbnailMark';
 import type { UserContentWithDetails } from '../types';
 
 interface ContentCardProps {
@@ -56,6 +57,7 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
   const title = item.title || t('content.untitled');
   const provider = (item.provider || 'other').replace(/_/g, ' ');
   const displayType = getDisplayType(item);
+  const isYouTubeVideo = displayType === 'video' && (item.provider || '').toLowerCase() === 'youtube';
   const durationSeconds = item.duration_seconds ?? item.estimated_read_seconds;
   const durationLabel = durationSeconds != null
     ? displayType === 'text' || displayType === 'pdf'
@@ -220,6 +222,7 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
                   <TypeIcon type={displayType} />
                 </div>
               )}
+              {isYouTubeVideo && <YouTubeThumbnailMark />}
             </div>
             {/* Planning/sharing remain below the thumbnail; archive/restore
                 has a visible slot in the metadata row on every card. */}
@@ -242,10 +245,10 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
           <div className="content-card-body">
             <div className="content-card-meta-row">
               <div className="content-card-meta-tags">
-                <span className={`content-card-type content-card-type--${displayType}`}>
+                {!isYouTubeVideo && <span className={`content-card-type content-card-type--${displayType}`}>
                   <TypeIcon type={displayType} />
                   {t(`content.types.${displayType}`)}
-                </span>
+                </span>}
                 {item.has_subtitles && displayType === 'video' ? (
                   <span className="content-card-subtitles" title={t('content.subtitlesAvailable')}>
                     <Captions size={14} aria-hidden="true" />

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Bookmark, BookOpen, Check, Clock, GraduationCap, Layers, Repeat, Subtitles, Video } from 'lucide-react';
+import { Bookmark, BookOpen, Captions, Check, Clock, GraduationCap, Layers, Play, Repeat, Video } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { itemKind } from '../pages/exploreVocabulary';
 import { youTubeUrlFor, videoDuration, type LearningEntry } from '../utils/exploreLearning';
 import { saveActionKey } from '../utils/learningActions';
+import { YouTubeThumbnailMark } from './YouTubeThumbnailMark';
 
 const icons = { video: Video, course: GraduationCap, deck: Layers, book: BookOpen, habit: Repeat };
 
@@ -17,12 +18,15 @@ export function ExploreCard({ entry }: { entry: LearningEntry }) {
   const [state, setState] = useState<'idle' | 'adding' | 'added' | 'failed'>('idle');
   const { item, topicId, subjectTitle } = entry;
   const kind = itemKind(topicId) || 'book';
+  const isVideo = kind === 'video';
   const Icon = icons[kind as keyof typeof icons] || BookOpen;
   const youtubeUrl = youTubeUrlFor(item);
   const alreadyMine = state === 'added';
   const duration = videoDuration(item.duration_seconds);
   const subtitleLanguage = item.subtitle_language
     ? t(`learning.languages.${item.subtitle_language.toLowerCase().split('-')[0]}`, { defaultValue: item.subtitle_language }) : '';
+  const subtitlesTitle = subtitleLanguage
+    ? t('learning.subtitlesReady', { language: subtitleLanguage }) : t('learning.captionsReady');
 
   const open = () => {
     hapticFeedback('light');
@@ -46,29 +50,32 @@ export function ExploreCard({ entry }: { entry: LearningEntry }) {
     } catch { setState('failed'); hapticFeedback('error'); }
   };
 
-  return <article className={`explore-card${kind === 'video' ? '' : ' is-compact'}`} data-kind={kind}>
+  return <article className={`explore-card${isVideo ? ' is-openable' : ' is-compact'}`} data-kind={kind}>
+    {isVideo && <button type="button" className="explore-card-open" onClick={open}
+      aria-label={`${t('learning.watch')}: ${item.title}`} />}
     <div className="explore-card-media" aria-hidden="true">
-      {item.image ? <img src={item.image} alt="" loading="lazy" /> : <Icon size={30} />}
+      {item.image ? <img src={item.image} alt="" loading="lazy" /> : !isVideo && <Icon size={30} />}
+      {isVideo && (youtubeUrl ? <YouTubeThumbnailMark /> : <Play className="explore-video-play" size={28} fill="currentColor" />)}
     </div>
     <div className="explore-card-body">
       <div className="explore-card-labels">
-        <span className="explore-card-kind"><Icon size={13} aria-hidden="true" />{t(`explore.kind.${kind}`)}</span>
-        <span dir="auto">{subjectTitle}</span>
+        {!isVideo && <span className="explore-card-kind"><Icon size={13} aria-hidden="true" />{t(`explore.kind.${kind}`)}</span>}
+        <span className="content-card-type explore-card-subject" dir="auto">{subjectTitle}</span>
         {item.creator && <span className="explore-card-creator" dir="auto">{item.creator}</span>}
       </div>
       <h3 className="explore-card-title" dir="auto">{item.title}</h3>
       {item.description && <p className="explore-card-description" dir="auto">{item.description}</p>}
       <div className="explore-card-footer">
-      {kind === 'video' && <div className="explore-learning-meta">
+      {isVideo && <div className="explore-learning-meta">
         {duration && <span><Clock size={13} aria-hidden="true" /><bdi>{duration}</bdi></span>}
-        {item.subtitles_available === true ? <span className="is-ready"><Subtitles size={14} aria-hidden="true" />
-          {subtitleLanguage ? t('learning.subtitlesReady', { language: subtitleLanguage }) : t('learning.captionsReady')}
-        </span> : <span>{t(item.subtitles_available === false ? 'learning.notCached' : 'learning.captionStatusUnknown')}</span>}
+        {item.subtitles_available === true && <span className="content-card-subtitles" title={subtitlesTitle}>
+          <Captions size={14} aria-hidden="true" />{t('content.subtitlesAvailable')}
+        </span>}
       </div>}
       <div className="explore-card-actions">
-        <button type="button" className={`explore-action${kind === 'video' ? ' is-primary' : ''}`} onClick={open}>
-          {t(kind === 'video' ? 'learning.watch' : kind === 'course' ? 'learning.viewCourse' : kind === 'deck' ? 'learning.viewPractice' : kind === 'habit' ? 'learning.setUpRoutine' : 'explore.open')}
-        </button>
+        {!isVideo && <button type="button" className="explore-action" onClick={open}>
+          {t(kind === 'course' ? 'learning.viewCourse' : kind === 'deck' ? 'learning.viewPractice' : kind === 'habit' ? 'learning.setUpRoutine' : 'explore.open')}
+        </button>}
         {youtubeUrl && <button type="button" className={`explore-action explore-save${alreadyMine ? ' is-done' : ''}`}
           title={t(saveActionKey(true, state, false))}
           aria-label={t(saveActionKey(true, state, false))}
