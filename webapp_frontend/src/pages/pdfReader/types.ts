@@ -25,6 +25,7 @@ export interface ViewportAnchor {
 }
 
 export interface PinchPreview {
+  // Absolute target scale, not a ratio relative to the rendered page.
   scale: number;
   originX: number;
   originY: number;

@@ -82,7 +82,7 @@ export function usePinchZoom({
     clearNativeSelection();
     if (anchor) {
       setPinchPreview({
-        scale: 1,
+        scale,
         originX: anchor.xRatio * 100,
         originY: anchor.yRatio * 100,
       });
@@ -115,7 +115,7 @@ export function usePinchZoom({
     pinchLatestAnchorRef.current = latestAnchor;
     pendingViewportAnchorRef.current = latestAnchor;
     setPinchPreview({
-      scale: nextScale / pinchStartScaleRef.current,
+      scale: pinchLatestScaleRef.current,
       originX: baseAnchor.xRatio * 100,
       originY: baseAnchor.yRatio * 100,
     });
@@ -142,14 +142,9 @@ export function usePinchZoom({
       clearPinchPreview();
       return;
     }
-    // Let the final CSS-transform preview frame paint, then drop preview before
-    // committing scale so we don't stack transform + re-rendered dimensions.
-    window.requestAnimationFrame(() => {
-      clearPinchPreview();
-      window.requestAnimationFrame(() => {
-        setScale(() => nextScale);
-      });
-    });
+    // Keep the preview up: clearing it before the re-render lands flashes the
+    // page back to its pre-pinch size. The render effect clears it later.
+    setScale(() => nextScale);
   }, [clearPinchPreview, pendingViewportAnchorRef, scale, setScale]);
 
   return {
