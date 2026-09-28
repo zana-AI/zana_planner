@@ -1770,6 +1770,7 @@ class PlannerAPIAdapter:
         Never use for past activity (use log_completed_activity).
 
         planned_start must be an ISO datetime string; call resolve_datetime() first.
+        A datetime without an offset is interpreted in the user's timezone.
         planned_duration_min is in minutes (e.g. 60 for 1 hour, 30 for 30 minutes).
 
         Args:
@@ -1787,10 +1788,25 @@ class PlannerAPIAdapter:
 
                     parsed_start = datetime.fromisoformat(str(planned_start).replace("Z", "+00:00"))
                     if parsed_start.tzinfo is None:
-                        parsed_start = parsed_start.replace(tzinfo=timezone.utc)
+                        settings = self.settings_repo.get_settings(int(user_id))
+                        tz_name = getattr(settings, "timezone", None) or "UTC"
+                        if tz_name in ("DEFAULT", "DISABLED"):
+                            tz_name = "UTC"
+                        try:
+                            user_tz = ZoneInfo(tz_name)
+                        except Exception:
+                            user_tz = timezone.utc
+                        parsed_start = parsed_start.replace(tzinfo=user_tz)
                     planned_start = parsed_start.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
                 except Exception:
-                    pass
+                    return "Invalid planned_start datetime. Please provide a specific date and time."
+            if planned_duration_min is not None:
+                try:
+                    planned_duration_min = int(planned_duration_min)
+                except (TypeError, ValueError):
+                    return "planned_duration_min must be a positive number of minutes."
+                if planned_duration_min <= 0:
+                    return "planned_duration_min must be a positive number of minutes."
             p_uuid = None
             if promise_id:
                 with get_db_session() as session:
