@@ -22,12 +22,14 @@
       --app-border: rgba(170, 196, 238, 0.16);
       --app-accent: #63a7f7;
       --watch-viewport-height: 100dvh;
+      --watch-pad-left: max(12px, env(safe-area-inset-left, 0px));
+      --watch-pad-right: max(12px, env(safe-area-inset-right, 0px));
     }
     body {
       margin: 0;
       min-height: 100vh;
       min-height: 100dvh;
-      padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+      padding: max(12px, env(safe-area-inset-top, 0px)) var(--watch-pad-right) max(20px, env(safe-area-inset-bottom, 0px)) var(--watch-pad-left);
       font-family: system-ui, sans-serif;
       background: var(--app-bg);
       color: #edf3ff;
@@ -51,7 +53,8 @@
       line-height: 1.35;
       min-height: 1.35em;
     }
-    .video-wrap { position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border: 1px solid var(--app-border); border-radius: 14px; background: #000; box-shadow: 0 18px 48px rgba(0,0,0,.28); }
+    /* Full-bleed: cancel the body's side padding so the video spans the whole screen width. */
+    .video-wrap { position: relative; width: auto; margin: 0 calc(-1 * var(--watch-pad-right)) 0 calc(-1 * var(--watch-pad-left)); padding-bottom: 56.25%; height: 0; overflow: hidden; border: 0; border-radius: 0; background: #000; box-shadow: 0 18px 48px rgba(0,0,0,.28); }
     .video-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
     /* Shown until the YouTube player reports ready. Where YouTube is blocked
        the frame would otherwise stay black with no explanation. It never
@@ -150,6 +153,7 @@
         var(--player-safe-left);
       width: auto;
       height: auto;
+      margin: 0;
       padding-bottom: 0;
       z-index: 10;
       background: #000;
