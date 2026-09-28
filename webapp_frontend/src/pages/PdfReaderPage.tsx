@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent, type WheelEvent } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, MoreHorizontal, PanelRight, Plus, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { flushSync } from 'react-dom';
@@ -21,6 +21,8 @@ const PDF_READ_BUCKET_COUNT = 120;
 const PDF_READ_DWELL_SECONDS = 15;
 const MAX_CANVAS_PIXELS = 16_000_000;
 const MAX_PDF_SCALE = 4;
+// A phone held sideways: the bar and footer float over the page and hide.
+const LANDSCAPE_PHONE_QUERY = '(orientation: landscape) and (max-height: 560px)';
 
 type PageRasterCacheEntry = {
   scale: number;
@@ -82,6 +84,8 @@ export function PdfReaderPage() {
   const [scale, setScale] = useState(1);
   const [rendering, setRendering] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isLandscapePhone, setIsLandscapePhone] = useState(() => window.matchMedia(LANDSCAPE_PHONE_QUERY).matches);
+  const [chromeHidden, setChromeHidden] = useState(isLandscapePhone);
   const [savedWords, setSavedWords] = useState<ContentWord[]>([]);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
@@ -618,11 +622,18 @@ export function PdfReaderPage() {
         }
 
         textLayerDiv.replaceChildren();
-        const textContent = page.streamTextContent();
-        textLayer = new pdfjsLib.TextLayer({
-          textContentSource: textContent,
-          container: textLayerDiv,
-          viewport,
+        const textLayerPromise = page.getTextContent().then((textContent) => {
+          if (cancelled) return;
+          // pdf.js sizes each span by measuring it on a canvas tagged with the
+          // PDF's language; render with that same language, not the UI's (fa),
+          // or generic fonts can resolve differently and selection drifts.
+          textLayerDiv.lang = textContent.lang ?? '';
+          textLayer = new pdfjsLib.TextLayer({
+            textContentSource: textContent,
+            container: textLayerDiv,
+            viewport,
+          });
+          return textLayer.render();
         });
 
         const canvasRenderPromise = (async () => {
@@ -667,7 +678,7 @@ export function PdfReaderPage() {
           }
         })();
 
-        await Promise.all([canvasRenderPromise, textLayer.render()]);
+        await Promise.all([canvasRenderPromise, textLayerPromise]);
         if (cancelled) return;
 
         const textDirection = detectTextLayerDirection(textLayerDiv);
@@ -874,12 +885,56 @@ export function PdfReaderPage() {
     if (unscaledWidth <= 0) return;
     pendingViewportAnchorRef.current = captureViewportAnchor();
     const nextScale = (shell.clientWidth - 28) / unscaledWidth;
-    setScale(Math.min(MAX_PDF_SCALE, Math.max(0.55, Number(nextScale.toFixed(2)))));
+    const fittedScale = Math.min(MAX_PDF_SCALE, Math.max(0.55, Number(nextScale.toFixed(2))));
+    fittedScaleRef.current = fittedScale;
+    setScale(fittedScale);
   };
 
   const zoomBy = (delta: number) => {
     pendingViewportAnchorRef.current = captureViewportAnchor();
     setScale((current) => Math.min(MAX_PDF_SCALE, Math.max(0.65, Number((current + delta).toFixed(2)))));
+  };
+
+  useEffect(() => {
+    const query = window.matchMedia(LANDSCAPE_PHONE_QUERY);
+    const sync = () => {
+      setIsLandscapePhone(query.matches);
+      setChromeHidden(query.matches);
+    };
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  // A page fitted to the width stays fitted when the width changes (rotating
+  // the phone), unless the reader has zoomed since.
+  const fittedScaleRef = useRef<number | null>(null);
+  const [shellWidth, setShellWidth] = useState(0);
+  const lastShellWidthRef = useRef(0);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const observer = new ResizeObserver(([entry]) => setShellWidth(Math.round(entry.contentRect.width)));
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, [loading, pdfUrl]);
+  useEffect(() => {
+    const previousWidth = lastShellWidthRef.current;
+    lastShellWidthRef.current = shellWidth;
+    if (!previousWidth || !shellWidth || previousWidth === shellWidth) return;
+    if (fittedScaleRef.current !== null && scale === fittedScaleRef.current) fitToWidth();
+  }, [shellWidth]);
+
+  const handleShellClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (menuOpen) {
+      setMenuOpen(false);
+      return;
+    }
+    if (!isLandscapePhone || selectionDraft) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, select, .pdf-reader-highlight-rect, .pdf-reader-selection-popover')) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    setChromeHidden((hidden) => !hidden);
   };
 
   const handleReaderScroll = () => {
@@ -1078,7 +1133,13 @@ export function PdfReaderPage() {
   }
 
   return (
-    <div className="pdf-reader-page">
+    <div
+      className={[
+        'pdf-reader-page',
+        isLandscapePhone ? 'pdf-reader-page--landscape' : '',
+        isLandscapePhone && chromeHidden && !menuOpen && !highlightsOpen ? 'pdf-reader-page--immersive' : '',
+      ].filter(Boolean).join(' ')}
+    >
       <section className="pdf-reader-viewer" dir="ltr">
         {/* One slim row: everything else lives in the "more" menu, the footer,
             or the edge buttons, so the page gets the screen. */}
@@ -1146,7 +1207,7 @@ export function PdfReaderPage() {
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
-            onClick={() => setMenuOpen(false)}
+            onClick={handleShellClick}
             tabIndex={0}
           >
             <div

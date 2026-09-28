@@ -234,6 +234,10 @@ select:focus {
   line-height: 1;
   opacity: 1;
   text-align: initial;
+  /* iOS only honours the prefixed form. Without it, WebKit text autosizing
+     enlarges these invisible spans past the width pdf.js measured, so a
+     selection drifts right of the word under the finger. */
+  -webkit-text-size-adjust: none;
   text-size-adjust: none;
   forced-color-adjust: none;
   transform-origin: 0 0;
@@ -832,6 +836,53 @@ select:focus {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Phone held sideways: the page gets the whole screen, including the notch
+   side areas. The bar and footer float over it and hide until the page is
+   tapped; only they keep clear of the safe areas. */
+.pdf-reader-page--landscape {
+  padding: 0;
+}
+
+.pdf-reader-page--landscape .pdf-reader-bar,
+.pdf-reader-page--landscape .pdf-reader-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.pdf-reader-page--landscape .pdf-reader-bar {
+  top: 0;
+  padding-top: max(6px, env(safe-area-inset-top));
+}
+
+.pdf-reader-page--landscape .pdf-reader-footer {
+  bottom: 0;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.pdf-reader-page--immersive .pdf-reader-bar {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pdf-reader-page--immersive .pdf-reader-footer {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdf-reader-page--landscape .pdf-reader-bar,
+  .pdf-reader-page--landscape .pdf-reader-footer {
+    transition: none;
+  }
 }
 
 @media (max-width: 767px) {
