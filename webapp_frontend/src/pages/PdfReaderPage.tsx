@@ -124,6 +124,8 @@ export function PdfReaderPage() {
   const isSavingProgressRef = useRef(false);
   const queuedProgressRef = useRef<number | null>(null);
   const pageRasterCacheRef = useRef<Map<number, PageRasterCacheEntry>>(new Map());
+  // Scale that the current pageSize was computed at.
+  const renderedScaleRef = useRef(scale);
   const panRef = useRef<{ pointerId: number; clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const wheelPageTurnLockUntilRef = useRef(0);
   const [isPanning, setIsPanning] = useState(false);
@@ -567,12 +569,14 @@ export function PdfReaderPage() {
 
         if (!cancelled && cacheMatchesViewport) {
           applyRasterCacheToCanvas(canvas, cachedRaster);
+          renderedScaleRef.current = scale;
           setPageSize({ width: newWidth, height: newHeight });
         } else {
           canvas.width = Math.floor(newWidth * outputScale);
           canvas.height = Math.floor(newHeight * outputScale);
           canvas.style.width = `${newWidth}px`;
           canvas.style.height = `${newHeight}px`;
+          renderedScaleRef.current = scale;
           setPageSize({ width: newWidth, height: newHeight });
         }
 
@@ -1006,7 +1010,10 @@ export function PdfReaderPage() {
     if (!pageSize.width || !pageSize.height) return undefined;
     const style: CSSProperties = { width: pageSize.width, height: pageSize.height };
     if (pinchPreview) {
-      style.transform = `scale(${pinchPreview.scale})`;
+      // Relative to what's rendered, so it drops to 1 as soon as the
+      // re-render at the target scale lands instead of stacking on top of it.
+      const ratio = pinchPreview.scale / (renderedScaleRef.current || 1);
+      style.transform = `scale(${ratio})`;
       style.transformOrigin = `${pinchPreview.originX}% ${pinchPreview.originY}%`;
     }
     return style;
