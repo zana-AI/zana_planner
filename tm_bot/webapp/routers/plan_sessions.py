@@ -85,7 +85,8 @@ def _fire_session_saved_dm(
                 planned_start=session_row.get("planned_start"),
                 planned_duration_min=session_row.get("planned_duration_min"),
                 reminder_enabled=bool(session_row.get("reminder_enabled", True)),
-                reminder_offset_min=int(session_row.get("reminder_offset_min") or 10),
+                reminder_offset_min=int(10 if session_row.get("reminder_offset_min") is None
+                                        else session_row["reminder_offset_min"]),
                 is_edit=is_edit,
                 miniapp_url=miniapp_url,
             )

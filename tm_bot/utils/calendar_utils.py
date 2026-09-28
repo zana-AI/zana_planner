@@ -1,7 +1,7 @@
 """
 Utility functions for generating Google Calendar links.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from urllib.parse import quote
 from typing import Optional
 
@@ -74,34 +74,21 @@ def generate_google_calendar_link(
         start_time: Start datetime (timezone-aware or naive)
         duration_hours: Duration in hours
         description: Event description
-        timezone: Timezone string (e.g., "Europe/Paris", "America/New_York")
+        timezone: Retained for caller compatibility; an aware start_time supplies
+            its own timezone, and a naive start_time is treated as UTC.
     
     Returns:
         Google Calendar URL string
     """
-    # Calculate end time
-    end_time = start_time + timedelta(hours=duration_hours)
-    
-    # Format dates in ISO 8601 format: YYYYMMDDTHHmmss
-    # If timezone-aware, include offset; otherwise use Z for UTC
-    if start_time.tzinfo is not None:
-        # Timezone-aware datetime
-        start_str = start_time.strftime("%Y%m%dT%H%M%S")
-        end_str = end_time.strftime("%Y%m%dT%H%M%S")
-        
-        # Get timezone offset
-        offset = start_time.strftime("%z")
-        if offset:
-            # Format: +0100 or -0500
-            start_str += offset
-            end_str += offset
-        else:
-            start_str += "Z"
-            end_str += "Z"
-    else:
-        # Naive datetime - treat as UTC
-        start_str = start_time.strftime("%Y%m%dT%H%M%SZ")
-        end_str = end_time.strftime("%Y%m%dT%H%M%SZ")
+    # Calendar template links expect UTC stamps ending in Z. An ISO-style
+    # +0000 offset in `dates` is read as a local wall time by Calendar, shifting
+    # the event for users outside UTC. Add the duration in UTC so a DST boundary
+    # cannot change the event's elapsed duration either.
+    start_utc = (start_time.replace(tzinfo=dt_timezone.utc) if start_time.tzinfo is None
+                 else start_time.astimezone(dt_timezone.utc))
+    end_utc = start_utc + timedelta(hours=duration_hours)
+    start_str = start_utc.strftime("%Y%m%dT%H%M%SZ")
+    end_str = end_utc.strftime("%Y%m%dT%H%M%SZ")
     
     # URL encode parameters
     encoded_title = quote(title)
@@ -147,14 +134,16 @@ def generate_ics(
 
     Returns the .ics file contents as a string (CRLF line endings).
     """
+    start_time = (start_time.replace(tzinfo=dt_timezone.utc) if start_time.tzinfo is None
+                  else start_time.astimezone(dt_timezone.utc))
     end_time = start_time + timedelta(hours=duration_hours)
 
     def _utc_stamp(dt: datetime) -> str:
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(dt_timezone.utc)
         return dt.strftime("%Y%m%dT%H%M%SZ")
 
-    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dtstamp = datetime.now(dt_timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     if not uid:
         uid = f"{dtstamp}-{abs(hash((title, _utc_stamp(start_time)))) % 10_000_000}@xaana.club"
 

@@ -1,5 +1,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
+from urllib.parse import parse_qs, urlsplit
+from zoneinfo import ZoneInfo
 
 from utils.calendar_utils import (
     calendar_event_description,
@@ -56,7 +58,7 @@ def test_generate_google_calendar_link_uses_promise_title_not_placeholder():
 
 
 @pytest.mark.unit
-def test_generate_google_calendar_link_tz_aware_includes_offset():
+def test_generate_google_calendar_link_tz_aware_uses_utc_stamps():
     tz = timezone(timedelta(hours=1))
     start = datetime(2025, 1, 2, 3, 4, 5, tzinfo=tz)
     url = generate_google_calendar_link(
@@ -66,7 +68,27 @@ def test_generate_google_calendar_link_tz_aware_includes_offset():
         description="Desc",
         timezone="Europe/Paris",
     )
-    assert "dates=20250102T030405+0100/20250102T050405+0100" in url
+    assert parse_qs(urlsplit(url).query)["dates"] == ["20250102T020405Z/20250102T040405Z"]
+
+
+@pytest.mark.unit
+def test_calendar_link_and_ics_keep_30_minutes_across_timezone_and_dst():
+    paris = ZoneInfo("Europe/Paris")
+    # The affected session: 15:00 Paris is 13:00 UTC on 28 September.
+    start = datetime(2026, 9, 28, 15, 0, tzinfo=paris)
+    url = generate_google_calendar_link("Exercise", start, 0.5)
+    assert parse_qs(urlsplit(url).query)["dates"] == ["20260928T130000Z/20260928T133000Z"]
+    ics = generate_ics("Exercise", start, 0.5)
+    assert "DTSTART:20260928T130000Z" in ics
+    assert "DTEND:20260928T133000Z" in ics
+
+    # At the autumn clock change, elapsed time still has to be 30 minutes.
+    dst_start = datetime(2026, 10, 25, 2, 45, tzinfo=paris, fold=0)
+    dst_url = generate_google_calendar_link("Exercise", dst_start, 0.5)
+    assert parse_qs(urlsplit(dst_url).query)["dates"] == ["20261025T004500Z/20261025T011500Z"]
+    dst_ics = generate_ics("Exercise", dst_start, 0.5)
+    assert "DTSTART:20261025T004500Z" in dst_ics
+    assert "DTEND:20261025T011500Z" in dst_ics
 
 
 @pytest.mark.unit

@@ -566,9 +566,20 @@ async def send_plan_session_reminder(
         if planned_start:
             try:
                 dt = datetime.fromisoformat(planned_start.replace("Z", "+00:00"))
-                time_str = dt.strftime("%H:%M")
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
             except Exception:
                 pass
+            else:
+                try:
+                    from zoneinfo import ZoneInfo
+                    settings = SettingsRepository().get_settings(user_id)
+                    tz_name = settings.timezone if settings and settings.timezone else "UTC"
+                    if tz_name in ("DEFAULT", "DISABLED"):
+                        tz_name = "UTC"
+                    time_str = dt.astimezone(ZoneInfo(tz_name)).strftime("%H:%M")
+                except Exception:
+                    time_str = dt.astimezone(timezone.utc).strftime("%H:%M UTC")
 
         dur_str = ""
         if planned_duration_min:

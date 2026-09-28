@@ -1153,7 +1153,8 @@ class CallbackHandlers:
                 event_title, promise_text, plan.get("notes")
             )
             reminder_enabled = bool(plan.get("reminder_enabled", True))
-            offset = int(plan.get("reminder_offset_min") or 10)
+            stored_offset = plan.get("reminder_offset_min")
+            offset = int(10 if stored_offset is None else stored_offset)
             ics_text = generate_ics(
                 title=event_title,
                 start_time=start_dt,
