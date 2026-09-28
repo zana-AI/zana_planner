@@ -50,6 +50,21 @@ const applyRasterCacheToCanvas = (target: HTMLCanvasElement, entry: PageRasterCa
   }
 };
 
+// page.getTextContent() iterates a ReadableStream with `for await`, which
+// Safari/WebKit doesn't support, so it throws on iPhones. Read it by hand.
+type TextContent = Awaited<ReturnType<pdfjsLib.PDFPageProxy['getTextContent']>>;
+const readTextContent = async (page: pdfjsLib.PDFPageProxy): Promise<TextContent> => {
+  const reader = page.streamTextContent().getReader();
+  const textContent: TextContent = { items: [], styles: {}, lang: null };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return textContent;
+    textContent.lang ??= value.lang;
+    Object.assign(textContent.styles, value.styles);
+    for (const item of value.items) textContent.items.push(item);
+  }
+};
+
 /** The deck most of a document's words were saved into, for "Review". */
 function mostCommonDeck(words: ContentWord[]): ContentWord | null {
   const counts = new Map<string, number>();
@@ -622,7 +637,7 @@ export function PdfReaderPage() {
         }
 
         textLayerDiv.replaceChildren();
-        const textLayerPromise = page.getTextContent().then((textContent) => {
+        const textLayerPromise = readTextContent(page).then((textContent) => {
           if (cancelled) return;
           // pdf.js sizes each span by measuring it on a canvas tagged with the
           // PDF's language; render with that same language, not the UI's (fa),
@@ -680,6 +695,7 @@ export function PdfReaderPage() {
 
         await Promise.all([canvasRenderPromise, textLayerPromise]);
         if (cancelled) return;
+        setError((current) => (current === t('pdfReader.failedToRenderPdfPage') ? '' : current));
 
         const textDirection = detectTextLayerDirection(textLayerDiv);
         textLayerDiv.dir = textDirection;
@@ -721,6 +737,7 @@ export function PdfReaderPage() {
         finishRenderPreview();
       } catch (err) {
         if (!cancelled && !(err instanceof Error && err.name === 'RenderingCancelledException')) {
+          console.error('PDF page render failed', err);
           setError(t('pdfReader.failedToRenderPdfPage'));
         }
       } finally {
