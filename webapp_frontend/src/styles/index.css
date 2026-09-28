@@ -1129,7 +1129,7 @@ select:focus {
   align-items: center;
   justify-content: center;
   flex: 1 1 0;
-  height: 26px;
+  height: 34px;
   border: 1px solid rgba(237, 243, 255, 0.13);
   border-radius: 6px;
   background: rgba(237, 243, 255, 0.07);
@@ -1219,6 +1219,45 @@ select:focus {
   min-width: 0;
 }
 
+.content-card-description {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.content-meta-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.content-language-badge,
+.content-duration-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(237, 243, 255, 0.15);
+  border-radius: 7px;
+  padding: 4px 6px;
+  color: rgba(237, 243, 255, 0.75);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.content-language-badge {
+  color: #bdeaf8;
+  border-color: rgba(103, 232, 249, 0.35);
+}
+
 .content-card-meta-row,
 .content-card-meta-tags,
 .content-card-subtitle,
@@ -1230,6 +1269,7 @@ select:focus {
 
 .content-card-meta-row {
   justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .content-card-archive-action {
@@ -1308,6 +1348,10 @@ select:focus {
   flex-wrap: wrap;
   color: rgba(237, 243, 255, 0.56);
   font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .youtube-thumbnail-mark { width: 20px; height: 14px; }
 }
 
 .content-card-timeline {

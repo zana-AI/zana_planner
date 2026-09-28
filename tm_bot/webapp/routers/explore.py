@@ -5,7 +5,7 @@ import re
 from fastapi import APIRouter, Depends, Response
 
 from ..dependencies import get_current_user
-from services.explore_config import explore_config_loader
+from services.explore_config import explore_config_loader, separate_level
 from repositories.explore_repo import ExploreRepository
 from utils.logger import get_logger
 
@@ -20,6 +20,8 @@ def get_explore_catalog(response: Response, user_id: int = Depends(get_current_u
     # model_dump creates a fresh response; never mutate the shared config cache.
     catalog = explore_config_loader.load().model_dump(mode="json")
     items = [item for category in catalog["categories"] for topic in category["topics"] for item in topic["items"]]
+    for item in items:
+        item["level"], item["description"] = separate_level(item.get("description"), item.get("level"))
     videos = [(item, re.search(r"[?&]video_id=([\w-]{11})(?:[&#]|$)", item.get("native_ref") or "")) for item in items]
     repo = ExploreRepository()
     catalog.update(metadata_available=True, clubs_available=True, clubs=[])
@@ -27,7 +29,9 @@ def get_explore_catalog(response: Response, user_id: int = Depends(get_current_u
         metadata = repo.video_metadata(sorted({match[1] for _, match in videos if match}))
         for item, match in videos:
             if match:
-                item.update(metadata.get(match[1], {"subtitles_available": False}))
+                for key, value in metadata.get(match[1], {"subtitles_available": False}).items():
+                    if key not in {"language", "level"} or not item.get(key):
+                        item[key] = value
     except Exception:
         logger.warning("Explore video metadata unavailable", exc_info=True)
         catalog["metadata_available"] = False

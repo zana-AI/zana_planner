@@ -24,19 +24,23 @@
 .explore-learning-meta .content-card-subtitles { gap: 4px; }
 .explore-card .explore-card-description { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .explore-card-creator { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.explore-card-labels { flex-wrap: nowrap; gap: 6px; }
+.explore-card-labels { flex-wrap: wrap; gap: 6px; }
 .explore-card-labels > span:not(.explore-card-creator) { flex-shrink: 0; }
 .explore-card-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
 .explore-card-footer .explore-learning-meta { flex: 1 1 auto; min-width: 0; gap: 4px 8px; }
 .explore-card-footer .explore-card-actions { margin-inline-start: auto; }
 .explore-card .explore-card-actions { flex-wrap: wrap; }
 .explore-card .explore-action { min-height: 44px; }
-.explore-save { width: 44px; padding: 0; justify-content: center; }
+.explore-card-media-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.explore-card-quick-actions { position: relative; z-index: 2; }
+.explore-card-quick-actions button { flex: 0 0 38px; }
+.explore-card-quick-actions button.is-done { color: var(--good-500); }
 .explore-card.is-compact { grid-template-columns: 48px minmax(0, 1fr); }
 .explore-card.is-compact .explore-card-media { aspect-ratio: 1; border: 1px solid color-mix(in srgb, var(--kind-accent) 25%, transparent); background: linear-gradient(145deg, color-mix(in srgb, var(--kind-accent) 20%, transparent), transparent); border-radius: 14px; }
 .explore-card.is-compact .explore-card-media svg { width: 23px; height: 23px; }
 .explore-card.is-compact .explore-card-body { grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; }
 .explore-card.is-compact .explore-card-labels, .explore-card.is-compact .explore-card-title, .explore-card.is-compact .explore-card-description { grid-column: 1; }
+.explore-card.is-compact .explore-card-creator { grid-column: 1; }
 .explore-card.is-compact .explore-card-footer, .explore-card.is-compact .explore-card-body > .explore-card-actions { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
 .explore-card.is-compact .explore-action { max-width: 110px; padding-inline: 10px; text-align: center; justify-content: center; }
 .learning-start { margin-block: 16px; }
@@ -187,6 +191,7 @@
 }
 .explore-card-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .explore-card.is-openable .explore-card-actions { position: relative; z-index: 2; }
+.explore-card.is-openable .explore-card-quick-actions { position: relative; z-index: 2; }
 .explore-card-media {
   position: relative;
   width: 100%;
@@ -217,6 +222,7 @@
   gap: 5px;
   min-width: 0;
 }
+.explore-card-creator { color: var(--fg-muted); font-size: 11px; }
 .explore-card-head {
   display: flex;
   align-items: flex-start;
@@ -300,7 +306,7 @@
 }
 @media (max-width: 480px) {
   .explore-card { grid-template-columns: 92px minmax(0, 1fr); gap: 8px; }
-  .explore-card[data-kind="video"] .explore-card-description { display: none; }
+  .explore-card.is-openable .explore-card-description { -webkit-line-clamp: 2; }
   .explore-card.is-compact { grid-template-columns: 36px minmax(0, 1fr); }
   .explore-card.is-compact .explore-action { max-width: 82px; font-size: 12px; }
 }
@@ -366,6 +372,16 @@
   color: var(--good-500);
   font-size: 13.5px;
 }
+
+.content-library-sheet-note { margin: 0 0 14px; color: var(--fg-muted); font-size: 13px; line-height: 1.5; }
+.content-library-sheet-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.content-library-share-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.content-library-share-fields label { display: grid; gap: 5px; color: var(--fg-muted); font-size: 12px; }
+.content-library-share-fields select { width: 100%; min-height: 42px; padding: 0 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--fg); font: inherit; }
+.content-library-share-options { display: grid; gap: 8px; }
+.content-library-share-options .plan-content-option { display: grid; justify-content: start; text-align: start; gap: 2px; }
+.content-library-share-options .plan-content-option small { color: var(--fg-muted); font-size: 11px; font-weight: 400; }
+.content-library-share-options + .content-library-error { margin-top: 10px; }
 
 /* Next up: sessions that belong to a time rather than to a promise. */
 .next-up { margin-bottom: 8px; }

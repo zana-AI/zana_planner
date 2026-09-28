@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+import re
 from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +13,41 @@ from sqlalchemy import text
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+_ESTIMATED_LEVEL = re.compile(r"^(?P<level>[ABC][12](?:-[ABC][12])?)(?:\s+\(stretch\))?\s+estimate\.\s*", re.I)
+_VIDEO_REF = re.compile(r"[?&]video_id=([A-Za-z0-9_-]{11})(?:[&#]|$)")
+
+
+def separate_level(description: Optional[str], level: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
+    """Move legacy leading CEFR estimates from card subtitles into a badge."""
+    match = _ESTIMATED_LEVEL.match(description or "")
+    if not match:
+        return level, description
+    inferred = "~" + match.group("level").replace("-", "–")
+    if "(stretch)" in match.group(0).lower():
+        inferred += "+"
+    return level or inferred, (description or "")[match.end():].strip() or None
+
+
+def catalog_video_levels(catalog: "ExploreCatalog") -> dict[str, str]:
+    levels = {}
+    for category in catalog.categories:
+        for topic in category.topics:
+            for item in topic.items:
+                match = _VIDEO_REF.search(item.native_ref or "")
+                if match:
+                    level, _ = separate_level(item.description, item.level)
+                    if level:
+                        levels[match[1]] = level
+    return levels
+
+
+def catalog_video_ids(catalog: "ExploreCatalog") -> set[str]:
+    """Published video IDs from the already filtered catalog view."""
+    return {match[1] for category in catalog.categories if category.published
+            for topic in category.topics if topic.published
+            for item in topic.items if item.published
+            if (match := _VIDEO_REF.search(item.native_ref or ""))}
 
 
 class ExploreItem(BaseModel):
@@ -26,9 +62,13 @@ class ExploreItem(BaseModel):
     image: Optional[str] = None
     description: Optional[str] = None
     creator: Optional[str] = None
+    content_id: Optional[str] = None
+    language: Optional[str] = None
+    level: Optional[str] = None
     # Optional verified video length; fresher DB metadata takes precedence.
     # Never use the last subtitle cue as a duration fallback.
     duration_seconds: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    estimated_read_seconds: Optional[int] = Field(default=None, gt=0)
     class_offer: Optional[str] = None
     # Editorial eligibility for Today; runtime cache readiness is also required.
     starter: bool = False
@@ -101,6 +141,11 @@ class ExploreConfigLoader:
                 logger.exception("Explore database catalog unavailable")
             self._cache_loaded_at = now
             return self._cache or ExploreCatalog()
+
+    def invalidate(self) -> None:
+        """Make an explicit share visible on the next request in this process."""
+        with self._lock:
+            self._cache_loaded_at = 0.0
 
     @staticmethod
     def _read_database() -> dict[str, Any]:
