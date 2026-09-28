@@ -34,6 +34,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy backend source + entrypoint (so we don't rely on bind-mounts in production)
 COPY tm_bot/ ./tm_bot/
 COPY scripts/caption_relay/ ./scripts/caption_relay/
+COPY scripts/manage_explore_catalog.py scripts/publish_language_catalog.py scripts/seed_explore_catalog.py ./scripts/
 COPY run_webapp_local.py ./
 
 # Copy assets directory (icons, static files)

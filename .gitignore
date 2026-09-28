@@ -35,3 +35,9 @@ tmp*
 /USERS_DATA_DIR
 /temp_*
 *workspace
+
+# Published Explore content is database data, not application source.
+/docs/content/
+/exports/
+/tm_bot/config/explore.yaml
+/tm_bot/config/language_sources.yaml

@@ -5,6 +5,7 @@ The localhost-only Vite sandbox runs on :5174. Mutations below affect memory onl
 """
 import copy
 import json
+import os
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -42,7 +43,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 def catalog():
-    raw = yaml.safe_load((ROOT / 'tm_bot/config/explore.yaml').read_text(encoding='utf-8'))
+    # Keep this sandbox offline. An exported catalog can be supplied explicitly;
+    # the default is synthetic UI fixture data, never production content.
+    exported = os.getenv('DESIGN_EXPLORE_CATALOG')
+    if exported:
+        raw = yaml.safe_load(Path(exported).read_text(encoding='utf-8'))
+    else:
+        raw = {'version': 1, 'categories': [
+            {'id': language, 'title': language.title(), 'language': code, 'order': order,
+             'topics': [{'id': 'watch', 'title': 'Watch', 'order': 20,
+                         'items': [{'id': f'design-{language}-video', 'title': f'Sample {language.title()} video',
+                                    'type': 'video', 'order': 1, 'starter': True,
+                                    'native_ref': '/youtube-watch?video_id=AAAAAAAAAAA',
+                                    'image': 'https://img.youtube.com/vi/AAAAAAAAAAA/mqdefault.jpg',
+                                    'duration_seconds': 540}]}]}
+            for language, code, order in [('french', 'fr', 10), ('english', 'en', 20)]
+        ]}
     raw['categories'] = [c for c in raw['categories'] if c.get('published', True)]
     for category in raw['categories']:
         category['topics'] = [t for t in category['topics'] if t.get('published', True)]

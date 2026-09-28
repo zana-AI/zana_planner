@@ -1,14 +1,50 @@
 # Explore content
 
-Explore is rendered from a small YAML catalog. Set `EXPLORE_CONFIG_URL` in the
-webapp environment to a raw, publicly readable `explore.yaml` that the owner
-can update without rebuilding the application. When the URL is absent or
-unavailable, the bundled `tm_bot/config/explore.yaml` is used.
+Explore is rendered from the curated `explore_catalog` row in PostgreSQL. The
+catalog is content data: it is not bundled into the webapp image or committed to
+the code repository. The `content` table holds video records and their access
+policy; the catalog controls which items are discoverable.
 
 The loader refreshes at most once per minute, validates the document, removes
 unpublished categories/topics/items, and sorts each level by `order` (then by
-`id`). If a refreshed document is invalid, the last known good catalog remains
-available.
+`id`). If the database is temporarily unavailable or a refreshed document is
+invalid, the last known good catalog remains available in that webapp process.
+An unseeded database returns an empty Explore view.
+
+For editorial changes, export the database catalog to a file outside the
+repository, edit it, then import with the SHA-256 printed by export. Import
+refuses concurrent changes and requires any newly listed video to already have
+a public `content` row:
+
+```bash
+python scripts/manage_explore_catalog.py export --output /tmp/explore.yaml
+python scripts/manage_explore_catalog.py import --file /tmp/explore.yaml --expected-sha256 YOUR_EXPORTED_HASH
+```
+
+The language publisher accepts an external `--batch` file and updates both the
+public `content` rows and the curated catalog in one database transaction:
+
+```bash
+python scripts/publish_language_catalog.py --batch /path/to/language-batch.yaml
+python scripts/publish_language_catalog.py --batch /path/to/language-batch.yaml --apply
+```
+
+The first command writes a preview under `exports/` without publishing. The
+second requires recent verification and never changes an existing private or
+club-only content row to public. Both commands run in the webapp's configured
+database environment. The first deployment of this storage model uses
+`scripts/seed_explore_catalog.py --file <current-live-explore.yaml> --apply`
+after migration `043_explore_catalog`; the seed command refuses to overwrite an
+existing catalog.
+
+To prepare another language batch, export the current catalog and pass that
+export plus an external source-rules file to the builder. Keep the resulting
+manifest outside Git as well:
+
+```bash
+python scripts/build_language_catalog.py --sources /path/to/language-sources.yaml \
+  --catalog /tmp/explore.yaml --output /tmp/language-batch.yaml --verify
+```
 
 ## Organised by subject
 
@@ -53,7 +89,7 @@ Explore at all; they live in Community.
 
 ## It is an allowlist, not a mirror
 
-Nothing reaches Explore unless it is written down in the YAML. There is no job
+Nothing reaches Explore unless it is included in the curated catalog. There is no job
 that syncs the catalog from the database, and there should not be — the
 database holds test fixtures, archived rows and half-finished content that must
 never surface. Curation *is* the feature.
@@ -71,7 +107,7 @@ Two independent mechanisms, and a content item needs both:
 
 | | What it does | Where it lives |
 |---|---|---|
-| This catalog | makes an item *appear* in Explore | `explore.yaml` |
+| This catalog | makes an item *appear* in Explore | `explore_catalog.document` |
 | `content.visibility` | decides who may *save or open* it | the `content` table |
 
 `content.visibility` defaults to `'private'`, and `can_access_content` admits
@@ -84,22 +120,21 @@ opens, because `/youtube-watch` is a public page that never consults the
 content row, but **＋ Add fails for everyone except the owner**. The card looks
 right up to the moment somebody taps the button.
 
-Every video in this catalog was in that state until 2026-09-07. When you list a
-content item, make its row public in the same change.
+When you list a content item, make its row public in the same transaction.
 
 **Never list per-user rows.** A `flashcard_deck` belongs to a single `user_id`,
 so putting one in the catalog would show every user a link into someone else's
 deck. Your own decks are not discovery — they live in Library.
 
-## Schema
+## Document schema
 
 ```yaml
 version: 1
 categories:
   - id: french
     title: French
-    icon: bubble-fr        # not read yet — see below
-    accent: "#22D3EE"      # not read yet — see below
+    icon: bubble-fr
+    accent: "#22D3EE"
     order: 10
     published: true
     topics:
@@ -120,14 +155,14 @@ categories:
         order: 20
         published: true
         items:
-          - id: video-sud-radio
-            title: "Olivier : ..."
+          - id: sample-video
+            title: Sample video
             type: video
             order: 10
             published: true
-            description: French subtitles — tap a word to translate and save a card.
-            image: https://img.youtube.com/vi/c4dtEcHyNcc/mqdefault.jpg
-            native_ref: /youtube-watch?video_id=c4dtEcHyNcc
+            description: A sample entry illustrating the document shape.
+            image: https://img.youtube.com/vi/abcdefghijk/mqdefault.jpg
+            native_ref: /youtube-watch?video_id=abcdefghijk
 ```
 
 Each item uses `url` for an external destination or `native_ref` for an
@@ -139,6 +174,4 @@ cannot become a `javascript:` navigation.
 content evolves; the current client displays the shared title, description,
 image metadata, and optional class offer for every type.
 
-`icon` and `accent` on a category are **read by nothing today** — the pydantic
-models ignore unknown keys. They are written in the catalog so the tile design
-has its data ready when `ExploreCategory` gains the fields.
+`icon` and `accent` are optional category display fields.
