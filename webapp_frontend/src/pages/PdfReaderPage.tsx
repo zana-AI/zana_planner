@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, MoreHorizontal, PanelRight, Plus, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { flushSync } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { HeatmapBar } from '../components/HeatmapBar';
@@ -191,6 +192,8 @@ export function PdfReaderPage() {
     setSelectionDraft,
     clearNativeSelection,
   });
+  const pinchPreviewRef = useRef(pinchPreview);
+  pinchPreviewRef.current = pinchPreview;
   const isRendering = rendering || documentRendering;
 
   useEffect(() => {
@@ -567,11 +570,45 @@ export function PdfReaderPage() {
           && cachedRaster.height === newHeight;
         const outputScale = getCanvasOutputScale(newWidth, newHeight);
 
-        if (!cancelled && cacheMatchesViewport) {
-          applyRasterCacheToCanvas(canvas, cachedRaster);
+        // Just after a pinch, the preview (old raster + CSS transform) stays on
+        // screen until the new raster is ready. Then size, raster, preview and
+        // scroll all change in one synchronous pass, so no frame shows the
+        // resized page at the old scroll position or a blank canvas.
+        const settlingPinch = Boolean(pinchPreviewRef.current) && !isPinchingRef.current;
+        const commitPinchRaster = (raster: PageRasterCacheEntry) => {
+          if (isPinchingRef.current || !pinchPreviewRef.current) {
+            applyRasterCacheToCanvas(canvas, raster);
+            renderedScaleRef.current = scale;
+            setPageSize({ width: newWidth, height: newHeight });
+            return;
+          }
+          const shell = shellRef.current;
+          const previewBox = pageFrame?.getBoundingClientRect();
+          applyRasterCacheToCanvas(canvas, raster);
           renderedScaleRef.current = scale;
-          setPageSize({ width: newWidth, height: newHeight });
-        } else {
+          pendingViewportAnchorRef.current = null;
+          pendingScrollFractionRef.current = null;
+          flushSync(() => {
+            setPageSize({ width: newWidth, height: newHeight });
+            clearPinchPreview();
+          });
+          if (shell && pageFrame && previewBox) {
+            const committedBox = pageFrame.getBoundingClientRect();
+            shell.scrollLeft += committedBox.left - previewBox.left;
+            shell.scrollTop += committedBox.top - previewBox.top;
+            updateProgressFromReader(pageNumber);
+          }
+        };
+
+        if (!cancelled && cacheMatchesViewport) {
+          if (settlingPinch) {
+            commitPinchRaster(cachedRaster);
+          } else {
+            applyRasterCacheToCanvas(canvas, cachedRaster);
+            renderedScaleRef.current = scale;
+            setPageSize({ width: newWidth, height: newHeight });
+          }
+        } else if (!settlingPinch) {
           canvas.width = Math.floor(newWidth * outputScale);
           canvas.height = Math.floor(newHeight * outputScale);
           canvas.style.width = `${newWidth}px`;
@@ -590,6 +627,23 @@ export function PdfReaderPage() {
 
         const canvasRenderPromise = (async () => {
           if (cacheMatchesViewport) return;
+          if (settlingPinch) {
+            const offscreen = document.createElement('canvas');
+            offscreen.width = Math.floor(newWidth * outputScale);
+            offscreen.height = Math.floor(newHeight * outputScale);
+            offscreen.style.width = `${newWidth}px`;
+            offscreen.style.height = `${newHeight}px`;
+            const offscreenContext = offscreen.getContext('2d');
+            if (!offscreenContext) return;
+            offscreenContext.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+            renderTask = page.render({ canvas: offscreen, canvasContext: offscreenContext, viewport });
+            await renderTask.promise;
+            if (cancelled) return;
+            const raster = { scale, width: newWidth, height: newHeight, canvas: offscreen };
+            pageRasterCacheRef.current.set(pageNumber, raster);
+            commitPinchRaster(raster);
+            return;
+          }
           context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
           context.clearRect(0, 0, newWidth, newHeight);
           renderTask = page.render({ canvas, canvasContext: context, viewport });
