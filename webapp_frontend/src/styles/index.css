@@ -83,6 +83,20 @@ select:focus {
   background: rgba(9, 15, 31, 0.92);
 }
 
+/* A long-press near the edge of the page must not start or extend a text
+   selection into the reader's own controls. */
+.pdf-reader-bar,
+.pdf-reader-footer,
+.pdf-reader-page-zone {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pdf-reader-bar input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .pdf-reader-title {
   flex: 1 1 auto;
   min-width: 0;
