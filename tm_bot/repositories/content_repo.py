@@ -181,6 +181,13 @@ class ContentRepository:
             ).scalar()
         return bool(row)
 
+    def make_curated_video_public(self, content_id: str) -> None:
+        """Repair a legacy Explore video whose row was left private."""
+        with get_db_session() as session:
+            session.execute(text("""UPDATE content SET visibility='public', updated_at=now()
+                WHERE id=:content_id AND provider='youtube' AND visibility='private'"""),
+                {"content_id": content_id})
+
     def add_user_content(
         self,
         user_id: str,

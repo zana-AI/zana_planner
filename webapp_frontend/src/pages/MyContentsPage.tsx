@@ -88,22 +88,16 @@ function getInternalYouTubeWatchUrl(item: UserContentWithDetails): string | null
   return `/youtube-watch?video_id=${encodeURIComponent(videoId)}${contentId ? `&content_id=${encodeURIComponent(contentId)}` : ''}`;
 }
 
-/**
- * The public address of a video, or null when the item has no public face.
- *
- * `/youtube-watch` takes no session and serves anyone — the subtitle reader is
- * already open to the world — so sharing a video is handing over a URL rather
- * than changing a permission. A PDF has no equivalent: its reader resolves the
- * caller's own content row, so there is nothing to share until content gains a
- * real visibility flag.
- */
-function getPublicShareUrl(item: UserContentWithDetails): string | null {
+/** Show sharing only for content with a supported public reader. */
+function canShareLibraryItem(item: UserContentWithDetails): boolean {
+  const provider = (item.provider || '').toLowerCase();
+  const mime = String(item.metadata_json?.['mime_type'] || '').toLowerCase();
+  if (provider === 'telegram_pdf' || mime === 'application/pdf') return true;
   const metadataVideoId = typeof item.metadata_json?.['video_id'] === 'string'
     ? item.metadata_json['video_id']
     : null;
   const videoId = metadataVideoId || extractYouTubeVideoId(item.original_url || item.canonical_url);
-  if (!videoId) return null;
-  return `${window.location.origin}/youtube-watch?video_id=${encodeURIComponent(videoId)}`;
+  return provider === 'youtube' && Boolean(videoId);
 }
 
 function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
@@ -122,6 +116,12 @@ export function MyContentsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [planning, setPlanning] = useState<UserContentWithDetails | null>(null);
   const [assigning, setAssigning] = useState<UserContentWithDetails | null>(null);
+  const [sharing, setSharing] = useState<UserContentWithDetails | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<UserContentWithDetails | null>(null);
+  const [shareLanguage, setShareLanguage] = useState('');
+  const [shareLevel, setShareLevel] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState('');
   const [plannedToast, setPlannedToast] = useState('');
   const { hapticFeedback, webApp } = useTelegramWebApp();
   const [addUrl, setAddUrl] = useState('');
@@ -148,6 +148,8 @@ export function MyContentsPage() {
   const loadSequence = useRef(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const requestedContentId = searchParams.get('content_id');
+  const sharingIsPdf = sharing && ((sharing.provider || '').toLowerCase() === 'telegram_pdf'
+    || String(sharing.metadata_json?.['mime_type'] || '').toLowerCase() === 'application/pdf');
 
   useEffect(() => {
     if (!requestedContentId || assigning) return;
@@ -254,23 +256,47 @@ export function MyContentsPage() {
     }
   };
 
-  const shareItem = (item: UserContentWithDetails) => {
-    const url = getPublicShareUrl(item);
-    if (!url) return;
-    hapticFeedback('light');
-    // Inside Telegram, hand the link to Telegram's own share sheet — the user
-    // is already in the app they would send it from.
-    if (webApp?.openTelegramLink) {
-      webApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}`);
-      return;
-    }
-    navigator.clipboard
-      ?.writeText(url)
-      .then(() => {
+  const openShare = (item: UserContentWithDetails) => {
+    setSharing(item);
+    setShareLanguage((item.language || '').toLowerCase().split('-')[0]);
+    const existingLevel = item.metadata_json?.['level'];
+    setShareLevel(typeof existingLevel === 'string' && /^[ABC][12]$/.test(existingLevel) ? existingLevel : '');
+    setShareError('');
+  };
+
+  const shareItem = async (destination: 'link' | 'explore') => {
+    if (!sharing || shareBusy) return;
+    setShareBusy(true);
+    setShareError('');
+    try {
+      const result = await apiClient.shareLibraryContent(sharing.content_id || sharing.id, {
+        destination,
+        language: destination === 'explore' && shareLanguage ? shareLanguage : undefined,
+        level: destination === 'explore' && shareLevel ? shareLevel : undefined,
+      });
+      if (destination === 'explore') {
+        setSharing(null);
+        setPlannedToast(t(result.already_in_explore ? 'content.alreadyInExplore' : 'content.sharedToExplore'));
+        window.setTimeout(() => setPlannedToast(''), 4000);
+        if (!result.already_in_explore) setRefreshVersion((version) => version + 1);
+        return;
+      }
+      const url = `${window.location.origin}${result.path}`;
+      hapticFeedback('light');
+      if (webApp?.openTelegramLink) {
+        setSharing(null);
+        webApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}`);
+      } else {
+        await navigator.clipboard.writeText(url);
+        setSharing(null);
         setPlannedToast(t('content.linkCopied'));
         window.setTimeout(() => setPlannedToast(''), 3000);
-      })
-      .catch(() => undefined);
+      }
+    } catch (err) {
+      setShareError(err instanceof ApiError ? err.message : t('content.shareFailed'));
+    } finally {
+      setShareBusy(false);
+    }
   };
 
   const openItem = (item: UserContentWithDetails) => {
@@ -437,8 +463,8 @@ export function MyContentsPage() {
                 item={item}
                 onClick={() => openItem(item)}
                 onPlan={item.status !== 'archived' ? () => setPlanning(item) : undefined}
-                onShare={getPublicShareUrl(item) ? () => shareItem(item) : undefined}
-                onArchive={item.status !== 'archived' ? () => setArchived(item, true) : undefined}
+                onShare={canShareLibraryItem(item) ? () => openShare(item) : undefined}
+                onArchive={item.status !== 'archived' ? () => setArchiveTarget(item) : undefined}
                 onRestore={item.status === 'archived' ? () => setArchived(item, false) : undefined}
                 updating={updatingId !== null}
               />
@@ -474,6 +500,49 @@ export function MyContentsPage() {
       {plannedToast ? (
         <p className="content-library-planned-toast" role="status">{plannedToast}</p>
       ) : null}
+
+      <BottomSheet open={!!archiveTarget} onClose={() => setArchiveTarget(null)}
+        title={t('content.archiveConfirmTitle')}
+        subtitle={archiveTarget?.title || t('content.untitled')}>
+        <p className="content-library-sheet-note">{t('content.archiveConfirmMessage')}</p>
+        <div className="content-library-sheet-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => setArchiveTarget(null)}>{t('common.cancel')}</button>
+          <button type="button" className="btn btn-primary" disabled={updatingId !== null}
+            onClick={() => { if (archiveTarget) void setArchived(archiveTarget, true); setArchiveTarget(null); }}>
+            {t('content.archive')}
+          </button>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet open={!!sharing} onClose={() => !shareBusy && setSharing(null)}
+        title={t('content.share')} subtitle={sharing?.title || t('content.untitled')}>
+        <p className="content-library-sheet-note">{t(sharingIsPdf ? 'content.pdfShareNotice' : 'content.videoShareNotice')}</p>
+        <div className="content-library-share-fields">
+          <label>{t('content.language')}
+            <select value={shareLanguage} onChange={(event) => setShareLanguage(event.target.value)}>
+              <option value="">{t('content.unspecified')}</option>
+              {shareLanguage && !['en', 'fr', 'fa'].includes(shareLanguage) &&
+                <option value={shareLanguage}>{shareLanguage.toUpperCase()}</option>}
+              {['en', 'fr', 'fa'].map((code) => <option key={code} value={code}>{t(`learning.languages.${code}`)}</option>)}
+            </select>
+          </label>
+          <label>{t('content.level')}
+            <select value={shareLevel} onChange={(event) => setShareLevel(event.target.value)}>
+              <option value="">{t('content.unspecified')}</option>
+              {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map((level) => <option key={level} value={level}>{level}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="content-library-share-options">
+          <button type="button" className="plan-content-option" disabled={shareBusy} onClick={() => void shareItem('explore')}>
+            <span>{t('content.shareToExplore')}</span><small>{t('content.shareToExploreHint')}</small>
+          </button>
+          <button type="button" className="plan-content-option" disabled={shareBusy} onClick={() => void shareItem('link')}>
+            <span>{t('content.shareLink')}</span><small>{t('content.shareLinkHint')}</small>
+          </button>
+        </div>
+        {shareError && <p className="content-library-error" role="alert">{shareError}</p>}
+      </BottomSheet>
 
       <PlanContentSheet
         open={!!planning}

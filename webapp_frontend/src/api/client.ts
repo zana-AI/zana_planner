@@ -425,6 +425,13 @@ class ApiClient {
     });
   }
 
+  async shareLibraryContent(contentId: string, body: { destination: 'link' | 'explore'; language?: string; level?: string }): Promise<{ path: string; already_in_explore: boolean }> {
+    return this.request(`/content/${encodeURIComponent(contentId)}/share`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   async assignUserContent(contentId: string, promiseId: string): Promise<{ content_id: string; promise_id: string; assigned: boolean }> {
     return this.request(`/user-content/${encodeURIComponent(contentId)}/assign`, {
       method: 'POST',

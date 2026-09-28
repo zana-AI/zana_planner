@@ -94,6 +94,23 @@ that syncs the catalog from the database, and there should not be — the
 database holds test fixtures, archived rows and half-finished content that must
 never surface. Curation *is* the feature.
 
+The Library Share menu is an explicit publishing path for a saved YouTube video
+or an owned PDF (including a public PDF saved by someone else).
+`POST /api/content/{id}/share` with `destination=explore`
+checks the caller's Library access, checks the catalog for the same content or
+YouTube video ID, then makes the content public and inserts a card in one
+transaction. It does not re-publish an item hidden by a curator. Sharing only
+the Xaana link makes the content public without adding it to Explore. The
+share sheet states that other Xaana users can then open the PDF.
+When someone saves a video already listed in the published catalog, the save
+route also repairs a legacy private YouTube content row before adding it to
+their Library. Hidden or club-only content is never promoted this way.
+
+Existing descriptions such as `A2-B1 estimate. …` are split at response time:
+the level appears as a metadata badge and the remaining text as the card
+description. No editorial content is rewritten in the catalog by that display
+change. New shares can supply an explicit language and CEFR level.
+
 Only globally-valid destinations belong in the catalog:
 
 - **challenges** — `visibility=public`, `status=active`

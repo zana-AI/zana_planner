@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Archive, ArchiveRestore, CalendarClock, Captions, FileText, Headphones, Play, Share2 } from 'lucide-react';
+import { Archive, ArchiveRestore, CalendarClock, FileText, Headphones, Play, Share2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
 import { YouTubeThumbnailMark } from './YouTubeThumbnailMark';
+import { ContentMetadataBadges } from './ContentMetadataBadges';
 import type { UserContentWithDetails } from '../types';
 
 interface ContentCardProps {
@@ -11,7 +12,7 @@ interface ContentCardProps {
   onClick?: () => void;
   /** Open the "when will you do this?" sheet for this item. */
   onPlan?: () => void;
-  /** Hand out a public link. Only set for items that actually have one. */
+  /** Open the two sharing destinations. */
   onShare?: () => void;
   /** Non-destructive: available by button or swipe, reversible in Archived. */
   onArchive?: () => void;
@@ -78,6 +79,7 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
     .replace(/\s+/g, ' ')
     .trim();
   const pageCount = Number(item.metadata_json?.['page_count'] || 0);
+  const level = typeof item.metadata_json?.['level'] === 'string' ? item.metadata_json['level'] : null;
 
   useEffect(() => {
     if (item.thumbnail_url || !item.thumbnail_asset_id || displayType !== 'pdf') {
@@ -224,9 +226,7 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
               )}
               {isYouTubeVideo && <YouTubeThumbnailMark />}
             </div>
-            {/* Planning/sharing remain below the thumbnail; archive/restore
-                has a visible slot in the metadata row on every card. */}
-            {(onPlan || onShare) && (
+            {(onPlan || onShare || onArchive || onRestore) && (
               <div className="content-card-quick-actions" onClick={(event) => event.stopPropagation()}>
                 {onPlan && (
                   <button type="button" onClick={onPlan} aria-label={t('content.planIt')} title={t('content.planIt')}>
@@ -238,45 +238,28 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
                     <Share2 size={15} />
                   </button>
                 )}
+                {(onArchive || onRestore) && <button type="button" disabled={updating}
+                  onClick={() => { snapTo(0); (onRestore || onArchive)?.(); }}
+                  aria-label={t(onRestore ? 'content.restoreToLibrary' : 'content.archive')}
+                  title={t(onRestore ? 'content.restoreToLibrary' : 'content.archive')}>
+                  {onRestore ? <ArchiveRestore size={15} aria-hidden="true" /> : <Archive size={15} aria-hidden="true" />}
+                </button>}
               </div>
             )}
           </div>
 
           <div className="content-card-body">
             <div className="content-card-meta-row">
-              <div className="content-card-meta-tags">
-                {!isYouTubeVideo && <span className={`content-card-type content-card-type--${displayType}`}>
-                  <TypeIcon type={displayType} />
-                  {t(`content.types.${displayType}`)}
-                </span>}
-                {item.has_subtitles && displayType === 'video' ? (
-                  <span className="content-card-subtitles" title={t('content.subtitlesAvailable')}>
-                    <Captions size={14} aria-hidden="true" />
-                    {t('content.subtitlesAvailable')}
-                  </span>
-                ) : null}
-              </div>
-              {(onArchive || onRestore) && (
-                <button
-                  type="button"
-                  className="content-card-archive-action"
-                  disabled={updating}
-                  aria-label={t(onRestore ? 'content.restoreToLibrary' : 'content.archive')}
-                  title={t(onRestore ? 'content.restoreToLibrary' : 'content.archive')}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    snapTo(0);
-                    (onRestore || onArchive)?.();
-                  }}
-                >
-                  {onRestore ? <ArchiveRestore size={17} aria-hidden="true" /> : <Archive size={17} aria-hidden="true" />}
-                </button>
-              )}
+              <ContentMetadataBadges language={item.language} level={level} duration={durationLabel}
+                subtitles={item.has_subtitles && displayType === 'video'} />
+              {!isYouTubeVideo && displayType !== 'pdf' && <span className={`content-card-type content-card-type--${displayType}`}>
+                <TypeIcon type={displayType} />{t(`content.types.${displayType}`)}
+              </span>}
             </div>
             <h3 className="content-card-title">{title}</h3>
+            {item.description && <p className="content-card-description" dir="auto">{item.description}</p>}
             <div className="content-card-subtitle">
               <span>{source}</span>
-              {durationLabel && <span>{durationLabel}</span>}
               <span>{t('content.progressRead', { percent: Math.round(progressRatio * 100) })}</span>
             </div>
             <HeatmapBar

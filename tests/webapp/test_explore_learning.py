@@ -27,11 +27,11 @@ def db(tmp_path, monkeypatch):
             'CREATE TABLE clubs (club_id TEXT, name TEXT, description TEXT, visibility TEXT, status TEXT)',
             'CREATE TABLE club_members (club_id TEXT, user_id TEXT, status TEXT)',
             'CREATE TABLE video_transcript (video_id TEXT, language TEXT, cues JSON, cue_count INT, duration_seconds REAL)',
-            'CREATE TABLE content (metadata_json JSON, canonical_url TEXT, duration_seconds REAL, updated_at TEXT)',
+            'CREATE TABLE content (metadata_json JSON, canonical_url TEXT, duration_seconds REAL, language TEXT, visibility TEXT, updated_at TEXT)',
             "INSERT INTO clubs VALUES ('public','Public','Open learning','public','active'),('mine','Mine','Private','private','active'),('other','Other','Secret','private','active'),('old','Old','Archived','public','archived')",
             "INSERT INTO club_members VALUES ('mine','42','active'),('other','42','left'),('old','42','active')",
             "INSERT INTO video_transcript VALUES ('abcdefghijk','fr','[{\"text\":\"Bonjour\"}]',1,80),('empty','en','[]',1,100),('invalid','en','{}',1,100)",
-            "INSERT INTO content VALUES ('{\"video_id\":\"abcdefghijk\"}','https://www.youtube.com/watch?v=abcdefghijk',120,'2026-01-01')",
+            "INSERT INTO content VALUES ('{\"video_id\":\"abcdefghijk\"}','https://www.youtube.com/watch?v=abcdefghijk',120,'fr','public','2026-01-01')",
         ]:
             session.execute(text(sql))
 
@@ -55,7 +55,7 @@ def test_club_discovery_has_only_public_or_active_memberships_and_no_people(db):
 
 def test_metadata_uses_video_length_not_transcript_length_and_requires_cues(db):
     meta = explore_repo.ExploreRepository().video_metadata(['abcdefghijk', 'empty', 'invalid', 'missing'])
-    assert meta['abcdefghijk'] == dict(subtitles_available=True, subtitle_language='fr', duration_seconds=120)
+    assert meta['abcdefghijk'] == dict(subtitles_available=True, subtitle_language='fr', duration_seconds=120, language='fr')
     for video in ('empty', 'invalid', 'missing'):
         assert meta[video]['subtitles_available'] is False
         assert 'duration_seconds' not in meta[video]

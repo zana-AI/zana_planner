@@ -2,8 +2,10 @@
 Content consumption manager API: resolve URL, user library, consume events, heatmap.
 """
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse, RedirectResponse
 from ..dependencies import get_current_user
 from ..schemas import (
@@ -21,6 +23,7 @@ from ..schemas import (
 )
 from utils.logger import get_logger
 from utils.admin_utils import is_admin
+from services.explore_config import separate_level
 from datetime import datetime, timedelta, timezone
 
 if TYPE_CHECKING:
@@ -38,6 +41,12 @@ except Exception:  # pragma: no cover - fallback for partial environments
 
 router = APIRouter(prefix="/api", tags=["content"])
 logger = get_logger(__name__)
+
+
+class ShareContentRequest(BaseModel):
+    destination: Literal["link", "explore"]
+    language: Optional[str] = Field(default=None, pattern=r"^[a-zA-Z]{2,3}(?:-[a-zA-Z]{2})?$")
+    level: Optional[Literal["A1", "A2", "B1", "B2", "C1", "C2"]] = None
 
 
 def get_content_repo() -> "ContentRepository":
@@ -122,10 +131,37 @@ async def add_user_content(
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
     if not is_admin(user_id) and not repo.can_access_content(str(user_id), body.content_id):
-        raise HTTPException(status_code=403, detail="This content is not shared with you")
+        from repositories.explore_repo import _youtube_video_id
+        from services.explore_config import catalog_video_ids, explore_config_loader
+        video_id = _youtube_video_id(content) if content.get("provider") == "youtube" else None
+        if video_id and video_id in catalog_video_ids(explore_config_loader.load()):
+            repo.make_curated_video_public(body.content_id)
+        if not repo.can_access_content(str(user_id), body.content_id):
+            raise HTTPException(status_code=403, detail="This content is not shared with you")
     repo.claim_content_owner(body.content_id, str(user_id))
     uc_id = repo.add_user_content(str(user_id), body.content_id)
     return {"user_content_id": uc_id, "status": "saved"}
+
+
+@router.post("/content/{content_id}/share")
+async def share_content(content_id: str, body: ShareContentRequest,
+                        user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    """Share a Library item by link or explicitly publish it to Explore."""
+    from repositories.explore_repo import ExploreRepository
+    from services.explore_config import explore_config_loader
+
+    try:
+        result = ExploreRepository().share_library_content(
+            content_id, str(user_id), body.destination, body.language, body.level)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if body.destination == "explore":
+        explore_config_loader.invalidate()
+    return result
 
 
 @router.get("/my-contents")
@@ -164,7 +200,22 @@ async def get_my_contents(
         if "metadata_json" in item and item["metadata_json"] is not None:
             m = item["metadata_json"]
             item["metadata_json"] = m if isinstance(m, dict) else {}
+        level, item["description"] = separate_level(
+            item.get("description"), (item.get("metadata_json") or {}).get("level"))
+        if level:
+            item["metadata_json"] = {**(item.get("metadata_json") or {}), "level": level}
         items.append(item)
+    # Older curated videos carried an estimated CEFR level at the start of
+    # their Explore subtitle. Show the same level as a Library badge.
+    if any(item.get("provider") == "youtube" for item in items):
+        from repositories.explore_repo import _youtube_video_id
+        from services.explore_config import catalog_video_levels, explore_config_loader
+        levels = catalog_video_levels(explore_config_loader.load())
+        for item in items:
+            video_id = _youtube_video_id(item) if item.get("provider") == "youtube" else None
+            if video_id and video_id in levels:
+                item["metadata_json"] = {**(item.get("metadata_json") or {}), "level":
+                                         (item.get("metadata_json") or {}).get("level") or levels[video_id]}
     next_cursor = None
     if has_next and visible_rows:
         current_offset = 0
