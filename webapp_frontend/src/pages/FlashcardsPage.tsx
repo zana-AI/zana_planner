@@ -35,7 +35,7 @@ function videoMomentUrl(fields: FlashcardFields, language: string): string | nul
   // Start a beat early: seeking exactly on the cue clips the first syllable.
   const at = Math.max(0, Math.floor(start) - 1);
   // The word travels too: the player highlights it inside the spoken line.
-  const word = encodeURIComponent(fields.front || '');
+  const word = encodeURIComponent(typeof fields.original_front === 'string' ? fields.original_front : fields.front || '');
   return `/youtube-watch?video_id=${match[1]}&start=${at}&word=${word}&lang=${encodeURIComponent(language)}&return_to=${encodeURIComponent(currentAppPath())}`;
 }
 
@@ -249,7 +249,7 @@ function ReviewPane({
   // Recognition cards are asked in context: the sentence sits on the front
   // with the word in bold. It would give the answer away when producing the
   // word, so there it stays on the back as before.
-  const sentenceOnFront = !isReversed && Boolean(spokenLine) && !/<\s*(?:b|strong)\b/i.test(spokenLine);
+  const sentenceOnFront = !isReversed && Boolean(spokenLine);
   // "battre en brèche · loc. verbale": what to memorise, which is the whole
   // idiom when the tapped word belongs to one.
   const headwordLine = [card.fields.headword, card.fields.grammar].filter(Boolean).join(' · ');
@@ -264,8 +264,15 @@ function ReviewPane({
       <div
         className={`fc-card ${revealed ? 'is-revealed' : ''}`}
         onClick={() => !revealed && setRevealed(true)}
-        role="button"
-        tabIndex={0}
+        role={revealed ? undefined : 'button'}
+        tabIndex={revealed ? undefined : 0}
+        aria-label={revealed ? undefined : t('flashcards.showAnswer')}
+        onKeyDown={(event) => {
+          if (!revealed && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            setRevealed(true);
+          }
+        }}
       >
         {isReversed ? (
           <span className="fc-direction">produce the word</span>
@@ -276,7 +283,7 @@ function ReviewPane({
         </div>
         {sentenceOnFront ? (
           <p className="fc-front-sentence" dir="auto">
-            <RichText text={boldTerm(spokenLine, card.fields.front)} />
+            <RichText text={boldTerm(spokenLine, card.fields.source_url && typeof card.fields.original_front === 'string' ? card.fields.original_front : card.fields.front)} />
           </p>
         ) : null}
 
@@ -334,9 +341,7 @@ function ReviewPane({
               </a>
             ) : null}
           </div>
-        ) : (
-          <div className="fc-reveal-hint">{t('flashcards.tapToReveal')}</div>
-        )}
+        ) : null}
       </div>
 
       {revealed ? (

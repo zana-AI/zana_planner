@@ -94,6 +94,8 @@
     "included": "انتخاب‌شده",
     "excluded": "انتخاب‌نشده",
     "partlyIncluded": "بخشی انتخاب‌شده",
+    "expandDeck": "نمایش زیردسته‌های {{name}}",
+    "collapseDeck": "پنهان‌کردن زیردسته‌های {{name}}",
     "reviewSelection": "انتخاب دسته‌های مرور",
     "selectedCount": "{{value}} دسته انتخاب‌شده",
     "readySummary": "{{due}} برای مرور · {{fresh}} جدید",
