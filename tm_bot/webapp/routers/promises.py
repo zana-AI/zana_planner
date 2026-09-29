@@ -27,6 +27,33 @@ router = APIRouter(prefix="/api", tags=["promises"])
 logger = get_logger(__name__)
 
 
+@router.get("/promises/suspended")
+async def list_suspended_promises(user_id: int = Depends(get_current_user)):
+    """List paused promises so they can be resumed without losing history."""
+    return [
+        {"id": p.id, "text": p.text, "suspended_at_utc": p.suspended_at_utc}
+        for p in PromisesRepository().list_suspended_promises(user_id)
+    ]
+
+
+@router.post("/promises/{promise_id}/suspend")
+async def suspend_promise(promise_id: str, user_id: int = Depends(get_current_user)):
+    result = PromisesRepository().set_suspended(user_id, promise_id, True)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Promise not found")
+    return {"status": "success", "promise": result}
+
+
+@router.post("/promises/{promise_id}/resume")
+async def resume_promise(promise_id: str, user_id: int = Depends(get_current_user)):
+    result = PromisesRepository().set_suspended(user_id, promise_id, False)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Promise not found")
+    if result["changed"]:
+        ReminderDispatchService().update_next_run_times(user_id, result["promise_uuid"])
+    return {"status": "success", "promise": result}
+
+
 @router.post("/promises")
 async def create_promise(
     request: Request,

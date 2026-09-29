@@ -26,17 +26,16 @@
     },
     "add_plan_session": {
       "alias_of": "schedule_session",
-      "doc": "Schedule a FUTURE work session (time block) tied to an existing promise.",
+      "doc": "Schedule a FUTURE work session (time block).",
       "params": [
         "promise_id",
         "title",
         "planned_start",
         "planned_duration_min",
-        "notes"
+        "notes",
+        "content_id"
       ],
-      "required": [
-        "promise_id"
-      ]
+      "required": []
     },
     "add_promise": {
       "doc": "Create an ongoing tracked goal the user wants to measure over time.",
@@ -314,7 +313,7 @@
       ]
     },
     "get_promises": {
-      "doc": "List the user's promises with id, text, tracking ('time'|'count') and status ('active'|'expired'). Use to look up promise_ids.",
+      "doc": "List promises with IDs, tracking and active, expired or suspended status.",
       "params": [
         "status"
       ],
@@ -331,6 +330,11 @@
     },
     "get_settings": {
       "doc": "Get user settings as a dict (timezone, nightly time, language, voice mode).",
+      "params": [],
+      "required": []
+    },
+    "get_suspended_promises": {
+      "doc": "List paused promises and their IDs so the user can resume one.",
       "params": [],
       "required": []
     },
@@ -500,18 +504,26 @@
         "datetime_text"
       ]
     },
+    "resume_promise": {
+      "doc": "Resume a paused promise and recalculate its next reminder times.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
+      ]
+    },
     "schedule_session": {
-      "doc": "Schedule a FUTURE work session (time block) tied to an existing promise.",
+      "doc": "Schedule a FUTURE work session (time block).",
       "params": [
         "promise_id",
         "title",
         "planned_start",
         "planned_duration_min",
-        "notes"
+        "notes",
+        "content_id"
       ],
-      "required": [
-        "promise_id"
-      ]
+      "required": []
     },
     "schedule_sessions": {
       "doc": "Schedule MULTIPLE future sessions in ONE call. Use when the user lists 2+ activities to plan.",
@@ -578,6 +590,15 @@
       "required": [
         "url",
         "content_metadata"
+      ]
+    },
+    "suspend_promise": {
+      "doc": "Pause a promise until resumed; keep its history and reminder settings.",
+      "params": [
+        "promise_id"
+      ],
+      "required": [
+        "promise_id"
       ]
     },
     "unfollow_user": {
@@ -682,6 +703,7 @@
     "get_promises",
     "get_setting",
     "get_settings",
+    "get_suspended_promises",
     "get_template",
     "get_tool_help",
     "get_upcoming_sessions",
@@ -697,11 +719,13 @@
     "mark_session_done",
     "mark_session_skipped",
     "open_mini_app",
+    "resume_promise",
     "schedule_session",
     "schedule_sessions",
     "set_language",
     "set_timezone",
     "subscribe_template",
+    "suspend_promise",
     "unfollow_user",
     "update_plan_session_status",
     "update_promise",
@@ -739,6 +763,7 @@
     "get_promises",
     "get_setting",
     "get_settings",
+    "get_suspended_promises",
     "get_template",
     "get_tool_help",
     "get_upcoming_sessions",
@@ -751,10 +776,12 @@
     "mark_session_done",
     "mark_session_skipped",
     "open_mini_app",
+    "resume_promise",
     "schedule_session",
     "set_language",
     "set_timezone",
     "subscribe_template",
+    "suspend_promise",
     "unfollow_user",
     "update_plan_session_status",
     "update_promise",

@@ -196,6 +196,33 @@
   color: var(--fg);
 }
 
+.suspended-promises { margin-top: 18px; }
+.suspended-promise-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.suspended-promise-row span { min-width: 0; overflow-wrap: anywhere; }
+.suspended-promise-row button {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--accent);
+  padding: 7px 12px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .week-strip {
   display: flex;
   align-items: center;

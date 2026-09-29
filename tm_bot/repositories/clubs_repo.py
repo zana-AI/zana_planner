@@ -514,6 +514,7 @@ class ClubsRepository:
                     LEFT JOIN promises p
                         ON p.promise_uuid = pcs.promise_uuid
                        AND p.is_deleted = 0
+                       AND p.suspended_at_utc IS NULL
                     WHERE cm.club_id = :club_id
                       AND cm.status = 'active'
                     ORDER BY cm.user_id, pcs.created_at_utc ASC;

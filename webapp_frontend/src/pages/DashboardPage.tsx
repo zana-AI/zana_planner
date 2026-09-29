@@ -53,6 +53,7 @@ export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
+  const [suspendedPromises, setSuspendedPromises] = useState<Array<{ id: string; text: string; suspended_at_utc: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   // Single source of truth: derive ref_time from URL
@@ -123,6 +124,12 @@ export function DashboardPage() {
       const data = await apiClient.getWeeklyReport(refTime, signal);
       if (signal?.aborted) return;
       setReportData(data);
+      try {
+        const suspended = await apiClient.listSuspendedPromises();
+        if (!signal?.aborted) setSuspendedPromises(suspended);
+      } catch (suspendedError) {
+        console.error('Failed to load suspended promises:', suspendedError);
+      }
       hapticFeedback('success');
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -618,6 +625,29 @@ export function DashboardPage() {
           </>
         ) : null}
 
+        {isCurrentWeek && suspendedPromises.length > 0 && (
+          <section className="suspended-promises">
+            <div className="section-head">
+              <h2>{t('dashboard.suspendedPromises')}</h2>
+              <span className="meta">{suspendedPromises.length}</span>
+            </div>
+            {suspendedPromises.map((promise) => (
+              <div className="suspended-promise-row" key={promise.id}>
+                <span dir="auto">#{promise.id} {promise.text.replace(/_/g, ' ')}</span>
+                <button type="button" onClick={async () => {
+                  try {
+                    await apiClient.resumePromise(promise.id);
+                    showToast(t('promise.resumed'));
+                    handleRefresh();
+                  } catch (resumeError) {
+                    showToast(resumeError instanceof Error ? resumeError.message : t('promise.resumeFailed'));
+                  }
+                }}>{t('promise.resume')}</button>
+              </div>
+            ))}
+          </section>
+        )}
+
         {tasksData && (
           <>
             <div className="section-head">
@@ -710,6 +740,16 @@ export function DashboardPage() {
           onEdit={() => {
             setEditPromise(detailPromise);
             setDetailPromise(null);
+          }}
+          onSuspend={isLocalMockSession ? undefined : async () => {
+            try {
+              await apiClient.suspendPromise(detailPromise.id);
+              setDetailPromise(null);
+              showToast(t('promise.suspended'));
+              handleRefresh();
+            } catch (suspendError) {
+              showToast(suspendError instanceof Error ? suspendError.message : t('promise.suspendFailed'));
+            }
           }}
           onLogged={handleRefresh}
         />

@@ -990,7 +990,7 @@ async def sync_club_description(
                     text("""
                         SELECT p.text, pi.target_value
                         FROM promise_club_shares pcs
-                        JOIN promises p ON p.promise_uuid = pcs.promise_uuid AND p.is_deleted = 0
+                        JOIN promises p ON p.promise_uuid = pcs.promise_uuid AND p.is_deleted = 0 AND p.suspended_at_utc IS NULL
                         LEFT JOIN promise_instances pi ON pi.promise_uuid = p.promise_uuid AND pi.status = 'active'
                         WHERE pcs.club_id = :club_id
                         LIMIT 1

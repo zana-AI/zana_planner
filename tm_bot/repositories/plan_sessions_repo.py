@@ -373,6 +373,7 @@ class PlanSessionsRepository:
                     FROM plan_sessions ps
                     LEFT JOIN promises p ON p.promise_uuid = ps.promise_uuid
                     WHERE ps.status = 'planned'
+                      AND (ps.promise_uuid IS NULL OR (p.is_deleted = 0 AND p.suspended_at_utc IS NULL))
                       {reminder_enabled_filter}
                       AND ps.planned_start IS NOT NULL
                       AND ps.planned_start >= :lower_bound
@@ -483,6 +484,7 @@ class PlanSessionsRepository:
                     LEFT JOIN promises p ON p.promise_uuid = ps.promise_uuid
                     WHERE ps.user_id = :user_id
                       AND ps.status = 'planned'
+                      AND (ps.promise_uuid IS NULL OR (p.is_deleted = 0 AND p.suspended_at_utc IS NULL))
                       AND ps.planned_start >= :since_iso
                       AND ps.planned_start <= :until_iso
                     ORDER BY ps.planned_start
@@ -510,6 +512,7 @@ class PlanSessionsRepository:
                     LEFT JOIN promises p ON p.promise_uuid = ps.promise_uuid
                     WHERE ps.user_id = :user_id
                       AND ps.status = 'planned'
+                      AND (ps.promise_uuid IS NULL OR (p.is_deleted = 0 AND p.suspended_at_utc IS NULL))
                       AND (ps.planned_start IS NULL OR ps.planned_start >= :since_iso)
                     ORDER BY ps.planned_start NULLS LAST
                 """),

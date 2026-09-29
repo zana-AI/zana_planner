@@ -52,7 +52,7 @@ class InstancesRepository:
     def _generate_promise_id(self, user_id: int, prefix: str = "P") -> str:
         """Generate a sequential promise ID like P01, P02, etc."""
         try:
-            promises = self.promises_repo.list_promises(user_id)
+            promises = self.promises_repo.list_promises(user_id, include_suspended=True)
             numeric_ids = []
             for p in promises:
                 if p.id and p.id.upper().startswith(prefix.upper()):

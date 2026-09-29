@@ -225,6 +225,7 @@
     "showOlderPromises_one": "Show {{count, num}} older promise",
     "showOlderPromises_other": "Show {{count, num}} older promises",
     "olderPromises": "Older promises",
+    "suspendedPromises": "Suspended promises",
     "oneTimeTasks": "One-time tasks",
     "distractions": "Distractions",
     "stayUnderBudget": "Stay under budget",
@@ -272,7 +273,13 @@
     "checkIn": "Check in",
     "log": "Log",
     "schedule": "Schedule",
-    "edit": "Edit"
+    "edit": "Edit",
+    "suspend": "Suspend",
+    "resume": "Resume",
+    "suspended": "Promise suspended",
+    "resumed": "Promise resumed",
+    "suspendFailed": "Could not suspend promise",
+    "resumeFailed": "Could not resume promise"
   },
   "play": {
     "ready": "Ready",

@@ -494,7 +494,7 @@ async def get_public_users(
                     LEFT JOIN (
                         SELECT user_id, COUNT(*) as promise_count
                         FROM promises
-                        WHERE is_deleted = 0
+                        WHERE is_deleted = 0 AND suspended_at_utc IS NULL
                         GROUP BY user_id
                     ) promise_counts ON u.user_id = promise_counts.user_id
                     WHERE (u.avatar_visibility = 'public' OR u.avatar_visibility IS NULL)
@@ -792,7 +792,7 @@ async def get_user(
                 text("""
                     SELECT COUNT(*) as promise_count
                     FROM promises
-                    WHERE user_id = :user_id AND is_deleted = 0
+                    WHERE user_id = :user_id AND is_deleted = 0 AND suspended_at_utc IS NULL
                 """),
                 {"user_id": str(user_id)}
             ).mappings().fetchone()
@@ -889,7 +889,7 @@ async def get_followers(
                         text("""
                             SELECT COUNT(*) as promise_count
                             FROM promises
-                            WHERE user_id = :user_id AND is_deleted = 0
+                            WHERE user_id = :user_id AND is_deleted = 0 AND suspended_at_utc IS NULL
                         """),
                         {"user_id": follower_id_str}
                     ).mappings().fetchone()
@@ -976,7 +976,7 @@ async def get_following(
                         text("""
                             SELECT COUNT(*) as promise_count
                             FROM promises
-                            WHERE user_id = :user_id AND is_deleted = 0
+                            WHERE user_id = :user_id AND is_deleted = 0 AND suspended_at_utc IS NULL
                         """),
                         {"user_id": following_id_str}
                     ).mappings().fetchone()
