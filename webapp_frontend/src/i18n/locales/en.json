@@ -94,6 +94,8 @@
     "included": "included",
     "excluded": "excluded",
     "partlyIncluded": "partly included",
+    "expandDeck": "Show subdecks of {{name}}",
+    "collapseDeck": "Hide subdecks of {{name}}",
     "reviewSelection": "Review selection",
     "selectedCount": "{{value}} decks selected",
     "readySummary": "{{due}} due · {{fresh}} new",

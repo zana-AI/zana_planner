@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Minus, Play, Search } from 'lucide-react';
+import { Check, ChevronDown, Minus, Play, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { formatNumber } from '../i18n/format';
@@ -15,6 +15,7 @@ export function DecksPage() {
   const [readyOnly, setReadyOnly] = useState(false);
   const [decks, setDecks] = useState<LibraryDeck[]>([]);
   const [query, setQuery] = useState('');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [excludedIds, setExcludedIds] = useState<Set<string>>(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem('xaana-review-excluded-decks') || '[]');
@@ -66,7 +67,7 @@ export function DecksPage() {
         current = current.parent_deck_id ? byId.get(current.parent_deck_id) : undefined;
       }
     }
-    return { directDecks, branchIds };
+    return { children, directDecks, branchIds };
   }, [decks, byId]);
 
   const selected = structure.directDecks.filter((deck) => !excludedIds.has(deck.deck_id));
@@ -111,10 +112,33 @@ export function DecksPage() {
     navigate(`/flashcards?${params.toString()}`);
   };
 
-  const visible = decks.filter((deck) =>
+  const matches = decks.filter((deck) =>
     deck.total > 0 && (!readyOnly || deck.due + deck.new > 0)
     && (!needle || path(deck).toLocaleLowerCase().includes(needle))
   );
+  const visibleIds = new Set(matches.map((deck) => deck.deck_id));
+  for (const deck of matches) {
+    let parent = deck.parent_deck_id ? byId.get(deck.parent_deck_id) : undefined;
+    const visited = new Set([deck.deck_id]);
+    while (parent && !visited.has(parent.deck_id)) {
+      visited.add(parent.deck_id);
+      visibleIds.add(parent.deck_id);
+      parent = parent.parent_deck_id ? byId.get(parent.parent_deck_id) : undefined;
+    }
+  }
+  const visible: Array<{ deck: LibraryDeck; depth: number }> = [];
+  const visited = new Set<string>();
+  const appendBranch = (deck: LibraryDeck, depth: number) => {
+    if (!visibleIds.has(deck.deck_id) || visited.has(deck.deck_id)) return;
+    visited.add(deck.deck_id);
+    visible.push({ deck, depth });
+    if (needle || expandedIds.has(deck.deck_id)) {
+      for (const child of structure.children.get(deck.deck_id) || []) appendBranch(child, depth + 1);
+    }
+  };
+  for (const deck of decks) {
+    if (!deck.parent_deck_id || !byId.has(deck.parent_deck_id)) appendBranch(deck, 0);
+  }
 
   return (
     <main className="decks-page">
@@ -140,18 +164,21 @@ export function DecksPage() {
         <div role="alert"><p>{t('flashcards.loadFailed')}</p><button className="fc-link" onClick={load}>{t('flashcards.tryAgain')}</button></div>
       ) : (
         <section className="decks-list" aria-label={t('deckBrowser.title')}>
-          {visible.map((deck) => {
+          {visible.map(({ deck, depth }) => {
             const branch = structure.branchIds.get(deck.deck_id) || [];
             const selectedCount = branch.filter((id) => !excludedIds.has(id)).length;
             const checked = selectedCount === 0 ? 'false' : selectedCount === branch.length ? 'true' : 'mixed';
-            return <article key={deck.deck_id} className={`decks-card${checked === 'false' ? ' is-excluded' : ''}`}>
+            const hasChildren = (structure.children.get(deck.deck_id) || []).some((child) => visibleIds.has(child.deck_id));
+            const expanded = Boolean(needle) || expandedIds.has(deck.deck_id);
+            return <article key={deck.deck_id} className={`decks-card${checked === 'false' ? ' is-excluded' : ''}${hasChildren ? ' is-parent' : ''}`}
+              style={{ marginInlineStart: `${Math.min(depth, 5) * 18}px` }}>
               <button type="button" className="decks-card-select" role="checkbox" aria-checked={checked}
                 aria-label={`${deck.name}: ${selectedCount === 0 ? t('deckBrowser.excluded') : selectedCount === branch.length ? t('deckBrowser.included') : t('deckBrowser.partlyIncluded')}`}
                 onClick={() => toggle(deck.deck_id)}>
                 <span className="decks-card-check" aria-hidden="true">{checked === 'mixed' ? <Minus size={16} /> : checked === 'true' ? <Check size={16} /> : null}</span>
                 <span className="decks-card-copy">
                   <strong dir="auto">{deck.name}</strong>
-                  {deck.parent_deck_id && <span className="decks-card-path" dir="auto">{path(deck)}</span>}
+                  {needle && deck.parent_deck_id && <span className="decks-card-path" dir="auto">{path(deck)}</span>}
                   <small className="decks-card-counts" dir={i18n.dir()}>
                     <span dir="auto">{t('deckBrowser.totalCards', { value: formatNumber(deck.total) })}</span>
                     <span dir="auto">{t('deckBrowser.newCards', { value: formatNumber(deck.new) })}</span>
@@ -159,6 +186,17 @@ export function DecksPage() {
                   </small>
                 </span>
               </button>
+              {hasChildren && !needle && <button type="button" className={`decks-card-expand${expanded ? ' is-expanded' : ''}`}
+                aria-label={t(expanded ? 'deckBrowser.collapseDeck' : 'deckBrowser.expandDeck', { name: deck.name })}
+                aria-expanded={expanded}
+                onClick={() => setExpandedIds((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(deck.deck_id)) next.delete(deck.deck_id);
+                  else next.add(deck.deck_id);
+                  return next;
+                })}>
+                <ChevronDown size={18} aria-hidden="true" />
+              </button>}
             </article>;
           })}
           {visible.length === 0 && <div className="decks-empty"><p>{t(query ? 'deckBrowser.noMatch' : readyOnly ? 'deckBrowser.caughtUp' : 'learning.reviewEmpty')}</p>
