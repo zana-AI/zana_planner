@@ -258,8 +258,11 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
       ? (doneSession.planned_duration_min / 60).toFixed(2).replace(/\.?0+$/, '')
       : '';
     const isoStart = doneSession.planned_start;
-    const prefillDate = isoStart ? isoStart.split('T')[0] : '';
-    const prefillTime = isoStart ? isoStart.substring(11, 16) : '';
+    const plannedAt = isoStart ? new Date(isoStart) : null;
+    const prefillDate = plannedAt && !Number.isNaN(plannedAt.getTime())
+      ? `${plannedAt.getFullYear()}-${String(plannedAt.getMonth() + 1).padStart(2, '0')}-${String(plannedAt.getDate()).padStart(2, '0')}` : '';
+    const prefillTime = plannedAt && !Number.isNaN(plannedAt.getTime())
+      ? `${String(plannedAt.getHours()).padStart(2, '0')}:${String(plannedAt.getMinutes()).padStart(2, '0')}` : '';
     // The session title (e.g. "fix UI for planned sessions") belongs in the
     // notes field, not appended to the promise title. Skip the generic defaults.
     const rawTitle = (doneSession.title ?? '').trim();
@@ -271,7 +274,7 @@ export function PromiseCard({ id, data, weekDays, onRefresh }: PromiseCardProps)
   const handleChipDoneLogged = async () => {
     if (logDoneSessionId === null) return;
     try {
-      const updated = await apiClient.updatePlanSessionStatus(logDoneSessionId, 'done');
+      const updated = await apiClient.updatePlanSessionStatus(logDoneSessionId, 'done', true);
       setPlanSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
     } catch { /* ignore */ }
     setLogDoneSessionId(null);

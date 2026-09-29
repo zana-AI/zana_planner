@@ -766,6 +766,7 @@ class UpcomingPlanSessionOut(PlanSessionOut):
 
 class PlanSessionStatusUpdate(BaseModel):
     status: str   # planned | done | skipped
+    activity_already_logged: bool = False
 
 
 class PlanSessionUpdate(BaseModel):

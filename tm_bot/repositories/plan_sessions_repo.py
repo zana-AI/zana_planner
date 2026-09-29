@@ -2,11 +2,13 @@
 Repository for plan_sessions and checklist_items tables.
 Follows the existing raw-SQL + get_db_session() pattern.
 """
+from datetime import datetime, timezone
 from typing import List, Optional
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import text
 
-from db.postgres_db import get_db_session, get_table_columns, resolve_promise_uuid, utc_now_iso
+from db.postgres_db import dt_from_utc_iso, get_db_session, get_table_columns, resolve_promise_uuid, utc_now_iso
 
 
 PLAN_SESSION_BASE_COLUMNS = [
@@ -203,10 +205,23 @@ class PlanSessionsRepository:
             checklist = self._get_checklist(session, row["id"])
             return {**_row_to_dict(row), "checklist": checklist}
 
-    def update_status(self, session_id: int, user_id: int, status: str) -> Optional[dict]:
+    def update_status(
+        self, session_id: int, user_id: int, status: str, *, activity_already_logged: bool = False
+    ) -> Optional[dict]:
         user = str(user_id)
         with get_db_session() as session:
             columns = _plan_session_columns(session)
+            previous = session.execute(
+                text("""
+                    SELECT status, promise_uuid, title, notes, planned_start, planned_duration_min
+                    FROM plan_sessions
+                    WHERE id = :session_id AND user_id = :user_id
+                    FOR UPDATE
+                """),
+                {"session_id": session_id, "user_id": user},
+            ).mappings().fetchone()
+            if not previous:
+                return None
             result = session.execute(
                 text(f"""
                     UPDATE plan_sessions SET status = :status
@@ -215,8 +230,45 @@ class PlanSessionsRepository:
                 """),
                 {"status": status, "session_id": session_id, "user_id": user},
             ).mappings().fetchone()
-            if not result:
-                return None
+
+            # The bot, web app, and LLM all update this repository. Keep the
+            # completion log in the same transaction as the status change.
+            # A stable action UUID prevents duplicate logs on retries.
+            action_uuid = str(uuid5(NAMESPACE_URL, f"xaana:plan-session:{session_id}"))
+            if status == "done" and previous["status"] != "done" and not activity_already_logged:
+                duration_min = previous["planned_duration_min"]
+                if previous["promise_uuid"] and duration_min and duration_min > 0:
+                    promise_id = session.execute(
+                        text("""
+                            SELECT current_id FROM promises
+                            WHERE promise_uuid = :promise_uuid AND user_id = :user_id
+                        """),
+                        {"promise_uuid": previous["promise_uuid"], "user_id": user},
+                    ).scalar()
+                    if promise_id:
+                        now = datetime.now(timezone.utc)
+                        planned_at = dt_from_utc_iso(previous["planned_start"])
+                        at_utc = planned_at.isoformat().replace("+00:00", "Z") if planned_at and planned_at <= now else utc_now_iso()
+                        notes = "\n".join(part for part in (previous["title"], previous["notes"]) if part) or None
+                        session.execute(
+                            text("""
+                                INSERT INTO actions (
+                                    action_uuid, user_id, promise_uuid, promise_id_text,
+                                    action_type, time_spent_hours, at_utc, notes
+                                ) VALUES (
+                                    :action_uuid, :user_id, :promise_uuid, :promise_id,
+                                    'log_time', :hours, :at_utc, :notes
+                                ) ON CONFLICT (action_uuid) DO NOTHING
+                            """),
+                            {"action_uuid": action_uuid, "user_id": user,
+                             "promise_uuid": previous["promise_uuid"], "promise_id": promise_id,
+                             "hours": duration_min / 60.0, "at_utc": at_utc, "notes": notes},
+                        )
+            elif status != "done" and previous["status"] == "done":
+                session.execute(
+                    text("DELETE FROM actions WHERE action_uuid = :action_uuid AND user_id = :user_id"),
+                    {"action_uuid": action_uuid, "user_id": user},
+                )
             checklist = self._get_checklist(session, result["id"])
             return {**_row_to_dict(result), "checklist": checklist}
 
