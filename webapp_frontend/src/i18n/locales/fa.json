@@ -256,6 +256,7 @@
     "weeklyActivity": "فعالیت هفتگی",
     "recent": "اخیر",
     "logged": "ثبت شد",
+    "checkInRecorded": "ثبت انجام شد",
     "amountLogged": "{{amount}} ثبت شد",
     "checkIns": "{{done, num}} از {{total, num}} ثبت",
     "goToClub": "رفتن به باشگاه",

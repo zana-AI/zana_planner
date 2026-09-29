@@ -66,7 +66,7 @@ function formatSessionTime(isoStr: string | null, t: TFunction): string {
   return formatDate(dt, { weekday: 'short', month: 'short', day: 'numeric' }) + ` · ${time}`;
 }
 
-type RecentLog = { datetime: string; date: string; time_spent: number; time_str: string; notes: string | null };
+type RecentLog = { datetime: string; date: string; time_spent: number; time_str: string; action_type: string; notes: string | null };
 
 const RECENT_LOGS_LIMIT = 3;
 
@@ -380,7 +380,9 @@ export function PromiseDetailSheet({
                     <Check size={12} />
                   </span>
                   <span className="recent-log-title">
-                    {note || (amount ? t('promise.amountLogged', { amount }) : t('promise.logged'))}
+                    {note || (amount ? t('promise.amountLogged', { amount })
+                      : log.action_type === 'club_checkin' || log.action_type === 'checkin'
+                        ? t('promise.checkInRecorded') : t('promise.logged'))}
                   </span>
                   <span className="recent-log-time">
                     {note && amount ? `${amount} · ` : ''}{formatLogDate(log.date, t)}

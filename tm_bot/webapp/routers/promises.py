@@ -842,6 +842,7 @@ async def get_promise_logs(
                 "date": date_str,
                 "time_spent": action.time_spent,
                 "time_str": time_str,
+                "action_type": action.action,
                 "notes": action.notes if action.notes else None
             })
         
