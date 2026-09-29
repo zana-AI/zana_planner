@@ -29,29 +29,34 @@
       margin: 0;
       min-height: 100vh;
       min-height: 100dvh;
-      padding: max(12px, env(safe-area-inset-top, 0px)) var(--watch-pad-right) max(20px, env(safe-area-inset-bottom, 0px)) var(--watch-pad-left);
+      padding: env(safe-area-inset-top, 0px) var(--watch-pad-right) max(20px, env(safe-area-inset-bottom, 0px)) var(--watch-pad-left);
       font-family: system-ui, sans-serif;
       background: var(--app-bg);
       color: #edf3ff;
     }
-    .watch-header { display: flex; align-items: center; gap: 8px; min-height: 34px; }
-    .watch-back {
-      flex: 0 0 auto; min-width: 34px; min-height: 34px; padding: 0 9px;
-      border: 1px solid var(--app-border); border-radius: 9px; background: transparent;
-      color: #edf3ff; font: inherit; font-size: 18px; cursor: pointer;
+    .watch-header {
+      display: flex; align-items: center; gap: 6px; direction: ltr;
+      min-height: 48px; margin: 0 calc(-1 * var(--watch-pad-right)) 0 calc(-1 * var(--watch-pad-left));
+      padding: 6px 8px; border-bottom: 1px solid rgba(237,243,255,.08);
+      background: rgba(9,15,31,.92);
+      -webkit-user-select: none; user-select: none;
     }
+    .watch-back {
+      display: inline-flex; align-items: center; justify-content: center;
+      flex: 0 0 34px; width: 34px; height: 34px; padding: 0;
+      border: 1px solid rgba(237,243,255,.14); border-radius: 8px;
+      background: rgba(237,243,255,.06); color: #edf3ff; cursor: pointer;
+    }
+    .watch-back svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .watch-back:hover, .watch-back:focus-visible { background: rgba(99,167,247,.14); outline: none; }
     .video-title {
-      flex: 1;
-      font-size: 15px;
-      font-weight: 600;
-      padding: 0 0 6px;
+      flex: 1 1 auto; min-width: 0;
+      font-size: 13px;
+      font-weight: 700;
       color: #edf3ff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      line-height: 1.35;
-      min-height: 1.35em;
     }
     /* Full-bleed: cancel the body's side padding. aspect-ratio (not padding-bottom %) because
        percentage padding is relative to the padded parent, which left the box wider than it is tall. */
@@ -77,10 +82,11 @@
       border-radius: 3px;
       opacity: 0.78;
     }
-    .transcript { position: relative; margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; --transcript-font-size: 13px; }
+    .transcript-wrap { position: relative; margin-top: 14px; }
+    .transcript { border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; --transcript-font-size: 13px; }
     .transcript summary { cursor: pointer; padding: 12px 14px; padding-inline-end: 160px; min-height: 46px; font-size: 13px; font-weight: 800; color: #edf3ff; }
-    .transcript:not([open]) summary { padding-inline-end: 14px; }
     .transcript-header-actions { position: absolute; top: 6px; inset-inline-end: 12px; display: flex; align-items: center; gap: 6px; }
+    .transcript[hidden] + .transcript-header-actions { display: none; }
     .transcript-header-actions button { min-height: 34px; border: 1px solid var(--app-border); border-radius: 8px; background: rgba(99,167,247,.1); color: #dceaff; font: inherit; cursor: pointer; }
     .transcript-header-actions button:hover, .transcript-header-actions button:focus-visible { background: rgba(99,167,247,.24); outline: none; }
     .transcript-header-actions button:disabled { opacity: .5; cursor: default; }
@@ -176,10 +182,10 @@
   </style>
 </head>
 <body>
-  <div class="watch-header">
-    <button id="backBtn" class="watch-back" type="button" aria-label="Back">←</button>
-    <div id="videoTitle" class="video-title" hidden></div>
-  </div>
+  <header class="watch-header">
+    <button id="backBtn" class="watch-back" type="button" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m7 7-7-7 7-7"/></svg></button>
+    <div id="videoTitle" class="video-title" dir="auto" hidden></div>
+  </header>
   <div class="video-wrap">
     <iframe title="YouTube video player" id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
     <div id="videoStatus" class="video-status" role="status"></div>
@@ -201,20 +207,22 @@
       <button id="closeWord" class="word-action is-close" type="button">✕</button>
     </div>
   </div>
-  <details id="transcript" class="transcript" open hidden>
-    <summary id="transcriptTitle">Transcript</summary>
+  <div class="transcript-wrap">
+    <details id="transcript" class="transcript" open hidden>
+      <summary id="transcriptTitle">Transcript</summary>
+      <div id="transcriptSettings" class="transcript-settings" hidden>
+        <label id="transcriptFontSizeLabel" for="transcriptFontSize"></label>
+        <input id="transcriptFontSize" type="range" min="12" max="28" step="1" value="13">
+        <output id="transcriptFontSizeValue" for="transcriptFontSize">13px</output>
+      </div>
+      <div id="transcriptStatus" class="transcript-status"><span id="transcriptMessage" role="status"></span><button id="transcriptRetry" class="transcript-retry" type="button" hidden></button></div>
+      <div id="transcriptList" class="transcript-list" hidden></div>
+    </details>
     <div class="transcript-header-actions">
       <button id="resumeWatched" class="transcript-resume" type="button" hidden></button>
       <button id="transcriptSettingsToggle" class="transcript-settings-toggle" type="button" aria-controls="transcriptSettings" aria-expanded="false">⚙</button>
     </div>
-    <div id="transcriptSettings" class="transcript-settings" hidden>
-      <label id="transcriptFontSizeLabel" for="transcriptFontSize"></label>
-      <input id="transcriptFontSize" type="range" min="12" max="28" step="1" value="13">
-      <output id="transcriptFontSizeValue" for="transcriptFontSize">13px</output>
-    </div>
-    <div id="transcriptStatus" class="transcript-status"><span id="transcriptMessage" role="status"></span><button id="transcriptRetry" class="transcript-retry" type="button" hidden></button></div>
-    <div id="transcriptList" class="transcript-list" hidden></div>
-  </details>
+  </div>
   <section id="savedWords" class="saved-words" hidden>
     <div class="saved-head">
       <span id="savedTitle" class="saved-title"></span>
@@ -294,6 +302,7 @@
   transcriptSettingsToggle.setAttribute('aria-label', copy.transcriptSettings);
   transcriptSettingsToggle.title = copy.transcriptSettings;
   transcriptSettingsToggle.addEventListener('click', function() {
+    if (!document.getElementById('transcript').open) document.getElementById('transcript').open = true;
     transcriptSettings.hidden = !transcriptSettings.hidden;
     transcriptSettingsToggle.setAttribute('aria-expanded', String(!transcriptSettings.hidden));
   });
