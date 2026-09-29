@@ -242,6 +242,9 @@ class ReportsService:
                 if action.action == 'log_time':
                     actions_by_promise_date[canonical][action_date]['hours'] += action.time_spent
                     if action.time_spent > 0:
+                        # A completed timed activity also satisfies one occurrence
+                        # of a count-based promise (for example, a gym workout).
+                        actions_by_promise_date[canonical][action_date]['count'] += 1
                         promises_with_action_activity.add(canonical)
                     if action.notes and action.notes.strip():
                         actions_by_promise_date[canonical][action_date]['notes'].append(action.notes.strip())
@@ -424,8 +427,12 @@ class ReportsService:
         # Calculate weekly hours and count
         weekly_actions = [a for a in promise_actions if week_start <= a.at <= week_end]
         weekly_hours = sum(a.time_spent for a in weekly_actions)
-        # Count check-in style actions (checkin + club_checkin) for count-based promises
-        weekly_count = sum(1 for a in weekly_actions if a.action in ('checkin', 'club_checkin'))
+        # Match the weekly card: a positive duration is one completed activity.
+        weekly_count = sum(
+            1 for a in weekly_actions
+            if a.action in ('checkin', 'club_checkin')
+            or (a.action == 'log_time' and a.time_spent > 0)
+        )
 
         # Calculate total hours
         total_hours = sum(a.time_spent for a in promise_actions)
