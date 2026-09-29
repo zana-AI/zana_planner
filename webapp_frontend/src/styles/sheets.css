@@ -197,31 +197,34 @@
 }
 
 .suspended-promises { margin-top: 18px; }
-.suspended-promise-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-12);
-  background: var(--surface);
-  color: var(--fg-muted);
-  font-size: 13px;
+.pcard.pcard-suspended {
+  cursor: default;
 }
-.suspended-promise-row span { min-width: 0; overflow-wrap: anywhere; }
-.suspended-promise-row button {
-  flex: 0 0 auto;
-  border: 1px solid var(--border-strong);
+.pcard.pcard-suspended:hover {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.pcard-suspended-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.pcard-suspended-actions button {
+  min-height: 32px;
+  border: 1px solid var(--border);
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--accent);
-  padding: 7px 12px;
+  padding: 6px 12px;
   font: inherit;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
+.pcard-suspended-actions button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.pcard-suspended-actions button:disabled { opacity: 0.5; cursor: wait; }
 
 .week-strip {
   display: flex;

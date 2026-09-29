@@ -277,6 +277,7 @@
     "suspend": "Suspend",
     "resume": "Resume",
     "suspended": "Promise suspended",
+    "suspendedStatus": "Suspended",
     "resumed": "Promise resumed",
     "suspendFailed": "Could not suspend promise",
     "resumeFailed": "Could not resume promise"
