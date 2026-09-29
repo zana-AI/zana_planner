@@ -6,6 +6,7 @@ import { formatDate, formatNumber } from '../i18n/format';
 import type { PromiseData, UpcomingPlanSession } from '../types';
 import { Badge } from './ui/Badge';
 import { formatPromiseText } from '../utils/activityFormat';
+import { getPromisePaceStatus } from '../utils/promisePace';
 
 interface PromiseCardV2Props {
   id: string;
@@ -14,10 +15,6 @@ interface PromiseCardV2Props {
   onOpenDetail: () => void;
   /** Today's planned sessions for this promise, rendered as prominent nested rows. */
   plannedToday?: UpcomingPlanSession[];
-}
-
-function toLocalDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 // Time column for a nested session row: clock for today, day + clock for future,
@@ -35,25 +32,6 @@ function formatSessionWhen(isoStr: string | null, t: TFunction): string {
   if (diffDays === 0) return time;
   if (diffDays === 1) return t('promise.tomorrowShortAt', { time });
   return `${formatDate(dt, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
-}
-
-// Returns expected progress fraction (0-1) based on today's position in the week.
-// Returns 1.0 for past weeks (today is not in weekDays).
-function weekExpectedFraction(weekDays: string[]): number {
-  const todayKey = toLocalDateKey(new Date());
-  const idx = weekDays.indexOf(todayKey);
-  return idx >= 0 ? (idx + 1) / 7 : 1.0;
-}
-
-function getStatusInfo(
-  progress: number,
-  expectedFraction: number,
-): { key: 'onTrack' | 'behind' | 'atRisk'; cls: 'good' | 'warn' | 'bad' | '' } {
-  const expected = expectedFraction * 100;
-  if (progress >= expected) return { key: 'onTrack', cls: 'good' };
-  if (progress >= expected * 0.5) return { key: 'behind', cls: 'warn' };
-  if (progress > 0) return { key: 'atRisk', cls: 'bad' };
-  return { key: 'atRisk', cls: '' };
 }
 
 function formatNextSession(isoStr: string, t: TFunction): string {
@@ -97,8 +75,7 @@ export function PromiseCardV2({ id, data, weekDays, onOpenDetail, plannedToday =
   const target = target_value || hours_promised || 1;
   const achieved = achieved_value ?? hours_spent ?? 0;
   const progress = target > 0 ? Math.min(Math.round((achieved / target) * 100), 100) : 0;
-  const expectedFraction = weekExpectedFraction(weekDays);
-  const { key: statusKey, cls: statusClass } = getStatusInfo(progress, expectedFraction);
+  const { key: statusKey, cls: statusClass } = getPromisePaceStatus(achieved, target, weekDays);
   const statusLabel = t(`status.${statusKey}`);
 
   const sessionsByDate: Record<string, number> = {};

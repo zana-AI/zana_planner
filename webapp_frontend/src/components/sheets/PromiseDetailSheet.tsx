@@ -13,6 +13,7 @@ import { LogActionModal } from '../LogActionModal';
 import { ScheduleSheet } from './ScheduleSheet';
 import { AddToCalendarSheet } from './AddToCalendarSheet';
 import { apiClient } from '../../api/client';
+import { getPromisePaceStatus } from '../../utils/promisePace';
 
 interface PromiseDetailSheetProps {
   open: boolean;
@@ -29,26 +30,6 @@ interface PromiseDetailSheetProps {
   /** Called after a planned session is logged-as-done, so the parent can
    *  refetch the weekly report and refresh the badge/grids. */
   onLogged?: () => void;
-}
-
-function toLocalDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function weekExpectedFraction(weekDays: string[]): number {
-  const todayKey = toLocalDateKey(new Date());
-  const idx = weekDays.indexOf(todayKey);
-  return idx >= 0 ? (idx + 1) / 7 : 1.0;
-}
-
-// Use raw (unrounded) progress so that e.g. 1 check-in on Monday (14.28%)
-// is not marked behind due to integer rounding against expected 14.28%.
-function getStatusClass(rawProgress: number, expectedFraction: number): 'good' | 'warn' | 'bad' | '' {
-  const expected = expectedFraction * 100;
-  if (rawProgress >= expected) return 'good';
-  if (rawProgress >= expected * 0.5) return 'warn';
-  if (rawProgress > 0) return 'bad';
-  return '';
 }
 
 function formatSessionTime(isoStr: string | null, t: TFunction): string {
@@ -118,11 +99,10 @@ export function PromiseDetailSheet({
   const achieved = achieved_value ?? hours_spent ?? 0;
   const rawProgress = target > 0 ? Math.min((achieved / target) * 100, 100) : 0;
   const progress = Math.round(rawProgress);
-  const expectedFraction = weekExpectedFraction(weekDays);
   // Only show weekly status for promises with a real weekly target:
   // non-recurring (trip/project) and zero-target promises have no meaningful pace.
   const hasWeeklyTarget = isCountBased ? target > 0 : recurring && (hours_promised ?? 0) > 0;
-  const statusClass = hasWeeklyTarget ? getStatusClass(rawProgress, expectedFraction) : null;
+  const statusClass = hasWeeklyTarget ? getPromisePaceStatus(achieved, target, weekDays).cls : null;
   const statusLabel = statusClass === 'good' ? t('status.onTrack') : statusClass === 'warn' ? t('status.behind') : statusClass === 'bad' ? t('status.atRisk') : '';
 
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);

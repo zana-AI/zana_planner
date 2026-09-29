@@ -629,11 +629,7 @@ export function DashboardPage() {
         ) : null}
 
         {isCurrentWeek && suspendedPromises.length > 0 && (
-          <section className="suspended-promises">
-            <div className="section-head">
-              <h2>{t('dashboard.suspendedPromises')}</h2>
-              <span className="meta">{suspendedPromises.length}</span>
-            </div>
+          <section className="suspended-promises" aria-label={t('dashboard.suspendedPromises')}>
             <div className="weekly-report">
               <div className="list">
                 {suspendedPromises.map((promise) => (
