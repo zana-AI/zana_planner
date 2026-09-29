@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from ..dependencies import get_current_user
 from handlers.translator import enrich_learning_card, translate_learning_term
 from services import flashcard_service
+from services.flashcard_drafter import EDITABLE as DRAFT_FIELDS, draft_cards
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
@@ -59,6 +60,24 @@ class NoteUpdateIn(BaseModel):
     fields: Dict[str, Any]
     note_type: Optional[str] = None
     deck_path: Optional[str] = None
+
+
+class DraftCardsIn(BaseModel):
+    # Existing notes are read on the server so callers cannot draft another
+    # learner's content. A single unsaved card can be supplied as fields.
+    note_ids: List[str] = Field(default_factory=list, max_length=10)
+    new_fields: Optional[Dict[str, Any]] = None
+    new_note_type: str = "vocab"
+
+
+class DraftApplyItem(BaseModel):
+    note_id: str
+    expected_fields: Dict[str, str]
+    fields: Dict[str, str]
+
+
+class DraftApplyIn(BaseModel):
+    items: List[DraftApplyItem] = Field(min_length=1, max_length=10)
 
 
 class DeckUpdateIn(BaseModel):
@@ -252,6 +271,60 @@ async def list_notes(
     return flashcard_service.list_notes(
         str(user_id), deck_id=deck_id, search=search, limit=limit
     )
+
+
+@router.post("/drafts")
+async def draft_flashcards(payload: DraftCardsIn, user_id: int = Depends(get_current_user)):
+    """Suggest content for one new card or up to ten existing cards. No writes."""
+    if bool(payload.note_ids) == bool(payload.new_fields):
+        raise HTTPException(status_code=422, detail="Supply note_ids or new_fields")
+    if len(set(payload.note_ids)) != len(payload.note_ids):
+        raise HTTPException(status_code=422, detail="Duplicate note IDs")
+    if payload.new_fields and not str(payload.new_fields.get("front") or "").strip():
+        raise HTTPException(status_code=422, detail="front is required")
+    try:
+        notes = flashcard_service.get_notes_for_draft(str(user_id), payload.note_ids) if payload.note_ids else []
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if payload.new_fields:
+        notes = [{"note_id": "new", "note_type": payload.new_note_type, "fields": payload.new_fields}]
+    items = []
+    for note in notes:
+        fields = note["fields"]
+        card = {key: str(fields.get(key) or "")[:500] for key in DRAFT_FIELDS}
+        card.update({
+            "id": note["note_id"], "note_type": note["note_type"],
+            "source_language": str(fields.get("source_language") or "")[:10],
+            "source_sentence": str(fields.get("source_sentence") or "")[:500],
+            "sentence_translation": str(fields.get("sentence_translation") or "")[:500],
+        })
+        items.append(card)
+    try:
+        suggestions = await asyncio.to_thread(draft_cards, items)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"suggestions": suggestions}
+
+
+@router.post("/drafts/apply")
+async def apply_flashcard_drafts(payload: DraftApplyIn, user_id: int = Depends(get_current_user)):
+    """Save only the selected, reviewed suggestions as one transaction."""
+    if len({item.note_id for item in payload.items}) != len(payload.items):
+        raise HTTPException(status_code=422, detail="Duplicate note IDs")
+    for item in payload.items:
+        if not str(item.fields.get("front") or "").strip():
+            raise HTTPException(status_code=422, detail="front is required")
+        if set(item.fields) != set(DRAFT_FIELDS) or set(item.expected_fields) != set(DRAFT_FIELDS):
+            raise HTTPException(status_code=422, detail="Invalid draft fields")
+        if any(len(value) > 500 for value in item.fields.values()):
+            raise HTTPException(status_code=422, detail="Draft field is too long")
+    try:
+        notes = flashcard_service.apply_card_drafts(
+            str(user_id), [item.model_dump() for item in payload.items]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"updated": len(notes)}
 
 
 @router.post("/notes")

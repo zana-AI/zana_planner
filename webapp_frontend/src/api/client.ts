@@ -1650,6 +1650,23 @@ class ApiClient {
     return this.request(`/flashcards/notes${suffix ? `?${suffix}` : ''}`);
   }
 
+  async draftFlashcards(payload: { note_ids?: string[]; new_fields?: import('../types').FlashcardFields }):
+    Promise<{ suggestions: Array<{ id: string; fields: import('../types').FlashcardFields; warning: string }> }> {
+    return this.request('/flashcards/drafts', {
+      method: 'POST', body: JSON.stringify(payload),
+    });
+  }
+
+  async applyFlashcardDrafts(items: Array<{
+    note_id: string;
+    expected_fields: Record<'front' | 'back' | 'example' | 'note_fa', string>;
+    fields: Record<'front' | 'back' | 'example' | 'note_fa', string>;
+  }>): Promise<{ updated: number }> {
+    return this.request('/flashcards/drafts/apply', {
+      method: 'POST', body: JSON.stringify({ items }),
+    });
+  }
+
   async createFlashcardNote(
     payload: import('../types').CreateFlashcardNoteRequest
   ): Promise<import('../types').FlashcardNote> {

@@ -383,7 +383,24 @@ stemmer could not reach) — fix the `front` or accept the plain card.
 
 ---
 
-## 7. Related
+## 7. AI-assisted card drafting
+
+The Manage tab can draft one new card from a word or phrase, or suggest edits
+for 1–10 selected existing cards in one Groq `openai/gpt-oss-20b` call. The
+prompt and strict response validation live in
+`tm_bot/services/flashcard_drafter.py`. `POST /api/flashcards/drafts` reads
+existing cards by the authenticated user ID and **does not write**. A new card's
+suggestion fills the regular editor, where the learner can edit and save it.
+
+Existing-card suggestions show current and proposed fields side by side. The
+learner selects which to apply, and `POST /api/flashcards/drafts/apply` checks
+the original fields and saves the chosen batch in one transaction. A stale
+card or duplicate front rejects the whole batch. Accepted cards get `_curated`
+and retain prior `source_key` values in `_import_aliases`, so reimports still
+match them. FSRS card state and review logs are never touched. An unset
+`GROQ_API_KEY` makes drafting unavailable without affecting manual editing.
+
+## 8. Related
 
 - `tm_bot/db/alembic/versions/032_flashcards_srs.py` — schema + design rationale
 - `tm_bot/db/alembic/versions/033_flashcard_deck_promise.py` — the deck→promise edge
