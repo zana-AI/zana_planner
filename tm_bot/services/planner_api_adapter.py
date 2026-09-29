@@ -1848,8 +1848,8 @@ class PlannerAPIAdapter:
     ) -> str:
         """Mark a planned session as done, skipped, or back to planned.
 
-        When marking 'done', this also logs time on the linked promise automatically
-        if the session had a planned_duration_min. Use get_upcoming_sessions or
+        When marking 'done', the session repository logs the planned duration
+        on the linked promise. Use get_upcoming_sessions or
         get_plan_sessions to find the session_id first.
         Allowed status values: 'done', 'skipped', 'planned'.
 
@@ -1863,23 +1863,6 @@ class PlannerAPIAdapter:
             result = self.plan_sessions_repo.update_status(session_id, user_id, status)
             if not result:
                 return f"Session #{session_id} not found."
-
-            # Auto-log time to the promise when marking a timed session done
-            if status == "done" and result.get("planned_duration_min"):
-                duration_hours = result["planned_duration_min"] / 60.0
-                p_uuid = result.get("promise_uuid")
-                if p_uuid:
-                    try:
-                        from sqlalchemy import text as _text
-                        with get_db_session() as db_session:
-                            row = db_session.execute(
-                                _text("SELECT current_id FROM promises WHERE promise_uuid = :uuid LIMIT 1"),
-                                {"uuid": p_uuid},
-                            ).fetchone()
-                        if row and row[0]:
-                            self.add_action(user_id, row[0], duration_hours)
-                    except Exception as log_err:
-                        logger.warning(f"Could not auto-log time for completed session {session_id}: {log_err}")
 
             status_msg = {
                 "done": "\u2705 Marked done",

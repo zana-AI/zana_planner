@@ -51,7 +51,7 @@ export function LogActionModal({ promiseId, promiseText, isOpen, onClose, onSucc
   // Initialize date/time to current if not set
   if (isOpen && !date && !time) {
     const now = new Date();
-    setDate(now.toISOString().split('T')[0]);
+    setDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
     const hours24 = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
     setTime(`${hours24}:${minutes}`);

@@ -197,7 +197,9 @@ async def update_plan_session_status(
 ):
     if body.status not in ("planned", "done", "skipped"):
         raise HTTPException(status_code=400, detail="status must be planned | done | skipped")
-    result = PlanSessionsRepository().update_status(session_id, user_id, body.status)
+    result = PlanSessionsRepository().update_status(
+        session_id, user_id, body.status, activity_already_logged=body.activity_already_logged
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Session not found")
     return result

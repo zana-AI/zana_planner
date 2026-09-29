@@ -1507,10 +1507,10 @@ class ApiClient {
     });
   }
 
-  async updatePlanSessionStatus(sessionId: number, status: string): Promise<import('../types').PlanSession> {
+  async updatePlanSessionStatus(sessionId: number, status: string, activityAlreadyLogged = false): Promise<import('../types').PlanSession> {
     return this.request(`/plan-sessions/${sessionId}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, activity_already_logged: activityAlreadyLogged }),
     });
   }
 

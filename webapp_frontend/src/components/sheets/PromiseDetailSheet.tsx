@@ -193,7 +193,7 @@ export function PromiseDetailSheet({
   const handleLogDoneSuccess = async () => {
     if (logDoneSessionId === null) return;
     try {
-      await apiClient.updatePlanSessionStatus(logDoneSessionId, 'done');
+      await apiClient.updatePlanSessionStatus(logDoneSessionId, 'done', true);
       setPlanSessions(prev => prev.map(s => s.id === logDoneSessionId ? { ...s, status: 'done' as const } : s));
     } catch {}
     setLogDoneSessionId(null);
