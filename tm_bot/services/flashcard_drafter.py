@@ -10,7 +10,7 @@ from llms.providers.usage import extract_tokens
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
-MODEL = "openai/gpt-oss-20b"
+MODEL = "openai/gpt-oss-120b"
 EDITABLE = ("front", "back", "example", "note_fa")
 LIMITS = {"front": 160, "back": 500, "example": 500, "note_fa": 350}
 
@@ -23,8 +23,10 @@ headword: verbs in the infinitive (including reflexive se), adjectives masculine
 singular where appropriate, nouns singular with an article when unambiguous.
 Keep fixed expressions whole. Never turn a grammar or sentence card into a word.
 Back is a concise definition or translation consistent with the existing back.
-note_fa is a short, natural Persian meaning. Supply it when confident; otherwise
-leave it empty and explain uncertainty in warning. Preserve a real source example
+note_fa translates the FRONT headword in dictionary form, never the example
+sentence (klaxonner -> بوق زدن; stressé -> مضطرب). Supply it when confident;
+otherwise leave it empty and explain uncertainty in warning. Preserve an
+existing personal note when it adds useful meaning. Preserve a real source example
 if provided; otherwise write a short natural example in the source language.
 Never invent a citation or claim an example came from the source. If a word or
 sense is ambiguous, keep the existing front and back and explain in warning.
@@ -41,7 +43,7 @@ SCHEMA: dict[str, Any] = {
 
 
 def draft_cards(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One inexpensive Groq call for up to ten cards; fail closed on malformed output."""
+    """One Groq call for up to ten cards; fail closed on malformed output."""
     key = os.getenv("GROQ_API_KEY", "").strip()
     if not key:
         raise RuntimeError("Card drafting is unavailable: GROQ_API_KEY is not configured")

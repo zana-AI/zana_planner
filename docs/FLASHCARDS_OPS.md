@@ -386,7 +386,7 @@ stemmer could not reach) — fix the `front` or accept the plain card.
 ## 7. AI-assisted card drafting
 
 The Manage tab can draft one new card from a word or phrase, or suggest edits
-for 1–10 selected existing cards in one Groq `openai/gpt-oss-20b` call. The
+for 1–10 selected existing cards in one Groq `openai/gpt-oss-120b` call. The
 prompt and strict response validation live in
 `tm_bot/services/flashcard_drafter.py`. `POST /api/flashcards/drafts` reads
 existing cards by the authenticated user ID and **does not write**. A new card's
