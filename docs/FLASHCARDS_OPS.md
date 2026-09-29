@@ -122,6 +122,13 @@ Prod is at `033`.
 `fields` is JSONB precisely so new keys need no migration. Add keys freely; the
 UI renders `front`, `back`, `example`, `note_fa`, `source_page`.
 
+Cards that have been hand-curated use two internal fields: `_curated: true`
+prevents automated reimports from overwriting their learning content, and
+`_import_aliases` contains normalised former prompts. An importer can still
+find a corrected lemma when its source contains the earlier inflected form.
+The aliases are for matching only; they are never study prompts. Explicit
+edits through `update_note` remain available.
+
 ### Two content conventions that differ by deck
 
 - **Édito B1** cards are **monolingual**: French word → French definition.
@@ -152,6 +159,11 @@ a duplicate instead of finding the card. This deck is full of accented words.
 
 Use the service, which recomputes the key correctly and keeps the card and its
 history (they hang off `note_id`, not the key):
+
+When standardising an imported prompt, retain its previous normalised key in
+`_import_aliases` and set `_curated: true`. Otherwise rerunning the old import
+can create a duplicate or restore the old content. Check alias uniqueness
+against all of that user's `source_key` values before writing.
 
 ```bash
 ssh root@169.58.186.195 "docker exec -e PYTHONIOENCODING=utf-8 zana-webapp python3 -c \"

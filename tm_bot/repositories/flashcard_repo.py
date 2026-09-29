@@ -329,12 +329,16 @@ class FlashcardNoteRepository:
     def get_by_source_key(
         self, session: Session, user_id: str, source_key: str
     ) -> Optional[dict]:
+        # A curated card may use a dictionary-form prompt while an importer
+        # still sends the inflected wording from its original source.
         row = session.execute(
             text(
                 f"SELECT {self._COLUMNS} FROM flashcard_note "
-                "WHERE user_id = :u AND source_key = :k"
+                "WHERE user_id = :u AND (source_key = :k OR "
+                "fields->'_import_aliases' @> CAST(:alias AS jsonb)) "
+                "ORDER BY (source_key = :k) DESC LIMIT 1"
             ),
-            {"u": str(user_id), "k": source_key},
+            {"u": str(user_id), "k": source_key, "alias": json.dumps([source_key])},
         ).mappings().fetchone()
         return _decode_json(dict(row), "fields") if row else None
 
@@ -431,10 +435,15 @@ class FlashcardNoteRepository:
         existing = self.get_by_source_key(session, user_id, key)
 
         if existing:
+            if existing["fields"].get("_curated") and source != "manual":
+                # Reimports must not replace corrected definitions, translations
+                # or prompts, and must not create a second FSRS card.
+                existing["_created"] = False
+                return existing
             session.execute(
                 text(
                     "UPDATE flashcard_note SET fields = :f, note_type = :t, "
-                    "deck_id = :d, source = :s, updated_at = now() "
+                    "deck_id = :d, source = :s, source_key = :k, updated_at = now() "
                     "WHERE note_id = :n"
                 ),
                 {
@@ -442,10 +451,11 @@ class FlashcardNoteRepository:
                     "t": note_type,
                     "d": deck_id,
                     "s": source,
+                    "k": key,
                     "n": existing["note_id"],
                 },
             )
-            existing.update(fields=fields, note_type=note_type, deck_id=deck_id)
+            existing.update(fields=fields, note_type=note_type, deck_id=deck_id, source_key=key, source=source)
             existing["_created"] = False
             return existing
 
