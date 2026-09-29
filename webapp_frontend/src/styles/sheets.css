@@ -126,6 +126,20 @@
   min-height: 0;
 }
 
+.confirm-action-message {
+  margin: 0 0 18px;
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
+.confirm-action-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.confirm-action-buttons .btn { width: 100%; }
+
 .pill {
   display: inline-flex;
   align-items: center;

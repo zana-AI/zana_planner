@@ -53,6 +53,7 @@ export function ClubsOverviewTab() {
   const visibleClubs = showArchived ? clubs : activeClubs;
 
   const handleDisable = async (label: string) => {
+    if (!window.confirm(`Disable reserve group ${label}? It will no longer be assigned to new clubs.`)) return;
     setBusyLabel(label);
     setError('');
     try {

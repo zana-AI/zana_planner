@@ -266,6 +266,8 @@
     "addToCalendar": "Add to calendar",
     "logAndMarkDone": "Log and mark done",
     "deleteSession": "Delete session",
+    "confirmDeleteSession": "Delete this planned session? Its reminder will be removed too.",
+    "confirmSnooze": "Snooze this promise until next week? It will leave this week's list.",
     "todayAt": "Today {{time}}",
     "tomorrowAt": "Tomorrow {{time}}",
     "tomorrowShortAt": "Tmrw {{time}}",
@@ -280,7 +282,11 @@
     "suspendedStatus": "Suspended",
     "resumed": "Promise resumed",
     "suspendFailed": "Could not suspend promise",
-    "resumeFailed": "Could not resume promise"
+    "resumeFailed": "Could not resume promise",
+    "confirmSuspendTitle": "Suspend this promise?",
+    "confirmSuspendMessage": "It will leave your active list and pause its reminders. Your history and settings will be kept, and you can resume it later.",
+    "confirmResumeTitle": "Resume this promise?",
+    "confirmResumeMessage": "It will return to your active list and its reminders will start again."
   },
   "play": {
     "ready": "Ready",
@@ -823,6 +829,7 @@
     "highlights": "Highlights",
     "openPage": "Open page",
     "delete": "Delete",
+    "confirmDeleteHighlight": "Delete this highlight and its note? This cannot be undone.",
     "selectTextInThePdfToSaveAHighlight": "Select text in the PDF to save a highlight.",
     "backToLibrary": "Back to library",
     "previousPage": "Previous page",
