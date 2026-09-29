@@ -225,6 +225,7 @@
     "showOlderPromises_one": "نمایش {{count, num}} قول قدیمی",
     "showOlderPromises_other": "نمایش {{count, num}} قول قدیمی",
     "olderPromises": "قول‌های قدیمی",
+    "suspendedPromises": "قول‌های معلق",
     "oneTimeTasks": "کارهای یک‌باره",
     "distractions": "حواس‌پرتی‌ها",
     "stayUnderBudget": "زیر سقف تعیین‌شده",
@@ -272,7 +273,13 @@
     "checkIn": "ثبت انجام",
     "log": "ثبت",
     "schedule": "زمان‌بندی",
-    "edit": "ویرایش"
+    "edit": "ویرایش",
+    "suspend": "معلق کردن",
+    "resume": "ازسرگیری",
+    "suspended": "قول معلق شد",
+    "resumed": "قول از سر گرفته شد",
+    "suspendFailed": "معلق کردن قول انجام نشد",
+    "resumeFailed": "ازسرگیری قول انجام نشد"
   },
   "play": {
     "ready": "آماده",

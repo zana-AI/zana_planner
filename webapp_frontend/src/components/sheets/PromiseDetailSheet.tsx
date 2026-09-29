@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users } from 'lucide-react';
+import { CalendarPlus, Clock, Pencil, Timer, Trash2, Check, Users, Pause } from 'lucide-react';
 import type { PromiseData, PlanSession } from '../../types';
 import { formatPromiseText } from '../../utils/activityFormat';
 import { Badge } from '../ui/Badge';
@@ -25,6 +25,7 @@ interface PromiseDetailSheetProps {
   onSchedule: () => void;
   onFocus: () => void;
   onEdit: () => void;
+  onSuspend?: () => void;
   /** Called after a planned session is logged-as-done, so the parent can
    *  refetch the weekly report and refresh the badge/grids. */
   onLogged?: () => void;
@@ -94,6 +95,7 @@ export function PromiseDetailSheet({
   onSchedule,
   onFocus,
   onEdit,
+  onSuspend,
   onLogged,
 }: PromiseDetailSheetProps) {
   const { t } = useTranslation();
@@ -407,6 +409,11 @@ export function PromiseDetailSheet({
         <Button variant="secondary" onClick={onEdit}>
           <Pencil size={14} />{t('promise.edit')}</Button>
       </div>
+      {onSuspend && (
+        <button type="button" className="older-promises-toggle" onClick={onSuspend}>
+          <Pause size={13} aria-hidden="true" /> {t('promise.suspend')}
+        </button>
+      )}
 
       {/* Log + mark-done modal, opened when tapping ✓ on a planned session row */}
       <LogActionModal

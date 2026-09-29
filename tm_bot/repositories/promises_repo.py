@@ -28,17 +28,18 @@ class PromisesRepository:
     def __init__(self) -> None:
         pass
 
-    def list_promises(self, user_id: int) -> List[Promise]:
+    def list_promises(self, user_id: int, include_suspended: bool = False) -> List[Promise]:
         user = str(user_id)
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, visibility, description
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, visibility, description, suspended_at_utc
                     FROM promises
                     WHERE user_id = :user_id AND is_deleted = 0
+                      AND (:include_suspended OR suspended_at_utc IS NULL)
                     ORDER BY current_id ASC;
                 """),
-                {"user_id": user},
+                {"user_id": user, "include_suspended": include_suspended},
             ).mappings().fetchall()
 
         promises: List[Promise] = []
@@ -64,6 +65,7 @@ class PromisesRepository:
                     end_date=date_from_iso(r["end_date"]),
                     visibility=visibility,
                     description=description,
+                    suspended_at_utc=r["suspended_at_utc"],
                 )
             )
         return promises
@@ -81,7 +83,7 @@ class PromisesRepository:
 
             row = session.execute(
                 text("""
-                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, is_deleted, visibility, description
+                    SELECT current_id, text, hours_per_week, recurring, start_date, end_date, is_deleted, visibility, description, suspended_at_utc
                     FROM promises
                     WHERE user_id = :user_id AND promise_uuid = :p_uuid
                     LIMIT 1;
@@ -112,7 +114,58 @@ class PromisesRepository:
             end_date=date_from_iso(row["end_date"]),
             visibility=visibility,
             description=description,
+            suspended_at_utc=row["suspended_at_utc"],
         )
+
+    def list_suspended_promises(self, user_id: int) -> List[Promise]:
+        """Return paused promises, including their stable IDs for resuming."""
+        return [p for p in self.list_promises(user_id, include_suspended=True) if p.suspended_at_utc]
+
+    def set_suspended(self, user_id: int, promise_id: str, suspended: bool) -> Optional[dict]:
+        """Atomically pause or resume a promise and record the transition."""
+        user = str(user_id)
+        pid = (promise_id or "").strip().upper()
+        if not pid:
+            return None
+        with get_db_session() as session:
+            p_uuid = resolve_promise_uuid(session, user, pid)
+            if not p_uuid:
+                return None
+            row = session.execute(
+                text("""SELECT promise_uuid, current_id, text, suspended_at_utc
+                        FROM promises WHERE user_id = :user_id AND promise_uuid = :p_uuid
+                          AND is_deleted = 0 FOR UPDATE"""),
+                {"user_id": user, "p_uuid": p_uuid},
+            ).mappings().fetchone()
+            if not row:
+                return None
+            was_suspended = row["suspended_at_utc"] is not None
+            changed = was_suspended != suspended
+            at = row["suspended_at_utc"]
+            if changed:
+                now = utc_now_iso()
+                at = now if suspended else None
+                session.execute(
+                    text("""UPDATE promises SET suspended_at_utc = :at, updated_at_utc = :now
+                            WHERE promise_uuid = :p_uuid"""),
+                    {"at": at, "now": now, "p_uuid": p_uuid},
+                )
+                if suspended:
+                    # Preserve reminder settings, but prevent overdue reminders on resume.
+                    session.execute(
+                        text("UPDATE promise_reminders SET next_run_at_utc = NULL WHERE promise_uuid = :p_uuid"),
+                        {"p_uuid": p_uuid},
+                    )
+                session.execute(
+                    text("""INSERT INTO promise_events
+                            (event_uuid, promise_uuid, user_id, event_type, at_utc, snapshot_json)
+                            VALUES (:event_uuid, :p_uuid, :user_id, :event_type, :now, :snapshot)"""),
+                    {"event_uuid": str(uuid.uuid4()), "p_uuid": p_uuid, "user_id": user,
+                     "event_type": "suspend" if suspended else "resume", "now": now,
+                     "snapshot": json.dumps({"id": row["current_id"], "suspended_at_utc": at})},
+                )
+            return {"id": row["current_id"], "text": row["text"],
+                    "promise_uuid": p_uuid, "suspended_at_utc": at, "changed": changed}
 
     def upsert_promise(self, user_id: int, promise: Promise) -> None:
         user = str(user_id)

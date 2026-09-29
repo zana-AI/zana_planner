@@ -262,6 +262,7 @@ def compute_club_leaderboard(club_id: str, today: date, limit: int = 10) -> Dict
                     JOIN promises p
                       ON p.promise_uuid = pcs.promise_uuid
                      AND p.is_deleted = 0
+                     AND p.suspended_at_utc IS NULL
                     LEFT JOIN promise_instances pi
                       ON pi.promise_uuid = p.promise_uuid
                      AND pi.status = 'active'

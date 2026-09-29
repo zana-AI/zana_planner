@@ -731,6 +731,18 @@ class ApiClient {
     });
   }
 
+  async listSuspendedPromises(): Promise<Array<{ id: string; text: string; suspended_at_utc: string }>> {
+    return this.request<Array<{ id: string; text: string; suspended_at_utc: string }>>('/promises/suspended');
+  }
+
+  async suspendPromise(promiseId: string): Promise<void> {
+    await this.request(`/promises/${encodeURIComponent(promiseId)}/suspend`, { method: 'POST' });
+  }
+
+  async resumePromise(promiseId: string): Promise<void> {
+    await this.request(`/promises/${encodeURIComponent(promiseId)}/resume`, { method: 'POST' });
+  }
+
   /**
    * Focus Timer / Pomodoro methods
    */

@@ -14,6 +14,7 @@ class Promise:
     end_date: Optional[date] = None
     visibility: str = "private"  # 'private' | 'followers' | 'clubs' | 'public'
     description: Optional[str] = None  # Additional description/content (URLs, notes, etc.)
+    suspended_at_utc: Optional[str] = None
     # Future: pinned/focus flags, tags
 
     def is_check_based(self) -> bool:

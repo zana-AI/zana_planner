@@ -558,17 +558,37 @@ class PlannerAPIAdapter:
         """Get a specific promise by ID."""
         return self.promises_repo.get_promise(user_id, promise_id)
 
+    def get_suspended_promises(self, user_id: int) -> List[Dict]:
+        """List paused promises and their IDs so the user can resume one."""
+        return [{"id": p.id, "text": p.text, "suspended_at_utc": p.suspended_at_utc}
+                for p in self.promises_repo.list_suspended_promises(user_id)]
+
+    def suspend_promise(self, user_id: int, promise_id: str) -> str:
+        """Pause a promise until resumed; keep its history and reminder settings."""
+        result = self.promises_repo.set_suspended(user_id, promise_id, True)
+        if not result:
+            return f"Promise #{promise_id} not found."
+        return f"Promise #{result['id']} suspended. You can resume it any time."
+
+    def resume_promise(self, user_id: int, promise_id: str) -> str:
+        """Resume a paused promise and recalculate its next reminder times."""
+        result = self.promises_repo.set_suspended(user_id, promise_id, False)
+        if not result:
+            return f"Promise #{promise_id} not found."
+        if result["changed"]:
+            self.reminder_dispatch.update_next_run_times(user_id, result["promise_uuid"])
+        return f"Promise #{result['id']} resumed."
+
     def get_promises(self, user_id, status: str = "all") -> List[Dict]:
-        """List the user's promises with id, text, tracking ('time'|'count') and status ('active'|'expired'). Use to look up promise_ids.
+        """List promises with IDs, tracking and active, expired or suspended status.
 
         Args:
-            status: filter the list — "active" (not past its end date), "expired"
-                (past its end date but still listed), or "all" (default).
+            status: "active", "expired", "suspended", or "all" (default).
         """
-        promises = self.promises_repo.list_promises(user_id)
+        promises = self.promises_repo.list_promises(user_id, include_suspended=True)
         dicts = [self._promise_to_dict(p) for p in promises]
         wanted = (status or "all").strip().lower()
-        if wanted in ("active", "expired"):
+        if wanted in ("active", "expired", "suspended"):
             dicts = [d for d in dicts if d["status"] == wanted]
         return dicts
     
@@ -930,7 +950,7 @@ class PlannerAPIAdapter:
             return "Please provide a search term."
         
         query_lower = query.strip().lower().replace(" ", "_")
-        promises = self.promises_repo.list_promises(user_id)
+        promises = self.promises_repo.list_promises(user_id, include_suspended=True)
         
         if not promises:
             return "You don't have any promises yet."
@@ -1033,7 +1053,7 @@ class PlannerAPIAdapter:
         until = self._parse_date_arg(until_date)
         
         # Get all promises for text lookup
-        promises = self.promises_repo.list_promises(user_id)
+        promises = self.promises_repo.list_promises(user_id, include_suspended=True)
         promise_texts = {p.id.upper(): p.text.replace("_", " ") for p in promises}
         
         # Get all actions
@@ -1297,7 +1317,7 @@ class PlannerAPIAdapter:
 
     def _generate_promise_id(self, user_id, promise_type='P'):
         """Generate unique promise ID."""
-        promises = self.promises_repo.list_promises(user_id)
+        promises = self.promises_repo.list_promises(user_id, include_suspended=True)
         last_id = 0
         
         if promises:
@@ -1313,7 +1333,7 @@ class PlannerAPIAdapter:
     def _promise_to_dict(self, promise: Promise) -> Dict:
         """Convert Promise model to a dict for adapter consumers (LLM/MCP/handlers).
 
-        ``tracking`` ('time'|'count') and ``status`` ('active'|'expired') are the
+        ``tracking`` ('time'|'count') and ``status`` ('active'|'expired'|'suspended') are the
         model-facing way to describe a promise. ``hours_per_week`` is retained for
         back-compat (bot handlers read it; it also encodes tracking via the
         <=0 convention) but is a legacy weekly *target* the product no longer
@@ -1327,7 +1347,7 @@ class PlannerAPIAdapter:
             # Operations use 'id', not this text, so cleaning it is safe.
             'text': promise.text.replace('_', ' '),
             'tracking': 'count' if promise.is_check_based() else 'time',
-            'status': 'expired' if is_expired else 'active',
+            'status': 'suspended' if promise.suspended_at_utc else ('expired' if is_expired else 'active'),
             'hours_per_week': promise.hours_per_week,
             'recurring': promise.recurring,
             'end_date': promise.end_date.isoformat() if promise.end_date else '',

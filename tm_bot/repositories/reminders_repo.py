@@ -189,14 +189,15 @@ class RemindersRepository:
         with get_db_session() as session:
             rows = session.execute(
                 text("""
-                    SELECT reminder_id, promise_uuid, slot_id, kind, offset_minutes,
-                           weekday, time_local, tz, enabled, last_sent_at_utc,
-                           next_run_at_utc, created_at_utc, updated_at_utc
-                    FROM promise_reminders
-                    WHERE enabled = 1
-                      AND next_run_at_utc IS NOT NULL
-                      AND next_run_at_utc <= :now
-                    ORDER BY next_run_at_utc ASC
+                    SELECT r.reminder_id, r.promise_uuid, r.slot_id, r.kind, r.offset_minutes,
+                           r.weekday, r.time_local, r.tz, r.enabled, r.last_sent_at_utc,
+                           r.next_run_at_utc, r.created_at_utc, r.updated_at_utc
+                    FROM promise_reminders r
+                    JOIN promises p ON p.promise_uuid = r.promise_uuid
+                    WHERE r.enabled = 1 AND p.is_deleted = 0 AND p.suspended_at_utc IS NULL
+                      AND r.next_run_at_utc IS NOT NULL
+                      AND r.next_run_at_utc <= :now
+                    ORDER BY r.next_run_at_utc ASC
                     LIMIT :limit
                 """),
                 {"now": now, "limit": limit},
