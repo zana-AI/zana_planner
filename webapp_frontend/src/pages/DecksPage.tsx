@@ -1,14 +1,18 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, Minus, Play, Search } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Check, ChevronDown, Minus, Pencil, Play, Search } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { formatNumber } from '../i18n/format';
 import type { LibraryDeck } from '../types';
+import { ManagePane } from './FlashcardsPage';
 import './DecksPage.css';
 
 export function DecksPage() {
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const managing = params.get('tab') === 'manage';
+  const managedDeckId = managing ? params.get('deck') || undefined : undefined;
   const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -34,6 +38,7 @@ export function DecksPage() {
   useEffect(load, []);
 
   const byId = useMemo(() => new Map(decks.map((deck) => [deck.deck_id, deck])), [decks]);
+  const managedDeck = managedDeckId ? byId.get(managedDeckId) : undefined;
   const structure = useMemo(() => {
     const children = new Map<string, LibraryDeck[]>();
     for (const deck of decks) {
@@ -86,6 +91,16 @@ export function DecksPage() {
       parent = parent.parent_deck_id ? byId.get(parent.parent_deck_id) : undefined;
     }
     return names.join(' › ');
+  };
+
+  const deckPath = (deck: LibraryDeck) => path(deck).split(' › ').join('::');
+  const showTab = (tab: 'review' | 'manage', deckId?: string) => {
+    const next = new URLSearchParams(params);
+    if (tab === 'manage') next.set('tab', 'manage');
+    else next.delete('tab');
+    if (tab === 'manage' && deckId) next.set('deck', deckId);
+    else next.delete('deck');
+    setParams(next);
   };
 
   const toggle = (deckId: string) => {
@@ -141,8 +156,21 @@ export function DecksPage() {
   }
 
   return (
-    <main className="decks-page">
-      <header><p>{t('learning.reviewHint')}</p></header>
+    <main className={`decks-page${managing ? ' is-managing' : ''}`}>
+      <header><p>{t(managing ? 'deckBrowser.manageHint' : 'learning.reviewHint')}</p></header>
+      <div className="decks-tabs" role="tablist" aria-label={t('deckBrowser.title')}>
+        <button type="button" role="tab" aria-selected={!managing} className={!managing ? 'is-active' : ''} onClick={() => showTab('review')}>{t('flashcards.reviewTab')}</button>
+        <button type="button" role="tab" aria-selected={managing} className={managing ? 'is-active' : ''} onClick={() => showTab('manage')}>{t('flashcards.myCards')}</button>
+      </div>
+      {managing ? (
+        <section className="decks-manage" role="tabpanel" aria-label={t('flashcards.myCards')}>
+          {managedDeck && <div className="decks-manage-context">
+            <strong dir="auto">{path(managedDeck)}</strong>
+            <button type="button" onClick={() => showTab('manage')}>{t('flashcards.allCards')}</button>
+          </div>}
+          <ManagePane key={managedDeckId || 'all'} deckId={managedDeckId} defaultDeckPath={managedDeck ? deckPath(managedDeck) : 'French'} onChanged={load} />
+        </section>
+      ) : <section role="tabpanel" aria-label={t('flashcards.reviewTab')}>
       <label className="decks-search">
         <Search size={17} aria-hidden="true" />
         <input aria-label={t('deckBrowser.search')} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('deckBrowser.search')} />
@@ -186,6 +214,12 @@ export function DecksPage() {
                   </small>
                 </span>
               </button>
+              <button type="button" className="decks-card-manage"
+                aria-label={t('deckBrowser.manageDeck', { name: deck.name })}
+                title={t('deckBrowser.manageDeck', { name: deck.name })}
+                onClick={() => showTab('manage', deck.deck_id)}>
+                <Pencil size={17} aria-hidden="true" />
+              </button>
               {hasChildren && !needle && <button type="button" className={`decks-card-expand${expanded ? ' is-expanded' : ''}`}
                 aria-label={t(expanded ? 'deckBrowser.collapseDeck' : 'deckBrowser.expandDeck', { name: deck.name })}
                 aria-expanded={expanded}
@@ -215,6 +249,7 @@ export function DecksPage() {
           </button>
         </div>
       )}
+      </section>}
     </main>
   );
 }

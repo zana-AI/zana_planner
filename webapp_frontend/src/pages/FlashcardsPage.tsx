@@ -384,7 +384,7 @@ function editableFields(fields: FlashcardFields): DraftFields {
   };
 }
 
-function ManagePane({
+export function ManagePane({
   deckId,
   defaultDeckPath,
   onChanged,

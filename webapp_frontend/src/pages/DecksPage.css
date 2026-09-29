@@ -4,9 +4,17 @@
   padding: 20px 16px calc(var(--bottom-nav-h) + 170px + env(safe-area-inset-bottom));
 }
 
+.decks-page.is-managing { padding-bottom: calc(var(--bottom-nav-h) + 32px + env(safe-area-inset-bottom)); }
 .decks-page h1, .decks-page h2, .decks-page p { margin: 0; }
 .decks-page header { margin-bottom: 20px; }
 .decks-page header p { color: var(--fg-muted); line-height: 1.5; }
+
+.decks-tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 4px; margin-bottom: 18px; border: 1px solid var(--border); border-radius: var(--r-12); background: var(--surface); }
+.decks-tabs button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: var(--fg-muted); font: inherit; font-weight: 700; cursor: pointer; }
+.decks-tabs button.is-active { background: var(--bg-elevated); color: var(--fg); box-shadow: var(--shadow-1); }
+.decks-manage-context { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.decks-manage-context strong { min-width: 0; overflow-wrap: anywhere; }
+.decks-manage-context button { flex: none; border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; background: var(--surface); color: var(--accent); font: inherit; cursor: pointer; }
 
 .decks-search {
   display: flex;
@@ -70,6 +78,8 @@
 }
 .decks-card-select:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .decks-card-expand { display: grid; place-items: center; align-self: center; flex: 0 0 44px; width: 44px; height: 44px; margin-inline-end: 6px; border: 0; border-radius: 9px; background: transparent; color: var(--fg-muted); cursor: pointer; }
+.decks-card-manage { display: grid; place-items: center; align-self: center; flex: 0 0 44px; width: 44px; height: 44px; margin-inline-end: 4px; border: 0; border-radius: 9px; background: transparent; color: var(--fg-muted); cursor: pointer; }
+.decks-card-manage:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); }
 .decks-card-expand:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--fg); }
 .decks-card-expand svg { transform: rotate(-90deg); transition: transform .15s ease; }
 .decks-card-expand.is-expanded svg { transform: rotate(0); }
