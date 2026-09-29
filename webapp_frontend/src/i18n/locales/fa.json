@@ -266,6 +266,8 @@
     "addToCalendar": "افزودن به تقویم",
     "logAndMarkDone": "ثبت و اتمام",
     "deleteSession": "حذف جلسه",
+    "confirmDeleteSession": "این جلسهٔ برنامه‌ریزی‌شده حذف شود؟ یادآوری آن هم حذف می‌شود.",
+    "confirmSnooze": "این قول تا هفتهٔ آینده به تعویق بیفتد؟ از فهرست این هفته کنار می‌رود.",
     "todayAt": "امروز ساعت {{time}}",
     "tomorrowAt": "فردا ساعت {{time}}",
     "tomorrowShortAt": "فردا {{time}}",
@@ -280,7 +282,11 @@
     "suspendedStatus": "معلق",
     "resumed": "قول از سر گرفته شد",
     "suspendFailed": "معلق کردن قول انجام نشد",
-    "resumeFailed": "ازسرگیری قول انجام نشد"
+    "resumeFailed": "ازسرگیری قول انجام نشد",
+    "confirmSuspendTitle": "این قول معلق شود؟",
+    "confirmSuspendMessage": "از فهرست فعال کنار می‌رود و یادآوری‌هایش متوقف می‌شود. سوابق و تنظیماتش حفظ می‌شوند و هر زمان بخواهید می‌توانید از سر بگیرید.",
+    "confirmResumeTitle": "این قول از سر گرفته شود؟",
+    "confirmResumeMessage": "به فهرست فعال برمی‌گردد و یادآوری‌هایش دوباره آغاز می‌شوند."
   },
   "play": {
     "ready": "آماده",
@@ -721,6 +727,7 @@
     "highlights": "هایلایت‌ها",
     "openPage": "باز کردن صفحه",
     "delete": "حذف",
+    "confirmDeleteHighlight": "این هایلایت و یادداشتش حذف شوند؟ این کار بازگشت‌پذیر نیست.",
     "selectTextInThePdfToSaveAHighlight": "برای ذخیرهٔ هایلایت، متنی را در پی‌دی‌اف انتخاب کنید.",
     "backToLibrary": "بازگشت به کتابخانه",
     "previousPage": "صفحهٔ قبل",

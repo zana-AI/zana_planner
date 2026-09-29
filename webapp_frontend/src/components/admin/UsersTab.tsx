@@ -94,6 +94,8 @@ export function UsersTab({ users, searchQuery, setSearchQuery, onUsersChange, on
 
   const toggleHidden = async (user: AdminUser) => {
     const nextHidden = !user.is_hidden;
+    const action = nextHidden ? 'Hide' : 'Show';
+    if (!window.confirm(`${action} ${displayName(user)} ${nextHidden ? 'from' : 'in'} community discovery and activity?`)) return;
     setTogglingId(user.user_id);
     onError('');
     try {

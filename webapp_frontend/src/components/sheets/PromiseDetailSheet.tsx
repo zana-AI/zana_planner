@@ -193,6 +193,7 @@ export function PromiseDetailSheet({
   };
 
   const handleDelete = async (sessionId: number) => {
+    if (!window.confirm(t('promise.confirmDeleteSession'))) return;
     try {
       await apiClient.deletePlanSession(sessionId);
       setPlanSessions(prev => prev.filter(s => s.id !== sessionId));

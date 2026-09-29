@@ -18,6 +18,7 @@ import { PlaySheet } from '../components/sheets/PlaySheet';
 import { PromiseDetailSheet } from '../components/sheets/PromiseDetailSheet';
 import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
 import { Toast } from '../components/ui/Toast';
+import { ConfirmActionSheet } from '../components/ui/ConfirmActionSheet';
 import { Badge } from '../components/ui/Badge';
 import { useToast } from '../hooks/useToast';
 import { formatPromiseText } from '../utils/activityFormat';
@@ -26,6 +27,9 @@ import type { PromiseData, WeeklyReportData, UpcomingPlanSession } from '../type
 import './explore.css';
 
 type ActivePromise = { id: string; data: PromiseData };
+type PromiseConfirmation =
+  | { kind: 'suspend'; promise: ActivePromise }
+  | { kind: 'resume'; id: string; text: string };
 
 function normalizeDateKey(date?: string): string {
   return (date || '').split(/[T\s]/)[0];
@@ -56,7 +60,8 @@ export function DashboardPage() {
   const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
   const [suspendedPromises, setSuspendedPromises] = useState<Array<{ id: string; text: string; suspended_at_utc: string }>>([]);
-  const [resumingPromiseId, setResumingPromiseId] = useState<string | null>(null);
+  const [promiseConfirmation, setPromiseConfirmation] = useState<PromiseConfirmation | null>(null);
+  const [promiseActionBusy, setPromiseActionBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   // Single source of truth: derive ref_time from URL
@@ -644,21 +649,9 @@ export function DashboardPage() {
                     <div className="pcard-suspended-actions">
                       <button
                         type="button"
-                        disabled={resumingPromiseId !== null}
+                        disabled={promiseActionBusy}
                         aria-label={`${t('promise.resume')} ${formatPromiseText(promise.text)}`}
-                        onClick={async () => {
-                          setResumingPromiseId(promise.id);
-                          try {
-                            await apiClient.resumePromise(promise.id);
-                            setSuspendedPromises((items) => items.filter((item) => item.id !== promise.id));
-                            showToast(t('promise.resumed'));
-                            handleRefresh();
-                          } catch (resumeError) {
-                            showToast(resumeError instanceof Error ? resumeError.message : t('promise.resumeFailed'));
-                          } finally {
-                            setResumingPromiseId(null);
-                          }
-                        }}
+                        onClick={() => setPromiseConfirmation({ kind: 'resume', id: promise.id, text: promise.text })}
                       >{t('promise.resume')}</button>
                     </div>
                   </article>
@@ -761,19 +754,46 @@ export function DashboardPage() {
             setEditPromise(detailPromise);
             setDetailPromise(null);
           }}
-          onSuspend={isLocalMockSession ? undefined : async () => {
-            try {
-              await apiClient.suspendPromise(detailPromise.id);
-              setDetailPromise(null);
-              showToast(t('promise.suspended'));
-              handleRefresh();
-            } catch (suspendError) {
-              showToast(suspendError instanceof Error ? suspendError.message : t('promise.suspendFailed'));
-            }
+          onSuspend={isLocalMockSession ? undefined : () => {
+            setPromiseConfirmation({ kind: 'suspend', promise: detailPromise });
+            setDetailPromise(null);
           }}
           onLogged={handleRefresh}
         />
       ) : null}
+
+      <ConfirmActionSheet
+        open={promiseConfirmation !== null}
+        title={promiseConfirmation?.kind === 'suspend' ? t('promise.confirmSuspendTitle') : t('promise.confirmResumeTitle')}
+        subtitle={promiseConfirmation ? formatPromiseText(promiseConfirmation.kind === 'suspend' ? promiseConfirmation.promise.data.text : promiseConfirmation.text) : undefined}
+        message={promiseConfirmation?.kind === 'suspend' ? t('promise.confirmSuspendMessage') : t('promise.confirmResumeMessage')}
+        confirmLabel={promiseConfirmation?.kind === 'suspend' ? t('promise.suspend') : t('promise.resume')}
+        busy={promiseActionBusy}
+        onClose={() => {
+          if (promiseConfirmation?.kind === 'suspend') setDetailPromise(promiseConfirmation.promise);
+          setPromiseConfirmation(null);
+        }}
+        onConfirm={async () => {
+          if (!promiseConfirmation || promiseActionBusy) return;
+          setPromiseActionBusy(true);
+          try {
+            if (promiseConfirmation.kind === 'suspend') {
+              await apiClient.suspendPromise(promiseConfirmation.promise.id);
+              showToast(t('promise.suspended'));
+            } else {
+              await apiClient.resumePromise(promiseConfirmation.id);
+              setSuspendedPromises((items) => items.filter((item) => item.id !== promiseConfirmation.id));
+              showToast(t('promise.resumed'));
+            }
+            setPromiseConfirmation(null);
+            handleRefresh();
+          } catch (actionError) {
+            showToast(actionError instanceof Error ? actionError.message : t(promiseConfirmation.kind === 'suspend' ? 'promise.suspendFailed' : 'promise.resumeFailed'));
+          } finally {
+            setPromiseActionBusy(false);
+          }
+        }}
+      />
 
       {editPromise ? (
         <EditPromiseSheet

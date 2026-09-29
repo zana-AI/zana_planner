@@ -1119,6 +1119,7 @@ export function PdfReaderPage() {
 
   const deleteHighlight = async (highlightId: string) => {
     if (!contentId) return;
+    if (!window.confirm(t('pdfReader.confirmDeleteHighlight'))) return;
     setError('');
     try {
       await apiClient.deletePdfHighlight(contentId, highlightId);

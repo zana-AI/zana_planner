@@ -117,7 +117,7 @@ function PlanSessionsList({ promiseId, externalSessions, onSessionsChange }: Pla
 
   // ---- Delete session ----
   async function handleDelete(sessionId: number) {
-    if (!confirm('Delete this session?')) return;
+    if (!window.confirm(t('promise.confirmDeleteSession'))) return;
     try {
       await apiClient.deletePlanSession(sessionId);
       setSessions(prev => {
