@@ -1594,7 +1594,17 @@ class ApiClient {
 
   // --- Flashcards (spaced repetition) --------------------------------------
 
-  async getFlashcardQueue(deckId?: string, limit = 50): Promise<import('../types').FlashcardQueue> {
+  async getFlashcardQueue(deckId?: string, limit = 50, selection?: import('../types').FlashcardDeckSelection): Promise<import('../types').FlashcardQueue> {
+    if (selection) {
+      return this.request('/flashcards/queue/selection', {
+        method: 'POST',
+        body: JSON.stringify({
+          limit,
+          deck_ids: selection.deckIds,
+          exclude_deck_ids: selection.excludeDeckIds,
+        }),
+      });
+    }
     const params = new URLSearchParams({ limit: String(limit) });
     if (deckId) params.set('deck_id', deckId);
     return this.request(`/flashcards/queue?${params.toString()}`);
@@ -1604,11 +1614,15 @@ class ApiClient {
   async reviewFlashcard(
     cardId: string,
     rating: import('../types').FlashcardRating,
-    durationMs?: number
+    durationMs?: number,
+    selection?: import('../types').FlashcardDeckSelection,
   ): Promise<import('../types').FlashcardReviewResult> {
     return this.request('/flashcards/review', {
       method: 'POST',
-      body: JSON.stringify({ card_id: cardId, rating, duration_ms: durationMs }),
+      body: JSON.stringify({
+        card_id: cardId, rating, duration_ms: durationMs,
+        deck_ids: selection?.deckIds, exclude_deck_ids: selection?.excludeDeckIds,
+      }),
     });
   }
 

@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 CARD_COLUMNS = (
@@ -54,6 +54,33 @@ def _as_utc(value: Any) -> Optional[datetime]:
 
 
 class FlashcardCardRepository:
+    @staticmethod
+    def _deck_scope(
+        deck_id: Optional[str],
+        deck_ids: Optional[List[str]],
+        exclude_deck_ids: Optional[List[str]],
+    ) -> tuple[str, str, Dict[str, Any], Optional[str]]:
+        """Build one deck filter for all queue/count queries.
+
+        The legacy single deck filter includes its subtree. Multi-deck review
+        selects exact deck IDs, since checking off one child must not be
+        overridden by its selected parent.
+        """
+        if sum(value is not None for value in (deck_id, deck_ids, exclude_deck_ids)) > 1:
+            raise ValueError("Choose one deck scope")
+        if deck_id is not None:
+            return SUBTREE_CTE, " AND n.deck_id IN (SELECT deck_id FROM sub)", {"deck": deck_id}, None
+        if deck_ids is not None:
+            return "", " AND n.deck_id IN :deck_ids", {"deck_ids": list(dict.fromkeys(deck_ids))}, "deck_ids"
+        if exclude_deck_ids is not None:
+            return "", " AND n.deck_id NOT IN :exclude_deck_ids", {"exclude_deck_ids": list(dict.fromkeys(exclude_deck_ids))}, "exclude_deck_ids"
+        return "", "", {}, None
+
+    @staticmethod
+    def _scoped_sql(sql: str, expanding_param: Optional[str]):
+        statement = text(sql)
+        return statement.bindparams(bindparam(expanding_param, expanding=True)) if expanding_param else statement
+
     @staticmethod
     def _decode(row: Dict[str, Any]) -> Dict[str, Any]:
         row["due"] = _as_utc(row.get("due"))
@@ -146,6 +173,8 @@ class FlashcardCardRepository:
         new_limit: int,
         limit: int = 50,
         deck_id: Optional[str] = None,
+        deck_ids: Optional[List[str]] = None,
+        exclude_deck_ids: Optional[List[str]] = None,
     ) -> List[dict]:
         """Cards to study now.
 
@@ -154,18 +183,17 @@ class FlashcardCardRepository:
         """
         # Selecting a deck means that deck *and everything under it* — notes hang
         # off leaf decks, so an exact match on a parent would return nothing.
-        prefix = SUBTREE_CTE if deck_id else ""
-        deck_filter = " AND n.deck_id IN (SELECT deck_id FROM sub)" if deck_id else ""
+        prefix, deck_filter, scope_params, expanding_param = self._deck_scope(deck_id, deck_ids, exclude_deck_ids)
         params: Dict[str, Any] = {"u": str(user_id), "now": now, "lim": limit}
-        if deck_id:
-            params["deck"] = deck_id
+        params.update(scope_params)
 
         due_rows = session.execute(
-            text(
+            self._scoped_sql(
                 f"{prefix}SELECT c.{CARD_COLUMNS.replace(', ', ', c.')} "
                 "FROM flashcard_card c JOIN flashcard_note n ON n.note_id = c.note_id "
                 "WHERE n.user_id = :u AND c.suspended = false AND c.reps > 0 "
-                f"AND c.due <= :now{deck_filter} ORDER BY c.due LIMIT :lim"
+                f"AND c.due <= :now{deck_filter} ORDER BY c.due LIMIT :lim",
+                expanding_param,
             ),
             params,
         ).mappings().all()
@@ -175,11 +203,12 @@ class FlashcardCardRepository:
         if remaining and new_limit > 0:
             new_params = dict(params, lim=min(remaining, new_limit))
             new_rows = session.execute(
-                text(
+                self._scoped_sql(
                     f"{prefix}SELECT c.{CARD_COLUMNS.replace(', ', ', c.')} "
                     "FROM flashcard_card c JOIN flashcard_note n ON n.note_id = c.note_id "
                     "WHERE n.user_id = :u AND c.suspended = false AND c.reps = 0"
-                    f"{deck_filter} ORDER BY n.created_at LIMIT :lim"
+                    f"{deck_filter} ORDER BY n.created_at LIMIT :lim",
+                    expanding_param,
                 ),
                 new_params,
             ).mappings().all()
@@ -201,15 +230,15 @@ class FlashcardCardRepository:
         user_id: str,
         now: datetime,
         deck_id: Optional[str] = None,
+        deck_ids: Optional[List[str]] = None,
+        exclude_deck_ids: Optional[List[str]] = None,
     ) -> Dict[str, int]:
-        prefix = SUBTREE_CTE if deck_id else ""
-        deck_filter = " AND n.deck_id IN (SELECT deck_id FROM sub)" if deck_id else ""
+        prefix, deck_filter, scope_params, expanding_param = self._deck_scope(deck_id, deck_ids, exclude_deck_ids)
         params: Dict[str, Any] = {"u": str(user_id), "now": now}
-        if deck_id:
-            params["deck"] = deck_id
+        params.update(scope_params)
 
         row = session.execute(
-            text(
+            self._scoped_sql(
                 f"{prefix}SELECT "
                 "SUM(CASE WHEN c.reps > 0 AND c.due <= :now THEN 1 ELSE 0 END) AS due, "
                 "SUM(CASE WHEN c.reps = 0 THEN 1 ELSE 0 END) AS new, "
@@ -218,7 +247,8 @@ class FlashcardCardRepository:
                 "SUM(CASE WHEN c.reps > 0 THEN 1 ELSE 0 END) AS studied, "
                 "COUNT(*) AS total "
                 "FROM flashcard_card c JOIN flashcard_note n ON n.note_id = c.note_id "
-                f"WHERE n.user_id = :u AND c.suspended = false{deck_filter}"
+                f"WHERE n.user_id = :u AND c.suspended = false{deck_filter}",
+                expanding_param,
             ),
             params,
         ).mappings().fetchone()
