@@ -46,11 +46,15 @@ async function installPlayer(page) {
   await page.evaluate(() => {
     window.testTime = 0;
     window.testState = 2;
+    window.seekCalls = [];
+    window.playCalls = 0;
     window.YT = {PlayerState: {PLAYING: 1, PAUSED: 2, ENDED: 0}, Player: function(id, config) {
       window.playerEvents = config.events;
       this.getCurrentTime = () => window.testTime;
       this.getPlayerState = () => window.testState;
       this.getDuration = () => 0; // metadata unavailable before playback
+      this.seekTo = seconds => { window.seekCalls.push(seconds); };
+      this.playVideo = () => { window.playCalls++; };
     }};
     window.onYouTubeIframeAPIReady();
     window.playerEvents.onReady();
@@ -61,7 +65,13 @@ test('stored duration and coverage display before player readiness, including on
   const {page, reports} = await openViewer(t);
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '45');
   await expect(page.locator('.progress-segment')).toHaveCount(2);
+  const resume = page.getByRole('button', {name: /Jump to furthest watched point/});
+  await expect(resume).toBeDisabled();
   await installPlayer(page);
+  await expect(resume).toBeEnabled();
+  await resume.click();
+  assert.deepEqual(await page.evaluate(() => window.seekCalls), [75]);
+  assert.equal(await page.evaluate(() => window.playCalls), 1);
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '45');
   await page.reload();
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '45');
@@ -71,25 +81,38 @@ test('stored duration and coverage display before player readiness, including on
 test('unwatched video still displays an empty bar on a Persian mobile layout', async t => {
   const {page} = await openViewer(t, {mobile: true, lang: 'fa', progress: {duration_seconds: 100, segments: []}});
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+  await expect(page.locator('#resumeWatched')).toBeHidden();
   await expect(page.locator('#transcriptMessage')).toContainText('زیرنویسی پیدا نشد');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('fully watched video resumes at its last playable second', async t => {
+  const {page} = await openViewer(t, {progress: {duration_seconds: 100, segments: [[0, 100]]}});
+  await installPlayer(page);
+  await page.getByRole('button', {name: /Jump to furthest watched point/}).click();
+  assert.deepEqual(await page.evaluate(() => window.seekCalls), [99]);
 });
 
 test('transcript text size persists on this device without closing the panel', async t => {
   const {page} = await openViewer(t, {mobile: true, lang: 'fa', transcript: () => ({
     available: true, language: 'fr', source: 'automatic', cues: [{start: 0, end: 2, text: 'Bonjour à tous'}]
   })});
+  const settings = page.getByRole('button', {name: 'تنظیمات زیرنویس'});
   const slider = page.getByRole('slider', {name: 'اندازهٔ متن زیرنویس'});
   const cueText = page.locator('.transcript-text');
   await expect(cueText).toHaveCSS('font-size', '13px');
+  await expect(slider).toBeHidden();
   assert.equal(await page.evaluate(() => {
     const title = document.getElementById('transcriptTitle');
     const titleText = document.createRange();
     titleText.selectNodeContents(title);
     const titleBounds = titleText.getBoundingClientRect();
-    const controlsBounds = document.querySelector('.transcript-font-controls').getBoundingClientRect();
+    const controlsBounds = document.querySelector('.transcript-header-actions').getBoundingClientRect();
     return titleBounds.left >= controlsBounds.right;
   }), true);
+  await settings.click();
+  await expect(slider).toBeVisible();
+  await expect(settings).toHaveAttribute('aria-expanded', 'true');
   await slider.focus();
   await slider.press('End');
   await expect(slider).toHaveValue('28');
@@ -97,7 +120,10 @@ test('transcript text size persists on this device without closing the panel', a
   await expect(page.locator('#transcript')).toHaveAttribute('open', '');
   assert.equal(await page.evaluate(() => localStorage.getItem('xaana-transcript-font-size')), '28');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.setViewportSize({width: 320, height: 844});
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.reload();
+  await settings.click();
   await expect(slider).toHaveValue('28');
   await expect(cueText).toHaveCSS('font-size', '28px');
 });
@@ -148,6 +174,7 @@ test('replays retain separate events and backward seeks leave unwatched gaps', a
   assert.deepEqual(reports.flatMap(report => report.segments), [[0, 6], [2, 8], [50, 55], [0, 3]]);
   release();
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '23');
+  await expect(page.getByRole('button', {name: /Jump to furthest watched point/})).toBeEnabled();
   await expect(page.locator('.progress-segment')).toHaveCount(3);
   // Saved [80,90] is visible, but never sent again as newly watched time.
   assert.equal(reports.flatMap(report => report.segments).some(range => range[0] === 80), false);

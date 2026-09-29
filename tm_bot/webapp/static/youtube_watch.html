@@ -78,11 +78,18 @@
       opacity: 0.78;
     }
     .transcript { position: relative; margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; --transcript-font-size: 13px; }
-    .transcript summary { cursor: pointer; padding: 12px 14px; padding-inline-end: 190px; min-height: 46px; font-size: 13px; font-weight: 800; color: #edf3ff; }
+    .transcript summary { cursor: pointer; padding: 12px 14px; padding-inline-end: 160px; min-height: 46px; font-size: 13px; font-weight: 800; color: #edf3ff; }
     .transcript:not([open]) summary { padding-inline-end: 14px; }
-    .transcript-font-controls { position: absolute; top: 6px; inset-inline-end: 12px; display: flex; align-items: center; gap: 5px; height: 34px; color: #dceaff; font-size: 12px; white-space: nowrap; }
-    .transcript-font-controls input { width: 100px; accent-color: var(--app-accent); cursor: pointer; }
-    .transcript-font-controls output { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+    .transcript-header-actions { position: absolute; top: 6px; inset-inline-end: 12px; display: flex; align-items: center; gap: 6px; }
+    .transcript-header-actions button { min-height: 34px; border: 1px solid var(--app-border); border-radius: 8px; background: rgba(99,167,247,.1); color: #dceaff; font: inherit; cursor: pointer; }
+    .transcript-header-actions button:hover, .transcript-header-actions button:focus-visible { background: rgba(99,167,247,.24); outline: none; }
+    .transcript-header-actions button:disabled { opacity: .5; cursor: default; }
+    .transcript-resume { padding: 0 8px; font-size: 12px !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .transcript-settings-toggle { width: 34px; padding: 0; font-size: 20px !important; line-height: 1; }
+    .transcript-settings { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--app-border); color: #dceaff; font-size: 13px; }
+    .transcript-settings label { white-space: nowrap; }
+    .transcript-settings input { width: min(180px, 38vw); accent-color: var(--app-accent); cursor: pointer; }
+    .transcript-settings output { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
     .transcript-list { max-height: min(46vh, 420px); overflow: auto; overscroll-behavior: contain; overflow-anchor: none; border-top: 1px solid var(--app-border); }
     .transcript-status { padding: 0 14px 12px; color: rgba(237,243,255,.65); font-size: 13px; line-height: 1.5; }
     .transcript-retry { margin-inline-start: 8px; border: 0; background: transparent; color: var(--app-accent); font: inherit; text-decoration: underline; cursor: pointer; }
@@ -196,10 +203,13 @@
   </div>
   <details id="transcript" class="transcript" open hidden>
     <summary id="transcriptTitle">Transcript</summary>
-    <div class="transcript-font-controls">
-      <span aria-hidden="true">A−</span>
+    <div class="transcript-header-actions">
+      <button id="resumeWatched" class="transcript-resume" type="button" hidden></button>
+      <button id="transcriptSettingsToggle" class="transcript-settings-toggle" type="button" aria-controls="transcriptSettings" aria-expanded="false">⚙</button>
+    </div>
+    <div id="transcriptSettings" class="transcript-settings" hidden>
+      <label id="transcriptFontSizeLabel" for="transcriptFontSize"></label>
       <input id="transcriptFontSize" type="range" min="12" max="28" step="1" value="13">
-      <span aria-hidden="true">A+</span>
       <output id="transcriptFontSizeValue" for="transcriptFontSize">13px</output>
     </div>
     <div id="transcriptStatus" class="transcript-status"><span id="transcriptMessage" role="status"></span><button id="transcriptRetry" class="transcript-retry" type="button" hidden></button></div>
@@ -238,6 +248,7 @@
     listen: 'تلفظ', save: 'ذخیره کارت', saved: 'ذخیره شد',
     connecting: 'در حال اتصال به یوتیوب…',
     watched: 'بخش‌های دیده‌شده', transcript: 'زیرنویس', transcriptFontSize: 'اندازهٔ متن زیرنویس',
+    transcriptSettings: 'تنظیمات زیرنویس', resumeWatched: 'رفتن به آخرین بخش دیده‌شده',
     fetchingSubtitles: 'در حال دریافت زیرنویس…',
     noSubtitles: 'برای این ویدیو زیرنویسی پیدا نشد. بدون زیرنویس هم می‌تونی تماشاش کنی.',
     subtitlesFailed: 'زیرنویس باز نشد. می‌تونی دوباره امتحان کنی یا فعلاً بدون زیرنویس ببینی.',
@@ -253,6 +264,7 @@
     listen: 'Listen', save: 'Save card', saved: 'Saved',
     connecting: 'Connecting to YouTube…',
     watched: 'Watched sections', transcript: 'Transcript', transcriptFontSize: 'Transcript text size',
+    transcriptSettings: 'Transcript settings', resumeWatched: 'Jump to furthest watched point',
     fetchingSubtitles: 'Fetching subtitles…',
     noSubtitles: 'Subtitles aren’t available for this video. You can still watch it.',
     subtitlesFailed: 'Subtitles couldn’t be loaded. You can still watch the video.',
@@ -277,9 +289,23 @@
   document.getElementById('videoStatus').textContent = copy.connecting;
   document.getElementById('watchProgress').setAttribute('aria-label', copy.watched);
   document.getElementById('transcriptTitle').textContent = copy.transcript;
+  var transcriptSettingsToggle = document.getElementById('transcriptSettingsToggle');
+  var transcriptSettings = document.getElementById('transcriptSettings');
+  transcriptSettingsToggle.setAttribute('aria-label', copy.transcriptSettings);
+  transcriptSettingsToggle.title = copy.transcriptSettings;
+  transcriptSettingsToggle.addEventListener('click', function() {
+    transcriptSettings.hidden = !transcriptSettings.hidden;
+    transcriptSettingsToggle.setAttribute('aria-expanded', String(!transcriptSettings.hidden));
+  });
+  document.getElementById('transcript').addEventListener('toggle', function() {
+    if (this.open) return;
+    transcriptSettings.hidden = true;
+    transcriptSettingsToggle.setAttribute('aria-expanded', 'false');
+  });
   var transcriptFontSizeInput = document.getElementById('transcriptFontSize');
   var transcriptFontSizeValue = document.getElementById('transcriptFontSizeValue');
   var transcriptFontSizeKey = 'xaana-transcript-font-size';
+  document.getElementById('transcriptFontSizeLabel').textContent = copy.transcriptFontSize;
   transcriptFontSizeInput.setAttribute('aria-label', copy.transcriptFontSize);
   function setTranscriptFontSize(value) {
     var size = Math.max(12, Math.min(28, parseInt(value, 10) || 13));
@@ -989,6 +1015,40 @@
     return merged;
   }
 
+  function furthestWatchedTime() {
+    return segments.reduce(function(last, seg) { return Math.max(last, seg[1]); }, 0);
+  }
+
+  function resumeTime() {
+    var furthest = furthestWatchedTime();
+    // Seeking to the exact end of a fully watched video can immediately end
+    // playback. Keep the final playable second available instead.
+    return videoDuration > 1 ? Math.min(furthest, videoDuration - 1) : furthest;
+  }
+
+  function updateResumeButton() {
+    var button = document.getElementById('resumeWatched');
+    var furthest = furthestWatchedTime();
+    button.hidden = furthest <= 0;
+    if (button.hidden) return;
+    var label = copy.resumeWatched + ' · ' + formatCueTime(resumeTime());
+    button.textContent = '⏭ ' + formatCueTime(resumeTime());
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.disabled = !playerReady || !player || typeof player.seekTo !== 'function';
+  }
+
+  document.getElementById('resumeWatched').addEventListener('click', function() {
+    if (!playerReady || !player || !furthestWatchedTime()) return;
+    var target = resumeTime();
+    try {
+      if (currentlyPlaying) markNotPlaying();
+      player.seekTo(target, true);
+      lastPlayerTime = target;
+      player.playVideo();
+    } catch (e) { dlog('resume seek failed: ' + e); }
+  });
+
   function loadWatchProgress() {
     var headers = authHeaders();
     if (userToken) headers['X-YouTube-User-Token'] = userToken;
@@ -1009,6 +1069,7 @@
   function updateProgressDisplay() {
     var container = document.getElementById('watchProgress');
     if (!container) return;
+    updateResumeButton();
     if (!videoDuration) { container.hidden = true; return; }
     container.hidden = false;
     container.innerHTML = '';
@@ -1135,6 +1196,7 @@
           playerReady = true;
           clearTimeout(videoStatusTimer);
           if (videoStatus) videoStatus.hidden = true;
+          updateResumeButton();
           if (startAt > 0) {
             try { player.seekTo(startAt, true); } catch (e) {}
           }
