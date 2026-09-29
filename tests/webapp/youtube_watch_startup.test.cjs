@@ -72,10 +72,47 @@ test('stored duration and coverage display before player readiness, including on
   await resume.click();
   assert.deepEqual(await page.evaluate(() => window.seekCalls), [75]);
   assert.equal(await page.evaluate(() => window.playCalls), 1);
+  await page.locator('#transcriptTitle').click();
+  await expect(page.locator('#transcript')).not.toHaveAttribute('open', '');
+  await expect(resume).toBeVisible();
+  const settings = page.getByRole('button', {name: 'Transcript settings'});
+  await expect(settings).toBeVisible();
+  await resume.click();
+  assert.deepEqual(await page.evaluate(() => window.seekCalls), [75, 75]);
+  await settings.click();
+  await expect(page.locator('#transcript')).toHaveAttribute('open', '');
+  await expect(page.getByRole('slider', {name: 'Transcript text size'})).toBeVisible();
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '45');
   await page.reload();
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '45');
   assert.equal(reports.length, 0);
+});
+
+test('Persian watch header matches the reader bar with a left back button', async t => {
+  const {page} = await openViewer(t, {mobile: true, lang: 'fa'});
+  const layout = await page.evaluate(() => {
+    const title = document.getElementById('videoTitle');
+    title.textContent = 'AMD Acquires World Labs';
+    title.hidden = false;
+    const back = document.getElementById('backBtn').getBoundingClientRect();
+    const heading = title.getBoundingClientRect();
+    const bar = document.querySelector('.watch-header');
+    return {
+      backLeft: back.left,
+      titleLeft: heading.left,
+      direction: getComputedStyle(bar).direction,
+      titleSize: getComputedStyle(title).fontSize,
+      barHeight: bar.getBoundingClientRect().height,
+      barLeft: bar.getBoundingClientRect().left,
+      barWidth: bar.getBoundingClientRect().width
+    };
+  });
+  assert.ok(layout.backLeft < layout.titleLeft);
+  assert.equal(layout.direction, 'ltr');
+  assert.equal(layout.titleSize, '13px');
+  assert.equal(layout.barHeight, 48);
+  assert.equal(layout.barLeft, 0);
+  assert.equal(layout.barWidth, 390);
 });
 
 test('unwatched video still displays an empty bar on a Persian mobile layout', async t => {
