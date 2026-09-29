@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fsrs import Card, Rating, Scheduler, State
+from sqlalchemy import text
 
 from db.postgres_db import get_db_session
 from repositories.flashcard_repo import (
@@ -509,6 +510,66 @@ def update_note(
         updated = _notes.update_fields(session, note_id, fields, note_type, deck_id)
         if updated:
             updated["references"] = _refs.list_for_note(session, note_id)
+        return updated
+
+
+_DRAFT_FIELDS = ("front", "back", "example", "note_fa")
+
+
+def get_notes_for_draft(user_id: str, note_ids: List[str]) -> List[dict]:
+    """Fetch only this learner's notes, preserving the requested order."""
+    with get_db_session() as session:
+        notes = []
+        for note_id in note_ids:
+            note = _notes.get(session, note_id)
+            if not note or str(note["user_id"]) != str(user_id):
+                raise ValueError("Card not found")
+            notes.append(note)
+        return notes
+
+
+def apply_card_drafts(user_id: str, items: List[dict]) -> List[dict]:
+    """Apply reviewed suggestions atomically, preserving FSRS and import aliases.
+
+    The original visible fields are an optimistic concurrency guard. If a card
+    was edited after the suggestion was generated, the whole batch is rejected.
+    """
+    with get_db_session() as session:
+        originals = []
+        for item in items:
+            note_id = item["note_id"]
+            session.execute(text("SELECT note_id FROM flashcard_note WHERE note_id = :n FOR UPDATE"), {"n": note_id})
+            note = _notes.get(session, note_id)
+            if not note or str(note["user_id"]) != str(user_id):
+                raise ValueError("Card not found")
+            expected = item["expected_fields"]
+            if any(str(note["fields"].get(key) or "") != str(expected.get(key) or "")
+                   for key in _DRAFT_FIELDS):
+                raise ValueError("A card changed while you were reviewing; reload and try again")
+            originals.append(note)
+
+        proposed_keys = [normalise_key(item["fields"]["front"]) for item in items]
+        if len(set(proposed_keys)) != len(proposed_keys):
+            raise ValueError("Two suggestions have the same front")
+        for item, key in zip(items, proposed_keys):
+            other = _notes.get_by_source_key(session, user_id, key)
+            if other and other["note_id"] != item["note_id"]:
+                raise ValueError("A suggested front already belongs to another card")
+
+        updated = []
+        for note, item in zip(originals, items):
+            fields = dict(item["fields"])
+            old_key = normalise_key(note["fields"].get("front", ""))
+            new_key = normalise_key(fields["front"])
+            aliases = list(note["fields"].get("_import_aliases") or [])
+            if old_key != new_key and old_key not in aliases:
+                aliases.append(old_key)
+            fields["_curated"] = True
+            if aliases:
+                fields["_import_aliases"] = aliases
+            changed = _notes.update_fields(session, note["note_id"], fields)
+            assert changed is not None
+            updated.append(changed)
         return updated
 
 

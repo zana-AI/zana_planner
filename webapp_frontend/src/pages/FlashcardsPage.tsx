@@ -369,6 +369,21 @@ function ReviewPane({
 
 // --- authoring ------------------------------------------------------------
 
+type DraftFields = Record<'front' | 'back' | 'example' | 'note_fa', string>;
+type ReviewedSuggestion = {
+  id: string;
+  original: DraftFields;
+  fields: DraftFields;
+  warning: string;
+};
+
+function editableFields(fields: FlashcardFields): DraftFields {
+  return {
+    front: fields.front || '', back: fields.back || '',
+    example: fields.example || '', note_fa: fields.note_fa || '',
+  };
+}
+
 function ManagePane({
   deckId,
   defaultDeckPath,
@@ -386,14 +401,22 @@ function ManagePane({
   const [draft, setDraft] = useState(() => emptyDraft(defaultDeckPath));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<ReviewedSuggestion[]>([]);
+  const [approvedIds, setApprovedIds] = useState<string[]>([]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setNotes(await apiClient.getFlashcardNotes({
+      const loaded = await apiClient.getFlashcardNotes({
         deckId,
         search: search || undefined,
-      }));
+      });
+      setNotes(loaded);
+      const visible = new Set(loaded.map((note) => note.note_id));
+      setSelectedIds((ids) => ids.filter((id) => visible.has(id)));
     } catch (err) {
       console.error('Failed to load notes:', err);
       setError(t('flashcards.loadFailed'));
@@ -411,6 +434,60 @@ function ManagePane({
     () => new Set(notes.map((n) => n.deck_id)).size,
     [notes],
   );
+
+  const draftNew = async () => {
+    if (!draft.front.trim()) { setError('Enter a word or phrase first.'); return; }
+    setAiBusy(true); setError(''); setAiMessage('');
+    try {
+      const result = await apiClient.draftFlashcards({ new_fields: editableFields(draft) });
+      const proposed = result.suggestions[0];
+      if (!proposed) throw new Error('No suggestion returned');
+      setDraft({ ...draft, ...editableFields(proposed.fields) });
+      setAiMessage(proposed.warning || 'AI suggestion added. Review and edit it before saving.');
+    } catch (err) {
+      console.error('Card drafting failed:', err);
+      setError(err instanceof Error ? err.message : 'Could not draft this card. Please try again.');
+    } finally { setAiBusy(false); }
+  };
+
+  const draftSelected = async (ids = selectedIds) => {
+    if (!ids.length || ids.length > 10) {
+      setError('Select 1–10 cards to improve at a time.'); return;
+    }
+    setAiBusy(true); setError(''); setAiMessage(''); setSuggestions([]); setApprovedIds([]);
+    try {
+      const result = await apiClient.draftFlashcards({ note_ids: ids });
+      const byId = new Map(notes.map((note) => [note.note_id, note]));
+      setSuggestions(result.suggestions.map((item) => ({
+        id: item.id,
+        original: editableFields(byId.get(item.id)!.fields),
+        fields: editableFields(item.fields),
+        warning: item.warning,
+      })));
+      setAiMessage('Review each suggestion, edit it if needed, then choose which cards to apply.');
+    } catch (err) {
+      console.error('Card drafting failed:', err);
+      setError(err instanceof Error ? err.message : 'Could not generate suggestions. No cards were changed.');
+    } finally { setAiBusy(false); }
+  };
+
+  const applySelected = async () => {
+    const chosen = suggestions.filter((item) => approvedIds.includes(item.id));
+    if (!chosen.length) return;
+    if (chosen.length > 1 && !window.confirm(`Apply reviewed changes to ${chosen.length} cards?`)) return;
+    setAiBusy(true); setError('');
+    try {
+      await apiClient.applyFlashcardDrafts(chosen.map((item) => ({
+        note_id: item.id, expected_fields: item.original, fields: item.fields,
+      })));
+      setSuggestions([]); setSelectedIds([]); setApprovedIds([]);
+      setAiMessage(`${chosen.length} card${chosen.length === 1 ? '' : 's'} updated. Review schedules were preserved.`);
+      await load(); onChanged();
+    } catch (err) {
+      console.error('Could not apply card drafts:', err);
+      setError(err instanceof Error ? err.message : 'Cards were not changed. Reload and try again.');
+    } finally { setAiBusy(false); }
+  };
 
   const startNew = () => { setDraft(emptyDraft(defaultDeckPath)); setEditing('new'); setError(''); };
   const startEdit = (note: FlashcardNote) => {
@@ -479,7 +556,47 @@ function ManagePane({
         <button className="fc-add" onClick={startNew}>+ Add</button>
       </div>
 
+      {notes.length > 0 ? (
+        <div className="fc-ai-toolbar">
+          <span>{selectedIds.length} selected · up to 10 per batch</span>
+          <button className="fc-secondary" onClick={() => setSelectedIds([])} disabled={!selectedIds.length || aiBusy}>Clear</button>
+          <button className="fc-primary" onClick={() => draftSelected()} disabled={!selectedIds.length || selectedIds.length > 10 || aiBusy}>
+            {aiBusy ? 'Drafting…' : '✨ Improve selected'}
+          </button>
+        </div>
+      ) : null}
+
       {error ? <div className="fc-inline-error">{error}</div> : null}
+      {aiMessage ? <p className="fc-hint fc-ai-message">{aiMessage}</p> : null}
+
+      {suggestions.length ? (
+        <section className="fc-ai-review" aria-label="Review AI suggestions">
+          <div className="fc-ai-review-head">
+            <h3>Review suggestions</h3>
+            <button className="fc-secondary" onClick={() => { setSuggestions([]); setApprovedIds([]); }} disabled={aiBusy}>Discard all</button>
+          </div>
+          {suggestions.map((item) => (
+            <div className="fc-ai-suggestion" key={item.id}>
+              <label className="fc-ai-approve">
+                <input type="checkbox" checked={approvedIds.includes(item.id)} onChange={(event) => setApprovedIds(event.target.checked ? [...approvedIds, item.id] : approvedIds.filter((id) => id !== item.id))} />
+                Apply this card
+              </label>
+              <div className="fc-ai-comparison">
+                <div className="fc-ai-original"><strong>Current</strong><span dir="auto">{item.original.front}</span><small dir="auto">{item.original.back}</small><small dir="auto">{item.original.example}</small><small dir="auto">{item.original.note_fa}</small></div>
+                <div className="fc-ai-proposed"><strong>Suggested · editable</strong>
+                  {(['front', 'back', 'example', 'note_fa'] as const).map((field) => (
+                    <label key={field}>{field === 'note_fa' ? 'Persian meaning' : field}
+                      <input dir="auto" value={item.fields[field]} onChange={(event) => setSuggestions((current) => current.map((row) => row.id === item.id ? { ...row, fields: { ...row.fields, [field]: event.target.value } } : row))} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {item.warning ? <p className="fc-ai-warning">Check this card: {item.warning}</p> : null}
+            </div>
+          ))}
+          <button className="fc-primary" onClick={applySelected} disabled={!approvedIds.length || aiBusy}>Apply {approvedIds.length} selected</button>
+        </section>
+      ) : null}
 
       {editing ? (
         <div className="fc-editor">
@@ -531,6 +648,7 @@ function ManagePane({
           )}
           <div className="fc-editor-actions">
             <button className="fc-secondary" onClick={() => setEditing(null)} disabled={busy}>{t('flashcards.cancel')}</button>
+            {editing === 'new' ? <button className="fc-secondary" onClick={draftNew} disabled={busy || aiBusy || !draft.front.trim()}>{aiBusy ? 'Drafting…' : '✨ Draft with AI'}</button> : null}
             <button className="fc-primary" onClick={save} disabled={busy}>
               {busy ? 'Saving…' : 'Save'}
             </button>
@@ -553,6 +671,7 @@ function ManagePane({
           <ul className="fc-list">
             {notes.map((note) => (
               <li key={note.note_id} className="fc-item">
+                <input className="fc-select-note" type="checkbox" aria-label={`Select ${note.fields.front}`} checked={selectedIds.includes(note.note_id)} onChange={(event) => setSelectedIds(event.target.checked ? [...selectedIds, note.note_id] : selectedIds.filter((id) => id !== note.note_id))} />
                 <div className="fc-item-main">
                   <div className="fc-item-front" dir="auto">
                     <RichText text={note.fields.front} />
