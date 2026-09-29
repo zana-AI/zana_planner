@@ -256,6 +256,7 @@
     "weeklyActivity": "Weekly activity",
     "recent": "Recent",
     "logged": "Logged",
+    "checkInRecorded": "Check-in recorded",
     "amountLogged": "{{amount}} logged",
     "checkIns": "{{done, num}}/{{total, num}} check-ins",
     "goToClub": "Go to club",

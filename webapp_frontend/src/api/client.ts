@@ -786,11 +786,11 @@ class ApiClient {
     limit: number = 20,
     startDate?: string,
     endDate?: string,
-  ): Promise<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; notes: string | null }> }> {
+  ): Promise<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; action_type: string; notes: string | null }> }> {
     const params = new URLSearchParams({ limit: String(limit) });
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
-    return this.request<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; notes: string | null }> }>(`/promises/${promiseId}/logs?${params.toString()}`);
+    return this.request<{ logs: Array<{ datetime: string; date: string; time_spent: number; time_str: string; action_type: string; notes: string | null }> }>(`/promises/${promiseId}/logs?${params.toString()}`);
   }
 
   // Admin API methods

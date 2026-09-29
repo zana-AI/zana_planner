@@ -14,6 +14,14 @@ from db.postgres_db import (
 from models.models import Action
 
 
+def visible_action_notes(notes: Optional[str]) -> Optional[str]:
+    """Hide machine provenance stored in action notes from activity views."""
+    cleaned = (notes or "").strip()
+    if cleaned.startswith(("source=group_activity_evidence;reason=", "credit:")):
+        return None
+    return notes if cleaned else None
+
+
 class ActionsRepository:
     """
     PostgreSQL-backed actions repository.
@@ -100,7 +108,7 @@ class ActionsRepository:
                     time_spent=float(r["time_spent_hours"] or 0.0),
                     credits_minutes=float(r["credits_minutes"] or 0.0),
                     at=at,
-                    notes=r.get("notes") if r.get("notes") else None,
+                    notes=visible_action_notes(r.get("notes")),
                 )
             )
         return actions
