@@ -77,8 +77,12 @@
       border-radius: 3px;
       opacity: 0.78;
     }
-    .transcript { margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; }
-    .transcript summary { cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 800; color: #edf3ff; }
+    .transcript { position: relative; margin-top: 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); overflow: hidden; --transcript-font-size: 13px; }
+    .transcript summary { cursor: pointer; padding: 12px 14px; padding-inline-end: 190px; min-height: 46px; font-size: 13px; font-weight: 800; color: #edf3ff; }
+    .transcript:not([open]) summary { padding-inline-end: 14px; }
+    .transcript-font-controls { position: absolute; top: 6px; inset-inline-end: 12px; display: flex; align-items: center; gap: 5px; height: 34px; color: #dceaff; font-size: 12px; white-space: nowrap; }
+    .transcript-font-controls input { width: 100px; accent-color: var(--app-accent); cursor: pointer; }
+    .transcript-font-controls output { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
     .transcript-list { max-height: min(46vh, 420px); overflow: auto; overscroll-behavior: contain; overflow-anchor: none; border-top: 1px solid var(--app-border); }
     .transcript-status { padding: 0 14px 12px; color: rgba(237,243,255,.65); font-size: 13px; line-height: 1.5; }
     .transcript-retry { margin-inline-start: 8px; border: 0; background: transparent; color: var(--app-accent); font: inherit; text-decoration: underline; cursor: pointer; }
@@ -86,7 +90,7 @@
     .transcript-cue:hover, .transcript-cue:focus-within { background: rgba(99,167,247,.12); color: #fff; outline: none; }
     .transcript-jump { align-self: start; padding: 0; border: 0; background: transparent; color: var(--app-accent); font: inherit; font-size: 12px; text-align: start; cursor: pointer; }
     .transcript-jump:hover, .transcript-jump:focus-visible { text-decoration: underline; outline: none; }
-    .transcript-text { min-width: 0; line-height: 1.45; }
+    .transcript-text { min-width: 0; font-size: var(--transcript-font-size); line-height: 1.45; }
     .transcript-word { padding: 1px 2px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
     /* Hover only hints that a word is tappable; nothing opens until a click. */
     .transcript-word:hover { text-decoration: underline; text-decoration-color: rgba(99,167,247,.6); text-underline-offset: 3px; }
@@ -192,6 +196,12 @@
   </div>
   <details id="transcript" class="transcript" open hidden>
     <summary id="transcriptTitle">Transcript</summary>
+    <div class="transcript-font-controls">
+      <span aria-hidden="true">A−</span>
+      <input id="transcriptFontSize" type="range" min="12" max="28" step="1" value="13">
+      <span aria-hidden="true">A+</span>
+      <output id="transcriptFontSizeValue" for="transcriptFontSize">13px</output>
+    </div>
     <div id="transcriptStatus" class="transcript-status"><span id="transcriptMessage" role="status"></span><button id="transcriptRetry" class="transcript-retry" type="button" hidden></button></div>
     <div id="transcriptList" class="transcript-list" hidden></div>
   </details>
@@ -227,7 +237,7 @@
     back: 'بازگشت', closeWord: 'بستن',
     listen: 'تلفظ', save: 'ذخیره کارت', saved: 'ذخیره شد',
     connecting: 'در حال اتصال به یوتیوب…',
-    watched: 'بخش‌های دیده‌شده', transcript: 'زیرنویس',
+    watched: 'بخش‌های دیده‌شده', transcript: 'زیرنویس', transcriptFontSize: 'اندازهٔ متن زیرنویس',
     fetchingSubtitles: 'در حال دریافت زیرنویس…',
     noSubtitles: 'برای این ویدیو زیرنویسی پیدا نشد. بدون زیرنویس هم می‌تونی تماشاش کنی.',
     subtitlesFailed: 'زیرنویس باز نشد. می‌تونی دوباره امتحان کنی یا فعلاً بدون زیرنویس ببینی.',
@@ -242,7 +252,7 @@
     back: 'Back', closeWord: 'Close',
     listen: 'Listen', save: 'Save card', saved: 'Saved',
     connecting: 'Connecting to YouTube…',
-    watched: 'Watched sections', transcript: 'Transcript',
+    watched: 'Watched sections', transcript: 'Transcript', transcriptFontSize: 'Transcript text size',
     fetchingSubtitles: 'Fetching subtitles…',
     noSubtitles: 'Subtitles aren’t available for this video. You can still watch it.',
     subtitlesFailed: 'Subtitles couldn’t be loaded. You can still watch the video.',
@@ -267,6 +277,24 @@
   document.getElementById('videoStatus').textContent = copy.connecting;
   document.getElementById('watchProgress').setAttribute('aria-label', copy.watched);
   document.getElementById('transcriptTitle').textContent = copy.transcript;
+  var transcriptFontSizeInput = document.getElementById('transcriptFontSize');
+  var transcriptFontSizeValue = document.getElementById('transcriptFontSizeValue');
+  var transcriptFontSizeKey = 'xaana-transcript-font-size';
+  transcriptFontSizeInput.setAttribute('aria-label', copy.transcriptFontSize);
+  function setTranscriptFontSize(value) {
+    var size = Math.max(12, Math.min(28, parseInt(value, 10) || 13));
+    transcriptFontSizeInput.value = String(size);
+    transcriptFontSizeInput.setAttribute('aria-valuetext', size + (uiLanguage === 'fa' ? ' پیکسل' : ' pixels'));
+    transcriptFontSizeValue.textContent = size + 'px';
+    document.getElementById('transcript').style.setProperty('--transcript-font-size', size + 'px');
+    return size;
+  }
+  try { setTranscriptFontSize(localStorage.getItem(transcriptFontSizeKey)); }
+  catch (_) { setTranscriptFontSize(13); }
+  transcriptFontSizeInput.addEventListener('input', function() {
+    var size = setTranscriptFontSize(this.value);
+    try { localStorage.setItem(transcriptFontSizeKey, String(size)); } catch (_) {}
+  });
   document.getElementById('transcriptRetry').textContent = copy.checkAgain;
   var sourceLanguage = 'fr';
   var videoTitleText = '';

@@ -71,8 +71,35 @@ test('stored duration and coverage display before player readiness, including on
 test('unwatched video still displays an empty bar on a Persian mobile layout', async t => {
   const {page} = await openViewer(t, {mobile: true, lang: 'fa', progress: {duration_seconds: 100, segments: []}});
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
-  await expect(page.locator('#transcriptMessage')).toContainText('در دسترس نیست');
+  await expect(page.locator('#transcriptMessage')).toContainText('زیرنویسی پیدا نشد');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('transcript text size persists on this device without closing the panel', async t => {
+  const {page} = await openViewer(t, {mobile: true, lang: 'fa', transcript: () => ({
+    available: true, language: 'fr', source: 'automatic', cues: [{start: 0, end: 2, text: 'Bonjour à tous'}]
+  })});
+  const slider = page.getByRole('slider', {name: 'اندازهٔ متن زیرنویس'});
+  const cueText = page.locator('.transcript-text');
+  await expect(cueText).toHaveCSS('font-size', '13px');
+  assert.equal(await page.evaluate(() => {
+    const title = document.getElementById('transcriptTitle');
+    const titleText = document.createRange();
+    titleText.selectNodeContents(title);
+    const titleBounds = titleText.getBoundingClientRect();
+    const controlsBounds = document.querySelector('.transcript-font-controls').getBoundingClientRect();
+    return titleBounds.left >= controlsBounds.right;
+  }), true);
+  await slider.focus();
+  await slider.press('End');
+  await expect(slider).toHaveValue('28');
+  await expect(cueText).toHaveCSS('font-size', '28px');
+  await expect(page.locator('#transcript')).toHaveAttribute('open', '');
+  assert.equal(await page.evaluate(() => localStorage.getItem('xaana-transcript-font-size')), '28');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.reload();
+  await expect(slider).toHaveValue('28');
+  await expect(cueText).toHaveCSS('font-size', '28px');
 });
 
 test('pending subtitles turn into interactive cues without playing the video', async t => {
