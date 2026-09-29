@@ -1,11 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient } from '../api/client';
+import { formatNumber } from '../i18n/format';
 import type {
   FlashcardCounts,
   FlashcardDeck,
+  FlashcardDeckSelection,
   FlashcardFields,
   FlashcardNote,
   FlashcardQueueCard,
@@ -13,11 +15,7 @@ import type {
 } from '../types';
 import './FlashcardsPage.css';
 
-/**
- * UI copy is English — the app chrome is English everywhere, and the study
- * content itself carries whatever language the deck is in. Nothing here is
- * specific to French.
- */
+/** Study content keeps the language of its deck; controls use the app locale. */
 /**
  * Cards mined from video know the second at which their word is spoken, so the
  * answer side can offer the clip. The link points at our own watch page rather
@@ -108,15 +106,16 @@ function RichText({ text }: { text: string }): ReactNode {
 }
 
 function CountsBar({ counts }: { counts: FlashcardCounts | null }) {
+  const { t } = useTranslation();
   if (!counts) return null;
   return (
     <div className="fc-counts">
-      <span className="fc-count fc-count-due">{counts.due} due</span>
-      <span className="fc-count fc-count-new">{counts.new} new</span>
+      <span className="fc-count fc-count-total">{t('flashcards.totalCount', { value: formatNumber(counts.total) })}</span>
+      <span className="fc-count fc-count-new">{t('flashcards.newCount', { value: formatNumber(counts.new) })}</span>
+      <span className="fc-count fc-count-due">{t('flashcards.dueValue', { value: formatNumber(counts.due) })}</span>
       {counts.studied > 0 ? (
-        <span className="fc-count fc-count-studied">{counts.studied} studied</span>
+        <span className="fc-count fc-count-studied">{t('flashcards.studiedCount', { value: formatNumber(counts.studied) })}</span>
       ) : null}
-      <span className="fc-count fc-count-total">{counts.total} total</span>
     </div>
   );
 }
@@ -125,10 +124,12 @@ function CountsBar({ counts }: { counts: FlashcardCounts | null }) {
 
 function ReviewPane({
   deckId,
+  selection,
   direction,
   onCountsChange,
 }: {
   deckId?: string;
+  selection?: FlashcardDeckSelection;
   direction: 'recognition' | 'production';
   onCountsChange: (c: FlashcardCounts) => void;
 }) {
@@ -145,7 +146,7 @@ function ReviewPane({
     setLoading(true);
     setError('');
     try {
-      const queue = await apiClient.getFlashcardQueue(deckId);
+      const queue = await apiClient.getFlashcardQueue(deckId, 50, selection);
       setCards(queue.cards);
       setIndex(0);
       setRevealed(false);
@@ -157,7 +158,7 @@ function ReviewPane({
     } finally {
       setLoading(false);
     }
-  }, [deckId, onCountsChange]);
+  }, [deckId, selection, onCountsChange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -168,7 +169,7 @@ function ReviewPane({
     setSubmitting(true);
     try {
       const result = await apiClient.reviewFlashcard(
-        card.card_id, rating, Date.now() - shownAt.current
+        card.card_id, rating, Date.now() - shownAt.current, selection,
       );
       onCountsChange(result.counts);
       if (index + 1 < cards.length) {
@@ -184,7 +185,7 @@ function ReviewPane({
     } finally {
       setSubmitting(false);
     }
-  }, [card, cards.length, index, load, onCountsChange, submitting]);
+  }, [card, cards.length, index, load, onCountsChange, selection, submitting]);
 
   // Space reveals, 1-4 rates — the keyboard shortcuts Anki users expect.
   useEffect(() => {
@@ -591,9 +592,8 @@ function emptyDraft(deckPath: string) {
 /**
  * Choose which deck to study.
  *
- * The queue endpoint has always accepted a deck and expands its whole subtree,
- * but the only way to pass one was to hand-write a `?deck=` URL — so in
- * practice every review mixed Édito B1, Lingoda and the video decks together.
+ * Single-deck links expand a whole subtree. Library's multi-deck selection
+ * uses exact card-holding decks instead, and has its own selector.
  *
  * Drill-down rather than a flat list of every deck: decks nest arbitrarily, and
  * one chip per deck stops being readable as soon as a few videos are imported.
@@ -626,9 +626,18 @@ function DeckPicker({ decks, deckId, onSelect }: {
 
 export function FlashcardsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const deckId = params.get('deck') || undefined;
   const deckName = params.get('name') || undefined;
+  const includedParam = params.get('deck_ids');
+  const excludedParam = params.get('exclude_deck_ids');
+  const selection = useMemo<FlashcardDeckSelection | undefined>(() => {
+    if (includedParam) return { deckIds: includedParam.split(',').filter(Boolean) };
+    if (excludedParam) return { excludeDeckIds: excludedParam.split(',').filter(Boolean) };
+    return undefined;
+  }, [includedParam, excludedParam]);
+  const selectionKey = includedParam || excludedParam || '';
   const direction = params.get('direction') === 'production' ? 'production' : 'recognition';
   const [decks, setDecks] = useState<FlashcardDeck[]>([]);
 
@@ -640,6 +649,8 @@ export function FlashcardsPage() {
 
   const selectDeck = useCallback((deck: FlashcardDeck | null) => {
     const next = new URLSearchParams(params);
+    next.delete('deck_ids');
+    next.delete('exclude_deck_ids');
     if (deck) { next.set('deck', deck.deck_id); next.set('name', deck.name); }
     else { next.delete('deck'); next.delete('name'); }
     setCounts(null);
@@ -657,12 +668,12 @@ export function FlashcardsPage() {
 
   const refreshCounts = useCallback(async () => {
     try {
-      const queue = await apiClient.getFlashcardQueue(deckId, 1);
+      const queue = await apiClient.getFlashcardQueue(deckId, 1, selection);
       setCounts(queue.counts);
     } catch {
       /* counts are decorative; a failure here must not break the page */
     }
-  }, [deckId]);
+  }, [deckId, selection]);
 
   useEffect(() => { refreshCounts(); }, [refreshCounts]);
 
@@ -671,7 +682,7 @@ export function FlashcardsPage() {
       <div className="fc-container">
         <header className="fc-session-header">
           <div className="fc-session-heading">
-            <h1 dir="auto">{deckName || t('flashcards.allCards')}</h1>
+            <h1 dir="auto">{selection ? t('flashcards.selectedDecks') : deckName || t('flashcards.allCards')}</h1>
           </div>
           {counts && <span className="fc-ready-count">{t('flashcards.dueCount', { count: counts.due })}</span>}
         </header>
@@ -681,7 +692,13 @@ export function FlashcardsPage() {
             <span>{t(`flashcards.${direction}`)}</span>
           </summary>
           <div className="fc-setup-body">
-            <DeckPicker decks={decks} deckId={deckId} onSelect={selectDeck} />
+            {selection ? (
+              <div className="fc-decks" role="group" aria-label={t('flashcards.chooseDeck')}>
+                <span>{t('flashcards.selectedDecks')}</span>
+                <button type="button" onClick={() => navigate('/decks')}>{t('flashcards.changeDecks')}</button>
+                <button type="button" onClick={() => selectDeck(null)}>{t('flashcards.allCards')}</button>
+              </div>
+            ) : <DeckPicker decks={decks} deckId={deckId} onSelect={selectDeck} />}
             <div className="fc-decks" role="group" aria-label={t('flashcards.studyDirection')}>
               <button type="button" aria-pressed={direction === 'recognition'} className={direction === 'recognition' ? 'is-active' : ''} onClick={() => selectDirection('recognition')}>{t('flashcards.recognition')}</button>
               <button type="button" aria-pressed={direction === 'production'} className={direction === 'production' ? 'is-active' : ''} onClick={() => selectDirection('production')}>{t('flashcards.production')}</button>
@@ -696,7 +713,7 @@ export function FlashcardsPage() {
         </div>
 
         {tab === 'review' ? (
-          <ReviewPane key={deckId || 'all'} deckId={deckId} direction={direction} onCountsChange={setCounts} />
+          <ReviewPane key={selectionKey || deckId || 'all'} deckId={selection ? undefined : deckId} selection={selection} direction={direction} onCountsChange={setCounts} />
         ) : (
           <ManagePane
             deckId={deckId}

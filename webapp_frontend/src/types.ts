@@ -990,6 +990,11 @@ export interface FlashcardQueue {
   counts: FlashcardCounts;
 }
 
+/** Exact deck IDs chosen in Library. Only one side is set. */
+export type FlashcardDeckSelection =
+  | { deckIds: string[]; excludeDeckIds?: never }
+  | { deckIds?: never; excludeDeckIds: string[] };
+
 /** 1=Again 2=Hard 3=Good 4=Easy — the learner's own assessment. */
 export type FlashcardRating = 1 | 2 | 3 | 4;
 

@@ -66,12 +66,15 @@ def get_queue(
     limit: int = 50,
     new_limit: int = DEFAULT_NEW_PER_DAY,
     deck_id: Optional[str] = None,
+    deck_ids: Optional[List[str]] = None,
+    exclude_deck_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Cards due now, with their note content and any source references."""
     now = datetime.now(timezone.utc)
     with get_db_session() as session:
         rows = _cards.get_due_queue(
-            session, user_id, now, new_limit=new_limit, limit=limit, deck_id=deck_id
+            session, user_id, now, new_limit=new_limit, limit=limit,
+            deck_id=deck_id, deck_ids=deck_ids, exclude_deck_ids=exclude_deck_ids,
         )
         cards: List[Dict[str, Any]] = []
         for row in rows:
@@ -94,7 +97,10 @@ def get_queue(
             )
         return {
             "cards": cards,
-            "counts": _cards.counts(session, user_id, now, deck_id=deck_id),
+            "counts": _cards.counts(
+                session, user_id, now, deck_id=deck_id,
+                deck_ids=deck_ids, exclude_deck_ids=exclude_deck_ids,
+            ),
         }
 
 
@@ -104,6 +110,8 @@ def review_card(
     rating: int,
     duration_ms: Optional[int] = None,
     now: Optional[datetime] = None,
+    deck_ids: Optional[List[str]] = None,
+    exclude_deck_ids: Optional[List[str]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Apply one review. Returns None if the card is not this user's."""
     if rating not in (1, 2, 3, 4):
@@ -164,7 +172,10 @@ def review_card(
             "due": refreshed["due"].isoformat(),
             "stability": refreshed["stability"],
             "difficulty": refreshed["difficulty"],
-            "counts": _cards.counts(session, user_id, datetime.now(timezone.utc)),
+            "counts": _cards.counts(
+                session, user_id, datetime.now(timezone.utc),
+                deck_ids=deck_ids, exclude_deck_ids=exclude_deck_ids,
+            ),
         }
         deck_id = note["deck_id"]
 

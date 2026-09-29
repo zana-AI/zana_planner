@@ -69,6 +69,22 @@ class ReviewIn(BaseModel):
     card_id: str
     rating: int = Field(ge=1, le=4, description="1=Again 2=Hard 3=Good 4=Easy")
     duration_ms: Optional[int] = Field(default=None, ge=0)
+    deck_ids: Optional[List[str]] = None
+    exclude_deck_ids: Optional[List[str]] = None
+
+
+class QueueSelectionIn(BaseModel):
+    limit: int = Field(default=50, ge=1, le=100)
+    deck_ids: Optional[List[str]] = None
+    exclude_deck_ids: Optional[List[str]] = None
+
+
+def validate_selection(deck_ids: Optional[List[str]], exclude_deck_ids: Optional[List[str]]) -> None:
+    if (deck_ids is None) == (exclude_deck_ids is None):
+        raise HTTPException(status_code=422, detail="Choose included or excluded decks")
+    ids = deck_ids if deck_ids is not None else exclude_deck_ids
+    if not ids or len(ids) > 500 or any(not deck_id or len(deck_id) > 100 for deck_id in ids):
+        raise HTTPException(status_code=422, detail="Select 1 to 500 valid decks")
 
 
 class WordLookupIn(BaseModel):
@@ -94,16 +110,30 @@ async def get_queue(
     return flashcard_service.get_queue(str(user_id), limit=limit, deck_id=deck_id)
 
 
+@router.post("/queue/selection")
+async def get_selected_queue(payload: QueueSelectionIn, user_id: int = Depends(get_current_user)):
+    """One due-first queue across the exact decks chosen in Library."""
+    validate_selection(payload.deck_ids, payload.exclude_deck_ids)
+    return flashcard_service.get_queue(
+        str(user_id), limit=payload.limit,
+        deck_ids=payload.deck_ids, exclude_deck_ids=payload.exclude_deck_ids,
+    )
+
+
 @router.post("/review")
 async def submit_review(
     payload: ReviewIn,
     user_id: int = Depends(get_current_user),
 ):
+    if payload.deck_ids is not None or payload.exclude_deck_ids is not None:
+        validate_selection(payload.deck_ids, payload.exclude_deck_ids)
     result = flashcard_service.review_card(
         str(user_id),
         card_id=payload.card_id,
         rating=payload.rating,
         duration_ms=payload.duration_ms,
+        deck_ids=payload.deck_ids,
+        exclude_deck_ids=payload.exclude_deck_ids,
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Card not found")
