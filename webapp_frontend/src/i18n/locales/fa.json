@@ -277,6 +277,7 @@
     "suspend": "معلق کردن",
     "resume": "ازسرگیری",
     "suspended": "قول معلق شد",
+    "suspendedStatus": "معلق",
     "resumed": "قول از سر گرفته شد",
     "suspendFailed": "معلق کردن قول انجام نشد",
     "resumeFailed": "ازسرگیری قول انجام نشد"

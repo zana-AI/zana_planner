@@ -18,7 +18,9 @@ import { PlaySheet } from '../components/sheets/PlaySheet';
 import { PromiseDetailSheet } from '../components/sheets/PromiseDetailSheet';
 import { ScheduleSheet } from '../components/sheets/ScheduleSheet';
 import { Toast } from '../components/ui/Toast';
+import { Badge } from '../components/ui/Badge';
 import { useToast } from '../hooks/useToast';
+import { formatPromiseText } from '../utils/activityFormat';
 import { getMockWeeklyReport, shouldUseLocalMockData } from '../api/mockData';
 import type { PromiseData, WeeklyReportData, UpcomingPlanSession } from '../types';
 import './explore.css';
@@ -54,6 +56,7 @@ export function DashboardPage() {
   const { initData, isReady, hapticFeedback } = useTelegramWebApp();
   const [reportData, setReportData] = useState<WeeklyReportData | null>(null);
   const [suspendedPromises, setSuspendedPromises] = useState<Array<{ id: string; text: string; suspended_at_utc: string }>>([]);
+  const [resumingPromiseId, setResumingPromiseId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   // Single source of truth: derive ref_time from URL
@@ -631,20 +634,41 @@ export function DashboardPage() {
               <h2>{t('dashboard.suspendedPromises')}</h2>
               <span className="meta">{suspendedPromises.length}</span>
             </div>
-            {suspendedPromises.map((promise) => (
-              <div className="suspended-promise-row" key={promise.id}>
-                <span dir="auto">#{promise.id} {promise.text.replace(/_/g, ' ')}</span>
-                <button type="button" onClick={async () => {
-                  try {
-                    await apiClient.resumePromise(promise.id);
-                    showToast(t('promise.resumed'));
-                    handleRefresh();
-                  } catch (resumeError) {
-                    showToast(resumeError instanceof Error ? resumeError.message : t('promise.resumeFailed'));
-                  }
-                }}>{t('promise.resume')}</button>
+            <div className="weekly-report">
+              <div className="list">
+                {suspendedPromises.map((promise) => (
+                  <article className="pcard pcard-suspended" key={promise.id}>
+                    <div className="top">
+                      <div className="title">
+                        <span dir="auto">{formatPromiseText(promise.text)}</span>
+                        <span className="pid" dir="ltr">#{promise.id}</span>
+                      </div>
+                      <Badge variant="neutral" showDot>{t('promise.suspendedStatus')}</Badge>
+                    </div>
+                    <div className="pcard-suspended-actions">
+                      <button
+                        type="button"
+                        disabled={resumingPromiseId !== null}
+                        aria-label={`${t('promise.resume')} ${formatPromiseText(promise.text)}`}
+                        onClick={async () => {
+                          setResumingPromiseId(promise.id);
+                          try {
+                            await apiClient.resumePromise(promise.id);
+                            setSuspendedPromises((items) => items.filter((item) => item.id !== promise.id));
+                            showToast(t('promise.resumed'));
+                            handleRefresh();
+                          } catch (resumeError) {
+                            showToast(resumeError instanceof Error ? resumeError.message : t('promise.resumeFailed'));
+                          } finally {
+                            setResumingPromiseId(null);
+                          }
+                        }}
+                      >{t('promise.resume')}</button>
+                    </div>
+                  </article>
+                ))}
               </div>
-            ))}
+            </div>
           </section>
         )}
 
