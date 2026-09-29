@@ -33,6 +33,7 @@ def test_drafter_uses_one_structured_call_and_checks_ids(monkeypatch):
     result = flashcard_drafter.draft_cards([{"id": "one"}, {"id": "two"}])
     assert [item["fields"]["front"] for item in result] == ["klaxonner", "stressé"]
     assert len(calls) == 1
+    assert calls[0]["model"] == "openai/gpt-oss-120b"
     assert calls[0]["response_format"]["json_schema"]["strict"] is True
     rows[1]["id"] = "wrong"
     response.choices[0].message.content = json.dumps({"cards": rows})
