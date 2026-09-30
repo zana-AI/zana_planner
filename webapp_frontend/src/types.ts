@@ -894,6 +894,8 @@ export interface PlanSession {
   status: 'planned' | 'done' | 'skipped';
   planned_start: string | null;       // ISO datetime
   planned_duration_min: number | null;
+  actual_duration_min?: number | null;
+  completed_at_utc?: string | null;
   notes: string | null;
   created_at: string;
   reminder_enabled: boolean;

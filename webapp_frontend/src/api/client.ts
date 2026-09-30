@@ -1499,6 +1499,10 @@ class ApiClient {
     return this.request('/plan-sessions/upcoming');
   }
 
+  async getPlanSession(sessionId: number): Promise<import('../types').UpcomingPlanSession> {
+    return this.request(`/plan-sessions/${sessionId}`);
+  }
+
   async getGoogleCalendarAuthorizationUrl(sessionId: number): Promise<{ url: string }> {
     return this.request(`/google-calendar/sessions/${sessionId}/authorization-url`, {
       method: 'POST',
@@ -1529,10 +1533,10 @@ class ApiClient {
     });
   }
 
-  async updatePlanSessionStatus(sessionId: number, status: string, activityAlreadyLogged = false): Promise<import('../types').PlanSession> {
+  async updatePlanSessionStatus(sessionId: number, status: string, activityAlreadyLogged = false, actualDurationMin?: number): Promise<import('../types').PlanSession> {
     return this.request(`/plan-sessions/${sessionId}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, activity_already_logged: activityAlreadyLogged }),
+      body: JSON.stringify({ status, activity_already_logged: activityAlreadyLogged, actual_duration_min: actualDurationMin }),
     });
   }
 

@@ -23,6 +23,8 @@ def test_direct_calendar_event_uses_exact_utc_interval_and_reminder():
     assert event["end"]["dateTime"] == "2026-09-28T13:30:00Z"
     assert event["reminders"]["overrides"] == [{"method": "popup", "minutes": 10}]
     assert event["summary"] == "Exercise"
+    assert event["source"]["url"] == "https://xaana.club/plan-sessions/77/complete"
+    assert "Mark done in Xaana: https://xaana.club/plan-sessions/77/complete" in event["description"]
 
 
 @pytest.mark.unit

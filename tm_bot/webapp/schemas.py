@@ -751,6 +751,8 @@ class PlanSessionOut(BaseModel):
     status: str
     planned_start: Optional[str]
     planned_duration_min: Optional[int]
+    actual_duration_min: Optional[int] = None
+    completed_at_utc: Optional[str] = None
     notes: Optional[str]
     created_at: str
     reminder_enabled: bool = True
@@ -767,6 +769,7 @@ class UpcomingPlanSessionOut(PlanSessionOut):
 class PlanSessionStatusUpdate(BaseModel):
     status: str   # planned | done | skipped
     activity_already_logged: bool = False
+    actual_duration_min: Optional[int] = Field(default=None, gt=0, le=1440)
 
 
 class PlanSessionUpdate(BaseModel):

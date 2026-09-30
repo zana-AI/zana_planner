@@ -47,6 +47,14 @@ def test_status_completion_logs_once_and_undo_removes_only_automatic_log():
         assert logs()[0]["at_utc"] == planned_start
         assert logs()[0]["notes"] == "Core exercise"
 
+        repo.update_status(session_id, user_id, "planned")
+        assert repo.get(session_id, user_id)["completed_at_utc"] is None
+        completed = repo.update_status(session_id, user_id, "done", actual_duration_min=45)
+        assert completed["actual_duration_min"] == 45
+        assert completed["completed_at_utc"] is not None
+        assert len(logs()) == 1
+        assert logs()[0]["time_spent_hours"] == 0.75
+
         repo.update_status(session_id, user_id, "done")
         assert len(logs()) == 1
 

@@ -40,7 +40,11 @@ export function resolveCalendarEventTitle(title: string | undefined | null, prom
   return sessionDisplay || 'Focus session';
 }
 
-function calendarEventDescription(eventTitle: string, promiseText: string, notes?: string | null): string {
+export function sessionCompletionUrl(sessionId: number): string {
+  return `${window.location.origin}/plan-sessions/${sessionId}/complete`;
+}
+
+function calendarEventDescription(eventTitle: string, promiseText: string, sessionId: number, notes?: string | null): string {
   const parts: string[] = [];
   if (notes?.trim()) parts.push(notes.trim());
   const promiseDisplay = (promiseText || '').trim().replace(/_/g, ' ');
@@ -48,6 +52,7 @@ function calendarEventDescription(eventTitle: string, promiseText: string, notes
     parts.push(`Xaana promise: ${promiseDisplay}`);
   }
   if (!parts.length) parts.push('Scheduled with Xaana (xaana.club)');
+  parts.push(`Mark done in Xaana: ${sessionCompletionUrl(sessionId)}`);
   return parts.join('\n');
 }
 
@@ -69,7 +74,7 @@ function eventFromSession(session: PlanSession, promiseText: string): CalendarEv
     title,
     start,
     durationMin,
-    description: calendarEventDescription(title, promiseText, session.notes),
+    description: calendarEventDescription(title, promiseText, session.id, session.notes),
   };
 }
 

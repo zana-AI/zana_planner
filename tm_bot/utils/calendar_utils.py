@@ -45,6 +45,7 @@ def calendar_event_description(
     event_title: str,
     promise_text: Optional[str],
     notes: Optional[str] = None,
+    completion_url: Optional[str] = None,
 ) -> str:
     """Build a Google Calendar / ICS description line."""
     parts: list[str] = []
@@ -56,7 +57,14 @@ def calendar_event_description(
         parts.append(f"Xaana promise: {promise_display}")
     if not parts:
         parts.append("Scheduled with Xaana (xaana.club)")
+    if completion_url:
+        parts.append(f"Mark done in Xaana: {completion_url}")
     return "\n".join(parts)
+
+
+def session_completion_url(session_id: int, base_url: str = "https://xaana.club") -> str:
+    """An owner-only review page; visiting this URL never changes session state."""
+    return f"{base_url.rstrip('/')}/plan-sessions/{int(session_id)}/complete"
 
 
 def generate_google_calendar_link(

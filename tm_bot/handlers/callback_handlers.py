@@ -1120,6 +1120,7 @@ class CallbackHandlers:
             calendar_event_description,
             generate_ics,
             resolve_calendar_event_title,
+            session_completion_url,
         )
         from db.postgres_db import get_db_session
         from sqlalchemy import text as sql_text
@@ -1150,7 +1151,8 @@ class CallbackHandlers:
             duration_min = int(plan.get("planned_duration_min") or 30)
             event_title = resolve_calendar_event_title(plan.get("title"), promise_text)
             description = calendar_event_description(
-                event_title, promise_text, plan.get("notes")
+                event_title, promise_text, plan.get("notes"),
+                session_completion_url(plan["id"]),
             )
             reminder_enabled = bool(plan.get("reminder_enabled", True))
             stored_offset = plan.get("reminder_offset_min")

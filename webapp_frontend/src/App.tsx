@@ -31,6 +31,7 @@ import { apiClient } from './api/client';
 import { shouldUseLocalMockData } from './api/mockData';
 import { BrowserLoginPage } from './pages/BrowserLoginPage';
 import { CalendarResultPage } from './pages/CalendarResultPage';
+import { SessionCompletionPage } from './pages/SessionCompletionPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
 
@@ -142,6 +143,7 @@ function MainApp() {
         {/* Local development helper - backend must explicitly enable dev auth */}
         <Route path="/dev-admin" element={<DevAdminLoginPage />} />
         <Route path="/calendar-result" element={<CalendarResultPage />} />
+        <Route path="/plan-sessions/:sessionId/complete" element={<SessionCompletionPage isAuthenticated={isAuthenticated} />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
 

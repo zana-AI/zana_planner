@@ -535,6 +535,21 @@
     "happyNewYear2026StartAchievingYourGoalsWithX": "سال نو ۲۰۲۶ مبارک! رسیدن به هدف‌هایتان را با Xaana شروع کنید",
     "dismissBanner": "بستن اعلان"
   },
+  "sessionCompletion": {
+    "heading": "تأیید انجام جلسه",
+    "session": "جلسهٔ برنامه‌ریزی‌شده",
+    "signInHint": "برای تأیید این جلسه وارد زانا شو. فقط صاحب جلسه می‌تواند آن را تغییر دهد.",
+    "signIn": "ورود",
+    "missing": "این جلسه در حساب شما پیدا نشد.",
+    "loadFailed": "بارگذاری جلسه ممکن نشد. دوباره تلاش کن.",
+    "scheduledFor": "زمان برنامه‌ریزی‌شده: {{date}}",
+    "confirmHint": "این جلسه را انجام دادی؟ مدت زمانی را که واقعاً صرف کردی تأیید کن.",
+    "actualDuration": "زمان صرف‌شده",
+    "minutes": "دقیقه",
+    "markDone": "ثبت انجام",
+    "alreadyDone": "این جلسه قبلاً انجام‌شده ثبت شده است",
+    "saveFailed": "ثبت انجام ممکن نشد. دوباره تلاش کن."
+  },
   "calendar": {
     "googleCalendar": "تقویم گوگل",
     "addDirectly": "افزودن مستقیم به تقویم گوگل",
@@ -871,7 +886,8 @@
     "customDurationInMinutes": "مدت دلخواه به دقیقه",
     "durationMustBeGreaterThan0Minutes": "مدت باید بیشتر از صفر دقیقه باشد",
     "sessionUpdated": "جلسه به‌روز شد",
-    "sessionScheduled": "جلسه زمان‌بندی شد"
+    "sessionScheduled": "جلسه زمان‌بندی شد",
+    "overlapWarning": "این زمان با جلسهٔ دیگری در زانا تداخل دارد: {{title}}. همچنان می‌توانی آن را ذخیره کنی."
   },
   "suggestPromise": {
     "suggestPromise": "پیشنهاد قول",

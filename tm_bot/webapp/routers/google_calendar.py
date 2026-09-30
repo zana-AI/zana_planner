@@ -19,7 +19,7 @@ from sqlalchemy import text
 
 from db.postgres_db import get_db_session
 from repositories.plan_sessions_repo import PlanSessionsRepository
-from utils.calendar_utils import calendar_event_description, resolve_calendar_event_title
+from utils.calendar_utils import calendar_event_description, resolve_calendar_event_title, session_completion_url
 from utils.logger import get_logger
 from ..dependencies import get_current_user
 
@@ -77,7 +77,8 @@ def _event_payload(plan_session: dict, user_id: int) -> dict:
                 {"uuid": promise_uuid, "user_id": str(user_id)},
             ).scalar() or ""
     title = resolve_calendar_event_title(plan_session.get("title"), promise_text)
-    description = calendar_event_description(title, promise_text, plan_session.get("notes"))
+    completion_url = session_completion_url(plan_session["id"])
+    description = calendar_event_description(title, promise_text, plan_session.get("notes"), completion_url)
     reminder_offset = plan_session.get("reminder_offset_min")
     reminder_minutes = max(0, min(40320, int(10 if reminder_offset is None else reminder_offset)))
     reminders = {
@@ -89,6 +90,7 @@ def _event_payload(plan_session: dict, user_id: int) -> dict:
         "id": uuid5(NAMESPACE_URL, f"xaana-calendar:{user_id}:{plan_session['id']}").hex,
         "summary": title,
         "description": description,
+        "source": {"title": "Xaana · Mark done", "url": completion_url},
         "start": {"dateTime": start.isoformat().replace("+00:00", "Z")},
         "end": {"dateTime": end.isoformat().replace("+00:00", "Z")},
         "reminders": reminders,

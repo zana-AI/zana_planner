@@ -17,6 +17,7 @@ from utils.calendar_utils import (
     generate_google_calendar_link,
     generate_ics,
     resolve_calendar_event_title,
+    session_completion_url,
 )
 from utils.logger import get_logger
 from cbdata import encode_cb, encode_session_cb
@@ -717,7 +718,11 @@ async def send_plan_session_saved_notification(
         duration_min = int(planned_duration_min or 30)
         duration_hours = duration_min / 60.0
         event_title = resolve_calendar_event_title(title, promise_text)
-        description = calendar_event_description(event_title, promise_text, notes)
+        app_base = (miniapp_url or "https://xaana.club").rstrip("/")
+        description = calendar_event_description(
+            event_title, promise_text, notes,
+            session_completion_url(plan_session_id, app_base),
+        )
 
         google_url = generate_google_calendar_link(
             title=event_title,
@@ -751,7 +756,6 @@ async def send_plan_session_saved_notification(
             lines.append(f"Promise: {promise_clean}")
         message = "\n".join(lines)
 
-        app_base = (miniapp_url or "https://xaana.club").rstrip("/")
         app_url = f"{app_base}/dashboard"
         if promise_id:
             app_url = f"{app_url}?promise={promise_id}"

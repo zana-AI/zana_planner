@@ -735,6 +735,21 @@
     "cancel": "Cancel",
     "howDidThisWeekGoWhatDidYouLearn": "How did this week go? What did you learn?"
   },
+  "sessionCompletion": {
+    "heading": "Confirm your session",
+    "session": "Planned session",
+    "signInHint": "Sign in to Xaana to confirm this session. Only its owner can update it.",
+    "signIn": "Sign in",
+    "missing": "This session was not found in your account.",
+    "loadFailed": "Could not load this session. Please try again.",
+    "scheduledFor": "Scheduled for {{date}}",
+    "confirmHint": "Did you do this session? Confirm the time you actually spent.",
+    "actualDuration": "Time spent",
+    "minutes": "minutes",
+    "markDone": "Mark done",
+    "alreadyDone": "Already marked done",
+    "saveFailed": "Could not save your completion. Please try again."
+  },
   "calendar": {
     "googleCalendar": "Google Calendar",
     "addDirectly": "Add directly to Google Calendar",
@@ -774,7 +789,8 @@
     "customDurationInMinutes": "Custom duration in minutes",
     "durationMustBeGreaterThan0Minutes": "Duration must be greater than 0 minutes",
     "sessionUpdated": "Session updated",
-    "sessionScheduled": "Session scheduled"
+    "sessionScheduled": "Session scheduled",
+    "overlapWarning": "This overlaps another Xaana session: {{title}}. You can still save it."
   },
   "clubDetail": {
     "loadingClub": "Loading club...",

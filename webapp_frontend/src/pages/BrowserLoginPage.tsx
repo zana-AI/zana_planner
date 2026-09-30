@@ -65,7 +65,17 @@ export function BrowserLoginPage() {
       // Keep the current account until confirmation succeeds. Reload so no old
       // account's React state or in-flight requests can bleed into the new one.
       apiClient.setAuthToken(data.session_token);
-      window.location.replace('/dashboard');
+      const savedReturn = localStorage.getItem('xaana_login_return_to');
+      localStorage.removeItem('xaana_login_return_to');
+      let returnTo = '/dashboard';
+      try {
+        const target = savedReturn ? JSON.parse(savedReturn) as { path?: string; at?: number } : null;
+        if (target?.path && /^\/plan-sessions\/\d+\/complete$/.test(target.path)
+          && typeof target.at === 'number' && Date.now() - target.at < 60 * 60 * 1000) {
+          returnTo = target.path;
+        }
+      } catch { /* Ignore an invalid saved destination. */ }
+      window.location.replace(returnTo);
     } catch (err) {
       setError(err instanceof Error && err.message === 'expired' ? 'expired' : 'failed');
       setBusy(false);

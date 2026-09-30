@@ -36,6 +36,8 @@ def _plan_session_select(columns: set[str], alias: str = "") -> str:
         "notified_at": "NULL::text",
         "reminder_enabled": "1",
         "reminder_offset_min": "10",
+        "actual_duration_min": "NULL::integer",
+        "completed_at_utc": "NULL::text",
     }
     for column, fallback in optional_columns.items():
         if column in columns:
@@ -206,7 +208,8 @@ class PlanSessionsRepository:
             return {**_row_to_dict(row), "checklist": checklist}
 
     def update_status(
-        self, session_id: int, user_id: int, status: str, *, activity_already_logged: bool = False
+        self, session_id: int, user_id: int, status: str, *, activity_already_logged: bool = False,
+        actual_duration_min: Optional[int] = None,
     ) -> Optional[dict]:
         user = str(user_id)
         with get_db_session() as session:
@@ -222,21 +225,31 @@ class PlanSessionsRepository:
             ).mappings().fetchone()
             if not previous:
                 return None
+            transition_to_done = status == "done" and previous["status"] != "done"
+            transition_from_done = status != "done" and previous["status"] == "done"
+            changes = ["status = :status"]
+            params = {"status": status, "session_id": session_id, "user_id": user}
+            if "actual_duration_min" in columns and (transition_to_done or transition_from_done):
+                changes.append("actual_duration_min = :actual_duration_min")
+                params["actual_duration_min"] = actual_duration_min if transition_to_done else None
+            if "completed_at_utc" in columns and (transition_to_done or transition_from_done):
+                changes.append("completed_at_utc = :completed_at_utc")
+                params["completed_at_utc"] = utc_now_iso() if transition_to_done else None
             result = session.execute(
                 text(f"""
-                    UPDATE plan_sessions SET status = :status
+                    UPDATE plan_sessions SET {', '.join(changes)}
                     WHERE id = :session_id AND user_id = :user_id
                     RETURNING {_plan_session_select(columns)}
                 """),
-                {"status": status, "session_id": session_id, "user_id": user},
+                params,
             ).mappings().fetchone()
 
             # The bot, web app, and LLM all update this repository. Keep the
             # completion log in the same transaction as the status change.
             # A stable action UUID prevents duplicate logs on retries.
             action_uuid = str(uuid5(NAMESPACE_URL, f"xaana:plan-session:{session_id}"))
-            if status == "done" and previous["status"] != "done" and not activity_already_logged:
-                duration_min = previous["planned_duration_min"]
+            if transition_to_done and not activity_already_logged:
+                duration_min = actual_duration_min or previous["planned_duration_min"]
                 if previous["promise_uuid"] and duration_min and duration_min > 0:
                     promise_id = session.execute(
                         text("""
@@ -264,7 +277,7 @@ class PlanSessionsRepository:
                              "promise_uuid": previous["promise_uuid"], "promise_id": promise_id,
                              "hours": duration_min / 60.0, "at_utc": at_utc, "notes": notes},
                         )
-            elif status != "done" and previous["status"] == "done":
+            elif transition_from_done:
                 session.execute(
                     text("DELETE FROM actions WHERE action_uuid = :action_uuid AND user_id = :user_id"),
                     {"action_uuid": action_uuid, "user_id": user},

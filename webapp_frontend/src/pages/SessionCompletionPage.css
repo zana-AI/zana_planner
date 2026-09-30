@@ -1,0 +1,36 @@
+.session-completion-page {
+  width: min(100% - 32px, 520px);
+  margin: 48px auto 96px;
+}
+
+.session-completion-card {
+  display: grid;
+  gap: 16px;
+  padding: clamp(20px, 5vw, 32px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.session-completion-card h1,
+.session-completion-card h2,
+.session-completion-card p {
+  margin: 0;
+}
+
+.session-completion-card h1 { font-size: 1.5rem; }
+.session-completion-card h2 { font-size: 1.2rem; }
+.session-completion-muted { color: var(--fg-muted); }
+.session-completion-done { color: var(--good-500, #34d399); }
+.session-completion-duration { display: flex; align-items: center; gap: 8px; }
+.session-completion-duration input {
+  width: 96px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--fg);
+  background: var(--surface);
+  font: inherit;
+}
+.session-completion-card .btn { width: fit-content; }
+.session-completion-back { width: fit-content; }

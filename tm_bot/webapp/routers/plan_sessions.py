@@ -189,6 +189,18 @@ async def create_standalone_plan_session(
     return result
 
 
+@router.get("/plan-sessions/{session_id}", response_model=UpcomingPlanSessionOut)
+async def get_plan_session(
+    session_id: int,
+    user_id: int = Depends(get_current_user),
+):
+    result = PlanSessionsRepository().get(session_id, user_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Session not found")
+    promise_text, promise_id = _promise_row_for_uuid(result.get("promise_uuid") or "")
+    return {**result, "promise_text": promise_text or None, "promise_id": promise_id or None}
+
+
 @router.patch("/plan-sessions/{session_id}/status", response_model=PlanSessionOut)
 async def update_plan_session_status(
     session_id: int,
@@ -197,8 +209,11 @@ async def update_plan_session_status(
 ):
     if body.status not in ("planned", "done", "skipped"):
         raise HTTPException(status_code=400, detail="status must be planned | done | skipped")
+    if body.actual_duration_min is not None and body.status != "done":
+        raise HTTPException(status_code=400, detail="actual duration requires done status")
     result = PlanSessionsRepository().update_status(
-        session_id, user_id, body.status, activity_already_logged=body.activity_already_logged
+        session_id, user_id, body.status, activity_already_logged=body.activity_already_logged,
+        actual_duration_min=body.actual_duration_min,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Session not found")

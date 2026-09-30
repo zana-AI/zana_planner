@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { formatDate } from '../../i18n/format';
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../api/client';
-import type { PlanSession } from '../../types';
+import type { PlanSession, UpcomingPlanSession } from '../../types';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
 
@@ -68,6 +68,7 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
   const [reminderOffset, setReminderOffset] = useState('10');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [otherSessions, setOtherSessions] = useState<UpcomingPlanSession[]>([]);
 
   const selectableWeekDays = useMemo(() => weekDays.filter(day => day >= todayKey()), [weekDays]);
   const labels = useMemo(() => selectableWeekDays.map(formatDayLabel), [selectableWeekDays]);
@@ -76,6 +77,12 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
 
   useEffect(() => {
     if (!open) return;
+    let active = true;
+    apiClient.getUpcomingPlanSessions().then(sessions => {
+      if (active) setOtherSessions(sessions);
+    }).catch(() => {
+      if (active) setOtherSessions([]);
+    });
     if (editSession) {
       setTitle(editSession.title && editSession.title !== 'Planned session' ? editSession.title : '');
       const parts = editSession.planned_start ? splitLocalDateTime(editSession.planned_start) : null;
@@ -95,7 +102,20 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
       setReminderOffset('10');
     }
     setError('');
+    return () => { active = false; };
   }, [open, editSession]);
+
+  const overlappingSession = useMemo(() => {
+    const start = new Date(`${selectedDate}T${selectedTime}:00`).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) return null;
+    const end = start + duration * 60_000;
+    return otherSessions.find(session => {
+      if (session.id === editSession?.id || !session.planned_start) return false;
+      const otherStart = new Date(session.planned_start).getTime();
+      const otherEnd = otherStart + (session.planned_duration_min || DEFAULT_DURATION) * 60_000;
+      return Number.isFinite(otherStart) && start < otherEnd && otherStart < end;
+    }) || null;
+  }, [selectedDate, selectedTime, duration, otherSessions, editSession?.id]);
 
   const handleSubmit = async () => {
     if (!selectedDate || !selectedTime) return;
@@ -212,6 +232,10 @@ export function ScheduleSheet({ open, promiseId, promiseText, weekDays, onClose,
           aria-label={t('schedule.customDurationInMinutes')}
         />
       </div>
+
+      {overlappingSession && <p className="ds-caption" role="status" style={{ color: 'var(--warning, #fbbf24)', marginTop: 8 }}>
+        {t('schedule.overlapWarning', { title: overlappingSession.title || overlappingSession.promise_text || t('schedule.plannedSession') })}
+      </p>}
 
       <div className="sched-reminder-row" style={{ marginTop: 12 }}>
         <label>
