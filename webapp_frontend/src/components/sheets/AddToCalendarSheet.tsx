@@ -75,7 +75,7 @@ export function AddToCalendarSheet({ open, session, promiseText, onClose }: AddT
           </span>
         </button>
       </div>
-      <p className="cal-choose-sub"><a href="/privacy" target="_blank" rel="noopener noreferrer">{t('calendar.privacyPolicy')}</a></p>
+      <p className="cal-choose-sub"><a href="/privacy" target="_blank" rel="noopener noreferrer">{t('calendar.privacyPolicy')}</a> · <a href="/terms" target="_blank" rel="noopener noreferrer">{t('calendar.termsOfService')}</a></p>
       {directError && <p role="alert" className="error-message">{directError}</p>}
     </BottomSheet>
   );

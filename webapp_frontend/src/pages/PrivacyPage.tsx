@@ -2,7 +2,7 @@ export function PrivacyPage() {
   return (
     <main className="page-container" dir="ltr" style={{ maxWidth: 760, margin: '2rem auto', lineHeight: 1.6 }}>
       <h1>Xaana Privacy Policy</h1>
-      <p>Effective September 30, 2026. Xaana is a planning and accountability app available at xaana.club and through the Xaana Telegram bot.</p>
+      <p>Effective September 2026. Xaana is a planning and accountability app available at xaana.club and through the Xaana Telegram bot.</p>
 
       <h2>Information used by Xaana</h2>
       <p>Xaana uses your Telegram account identifier and profile information to sign you in. It stores the promises, sessions, check-ins, messages, clubs, and learning content you choose to create or share so it can provide planning, reminders, progress views, and related features. Some features use third-party AI services to process the content you provide. Xaana also uses technical logs to operate and protect the service.</p>
@@ -17,7 +17,7 @@ export function PrivacyPage() {
 
       <h2>Questions and deletion requests</h2>
       <p>For questions about this policy or requests to access or delete your Xaana data, contact the <a href="https://t.me/xaana_bot" target="_blank" rel="noopener noreferrer">Xaana bot on Telegram</a>. You can also remove individual sessions and other content in the app where those controls are available.</p>
-      <p><a href="/">Back to Xaana</a></p>
+      <p><a href="/terms">Terms of Service</a> · <a href="/">Back to Xaana</a></p>
     </main>
   );
 }

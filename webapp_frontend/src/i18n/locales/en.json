@@ -740,6 +740,7 @@
     "addDirectly": "Add directly to Google Calendar",
     "directAddHint": "Allow Xaana to add this session to your primary calendar",
     "privacyPolicy": "Privacy policy",
+    "termsOfService": "Terms of service",
     "directAddFailed": "Could not start Google Calendar. You can still open a pre-filled event below.",
     "openGoogleCalendar": "Open a Google Calendar event",
     "addedTitle": "Session added to Google Calendar",

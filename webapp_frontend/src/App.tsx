@@ -32,6 +32,7 @@ import { shouldUseLocalMockData } from './api/mockData';
 import { BrowserLoginPage } from './pages/BrowserLoginPage';
 import { CalendarResultPage } from './pages/CalendarResultPage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { TermsPage } from './pages/TermsPage';
 
 // Handles channel-post deep links (?startapp=<source_key>) — must live inside the Router.
 function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
@@ -142,6 +143,7 @@ function MainApp() {
         <Route path="/dev-admin" element={<DevAdminLoginPage />} />
         <Route path="/calendar-result" element={<CalendarResultPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
 
         {/* Screenshot-only route for generated home-page mockup assets. */}
         {import.meta.env.DEV && (

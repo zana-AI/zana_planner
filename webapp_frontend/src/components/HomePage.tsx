@@ -187,7 +187,7 @@ export function HomePage() {
         </a>
       </section>
       <footer style={{ padding: '1.5rem 0', textAlign: 'center' }}>
-        <a href="/privacy">Privacy Policy</a>
+        <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Service</a>
       </footer>
     </main>
   );
