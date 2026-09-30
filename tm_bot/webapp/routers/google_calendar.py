@@ -41,6 +41,13 @@ def _client_credentials() -> tuple[str, str]:
     return client_id, client_secret
 
 
+def _direct_add_enabled_for(user_id: int) -> bool:
+    if os.getenv("GOOGLE_CALENDAR_PUBLIC_ENABLED", "0") == "1":
+        return True
+    test_ids = os.getenv("GOOGLE_CALENDAR_TEST_USER_IDS", os.getenv("ADMIN_IDS", ""))
+    return str(user_id) in {value.strip() for value in test_ids.split(",") if value.strip()}
+
+
 def _result(status: str) -> RedirectResponse:
     response = RedirectResponse(f"/calendar-result?status={status}", status_code=303)
     response.headers["Cache-Control"] = "no-store"
@@ -89,12 +96,15 @@ def _event_payload(plan_session: dict, user_id: int) -> dict:
 
 
 @router.get("/availability")
-async def availability() -> dict:
-    return {"enabled": bool(os.getenv("GOOGLE_CALENDAR_CLIENT_ID") and os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET"))}
+async def availability(user_id: int = Depends(get_current_user)) -> dict:
+    configured = bool(os.getenv("GOOGLE_CALENDAR_CLIENT_ID") and os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET"))
+    return {"enabled": configured and _direct_add_enabled_for(user_id)}
 
 
 @router.post("/sessions/{session_id}/authorization-url")
 async def authorization_url(session_id: int, user_id: int = Depends(get_current_user)) -> dict:
+    if not _direct_add_enabled_for(user_id):
+        raise HTTPException(status_code=403, detail="Google Calendar direct add is not available yet")
     client_id, _ = _client_credentials()
     plan_session = PlanSessionsRepository().get(session_id, user_id)
     if not plan_session:

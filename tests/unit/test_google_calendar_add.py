@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from webapp.routers.google_calendar import _event_payload
+from webapp.routers.google_calendar import _direct_add_enabled_for, _event_payload
 
 
 @pytest.mark.unit
@@ -40,3 +40,21 @@ def test_direct_calendar_event_keeps_elapsed_duration_across_dst():
     assert start.astimezone(timezone.utc).isoformat() == "2026-10-25T00:45:00+00:00"
     assert (end - start).total_seconds() == 1800
     assert event["reminders"] == {"useDefault": False, "overrides": []}
+
+
+@pytest.mark.unit
+def test_unverified_calendar_access_is_limited_to_test_users(monkeypatch):
+    monkeypatch.delenv("GOOGLE_CALENDAR_PUBLIC_ENABLED", raising=False)
+    monkeypatch.delenv("GOOGLE_CALENDAR_TEST_USER_IDS", raising=False)
+    monkeypatch.setenv("ADMIN_IDS", "123, 456")
+    assert _direct_add_enabled_for(123)
+    assert _direct_add_enabled_for(456)
+    assert not _direct_add_enabled_for(789)
+
+
+@pytest.mark.unit
+def test_verified_calendar_access_can_be_opened_to_all_users(monkeypatch):
+    monkeypatch.setenv("GOOGLE_CALENDAR_PUBLIC_ENABLED", "1")
+    monkeypatch.delenv("GOOGLE_CALENDAR_TEST_USER_IDS", raising=False)
+    monkeypatch.delenv("ADMIN_IDS", raising=False)
+    assert _direct_add_enabled_for(789)
