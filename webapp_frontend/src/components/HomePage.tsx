@@ -186,6 +186,9 @@ export function HomePage() {
           <ArrowRight size={18} />
         </a>
       </section>
+      <footer style={{ padding: '1.5rem 0', textAlign: 'center' }}>
+        <a href="/privacy">Privacy Policy</a>
+      </footer>
     </main>
   );
 }

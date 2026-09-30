@@ -1499,6 +1499,16 @@ class ApiClient {
     return this.request('/plan-sessions/upcoming');
   }
 
+  async getGoogleCalendarAuthorizationUrl(sessionId: number): Promise<{ url: string }> {
+    return this.request(`/google-calendar/sessions/${sessionId}/authorization-url`, {
+      method: 'POST',
+    });
+  }
+
+  async getGoogleCalendarAvailability(): Promise<{ enabled: boolean }> {
+    return this.request('/google-calendar/availability');
+  }
+
   /**
    * Plan a time without naming a promise first — "watch it tonight".
    * A promise can be attached later; it is a grouping, not a prerequisite.
