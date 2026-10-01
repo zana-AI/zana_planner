@@ -37,6 +37,7 @@ import type {
   FocusSession,
   Content,
   MyContentsResponse,
+  ClubSharedContent,
   HeatmapData,
   ConsumeEventRequest,
   PdfOpenResponse,
@@ -431,6 +432,24 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  }
+
+  async shareContentToClub(contentId: string, clubId: string): Promise<{ already_shared: boolean; club_name: string }> {
+    return this.request(`/content/${encodeURIComponent(contentId)}/share/club`, {
+      method: 'POST', body: JSON.stringify({ club_id: clubId }),
+    });
+  }
+
+  async getClubSharedContent(options: { clubId?: string; q?: string; offset?: number } = {}): Promise<{ items: ClubSharedContent[]; next_offset: number | null }> {
+    const params = new URLSearchParams();
+    if (options.clubId) params.set('club_id', options.clubId);
+    if (options.q) params.set('q', options.q);
+    if (options.offset) params.set('offset', String(options.offset));
+    return this.request(`/club-shared-content?${params.toString()}`);
+  }
+
+  async removeClubContentShare(contentId: string, clubId: string): Promise<void> {
+    await this.request(`/content/${encodeURIComponent(contentId)}/share/club/${encodeURIComponent(clubId)}`, { method: 'DELETE' });
   }
 
   async assignUserContent(contentId: string, promiseId: string): Promise<{ content_id: string; promise_id: string; assigned: boolean }> {
