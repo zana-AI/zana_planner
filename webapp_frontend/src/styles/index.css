@@ -6601,6 +6601,56 @@ textarea.modal-input {
   margin: 0 0 12px;
 }
 
+.user-detail-clubs {
+  margin-bottom: 16px;
+}
+
+.user-detail-club-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.user-detail-club-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(99, 208, 235, 0.35);
+  border-radius: var(--radius-12);
+  background: rgba(99, 208, 235, 0.08);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.user-detail-club-link:hover,
+.user-detail-club-link:focus-visible {
+  border-color: var(--accent);
+  background: rgba(99, 208, 235, 0.15);
+}
+
+.user-detail-club-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--accent);
+}
+
+.user-detail-club-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-detail-club-arrow {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+}
+
 .user-detail-promises {
   display: flex;
   flex-direction: column;

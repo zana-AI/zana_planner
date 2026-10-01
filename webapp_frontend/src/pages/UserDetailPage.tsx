@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { apiClient, ApiError } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
-import type { PublicUser, PublicPromiseBadge, UserInfo } from '../types';
+import type { ClubSummary, PublicUser, PublicPromiseBadge, UserInfo } from '../types';
 import { PromiseBadge } from '../components/PromiseBadge';
 import { SuggestPromiseModal } from '../components/SuggestPromiseModal';
 import { Button } from '../components/ui/Button';
@@ -25,6 +25,7 @@ export function UserDetailPage() {
   const [dicebearError, setDicebearError] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [publicPromises, setPublicPromises] = useState<PublicPromiseBadge[]>([]);
+  const [sharedClubs, setSharedClubs] = useState<ClubSummary[]>([]);
 
   const hasToken = !!localStorage.getItem('telegram_auth_token');
 
@@ -53,15 +54,20 @@ export function UserDetailPage() {
       setLoading(true);
       setError('');
       try {
-        const [data, promises] = await Promise.all([
+        const [data, promises, clubs] = await Promise.all([
           apiClient.getUser(userId),
           apiClient.getPublicPromises(userId).catch((err) => {
             console.error('Failed to fetch public promises:', err);
             return [] as PublicPromiseBadge[];
           }),
+          apiClient.getMyClubs().then((response) => response.clubs).catch((err) => {
+            console.error('Failed to fetch shared clubs:', err);
+            return [] as ClubSummary[];
+          }),
         ]);
         setUserData(data);
         setPublicPromises(promises);
+        setSharedClubs(clubs.filter((club) => club.members.some((member) => member.user_id === userId)));
       } catch (err) {
         console.error('Failed to fetch user:', err);
         if (err instanceof ApiError) {
@@ -70,6 +76,7 @@ export function UserDetailPage() {
           setError(t('userDetail.failedToLoadUser'));
         }
         setPublicPromises([]);
+        setSharedClubs([]);
       } finally {
         setLoading(false);
       }
@@ -203,6 +210,25 @@ export function UserDetailPage() {
             ) : null}
           </div>
         </div>
+
+        {sharedClubs.length > 0 ? (
+          <section className="user-detail-clubs" aria-labelledby="user-detail-clubs-title">
+            <h3 id="user-detail-clubs-title" className="user-detail-section-title">{t('userDetail.sharedClubs')}</h3>
+            <div className="user-detail-club-list">
+              {sharedClubs.map((club) => (
+                <Link className="user-detail-club-link" to={`/clubs/${encodeURIComponent(club.club_id)}`} key={club.club_id}>
+                  <svg className="user-detail-club-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="9" cy="8" r="3" />
+                    <path d="M3.5 19v-1.5a5.5 5.5 0 0 1 11 0V19H3.5Z" />
+                    <path d="M16 5.2a3 3 0 0 1 0 5.6M17 13a5 5 0 0 1 3.5 4.8V19H17" />
+                  </svg>
+                  <span className="user-detail-club-name">{club.name}</span>
+                  <span className="user-detail-club-arrow" aria-hidden="true">›</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {publicPromises.length > 0 ? (
           <div>
