@@ -559,6 +559,8 @@ class PlannerBot:
 
         if ctx.input_type == "text":
             self._record_group_visible_message(ctx)
+            if await self._handle_group_content_links(ctx):
+                return
 
         if ctx.input_type == "command":
             command = (ctx.command or "").split("@", 1)[0].lower()
@@ -668,6 +670,32 @@ class PlannerBot:
                 reply_context=reply_context,
                 bot_self_aliases=bot_self_aliases,
             )
+
+    async def _handle_group_content_links(self, ctx: InputContext) -> bool:
+        from services.club_content_ingest_service import group_content_urls, ingest_club_links
+
+        user = getattr(ctx.platform_update, "effective_user", None)
+        if not ctx.user_id or getattr(user, "is_bot", False):
+            return False
+        message = getattr(ctx.platform_update, "effective_message", None)
+        urls = group_content_urls(ctx.raw_text or "", message,
+                                  getattr(getattr(self, "message_handlers", None), "miniapp_url", "") or "https://xaana.club")
+        if not urls:
+            return False
+        club = await asyncio.to_thread(self._get_club_for_group_chat, ctx.chat_id)
+        if not club:
+            return False
+        try:
+            await ingest_club_links(urls, str(club["club_id"]), ctx.user_id)
+        except PermissionError:
+            return True  # Don't route a nonmember's link to the assistant.
+        except Exception:
+            logger.exception("Club content import failed: club=%s message=%s", club["club_id"], ctx.message_id)
+            message = ("این پیوند هنوز به باشگاه اضافه نشد. لطفاً دوباره بفرست."
+                       if str(club.get("club_language") or "").startswith("fa")
+                       else "This link wasn't added to the club yet. Please send it again.")
+            await self._reply_to_group_message(ctx, message, parse_mode=None)
+        return True
 
     async def _on_chat_join_request_update(self, update, context) -> None:
         """Join requests have no normal message, so handle them outside dispatch()."""

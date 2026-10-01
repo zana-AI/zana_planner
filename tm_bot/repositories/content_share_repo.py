@@ -3,12 +3,30 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 import json
+from urllib.parse import urlparse
 
 from sqlalchemy import text
 
 from db.postgres_db import get_db_session
 from repositories.explore_repo import _youtube_video_id
 from repositories.youtube_progress_repo import coverage
+
+
+def content_share_path(content: dict, club_id: str) -> str:
+    content_id = content.get("content_id") or content["id"]
+    metadata = content.get("metadata_json") or {}
+    if isinstance(metadata, str):
+        metadata = json.loads(metadata)
+    if content.get("provider") == "youtube":
+        video_id = _youtube_video_id(content)
+        if video_id:
+            return f"/youtube-watch?video_id={video_id}&content_id={content_id}&club_id={club_id}"
+    if content.get("provider") == "telegram_pdf" or metadata.get("mime_type") == "application/pdf":
+        return f"/pdf-reader?content_id={content_id}&club_id={club_id}"
+    url = content.get("canonical_url") or content.get("original_url") or ""
+    if urlparse(url).scheme in {"https", "http"} and urlparse(url).hostname:
+        return url
+    raise ValueError("This content has no supported link")
 
 
 class ContentShareRepository:
@@ -26,15 +44,16 @@ class ContentShareRepository:
             if content.get("visibility") == "club":
                 raise PermissionError("Club-owned content cannot be reshared")
             metadata = content.get("metadata_json") or {}
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
             is_pdf = content.get("provider") == "telegram_pdf" or metadata.get("mime_type") == "application/pdf"
             video_id = _youtube_video_id(content) if content.get("provider") == "youtube" else None
-            if not (is_pdf or video_id):
-                raise ValueError("Only PDFs and YouTube videos can be shared")
+            path = content_share_path(content, club_id)
             if is_pdf and str(content.get("owner_user_id") or "") != user_id and content.get("visibility") != "public":
                 raise PermissionError("Only the PDF owner can share it")
 
             club = session.execute(text("""
-                SELECT c.club_id, c.name, c.telegram_chat_id
+                SELECT c.club_id, c.name, c.telegram_chat_id, c.language
                 FROM clubs c JOIN club_members m ON m.club_id = c.club_id
                 WHERE c.club_id = :club_id AND m.user_id = :user_id
                   AND m.status = 'active' AND c.status = 'active'
@@ -64,8 +83,6 @@ class ContentShareRepository:
                     WHERE content_id = :content_id AND club_id = :club_id
                 """), {"content_id": content_id, "club_id": club_id, "user_id": user_id})
 
-            path = (f"/youtube-watch?video_id={video_id}&content_id={content_id}&club_id={club_id}" if video_id
-                    else f"/pdf-reader?content_id={content_id}&club_id={club_id}")
             thumbnail_storage_uri = None
             if is_pdf:
                 thumbnail = session.execute(text("""
@@ -75,6 +92,7 @@ class ContentShareRepository:
                 """), {"content_id": content_id}).mappings().first()
                 thumbnail_storage_uri = thumbnail["storage_uri"] if thumbnail else None
             return {"already_shared": False, "club_name": club["name"],
+                    "club_language": club["language"],
                     "chat_id": str(club["telegram_chat_id"]),
                     "title": content.get("title") or "Untitled", "path": path,
                     "thumbnail_url": f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg" if video_id else None,
@@ -125,9 +143,7 @@ class ContentShareRepository:
         items = []
         for row in rows:
             item = dict(row)
-            video_id = _youtube_video_id(item) if item.get("provider") == "youtube" else None
-            item["path"] = (f"/youtube-watch?video_id={video_id}&content_id={item['content_id']}&club_id={item['club_id']}" if video_id
-                            else f"/pdf-reader?content_id={item['content_id']}&club_id={item['club_id']}")
+            item["path"] = content_share_path(item, item["club_id"])
             items.append(item)
         return items
 
