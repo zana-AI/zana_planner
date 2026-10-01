@@ -82,6 +82,9 @@ class ContentResolveService:
 
         title = link_meta.get("title")
         description = (link_meta.get("description") or "")[:2000]
+        if description.strip().lower() in {"no description available", "unable to extract video information"}:
+            description = ""
+        description = description or None
         metadata = dict(link_meta.get("metadata") or {})
 
         duration_hours = link_meta.get("duration")
@@ -93,24 +96,16 @@ class ContentResolveService:
         author_channel = metadata.get("channel") or None
         thumbnail_url = None
 
-        # YouTube: enrich metadata and set thumbnail
+        # ContentService has already fetched YouTube metadata. Reuse it instead
+        # of making a second yt-dlp/Data API request for every saved link.
         if url_type == "youtube":
             try:
-                from utils.youtube_utils import get_video_info, extract_video_id
+                from utils.youtube_utils import extract_video_id
                 video_id = extract_video_id(url)
                 if video_id:
-                    info = get_video_info(video_id, url=url)
                     metadata["video_id"] = video_id
-                    metadata["category"] = info.get("category")
-                    metadata["tags"] = info.get("tags")
-                    metadata["language"] = info.get("language")
-                    metadata["captions_available"] = info.get("captions_available")
-                    resolved_title = str(info.get("title") or "").strip()
-                    if resolved_title and str(title or "").strip().lower() in {"", "youtube video", "untitled"}:
-                        title = resolved_title
-                    author_channel = author_channel or info.get("channel") or None
-                    if duration_seconds is None and info.get("duration_seconds"):
-                        duration_seconds = float(info["duration_seconds"])
+                    if duration_seconds is None and metadata.get("duration_seconds"):
+                        duration_seconds = float(metadata["duration_seconds"])
                     thumbnail_url = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
             except Exception as e:
                 logger.debug("youtube_utils enrichment in resolve: %s", e)
@@ -124,7 +119,7 @@ class ContentResolveService:
             description=description,
             author_channel=author_channel,
             language=metadata.get("language"),
-            published_at=None,
+            published_at=metadata.get("published_at"),
             duration_seconds=duration_seconds,
             estimated_read_seconds=estimated_read_seconds,
             thumbnail_url=thumbnail_url,

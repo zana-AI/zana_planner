@@ -66,6 +66,15 @@ def format_duration(seconds: Optional[float]) -> str:
     return f"{h}h {m}m {s}s"
 
 
+def parse_youtube_duration(value: str) -> Optional[int]:
+    """Parse the day/hour/minute/second ISO 8601 form returned by videos.list."""
+    match = re.fullmatch(r"P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", value or "")
+    if not match or not any(part is not None for part in match.groups()):
+        return None
+    days, hours, minutes, seconds = (int(part or 0) for part in match.groups())
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
 def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
     """
     Fetch metadata for a YouTube video.
@@ -92,6 +101,7 @@ def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
         "channel": None,
         "view_count": None,
         "description_snippet": None,
+        "published_at": None,
         "url": url,
     }
 
@@ -109,7 +119,7 @@ def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 if not info:
-                    return result
+                    raise ValueError("No yt-dlp metadata")
 
                 result["title"] = info.get("title") or result["title"]
                 duration_sec = info.get("duration")
@@ -138,7 +148,7 @@ def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
     else:
         result = _get_video_info_basic(url, result)
 
-    # Optional: YouTube Data API v3 for category name and language
+    # Optional: YouTube Data API v3 for authoritative language, date and duration.
     api_key = os.getenv("YOUTUBE_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if api_key:
         _enrich_with_youtube_api(video_id, result, api_key)
@@ -285,14 +295,11 @@ def _get_video_info_basic(url: str, result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _enrich_with_youtube_api(video_id: str, result: Dict[str, Any], api_key: str) -> None:
-    """Enrich result with category name and language from YouTube Data API v3."""
+    """Enrich result with metadata from YouTube Data API v3."""
     try:
-        # videos.list
-        vurl = (
-            "https://www.googleapis.com/youtube/v3/videos"
-            f"?id={video_id}&part=snippet,contentDetails&key={api_key}"
-        )
-        resp = requests.get(vurl, timeout=5)
+        resp = requests.get("https://www.googleapis.com/youtube/v3/videos", params={
+            "id": video_id, "part": "snippet,contentDetails", "key": api_key,
+        }, timeout=10)
         if resp.status_code != 200:
             return
         data = resp.json()
@@ -300,26 +307,20 @@ def _enrich_with_youtube_api(video_id: str, result: Dict[str, Any], api_key: str
         if not items:
             return
         snippet = items[0].get("snippet") or {}
-        category_id = snippet.get("categoryId")
+        details = items[0].get("contentDetails") or {}
+        result["published_at"] = result.get("published_at") or snippet.get("publishedAt")
+        duration = parse_youtube_duration(details.get("duration") or "")
+        if duration and not result.get("duration_seconds"):
+            result["duration_seconds"] = duration
+            result["duration_formatted"] = format_duration(duration)
         lang = snippet.get("defaultAudioLanguage") or snippet.get("defaultLanguage")
         if lang:
             result["language"] = result["language"] or lang
-        if category_id:
-            # videoCategories.list to get category title
-            cat_url = (
-                "https://www.googleapis.com/youtube/v3/videoCategories"
-                f"?id={category_id}&part=snippet&key={api_key}"
-            )
-            cat_resp = requests.get(cat_url, timeout=5)
-            if cat_resp.status_code == 200:
-                cat_data = cat_resp.json()
-                cat_items = cat_data.get("items") or []
-                if cat_items and cat_items[0].get("snippet", {}).get("title"):
-                    result["category"] = result["category"] or cat_items[0]["snippet"]["title"]
-            else:
-                result["category"] = result["category"] or f"Category {category_id}"
+        if not result.get("description_snippet"):
+            result["description_snippet"] = (snippet.get("description") or "").strip()[:300] or None
     except Exception as e:
-        logger.debug("youtube_utils YouTube API enrichment failed: %s", e)
+        # Request exceptions can include the URL and its API key.
+        logger.debug("youtube_utils YouTube API enrichment failed for %s (%s)", video_id, type(e).__name__)
 
 
 def format_analysis_message(info: Dict[str, Any]) -> str:

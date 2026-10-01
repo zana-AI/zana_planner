@@ -85,3 +85,25 @@ def test_library_response_separates_estimated_level_from_subtitle(monkeypatch):
     item = response.json()["items"][0]
     assert item["description"] == "Everyday reading."
     assert item["metadata_json"]["level"] == "~A2–B1"
+
+
+def test_library_language_filter_is_validated_and_forwarded(monkeypatch):
+    calls = []
+
+    class Repo:
+        def get_user_contents(self, *_args, **kwargs):
+            calls.append(kwargs)
+            return []
+
+        def get_user_content_facets(self, *_args, **_kwargs):
+            return {"language": {"fr": 2, "unknown": 1}}
+
+    monkeypatch.setattr(content, "get_content_repo", lambda: Repo())
+    app = FastAPI()
+    app.include_router(content.router)
+    app.dependency_overrides[content.get_current_user] = lambda: 7
+    with TestClient(app) as client:
+        assert client.get("/api/my-contents?language=fr").status_code == 200
+        assert client.get("/api/my-contents?language=unknown").status_code == 200
+        assert client.get("/api/my-contents?language=fr%27").status_code == 400
+    assert [call["language"] for call in calls] == ["fr", "unknown"]

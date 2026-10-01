@@ -53,7 +53,7 @@ function TypeIcon({ type }: { type: ReturnType<typeof getDisplayType> }) {
 }
 
 export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onRestore, updating = false }: ContentCardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState('');
   const title = item.title || t('content.untitled');
   const provider = (item.provider || 'other').replace(/_/g, ' ');
@@ -80,6 +80,13 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
     .trim();
   const pageCount = Number(item.metadata_json?.['page_count'] || 0);
   const level = typeof item.metadata_json?.['level'] === 'string' ? item.metadata_json['level'] : null;
+  const description = (item.description || '').trim();
+  const usefulDescription = description && !/^(no description available|unable to extract video information)$/i.test(description)
+    ? description : '';
+  const publishedDate = item.published_at ? new Date(item.published_at) : null;
+  const publishedLabel = publishedDate && !Number.isNaN(publishedDate.getTime())
+    ? t('content.publishedOn', { date: new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(publishedDate) })
+    : '';
 
   useEffect(() => {
     if (item.thumbnail_url || !item.thumbnail_asset_id || displayType !== 'pdf') {
@@ -250,14 +257,14 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
 
           <div className="content-card-body">
             <div className="content-card-meta-row">
-              <ContentMetadataBadges language={item.language} level={level} duration={durationLabel}
+              <ContentMetadataBadges language={item.language} subject={!item.language ? t('myContents.unknownLanguage') : null} level={level} duration={durationLabel}
                 subtitles={item.has_subtitles && displayType === 'video'} />
               {!isYouTubeVideo && displayType !== 'pdf' && <span className={`content-card-type content-card-type--${displayType}`}>
                 <TypeIcon type={displayType} />{t(`content.types.${displayType}`)}
               </span>}
             </div>
             <h3 className="content-card-title">{title}</h3>
-            {item.description && <p className="content-card-description" dir="auto">{item.description}</p>}
+            {(usefulDescription || publishedLabel) && <p className="content-card-description" dir="auto">{usefulDescription || publishedLabel}</p>}
             <div className="content-card-subtitle">
               <span>{source}</span>
               <span>{t('content.progressRead', { percent: Math.round(progressRatio * 100) })}</span>

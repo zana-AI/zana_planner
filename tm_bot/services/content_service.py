@@ -115,7 +115,7 @@ class ContentService:
             info = get_video_info(video_id, url=url)
             duration_seconds = info.get("duration_seconds")
             duration_hours = duration_seconds / 3600.0 if duration_seconds else None
-            description = (info.get("description_snippet") or "")[:500] or "No description available"
+            description = (info.get("description_snippet") or "")[:500]
             return {
                 "title": info.get("title") or "YouTube Video",
                 "description": description,
@@ -127,6 +127,9 @@ class ContentService:
                     "channel": info.get("channel") or "",
                     "view_count": info.get("view_count") or 0,
                     "has_subtitles": info.get("captions_available", False),
+                    "language": info.get("language"),
+                    "published_at": info.get("published_at"),
+                    "video_id": video_id,
                 },
             }
         except Exception as e:
@@ -158,7 +161,7 @@ class ContentService:
         
         return {
             'title': 'YouTube Video',
-            'description': 'Unable to extract video information',
+            'description': '',
             'duration': None,
             'url': url,
             'type': 'youtube',

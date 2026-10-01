@@ -380,7 +380,7 @@ class ApiClient {
     status?: string,
     cursor?: string,
     limit?: number,
-    filters: { q?: string; content_type?: string; sort?: string } = {},
+    filters: { q?: string; content_type?: string; language?: string; sort?: string } = {},
   ): Promise<MyContentsResponse> {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
@@ -388,6 +388,7 @@ class ApiClient {
     if (limit != null) params.set('limit', String(limit));
     if (filters.q) params.set('q', filters.q);
     if (filters.content_type) params.set('content_type', filters.content_type);
+    if (filters.language) params.set('language', filters.language);
     if (filters.sort) params.set('sort', filters.sort);
     const q = params.toString() ? `?${params.toString()}` : '';
     return this.request<MyContentsResponse>(`/my-contents${q}`);

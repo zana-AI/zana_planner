@@ -1,6 +1,7 @@
 """
 Content consumption manager API: resolve URL, user library, consume events, heatmap.
 """
+import re
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from typing import Literal
 
@@ -169,6 +170,7 @@ async def get_my_contents(
     status: Optional[str] = None,
     q: Optional[str] = None,
     content_type: Optional[str] = None,
+    language: Optional[str] = None,
     sort: Optional[str] = None,
     cursor: Optional[str] = None,
     limit: int = 20,
@@ -179,6 +181,9 @@ async def get_my_contents(
     safe_limit = max(1, min(int(limit or 20), 100))
     resolved_status = None if status in (None, "", "all") else status
     resolved_type = None if content_type in (None, "", "all") else content_type
+    resolved_language = None if language in (None, "", "all") else language
+    if resolved_language and resolved_language != "unknown" and not re.fullmatch(r"[A-Za-z]{2,3}", resolved_language):
+        raise HTTPException(status_code=400, detail="Invalid language filter")
     rows = repo.get_user_contents(
         str(user_id),
         status=resolved_status,
@@ -186,6 +191,7 @@ async def get_my_contents(
         limit=safe_limit + 1,
         q=q,
         content_type=resolved_type,
+        language=resolved_language,
         sort=sort,
     )
     has_next = len(rows) > safe_limit
