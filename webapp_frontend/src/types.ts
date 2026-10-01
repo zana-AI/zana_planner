@@ -312,6 +312,23 @@ export interface ClubSummary {
   checkin_what_counts?: string;
 }
 
+export interface ClubSharedContent {
+  content_id: string;
+  title: string;
+  provider: string;
+  content_type: string;
+  language?: string | null;
+  duration_seconds?: number | null;
+  thumbnail_url?: string | null;
+  club_id: string;
+  club_name: string;
+  shared_by: string;
+  created_at: string;
+  saved_status?: string | null;
+  can_remove: boolean;
+  path: string;
+}
+
 export interface ClubLeaderboardPromiseSummary {
   promise_uuid: string;
   promise_text: string;

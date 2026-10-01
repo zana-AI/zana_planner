@@ -5,6 +5,10 @@ from fastapi.testclient import TestClient
 from repositories.explore_repo import ExploreRepository
 from services.explore_config import ExploreCatalog, explore_config_loader
 from webapp.routers import content
+from repositories.content_share_repo import ContentShareRepository
+from services import content_share_service
+import asyncio
+import httpx
 
 
 def test_share_route_validates_level_and_invalidates_explore_cache(monkeypatch):
@@ -107,3 +111,67 @@ def test_library_language_filter_is_validated_and_forwarded(monkeypatch):
         assert client.get("/api/my-contents?language=unknown").status_code == 200
         assert client.get("/api/my-contents?language=fr%27").status_code == 400
     assert [call["language"] for call in calls] == ["fr", "unknown"]
+
+
+def test_club_share_posts_only_after_reservation_and_records_delivery(monkeypatch):
+    calls = []
+
+    class Repo:
+        def reserve_club_share(self, content_id, club_id, user_id):
+            calls.append(("reserve", content_id, club_id, user_id))
+            return {"already_shared": False, "club_name": "French", "chat_id": "-123",
+                    "title": "Lesson", "path": "/pdf-reader?content_id=pdf"}
+
+        def finish_club_share(self, content_id, club_id, message_id):
+            calls.append(("finish", content_id, club_id, message_id))
+
+        def fail_club_share(self, *_args):
+            calls.append(("failed",))
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            pass
+
+        async def post(self, url, json):
+            calls.append(("post", url, json))
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 42}})
+
+    monkeypatch.setenv("BOT_TOKEN", "test-token")
+    monkeypatch.setattr(content_share_service.httpx, "AsyncClient", lambda **_kwargs: Client())
+    result = asyncio.run(content_share_service.share_content_with_club("pdf", "club", "7", Repo()))
+    assert result["already_shared"] is False
+    assert [call[0] for call in calls] == ["reserve", "post", "finish"]
+    assert calls[1][2]["chat_id"] == "-123"
+    assert calls[1][2]["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("content_id=pdf")
+    assert calls[2] == ("finish", "pdf", "club", 42)
+
+
+def test_existing_club_share_does_not_post_again(monkeypatch):
+    class Repo:
+        def reserve_club_share(self, *_args):
+            return {"already_shared": True, "club_name": "French"}
+
+    monkeypatch.delenv("BOT_TOKEN", raising=False)
+    result = asyncio.run(content_share_service.share_content_with_club("pdf", "club", "7", Repo()))
+    assert result == {"already_shared": True, "club_name": "French"}
+
+
+def test_club_shelf_is_scoped_to_authenticated_member(monkeypatch):
+    calls = []
+
+    def list_for_member(_self, user_id, **kwargs):
+        calls.append((user_id, kwargs))
+        return [{"content_id": "pdf", "club_id": "club"}]
+
+    monkeypatch.setattr(ContentShareRepository, "list_for_member", list_for_member)
+    app = FastAPI()
+    app.include_router(content.router)
+    app.dependency_overrides[content.get_current_user] = lambda: 7
+    with TestClient(app) as client:
+        response = client.get("/api/club-shared-content?club_id=club&q=French")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["content_id"] == "pdf"
+    assert calls == [("7", {"club_id": "club", "q": "French", "limit": 31, "offset": 0})]

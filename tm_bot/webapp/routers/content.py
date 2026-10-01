@@ -50,6 +50,10 @@ class ShareContentRequest(BaseModel):
     level: Optional[Literal["A1", "A2", "B1", "B2", "C1", "C2"]] = None
 
 
+class ClubContentShareRequest(BaseModel):
+    club_id: str = Field(min_length=1, max_length=128)
+
+
 def get_content_repo() -> "ContentRepository":
     from repositories.content_repo import ContentRepository
 
@@ -163,6 +167,48 @@ async def share_content(content_id: str, body: ShareContentRequest,
     if body.destination == "explore":
         explore_config_loader.invalidate()
     return result
+
+
+@router.post("/content/{content_id}/share/club")
+async def share_content_to_club(content_id: str, body: ClubContentShareRequest,
+                                user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    """Post to one of the user's clubs and add the item to its shared shelf."""
+    from services.content_share_service import share_content_with_club
+
+    try:
+        return await share_content_with_club(content_id, body.club_id, str(user_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/club-shared-content")
+async def get_club_shared_content(club_id: Optional[str] = None, q: Optional[str] = None,
+                                  offset: int = 0, limit: int = 30,
+                                  user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    from repositories.content_share_repo import ContentShareRepository
+
+    safe_offset = max(0, offset)
+    safe_limit = max(1, min(limit, 100))
+    rows = ContentShareRepository().list_for_member(str(user_id), club_id=club_id,
+                                                    q=q, limit=safe_limit + 1, offset=safe_offset)
+    return {"items": rows[:safe_limit],
+            "next_offset": safe_offset + safe_limit if len(rows) > safe_limit else None}
+
+
+@router.delete("/content/{content_id}/share/club/{club_id}")
+async def remove_club_content_share(content_id: str, club_id: str,
+                                    user_id: int = Depends(get_current_user)) -> Dict[str, str]:
+    from repositories.content_share_repo import ContentShareRepository
+
+    if not ContentShareRepository().remove_club_share(content_id, club_id, str(user_id)):
+        raise HTTPException(status_code=404, detail="Club share not found or not removable")
+    return {"status": "removed"}
 
 
 @router.get("/my-contents")

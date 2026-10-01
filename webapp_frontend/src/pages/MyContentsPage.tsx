@@ -3,12 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
+import { ClubSharedShelf } from '../components/ClubSharedShelf';
 import { BottomSheet } from '../components/ui/BottomSheet';
 import { PlanContentSheet } from '../components/sheets/PlanContentSheet';
 import { AssignContentSheet } from '../components/sheets/AssignContentSheet';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { MyContentsFacets, UserContentWithDetails } from '../types';
+import type { ClubSummary, MyContentsFacets, UserContentWithDetails } from '../types';
 import { restoredLibraryStatus } from '../utils/libraryArchive';
 import './explore.css';
 
@@ -120,8 +121,14 @@ export function MyContentsPage() {
   const [archiveTarget, setArchiveTarget] = useState<UserContentWithDetails | null>(null);
   const [shareLanguage, setShareLanguage] = useState('');
   const [shareLevel, setShareLevel] = useState('');
+  const [shareIsLearning, setShareIsLearning] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState('');
+  const [shareStep, setShareStep] = useState<'choose' | 'club' | 'explore'>('choose');
+  const [shareClubs, setShareClubs] = useState<ClubSummary[]>([]);
+  const [shareClubsLoading, setShareClubsLoading] = useState(false);
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const [shelf, setShelf] = useState<'mine' | 'clubs'>('mine');
   const [plannedToast, setPlannedToast] = useState('');
   const { hapticFeedback, webApp } = useTelegramWebApp();
   const [addUrl, setAddUrl] = useState('');
@@ -260,10 +267,43 @@ export function MyContentsPage() {
 
   const openShare = (item: UserContentWithDetails) => {
     setSharing(item);
+    setShareStep('choose');
+    setSelectedClubId('');
     setShareLanguage((item.language || '').toLowerCase().split('-')[0]);
     const existingLevel = item.metadata_json?.['level'];
     setShareLevel(typeof existingLevel === 'string' && /^[ABC][12]$/.test(existingLevel) ? existingLevel : '');
+    setShareIsLearning(typeof existingLevel === 'string' && /^[ABC][12]$/.test(existingLevel));
     setShareError('');
+  };
+
+  const openClubShare = async () => {
+    setShareStep('club');
+    setShareClubsLoading(true);
+    setShareError('');
+    try {
+      const response = await apiClient.getMyClubs();
+      setShareClubs(response.clubs);
+    } catch (err) {
+      setShareError(err instanceof ApiError ? err.message : t('content.clubLoadFailed'));
+    } finally {
+      setShareClubsLoading(false);
+    }
+  };
+
+  const confirmClubShare = async () => {
+    if (!sharing || !selectedClubId || shareBusy) return;
+    setShareBusy(true);
+    setShareError('');
+    try {
+      const result = await apiClient.shareContentToClub(sharing.content_id || sharing.id, selectedClubId);
+      setSharing(null);
+      setPlannedToast(t(result.already_shared ? 'content.alreadySharedWithClub' : 'content.sharedWithClub', { club: result.club_name }));
+      window.setTimeout(() => setPlannedToast(''), 4000);
+    } catch (err) {
+      setShareError(err instanceof ApiError ? err.message : t('content.shareFailed'));
+    } finally {
+      setShareBusy(false);
+    }
   };
 
   const shareItem = async (destination: 'link' | 'explore') => {
@@ -274,7 +314,7 @@ export function MyContentsPage() {
       const result = await apiClient.shareLibraryContent(sharing.content_id || sharing.id, {
         destination,
         language: destination === 'explore' && shareLanguage ? shareLanguage : undefined,
-        level: destination === 'explore' && shareLevel ? shareLevel : undefined,
+        level: destination === 'explore' && shareIsLearning && shareLevel ? shareLevel : undefined,
       });
       if (destination === 'explore') {
         setSharing(null);
@@ -284,15 +324,20 @@ export function MyContentsPage() {
         return;
       }
       const url = `${window.location.origin}${result.path}`;
+      const telegramShareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(sharing.title || '')}`;
       hapticFeedback('light');
       if (webApp?.openTelegramLink) {
         setSharing(null);
-        webApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}`);
+        webApp.openTelegramLink(telegramShareUrl);
       } else {
-        await navigator.clipboard.writeText(url);
+        const telegramWindow = window.open(telegramShareUrl, '_blank');
+        if (telegramWindow) telegramWindow.opener = null;
         setSharing(null);
-        setPlannedToast(t('content.linkCopied'));
-        window.setTimeout(() => setPlannedToast(''), 3000);
+        if (!telegramWindow) {
+          await navigator.clipboard.writeText(url);
+          setPlannedToast(t('content.linkCopied'));
+          window.setTimeout(() => setPlannedToast(''), 3000);
+        }
       }
     } catch (err) {
       setShareError(err instanceof ApiError ? err.message : t('content.shareFailed'));
@@ -363,6 +408,10 @@ export function MyContentsPage() {
 
   return (
     <main className="content-library-page">
+      <nav className="content-library-shelves" aria-label={t('content.libraryShelves')}>
+        <button type="button" className={shelf === 'mine' ? 'is-active' : ''} aria-current={shelf === 'mine' ? 'page' : undefined} onClick={() => setShelf('mine')}>{t('content.myLibrary')}</button>
+        <button type="button" className={shelf === 'clubs' ? 'is-active' : ''} aria-current={shelf === 'clubs' ? 'page' : undefined} onClick={() => setShelf('clubs')}>{t('content.sharedWithClubs')}</button>
+      </nav>
       <section className="content-library-command">
         {/* Search plus one toggle. Status chips, type chips and sort used to sit
             in three permanent rows above the library, so the content itself
@@ -380,7 +429,7 @@ export function MyContentsPage() {
               placeholder={t('myContents.searchYourLibrary')}
             />
           </label>
-          <button
+          {shelf === 'mine' && <button
             type="button"
             className="content-library-filter-toggle content-library-add-toggle"
             aria-label={t('myContents.addToLibrary')}
@@ -388,8 +437,8 @@ export function MyContentsPage() {
             onClick={() => { setAddError(''); setAddOpen(true); }}
           >
             <Plus size={18} aria-hidden="true" />
-          </button>
-          <button
+          </button>}
+          {shelf === 'mine' && <button
             type="button"
             className={`content-library-filter-toggle${filtersOpen ? ' is-open' : ''}`}
             onClick={() => setFiltersOpen((open) => !open)}
@@ -400,10 +449,10 @@ export function MyContentsPage() {
             {activeFilterCount > 0 && (
               <span className="content-library-filter-count">{activeFilterCount}</span>
             )}
-          </button>
+          </button>}
         </div>
 
-        {filtersOpen && (
+        {shelf === 'mine' && filtersOpen && (
           <div className="content-library-filter-panel">
             <div className="content-library-filters" aria-label={t('myContents.libraryStatusFilters')}>
               {STATUS_FILTERS.map((filter) => (
@@ -463,6 +512,7 @@ export function MyContentsPage() {
         )}
       </section>
 
+      {shelf === 'clubs' ? <ClubSharedShelf query={debouncedQuery} onSaved={() => setRefreshVersion((value) => value + 1)} /> : <>
       {error && <div className="content-library-error">{error}</div>}
 
       {loading ? (
@@ -509,6 +559,7 @@ export function MyContentsPage() {
           )}
         </section>
       ) : null}
+      </>}
 
       {plannedToast ? (
         <p className="content-library-planned-toast" role="status">{plannedToast}</p>
@@ -529,31 +580,57 @@ export function MyContentsPage() {
 
       <BottomSheet open={!!sharing} onClose={() => !shareBusy && setSharing(null)}
         title={t('content.share')} subtitle={sharing?.title || t('content.untitled')}>
-        <p className="content-library-sheet-note">{t(sharingIsPdf ? 'content.pdfShareNotice' : 'content.videoShareNotice')}</p>
-        <div className="content-library-share-fields">
-          <label>{t('content.language')}
-            <select value={shareLanguage} onChange={(event) => setShareLanguage(event.target.value)}>
-              <option value="">{t('content.unspecified')}</option>
-              {shareLanguage && !['en', 'fr', 'fa'].includes(shareLanguage) &&
-                <option value={shareLanguage}>{shareLanguage.toUpperCase()}</option>}
-              {['en', 'fr', 'fa'].map((code) => <option key={code} value={code}>{t(`learning.languages.${code}`)}</option>)}
-            </select>
-          </label>
-          <label>{t('content.level')}
-            <select value={shareLevel} onChange={(event) => setShareLevel(event.target.value)}>
-              <option value="">{t('content.unspecified')}</option>
-              {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map((level) => <option key={level} value={level}>{level}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="content-library-share-options">
-          <button type="button" className="plan-content-option" disabled={shareBusy} onClick={() => void shareItem('explore')}>
-            <span>{t('content.shareToExplore')}</span><small>{t('content.shareToExploreHint')}</small>
-          </button>
-          <button type="button" className="plan-content-option" disabled={shareBusy} onClick={() => void shareItem('link')}>
-            <span>{t('content.shareLink')}</span><small>{t('content.shareLinkHint')}</small>
-          </button>
-        </div>
+        {shareStep === 'choose' && <>
+          <p className="content-library-sheet-note">{t(sharingIsPdf ? 'content.pdfShareNotice' : 'content.videoShareNotice')}</p>
+          <div className="content-library-share-options">
+            <button type="button" className="plan-content-option" disabled={shareBusy} onClick={() => void shareItem('link')}>
+              <span>{t('content.shareLink')}</span><small>{t('content.shareLinkHint')}</small>
+            </button>
+            <button type="button" className="plan-content-option" disabled={shareBusy} onClick={() => void openClubShare()}>
+              <span>{t('content.shareToClub')}</span><small>{t('content.shareToClubHint')}</small>
+            </button>
+            <button type="button" className="plan-content-option" disabled={shareBusy} onClick={() => setShareStep('explore')}>
+              <span>{t('content.shareToExplore')}</span><small>{t('content.shareToExploreHint')}</small>
+            </button>
+          </div>
+        </>}
+        {shareStep === 'club' && <>
+          <button type="button" className="content-library-share-back" disabled={shareBusy} onClick={() => setShareStep('choose')}>{t('content.backToShareOptions')}</button>
+          <p className="content-library-sheet-note">{t('content.clubSharePreview')}</p>
+          {shareClubsLoading ? <p className="content-library-state">{t('myContents.loadingLibrary')}</p>
+            : shareClubs.length === 0 ? <p className="content-library-state">{t('content.noClubsToShare')}</p>
+            : <div className="content-library-share-clubs" role="radiogroup" aria-label={t('content.chooseClub')}>
+              {shareClubs.map((club) => <label key={club.club_id} className={selectedClubId === club.club_id ? 'is-selected' : ''}>
+                <input type="radio" name="shareClub" value={club.club_id} disabled={!['ready', 'connected'].includes(club.telegram_status)} checked={selectedClubId === club.club_id} onChange={() => setSelectedClubId(club.club_id)} />
+                <span>{club.name}{!['ready', 'connected'].includes(club.telegram_status) && <small> · {t('content.clubTelegramUnavailable')}</small>}</span>
+              </label>)}
+            </div>}
+          {selectedClubId && <p className="content-library-sheet-note">{t('content.clubShareConfirm', { club: shareClubs.find((club) => club.club_id === selectedClubId)?.name })}</p>}
+          <button type="button" className="btn btn-primary btn-block" disabled={!selectedClubId || shareBusy} onClick={() => void confirmClubShare()}>{shareBusy ? t('content.sharing') : t('content.postToClub')}</button>
+        </>}
+        {shareStep === 'explore' && <>
+          <button type="button" className="content-library-share-back" disabled={shareBusy} onClick={() => setShareStep('choose')}>{t('content.backToShareOptions')}</button>
+          <p className="content-library-sheet-note">{t('content.exploreSharePreview')}</p>
+          <div className="content-library-share-fields">
+            <label>{t('content.contentLanguage')}
+              <select value={shareLanguage} onChange={(event) => setShareLanguage(event.target.value)}>
+                <option value="">{t('content.unspecified')}</option>
+                {shareLanguage && !['en', 'fr', 'fa'].includes(shareLanguage) &&
+                  <option value={shareLanguage}>{shareLanguage.toUpperCase()}</option>}
+                {['en', 'fr', 'fa'].map((code) => <option key={code} value={code}>{t(`learning.languages.${code}`)}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="content-library-learning-toggle"><input type="checkbox" checked={shareIsLearning} onChange={(event) => setShareIsLearning(event.target.checked)} />{t('content.isLearningContent')}</label>
+          {shareIsLearning && <div className="content-library-share-fields"><label>{t('content.learningLevelOptional')}
+              <select value={shareLevel} onChange={(event) => setShareLevel(event.target.value)}>
+                <option value="">{t('content.unspecified')}</option>
+                {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map((level) => <option key={level} value={level}>{level}</option>)}
+              </select>
+            </label>
+          </div>}
+          <button type="button" className="btn btn-primary btn-block" disabled={shareBusy} onClick={() => void shareItem('explore')}>{shareBusy ? t('content.sharing') : t('content.publishToExplore')}</button>
+        </>}
         {shareError && <p className="content-library-error" role="alert">{shareError}</p>}
       </BottomSheet>
 

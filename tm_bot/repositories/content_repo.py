@@ -173,6 +173,14 @@ class ContentRepository:
                                       AND cm.status = 'active'
                                 )
                             )
+                              OR EXISTS (
+                                  SELECT 1 FROM content_club_shares s
+                                  JOIN club_members cm ON cm.club_id = s.club_id
+                                  JOIN clubs cl ON cl.club_id = s.club_id
+                                  WHERE s.content_id = c.id AND s.status = 'sent'
+                                    AND cm.user_id = :user_id AND cm.status = 'active'
+                                    AND COALESCE(cl.status, 'active') = 'active'
+                              )
                           )
                     )
                     """
