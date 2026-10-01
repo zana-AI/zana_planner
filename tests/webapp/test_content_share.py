@@ -145,8 +145,100 @@ def test_club_share_posts_only_after_reservation_and_records_delivery(monkeypatc
     assert result["already_shared"] is False
     assert [call[0] for call in calls] == ["reserve", "post", "finish"]
     assert calls[1][2]["chat_id"] == "-123"
+    assert calls[1][2]["parse_mode"] == "HTML"
+    assert calls[1][2]["text"].startswith('📚 <a href="https://xaana.club/pdf-reader?content_id=pdf">Lesson</a>')
+    assert "\nhttps://" not in calls[1][2]["text"]
     assert calls[1][2]["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("content_id=pdf")
     assert calls[2] == ("finish", "pdf", "club", 42)
+
+
+def test_club_video_share_sends_thumbnail_with_hidden_link(monkeypatch):
+    calls = []
+
+    class Repo:
+        def reserve_club_share(self, *_args):
+            return {"already_shared": False, "club_name": "French", "chat_id": "-123",
+                    "title": "French & news <today>", "path": "/youtube-watch?video_id=abcdefghijk&club_id=club",
+                    "thumbnail_url": "https://img.youtube.com/vi/abcdefghijk/mqdefault.jpg"}
+
+        def finish_club_share(self, *args):
+            calls.append(("finish", *args))
+
+        def fail_club_share(self, *_args):
+            calls.append(("failed",))
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_args): pass
+        async def post(self, url, **kwargs):
+            calls.append(("post", url, kwargs))
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 51}})
+
+    monkeypatch.setenv("BOT_TOKEN", "test-token")
+    monkeypatch.setattr(content_share_service.httpx, "AsyncClient", lambda **_kwargs: Client())
+    asyncio.run(content_share_service.share_content_with_club("video", "club", "7", Repo()))
+
+    assert [call[0] for call in calls] == ["post", "finish"]
+    assert calls[0][1].endswith("/sendPhoto")
+    photo = calls[0][2]["json"]
+    assert photo["photo"] == "https://img.youtube.com/vi/abcdefghijk/mqdefault.jpg"
+    assert photo["parse_mode"] == "HTML"
+    assert "French &amp; news &lt;today&gt;" in photo["caption"]
+    assert "\nhttps://" not in photo["caption"]
+    assert photo["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("club_id=club")
+
+
+def test_club_pdf_share_uploads_preview_and_falls_back_if_photo_is_rejected(monkeypatch):
+    calls = []
+
+    class Repo:
+        def reserve_club_share(self, *_args):
+            return {"already_shared": False, "club_name": "French", "chat_id": "-123",
+                    "title": "Reader", "path": "/pdf-reader?content_id=pdf&club_id=club",
+                    "thumbnail_storage_uri": "local://thumbnail/preview.jpg"}
+
+        def finish_club_share(self, *args):
+            calls.append(("finish", *args))
+
+        def fail_club_share(self, *_args):
+            calls.append(("failed",))
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_args): pass
+        async def post(self, url, **kwargs):
+            calls.append(("post", url, kwargs))
+            if url.endswith("/sendPhoto"):
+                return httpx.Response(400, json={"ok": False, "description": "bad photo"})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 52}})
+
+    async def preview(_client, _uri):
+        return b"\xff\xd8preview\xff\xd9"
+
+    monkeypatch.setenv("BOT_TOKEN", "test-token")
+    monkeypatch.setattr(content_share_service, "_pdf_thumbnail_bytes", preview)
+    monkeypatch.setattr(content_share_service.httpx, "AsyncClient", lambda **_kwargs: Client())
+    asyncio.run(content_share_service.share_content_with_club("pdf", "club", "7", Repo()))
+
+    assert [call[0] for call in calls] == ["post", "post", "finish"]
+    assert calls[0][1].endswith("/sendPhoto")
+    assert calls[0][2]["files"]["photo"][1].startswith(b"\xff\xd8")
+    assert calls[1][1].endswith("/sendMessage")
+    assert calls[1][2]["json"]["parse_mode"] == "HTML"
+
+
+def test_local_pdf_thumbnail_is_read_for_telegram_upload(monkeypatch, tmp_path):
+    preview = tmp_path / "preview.jpg"
+    preview.write_bytes(b"\xff\xd8preview\xff\xd9")
+
+    class Storage:
+        def resolve_local_storage_uri(self, uri):
+            assert uri == "local://thumbnail/preview.jpg"
+            return preview
+
+    monkeypatch.setattr(content_share_service, "ObjectStorageService", Storage)
+    payload = asyncio.run(content_share_service._pdf_thumbnail_bytes(None, "local://thumbnail/preview.jpg"))
+    assert payload == preview.read_bytes()
 
 
 def test_existing_club_share_does_not_post_again(monkeypatch):
