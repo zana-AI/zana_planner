@@ -85,6 +85,18 @@ def main() -> None:
                     updated += 1
         print(f"Processed {min(start + 50, len(ids))}/{len(ids)} videos")
     print(f"Matched content rows: {updated}")
+    if args.apply:
+        with get_db_session() as db:
+            captions = db.execute(text("""
+                UPDATE content AS c SET language = t.language
+                FROM video_transcript AS t
+                WHERE c.provider = 'youtube'
+                  AND NULLIF(TRIM(c.language), '') IS NULL
+                  AND c.metadata_json->>'video_id' = t.video_id
+                  AND t.is_generated = TRUE AND t.cue_count > 0
+                  AND t.language ~ '^[a-z]{2,3}(-[A-Za-z0-9]+)*$'
+            """))
+            print(f"Languages filled from generated captions: {captions.rowcount}")
 
 
 if __name__ == "__main__":

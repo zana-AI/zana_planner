@@ -4,6 +4,7 @@ import re
 import secrets
 
 from sqlalchemy import text
+from repositories.video_transcript_repo import fill_content_language_from_caption
 from db.postgres_db import get_db_session
 
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -126,6 +127,8 @@ class VideoTranscriptFetchQueueRepository:
                          "generated": transcript.get("is_generated", True), "cues": json.dumps(cues),
                          "count": len(cues), "duration": max(c["end"] for c in cues),
                          "source": "caption_relay" if worker_id else "caption_server"})
+                fill_content_language_from_caption(session, video_id, transcript.get("language"),
+                                                   transcript.get("is_generated", True), len(cues))
                 status, delay = "completed", 0
             elif job["fetch_stage"] == "server":
                 status, delay = "queued", 0

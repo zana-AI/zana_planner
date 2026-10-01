@@ -4,11 +4,25 @@ Repository for cached YouTube transcripts (see migration 036_video_transcript).
 Populated by the server dispatcher or an authenticated Xaana Caption Relay.
 """
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 
 from db.postgres_db import get_db_session
+
+
+def fill_content_language_from_caption(session, video_id: str, language: Optional[str],
+                                       is_generated: bool, cue_count: int) -> None:
+    """Use a nonempty generated caption track only when audio language is missing."""
+    if not (cue_count and is_generated and language and re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z0-9]+)*", language)):
+        return
+    session.execute(text("""
+        UPDATE content SET language = :language
+        WHERE provider = 'youtube'
+          AND NULLIF(TRIM(language), '') IS NULL
+          AND metadata_json->>'video_id' = :video_id
+    """), {"language": language, "video_id": video_id})
 
 
 class VideoTranscriptRepository:
@@ -92,6 +106,7 @@ class VideoTranscriptRepository:
                     "source": source,
                 },
             )
+            fill_content_language_from_caption(session, video_id, language, is_generated, len(cues))
         return len(cues)
 
     def list_video_ids(self) -> List[str]:
