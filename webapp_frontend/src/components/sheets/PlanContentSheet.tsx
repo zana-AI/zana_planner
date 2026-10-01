@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../api/client';
 import { useTelegramWebApp } from '../../hooks/useTelegramWebApp';
 import { BottomSheet } from '../ui/BottomSheet';
@@ -38,6 +38,21 @@ function thisWeekend(): Date {
   return when;
 }
 
+function localDateTime(when: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
+}
+
+function suggestedCustomTime(): string {
+  // A half-hour lead time, rounded up to a quarter-hour on the device clock.
+  const earliest = Date.now() + 30 * 60000;
+  let candidate = Math.ceil(earliest / (15 * 60000)) * 15 * 60000;
+  // During the autumn clock change, an ambiguous local time resolves to the
+  // first occurrence. Advance until the editable value keeps its lead time.
+  while (new Date(localDateTime(new Date(candidate))).getTime() < earliest) candidate += 15 * 60000;
+  return localDateTime(new Date(candidate));
+}
+
 /**
  * "Watch later" — but when?
  *
@@ -61,6 +76,13 @@ export function PlanContentSheet({
   const [customValue, setCustomValue] = useState('');
   const [customOpen, setCustomOpen] = useState(false);
 
+  useEffect(() => {
+    if (!open) return;
+    setCustomValue(suggestedCustomTime());
+    setCustomOpen(false);
+    setError('');
+  }, [open, contentId]);
+
   // Round a known runtime up to the nearest five minutes; otherwise a sitting
   // that is long enough to be worth putting in a calendar.
   const durationMin = useMemo(() => {
@@ -70,6 +92,10 @@ export function PlanContentSheet({
 
   const plan = async (when: Date, label: string) => {
     if (!contentId) return;
+    if (!Number.isFinite(when.getTime()) || when.getTime() <= Date.now()) {
+      setError(t('content.planFutureTime'));
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -126,7 +152,8 @@ export function PlanContentSheet({
             <input
               type="datetime-local"
               value={customValue}
-              onChange={(event) => setCustomValue(event.target.value)}
+              min={localDateTime(new Date())}
+              onChange={(event) => { setCustomValue(event.target.value); setError(''); }}
               aria-label={t('content.pickATime')}
             />
             <button

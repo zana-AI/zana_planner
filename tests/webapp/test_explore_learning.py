@@ -28,10 +28,14 @@ def db(tmp_path, monkeypatch):
             'CREATE TABLE club_members (club_id TEXT, user_id TEXT, status TEXT)',
             'CREATE TABLE video_transcript (video_id TEXT, language TEXT, cues JSON, cue_count INT, duration_seconds REAL)',
             'CREATE TABLE content (metadata_json JSON, canonical_url TEXT, duration_seconds REAL, language TEXT, visibility TEXT, updated_at TEXT)',
+            'CREATE TABLE user_content (user_id TEXT, content_id TEXT)',
             "INSERT INTO clubs VALUES ('public','Public','Open learning','public','active'),('mine','Mine','Private','private','active'),('other','Other','Secret','private','active'),('old','Old','Archived','public','archived')",
             "INSERT INTO club_members VALUES ('mine','42','active'),('other','42','left'),('old','42','active')",
             "INSERT INTO video_transcript VALUES ('abcdefghijk','fr','[{\"text\":\"Bonjour\"}]',1,80),('empty','en','[]',1,100),('invalid','en','{}',1,100)",
             "INSERT INTO content VALUES ('{\"video_id\":\"abcdefghijk\"}','https://www.youtube.com/watch?v=abcdefghijk',120,'fr','public','2026-01-01')",
+            'ALTER TABLE content ADD COLUMN id TEXT',
+            'ALTER TABLE content ADD COLUMN original_url TEXT',
+            "UPDATE content SET id='main-video'",
         ]:
             session.execute(text(sql))
 
@@ -111,3 +115,23 @@ def test_discovery_requires_authentication(client):
     http, app, _ = client
     app.dependency_overrides.clear()
     assert http.get('/api/explore').status_code == 401
+
+
+def test_saved_bookmarks_are_personal_and_do_not_mutate_the_shared_catalog(client, db):
+    http, app, config = client
+    with db.begin() as session:
+        session.execute(text("INSERT INTO user_content VALUES ('42','main-video')"))
+    assert http.get('/api/explore').json()['categories'][0]['topics'][0]['items'][0]['is_saved'] is True
+    assert 'is_saved' not in config.model_dump()['categories'][0]['topics'][0]['items'][0]
+    app.dependency_overrides[explore.get_current_user] = lambda: 99
+    assert http.get('/api/explore').json()['categories'][0]['topics'][0]['items'][0]['is_saved'] is False
+
+
+def test_saved_video_alias_and_pdf_identity_are_recognized(db):
+    with db.begin() as session:
+        session.execute(text("""INSERT INTO content (id, original_url, metadata_json)
+            VALUES ('alias','https://youtu.be/ZYXWVUTSRQP?si=tracking','{}'), ('pdf',NULL,'{}')"""))
+        session.execute(text("INSERT INTO user_content VALUES ('42','alias'),('42','pdf'),('99','main-video')"))
+    ids, videos = explore_repo.ExploreRepository().saved_content('42')
+    assert ids == {'alias', 'pdf'}
+    assert videos == {'ZYXWVUTSRQP'}

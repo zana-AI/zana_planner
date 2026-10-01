@@ -34,7 +34,8 @@
 .explore-card-media-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .explore-card-quick-actions { position: relative; z-index: 2; }
 .explore-card-quick-actions button { flex: 0 0 38px; }
-.explore-card-quick-actions button.is-done { color: var(--good-500); }
+.explore-card-quick-actions button.is-done { color: var(--good-500); opacity: 1; }
+.explore-card-saved { margin: 0; color: var(--good-500); font-size: 12px; }
 .explore-card.is-compact { grid-template-columns: 48px minmax(0, 1fr); }
 .explore-card.is-compact .explore-card-media { aspect-ratio: 1; border: 1px solid color-mix(in srgb, var(--kind-accent) 25%, transparent); background: linear-gradient(145deg, color-mix(in srgb, var(--kind-accent) 20%, transparent), transparent); border-radius: 14px; }
 .explore-card.is-compact .explore-card-media svg { width: 23px; height: 23px; }

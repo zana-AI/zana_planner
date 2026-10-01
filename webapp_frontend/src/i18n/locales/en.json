@@ -564,6 +564,7 @@
     "pickATime": "Pick a time",
     "planNote": "Blocks {{minutes}} minutes. You can attach it to a promise later.",
     "plannedFor": "Planned for {{when}}.",
+    "planFutureTime": "Choose a date and time in the future.",
     "planFailed": "Could not plan that. Try again.",
     "study": "Study",
     "deckDue_one": "{{count, num}} to review",
