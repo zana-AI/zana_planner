@@ -344,6 +344,7 @@ class ContentRepository:
         limit: int = 20,
         q: Optional[str] = None,
         content_type: Optional[str] = None,
+        language: Optional[str] = None,
         sort: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return joined content + user_content + rollup rows for the library."""
@@ -364,6 +365,12 @@ class ContentRepository:
             else:
                 conditions.append("c.content_type = :content_type")
                 params["content_type"] = content_type
+        if language and language != "all":
+            if language == "unknown":
+                conditions.append("NULLIF(TRIM(c.language), '') IS NULL")
+            else:
+                conditions.append("LOWER(SPLIT_PART(c.language, '-', 1)) = :language")
+                params["language"] = language.lower()
         if q and q.strip():
             params["q"] = f"%{q.strip()}%"
             conditions.append(
@@ -478,7 +485,7 @@ class ContentRepository:
         with get_db_session() as session:
             rows = session.execute(
                 text(f"""
-                    SELECT uc.status, c.content_type, c.provider, c.metadata_json
+                    SELECT uc.status, c.content_type, c.provider, c.metadata_json, c.language
                     FROM user_content uc
                     JOIN content c ON c.id = uc.content_id
                     WHERE {" AND ".join(where)}
@@ -488,6 +495,7 @@ class ContentRepository:
 
         status_counts: Dict[str, int] = {}
         type_counts: Dict[str, int] = {}
+        language_counts: Dict[str, int] = {}
         for row in rows:
             status_value = str(row.get("status") or "saved")
             status_counts[status_value] = status_counts.get(status_value, 0) + 1
@@ -508,7 +516,9 @@ class ContentRepository:
             provider = str(row.get("provider") or "").lower()
             type_value = "pdf" if provider == "telegram_pdf" or mime == "application/pdf" else str(row.get("content_type") or "other")
             type_counts[type_value] = type_counts.get(type_value, 0) + 1
-        return {"status": status_counts, "content_type": type_counts}
+            language_value = str(row.get("language") or "").strip().lower().split("-", 1)[0] or "unknown"
+            language_counts[language_value] = language_counts.get(language_value, 0) + 1
+        return {"status": status_counts, "content_type": type_counts, "language": language_counts}
 
     def update_user_content_progress(
         self,

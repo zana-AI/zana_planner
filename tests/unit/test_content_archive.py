@@ -17,9 +17,9 @@ def archive_db(monkeypatch):
             last_interaction_at TEXT, total_consumed_seconds REAL, completed_at TEXT
         )'''))
         connection.execute(text('''CREATE TABLE content (
-            id TEXT, content_type TEXT, provider TEXT, metadata_json TEXT
+            id TEXT, content_type TEXT, provider TEXT, metadata_json TEXT, language TEXT
         )'''))
-        connection.execute(text("INSERT INTO content VALUES ('v', 'video', 'youtube', '{}'), ('p', 'text', 'telegram_pdf', '{}')"))
+        connection.execute(text("INSERT INTO content VALUES ('v', 'video', 'youtube', '{}', 'fr-FR'), ('p', 'text', 'telegram_pdf', '{}', NULL)"))
         connection.execute(text('''INSERT INTO user_content VALUES
             ('42', 'v', 'completed', 'my notes', 5, 1, 120, 'seconds', 'before', 120, 'finished'),
             ('other', 'v', 'saved', NULL, NULL, 0, 0, 'seconds', NULL, 0, NULL),
@@ -66,8 +66,9 @@ def test_late_progress_does_not_unarchive(archive_db):
 def test_status_facets_include_archive_but_main_library_type_counts_do_not(archive_db):
     _, repo = archive_db
     default = repo.get_user_content_facets('42')
-    assert default == {'status': {'completed': 1, 'archived': 1}, 'content_type': {'video': 1}}
+    assert default == {'status': {'completed': 1, 'archived': 1}, 'content_type': {'video': 1}, 'language': {'fr': 1}}
     archived = repo.get_user_content_facets('42', status='archived')
     assert archived['status'] == default['status']
     assert archived['content_type'] == {'pdf': 1}
+    assert archived['language'] == {'unknown': 1}
     assert repo.get_user_content_facets('42', status='saved')['content_type'] == {}

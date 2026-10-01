@@ -742,6 +742,7 @@ export interface HeatmapData {
 export interface MyContentsFacets {
   status?: Record<string, number>;
   content_type?: Record<string, number>;
+  language?: Record<string, number>;
 }
 
 export interface ConsumeEventRequest {

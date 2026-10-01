@@ -135,6 +135,7 @@ export function MyContentsPage() {
   // a filter that hides what you just saved reads as the save having failed.
   const [status, setStatus] = useState<StatusFilter>('all');
   const [contentType, setContentType] = useState<TypeFilter>('all');
+  const [language, setLanguage] = useState('all');
   const [sort, setSort] = useState<SortKey>('added');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -189,6 +190,7 @@ export function MyContentsPage() {
         {
           q: debouncedQuery || undefined,
           content_type: contentType === 'all' ? undefined : contentType,
+          language: language === 'all' ? undefined : language,
           sort,
         },
       );
@@ -209,7 +211,7 @@ export function MyContentsPage() {
         setLoadingMore(false);
       }
     }
-  }, [contentType, debouncedQuery, sort, status]);
+  }, [contentType, debouncedQuery, language, sort, status]);
 
   useEffect(() => {
     void loadContents();
@@ -345,14 +347,16 @@ export function MyContentsPage() {
     return [
       status !== 'all',
       contentType !== 'all',
+      language !== 'all',
       sort !== 'added',
       Boolean(debouncedQuery),
     ].filter(Boolean).length;
-  }, [contentType, debouncedQuery, sort, status]);
+  }, [contentType, debouncedQuery, language, sort, status]);
 
   const resetFilters = () => {
     setStatus('all');
     setContentType('all');
+    setLanguage('all');
     setQuery('');
     setSort('added');
   };
@@ -434,6 +438,15 @@ export function MyContentsPage() {
             </div>
 
             <div className="content-library-filter-foot">
+              <label className="content-library-sort">
+                <span>{t('myContents.languageFilter')}</span>
+                <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+                  <option value="all">{t('myContents.allLanguages')}</option>
+                  {Object.entries(facets.language || {}).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => (
+                    <option key={code} value={code}>{code === 'unknown' ? t('myContents.unknownLanguage') : t(`learning.languages.${code}`, { defaultValue: code.toUpperCase() })} ({count})</option>
+                  ))}
+                </select>
+              </label>
               <label className="content-library-sort">
                 <span>{t('myContents.sort')}</span>
                 <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
