@@ -89,6 +89,25 @@ def _add_explore_item(document: dict, content: dict, path: str, video_id: str | 
 
 
 class ExploreRepository:
+    def saved_content(self, user_id: str) -> tuple[set[str], set[str]]:
+        """The viewer's Library identities, including alternate URLs for a video."""
+        with get_db_session() as session:
+            rows = session.execute(text("""
+                SELECT c.id, c.canonical_url, c.original_url, c.metadata_json
+                FROM user_content uc JOIN content c ON c.id = uc.content_id
+                WHERE uc.user_id = :user_id
+            """), {"user_id": str(user_id)}).mappings().all()
+        content_ids, video_ids = set(), set()
+        for row in rows:
+            content = dict(row)
+            content_ids.add(str(content["id"]))
+            if isinstance(content.get("metadata_json"), str):
+                content["metadata_json"] = json.loads(content["metadata_json"])
+            video_id = _youtube_video_id(content)
+            if video_id:
+                video_ids.add(video_id)
+        return content_ids, video_ids
+
     def share_library_content(self, content_id: str, user_id: str, destination: str,
                               language: str | None = None, level: str | None = None) -> dict:
         """Make an owned PDF linkable, or explicitly list a saved item in Explore.

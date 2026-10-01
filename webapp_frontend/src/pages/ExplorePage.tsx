@@ -5,7 +5,7 @@ import { UsersRound } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { ExploreCard } from '../components/ExploreCard';
 import type { ExploreCatalog } from '../types';
-import { catalogEntries, exploreFilter, exploreFilterParams, EXPLORE_FILTERS } from '../utils/exploreLearning';
+import { catalogEntries, exploreFilter, exploreFilterParams, EXPLORE_FILTERS, youTubeUrlFor, type LearningEntry } from '../utils/exploreLearning';
 import './explore.css';
 
 export function ExplorePage() {
@@ -31,6 +31,17 @@ export function ExplorePage() {
     if (subjectId) navigate('/explore?' + next);
     else setParams(next);
   };
+  const markSaved = (entry: LearningEntry) => {
+    const videoUrl = youTubeUrlFor(entry.item);
+    setCatalog(current => current && ({ ...current, categories: current.categories.map(category => ({
+      ...category, topics: category.topics.map(topic => ({ ...topic, items: topic.items.map(item =>
+        (category.id === entry.subjectId && item.id === entry.item.id)
+          || (entry.item.content_id && item.content_id === entry.item.content_id)
+          || (videoUrl && youTubeUrlFor(item) === videoUrl)
+          ? { ...item, is_saved: true } : item),
+      })),
+    })) }));
+  };
   if (error) return <main className="app"><p role="alert">{t('templates.loadFailed')}</p><button className="explore-action" onClick={() => setAttempt(a => a + 1)}>{t('common.tryAgain')}</button></main>;
   if (!catalog) return <main className="app"><p role="status">{t('common.loading')}</p></main>;
 
@@ -55,7 +66,7 @@ export function ExplorePage() {
     </div>
     {filter === 'clubs' && <div className="explore-club-tools"><p>{t('learning.clubsHint')}</p><button type="button" className="explore-action" onClick={() => navigate('/clubs')}>{t('learning.manageClubs')}</button></div>}
     <div className="explore-list">
-      {entries.map(entry => <ExploreCard key={entry.subjectId + ':' + entry.item.id} entry={entry} />)}
+      {entries.map(entry => <ExploreCard key={entry.subjectId + ':' + entry.item.id} entry={entry} onSaved={() => markSaved(entry)} />)}
       {clubs.map(club => <article key={club.club_id} className="explore-card is-compact" data-kind="club">
         <div className="explore-card-media" aria-hidden="true"><UsersRound size={30} /></div>
         <div className="explore-card-body">

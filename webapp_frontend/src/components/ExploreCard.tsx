@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Bookmark, BookOpen, Check, FileText, GraduationCap, Layers, Play, Repeat, Video } from 'lucide-react';
+import { Bookmark, BookOpen, FileText, GraduationCap, Layers, Play, Repeat, Video } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useTelegramWebApp } from '../hooks/useTelegramWebApp';
 import { itemKind } from '../pages/exploreVocabulary';
@@ -12,11 +12,17 @@ import { ContentMetadataBadges } from './ContentMetadataBadges';
 
 const icons = { video: Video, course: GraduationCap, deck: Layers, book: BookOpen, habit: Repeat };
 
-export function ExploreCard({ entry }: { entry: LearningEntry }) {
+export function ExploreCard({ entry, onSaved }: { entry: LearningEntry; onSaved?: () => void }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { hapticFeedback } = useTelegramWebApp();
   const [state, setState] = useState<'idle' | 'adding' | 'added' | 'failed'>('idle');
+  const [savedNotice, setSavedNotice] = useState(false);
+  useEffect(() => {
+    if (!savedNotice) return;
+    const timer = window.setTimeout(() => setSavedNotice(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [savedNotice]);
   const { item, topicId, subjectTitle } = entry;
   const kind = itemKind(topicId) || 'book';
   const isVideo = kind === 'video';
@@ -24,7 +30,7 @@ export function ExploreCard({ entry }: { entry: LearningEntry }) {
   const isMedia = isVideo || isPdf;
   const Icon = icons[kind as keyof typeof icons] || BookOpen;
   const youtubeUrl = youTubeUrlFor(item);
-  const alreadyMine = state === 'added';
+  const alreadyMine = item.is_saved === true || state === 'added';
   const duration = videoDuration(item.duration_seconds);
   const canSave = Boolean(youtubeUrl || item.content_id);
 
@@ -38,6 +44,7 @@ export function ExploreCard({ entry }: { entry: LearningEntry }) {
     } else if (item.native_ref?.startsWith('/') && !item.native_ref.startsWith('//')) navigate(item.native_ref);
   };
   const add = async () => {
+    if (state === 'adding' || alreadyMine) return;
     setState('adding');
     try {
       if (item.content_id) {
@@ -48,7 +55,7 @@ export function ExploreCard({ entry }: { entry: LearningEntry }) {
         if (!id) throw new Error('Missing content id');
         await apiClient.addUserContent(id);
       }
-      setState('added'); hapticFeedback('success');
+      setState('added'); setSavedNotice(true); onSaved?.(); hapticFeedback('success');
     } catch { setState('failed'); hapticFeedback('error'); }
   };
 
@@ -62,10 +69,10 @@ export function ExploreCard({ entry }: { entry: LearningEntry }) {
       </div>
       {canSave && <div className="content-card-quick-actions explore-card-quick-actions">
         <button type="button" className={alreadyMine ? 'is-done' : ''}
-          title={t(saveActionKey(true, state, false))}
-          aria-label={t(saveActionKey(true, state, false))}
+          title={t(saveActionKey(true, state, alreadyMine))}
+          aria-label={t(saveActionKey(true, state, alreadyMine))}
           disabled={state === 'adding' || alreadyMine} onClick={() => void add()}>
-          {alreadyMine ? <Check size={17} aria-hidden="true" /> : <Bookmark size={17} aria-hidden="true" />}
+          <Bookmark size={17} fill={alreadyMine ? 'currentColor' : 'none'} aria-hidden="true" />
         </button>
       </div>}
     </div>
@@ -87,6 +94,7 @@ export function ExploreCard({ entry }: { entry: LearningEntry }) {
       </div>}
       {item.class_offer && <p className="explore-card-offer">{item.class_offer}</p>}
       {state === 'failed' && <p role="alert" className="explore-card-error">{t('explore.addFailed')}</p>}
+      {savedNotice && <p role="status" className="explore-card-saved">{t('learning.savedToLibrary')}</p>}
     </div>
   </article>;
 }

@@ -1,12 +1,13 @@
 """Data-driven Explore catalog endpoint."""
 
 import re
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, Depends, Response
 
 from ..dependencies import get_current_user
 from services.explore_config import explore_config_loader, separate_level
-from repositories.explore_repo import ExploreRepository
+from repositories.explore_repo import ExploreRepository, _youtube_video_id
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["explore"])
@@ -35,6 +36,14 @@ def get_explore_catalog(response: Response, user_id: int = Depends(get_current_u
     except Exception:
         logger.warning("Explore video metadata unavailable", exc_info=True)
         catalog["metadata_available"] = False
+    try:
+        saved_ids, saved_videos = repo.saved_content(str(user_id))
+        for item, match in videos:
+            content_id = item.get("content_id") or parse_qs(urlparse(item.get("native_ref") or "").query).get("content_id", [None])[0]
+            video_id = match[1] if match else _youtube_video_id({"original_url": item.get("url")})
+            item["is_saved"] = content_id in saved_ids or video_id in saved_videos
+    except Exception:
+        logger.warning("Explore Library state unavailable", exc_info=True)
     try:
         catalog["clubs"] = repo.clubs(user_id)
     except Exception:
