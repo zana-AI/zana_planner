@@ -682,6 +682,7 @@ class UpdateHighlightRequest(BaseModel):
     selected_text: Optional[str] = Field(default=None, max_length=8000)
     note: Optional[str] = Field(default=None, max_length=8000)
     color: Optional[str] = Field(default=None, max_length=32)
+    club_visible: Optional[bool] = None
 
 
 class AnalyzeContentRequest(BaseModel):

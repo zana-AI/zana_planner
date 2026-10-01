@@ -676,6 +676,7 @@ select:focus {
 
 .pdf-reader-coreaders-drawer .pdf-reader-coreader-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -701,6 +702,10 @@ select:focus {
   font-weight: 600;
   white-space: nowrap;
 }
+
+.pdf-reader-coreader-progress { display: block; width: 100%; height: 6px; border-radius: 999px; overflow: hidden; background: rgba(237, 243, 255, 0.13); }
+.pdf-reader-coreader-progress > span { display: block; height: 100%; border-radius: inherit; background: #22c8dc; }
+.pdf-reader-club-visibility { margin: 4px 0 10px; color: rgba(237, 243, 255, 0.65); font-size: 12px; line-height: 1.5; }
 
 .add-to-deck-sheet {
   display: grid;

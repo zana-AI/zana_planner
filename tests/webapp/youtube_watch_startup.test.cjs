@@ -11,6 +11,7 @@ after(async () => { await browser?.close(); });
 async function openViewer(t, options = {}) {
   const page = await browser.newPage({viewport: options.mobile ? {width: 390, height: 844} : {width: 1100, height: 850}});
   const errors = [], reports = [];
+  const clubNotes = [];
   let transcriptRequests = 0;
   page.on('pageerror', error => errors.push(error.message));
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
@@ -34,13 +35,40 @@ async function openViewer(t, options = {}) {
       reports.push(route.request().postDataJSON().stats);
       return route.fulfill({json: {ok: true}});
     }
+    if (options.club && url.pathname.endsWith('/co-readers')) {
+      assert.equal(url.searchParams.get('club_id'), 'club-1');
+      assert.equal(route.request().headers().authorization, 'Bearer test-session');
+      return route.fulfill({json: {items: [{user_id: '7', name: 'Marzieh', progress_ratio: 0.4}]}});
+    }
+    if (options.club && url.pathname.endsWith('/club-video-annotations')) {
+      if (route.request().method() === 'POST') {
+        assert.equal(route.request().postDataJSON().club_id, 'club-1');
+        clubNotes.push({...route.request().postDataJSON(), id: 'note-1', author_name: 'You', is_mine: true});
+      } else {
+        assert.equal(url.searchParams.get('club_id'), 'club-1');
+      }
+      return route.fulfill({json: route.request().method() === 'POST' ? {annotation_id: 'note-1'} : {items: clubNotes}});
+    }
     if (url.hostname === 'xaana.test') return route.fulfill({json: {items: []}});
     // Never depend on YouTube, Telegram or a live account for this regression test.
     return route.fulfill({body: '', contentType: url.pathname.endsWith('.js') || url.pathname === '/iframe_api' ? 'application/javascript' : 'text/html'});
   });
-  await page.goto('https://xaana.test/youtube-watch?video_id=du-G1B785Fs&content_id=item&lang=' + (options.lang || 'en'));
+  await page.goto('https://xaana.test/youtube-watch?video_id=du-G1B785Fs&content_id=item&lang=' + (options.lang || 'en') + (options.club ? '&club_id=club-1' : ''));
   return {page, reports, transcriptRequests: () => transcriptRequests};
 }
+
+test('club video shows member progress and saves a timestamped note', async t => {
+  const {page} = await openViewer(t, {club: true});
+  await expect(page.locator('#clubActivity')).toBeVisible();
+  await expect(page.locator('#clubReaderList')).toContainText('Marzieh');
+  await page.locator('#clubActivity summary').click();
+  await installPlayer(page);
+  await page.evaluate(() => { window.testTime = 42; });
+  await page.locator('#clubNoteBody').fill('This phrase is useful');
+  await page.locator('#clubNoteSubmit').click();
+  await expect(page.locator('#clubNoteList')).toContainText('This phrase is useful');
+  await expect(page.locator('#clubNoteList')).toContainText('0:42');
+});
 
 async function installPlayer(page) {
   await page.evaluate(() => {

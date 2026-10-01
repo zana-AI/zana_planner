@@ -54,6 +54,13 @@ class FakeRepo:
             if h["user_id"] == str(user_id) and h["content_id"] == str(content_id) and h["asset_id"] == str(asset_id)
         ]
 
+    def list_visible_highlights(self, viewer_user_id, content_id, asset_id,
+                                teacher_user_id=None, as_user_id=None):
+        if as_user_id and str(as_user_id) != str(viewer_user_id):
+            raise PermissionError("Only the club owner may view another member's highlights")
+        return [{**item, "is_mine": True} for item in
+                self.list_highlights(viewer_user_id, content_id, asset_id)]
+
     def create_highlight(self, user_id, content_id, asset_id, page_index, rects, selected_text=None, note=None, color=None, copied_from_highlight_id=None, migration_status=None):
         self._seq += 1
         hid = f"h-{self._seq}"
@@ -71,6 +78,7 @@ class FakeRepo:
             "updated_at": "2026-05-04T00:00:00Z",
             "copied_from_highlight_id": copied_from_highlight_id,
             "migration_status": migration_status,
+            "club_visible": True,
         }
         self.highlights.append(item)
         return hid
@@ -81,7 +89,8 @@ class FakeRepo:
                 return item
         return None
 
-    def update_highlight(self, user_id, content_id, highlight_id, rects=None, selected_text=None, note=None, color=None):
+    def update_highlight(self, user_id, content_id, highlight_id, rects=None, selected_text=None,
+                         note=None, color=None, club_visible=None):
         for item in self.highlights:
             if item["id"] == str(highlight_id) and item["user_id"] == str(user_id) and item["content_id"] == str(content_id):
                 if rects is not None:
@@ -92,6 +101,8 @@ class FakeRepo:
                     item["note"] = note
                 if color is not None:
                     item["color"] = color
+                if club_visible is not None:
+                    item["club_visible"] = club_visible
                 return True
         return False
 
@@ -231,14 +242,50 @@ def test_pdf_highlight_crud(monkeypatch):
 
     patched = client.patch(
         f"/api/content/content-1/highlights/{highlight_id}",
-        json={"note": "updated note"},
+        json={"note": "updated note", "club_visible": False},
     )
     assert patched.status_code == 200
     assert patched.json()["updated"] is True
+    assert client.get("/api/content/content-1/highlights?asset_id=asset-1").json()["items"][0]["club_visible"] is False
 
     deleted = client.delete(f"/api/content/content-1/highlights/{highlight_id}")
     assert deleted.status_code == 200
     assert deleted.json()["deleted"] is True
+
+
+def test_club_activity_requires_active_share_membership(monkeypatch):
+    from repositories import content_share_repo
+
+    app, _ = _build_app(monkeypatch)
+    calls = []
+
+    class FakeShareRepo:
+        def is_active_member_of_share(self, content_id, club_id, user_id):
+            calls.append((content_id, club_id, user_id))
+            return club_id == "joined-club"
+
+        def list_activity(self, content_id, club_id):
+            return [{"user_id": "7", "name": "Reader", "progress_ratio": 0.5}]
+
+        def list_club_highlights(self, content_id, club_id, asset_id, viewer_user_id, as_user_id):
+            return [{"id": "mark-1", "note": "shared", "is_mine": False}]
+
+        def list_video_annotations(self, content_id, club_id, user_id):
+            return [{"id": "note-1", "body": "shared", "is_mine": False}]
+
+    monkeypatch.setattr(content_share_repo, "ContentShareRepository", FakeShareRepo)
+    client = TestClient(app)
+
+    assert client.get("/api/content/content-1/co-readers?club_id=other-club").status_code == 403
+    assert client.get("/api/content/content-1/highlights?asset_id=asset-1&club_id=other-club").status_code == 403
+    assert client.get("/api/content/content-1/club-video-annotations?club_id=other-club").status_code == 403
+    assert client.get("/api/content/content-1/pdf?club_id=other-club").status_code == 403
+
+    assert client.get("/api/content/content-1/co-readers?club_id=joined-club").json()["items"][0]["progress_ratio"] == 0.5
+    assert client.get("/api/content/content-1/highlights?asset_id=asset-1&club_id=joined-club").json()["items"][0]["note"] == "shared"
+    assert client.get("/api/content/content-1/club-video-annotations?club_id=joined-club").json()["items"][0]["body"] == "shared"
+    assert client.get("/api/content/content-1/pdf?club_id=joined-club").json()["club_id"] == "joined-club"
+    assert calls and all(call[2] == "7" for call in calls)
 
 
 def test_local_pdf_open_and_file(monkeypatch, tmp_path):

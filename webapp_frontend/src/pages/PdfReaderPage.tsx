@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent, type WheelEvent } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, MoreHorizontal, PanelRight, Plus, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff, MoreHorizontal, PanelRight, Plus, ScanLine, Trash2, Users, X, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { flushSync } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -82,6 +82,7 @@ export function PdfReaderPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const contentId = params.get('content_id') || '';
+  const requestedClubId = params.get('club_id') || '';
   const returnTo = params.get('return_to') || '';
   const requestedPage = Number(params.get('page'));
 
@@ -106,13 +107,12 @@ export function PdfReaderPage() {
   const [pageTurnDirection, setPageTurnDirection] = useState<'next' | 'prev' | null>(null);
   const [highlightsOpen, setHighlightsOpen] = useState(false);
 
-  // Content sharing context (club_id set only when this PDF is shared to a
-  // club). Drives the co-reading poll and the teacher's roster/switch-student
-  // panel — see the annotation-sharing design in the UX review this came
-  // from: teacher = club owner, students never see each other's highlights.
+  // Club shares show a member roster and shared annotations. Legacy class
+  // material keeps its owner-only roster when no share ID is present.
   const [contentTitle, setContentTitle] = useState('');
   const [contentLanguage, setContentLanguage] = useState('');
   const [clubId, setClubId] = useState<string | null>(null);
+  const [clubShareId, setClubShareId] = useState<string | null>(null);
   const [isTeacher, setIsTeacher] = useState(false);
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [coReaders, setCoReaders] = useState<ContentCoReader[]>([]);
@@ -336,16 +336,20 @@ export function PdfReaderPage() {
   const load = async () => {
     if (!canOpen || !canLoadApi) return;
     setLoading(true);
+    setClubShareId(null);
+    setViewingUserId(null);
+    setCoReadersOpen(false);
     setError('');
     setPdfUrl('');
     setPdfBytes(null);
     try {
-      const open = await apiClient.getPdfOpen(contentId);
+      const open = await apiClient.getPdfOpen(contentId, requestedClubId || undefined);
       setAssetId(open.asset_id);
       setPdfUrl(open.pdf_url);
       setContentTitle(open.title || '');
       setContentLanguage(open.language || '');
       setClubId(open.club_id || null);
+      setClubShareId(requestedClubId && open.club_id === requestedClubId ? requestedClubId : null);
       setIsTeacher(Boolean(open.is_teacher));
       const blob = await apiClient.fetchPdfBlob(open.pdf_url);
       setPdfBytes(new Uint8Array(await blob.arrayBuffer()));
@@ -367,7 +371,7 @@ export function PdfReaderPage() {
       setCoverageBuckets(normalizedBuckets);
       setProgressRatio(computeCoverageRatio(normalizedBuckets));
 
-      const h = await apiClient.getPdfHighlights(contentId, open.asset_id, viewingUserId || undefined);
+      const h = await apiClient.getPdfHighlights(contentId, open.asset_id, viewingUserId || undefined, requestedClubId || undefined);
       setHighlights(h.items || []);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -387,7 +391,7 @@ export function PdfReaderPage() {
       return;
     }
     load();
-  }, [contentId, canLoadApi, isReady, isTelegramMiniApp, authData, hasBrowserToken]);
+  }, [contentId, requestedClubId, canLoadApi, isReady, isTelegramMiniApp, authData, hasBrowserToken]);
 
   // The reader is always the immersive layout now; give it the full height.
   useEffect(() => {
@@ -427,12 +431,12 @@ export function PdfReaderPage() {
   useEffect(() => {
     if (!contentId || !assetId || !canLoadApi) return;
     apiClient
-      .getPdfHighlights(contentId, assetId, viewingUserId || undefined)
+      .getPdfHighlights(contentId, assetId, viewingUserId || undefined, clubShareId || undefined)
       .then((h) => setHighlights(h.items || []))
       .catch(() => {
         /* keep showing the last-known highlights on a transient failure */
       });
-  }, [viewingUserId]);
+  }, [viewingUserId, clubShareId]);
 
   // Live co-reading: on club-shared content, poll for the other side's
   // highlights every few seconds so a teacher and student marking up the
@@ -445,7 +449,7 @@ export function PdfReaderPage() {
     const poll = () => {
       if (document.visibilityState !== 'visible') return;
       apiClient
-        .getPdfHighlights(contentId, assetId, viewingUserId || undefined)
+        .getPdfHighlights(contentId, assetId, viewingUserId || undefined, clubShareId || undefined)
         .then((h) => {
           if (!cancelled) setHighlights(h.items || []);
         })
@@ -458,15 +462,21 @@ export function PdfReaderPage() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [clubId, contentId, assetId, canLoadApi, viewingUserId]);
+  }, [clubId, clubShareId, contentId, assetId, canLoadApi, viewingUserId]);
 
   useEffect(() => {
-    if (!isTeacher || !contentId || !coReadersOpen) return;
-    apiClient
-      .getContentCoReaders(contentId)
-      .then((res) => setCoReaders(res.items || []))
-      .catch(() => setCoReaders([]));
-  }, [isTeacher, contentId, coReadersOpen]);
+    if ((!isTeacher && !clubShareId) || !contentId || !coReadersOpen) return;
+    let cancelled = false;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      apiClient.getContentCoReaders(contentId, clubShareId || undefined)
+        .then((res) => { if (!cancelled) setCoReaders(res.items || []); })
+        .catch(() => { /* retain the last roster until the next refresh */ });
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 15000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [isTeacher, clubShareId, contentId, coReadersOpen]);
 
   useEffect(() => {
     const flushProgress = () => {
@@ -1046,7 +1056,7 @@ export function PdfReaderPage() {
       }
       setSelectionDraft(null);
       clearNativeSelection();
-      const h = await apiClient.getPdfHighlights(contentId, assetId, viewingUserId || undefined);
+      const h = await apiClient.getPdfHighlights(contentId, assetId, viewingUserId || undefined, clubShareId || undefined);
       setHighlights(h.items || []);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -1087,7 +1097,7 @@ export function PdfReaderPage() {
           color: selectionDraft.color,
         });
         highlightId = created.highlight_id;
-        const h = await apiClient.getPdfHighlights(contentId, assetId, viewingUserId || undefined);
+        const h = await apiClient.getPdfHighlights(contentId, assetId, viewingUserId || undefined, clubShareId || undefined);
         setHighlights(h.items || []);
       }
       setAddToDeckDraft({ text: selectionDraft.text, passage: passageAround(selectionDraft.text, pageNumber - 1), pageIndex: pageNumber - 1, highlightId });
@@ -1133,6 +1143,18 @@ export function PdfReaderPage() {
     }
   };
 
+  const toggleClubHighlight = async (highlight: PdfHighlight) => {
+    if (!contentId || !highlight.is_mine) return;
+    const visible = highlight.club_visible === false;
+    try {
+      await apiClient.updatePdfHighlight(contentId, highlight.id, { club_visible: visible });
+      setHighlights((previous) => previous.map((item) => item.id === highlight.id
+        ? { ...item, club_visible: visible } : item));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('pdfReader.highlightVisibilityFailed'));
+    }
+  };
+
   const pageFrameStyle = useMemo<CSSProperties | undefined>(() => {
     if (!pageSize.width || !pageSize.height) return undefined;
     const style: CSSProperties = { width: pageSize.width, height: pageSize.height };
@@ -1173,11 +1195,11 @@ export function PdfReaderPage() {
             <input aria-label={t('pdfReader.jumpToPage')} type="number" min={1} max={pageCount || 1} value={pageNumber} disabled={!pageCount} onChange={(event) => goToPage(Number(event.target.value || 1))} />
             <span>/ {pageCount || 0}</span>
           </label>
-          {isTeacher && (
+          {(isTeacher || clubShareId) && (
             <button
               className="pdf-reader-icon-btn"
               onClick={() => setCoReadersOpen((open) => !open)}
-              title={t('pdfReader.coReaders')}
+              title={t(clubShareId ? 'pdfReader.clubReaders' : 'pdfReader.coReaders')}
               type="button"
             >
               <Users size={18} />
@@ -1392,6 +1414,13 @@ export function PdfReaderPage() {
                           <Plus size={14} />
                         </button>
                       )}
+                      {clubShareId && h.is_mine && (
+                        <button type="button" onClick={() => void toggleClubHighlight(h)}
+                          title={t(h.club_visible === false ? 'pdfReader.keepHighlightPrivate' : 'pdfReader.visibleToClub')}
+                          aria-label={t(h.club_visible === false ? 'pdfReader.keepHighlightPrivate' : 'pdfReader.visibleToClub')}>
+                          {h.club_visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      )}
                       {h.is_mine !== false && (
                         <button onClick={() => deleteHighlight(h.id)} type="button" title={t('pdfReader.delete')} aria-label={t('pdfReader.delete')}>
                           <Trash2 size={14} />
@@ -1408,22 +1437,23 @@ export function PdfReaderPage() {
       )}
 
       {coReadersOpen && (
-        <aside className="pdf-reader-highlights-drawer pdf-reader-coreaders-drawer" aria-label={t('pdfReader.coReaders')}>
+        <aside className="pdf-reader-highlights-drawer pdf-reader-coreaders-drawer" aria-label={t(clubShareId ? 'pdfReader.clubReaders' : 'pdfReader.coReaders')}>
           <header>
             <div>
-              <h2>{t('pdfReader.coReaders')}</h2>
+              <h2>{t(clubShareId ? 'pdfReader.clubReaders' : 'pdfReader.coReaders')}</h2>
             </div>
             <button className="pdf-reader-icon-btn" type="button" onClick={() => setCoReadersOpen(false)} title={t('pdfReader.closeHighlights')}>
               <X size={18} />
             </button>
           </header>
           <div className="pdf-reader-highlights-list">
+            {clubShareId && <p className="pdf-reader-club-visibility">{t('pdfReader.clubActivityVisible')}</p>}
             <button
               type="button"
               className={`pdf-reader-coreader-row${viewingUserId === null ? ' is-active' : ''}`}
               onClick={() => setViewingUserId(null)}
             >
-              <span>{t('pdfReader.viewingOwnHighlights')}</span>
+              <span>{t(clubShareId ? 'pdfReader.allClubHighlights' : 'pdfReader.viewingOwnHighlights')}</span>
             </button>
             {coReaders.map((reader) => (
               <button
@@ -1434,8 +1464,11 @@ export function PdfReaderPage() {
               >
                 <span>{reader.name}</span>
                 <span className="pdf-reader-coreader-stats">
-                  {Math.round((reader.progress_ratio || 0) * 100)}% · {Math.round((reader.total_consumed_seconds || 0) / 60)}m · {reader.highlight_count}
+                  {Math.round((reader.progress_ratio || 0) * 100)}% · {reader.highlight_count} {t('pdfReader.highlights')}
                 </span>
+                {clubShareId && <span className="pdf-reader-coreader-progress" role="progressbar" aria-valuenow={Math.round((reader.progress_ratio || 0) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={reader.name}>
+                  <span style={{ width: `${Math.round((reader.progress_ratio || 0) * 100)}%` }} />
+                </span>}
               </button>
             ))}
             {coReaders.length === 0 && <div className="pdf-reader-empty">{t('pdfReader.noCoReadersYet')}</div>}

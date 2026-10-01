@@ -50,6 +50,21 @@ class ShareContentRequest(BaseModel):
     level: Optional[Literal["A1", "A2", "B1", "B2", "C1", "C2"]] = None
 
 
+class ClubVideoAnnotationRequest(BaseModel):
+    club_id: str = Field(min_length=1, max_length=128)
+    position_seconds: int = Field(ge=0, le=604800)
+    body: str = Field(min_length=1, max_length=2000)
+
+
+def _require_club_share(content_id: str, club_id: str, user_id: str):
+    from repositories.content_share_repo import ContentShareRepository
+
+    share_repo = ContentShareRepository()
+    if not share_repo.is_active_member_of_share(content_id, club_id, user_id):
+        raise HTTPException(status_code=403, detail="This item is not shared with your club")
+    return share_repo
+
+
 class ClubContentShareRequest(BaseModel):
     club_id: str = Field(min_length=1, max_length=128)
 
@@ -497,12 +512,15 @@ async def get_content_thumbnail(
 @router.get("/content/{content_id}/pdf")
 async def get_pdf_content_open(
     content_id: str,
+    club_id: Optional[str] = None,
     user_id: int = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Return latest PDF asset + signed URL + resume fields for a user's content item.
     """
     uid = str(user_id)
+    if club_id:
+        _require_club_share(content_id, club_id, uid)
     repo = get_content_repo()
     uc = repo.get_user_content(uid, content_id)
     if not uc:
@@ -558,7 +576,7 @@ async def get_pdf_content_open(
         "progress_ratio": read_progress_ratio,
         "title": (content or {}).get("title"),
         "language": (content or {}).get("language"),
-        "club_id": (content or {}).get("club_id") if teacher_id else None,
+        "club_id": club_id or ((content or {}).get("club_id") if teacher_id else None),
         "is_teacher": bool(teacher_id) and teacher_id == uid,
     }
 
@@ -617,6 +635,7 @@ async def get_pdf_highlights(
     content_id: str,
     asset_id: Optional[str] = None,
     as_user_id: Optional[str] = None,
+    club_id: Optional[str] = None,
     user_id: int = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """List highlights for a user/content and asset version.
@@ -643,6 +662,11 @@ async def get_pdf_highlights(
     if not asset:
         raise HTTPException(status_code=404, detail="PDF asset not found")
 
+    if club_id:
+        share_repo = _require_club_share(content_id, club_id, uid)
+        items = share_repo.list_club_highlights(content_id, club_id, str(resolved_asset_id), uid, as_user_id)
+        return {"asset_id": str(resolved_asset_id), "items": items, "count": len(items)}
+
     content = repo.get_content_by_id(content_id)
     teacher_id = _club_teacher_for_content(content or {})
     try:
@@ -661,14 +685,14 @@ async def get_pdf_highlights(
 @router.get("/content/{content_id}/co-readers")
 async def get_content_co_readers(
     content_id: str,
+    club_id: Optional[str] = None,
     user_id: int = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Roster + engagement for a club-shared content item — teacher-only.
-
-    Powers the "who's read this, how far, and how much have they
-    highlighted" view for a teacher's class material.
-    """
+    """Roster and reading progress for club shares or legacy class material."""
     uid = str(user_id)
+    if club_id:
+        share_repo = _require_club_share(content_id, club_id, uid)
+        return {"items": share_repo.list_activity(content_id, club_id)}
     repo = get_content_repo()
     content = repo.get_content_by_id(content_id)
     if not content:
@@ -683,6 +707,38 @@ async def get_content_co_readers(
     member_ids = [str(m["user_id"]) for m in members if str(m["user_id"]) != uid]
     items = repo.list_co_readers(content_id, member_ids)
     return {"items": items}
+
+
+@router.get("/content/{content_id}/club-video-annotations")
+async def get_club_video_annotations(content_id: str, club_id: str,
+                                     user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    repo = _require_club_share(content_id, club_id, str(user_id))
+    return {"items": repo.list_video_annotations(content_id, club_id, str(user_id))}
+
+
+@router.post("/content/{content_id}/club-video-annotations")
+async def create_club_video_annotation(content_id: str, body: ClubVideoAnnotationRequest,
+                                       user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    if not body.body.strip():
+        raise HTTPException(status_code=422, detail="Annotation cannot be blank")
+    repo = _require_club_share(content_id, body.club_id, str(user_id))
+    from repositories.explore_repo import _youtube_video_id
+
+    content = get_content_repo().get_content_by_id(content_id)
+    if not content or content.get("provider") != "youtube" or not _youtube_video_id(content):
+        raise HTTPException(status_code=400, detail="Club annotations are for videos")
+    annotation_id = repo.add_video_annotation(content_id, body.club_id, str(user_id),
+                                              body.position_seconds, body.body.strip())
+    return {"annotation_id": annotation_id}
+
+
+@router.delete("/content/{content_id}/club-video-annotations/{annotation_id}")
+async def delete_club_video_annotation(content_id: str, annotation_id: str, club_id: str,
+                                       user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    repo = _require_club_share(content_id, club_id, str(user_id))
+    if not repo.remove_video_annotation(content_id, club_id, str(user_id), annotation_id):
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    return {"deleted": True}
 
 
 @router.post("/content/{content_id}/highlights")
@@ -735,6 +791,7 @@ async def update_pdf_highlight(
         selected_text=body.selected_text,
         note=body.note,
         color=body.color,
+        club_visible=body.club_visible,
     )
     return {"highlight_id": highlight_id, "updated": bool(updated)}
 
