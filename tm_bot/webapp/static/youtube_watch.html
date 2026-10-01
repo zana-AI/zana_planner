@@ -146,27 +146,13 @@
     .club-activity { margin-top: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
     .club-activity summary { padding: 12px 14px; cursor: pointer; font-size: 13px; font-weight: 800; }
     .club-activity-body { display: grid; gap: 12px; padding: 0 14px 14px; }
-    .club-activity-hint { margin: 0; color: rgba(237,243,255,.62); font-size: 12px; line-height: 1.5; }
-    .club-reader-list, .club-note-list { display: grid; gap: 7px; max-height: 240px; overflow: auto; }
+    .club-reader-list { display: grid; gap: 7px; max-height: 240px; overflow: auto; }
     .club-reader { display: grid; gap: 5px; font-size: 12px; }
     .club-reader-person { display: inline-flex; align-items: center; justify-self: start; gap: 7px; padding: 2px 4px; border: 0; border-radius: 20px; background: none; color: #edf3ff; font: inherit; cursor: pointer; }
     .club-reader-person:hover, .club-reader-person:focus-visible { background: rgba(99,167,247,.16); outline: none; }
     .club-reader-avatar { display: grid; place-items: center; width: 25px; height: 25px; flex: none; overflow: hidden; border-radius: 50%; background: #34486f; color: #fff; font-size: 11px; font-weight: 800; }
     .club-reader-avatar img { width: 100%; height: 100%; object-fit: cover; }
     .club-reader .progress-container { margin: 0 0 5px; }
-    .club-notes { border-top: 1px solid var(--app-border); padding-top: 8px; }
-    .club-notes h3 { margin: 0; color: var(--app-accent); font-size: 13px; }
-    .club-notes-body { display: grid; gap: 10px; padding-top: 10px; }
-    .club-note-form { display: grid; gap: 7px; }
-    .club-note-form textarea { width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--app-border); border-radius: 8px; background: #0a1630; color: #edf3ff; padding: 8px; font: inherit; }
-    .club-note-form button, .club-note button { border: 1px solid var(--app-border); border-radius: 8px; background: rgba(99,167,247,.12); color: #dceaff; padding: 7px 10px; font: inherit; cursor: pointer; }
-    .club-note-form button { justify-self: start; }
-    .club-note { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 8px; border: 1px solid var(--app-border); border-radius: 8px; font-size: 12px; }
-    .club-note.is-personal { grid-template-columns: 1fr; }
-    .club-note small { display: block; color: rgba(237,243,255,.55); margin-bottom: 3px; }
-    .club-note p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .club-note-empty { margin: 0; color: rgba(237,243,255,.58); font-size: 12px; }
-    .club-note-status { margin: 0; color: #fca5a5; font-size: 12px; }
     .debug {
       margin-top: 10px;
       padding: 10px;
@@ -257,16 +243,6 @@
     <summary id="clubActivityTitle"></summary>
     <div class="club-activity-body">
       <div id="clubReaderList" class="club-reader-list"></div>
-      <section class="club-notes" aria-labelledby="clubNotesTitle"><div class="club-notes-body">
-        <h3 id="clubNotesTitle"></h3>
-        <div id="clubNoteList" class="club-note-list"></div>
-        <form id="clubNoteForm" class="club-note-form">
-          <label id="clubNoteLabel" for="clubNoteBody"></label>
-          <textarea id="clubNoteBody" maxlength="2000" required></textarea>
-          <button id="clubNoteSubmit" type="submit"></button>
-        </form>
-        <p id="clubNoteStatus" class="club-note-status" role="status"></p>
-      </div></section>
     </div>
   </details>
   <section id="savedWords" class="saved-words" hidden>
@@ -314,11 +290,7 @@
     savedTitle: 'کلمه‌های ذخیره‌شده از این ویدیو', clubSavedTitle: 'کارت‌های باشگاه از این ویدیو', savedBy: 'ذخیره‌شده توسط', review: 'مرور کارت‌ها ←', building: 'در حال ساخت کارت…',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'روی یک کلمه از زیرنویس بزن.',
     signIn: 'برای ذخیرهٔ کارت، ویدیو رو از داخل زانا باز کن.', context: 'جمله',
-    clubActivity: 'پیشرفت باشگاه', clubNotes: 'یادداشت‌ها و نشان‌گذاری‌ها',
-    clubNoteLabel: 'یادداشت جدید برای باشگاه', clubNoteSubmit: 'افزودن یادداشت',
-    personalNote: 'یادداشت شخصی من', viewProfile: 'نمایش نمایهٔ',
-    noNotes: 'هنوز یادداشتی ثبت نشده است.',
-    clubNoteDelete: 'حذف', clubNoteError: 'یادداشت باشگاه بارگذاری یا ذخیره نشد.'
+    clubActivity: 'پیشرفت باشگاه', viewProfile: 'نمایش نمایهٔ'
   } : {
     back: 'Back', closeWord: 'Close',
     listen: 'Listen', save: 'Save card', saved: 'Saved',
@@ -335,11 +307,7 @@
     savedTitle: 'Saved from this video', clubSavedTitle: 'Club cards from this video', savedBy: 'Saved by', review: 'Review →', building: 'Building card…',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
     signIn: 'Open this page inside the app to save cards.', context: 'line',
-    clubActivity: 'Club progress', clubNotes: 'Notes and highlights',
-    clubNoteLabel: 'New club note', clubNoteSubmit: 'Add note',
-    personalNote: 'My private note', viewProfile: 'View profile of',
-    noNotes: 'No notes yet.',
-    clubNoteDelete: 'Delete', clubNoteError: 'Could not load or save club notes.'
+    clubActivity: 'Club progress', viewProfile: 'View profile of'
   };
   document.documentElement.lang = uiLanguage;
   document.documentElement.dir = uiLanguage === 'fa' ? 'rtl' : 'ltr';
@@ -1553,85 +1521,30 @@
     var headers = authHeaders();
     if (!headers.Authorization && !headers['X-Telegram-Init-Data']) return;
     var query = '?club_id=' + encodeURIComponent(clubId);
-    Promise.all([
-      fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-progress' + query, {headers: headers}),
-      fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations' + query, {headers: headers})
-    ]).then(function(responses) {
-      if (!responses[0].ok || !responses[1].ok) {
+    fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-progress' + query, {headers: headers})
+    .then(function(response) {
+      if (!response.ok) {
         var failure = new Error('club');
-        failure.status = responses[0].status === 403 || responses[1].status === 403 ? 403 : 0;
+        failure.status = response.status;
         throw failure;
       }
-      return Promise.all(responses.map(function(response) { return response.json(); }));
+      return response.json();
     }).then(function(data) {
       var section = document.getElementById('clubActivity');
-      section.hidden = false;
-      var readers = (data[0] && data[0].items) || [];
+      var duration = Number(data.duration_seconds) || videoDuration;
+      var readers = (data.items || []).filter(function(reader) {
+        return duration > 0 && (reader.segments || []).some(function(segment) {
+          var start = Math.max(0, Math.min(duration, Number(segment[0]) || 0));
+          var end = Math.max(start, Math.min(duration, Number(segment[1]) || 0));
+          return end > start;
+        });
+      });
+      section.hidden = readers.length === 0;
       document.getElementById('clubActivityTitle').textContent = copy.clubActivity + ' · ' + readers.length;
-      document.getElementById('clubNoteLabel').textContent = copy.clubNoteLabel;
-      document.getElementById('clubNoteSubmit').textContent = copy.clubNoteSubmit;
       var readerList = document.getElementById('clubReaderList');
       readerList.replaceChildren();
       clubAvatarUrls.forEach(function(url) { URL.revokeObjectURL(url); });
       clubAvatarUrls = [];
-      var duration = Number(data[0].duration_seconds) || videoDuration;
-      var noteList = document.getElementById('clubNoteList');
-      var notes = (data[1] && data[1].items) || [];
-      var personalNote = String((data[1] && data[1].personal_note) || '').trim();
-      function renderNotes() {
-        noteList.replaceChildren();
-        var noteCount = notes.length + (personalNote ? 1 : 0);
-        document.getElementById('clubNotesTitle').textContent = copy.clubNotes + (noteCount ? ' · ' + noteCount : '');
-        if (!noteCount) {
-          var empty = document.createElement('p');
-          empty.className = 'club-note-empty';
-          empty.textContent = copy.noNotes;
-          noteList.appendChild(empty);
-        }
-        if (personalNote) {
-          var personalRow = document.createElement('article');
-          personalRow.className = 'club-note is-personal';
-          var personalLabel = document.createElement('small');
-          personalLabel.textContent = copy.personalNote;
-          var personalBody = document.createElement('p');
-          personalBody.textContent = personalNote;
-          var personalText = document.createElement('div');
-          personalText.appendChild(personalLabel); personalText.appendChild(personalBody);
-          personalRow.appendChild(personalText);
-          noteList.appendChild(personalRow);
-        }
-        notes.forEach(function(note) {
-          var row = document.createElement('article');
-          row.className = 'club-note';
-          var jump = document.createElement('button');
-          jump.type = 'button'; jump.textContent = formatCueTime(note.position_seconds);
-          jump.addEventListener('click', function() {
-            if (player && typeof player.seekTo === 'function') {
-              player.seekTo(Math.max(0, Number(note.position_seconds) || 0), true);
-              player.playVideo();
-            }
-          });
-          var body = document.createElement('div');
-          var author = document.createElement('small');
-          author.textContent = note.author_name || 'Member';
-          var noteText = document.createElement('p');
-          noteText.textContent = note.body || '';
-          body.appendChild(author); body.appendChild(noteText);
-          row.appendChild(jump); row.appendChild(body);
-          if (note.is_mine) {
-            var remove = document.createElement('button');
-            remove.type = 'button'; remove.textContent = copy.clubNoteDelete;
-            remove.addEventListener('click', function() {
-              fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations/' + encodeURIComponent(note.id) + query,
-                {method: 'DELETE', headers: authHeaders()})
-                .then(function(response) { if (!response.ok) throw new Error('delete'); loadClubActivity(); })
-                .catch(function() { document.getElementById('clubNoteStatus').textContent = copy.clubNoteError; });
-            });
-            row.appendChild(remove);
-          }
-          noteList.appendChild(row);
-        });
-      }
       readers.forEach(function(reader) {
         var row = document.createElement('div');
         row.className = 'club-reader';
@@ -1680,8 +1593,6 @@
         row.appendChild(name); row.appendChild(bar);
         readerList.appendChild(row);
       });
-      renderNotes();
-      document.getElementById('clubNoteStatus').textContent = '';
     }).catch(function(error) {
       // A revoked club share must not leave a cached roster visible. A brief
       // network failure can retain the last successful view and retry.
@@ -1689,33 +1600,11 @@
       if (error.status === 403) {
         section.hidden = true;
         document.getElementById('clubReaderList').replaceChildren();
-        document.getElementById('clubNoteList').replaceChildren();
-      } else if (!section.hidden) {
-        document.getElementById('clubNoteStatus').textContent = copy.clubNoteError;
+        clubAvatarUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+        clubAvatarUrls = [];
       }
     });
   }
-
-  document.getElementById('clubNoteForm').addEventListener('submit', function(event) {
-    event.preventDefault();
-    if (!contentId || !clubId) return;
-    var field = document.getElementById('clubNoteBody');
-    var body = field.value.trim();
-    if (!body) return;
-    var position = 0;
-    try { position = player ? Math.max(0, Math.round(player.getCurrentTime())) : 0; } catch (_) {}
-    var submit = document.getElementById('clubNoteSubmit');
-    submit.disabled = true;
-    fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({club_id: clubId, position_seconds: position, body: body})
-    }).then(function(response) {
-      if (!response.ok) throw new Error('save');
-      field.value = '';
-      loadClubActivity();
-    }).catch(function() { document.getElementById('clubNoteStatus').textContent = copy.clubNoteError; })
-      .finally(function() { submit.disabled = false; });
-  });
 
   // Leave the player for another app route, keeping the session the same way
   // the Back button does (Telegram Desktop may not re-send initData).

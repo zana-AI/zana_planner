@@ -10,8 +10,7 @@ after(async () => { await browser?.close(); });
 
 async function openViewer(t, options = {}) {
   const page = await browser.newPage({viewport: options.mobile ? {width: 390, height: 844} : {width: 1100, height: 850}});
-  const errors = [], reports = [];
-  const clubNotes = [];
+  const errors = [], reports = [], annotationRequests = [];
   let transcriptRequests = 0;
   page.on('pageerror', error => errors.push(error.message));
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
@@ -59,20 +58,15 @@ async function openViewer(t, options = {}) {
       return route.fulfill({json: {items: [{user_id: '7', name: 'Marzieh', progress_ratio: 0.4}]}});
     }
     if (options.club && url.pathname.endsWith('/club-video-annotations')) {
-      if (route.request().method() === 'POST') {
-        assert.equal(route.request().postDataJSON().club_id, 'club-1');
-        clubNotes.push({...route.request().postDataJSON(), id: 'note-1', author_name: 'You', is_mine: true});
-      } else {
-        assert.equal(url.searchParams.get('club_id'), 'club-1');
-      }
-      return route.fulfill({json: route.request().method() === 'POST' ? {annotation_id: 'note-1'} : {items: clubNotes}});
+      annotationRequests.push(route.request().method());
+      return route.fulfill({status: 503, json: {detail: 'Separate club notes are unavailable'}});
     }
     if (url.hostname === 'xaana.test') return route.fulfill({json: {items: []}});
     // Never depend on YouTube, Telegram or a live account for this regression test.
     return route.fulfill({body: '', contentType: url.pathname.endsWith('.js') || url.pathname === '/iframe_api' ? 'application/javascript' : 'text/html'});
   });
   await page.goto('https://xaana.test/youtube-watch?video_id=du-G1B785Fs&content_id=item&lang=' + (options.lang || 'en') + (options.club ? '&club_id=club-1' : ''));
-  return {page, reports, transcriptRequests: () => transcriptRequests};
+  return {page, reports, annotationRequests, transcriptRequests: () => transcriptRequests};
 }
 
 test('a guest club link immediately offers sign in with the same video destination', async t => {
@@ -108,17 +102,32 @@ test('the Telegram account takes priority over a remembered browser account', as
   await expect(page.locator('#watchAuthNotice')).toBeHidden();
 });
 
-test('club video shows member progress and saves a timestamped note', async t => {
-  const {page} = await openViewer(t, {club: true});
+test('club video uses the existing progress bar without a separate note feature', async t => {
+  const {page, annotationRequests} = await openViewer(t, {club: true});
   await expect(page.locator('#clubActivity')).toBeVisible();
   await expect(page.locator('#clubReaderList')).toContainText('Marzieh');
   await page.locator('#clubActivity summary').click();
-  await installPlayer(page);
-  await page.evaluate(() => { window.testTime = 42; });
-  await page.locator('#clubNoteBody').fill('This phrase is useful');
-  await page.locator('#clubNoteSubmit').click();
-  await expect(page.locator('#clubNoteList')).toContainText('This phrase is useful');
-  await expect(page.locator('#clubNoteList')).toContainText('0:42');
+  await expect(page.locator('#clubReaderList .progress-container .progress-segment')).toHaveCount(1);
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  assert.deepEqual(annotationRequests, []);
+});
+
+test('empty club activity keeps the same layout as the normal video viewer', async t => {
+  const personalCards = [{note_id: 'mine', front: 'voyager', back: 'travel', deck_id: 'my-deck', deck_name: 'French'}];
+  const club = await openViewer(t, {club: true, personalCards, clubCards: personalCards,
+    clubProgress: {duration_seconds: 100, items: [
+      {user_id: '7', name: 'Marzieh', segments: []},
+      {user_id: '8', name: 'AA', segments: [[12, 12]]},
+    ]},
+  });
+  const normal = await openViewer(t, {personalCards});
+  for (const {page} of [club, normal]) {
+    await expect(page.locator('#clubActivity')).toBeHidden();
+    await expect(page.locator('#savedWords')).toBeVisible();
+    await expect(page.locator('#savedReview')).toBeVisible();
+    await expect(page.getByRole('textbox')).toHaveCount(0);
+    await expect(page.locator('#watchProgress')).toHaveAttribute('aria-valuenow', '45');
+  }
 });
 
 test('club video shows each member card with a decorative creator circle', async t => {
