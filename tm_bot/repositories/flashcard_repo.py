@@ -392,6 +392,29 @@ class FlashcardNoteRepository:
         ).mappings().all()
         return [_decode_json(dict(r), "fields") for r in rows]
 
+    def list_for_club_video(self, session: Session, content_id: str, club_id: str,
+                            video_id: str) -> List[dict]:
+        """Video cards authored by active members of this active club share."""
+        rows = session.execute(
+            text("""
+                SELECT n.note_id, n.user_id, n.fields,
+                       COALESCE(NULLIF(u.first_name, ''), NULLIF(u.username, ''), 'Member') AS creator_name,
+                       CASE WHEN COALESCE(u.avatar_visibility, 'public') = 'public'
+                            THEN u.avatar_path ELSE NULL END AS avatar_path
+                FROM flashcard_note n
+                JOIN club_members m ON m.user_id = n.user_id AND m.club_id = :club_id AND m.status = 'active'
+                JOIN content_club_shares s ON s.club_id = m.club_id AND s.content_id = :content_id AND s.status = 'sent'
+                JOIN clubs c ON c.club_id = s.club_id AND c.status = 'active'
+                JOIN users u ON u.user_id = n.user_id
+                WHERE (n.fields->>'source_video_id' = :video_id
+                       OR n.fields->'video_contexts' @> CAST(:context AS jsonb))
+                ORDER BY n.created_at, n.note_id
+            """),
+            {"content_id": content_id, "club_id": club_id, "video_id": video_id,
+             "context": json.dumps([{"source_video_id": video_id}])},
+        ).mappings().all()
+        return [_decode_json(dict(row), "fields") for row in rows]
+
     def list_for_content(self, session: Session, user_id: str, content_id: str) -> List[dict]:
         """Notes that cite one content item (e.g. words saved from a PDF).
 

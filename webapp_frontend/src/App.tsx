@@ -34,6 +34,7 @@ import { CalendarResultPage } from './pages/CalendarResultPage';
 import { SessionCompletionPage } from './pages/SessionCompletionPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
+import { UserDetailPage } from './pages/UserDetailPage';
 
 // Handles channel-post deep links (?startapp=<source_key>) — must live inside the Router.
 function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
@@ -169,12 +170,12 @@ function MainApp() {
         
         <Route path="/clubs" element={isAuthenticated ? <UsersPage clubsOnly /> : <Navigate to="/" replace />} />
 
-        {/* Legacy people links no longer open a people directory. APIs are retained. */}
+        {/* Direct member profiles remain available from club activity; the people directory stays closed. */}
         <Route
           path="/users/:userId"
           element={
             isAuthenticated ? (
-              <Navigate to="/explore?type=clubs" replace />
+              <UserDetailPage />
             ) : (
               <Navigate to="/" replace />
             )

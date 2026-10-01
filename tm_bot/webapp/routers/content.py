@@ -716,6 +716,20 @@ async def get_club_video_progress(content_id: str, club_id: str,
     return repo.list_video_progress(content_id, club_id, str(user_id))
 
 
+@router.get("/content/{content_id}/club-video-words")
+async def get_club_video_words(content_id: str, club_id: str,
+                               user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    _require_club_share(content_id, club_id, str(user_id))
+    from repositories.explore_repo import _youtube_video_id
+    from services.flashcard_service import list_club_video_words
+
+    content = get_content_repo().get_content_by_id(content_id)
+    video_id = _youtube_video_id(content) if content and content.get("provider") == "youtube" else None
+    if not video_id:
+        raise HTTPException(status_code=404, detail="YouTube video not found")
+    return {"items": list_club_video_words(content_id, club_id, video_id, str(user_id))}
+
+
 @router.post("/content/{content_id}/club-open")
 async def open_club_content(content_id: str, club_id: str,
                             user_id: int = Depends(get_current_user)) -> Dict[str, Any]:

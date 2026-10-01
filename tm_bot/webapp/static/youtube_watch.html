@@ -137,9 +137,12 @@
     .saved-review { color: var(--app-accent); font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
     .saved-review:hover, .saved-review:focus-visible { text-decoration: underline; outline: none; }
     .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .saved-card { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; }
     .saved-chip { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; padding: 5px 9px; border: 1px solid rgba(126,224,161,.35); border-radius: 999px; background: rgba(126,224,161,.08); color: #edf3ff; font: inherit; font-size: 13px; cursor: pointer; }
     .saved-chip:hover, .saved-chip:focus-visible { background: rgba(126,224,161,.18); outline: none; }
     .saved-chip-back { color: rgba(237,243,255,.6); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .saved-creator { display: grid; place-items: center; width: 24px; height: 24px; flex: none; overflow: hidden; border-radius: 50%; background: #34486f; color: #fff; font-size: 11px; font-weight: 800; }
+    .saved-creator img { width: 100%; height: 100%; object-fit: cover; }
     .club-activity { margin-top: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
     .club-activity summary { padding: 12px 14px; cursor: pointer; font-size: 13px; font-weight: 800; }
     .club-activity-body { display: grid; gap: 12px; padding: 0 14px 14px; }
@@ -147,7 +150,7 @@
     .club-reader-list, .club-note-list { display: grid; gap: 7px; max-height: 240px; overflow: auto; }
     .club-reader { display: grid; gap: 5px; font-size: 12px; }
     .club-reader-person { display: inline-flex; align-items: center; justify-self: start; gap: 7px; padding: 2px 4px; border: 0; border-radius: 20px; background: none; color: #edf3ff; font: inherit; cursor: pointer; }
-    .club-reader-person:hover, .club-reader-person:focus-visible, .club-reader-person.is-selected { background: rgba(99,167,247,.16); outline: none; }
+    .club-reader-person:hover, .club-reader-person:focus-visible { background: rgba(99,167,247,.16); outline: none; }
     .club-reader-avatar { display: grid; place-items: center; width: 25px; height: 25px; flex: none; overflow: hidden; border-radius: 50%; background: #34486f; color: #fff; font-size: 11px; font-weight: 800; }
     .club-reader-avatar img { width: 100%; height: 100%; object-fit: cover; }
     .club-reader .progress-container { margin: 0 0 5px; }
@@ -305,12 +308,12 @@
     checkAgain: 'بررسی دوباره',
     videoUnavailable: 'ویدیو اینجا پخش نشد، ولی می‌تونی از زیرنویس پایین استفاده کنی.',
     existingKept: 'این کارت رو از قبل داری',
-    savedTitle: 'کلمه‌های ذخیره‌شده از این ویدیو', review: 'مرور کارت‌ها ←', building: 'در حال ساخت کارت…',
+    savedTitle: 'کلمه‌های ذخیره‌شده از این ویدیو', clubSavedTitle: 'کارت‌های باشگاه از این ویدیو', savedBy: 'ذخیره‌شده توسط', review: 'مرور کارت‌ها ←', building: 'در حال ساخت کارت…',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'روی یک کلمه از زیرنویس بزن.',
     signIn: 'برای ذخیرهٔ کارت، ویدیو رو از داخل زانا باز کن.', context: 'جمله',
     clubActivity: 'پیشرفت باشگاه', clubNotes: 'یادداشت‌ها و نشان‌گذاری‌ها',
     clubNoteLabel: 'یادداشت جدید برای باشگاه', clubNoteSubmit: 'افزودن یادداشت',
-    personalNote: 'یادداشت شخصی من', filterMemberNotes: 'نمایش یادداشت‌های',
+    personalNote: 'یادداشت شخصی من', viewProfile: 'نمایش نمایهٔ',
     noNotes: 'هنوز یادداشتی ثبت نشده است.',
     clubNoteDelete: 'حذف', clubNoteError: 'یادداشت باشگاه بارگذاری یا ذخیره نشد.'
   } : {
@@ -326,12 +329,12 @@
     checkAgain: 'Check again',
     videoUnavailable: 'The video couldn’t load here. The subtitles below still work.',
     existingKept: 'Existing card kept',
-    savedTitle: 'Saved from this video', review: 'Review →', building: 'Building card…',
+    savedTitle: 'Saved from this video', clubSavedTitle: 'Club cards from this video', savedBy: 'Saved by', review: 'Review →', building: 'Building card…',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
     signIn: 'Open this page inside the app to save cards.', context: 'line',
     clubActivity: 'Club progress', clubNotes: 'Notes and highlights',
     clubNoteLabel: 'New club note', clubNoteSubmit: 'Add note',
-    personalNote: 'My private note', filterMemberNotes: 'Show notes by',
+    personalNote: 'My private note', viewProfile: 'View profile of',
     noNotes: 'No notes yet.',
     clubNoteDelete: 'Delete', clubNoteError: 'Could not load or save club notes.'
   };
@@ -1426,63 +1429,102 @@
     });
   }
 
+  var savedAvatarUrls = [];
   function loadSavedWords() {
     var headers = authHeaders();
     if (!headers.Authorization && !headers['X-Telegram-Init-Data']) return;
-    fetch(baseUrl + '/api/flashcards/video-notes?video_id=' + encodeURIComponent(videoId), { headers: headers })
+    var clubMode = !!(contentId && clubId);
+    var personalRequest = fetch(baseUrl + '/api/flashcards/video-notes?video_id=' + encodeURIComponent(videoId), {headers: headers})
       .then(function(response) { return response.ok ? response.json() : null; })
-      .then(function(data) {
-        var items = (data && data.items) || [];
-        savedKeys = Object.create(null);
-        items.forEach(function(item) { if (item.front) savedKeys[foldAccents(item.front)] = true; });
-        applySavedMarks();
-        var section = document.getElementById('savedWords');
-        var list = document.getElementById('savedList');
-        list.innerHTML = '';
-        section.hidden = items.length === 0;
-        if (!items.length) return;
-        document.getElementById('savedTitle').textContent = copy.savedTitle + ' (' + items.length + ')';
-        items.forEach(function(item) {
-          var chip = document.createElement('button');
-          chip.type = 'button';
-          chip.className = 'saved-chip';
-          var front = document.createElement('span');
-          front.dir = 'auto';
-          front.textContent = item.front;
-          chip.appendChild(front);
-          if (item.back) {
-            var back = document.createElement('span');
-            back.className = 'saved-chip-back';
-            back.dir = 'auto';
-            back.textContent = item.back;
-            chip.appendChild(back);
+      .catch(function() { return null; });
+    var clubRequest = clubMode
+      ? fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-words?club_id=' + encodeURIComponent(clubId), {headers: headers})
+          .then(function(response) { return response.ok ? response.json() : null; })
+          .catch(function() { return null; })
+      : Promise.resolve(null);
+    Promise.all([personalRequest, clubRequest]).then(function(data) {
+      var personalItems = (data[0] && data[0].items) || [];
+      // If club access was revoked or briefly unavailable, show only this user's cards.
+      var clubItems = data[1] && Array.isArray(data[1].items) ? data[1].items : null;
+      var items = clubItems === null ? personalItems : clubItems;
+      savedKeys = Object.create(null);
+      personalItems.forEach(function(item) { if (item.front) savedKeys[foldAccents(item.front)] = true; });
+      applySavedMarks();
+      var section = document.getElementById('savedWords');
+      var list = document.getElementById('savedList');
+      list.replaceChildren();
+      savedAvatarUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+      savedAvatarUrls = [];
+      section.hidden = items.length === 0;
+      if (!items.length) return;
+      document.getElementById('savedTitle').textContent = (clubItems === null ? copy.savedTitle : copy.clubSavedTitle) + ' (' + items.length + ')';
+      items.forEach(function(item) {
+        var card = document.createElement('span');
+        card.className = 'saved-card';
+        var chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'saved-chip';
+        var front = document.createElement('span');
+        front.dir = 'auto';
+        front.textContent = item.front;
+        chip.appendChild(front);
+        if (item.back) {
+          var back = document.createElement('span');
+          back.className = 'saved-chip-back';
+          back.dir = 'auto';
+          back.textContent = item.back;
+          chip.appendChild(back);
+        }
+        if (typeof item.start === 'number') {
+          chip.title = formatCueTime(item.start);
+          chip.addEventListener('click', function() {
+            if (player && typeof player.seekTo === 'function') { player.seekTo(Math.max(0, item.start - 0.5), true); player.playVideo(); }
+            setActiveCue(cueIndexAt(item.start));
+          });
+        }
+        card.appendChild(chip);
+        if (clubItems !== null) {
+          var creator = document.createElement('span');
+          creator.className = 'saved-creator';
+          creator.title = copy.savedBy + ' ' + (item.creator_name || 'Member');
+          creator.setAttribute('role', 'img');
+          creator.setAttribute('aria-label', creator.title);
+          creator.textContent = (item.creator_name || 'M').trim().charAt(0).toUpperCase();
+          card.appendChild(creator);
+          if (item.avatar_path && item.user_id) {
+            fetch(baseUrl + '/api/media/avatars/' + encodeURIComponent(item.user_id), {headers: headers})
+              .then(function(response) { if (!response.ok) throw new Error('avatar'); return response.blob(); })
+              .then(function(blob) {
+                if (!blob.type.startsWith('image/') || !card.isConnected) return;
+                var url = URL.createObjectURL(blob);
+                savedAvatarUrls.push(url);
+                var img = document.createElement('img');
+                img.alt = '';
+                img.src = url;
+                creator.replaceChildren(img);
+              }).catch(function() { /* Keep the initial if the photo is unavailable. */ });
           }
-          if (typeof item.start === 'number') {
-            chip.title = formatCueTime(item.start);
-            chip.addEventListener('click', function() {
-              if (player && typeof player.seekTo === 'function') { player.seekTo(Math.max(0, item.start - 0.5), true); player.playVideo(); }
-              setActiveCue(cueIndexAt(item.start));
-            });
-          }
-          list.appendChild(chip);
-        });
-        // Review the deck most of these words live in (a word saved earlier
-        // from elsewhere keeps its own deck, so pick the majority).
-        var counts = {};
-        items.forEach(function(item) { counts[item.deck_id] = (counts[item.deck_id] || 0) + 1; });
-        var deckId = Object.keys(counts).sort(function(a, b) { return counts[b] - counts[a]; })[0];
-        var deck = items.filter(function(item) { return item.deck_id === deckId; })[0];
-        var review = document.getElementById('savedReview');
+        }
+        list.appendChild(card);
+      });
+      // Peers' cards are visible here but never enter this user's review deck.
+      var review = document.getElementById('savedReview');
+      var counts = {};
+      personalItems.forEach(function(item) { if (item.deck_id) counts[item.deck_id] = (counts[item.deck_id] || 0) + 1; });
+      var deckId = Object.keys(counts).sort(function(a, b) { return counts[b] - counts[a]; })[0];
+      var deck = personalItems.find(function(item) { return item.deck_id === deckId; });
+      review.hidden = !deck;
+      review.onclick = null;
+      if (deck) {
         review.textContent = copy.review;
         review.onclick = function(event) {
           event.preventDefault();
           openAppPath('/flashcards?deck=' + encodeURIComponent(deck.deck_id) + '&name=' + encodeURIComponent(deck.deck_name));
         };
-      })
-      .catch(function() { /* the strip is optional; the player keeps working */ });
+      }
+    });
   }
 
-  var selectedClubReaderId = '';
   var clubAvatarUrls = [];
   function loadClubActivity() {
     if (!contentId || !clubId) return;
@@ -1516,19 +1558,15 @@
       var personalNote = String((data[1] && data[1].personal_note) || '').trim();
       function renderNotes() {
         noteList.replaceChildren();
-        var visible = selectedClubReaderId
-          ? notes.filter(function(note) { return String(note.user_id) === selectedClubReaderId; })
-          : notes;
-        var noteCount = visible.length + (!selectedClubReaderId && personalNote ? 1 : 0);
-        var selectedReader = readers.find(function(reader) { return String(reader.user_id) === selectedClubReaderId; });
-        document.getElementById('clubNotesTitle').textContent = copy.clubNotes + (selectedReader ? ' · ' + selectedReader.name : '') + (noteCount ? ' · ' + noteCount : '');
+        var noteCount = notes.length + (personalNote ? 1 : 0);
+        document.getElementById('clubNotesTitle').textContent = copy.clubNotes + (noteCount ? ' · ' + noteCount : '');
         if (!noteCount) {
           var empty = document.createElement('p');
           empty.className = 'club-note-empty';
           empty.textContent = copy.noNotes;
           noteList.appendChild(empty);
         }
-        if (!selectedClubReaderId && personalNote) {
+        if (personalNote) {
           var personalRow = document.createElement('article');
           personalRow.className = 'club-note is-personal';
           var personalLabel = document.createElement('small');
@@ -1540,7 +1578,7 @@
           personalRow.appendChild(personalText);
           noteList.appendChild(personalRow);
         }
-        visible.forEach(function(note) {
+        notes.forEach(function(note) {
           var row = document.createElement('article');
           row.className = 'club-note';
           var jump = document.createElement('button');
@@ -1577,9 +1615,8 @@
         row.className = 'club-reader';
         var name = document.createElement('button');
         name.type = 'button';
-        name.className = 'club-reader-person' + (selectedClubReaderId === String(reader.user_id) ? ' is-selected' : '');
-        name.title = copy.filterMemberNotes + ' ' + (reader.name || 'Member');
-        name.setAttribute('aria-pressed', selectedClubReaderId === String(reader.user_id) ? 'true' : 'false');
+        name.className = 'club-reader-person';
+        name.title = copy.viewProfile + ' ' + (reader.name || 'Member');
         var avatar = document.createElement('span');
         avatar.className = 'club-reader-avatar';
         avatar.textContent = (reader.name || 'M').trim().charAt(0).toUpperCase();
@@ -1601,13 +1638,7 @@
         nameText.textContent = reader.name || 'Member';
         name.appendChild(avatar); name.appendChild(nameText);
         name.addEventListener('click', function() {
-          selectedClubReaderId = selectedClubReaderId === String(reader.user_id) ? '' : String(reader.user_id);
-          Array.prototype.forEach.call(readerList.querySelectorAll('.club-reader-person'), function(button) {
-            var active = button === name && !!selectedClubReaderId;
-            button.classList.toggle('is-selected', active);
-            button.setAttribute('aria-pressed', active ? 'true' : 'false');
-          });
-          renderNotes();
+          openAppPath('/users/' + encodeURIComponent(reader.user_id));
         });
         var bar = document.createElement('div');
         bar.className = 'progress-container';
@@ -1627,7 +1658,6 @@
         row.appendChild(name); row.appendChild(bar);
         readerList.appendChild(row);
       });
-      if (selectedClubReaderId && !readers.some(function(reader) { return String(reader.user_id) === selectedClubReaderId; })) selectedClubReaderId = '';
       renderNotes();
       document.getElementById('clubNoteStatus').textContent = '';
     }).catch(function(error) {
@@ -1668,8 +1698,8 @@
   // Leave the player for another app route, keeping the session the same way
   // the Back button does (Telegram Desktop may not re-send initData).
   function openAppPath(path) {
-    flushStats('navigate').then(function(saved) {
-      if (saved) window.location.assign(path + (sessionToken ? '#session_token=' + encodeURIComponent(sessionToken) : ''));
+    flushStats('navigate').finally(function() {
+      window.location.assign(path + (sessionToken ? '#session_token=' + encodeURIComponent(sessionToken) : ''));
     });
   }
 

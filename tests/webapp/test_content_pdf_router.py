@@ -303,6 +303,40 @@ def test_club_activity_requires_active_share_membership(monkeypatch):
     assert calls and all(call[2] == "7" for call in calls)
 
 
+def test_club_video_words_require_membership_and_use_shared_video(monkeypatch):
+    from repositories import content_share_repo
+    from services import flashcard_service
+
+    app, repo = _build_app(monkeypatch)
+    repo.get_content_by_id = lambda content_id: {
+        "id": content_id,
+        "provider": "youtube",
+        "canonical_url": "https://www.youtube.com/watch?v=noiAFsYZZiY",
+        "metadata_json": {},
+    }
+
+    class FakeShareRepo:
+        def is_active_member_of_share(self, content_id, club_id, user_id):
+            return content_id == "content-1" and club_id == "joined-club" and user_id == "7"
+
+    monkeypatch.setattr(content_share_repo, "ContentShareRepository", FakeShareRepo)
+    calls = []
+
+    def fake_words(content_id, club_id, video_id, viewer_user_id):
+        calls.append((content_id, club_id, video_id, viewer_user_id))
+        return [{"note_id": "peer-note", "user_id": "8", "creator_name": "Marzieh",
+                 "front": "partir", "back": "leave", "is_mine": False}]
+
+    monkeypatch.setattr(flashcard_service, "list_club_video_words", fake_words)
+    client = TestClient(app)
+    assert client.get("/api/content/content-1/club-video-words?club_id=other-club").status_code == 403
+    assert calls == []
+    response = client.get("/api/content/content-1/club-video-words?club_id=joined-club")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["front"] == "partir"
+    assert calls == [("content-1", "joined-club", "noiAFsYZZiY", "7")]
+
+
 def test_local_pdf_open_and_file(monkeypatch, tmp_path):
     file_path = tmp_path / "sample.pdf"
     file_path.write_bytes(b"%PDF-1.7 local test")
