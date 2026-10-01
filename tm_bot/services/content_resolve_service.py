@@ -84,6 +84,7 @@ class ContentResolveService:
         description = (link_meta.get("description") or "")[:2000]
         if description.strip().lower() in {"no description available", "unable to extract video information"}:
             description = ""
+        description = description or None
         metadata = dict(link_meta.get("metadata") or {})
 
         duration_hours = link_meta.get("duration")

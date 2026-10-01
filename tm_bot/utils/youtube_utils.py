@@ -119,7 +119,7 @@ def get_video_info(video_id: str, url: Optional[str] = None) -> Dict[str, Any]:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 if not info:
-                    return result
+                    raise ValueError("No yt-dlp metadata")
 
                 result["title"] = info.get("title") or result["title"]
                 duration_sec = info.get("duration")
