@@ -991,6 +991,7 @@
     "userNotFound": "User not found",
     "suggestPromise": "Suggest Promise",
     "publicPromises": "Public Promises",
+    "sharedClubs": "Clubs in common",
     "noPublicPromisesYet": "No public promises yet",
     "userIdIsRequired": "User ID is required",
     "failedToLoadUser": "Failed to load user"
