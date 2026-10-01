@@ -126,8 +126,10 @@
     .word-action { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--app-border); border-radius: 10px; background: rgba(99,167,247,.10); color: #dceaff; font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
     .word-action:hover, .word-action:focus-visible { background: rgba(99,167,247,.24); outline: none; }
     .word-action:disabled { cursor: default; opacity: .55; }
+    .word-action svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .word-action.is-saved svg { fill: currentColor; }
     .word-action.is-close { background: transparent; color: rgba(237,243,255,.7); }
-    /* Words saved from this video: proof the ＋ worked, a way back to each
+    /* Words saved from this video: proof saving worked, a way back to each
        moment, and a link to review them. Saved words are also underlined in
        the transcript itself. */
     .transcript-word.is-saved { text-decoration: underline; text-decoration-color: #7ee0a1; text-decoration-thickness: 2px; text-underline-offset: 3px; }
@@ -219,7 +221,7 @@
     </div>
     <div class="word-actions">
       <button id="listenWord" class="word-action" type="button">🔊</button>
-      <button id="saveWord" class="word-action" type="button">＋</button>
+      <button id="saveWord" class="word-action" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
       <button id="closeWord" class="word-action is-close" type="button">✕</button>
     </div>
   </div>
@@ -497,6 +499,7 @@
     if (selectedWordButton) selectedWordButton.classList.add('is-selected');
     selectedWord = clean;
     selectedCue = cue;
+    updateSaveWordIcon();
     var tools = document.getElementById('wordTools');
     document.getElementById('selectedWord').textContent = clean;
     document.getElementById('wordContext').textContent = formatCueTime(cue.start) + ' · ' + copy.context;
@@ -637,9 +640,9 @@
       if (!response.ok) throw new Error('save HTTP ' + response.status);
       return response.json();
     }).then(function(data) {
-      saveButton.textContent = '✓';
+      savedKeys[foldAccents(payload.fields.front)] = true;
+      updateSaveWordIcon();
       setWordStatus(data && data._created === false ? copy.saved + ' · ' + copy.existingKept : copy.saved);
-      setTimeout(function() { saveButton.textContent = '＋'; }, 1800);
       loadSavedWords();
     }).catch(function(error) {
       setWordStatus(error && error.message === 'auth' ? copy.signIn : copy.unavailable);
@@ -1413,7 +1416,12 @@
     stopPolling();
   });
 
+  function updateSaveWordIcon() {
+    document.getElementById('saveWord').classList.toggle('is-saved', !!savedKeys[foldAccents(selectedWord)]);
+  }
+
   function applySavedMarks() {
+    updateSaveWordIcon();
     Array.prototype.forEach.call(document.querySelectorAll('.transcript-word'), function(word) {
       word.classList.toggle('is-saved', !!savedKeys[foldAccents(word.textContent)]);
     });
