@@ -12,7 +12,12 @@ from webapp.routers import content as content_router
 class FakeRepo:
     def __init__(self):
         self.highlights = []
+        self.saved = []
         self._seq = 0
+
+    def add_user_content(self, user_id, content_id):
+        self.saved.append((user_id, content_id))
+        return "saved-row"
 
     def get_user_content(self, user_id, content_id):
         if str(content_id) != "content-1":
@@ -20,6 +25,7 @@ class FakeRepo:
         return {
             "user_id": str(user_id),
             "content_id": str(content_id),
+            "notes": "Only my private note",
             "last_position": 0.25,
             "progress_ratio": 0.25,
             "assigned_promise_id": None,
@@ -267,6 +273,9 @@ def test_club_activity_requires_active_share_membership(monkeypatch):
         def list_activity(self, content_id, club_id):
             return [{"user_id": "7", "name": "Reader", "progress_ratio": 0.5}]
 
+        def list_video_progress(self, content_id, club_id, viewer_user_id):
+            return {"duration_seconds": 60, "items": [{"user_id": "8", "name": "Peer", "segments": [[5, 12]]}]}
+
         def list_club_highlights(self, content_id, club_id, asset_id, viewer_user_id, as_user_id):
             return [{"id": "mark-1", "note": "shared", "is_mine": False}]
 
@@ -277,13 +286,19 @@ def test_club_activity_requires_active_share_membership(monkeypatch):
     client = TestClient(app)
 
     assert client.get("/api/content/content-1/co-readers?club_id=other-club").status_code == 403
+    assert client.get("/api/content/content-1/club-video-progress?club_id=other-club").status_code == 403
+    assert client.post("/api/content/content-1/club-open?club_id=other-club").status_code == 403
     assert client.get("/api/content/content-1/highlights?asset_id=asset-1&club_id=other-club").status_code == 403
     assert client.get("/api/content/content-1/club-video-annotations?club_id=other-club").status_code == 403
     assert client.get("/api/content/content-1/pdf?club_id=other-club").status_code == 403
 
     assert client.get("/api/content/content-1/co-readers?club_id=joined-club").json()["items"][0]["progress_ratio"] == 0.5
+    assert client.get("/api/content/content-1/club-video-progress?club_id=joined-club").json()["items"][0]["segments"] == [[5, 12]]
+    assert client.post("/api/content/content-1/club-open?club_id=joined-club").json()["saved"] is True
     assert client.get("/api/content/content-1/highlights?asset_id=asset-1&club_id=joined-club").json()["items"][0]["note"] == "shared"
-    assert client.get("/api/content/content-1/club-video-annotations?club_id=joined-club").json()["items"][0]["body"] == "shared"
+    annotations = client.get("/api/content/content-1/club-video-annotations?club_id=joined-club").json()
+    assert annotations["items"][0]["body"] == "shared"
+    assert annotations["personal_note"] == "Only my private note"
     assert client.get("/api/content/content-1/pdf?club_id=joined-club").json()["club_id"] == "joined-club"
     assert calls and all(call[2] == "7" for call in calls)
 

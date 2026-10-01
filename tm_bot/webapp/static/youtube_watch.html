@@ -145,15 +145,24 @@
     .club-activity-body { display: grid; gap: 12px; padding: 0 14px 14px; }
     .club-activity-hint { margin: 0; color: rgba(237,243,255,.62); font-size: 12px; line-height: 1.5; }
     .club-reader-list, .club-note-list { display: grid; gap: 7px; max-height: 240px; overflow: auto; }
-    .club-reader { display: grid; grid-template-columns: 1fr auto; gap: 5px 8px; font-size: 12px; }
-    .club-reader meter { grid-column: 1 / -1; width: 100%; height: 9px; accent-color: #22c8dc; }
+    .club-reader { display: grid; gap: 5px; font-size: 12px; }
+    .club-reader-person { display: inline-flex; align-items: center; justify-self: start; gap: 7px; padding: 2px 4px; border: 0; border-radius: 20px; background: none; color: #edf3ff; font: inherit; cursor: pointer; }
+    .club-reader-person:hover, .club-reader-person:focus-visible, .club-reader-person.is-selected { background: rgba(99,167,247,.16); outline: none; }
+    .club-reader-avatar { display: grid; place-items: center; width: 25px; height: 25px; flex: none; overflow: hidden; border-radius: 50%; background: #34486f; color: #fff; font-size: 11px; font-weight: 800; }
+    .club-reader-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .club-reader .progress-container { margin: 0 0 5px; }
+    .club-notes { border-top: 1px solid var(--app-border); padding-top: 8px; }
+    .club-notes h3 { margin: 0; color: var(--app-accent); font-size: 13px; }
+    .club-notes-body { display: grid; gap: 10px; padding-top: 10px; }
     .club-note-form { display: grid; gap: 7px; }
     .club-note-form textarea { width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--app-border); border-radius: 8px; background: #0a1630; color: #edf3ff; padding: 8px; font: inherit; }
     .club-note-form button, .club-note button { border: 1px solid var(--app-border); border-radius: 8px; background: rgba(99,167,247,.12); color: #dceaff; padding: 7px 10px; font: inherit; cursor: pointer; }
     .club-note-form button { justify-self: start; }
     .club-note { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 8px; border: 1px solid var(--app-border); border-radius: 8px; font-size: 12px; }
+    .club-note.is-personal { grid-template-columns: 1fr; }
     .club-note small { display: block; color: rgba(237,243,255,.55); margin-bottom: 3px; }
     .club-note p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .club-note-empty { margin: 0; color: rgba(237,243,255,.58); font-size: 12px; }
     .club-note-status { margin: 0; color: #fca5a5; font-size: 12px; }
     .debug {
       margin-top: 10px;
@@ -241,15 +250,17 @@
   <details id="clubActivity" class="club-activity" hidden>
     <summary id="clubActivityTitle"></summary>
     <div class="club-activity-body">
-      <p id="clubActivityHint" class="club-activity-hint"></p>
       <div id="clubReaderList" class="club-reader-list"></div>
-      <form id="clubNoteForm" class="club-note-form">
-        <label id="clubNoteLabel" for="clubNoteBody"></label>
-        <textarea id="clubNoteBody" maxlength="2000" required></textarea>
-        <button id="clubNoteSubmit" type="submit"></button>
-      </form>
-      <p id="clubNoteStatus" class="club-note-status" role="status"></p>
-      <div id="clubNoteList" class="club-note-list"></div>
+      <section class="club-notes" aria-labelledby="clubNotesTitle"><div class="club-notes-body">
+        <h3 id="clubNotesTitle"></h3>
+        <div id="clubNoteList" class="club-note-list"></div>
+        <form id="clubNoteForm" class="club-note-form">
+          <label id="clubNoteLabel" for="clubNoteBody"></label>
+          <textarea id="clubNoteBody" maxlength="2000" required></textarea>
+          <button id="clubNoteSubmit" type="submit"></button>
+        </form>
+        <p id="clubNoteStatus" class="club-note-status" role="status"></p>
+      </div></section>
     </div>
   </details>
   <section id="savedWords" class="saved-words" hidden>
@@ -297,8 +308,10 @@
     savedTitle: 'کلمه‌های ذخیره‌شده از این ویدیو', review: 'مرور کارت‌ها ←', building: 'در حال ساخت کارت…',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'روی یک کلمه از زیرنویس بزن.',
     signIn: 'برای ذخیرهٔ کارت، ویدیو رو از داخل زانا باز کن.', context: 'جمله',
-    clubActivity: 'مطالعهٔ گروهی', clubActivityHint: 'پیشرفت تماشا و یادداشت‌های این بخش برای اعضای باشگاه قابل‌نمایش است.',
-    clubNoteLabel: 'یادداشت در این لحظهٔ ویدیو', clubNoteSubmit: 'افزودن یادداشت',
+    clubActivity: 'پیشرفت باشگاه', clubNotes: 'یادداشت‌ها و نشان‌گذاری‌ها',
+    clubNoteLabel: 'یادداشت جدید برای باشگاه', clubNoteSubmit: 'افزودن یادداشت',
+    personalNote: 'یادداشت شخصی من', filterMemberNotes: 'نمایش یادداشت‌های',
+    noNotes: 'هنوز یادداشتی ثبت نشده است.',
     clubNoteDelete: 'حذف', clubNoteError: 'یادداشت باشگاه بارگذاری یا ذخیره نشد.'
   } : {
     back: 'Back', closeWord: 'Close',
@@ -316,8 +329,10 @@
     savedTitle: 'Saved from this video', review: 'Review →', building: 'Building card…',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
     signIn: 'Open this page inside the app to save cards.', context: 'line',
-    clubActivity: 'Watch together', clubActivityHint: 'Watch progress and notes here are visible to this club’s members.',
-    clubNoteLabel: 'Note at this point in the video', clubNoteSubmit: 'Add note',
+    clubActivity: 'Club progress', clubNotes: 'Notes and highlights',
+    clubNoteLabel: 'New club note', clubNoteSubmit: 'Add note',
+    personalNote: 'My private note', filterMemberNotes: 'Show notes by',
+    noNotes: 'No notes yet.',
     clubNoteDelete: 'Delete', clubNoteError: 'Could not load or save club notes.'
   };
   document.documentElement.lang = uiLanguage;
@@ -1467,13 +1482,15 @@
       .catch(function() { /* the strip is optional; the player keeps working */ });
   }
 
+  var selectedClubReaderId = '';
+  var clubAvatarUrls = [];
   function loadClubActivity() {
     if (!contentId || !clubId) return;
     var headers = authHeaders();
     if (!headers.Authorization && !headers['X-Telegram-Init-Data']) return;
     var query = '?club_id=' + encodeURIComponent(clubId);
     Promise.all([
-      fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/co-readers' + query, {headers: headers}),
+      fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-progress' + query, {headers: headers}),
       fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations' + query, {headers: headers})
     ]).then(function(responses) {
       if (!responses[0].ok || !responses[1].ok) {
@@ -1487,58 +1504,131 @@
       section.hidden = false;
       var readers = (data[0] && data[0].items) || [];
       document.getElementById('clubActivityTitle').textContent = copy.clubActivity + ' · ' + readers.length;
-      document.getElementById('clubActivityHint').textContent = copy.clubActivityHint;
       document.getElementById('clubNoteLabel').textContent = copy.clubNoteLabel;
       document.getElementById('clubNoteSubmit').textContent = copy.clubNoteSubmit;
       var readerList = document.getElementById('clubReaderList');
       readerList.replaceChildren();
+      clubAvatarUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+      clubAvatarUrls = [];
+      var duration = Number(data[0].duration_seconds) || videoDuration;
+      var noteList = document.getElementById('clubNoteList');
+      var notes = (data[1] && data[1].items) || [];
+      var personalNote = String((data[1] && data[1].personal_note) || '').trim();
+      function renderNotes() {
+        noteList.replaceChildren();
+        var visible = selectedClubReaderId
+          ? notes.filter(function(note) { return String(note.user_id) === selectedClubReaderId; })
+          : notes;
+        var noteCount = visible.length + (!selectedClubReaderId && personalNote ? 1 : 0);
+        var selectedReader = readers.find(function(reader) { return String(reader.user_id) === selectedClubReaderId; });
+        document.getElementById('clubNotesTitle').textContent = copy.clubNotes + (selectedReader ? ' · ' + selectedReader.name : '') + (noteCount ? ' · ' + noteCount : '');
+        if (!noteCount) {
+          var empty = document.createElement('p');
+          empty.className = 'club-note-empty';
+          empty.textContent = copy.noNotes;
+          noteList.appendChild(empty);
+        }
+        if (!selectedClubReaderId && personalNote) {
+          var personalRow = document.createElement('article');
+          personalRow.className = 'club-note is-personal';
+          var personalLabel = document.createElement('small');
+          personalLabel.textContent = copy.personalNote;
+          var personalBody = document.createElement('p');
+          personalBody.textContent = personalNote;
+          var personalText = document.createElement('div');
+          personalText.appendChild(personalLabel); personalText.appendChild(personalBody);
+          personalRow.appendChild(personalText);
+          noteList.appendChild(personalRow);
+        }
+        visible.forEach(function(note) {
+          var row = document.createElement('article');
+          row.className = 'club-note';
+          var jump = document.createElement('button');
+          jump.type = 'button'; jump.textContent = formatCueTime(note.position_seconds);
+          jump.addEventListener('click', function() {
+            if (player && typeof player.seekTo === 'function') {
+              player.seekTo(Math.max(0, Number(note.position_seconds) || 0), true);
+              player.playVideo();
+            }
+          });
+          var body = document.createElement('div');
+          var author = document.createElement('small');
+          author.textContent = note.author_name || 'Member';
+          var noteText = document.createElement('p');
+          noteText.textContent = note.body || '';
+          body.appendChild(author); body.appendChild(noteText);
+          row.appendChild(jump); row.appendChild(body);
+          if (note.is_mine) {
+            var remove = document.createElement('button');
+            remove.type = 'button'; remove.textContent = copy.clubNoteDelete;
+            remove.addEventListener('click', function() {
+              fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations/' + encodeURIComponent(note.id) + query,
+                {method: 'DELETE', headers: authHeaders()})
+                .then(function(response) { if (!response.ok) throw new Error('delete'); loadClubActivity(); })
+                .catch(function() { document.getElementById('clubNoteStatus').textContent = copy.clubNoteError; });
+            });
+            row.appendChild(remove);
+          }
+          noteList.appendChild(row);
+        });
+      }
       readers.forEach(function(reader) {
         var row = document.createElement('div');
         row.className = 'club-reader';
-        var name = document.createElement('span');
-        name.textContent = reader.name || 'Member';
-        var value = document.createElement('span');
-        var pct = Math.max(0, Math.min(100, Math.round((Number(reader.progress_ratio) || 0) * 100)));
-        value.textContent = pct + '%';
-        var bar = document.createElement('meter');
-        bar.min = 0; bar.max = 100; bar.value = pct;
-        bar.setAttribute('aria-label', name.textContent);
-        row.appendChild(name); row.appendChild(value); row.appendChild(bar);
+        var name = document.createElement('button');
+        name.type = 'button';
+        name.className = 'club-reader-person' + (selectedClubReaderId === String(reader.user_id) ? ' is-selected' : '');
+        name.title = copy.filterMemberNotes + ' ' + (reader.name || 'Member');
+        name.setAttribute('aria-pressed', selectedClubReaderId === String(reader.user_id) ? 'true' : 'false');
+        var avatar = document.createElement('span');
+        avatar.className = 'club-reader-avatar';
+        avatar.textContent = (reader.name || 'M').trim().charAt(0).toUpperCase();
+        if (reader.avatar_path) {
+          fetch(baseUrl + '/api/media/avatars/' + encodeURIComponent(reader.user_id), {headers: headers})
+            .then(function(response) { if (!response.ok) throw new Error('avatar'); return response.blob(); })
+            .then(function(blob) {
+              if (!blob.type.startsWith('image/')) return;
+              if (!row.isConnected) return;
+              var url = URL.createObjectURL(blob);
+              clubAvatarUrls.push(url);
+              var img = document.createElement('img');
+              img.alt = '';
+              img.src = url;
+              avatar.replaceChildren(img);
+            }).catch(function() { /* An initial is the fallback for unavailable or private photos. */ });
+        }
+        var nameText = document.createElement('span');
+        nameText.textContent = reader.name || 'Member';
+        name.appendChild(avatar); name.appendChild(nameText);
+        name.addEventListener('click', function() {
+          selectedClubReaderId = selectedClubReaderId === String(reader.user_id) ? '' : String(reader.user_id);
+          Array.prototype.forEach.call(readerList.querySelectorAll('.club-reader-person'), function(button) {
+            var active = button === name && !!selectedClubReaderId;
+            button.classList.toggle('is-selected', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+          });
+          renderNotes();
+        });
+        var bar = document.createElement('div');
+        bar.className = 'progress-container';
+        bar.setAttribute('role', 'img');
+        bar.setAttribute('aria-label', nameText.textContent + ' · ' + copy.watched);
+        (reader.segments || []).forEach(function(segment) {
+          if (!duration) return;
+          var start = Math.max(0, Math.min(duration, Number(segment[0]) || 0));
+          var end = Math.max(start, Math.min(duration, Number(segment[1]) || 0));
+          if (end <= start) return;
+          var part = document.createElement('div');
+          part.className = 'progress-segment';
+          part.style.left = (start / duration * 100) + '%';
+          part.style.width = ((end - start) / duration * 100) + '%';
+          bar.appendChild(part);
+        });
+        row.appendChild(name); row.appendChild(bar);
         readerList.appendChild(row);
       });
-      var noteList = document.getElementById('clubNoteList');
-      noteList.replaceChildren();
-      ((data[1] && data[1].items) || []).forEach(function(note) {
-        var row = document.createElement('article');
-        row.className = 'club-note';
-        var jump = document.createElement('button');
-        jump.type = 'button'; jump.textContent = formatCueTime(note.position_seconds);
-        jump.addEventListener('click', function() {
-          if (player && typeof player.seekTo === 'function') {
-            player.seekTo(Math.max(0, Number(note.position_seconds) || 0), true);
-            player.playVideo();
-          }
-        });
-        var body = document.createElement('div');
-        var author = document.createElement('small');
-        author.textContent = note.author_name || 'Member';
-        var text = document.createElement('p');
-        text.textContent = note.body || '';
-        body.appendChild(author); body.appendChild(text);
-        row.appendChild(jump); row.appendChild(body);
-        if (note.is_mine) {
-          var remove = document.createElement('button');
-          remove.type = 'button'; remove.textContent = copy.clubNoteDelete;
-          remove.addEventListener('click', function() {
-            fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations/' + encodeURIComponent(note.id) + query,
-              {method: 'DELETE', headers: authHeaders()})
-              .then(function(response) { if (!response.ok) throw new Error('delete'); loadClubActivity(); })
-              .catch(function() { document.getElementById('clubNoteStatus').textContent = copy.clubNoteError; });
-          });
-          row.appendChild(remove);
-        }
-        noteList.appendChild(row);
-      });
+      if (selectedClubReaderId && !readers.some(function(reader) { return String(reader.user_id) === selectedClubReaderId; })) selectedClubReaderId = '';
+      renderNotes();
       document.getElementById('clubNoteStatus').textContent = '';
     }).catch(function(error) {
       // A revoked club share must not leave a cached roster visible. A brief
@@ -1626,6 +1716,13 @@
   loadTranscript();
   loadWatchProgress();
   loadSavedWords();
+  if (clubId && contentId) {
+    var openHeaders = authHeaders();
+    if (openHeaders.Authorization || openHeaders['X-Telegram-Init-Data']) {
+      fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-open?club_id=' + encodeURIComponent(clubId),
+        {method: 'POST', headers: openHeaders}).catch(function() { /* Watching remains available if saving fails. */ });
+    }
+  }
   loadClubActivity();
   if (clubId && contentId) window.setInterval(function() {
     if (document.visibilityState === 'visible') loadClubActivity();

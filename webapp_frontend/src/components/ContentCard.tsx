@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Archive, ArchiveRestore, CalendarClock, FileText, Headphones, Play, Share2 } from 'lucide-react';
+import { Archive, ArchiveRestore, CalendarClock, FileText, Headphones, Play, Share2, UsersRound } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { HeatmapBar } from './HeatmapBar';
 import { YouTubeThumbnailMark } from './YouTubeThumbnailMark';
@@ -259,6 +259,7 @@ export function ContentCard({ item, onClick, onPlan, onShare, onArchive, onResto
             <div className="content-card-meta-row">
               <ContentMetadataBadges language={item.language} subject={!item.language ? t('myContents.unknownLanguage') : null} level={level} duration={durationLabel}
                 subtitles={item.has_subtitles && displayType === 'video'} />
+              {item.club_names?.map((club, index) => <span className="content-card-club-badge" key={`${item.club_ids?.[index] || club}`}><UsersRound size={12} aria-hidden="true" /><span>{club}</span></span>)}
               {!isYouTubeVideo && displayType !== 'pdf' && <span className={`content-card-type content-card-type--${displayType}`}>
                 <TypeIcon type={displayType} />{t(`content.types.${displayType}`)}
               </span>}

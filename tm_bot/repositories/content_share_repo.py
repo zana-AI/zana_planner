@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from db.postgres_db import get_db_session
 from repositories.explore_repo import _youtube_video_id
+from repositories.youtube_progress_repo import coverage
 
 
 class ContentShareRepository:
@@ -169,6 +170,38 @@ class ContentShareRepository:
                 LIMIT 200
             """), {"content_id": content_id, "club_id": club_id}).mappings().all()
         return [dict(row) for row in rows]
+
+    def list_video_progress(self, content_id: str, club_id: str, viewer_user_id: str) -> dict[str, Any]:
+        """Watched ranges for active *other* members, using the viewer's timeline units."""
+        with get_db_session() as session:
+            duration = session.execute(text("SELECT duration_seconds FROM content WHERE id = :content_id"),
+                                       {"content_id": content_id}).scalar()
+            rows = session.execute(text("""
+                SELECT m.user_id, COALESCE(NULLIF(u.first_name, ''), NULLIF(u.username, ''), 'Member') AS name,
+                       CASE WHEN COALESCE(u.avatar_visibility, 'public') = 'public'
+                            THEN u.avatar_path ELSE NULL END AS avatar_path,
+                       e.start_position, e.end_position
+                FROM content_consumption_event e
+                JOIN club_members m ON m.user_id = e.user_id AND m.club_id = :club_id AND m.status = 'active'
+                JOIN content_club_shares s ON s.club_id = m.club_id AND s.content_id = e.content_id AND s.status = 'sent'
+                JOIN users u ON u.user_id = m.user_id
+                WHERE e.content_id = :content_id AND e.position_unit = 'seconds'
+                  AND e.user_id != :viewer_user_id AND e.end_position > e.start_position
+                ORDER BY m.user_id, e.start_position
+            """), {"content_id": content_id, "club_id": club_id,
+                   "viewer_user_id": viewer_user_id}).mappings().all()
+        by_user: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            uid = str(row["user_id"])
+            entry = by_user.setdefault(uid, {"user_id": uid, "name": row["name"],
+                                             "avatar_path": row["avatar_path"], "ranges": []})
+            entry["ranges"].append((float(row["start_position"]), float(row["end_position"])))
+        items = []
+        for entry in by_user.values():
+            segments, _ = coverage(entry.pop("ranges"), duration)
+            if segments:
+                items.append({**entry, "segments": segments})
+        return {"duration_seconds": duration, "items": sorted(items, key=lambda item: item["name"].lower())}
 
     def list_club_highlights(self, content_id: str, club_id: str, asset_id: str,
                              viewer_user_id: str, as_user_id: str | None = None) -> list[dict[str, Any]]:

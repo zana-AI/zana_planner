@@ -709,11 +709,29 @@ async def get_content_co_readers(
     return {"items": items}
 
 
+@router.get("/content/{content_id}/club-video-progress")
+async def get_club_video_progress(content_id: str, club_id: str,
+                                  user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    repo = _require_club_share(content_id, club_id, str(user_id))
+    return repo.list_video_progress(content_id, club_id, str(user_id))
+
+
+@router.post("/content/{content_id}/club-open")
+async def open_club_content(content_id: str, club_id: str,
+                            user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
+    """Opening a club share keeps it in the member's Library after membership ends."""
+    _require_club_share(content_id, club_id, str(user_id))
+    get_content_repo().add_user_content(str(user_id), content_id)
+    return {"saved": True}
+
+
 @router.get("/content/{content_id}/club-video-annotations")
 async def get_club_video_annotations(content_id: str, club_id: str,
                                      user_id: int = Depends(get_current_user)) -> Dict[str, Any]:
     repo = _require_club_share(content_id, club_id, str(user_id))
-    return {"items": repo.list_video_annotations(content_id, club_id, str(user_id))}
+    own_content = get_content_repo().get_user_content(str(user_id), content_id)
+    return {"items": repo.list_video_annotations(content_id, club_id, str(user_id)),
+            "personal_note": (own_content or {}).get("notes") or ""}
 
 
 @router.post("/content/{content_id}/club-video-annotations")

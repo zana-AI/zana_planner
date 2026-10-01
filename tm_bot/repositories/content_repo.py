@@ -357,14 +357,14 @@ class ContentRepository:
     ) -> List[Dict[str, Any]]:
         """Return joined content + user_content + rollup rows for the library."""
         params: Dict[str, Any] = {"user_id": user_id, "limit": max(1, min(int(limit or 20), 101))}
-        conditions = ["uc.user_id = :user_id"]
+        conditions = []
         if status and status != "all":
-            conditions.append("uc.status = :status")
+            conditions.append("COALESCE(uc.status, 'saved') = :status")
             params["status"] = status
         else:
             # The main Library excludes archived items. They remain available
             # through the explicit Archived filter, with all learning data.
-            conditions.append("uc.status != 'archived'")
+            conditions.append("COALESCE(uc.status, 'saved') != 'archived'")
         if content_type and content_type != "all":
             if content_type == "pdf":
                 conditions.append(
@@ -403,8 +403,8 @@ class ContentRepository:
             conditions.append(
                 """
                 (
-                    uc.last_interaction_at IS NOT NULL AND uc.last_interaction_at < :cursor
-                    OR uc.last_interaction_at IS NULL AND uc.added_at < :cursor
+                    uc.last_interaction_at IS NOT NULL AND uc.last_interaction_at::timestamptz < :cursor
+                    OR uc.last_interaction_at IS NULL AND COALESCE(uc.added_at::timestamptz, shares.shared_at) < :cursor
                 )
                 """
             )
@@ -413,16 +413,16 @@ class ContentRepository:
 
         sort_key = sort or "recent"
         order_by = {
-            "added": "uc.added_at DESC",
-            "title": "LOWER(COALESCE(c.title, '')) ASC, uc.added_at DESC",
-            "progress": "uc.progress_ratio DESC NULLS LAST, uc.last_interaction_at DESC NULLS LAST, uc.added_at DESC",
+            "added": "COALESCE(uc.added_at::timestamptz, shares.shared_at) DESC",
+            "title": "LOWER(COALESCE(c.title, '')) ASC, COALESCE(uc.added_at::timestamptz, shares.shared_at) DESC",
+            "progress": "uc.progress_ratio DESC NULLS LAST, uc.last_interaction_at::timestamptz DESC NULLS LAST, COALESCE(uc.added_at::timestamptz, shares.shared_at) DESC",
             # Never-opened content has a null last_interaction_at, and NULLS LAST
             # buried it below everything ever touched — so a link saved a minute
             # ago sorted beneath an article read last year. Falling back to
             # added_at makes "recent" mean recently added *or* read, which is
             # what the word means to someone who just saved something.
-            "recent": "COALESCE(uc.last_interaction_at, uc.added_at) DESC, uc.added_at DESC",
-        }.get(sort_key, "COALESCE(uc.last_interaction_at, uc.added_at) DESC, uc.added_at DESC")
+            "recent": "COALESCE(uc.last_interaction_at::timestamptz, uc.added_at::timestamptz, shares.shared_at) DESC, COALESCE(uc.added_at::timestamptz, shares.shared_at) DESC",
+        }.get(sort_key, "COALESCE(uc.last_interaction_at::timestamptz, uc.added_at::timestamptz, shares.shared_at) DESC")
 
         with get_db_session() as session:
             rows = session.execute(
@@ -431,16 +431,34 @@ class ContentRepository:
                            c.title, c.description, c.author_channel, c.language, c.published_at,
                            c.duration_seconds, c.estimated_read_seconds, c.thumbnail_url, c.metadata_json,
                            c.owner_user_id, c.visibility, c.club_id,
-                           uc.id AS user_content_id, uc.status, uc.added_at, uc.last_interaction_at,
+                           uc.id AS user_content_id, COALESCE(uc.status, 'saved') AS status,
+                           COALESCE(uc.added_at::timestamptz, shares.shared_at) AS added_at, uc.last_interaction_at,
                            uc.completed_at, uc.last_position, uc.position_unit, uc.progress_ratio,
                            uc.total_consumed_seconds, uc.notes, uc.rating,
                            uc.assigned_promise_id, uc.assigned_at,
-                           r.bucket_count, r.buckets,
+                           r.bucket_count, r.buckets, shares.club_ids, shares.club_names,
                            thumbnail_asset.id AS thumbnail_asset_id,
                            CASE WHEN transcript.cue_count > 0 THEN TRUE ELSE FALSE END AS has_subtitles
-                    FROM user_content uc
-                    JOIN content c ON c.id = uc.content_id
-                    LEFT JOIN user_content_rollup r ON r.user_id = uc.user_id AND r.content_id = uc.content_id
+                    FROM (
+                        SELECT uc.content_id FROM user_content uc WHERE uc.user_id = :user_id
+                        UNION
+                        SELECT s.content_id FROM content_club_shares s
+                        JOIN clubs cl ON cl.club_id = s.club_id AND cl.status = 'active'
+                        JOIN club_members m ON m.club_id = s.club_id AND m.user_id = :user_id AND m.status = 'active'
+                        WHERE s.status = 'sent'
+                    ) accessible
+                    JOIN content c ON c.id = accessible.content_id
+                    LEFT JOIN user_content uc ON uc.content_id = c.id AND uc.user_id = :user_id
+                    LEFT JOIN LATERAL (
+                        SELECT ARRAY_AGG(s.club_id::text ORDER BY cl.name) AS club_ids,
+                               ARRAY_AGG(cl.name ORDER BY cl.name) AS club_names,
+                               MAX(s.created_at) AS shared_at
+                        FROM content_club_shares s
+                        JOIN clubs cl ON cl.club_id = s.club_id AND cl.status = 'active'
+                        JOIN club_members m ON m.club_id = s.club_id AND m.user_id = :user_id AND m.status = 'active'
+                        WHERE s.content_id = c.id AND s.status = 'sent'
+                    ) shares ON TRUE
+                    LEFT JOIN user_content_rollup r ON r.user_id = :user_id AND r.content_id = c.id
                     LEFT JOIN video_transcript transcript ON transcript.video_id = COALESCE(
                         NULLIF(c.metadata_json->>'video_id', ''),
                         CASE
@@ -464,7 +482,7 @@ class ContentRepository:
                         LIMIT 1
                     ) thumbnail_asset ON TRUE
                     WHERE {" AND ".join(conditions)}
-                    ORDER BY {order_by}
+                    ORDER BY {order_by}, c.id
                     LIMIT :limit
                     OFFSET :offset
                 """),
@@ -475,7 +493,7 @@ class ContentRepository:
     def get_user_content_facets(self, user_id: str, q: Optional[str] = None, status: Optional[str] = None) -> Dict[str, Dict[str, int]]:
         """Return lightweight facet counts for the user's library."""
         params: Dict[str, Any] = {"user_id": user_id}
-        where = ["uc.user_id = :user_id"]
+        where = []
         if q and q.strip():
             params["q"] = f"%{q.strip()}%"
             where.append(
@@ -493,10 +511,18 @@ class ContentRepository:
         with get_db_session() as session:
             rows = session.execute(
                 text(f"""
-                    SELECT uc.status, c.content_type, c.provider, c.metadata_json, c.language
-                    FROM user_content uc
-                    JOIN content c ON c.id = uc.content_id
-                    WHERE {" AND ".join(where)}
+                    SELECT COALESCE(uc.status, 'saved') AS status, c.content_type, c.provider, c.metadata_json, c.language
+                    FROM (
+                        SELECT uc.content_id FROM user_content uc WHERE uc.user_id = :user_id
+                        UNION
+                        SELECT s.content_id FROM content_club_shares s
+                        JOIN clubs cl ON cl.club_id = s.club_id AND cl.status = 'active'
+                        JOIN club_members m ON m.club_id = s.club_id AND m.user_id = :user_id AND m.status = 'active'
+                        WHERE s.status = 'sent'
+                    ) accessible
+                    JOIN content c ON c.id = accessible.content_id
+                    LEFT JOIN user_content uc ON uc.content_id = c.id AND uc.user_id = :user_id
+                    {"WHERE " + " AND ".join(where) if where else ""}
                 """),
                 params,
             ).mappings().fetchall()

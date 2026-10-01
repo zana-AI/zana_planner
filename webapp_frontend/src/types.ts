@@ -744,6 +744,9 @@ export interface UserContent {
 
 export interface UserContentWithDetails extends Content, UserContent {
   user_content_id?: string;
+  /** Active clubs sharing this item; one Library card is shown per content ID. */
+  club_ids?: string[] | null;
+  club_names?: string[] | null;
   thumbnail_asset_id?: string;
   /** A cached YouTube transcript with at least one subtitle cue is available. */
   has_subtitles?: boolean;
