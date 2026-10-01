@@ -853,7 +853,7 @@ class ContentRepository:
                 text(
                     """
                     SELECT h.id, h.user_id, h.content_id, h.asset_id, h.page_index, h.rects_json,
-                           h.selected_text, h.note, h.color, h.created_at, h.updated_at,
+                           h.selected_text, h.note, h.color, h.created_at, h.updated_at, h.club_visible,
                            h.copied_from_highlight_id, h.migration_status,
                            COALESCE(u.first_name, u.username, 'User') AS author_name
                     FROM content_highlight h
@@ -891,7 +891,7 @@ class ContentRepository:
                     """
                     SELECT
                         u.user_id,
-                        COALESCE(u.first_name, u.username, 'User') AS name,
+                        COALESCE(users.first_name, users.username, 'User') AS name,
                         COALESCE(uc.progress_ratio, 0) AS progress_ratio,
                         COALESCE(uc.total_consumed_seconds, 0) AS total_consumed_seconds,
                         uc.last_interaction_at,
@@ -919,7 +919,7 @@ class ContentRepository:
                 text(
                     """
                     SELECT id, user_id, content_id, asset_id, page_index, rects_json, selected_text,
-                           note, color, created_at, updated_at, copied_from_highlight_id, migration_status
+                           note, color, created_at, updated_at, club_visible, copied_from_highlight_id, migration_status
                     FROM content_highlight
                     WHERE user_id = :user_id AND content_id = :content_id AND asset_id = :asset_id
                     ORDER BY page_index ASC, created_at ASC
@@ -942,7 +942,7 @@ class ContentRepository:
                 text(
                     """
                     SELECT id, user_id, content_id, asset_id, page_index, rects_json, selected_text,
-                           note, color, created_at, updated_at, copied_from_highlight_id, migration_status
+                           note, color, created_at, updated_at, club_visible, copied_from_highlight_id, migration_status
                     FROM content_highlight
                     WHERE user_id = :user_id AND content_id = :content_id AND id = :highlight_id
                     LIMIT 1
@@ -966,6 +966,7 @@ class ContentRepository:
         selected_text: Optional[str] = None,
         note: Optional[str] = None,
         color: Optional[str] = None,
+        club_visible: Optional[bool] = None,
     ) -> bool:
         """Update mutable highlight fields; returns True if row updated."""
         now = _now()
@@ -978,6 +979,7 @@ class ContentRepository:
                         selected_text = COALESCE(:selected_text, selected_text),
                         note = COALESCE(:note, note),
                         color = COALESCE(:color, color),
+                        club_visible = COALESCE(:club_visible, club_visible),
                         updated_at = :updated_at
                     WHERE user_id = :user_id AND content_id = :content_id AND id = :highlight_id
                     """
@@ -990,6 +992,7 @@ class ContentRepository:
                     "selected_text": selected_text,
                     "note": note,
                     "color": color,
+                    "club_visible": club_visible,
                     "updated_at": now,
                 },
             )

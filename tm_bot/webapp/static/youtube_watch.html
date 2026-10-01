@@ -140,6 +140,21 @@
     .saved-chip { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; padding: 5px 9px; border: 1px solid rgba(126,224,161,.35); border-radius: 999px; background: rgba(126,224,161,.08); color: #edf3ff; font: inherit; font-size: 13px; cursor: pointer; }
     .saved-chip:hover, .saved-chip:focus-visible { background: rgba(126,224,161,.18); outline: none; }
     .saved-chip-back { color: rgba(237,243,255,.6); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .club-activity { margin-top: 12px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-panel); }
+    .club-activity summary { padding: 12px 14px; cursor: pointer; font-size: 13px; font-weight: 800; }
+    .club-activity-body { display: grid; gap: 12px; padding: 0 14px 14px; }
+    .club-activity-hint { margin: 0; color: rgba(237,243,255,.62); font-size: 12px; line-height: 1.5; }
+    .club-reader-list, .club-note-list { display: grid; gap: 7px; max-height: 240px; overflow: auto; }
+    .club-reader { display: grid; grid-template-columns: 1fr auto; gap: 5px 8px; font-size: 12px; }
+    .club-reader meter { grid-column: 1 / -1; width: 100%; height: 9px; accent-color: #22c8dc; }
+    .club-note-form { display: grid; gap: 7px; }
+    .club-note-form textarea { width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--app-border); border-radius: 8px; background: #0a1630; color: #edf3ff; padding: 8px; font: inherit; }
+    .club-note-form button, .club-note button { border: 1px solid var(--app-border); border-radius: 8px; background: rgba(99,167,247,.12); color: #dceaff; padding: 7px 10px; font: inherit; cursor: pointer; }
+    .club-note-form button { justify-self: start; }
+    .club-note { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 8px; border: 1px solid var(--app-border); border-radius: 8px; font-size: 12px; }
+    .club-note small { display: block; color: rgba(237,243,255,.55); margin-bottom: 3px; }
+    .club-note p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .club-note-status { margin: 0; color: #fca5a5; font-size: 12px; }
     .debug {
       margin-top: 10px;
       padding: 10px;
@@ -223,6 +238,20 @@
       <button id="transcriptSettingsToggle" class="transcript-settings-toggle" type="button" aria-controls="transcriptSettings" aria-expanded="false">⚙</button>
     </div>
   </div>
+  <details id="clubActivity" class="club-activity" hidden>
+    <summary id="clubActivityTitle"></summary>
+    <div class="club-activity-body">
+      <p id="clubActivityHint" class="club-activity-hint"></p>
+      <div id="clubReaderList" class="club-reader-list"></div>
+      <form id="clubNoteForm" class="club-note-form">
+        <label id="clubNoteLabel" for="clubNoteBody"></label>
+        <textarea id="clubNoteBody" maxlength="2000" required></textarea>
+        <button id="clubNoteSubmit" type="submit"></button>
+      </form>
+      <p id="clubNoteStatus" class="club-note-status" role="status"></p>
+      <div id="clubNoteList" class="club-note-list"></div>
+    </div>
+  </details>
   <section id="savedWords" class="saved-words" hidden>
     <div class="saved-head">
       <span id="savedTitle" class="saved-title"></span>
@@ -244,6 +273,7 @@
   }
   var videoId = params.get('video_id') || '';
   var contentId = params.get('content_id') || '';
+  var clubId = params.get('club_id') || '';
   // Flashcards mined from this video link straight to the second the word
   // is spoken, so honour a ?start= offset when opening the player.
   var startAt = Math.max(0, parseInt(params.get('start') || '0', 10) || 0);
@@ -266,7 +296,10 @@
     existingKept: 'این کارت رو از قبل داری',
     savedTitle: 'کلمه‌های ذخیره‌شده از این ویدیو', review: 'مرور کارت‌ها ←', building: 'در حال ساخت کارت…',
     loading: 'در حال ترجمه…', unavailable: 'ترجمه در دسترس نیست', chooseWord: 'روی یک کلمه از زیرنویس بزن.',
-    signIn: 'برای ذخیرهٔ کارت، ویدیو رو از داخل زانا باز کن.', context: 'جمله'
+    signIn: 'برای ذخیرهٔ کارت، ویدیو رو از داخل زانا باز کن.', context: 'جمله',
+    clubActivity: 'مطالعهٔ گروهی', clubActivityHint: 'پیشرفت تماشا و یادداشت‌های این بخش برای اعضای باشگاه قابل‌نمایش است.',
+    clubNoteLabel: 'یادداشت در این لحظهٔ ویدیو', clubNoteSubmit: 'افزودن یادداشت',
+    clubNoteDelete: 'حذف', clubNoteError: 'یادداشت باشگاه بارگذاری یا ذخیره نشد.'
   } : {
     back: 'Back', closeWord: 'Close',
     listen: 'Listen', save: 'Save card', saved: 'Saved',
@@ -282,7 +315,10 @@
     existingKept: 'Existing card kept',
     savedTitle: 'Saved from this video', review: 'Review →', building: 'Building card…',
     loading: 'Translating…', unavailable: 'Translation unavailable', chooseWord: 'Choose a word.',
-    signIn: 'Open this page inside the app to save cards.', context: 'line'
+    signIn: 'Open this page inside the app to save cards.', context: 'line',
+    clubActivity: 'Watch together', clubActivityHint: 'Watch progress and notes here are visible to this club’s members.',
+    clubNoteLabel: 'Note at this point in the video', clubNoteSubmit: 'Add note',
+    clubNoteDelete: 'Delete', clubNoteError: 'Could not load or save club notes.'
   };
   document.documentElement.lang = uiLanguage;
   document.documentElement.dir = uiLanguage === 'fa' ? 'rtl' : 'ltr';
@@ -1431,6 +1467,114 @@
       .catch(function() { /* the strip is optional; the player keeps working */ });
   }
 
+  function loadClubActivity() {
+    if (!contentId || !clubId) return;
+    var headers = authHeaders();
+    if (!headers.Authorization && !headers['X-Telegram-Init-Data']) return;
+    var query = '?club_id=' + encodeURIComponent(clubId);
+    Promise.all([
+      fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/co-readers' + query, {headers: headers}),
+      fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations' + query, {headers: headers})
+    ]).then(function(responses) {
+      if (!responses[0].ok || !responses[1].ok) {
+        var failure = new Error('club');
+        failure.status = responses[0].status === 403 || responses[1].status === 403 ? 403 : 0;
+        throw failure;
+      }
+      return Promise.all(responses.map(function(response) { return response.json(); }));
+    }).then(function(data) {
+      var section = document.getElementById('clubActivity');
+      section.hidden = false;
+      var readers = (data[0] && data[0].items) || [];
+      document.getElementById('clubActivityTitle').textContent = copy.clubActivity + ' · ' + readers.length;
+      document.getElementById('clubActivityHint').textContent = copy.clubActivityHint;
+      document.getElementById('clubNoteLabel').textContent = copy.clubNoteLabel;
+      document.getElementById('clubNoteSubmit').textContent = copy.clubNoteSubmit;
+      var readerList = document.getElementById('clubReaderList');
+      readerList.replaceChildren();
+      readers.forEach(function(reader) {
+        var row = document.createElement('div');
+        row.className = 'club-reader';
+        var name = document.createElement('span');
+        name.textContent = reader.name || 'Member';
+        var value = document.createElement('span');
+        var pct = Math.max(0, Math.min(100, Math.round((Number(reader.progress_ratio) || 0) * 100)));
+        value.textContent = pct + '%';
+        var bar = document.createElement('meter');
+        bar.min = 0; bar.max = 100; bar.value = pct;
+        bar.setAttribute('aria-label', name.textContent);
+        row.appendChild(name); row.appendChild(value); row.appendChild(bar);
+        readerList.appendChild(row);
+      });
+      var noteList = document.getElementById('clubNoteList');
+      noteList.replaceChildren();
+      ((data[1] && data[1].items) || []).forEach(function(note) {
+        var row = document.createElement('article');
+        row.className = 'club-note';
+        var jump = document.createElement('button');
+        jump.type = 'button'; jump.textContent = formatCueTime(note.position_seconds);
+        jump.addEventListener('click', function() {
+          if (player && typeof player.seekTo === 'function') {
+            player.seekTo(Math.max(0, Number(note.position_seconds) || 0), true);
+            player.playVideo();
+          }
+        });
+        var body = document.createElement('div');
+        var author = document.createElement('small');
+        author.textContent = note.author_name || 'Member';
+        var text = document.createElement('p');
+        text.textContent = note.body || '';
+        body.appendChild(author); body.appendChild(text);
+        row.appendChild(jump); row.appendChild(body);
+        if (note.is_mine) {
+          var remove = document.createElement('button');
+          remove.type = 'button'; remove.textContent = copy.clubNoteDelete;
+          remove.addEventListener('click', function() {
+            fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations/' + encodeURIComponent(note.id) + query,
+              {method: 'DELETE', headers: authHeaders()})
+              .then(function(response) { if (!response.ok) throw new Error('delete'); loadClubActivity(); })
+              .catch(function() { document.getElementById('clubNoteStatus').textContent = copy.clubNoteError; });
+          });
+          row.appendChild(remove);
+        }
+        noteList.appendChild(row);
+      });
+      document.getElementById('clubNoteStatus').textContent = '';
+    }).catch(function(error) {
+      // A revoked club share must not leave a cached roster visible. A brief
+      // network failure can retain the last successful view and retry.
+      var section = document.getElementById('clubActivity');
+      if (error.status === 403) {
+        section.hidden = true;
+        document.getElementById('clubReaderList').replaceChildren();
+        document.getElementById('clubNoteList').replaceChildren();
+      } else if (!section.hidden) {
+        document.getElementById('clubNoteStatus').textContent = copy.clubNoteError;
+      }
+    });
+  }
+
+  document.getElementById('clubNoteForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    if (!contentId || !clubId) return;
+    var field = document.getElementById('clubNoteBody');
+    var body = field.value.trim();
+    if (!body) return;
+    var position = 0;
+    try { position = player ? Math.max(0, Math.round(player.getCurrentTime())) : 0; } catch (_) {}
+    var submit = document.getElementById('clubNoteSubmit');
+    submit.disabled = true;
+    fetch(baseUrl + '/api/content/' + encodeURIComponent(contentId) + '/club-video-annotations', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({club_id: clubId, position_seconds: position, body: body})
+    }).then(function(response) {
+      if (!response.ok) throw new Error('save');
+      field.value = '';
+      loadClubActivity();
+    }).catch(function() { document.getElementById('clubNoteStatus').textContent = copy.clubNoteError; })
+      .finally(function() { submit.disabled = false; });
+  });
+
   // Leave the player for another app route, keeping the session the same way
   // the Back button does (Telegram Desktop may not re-send initData).
   function openAppPath(path) {
@@ -1482,6 +1626,10 @@
   loadTranscript();
   loadWatchProgress();
   loadSavedWords();
+  loadClubActivity();
+  if (clubId && contentId) window.setInterval(function() {
+    if (document.visibilityState === 'visible') loadClubActivity();
+  }, 15000);
 
   // Safe-area insets change when the frame enters or leaves full screen.
   document.addEventListener('fullscreenchange', syncTelegramLayoutVars);

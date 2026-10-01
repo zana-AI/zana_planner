@@ -462,8 +462,9 @@ class ApiClient {
   /**
    * Open PDF content (latest asset + signed URL + resume fields).
    */
-  async getPdfOpen(contentId: string): Promise<PdfOpenResponse> {
-    return this.request<PdfOpenResponse>(`/content/${encodeURIComponent(contentId)}/pdf`);
+  async getPdfOpen(contentId: string, clubId?: string): Promise<PdfOpenResponse> {
+    const query = clubId ? `?club_id=${encodeURIComponent(clubId)}` : '';
+    return this.request<PdfOpenResponse>(`/content/${encodeURIComponent(contentId)}/pdf${query}`);
   }
 
   /**
@@ -473,10 +474,12 @@ class ApiClient {
     contentId: string,
     assetId?: string,
     asUserId?: string,
+    clubId?: string,
   ): Promise<{ asset_id: string; items: PdfHighlight[]; count: number }> {
     const query = new URLSearchParams();
     if (assetId) query.set('asset_id', assetId);
     if (asUserId) query.set('as_user_id', asUserId);
+    if (clubId) query.set('club_id', clubId);
     const q = query.toString();
     return this.request<{ asset_id: string; items: PdfHighlight[]; count: number }>(
       `/content/${encodeURIComponent(contentId)}/highlights${q ? `?${q}` : ''}`
@@ -485,11 +488,12 @@ class ApiClient {
 
   /**
    * Roster for a shared (club) content item: each member's read progress,
-   * time spent, and how many highlights they've made. Teacher-only — the
-   * server 403s a non-owner caller.
+   * time spent, and how many highlights they've made. A club share ID opens
+   * the roster to active members; the legacy class view remains owner-only.
    */
-  async getContentCoReaders(contentId: string): Promise<{ items: import('../types').ContentCoReader[] }> {
-    return this.request(`/content/${encodeURIComponent(contentId)}/co-readers`);
+  async getContentCoReaders(contentId: string, clubId?: string): Promise<{ items: import('../types').ContentCoReader[] }> {
+    const query = clubId ? `?club_id=${encodeURIComponent(clubId)}` : '';
+    return this.request(`/content/${encodeURIComponent(contentId)}/co-readers${query}`);
   }
 
   /**

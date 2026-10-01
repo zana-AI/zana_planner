@@ -811,6 +811,7 @@ export interface ContentCoReader {
   progress_ratio: number;
   total_consumed_seconds: number;
   highlight_count: number;
+  annotation_count?: number;
   last_interaction_at?: string | null;
 }
 
@@ -830,6 +831,7 @@ export interface PdfHighlight {
   rects_json: PdfHighlightRect[];
   selected_text?: string;
   note?: string;
+  club_visible?: boolean;
   color?: string;
   created_at: string;
   updated_at: string;
@@ -855,6 +857,7 @@ export interface UpdatePdfHighlightRequest {
   selected_text?: string;
   note?: string;
   color?: string;
+  club_visible?: boolean;
 }
 
 // Focus Timer / Pomodoro types
