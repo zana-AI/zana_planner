@@ -1,0 +1,13 @@
+[Unit]
+Description=Build Xaana French news video candidates (review only)
+Wants=network-online.target
+After=network-online.target docker.service
+ConditionPathExists=/opt/zana-config/youtube_news_discovery.key
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+WorkingDirectory=/opt/zana-bot/zana_planner
+ExecStart=/usr/bin/python3 /opt/zana-config/bin/daily_french_news_candidates.py --youtube-key-file /opt/zana-config/youtube_news_discovery.key --groq-env-file /opt/zana-config/.env.prod --output-dir /opt/zana-config/news-discovery/reports
+TimeoutStartSec=300
