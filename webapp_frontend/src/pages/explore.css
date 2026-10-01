@@ -389,24 +389,9 @@
 .content-library-share-clubs input { accent-color: var(--accent); }
 .content-library-learning-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--fg); font-size: 13px; }
 .content-library-learning-toggle input { accent-color: var(--accent); }
-.content-library-shelves { display: flex; gap: 8px; padding: 0 0 14px; }
-.content-library-shelves button { flex: 1; min-height: 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--fg-muted); font: inherit; font-weight: 600; cursor: pointer; }
-.content-library-shelves button.is-active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
-.club-shared-shelf { display: grid; gap: 12px; }
-.club-shared-shelf-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--fg-muted); font-size: 13px; }
-.club-shared-shelf-head p { margin: 0; }
-.club-shared-shelf-head label { display: grid; gap: 4px; min-width: 140px; }
-.club-shared-shelf-head select { min-height: 38px; padding: 0 9px; color: var(--fg); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
-.club-shared-shelf-list { display: grid; gap: 10px; }
-.club-shared-item { display: flex; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.club-shared-item img { width: 112px; height: 72px; object-fit: cover; border-radius: 7px; flex: none; }
-.club-shared-item-body { min-width: 0; display: grid; gap: 5px; }
-.club-shared-item-body small { color: var(--fg-muted); }
-.club-shared-item-body strong { overflow-wrap: anywhere; }
-.club-shared-item-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.club-shared-item-actions button, .club-shared-item-actions a { border: 0; background: none; color: var(--accent); padding: 4px 0; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
-.club-shared-item-actions .club-shared-remove { color: var(--fg-muted); }
-@media (max-width: 560px) { .club-shared-shelf-head { align-items: stretch; flex-direction: column; } .club-shared-item img { width: 84px; height: 60px; } }
+.content-card-club-badge { display: inline-flex; align-items: center; gap: 5px; max-width: 160px; padding: 3px 7px; border: 1px solid rgba(192, 147, 250, .48); border-radius: 7px; background: rgba(157, 100, 222, .13); color: #d8b4fe; font-size: 11px; font-weight: 700; }
+.content-card-club-badge span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.content-card-club-badge svg { flex: none; }
 
 /* Next up: sessions that belong to a time rather than to a promise. */
 .next-up { margin-bottom: 8px; }

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, Plus, Search } from 'lucide-react';
 import { apiClient, ApiError } from '../api/client';
 import { ContentCard } from '../components/ContentCard';
-import { ClubSharedShelf } from '../components/ClubSharedShelf';
 import { BottomSheet } from '../components/ui/BottomSheet';
 import { PlanContentSheet } from '../components/sheets/PlanContentSheet';
 import { AssignContentSheet } from '../components/sheets/AssignContentSheet';
@@ -86,7 +85,8 @@ function getInternalYouTubeWatchUrl(item: UserContentWithDetails): string | null
   if (provider !== 'youtube' && !videoId) return null;
   if (!videoId) return null;
   const contentId = item.content_id || item.id;
-  return `/youtube-watch?video_id=${encodeURIComponent(videoId)}${contentId ? `&content_id=${encodeURIComponent(contentId)}` : ''}`;
+  const clubId = item.club_ids?.[0];
+  return `/youtube-watch?video_id=${encodeURIComponent(videoId)}${contentId ? `&content_id=${encodeURIComponent(contentId)}` : ''}${clubId ? `&club_id=${encodeURIComponent(clubId)}` : ''}`;
 }
 
 /** Show sharing only for content with a supported public reader. */
@@ -108,7 +108,8 @@ function getInternalPdfReaderUrl(item: UserContentWithDetails): string | null {
   if (!isPdf) return null;
   const contentId = item.content_id || item.id;
   if (!contentId) return null;
-  return `/pdf-reader?content_id=${encodeURIComponent(contentId)}`;
+  const clubId = item.club_ids?.[0];
+  return `/pdf-reader?content_id=${encodeURIComponent(contentId)}${clubId ? `&club_id=${encodeURIComponent(clubId)}` : ''}`;
 }
 
 export function MyContentsPage() {
@@ -128,7 +129,6 @@ export function MyContentsPage() {
   const [shareClubs, setShareClubs] = useState<ClubSummary[]>([]);
   const [shareClubsLoading, setShareClubsLoading] = useState(false);
   const [selectedClubId, setSelectedClubId] = useState('');
-  const [shelf, setShelf] = useState<'mine' | 'clubs'>('mine');
   const [plannedToast, setPlannedToast] = useState('');
   const { hapticFeedback, webApp } = useTelegramWebApp();
   const [addUrl, setAddUrl] = useState('');
@@ -408,10 +408,6 @@ export function MyContentsPage() {
 
   return (
     <main className="content-library-page">
-      <nav className="content-library-shelves" aria-label={t('content.libraryShelves')}>
-        <button type="button" className={shelf === 'mine' ? 'is-active' : ''} aria-current={shelf === 'mine' ? 'page' : undefined} onClick={() => setShelf('mine')}>{t('content.myLibrary')}</button>
-        <button type="button" className={shelf === 'clubs' ? 'is-active' : ''} aria-current={shelf === 'clubs' ? 'page' : undefined} onClick={() => setShelf('clubs')}>{t('content.sharedWithClubs')}</button>
-      </nav>
       <section className="content-library-command">
         {/* Search plus one toggle. Status chips, type chips and sort used to sit
             in three permanent rows above the library, so the content itself
@@ -429,7 +425,7 @@ export function MyContentsPage() {
               placeholder={t('myContents.searchYourLibrary')}
             />
           </label>
-          {shelf === 'mine' && <button
+          <button
             type="button"
             className="content-library-filter-toggle content-library-add-toggle"
             aria-label={t('myContents.addToLibrary')}
@@ -437,8 +433,8 @@ export function MyContentsPage() {
             onClick={() => { setAddError(''); setAddOpen(true); }}
           >
             <Plus size={18} aria-hidden="true" />
-          </button>}
-          {shelf === 'mine' && <button
+          </button>
+          <button
             type="button"
             className={`content-library-filter-toggle${filtersOpen ? ' is-open' : ''}`}
             onClick={() => setFiltersOpen((open) => !open)}
@@ -449,10 +445,10 @@ export function MyContentsPage() {
             {activeFilterCount > 0 && (
               <span className="content-library-filter-count">{activeFilterCount}</span>
             )}
-          </button>}
+          </button>
         </div>
 
-        {shelf === 'mine' && filtersOpen && (
+        {filtersOpen && (
           <div className="content-library-filter-panel">
             <div className="content-library-filters" aria-label={t('myContents.libraryStatusFilters')}>
               {STATUS_FILTERS.map((filter) => (
@@ -512,7 +508,6 @@ export function MyContentsPage() {
         )}
       </section>
 
-      {shelf === 'clubs' ? <ClubSharedShelf query={debouncedQuery} onSaved={() => setRefreshVersion((value) => value + 1)} /> : <>
       {error && <div className="content-library-error">{error}</div>}
 
       {loading ? (
@@ -526,9 +521,9 @@ export function MyContentsPage() {
                 item={item}
                 onClick={() => openItem(item)}
                 onPlan={item.status !== 'archived' ? () => setPlanning(item) : undefined}
-                onShare={canShareLibraryItem(item) ? () => openShare(item) : undefined}
-                onArchive={item.status !== 'archived' ? () => setArchiveTarget(item) : undefined}
-                onRestore={item.status === 'archived' ? () => setArchived(item, false) : undefined}
+                onShare={item.user_content_id && canShareLibraryItem(item) ? () => openShare(item) : undefined}
+                onArchive={item.user_content_id && item.status !== 'archived' ? () => setArchiveTarget(item) : undefined}
+                onRestore={item.user_content_id && item.status === 'archived' ? () => setArchived(item, false) : undefined}
                 updating={updatingId !== null}
               />
             ))}
@@ -559,7 +554,6 @@ export function MyContentsPage() {
           )}
         </section>
       ) : null}
-      </>}
 
       {plannedToast ? (
         <p className="content-library-planned-toast" role="status">{plannedToast}</p>
