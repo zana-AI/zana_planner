@@ -35,6 +35,16 @@ async function openViewer(t, options = {}) {
       reports.push(route.request().postDataJSON().stats);
       return route.fulfill({json: {ok: true}});
     }
+    if (url.pathname.endsWith('/video-notes')) {
+      return route.fulfill({json: {items: options.personalCards || []}});
+    }
+    if (options.club && url.pathname.endsWith('/club-video-words')) {
+      assert.equal(url.searchParams.get('club_id'), 'club-1');
+      return route.fulfill({json: {items: options.clubCards || []}});
+    }
+    if (options.club && url.pathname.endsWith('/club-video-progress')) {
+      return route.fulfill({json: options.clubProgress || {duration_seconds: 100, items: [{user_id: '7', name: 'Marzieh', segments: [[5, 12]]}]}});
+    }
     if (options.club && url.pathname.endsWith('/co-readers')) {
       assert.equal(url.searchParams.get('club_id'), 'club-1');
       assert.equal(route.request().headers().authorization, 'Bearer test-session');
@@ -68,6 +78,36 @@ test('club video shows member progress and saves a timestamped note', async t =>
   await page.locator('#clubNoteSubmit').click();
   await expect(page.locator('#clubNoteList')).toContainText('This phrase is useful');
   await expect(page.locator('#clubNoteList')).toContainText('0:42');
+});
+
+test('club video shows each member card with a decorative creator circle', async t => {
+  const {page} = await openViewer(t, {club: true,
+    personalCards: [{note_id: 'mine', front: 'voyager', back: 'travel', deck_id: 'my-deck', deck_name: 'French'}],
+    clubCards: [
+      {note_id: 'mine', user_id: '7', creator_name: 'You', front: 'voyager', back: 'travel', start: 3, is_mine: true},
+      {note_id: 'peer', user_id: '8', creator_name: 'Marzieh', front: 'partir', back: 'leave', start: 5, is_mine: false},
+    ],
+  });
+  await expect(page.locator('#savedWords')).toBeVisible();
+  await expect(page.locator('.saved-card')).toHaveCount(2);
+  await expect(page.locator('.saved-creator')).toHaveCount(2);
+  assert.equal(await page.locator('.saved-creator').first().evaluate(el => el.tagName), 'SPAN');
+  await expect(page.locator('#savedReview')).toBeVisible();
+  await expect(page.locator('#savedList')).toContainText('partir');
+  assert.equal(await page.locator('.saved-creator').last().getAttribute('aria-label'), 'Saved by Marzieh');
+});
+
+test('peer cards do not provide a review link and progress rows open profiles', async t => {
+  const {page} = await openViewer(t, {club: true,
+    clubCards: [{note_id: 'peer', user_id: '8', creator_name: 'Marzieh', front: 'partir', back: 'leave'}],
+    clubProgress: {duration_seconds: 100, items: [{user_id: '8', name: 'Marzieh', segments: [[5, 12]]}]},
+  });
+  await expect(page.locator('#savedWords')).toBeVisible();
+  await expect(page.locator('#savedReview')).toBeHidden();
+  await page.locator('#clubActivity summary').click();
+  await expect(page.locator('#clubReaderList .club-reader-person')).toBeVisible();
+  await page.locator('#clubReaderList .club-reader-person').click();
+  await expect(page).toHaveURL(/\/users\/8$/);
 });
 
 async function installPlayer(page) {

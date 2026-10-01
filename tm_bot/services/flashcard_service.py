@@ -307,6 +307,16 @@ def list_notes(
         return notes
 
 
+def _start_in_video(fields: dict, video_id: str):
+    start = fields.get("source_start") if fields.get("source_video_id") == video_id else None
+    if start is None:
+        for context in fields.get("video_contexts") or []:
+            if isinstance(context, dict) and context.get("source_video_id") == video_id:
+                start = context.get("source_start")
+                break
+    return float(start) if isinstance(start, (int, float)) else None
+
+
 def list_video_words(user_id: str, video_id: str) -> List[dict]:
     """Words this user saved from one video, in the order they are spoken.
 
@@ -319,21 +329,42 @@ def list_video_words(user_id: str, video_id: str) -> List[dict]:
     items = []
     for note in notes:
         fields = note.get("fields") or {}
-        start = fields.get("source_start") if fields.get("source_video_id") == video_id else None
-        if start is None:
-            for context in fields.get("video_contexts") or []:
-                if isinstance(context, dict) and context.get("source_video_id") == video_id:
-                    start = context.get("source_start")
-                    break
         items.append({
             "note_id": note["note_id"],
             "front": fields.get("front", ""),
             "back": fields.get("back", ""),
-            "start": float(start) if isinstance(start, (int, float)) else None,
+            "start": _start_in_video(fields, video_id),
             "deck_id": note["deck_id"],
             "deck_name": note["deck_name"],
         })
     items.sort(key=lambda item: (item["start"] is None, item["start"] or 0))
+    return items
+
+
+def list_club_video_words(content_id: str, club_id: str, video_id: str,
+                          viewer_user_id: str) -> List[dict]:
+    """Display-only cards from active club members; never expose peer deck IDs."""
+    with get_db_session() as session:
+        notes = _notes.list_for_club_video(session, content_id, club_id, video_id)
+    items = []
+    for note in notes:
+        fields = note.get("fields") or {}
+        front = fields.get("front")
+        if not isinstance(front, str) or not front.strip():
+            continue
+        back = fields.get("back")
+        items.append({
+            "note_id": note["note_id"],
+            "front": front,
+            "back": back if isinstance(back, str) else "",
+            "start": _start_in_video(fields, video_id),
+            "user_id": str(note["user_id"]),
+            "creator_name": note["creator_name"],
+            "avatar_path": note.get("avatar_path"),
+            "is_mine": str(note["user_id"]) == viewer_user_id,
+        })
+    items.sort(key=lambda item: (item["start"] is None, item["start"] or 0,
+                                 item["creator_name"].lower()))
     return items
 
 
