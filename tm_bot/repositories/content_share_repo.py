@@ -65,9 +65,19 @@ class ContentShareRepository:
 
             path = (f"/youtube-watch?video_id={video_id}&content_id={content_id}&club_id={club_id}" if video_id
                     else f"/pdf-reader?content_id={content_id}&club_id={club_id}")
+            thumbnail_storage_uri = None
+            if is_pdf:
+                thumbnail = session.execute(text("""
+                    SELECT storage_uri FROM content_asset
+                    WHERE content_id = :content_id AND asset_type = 'pdf_thumbnail'
+                    ORDER BY created_at DESC LIMIT 1
+                """), {"content_id": content_id}).mappings().first()
+                thumbnail_storage_uri = thumbnail["storage_uri"] if thumbnail else None
             return {"already_shared": False, "club_name": club["name"],
                     "chat_id": str(club["telegram_chat_id"]),
-                    "title": content.get("title") or "Untitled", "path": path}
+                    "title": content.get("title") or "Untitled", "path": path,
+                    "thumbnail_url": f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg" if video_id else None,
+                    "thumbnail_storage_uri": thumbnail_storage_uri}
 
     def finish_club_share(self, content_id: str, club_id: str, message_id: int) -> None:
         with get_db_session() as session:
