@@ -39,6 +39,19 @@ def canonicalize_url(url: str) -> str:
         path = path.rstrip('/')
     # Filter and sort query params
     query_dict = parse_qs(parsed.query, keep_blank_values=False)
+    # Short, watch, embed and Shorts links identify the same Library video.
+    # Playback offsets and YouTube's `si` share tracking must not split progress.
+    host = parsed.hostname or ''
+    video_id = None
+    if host.lower() == 'youtu.be':
+        video_id = path.strip('/').split('/')[0]
+    elif host.lower() in {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'}:
+        if path == '/watch':
+            video_id = (query_dict.get('v') or [''])[0]
+        elif path.startswith(('/embed/', '/shorts/', '/live/')):
+            video_id = path.split('/')[2]
+    if video_id and re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
+        return f'https://www.youtube.com/watch?v={video_id}'
     filtered = {
         k: v for k, v in query_dict.items()
         if k.lower() not in _TRACKING_PARAMS

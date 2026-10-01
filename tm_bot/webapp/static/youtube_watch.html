@@ -213,6 +213,9 @@
     <button id="backBtn" class="watch-back" type="button" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m7 7-7-7 7-7"/></svg></button>
     <div id="videoTitle" class="video-title" dir="auto" hidden></div>
   </header>
+  <aside id="watchAuthNotice" hidden style="margin:12px 14px;padding:12px 14px;border:1px solid #29405f;border-radius:12px;background:#101d35" role="status">
+    <span id="watchAuthMessage"></span> <a id="watchSignIn" style="color:#55c5ff;font-weight:600"></a>
+  </aside>
   <div class="video-wrap">
     <iframe title="YouTube video player" id="yt" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
     <div id="videoStatus" class="video-status" role="status"></div>
@@ -455,9 +458,24 @@
     var token = sessionToken || '';
     try { token = localStorage.getItem('telegram_auth_token') || token; } catch (_) {}
     var initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
-    if (token) headers.Authorization = 'Bearer ' + token;
-    else if (initData) headers['X-Telegram-Init-Data'] = initData;
+    // The current Telegram account takes priority over a previous browser login.
+    if (initData) headers['X-Telegram-Init-Data'] = initData;
+    else if (token) headers.Authorization = 'Bearer ' + token;
     return headers;
+  }
+
+  function showWatchSignIn() {
+    document.getElementById('watchAuthNotice').hidden = false;
+    document.getElementById('watchAuthMessage').textContent = uiLanguage === 'fa'
+      ? 'برای ذخیرهٔ پیشرفت و نمایش آن به باشگاه، وارد زانا شو.'
+      : 'Sign in to save your progress and share it with your club.';
+    var link = document.getElementById('watchSignIn');
+    link.textContent = uiLanguage === 'fa' ? 'ورود' : 'Sign in';
+    var target = new URLSearchParams();
+    ['video_id', 'content_id', 'club_id', 'lang', 'start', 'word', 'pid'].forEach(function(key) {
+      if (params.get(key)) target.set(key, params.get(key));
+    });
+    link.href = '/login?return_to=' + encodeURIComponent('/youtube-watch?' + target);
   }
 
   function translationTarget() {
@@ -1118,7 +1136,10 @@
     var endpoint = '/api/youtube/' + encodeURIComponent(videoId) + '/progress';
     if (contentId) endpoint += '?content_id=' + encodeURIComponent(contentId);
     fetch(baseUrl + endpoint, {headers: headers})
-      .then(function(response) { return response.ok ? response.json() : null; })
+      .then(function(response) {
+        if (response.status === 401) showWatchSignIn();
+        return response.ok ? response.json() : null;
+      })
       .then(function(data) {
         if (!data) return;
         if (!videoDuration && Number(data.duration_seconds) > 0) videoDuration = Number(data.duration_seconds);
@@ -1387,6 +1408,7 @@
               body: JSON.stringify({stats: stats, user_token: userToken,
                 init_data: window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp.initData : ''})
             });
+            if (response.status === 401) showWatchSignIn();
             if (!response.ok || !(await response.json()).ok) throw new Error('save rejected');
             watchOutbox.shift();
             persistWatchOutbox();
@@ -1743,6 +1765,7 @@
   // frame does that, and a second one overlapped and fought it. Rotating a
   // phone still switches to the immersive landscape layout automatically.
 
+  if (!watchAuthScope()) showWatchSignIn();
   loadTranscript();
   loadWatchProgress();
   loadSavedWords();

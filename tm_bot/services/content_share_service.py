@@ -3,6 +3,7 @@ import asyncio
 import html
 import json
 import os
+from urllib.parse import urljoin
 
 import httpx
 
@@ -36,8 +37,10 @@ async def share_content_with_club(content_id: str, club_id: str, user_id: str,
     if not bot_token:
         repo.fail_club_share(content_id, club_id)
         raise RuntimeError("Xaana bot is unavailable")
-    url = f"{(os.getenv('MINIAPP_URL') or 'https://xaana.club').rstrip('/')}{reserved['path']}"
+    url = urljoin((os.getenv('MINIAPP_URL') or 'https://xaana.club').rstrip('/') + '/', reserved['path'])
     label = "باز کردن در زانا" if str(reserved.get("club_language") or "").startswith("fa") else "Open in Xaana"
+    if not reserved['path'].startswith('/'):
+        label = "باز کردن محتوا" if str(reserved.get("club_language") or "").startswith("fa") else "Open content"
     title = html.escape(str(reserved["title"]).strip()[:220])
     message = f'📚 <a href="{html.escape(url, quote=True)}">{title}</a>'
     keyboard = {"inline_keyboard": [[{"text": label, "url": url}]]}

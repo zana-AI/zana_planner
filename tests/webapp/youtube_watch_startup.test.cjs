@@ -17,12 +17,20 @@ async function openViewer(t, options = {}) {
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
   await page.clock.install({time: new Date('2026-09-24T12:00:00Z')});
   await page.clock.pauseAt(new Date('2026-09-24T12:00:01Z'));
-  await page.addInitScript(() => localStorage.setItem('telegram_auth_token', 'test-session'));
+  await page.addInitScript(options => {
+    if (!options.guest) localStorage.setItem('telegram_auth_token', 'test-session');
+    if (options.telegram) window.Telegram = {WebApp: {initData: 'current-telegram-account',
+      ready() {}, expand() {}, MainButton: {hide() {}}, onEvent() {}}};
+  }, {guest: !!options.guest, telegram: !!options.telegram});
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/youtube-watch') return route.fulfill({contentType: 'text/html', body: html});
     if (url.pathname.endsWith('/progress')) {
-      assert.equal(route.request().headers().authorization, 'Bearer test-session');
+      if (options.guest || options.expired) return route.fulfill({status: 401, json: {detail: 'Sign in'}});
+      if (options.telegram) {
+        assert.equal(route.request().headers()['x-telegram-init-data'], 'current-telegram-account');
+        assert.equal(route.request().headers().authorization, undefined);
+      } else assert.equal(route.request().headers().authorization, 'Bearer test-session');
       if (options.progressGate) await options.progressGate;
       return route.fulfill({json: options.progress || {duration_seconds: 100, segments: [[0, 20], [50, 75]]}});
     }
@@ -66,6 +74,39 @@ async function openViewer(t, options = {}) {
   await page.goto('https://xaana.test/youtube-watch?video_id=du-G1B785Fs&content_id=item&lang=' + (options.lang || 'en') + (options.club ? '&club_id=club-1' : ''));
   return {page, reports, transcriptRequests: () => transcriptRequests};
 }
+
+test('a guest club link immediately offers sign in with the same video destination', async t => {
+  const {page, reports} = await openViewer(t, {guest: true, club: true});
+  await expect(page.locator('#watchAuthNotice')).toBeVisible();
+  const link = new URL(await page.locator('#watchSignIn').getAttribute('href'), page.url());
+  assert.equal(link.pathname, '/login');
+  const destination = new URL(link.searchParams.get('return_to'), page.url());
+  assert.equal(destination.pathname, '/youtube-watch');
+  assert.equal(destination.searchParams.get('video_id'), 'du-G1B785Fs');
+  assert.equal(destination.searchParams.get('content_id'), 'item');
+  assert.equal(destination.searchParams.get('club_id'), 'club-1');
+  assert.equal(reports.length, 0);
+});
+
+test('expired sessions offer sign in; authenticated viewers need no save button', async t => {
+  const expired = await openViewer(t, {expired: true, club: true});
+  await expect(expired.page.locator('#watchAuthNotice')).toBeVisible();
+  const signedIn = await openViewer(t, {club: true});
+  await expect(signedIn.page.locator('#watchAuthNotice')).toBeHidden();
+  await installPlayer(signedIn.page);
+  await signedIn.page.evaluate(() => {
+    window.testState = 1; window.playerEvents.onStateChange({data: 1}); window.testTime = 12;
+    window.testState = 2; window.playerEvents.onStateChange({data: 2});
+  });
+  await expect.poll(() => signedIn.reports.length).toBe(1);
+  assert.deepEqual(signedIn.reports[0].segments, [[0, 12]]);
+});
+
+test('the Telegram account takes priority over a remembered browser account', async t => {
+  const {page} = await openViewer(t, {telegram: true});
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '45');
+  await expect(page.locator('#watchAuthNotice')).toBeHidden();
+});
 
 test('club video shows member progress and saves a timestamped note', async t => {
   const {page} = await openViewer(t, {club: true});

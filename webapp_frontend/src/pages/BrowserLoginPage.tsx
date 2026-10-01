@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../api/client';
-import { parseBrowserLoginCode } from '../utils/browserLogin';
+import { consumeLoginReturnTo, parseBrowserLoginCode, safeLoginReturnTo } from '../utils/browserLogin';
+import { TelegramLogin } from '../components/TelegramLogin';
 
 // Read once, outside React's StrictMode remounts. Strip the secret immediately;
 // it stays in memory, not history, storage, referrers or server request URLs.
 const initialCode = window.location.pathname === '/login'
   ? parseBrowserLoginCode(window.location.href, window.location.origin) : null;
+const initialReturnTo = safeLoginReturnTo(new URLSearchParams(window.location.search).get('return_to'), window.location.origin);
+if (window.location.pathname === '/login' && initialReturnTo) {
+  localStorage.setItem('xaana_login_return_to', JSON.stringify({ path: initialReturnTo, at: Date.now() }));
+}
 if (window.location.pathname === '/login' && window.location.hash) {
   window.history.replaceState(null, '', '/login');
 }
@@ -23,6 +28,7 @@ export function BrowserLoginPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const inTelegram = !!window.Telegram?.WebApp?.initData;
+  const finishLogin = useCallback(() => window.location.replace(consumeLoginReturnTo()), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,17 +71,7 @@ export function BrowserLoginPage() {
       // Keep the current account until confirmation succeeds. Reload so no old
       // account's React state or in-flight requests can bleed into the new one.
       apiClient.setAuthToken(data.session_token);
-      const savedReturn = localStorage.getItem('xaana_login_return_to');
-      localStorage.removeItem('xaana_login_return_to');
-      let returnTo = '/dashboard';
-      try {
-        const target = savedReturn ? JSON.parse(savedReturn) as { path?: string; at?: number } : null;
-        if (target?.path && /^\/plan-sessions\/\d+\/complete$/.test(target.path)
-          && typeof target.at === 'number' && Date.now() - target.at < 60 * 60 * 1000) {
-          returnTo = target.path;
-        }
-      } catch { /* Ignore an invalid saved destination. */ }
-      window.location.replace(returnTo);
+      finishLogin();
     } catch (err) {
       setError(err instanceof Error && err.message === 'expired' ? 'expired' : 'failed');
       setBusy(false);
@@ -85,9 +81,10 @@ export function BrowserLoginPage() {
   return (
     <main className="browser-login-page">
       <section className="browser-login-card" aria-labelledby="browser-login-title">
-        <h1 id="browser-login-title">{t('accountSwitch.title')}</h1>
+        <h1 id="browser-login-title">{t(initialReturnTo ? 'sessionCompletion.signIn' : 'accountSwitch.title')}</h1>
         {inTelegram ? <p>{t('accountSwitch.miniApp')}</p> : <>
           {!account && <>
+          {initialReturnTo && !code && <TelegramLogin onAuthSuccess={finishLogin} requestAccess={false} />}
           <p>{t('accountSwitch.description')}</p>
           <ol>
             <li>{t('accountSwitch.chooseAccount')}</li>
