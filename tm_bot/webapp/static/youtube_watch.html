@@ -265,6 +265,8 @@
   var sessionToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('session_token') || '';
   if (sessionToken) {
     try { localStorage.setItem('telegram_auth_token', sessionToken); } catch (_) {}
+    // Keep the credential out of copied video links and browser history.
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
   }
   var videoId = params.get('video_id') || '';
   var contentId = params.get('content_id') || '';
