@@ -193,3 +193,9 @@ After acceptance, set `TELEGRAM_BOT_USERNAME` to that username and
 webapp and bot, and replace existing club message keyboards using
 `club_miniapp_url`. Keep captions/thumbnails. External website links stay normal
 URL buttons. No database migration is needed.
+
+Club share captions and text messages contain a plain title, without a reader
+hyperlink or raw URL. Keep the thumbnail and use the inline button as the sole
+opening action: a caption hyperlink does not perform the button's Telegram
+authentication flow. This applies to new video, PDF, and external-content shares
+and to the text fallback when a thumbnail cannot be delivered.
