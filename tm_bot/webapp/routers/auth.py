@@ -3,7 +3,9 @@ Authentication endpoints.
 """
 
 import time
+from urllib.parse import urlsplit, parse_qsl, quote
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from repositories.browser_login_repo import BrowserLoginRepository
 from ..auth import validate_telegram_widget_auth, extract_user_id
@@ -13,6 +15,48 @@ from utils.logger import get_logger
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = get_logger(__name__)
+
+
+@router.get('/telegram-open')
+def telegram_open(request: Request):
+    """Telegram LoginUrl handoff to a same-origin reader after signed login."""
+    headers = {'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'}
+    params = request.query_params
+    # Duplicate parameters can give the browser and signature validator different
+    # interpretations. Accept only Telegram's documented identity fields + next.
+    allowed = {'next', 'id', 'first_name', 'last_name', 'username', 'photo_url', 'auth_date', 'hash'}
+    if any(key not in allowed or len(params.getlist(key)) != 1 for key in params):
+        raise HTTPException(400, 'Invalid sign-in link', headers=headers)
+    target = params.get('next', '')
+    try:
+        parts = urlsplit(target)
+    except ValueError:
+        raise HTTPException(400, 'Invalid reader destination', headers=headers)
+    if (not target.startswith('/') or parts.scheme or parts.netloc or parts.fragment
+            or parts.path not in {'/youtube-watch', '/pdf-reader'}
+            or any(ord(char) < 32 or char == '\\' for char in target)):
+        raise HTTPException(400, 'Invalid reader destination', headers=headers)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    if any(key not in {'video_id', 'content_id', 'club_id', 'lang', 'start', 'word', 'pid'} for key, _ in query):
+        raise HTTPException(400, 'Invalid reader destination', headers=headers)
+    # Telegram opens the original URL without identity fields if login is declined.
+    if not params.get('hash') and not any(key in params for key in {'id', 'auth_date'}):
+        return RedirectResponse(target, status_code=303, headers=headers)
+    data = {key: value for key, value in params.items() if key != 'next'}
+    try:
+        auth_date, user_id = int(data['auth_date']), int(data['id'])
+    except (KeyError, ValueError):
+        raise HTTPException(401, 'Invalid Telegram sign-in', headers=headers)
+    if user_id <= 0 or not 0 <= time.time() - auth_date <= 300:
+        raise HTTPException(401, 'Telegram sign-in expired', headers=headers)
+    validated = validate_telegram_widget_auth(data, request.app.state.bot_token, max_age_seconds=300)
+    if not validated:
+        raise HTTPException(401, 'Invalid Telegram sign-in', headers=headers)
+    session = request.app.state.auth_session_repo.create_session(
+        user_id=user_id, telegram_auth_date=auth_date, auth_method='widget', expires_in_days=90,
+    )
+    return RedirectResponse(target + '#session_token=' + quote(session.session_token, safe=''),
+                            status_code=303, headers=headers)
 
 
 class BrowserLoginCode(BaseModel):

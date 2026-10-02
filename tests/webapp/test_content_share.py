@@ -1,4 +1,5 @@
 """The explicit share action exposes only the validated destinations."""
+from urllib.parse import parse_qs, urlparse
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -148,7 +149,7 @@ def test_club_share_posts_only_after_reservation_and_records_delivery(monkeypatc
     assert calls[1][2]["parse_mode"] == "HTML"
     assert calls[1][2]["text"].startswith('📚 <a href="https://xaana.club/pdf-reader?content_id=pdf">Lesson</a>')
     assert "\nhttps://" not in calls[1][2]["text"]
-    assert calls[1][2]["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("content_id=pdf")
+    assert parse_qs(urlparse(calls[1][2]["reply_markup"]["inline_keyboard"][0][0]["login_url"]["url"]).query)["next"] == ["/pdf-reader?content_id=pdf"]
     assert calls[2] == ("finish", "pdf", "club", 42)
 
 
@@ -185,7 +186,7 @@ def test_club_video_share_sends_thumbnail_with_hidden_link(monkeypatch):
     assert photo["parse_mode"] == "HTML"
     assert "French &amp; news &lt;today&gt;" in photo["caption"]
     assert "\nhttps://" not in photo["caption"]
-    assert photo["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("club_id=club")
+    assert parse_qs(urlparse(photo["reply_markup"]["inline_keyboard"][0][0]["login_url"]["url"]).query)["next"] == ["/youtube-watch?video_id=abcdefghijk&club_id=club"]
 
 
 def test_club_pdf_share_uploads_preview_and_falls_back_if_photo_is_rejected(monkeypatch):
@@ -267,3 +268,15 @@ def test_club_shelf_is_scoped_to_authenticated_member(monkeypatch):
     assert response.status_code == 200
     assert response.json()["items"][0]["content_id"] == "pdf"
     assert calls == [("7", {"club_id": "club", "q": "French", "limit": 31, "offset": 0})]
+
+
+def test_external_links_never_receive_a_login_handoff():
+    keyboard = content_share_service.club_open_keyboard('https://example.org/read', 'Open')
+    assert keyboard['inline_keyboard'][0][0] == {'text': 'Open', 'url': 'https://example.org/read'}
+
+
+def test_login_handoff_is_at_the_site_root_even_with_a_miniapp_path():
+    keyboard = content_share_service.club_open_keyboard('/youtube-watch?video_id=abcdefghijk', 'Open', 'https://xaana.club/dashboard')
+    url = urlparse(keyboard['inline_keyboard'][0][0]['login_url']['url'])
+    assert url.path == '/api/auth/telegram-open'
+    assert parse_qs(url.query)['next'] == ['/youtube-watch?video_id=abcdefghijk']
