@@ -17,10 +17,10 @@ async function openViewer(t, options = {}) {
   await page.clock.install({time: new Date('2026-09-24T12:00:00Z')});
   await page.clock.pauseAt(new Date('2026-09-24T12:00:01Z'));
   await page.addInitScript(options => {
-    if (!options.guest) localStorage.setItem('telegram_auth_token', 'test-session');
+    if (!options.guest && !options.freshBrowser) localStorage.setItem('telegram_auth_token', 'test-session');
     if (options.telegram) window.Telegram = {WebApp: {initData: 'current-telegram-account',
       ready() {}, expand() {}, MainButton: {hide() {}}, onEvent() {}}};
-  }, {guest: !!options.guest, telegram: !!options.telegram});
+  }, {guest: !!options.guest, telegram: !!options.telegram, freshBrowser: !!options.freshBrowser});
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/youtube-watch') return route.fulfill({contentType: 'text/html', body: html});
@@ -65,7 +65,7 @@ async function openViewer(t, options = {}) {
     // Never depend on YouTube, Telegram or a live account for this regression test.
     return route.fulfill({body: '', contentType: url.pathname.endsWith('.js') || url.pathname === '/iframe_api' ? 'application/javascript' : 'text/html'});
   });
-  await page.goto('https://xaana.test/youtube-watch?video_id=du-G1B785Fs&content_id=item&lang=' + (options.lang || 'en') + (options.club ? '&club_id=club-1' : ''));
+  await page.goto('https://xaana.test/youtube-watch?video_id=du-G1B785Fs&content_id=item&lang=' + (options.lang || 'en') + (options.club ? '&club_id=club-1' : '') + (options.freshBrowser ? '#session_token=test-session' : ''));
   return {page, reports, annotationRequests, transcriptRequests: () => transcriptRequests};
 }
 
@@ -94,6 +94,19 @@ test('expired sessions offer sign in; authenticated viewers need no save button'
   });
   await expect.poll(() => signedIn.reports.length).toBe(1);
   assert.deepEqual(signedIn.reports[0].segments, [[0, 12]]);
+});
+
+test('signed LoginUrl handoff authenticates a fresh in-app browser and records club viewing', async t => {
+  const {page, reports} = await openViewer(t, {freshBrowser: true, club: true});
+  await expect(page.locator('#watchAuthNotice')).toBeHidden();
+  assert.equal(await page.evaluate(() => localStorage.getItem('telegram_auth_token')), 'test-session');
+  await installPlayer(page);
+  await page.evaluate(() => {
+    window.testState = 1; window.playerEvents.onStateChange({data: 1}); window.testTime = 12;
+    window.testState = 2; window.playerEvents.onStateChange({data: 2});
+  });
+  await expect.poll(() => reports.length).toBe(1);
+  assert.deepEqual(reports[0].segments, [[0, 12]]);
 });
 
 test('the Telegram account takes priority over a remembered browser account', async t => {

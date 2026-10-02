@@ -3,7 +3,7 @@ import asyncio
 import html
 import json
 import os
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlencode
 
 import httpx
 
@@ -26,6 +26,17 @@ async def _pdf_thumbnail_bytes(client: httpx.AsyncClient, storage_uri: str) -> b
     return payload
 
 
+def club_open_keyboard(path: str, label: str, base_url: str | None = None) -> dict:
+    """Ask Telegram to authenticate the actual clicker, never the sharer."""
+    base = (base_url or os.getenv('MINIAPP_URL') or 'https://xaana.club').rstrip('/') + '/'
+    if path.startswith('/youtube-watch?') or path.startswith('/pdf-reader?'):
+        login_url = urljoin(base, '/api/auth/telegram-open') + '?' + urlencode({'next': path})
+        button = {'text': label, 'login_url': {'url': login_url}}
+    else:
+        button = {'text': label, 'url': urljoin(base, path)}
+    return {'inline_keyboard': [[button]]}
+
+
 async def share_content_with_club(content_id: str, club_id: str, user_id: str,
                                   repo: ContentShareRepository | None = None) -> dict:
     repo = repo or ContentShareRepository()
@@ -43,7 +54,7 @@ async def share_content_with_club(content_id: str, club_id: str, user_id: str,
         label = "باز کردن محتوا" if str(reserved.get("club_language") or "").startswith("fa") else "Open content"
     title = html.escape(str(reserved["title"]).strip()[:220])
     message = f'📚 <a href="{html.escape(url, quote=True)}">{title}</a>'
-    keyboard = {"inline_keyboard": [[{"text": label, "url": url}]]}
+    keyboard = club_open_keyboard(reserved['path'], label)
     try:
         async with httpx.AsyncClient(timeout=12) as client:
             photo_url = reserved.get("thumbnail_url")
