@@ -565,6 +565,8 @@
     "planNote": "Blocks {{minutes}} minutes. You can attach it to a promise later.",
     "plannedFor": "Planned for {{when}}.",
     "planFutureTime": "Choose a date and time in the future.",
+    "openInTelegram": "Open this link in Telegram to continue.",
+    "clubOpenFailed": "Could not open this club item. Check your membership and try again.",
     "planFailed": "Could not plan that. Try again.",
     "study": "Study",
     "deckDue_one": "{{count, num}} to review",

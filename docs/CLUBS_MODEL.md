@@ -170,3 +170,26 @@ zero.** "Please author daily quizzes for us" is a job offer and it is why the fi
 attempt stalled; "we turn the posts you already write into a daily quiz" is a gift. Any
 plan to onboard more coaches depends on automated ingestion being genuinely good, not on
 recruiting more motivated teachers.
+
+## Club reader Mini App links
+
+A club reader launch link contains only a destination:
+`https://t.me/xaana_bot?startapp=clubread_<content UUID without hyphens>_<club UUID without hyphens>`.
+Telegram supplies the clicker's signed `initData` independently. The Mini App
+exchanges that verified identity at `POST /api/auth/club-miniapp-open`, which
+checks current membership and the active share before returning the reader path
+and a one-day session. The reader stays on the same origin inside the WebView.
+Reader handoffs take precedence over a restored `start_param`, preventing a Back
+navigation loop. Sessions never appear in shared group buttons.
+
+### Native phone preview and rollout
+
+Routing support can be deployed without changing existing group buttons.
+`CLUB_MINIAPP_LINKS_ENABLED` defaults off; shares keep the existing LoginUrl flow
+until the owner confirms the native phone preview. Require the bot's main Mini
+App to be configured (`getMe.has_main_web_app`) and verify its username.
+After acceptance, set `TELEGRAM_BOT_USERNAME` to that username and
+`CLUB_MINIAPP_LINKS_ENABLED=1` in production configuration, deploy/recreate the
+webapp and bot, and replace existing club message keyboards using
+`club_miniapp_url`. Keep captions/thumbnails. External website links stay normal
+URL buttons. No database migration is needed.

@@ -367,6 +367,10 @@ class ApiClient {
   /**
    * Add content to user library.
    */
+  async openClubReader(destination: { content_id: string; club_id: string; language: string }): Promise<{ path: string; session_token: string }> {
+    return this.request('/auth/club-miniapp-open', { method: 'POST', body: JSON.stringify(destination) });
+  }
+
   async addUserContent(contentId: string): Promise<{ user_content_id: string; status: string }> {
     return this.request<{ user_content_id: string; status: string }>('/user-content', {
       method: 'POST',

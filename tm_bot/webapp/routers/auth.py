@@ -6,15 +6,55 @@ import time
 from urllib.parse import urlsplit, parse_qsl, quote
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+from uuid import UUID
 from pydantic import BaseModel, Field
 from repositories.browser_login_repo import BrowserLoginRepository
-from ..auth import validate_telegram_widget_auth, extract_user_id
+from ..auth import validate_telegram_widget_auth, validate_telegram_init_data, extract_user_id
 from ..schemas import TelegramLoginRequest, TelegramLoginResponse
 from utils.dev_auth import get_dev_admin_user_id, is_dev_auth_enabled
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = get_logger(__name__)
+
+
+class ClubMiniAppOpen(BaseModel):
+    content_id: UUID
+    club_id: UUID
+    language: str = Field(default='en', pattern=r'^[a-zA-Z]{2,3}(?:-[a-zA-Z]{2})?$')
+
+
+@router.post('/club-miniapp-open')
+def open_club_miniapp(body: ClubMiniAppOpen, request: Request, response: Response):
+    """Exchange the current Telegram Mini App identity for a reader session."""
+    from repositories.content_share_repo import ContentShareRepository, content_share_path
+    from repositories.content_repo import ContentRepository
+
+    response.headers['Cache-Control'] = 'no-store'
+    init_data = request.headers.get('X-Telegram-Init-Data', '')
+    # A remembered browser account must never replace the current Telegram user.
+    validated = validate_telegram_init_data(init_data, request.app.state.bot_token)
+    try:
+        user_id = extract_user_id(validated) if validated else None
+    except (TypeError, ValueError):
+        user_id = None
+    auth_date = validated.get('auth_date') if validated else None
+    if not user_id or user_id <= 0 or not auth_date or not 0 <= time.time() - auth_date <= 86400:
+        raise HTTPException(401, 'Open this item inside Telegram', headers={'Cache-Control': 'no-store'})
+    content_id, club_id = str(body.content_id), str(body.club_id)
+    if not ContentShareRepository().is_active_member_of_share(content_id, club_id, str(user_id)):
+        raise HTTPException(403, 'This item is not shared with your club')
+    content = ContentRepository().get_content_by_id(content_id)
+    if not content:
+        raise HTTPException(404, 'Content not found')
+    path = content_share_path(content, club_id)
+    if not path.startswith(('/youtube-watch?', '/pdf-reader?')):
+        raise HTTPException(400, 'This item has no Xaana reader')
+    path += '&' + 'lang=' + quote(body.language, safe='')
+    session = request.app.state.auth_session_repo.create_session(
+        user_id=user_id, telegram_auth_date=auth_date, expires_in_days=1, auth_method='miniapp',
+    )
+    return {'path': path, 'session_token': session.session_token}
 
 
 @router.get('/telegram-open')
