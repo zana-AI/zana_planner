@@ -147,13 +147,13 @@ def test_club_share_posts_only_after_reservation_and_records_delivery(monkeypatc
     assert [call[0] for call in calls] == ["reserve", "post", "finish"]
     assert calls[1][2]["chat_id"] == "-123"
     assert calls[1][2]["parse_mode"] == "HTML"
-    assert calls[1][2]["text"].startswith('📚 <a href="https://xaana.club/pdf-reader?content_id=pdf">Lesson</a>')
+    assert calls[1][2]["text"] == "📚 Lesson"
     assert "\nhttps://" not in calls[1][2]["text"]
     assert parse_qs(urlparse(calls[1][2]["reply_markup"]["inline_keyboard"][0][0]["login_url"]["url"]).query)["next"] == ["/pdf-reader?content_id=pdf"]
     assert calls[2] == ("finish", "pdf", "club", 42)
 
 
-def test_club_video_share_sends_thumbnail_with_hidden_link(monkeypatch):
+def test_club_video_share_sends_thumbnail_with_plain_title(monkeypatch):
     calls = []
 
     class Repo:
@@ -184,7 +184,7 @@ def test_club_video_share_sends_thumbnail_with_hidden_link(monkeypatch):
     photo = calls[0][2]["json"]
     assert photo["photo"] == "https://img.youtube.com/vi/abcdefghijk/mqdefault.jpg"
     assert photo["parse_mode"] == "HTML"
-    assert "French &amp; news &lt;today&gt;" in photo["caption"]
+    assert photo["caption"] == "📚 French &amp; news &lt;today&gt;"
     assert "\nhttps://" not in photo["caption"]
     assert parse_qs(urlparse(photo["reply_markup"]["inline_keyboard"][0][0]["login_url"]["url"]).query)["next"] == ["/youtube-watch?video_id=abcdefghijk&club_id=club"]
 

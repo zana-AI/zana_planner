@@ -65,12 +65,13 @@ async def share_content_with_club(content_id: str, club_id: str, user_id: str,
     if not bot_token:
         repo.fail_club_share(content_id, club_id)
         raise RuntimeError("Xaana bot is unavailable")
-    url = urljoin((os.getenv('MINIAPP_URL') or 'https://xaana.club').rstrip('/') + '/', reserved['path'])
     label = "باز کردن در زانا" if str(reserved.get("club_language") or "").startswith("fa") else "Open in Xaana"
     if not reserved['path'].startswith('/'):
         label = "باز کردن محتوا" if str(reserved.get("club_language") or "").startswith("fa") else "Open content"
     title = html.escape(str(reserved["title"]).strip()[:220])
-    message = f'📚 <a href="{html.escape(url, quote=True)}">{title}</a>'
+    # Keep one opening action: a caption link bypasses the button's Telegram
+    # authentication flow and can leave the reader signed out.
+    message = f'📚 {title}'
     keyboard = club_open_keyboard(reserved['path'], label)
     try:
         async with httpx.AsyncClient(timeout=12) as client:
