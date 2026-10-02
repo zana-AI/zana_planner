@@ -100,6 +100,7 @@ test('signed LoginUrl handoff authenticates a fresh in-app browser and records c
   const {page, reports} = await openViewer(t, {freshBrowser: true, club: true});
   await expect(page.locator('#watchAuthNotice')).toBeHidden();
   assert.equal(await page.evaluate(() => localStorage.getItem('telegram_auth_token')), 'test-session');
+  assert.equal(new URL(page.url()).hash, '');
   await installPlayer(page);
   await page.evaluate(() => {
     window.testState = 1; window.playerEvents.onStateChange({data: 1}); window.testTime = 12;
