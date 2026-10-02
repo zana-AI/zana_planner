@@ -4,6 +4,7 @@ import html
 import json
 import os
 from urllib.parse import urljoin, urlencode
+from uuid import UUID
 
 import httpx
 
@@ -26,10 +27,26 @@ async def _pdf_thumbnail_bytes(client: httpx.AsyncClient, storage_uri: str) -> b
     return payload
 
 
+def club_miniapp_url(content_id: str, club_id: str, bot_username: str) -> str:
+    """Public destination only: Telegram supplies the opener's identity separately."""
+    username = bot_username.strip().lstrip('@')
+    if not username or not all(char.isascii() and (char.isalnum() or char == '_') for char in username):
+        raise ValueError('Invalid Mini App bot username')
+    destination = f'clubread_{UUID(content_id).hex}_{UUID(club_id).hex}'
+    return f'https://t.me/{username}?startapp={destination}'
+
+
 def club_open_keyboard(path: str, label: str, base_url: str | None = None) -> dict:
     """Ask Telegram to authenticate the actual clicker, never the sharer."""
     base = (base_url or os.getenv('MINIAPP_URL') or 'https://xaana.club').rstrip('/') + '/'
     if path.startswith('/youtube-watch?') or path.startswith('/pdf-reader?'):
+        # Enable only after the native phone preview has been accepted.
+        if os.getenv('CLUB_MINIAPP_LINKS_ENABLED') == '1':
+            from urllib.parse import parse_qs, urlsplit
+            params = parse_qs(urlsplit(path).query)
+            destination = club_miniapp_url(params['content_id'][0], params['club_id'][0],
+                                          os.getenv('TELEGRAM_BOT_USERNAME') or '')
+            return {'inline_keyboard': [[{'text': label, 'url': destination}]]}
         login_url = urljoin(base, '/api/auth/telegram-open') + '?' + urlencode({'next': path})
         button = {'text': label, 'login_url': {'url': login_url}}
     else:

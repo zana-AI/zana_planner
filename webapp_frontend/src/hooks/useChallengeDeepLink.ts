@@ -1,21 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
+import { MINIAPP_START_PARAM } from '../utils/miniAppStart';
 
 // Captured ONCE at module load — before React Router can redirect "/" to
 // "/dashboard" and wipe the query string (which would lose the deep-link param).
-const INITIAL_SOURCE_KEY: string = (() => {
-  try {
-    const tgStartParam =
-      (window.Telegram?.WebApp?.initDataUnsafe as { start_param?: string } | undefined)?.start_param;
-    const params = new URLSearchParams(window.location.search);
-    const urlStartParam =
-      params.get('startapp') || params.get('tgWebAppStartParam') || params.get('challenge');
-    return (tgStartParam || urlStartParam || '').trim();
-  } catch {
-    return '';
-  }
-})();
+const INITIAL_SOURCE_KEY = MINIAPP_START_PARAM;
 
 /**
  * Entry funnel: when the Mini App is opened from a channel post deep-link
@@ -37,7 +27,7 @@ export function useChallengeDeepLink(enabled: boolean): void {
     if (!enabled || handledRef.current) return;
 
     const sourceKey = INITIAL_SOURCE_KEY;
-    if (!sourceKey) return;
+    if (!sourceKey || sourceKey.startsWith('clubread_')) return;
 
     // One-shot: handledRef guards against a second fetch. We deliberately do NOT
     // cancel on cleanup — react-router's navigate identity changes on unrelated

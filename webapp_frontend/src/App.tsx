@@ -35,6 +35,8 @@ import { SessionCompletionPage } from './pages/SessionCompletionPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
+import { ClubReaderLaunch } from './components/ClubReaderLaunch';
+import { MINIAPP_START_PARAM } from './utils/miniAppStart';
 
 // Handles channel-post deep links (?startapp=<source_key>) — must live inside the Router.
 function ChallengeDeepLinkRouter({ enabled }: { enabled: boolean }) {
@@ -133,6 +135,10 @@ function MainApp() {
         </div>
       </div>
     );
+  }
+
+  if (MINIAPP_START_PARAM.startsWith('clubread_')) {
+    return <ClubReaderLaunch startParam={MINIAPP_START_PARAM} initData={initData} />;
   }
 
   return (
