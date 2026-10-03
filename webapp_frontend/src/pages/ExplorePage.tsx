@@ -15,6 +15,7 @@ export function ExplorePage() {
   const [params, setParams] = useSearchParams();
   const subject = subjectId || params.get('subject') || 'all';
   const filter = exploreFilter(params.get('type'));
+  const tag = params.get('tag') || 'all';
   const [catalog, setCatalog] = useState<ExploreCatalog | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -26,8 +27,8 @@ export function ExplorePage() {
     return () => { active = false; };
   }, [attempt]);
 
-  const updateFilter = (type: string, nextSubject = subject) => {
-    const next = exploreFilterParams(type, nextSubject);
+  const updateFilter = (type: string, nextSubject = subject, nextTag = tag) => {
+    const next = exploreFilterParams(type, nextSubject, nextTag);
     if (subjectId) navigate('/explore?' + next);
     else setParams(next);
   };
@@ -46,9 +47,12 @@ export function ExplorePage() {
   if (!catalog) return <main className="app"><p role="status">{t('common.loading')}</p></main>;
 
   const allEntries = catalogEntries(catalog);
-  const entries = allEntries.filter(e => (subject === 'all' || subject === e.subjectId) && (filter === 'all' || filter === e.topicId))
+  const availableTags = [...new Set(allEntries.filter(e => (subject === 'all' || subject === e.subjectId)
+    && (filter === 'all' || filter === e.topicId)).flatMap(e => e.item.tags || []))].sort();
+  const entries = allEntries.filter(e => (subject === 'all' || subject === e.subjectId) && (filter === 'all' || filter === e.topicId)
+    && (tag === 'all' || e.item.tags?.includes(tag)))
     .sort((a, b) => Number(!!b.item.starter) - Number(!!a.item.starter) || a.item.order - b.item.order);
-  const showClubs = filter === 'clubs' || (filter === 'all' && subject === 'all');
+  const showClubs = filter === 'clubs' || (filter === 'all' && subject === 'all' && tag === 'all');
   const clubs = showClubs ? catalog.clubs || [] : [];
   const visibleFilters = EXPLORE_FILTERS.filter(f => ['all', 'clubs', filter].includes(f) || allEntries.some(e => e.topicId === f));
   return <main className="app explore-page">
@@ -64,6 +68,14 @@ export function ExplorePage() {
           aria-pressed={filter === f} onClick={() => updateFilter(f)}>{t(f === 'all' ? 'explore.all' : f === 'clubs' ? 'community.clubs' : 'explore.topic.' + f)}</button>)}
       </div>
     </div>
+    {filter !== 'clubs' && (availableTags.length > 0 || tag !== 'all') && <label className="explore-subject-select explore-tag-filter">
+      <span>{t('explore.topicLabel')}</span>
+      <select aria-label={t('explore.topicLabel')} value={tag} onChange={event => updateFilter(filter, subject, event.target.value)}>
+        <option value="all">{t('explore.allTopics')}</option>
+        {[...new Set([...availableTags, ...(tag !== 'all' ? [tag] : [])])].map(value =>
+          <option key={value} value={value}>{t('explore.tags.' + value, { defaultValue: value })}</option>)}
+      </select>
+    </label>}
     {filter === 'clubs' && <div className="explore-club-tools"><p>{t('learning.clubsHint')}</p><button type="button" className="explore-action" onClick={() => navigate('/clubs')}>{t('learning.manageClubs')}</button></div>}
     <div className="explore-list">
       {entries.map(entry => <ExploreCard key={entry.subjectId + ':' + entry.item.id} entry={entry} onSaved={() => markSaved(entry)} />)}

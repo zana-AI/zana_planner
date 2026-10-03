@@ -7,7 +7,8 @@ import time
 import re
 from typing import Any, Callable, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from services.content_tags import normalize_content_tags
 from sqlalchemy import text
 
 from utils.logger import get_logger
@@ -62,6 +63,13 @@ class ExploreItem(BaseModel):
     image: Optional[str] = None
     description: Optional[str] = None
     creator: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, value):
+        return normalize_content_tags(value)
+
     content_id: Optional[str] = None
     language: Optional[str] = None
     level: Optional[str] = None

@@ -86,6 +86,9 @@ export function ExploreCard({ entry, onSaved }: { entry: LearningEntry; onSaved?
       </div>
       <h3 className="explore-card-title" dir="auto">{item.title}</h3>
       {item.description && <p className="explore-card-description" dir="auto">{item.description}</p>}
+      {!!item.tags?.length && <div className="explore-content-tags" aria-label={t('explore.topicLabel')}>
+        {item.tags.map(tag => <span key={tag}>{t('explore.tags.' + tag, { defaultValue: tag })}</span>)}
+      </div>}
       {item.creator && <span className="explore-card-creator" dir="auto">{item.creator}</span>}
       {!isMedia && <div className="explore-card-actions">
         <button type="button" className="explore-action" onClick={open}>

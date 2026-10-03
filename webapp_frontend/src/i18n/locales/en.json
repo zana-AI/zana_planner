@@ -452,6 +452,23 @@
     "quickStartHabits": "Quick-start habits"
   },
   "explore": {
+    "topicLabel": "Topic",
+    "allTopics": "All topics",
+    "tags": {
+      "economy": "Economy",
+      "society": "Society",
+      "technology": "Technology",
+      "news": "News",
+      "health": "Health",
+      "language_learning": "Language learning",
+      "travel": "Travel",
+      "politics": "Politics",
+      "food": "Food",
+      "culture": "Culture",
+      "nature": "Nature",
+      "sport": "Sport",
+      "science": "Science"
+    },
     "all": "All",
     "open": "Open",
     "add": "Add",

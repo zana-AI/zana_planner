@@ -69,7 +69,9 @@ class ContentRepository:
                         duration_seconds = COALESCE(EXCLUDED.duration_seconds, content.duration_seconds),
                         estimated_read_seconds = COALESCE(EXCLUDED.estimated_read_seconds, content.estimated_read_seconds),
                         thumbnail_url = COALESCE(EXCLUDED.thumbnail_url, content.thumbnail_url),
-                        metadata_json = COALESCE(EXCLUDED.metadata_json, content.metadata_json),
+                        -- Refreshing provider fields must retain editorial tags and provenance.
+                        metadata_json = COALESCE(content.metadata_json, '{}'::jsonb)
+                            || COALESCE(EXCLUDED.metadata_json, '{}'::jsonb),
                         updated_at = EXCLUDED.updated_at
                 """),
                 {

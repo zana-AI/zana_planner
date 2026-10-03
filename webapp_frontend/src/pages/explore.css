@@ -9,6 +9,9 @@
 .explore-filter-bar .explore-chips { flex: 0 0 auto; flex-wrap: nowrap; margin: 0; }
 .explore-filter-bar .explore-chip { flex: 0 0 auto; min-height: 44px; }
 .explore-club-tools { margin-bottom: 16px; }
+.explore-tag-filter { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.explore-content-tags { display: flex; flex-wrap: wrap; gap: 5px; grid-column: 1; }
+.explore-content-tags span { font-size: 11px; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 7px; }
 .explore-card { --kind-accent: #67e8f9; }
 .explore-card:not([data-kind="video"]) { border-inline-start: 3px solid var(--kind-accent); }
 .explore-card[data-kind="course"] { --kind-accent: #c4b5fd; }

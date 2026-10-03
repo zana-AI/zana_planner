@@ -6,11 +6,12 @@ export function exploreFilter(value: string | null): string {
   return value && EXPLORE_FILTERS.includes(value) ? value : 'watch';
 }
 
-export function exploreFilterParams(type: string, subject: string): URLSearchParams {
+export function exploreFilterParams(type: string, subject: string, tag = 'all'): URLSearchParams {
   const params = new URLSearchParams();
   // All must be explicit now that the unfiltered landing page means Watch.
   if (type !== 'watch') params.set('type', type);
   if (type !== 'clubs' && subject !== 'all') params.set('subject', subject);
+  if (type !== 'clubs' && tag !== 'all') params.set('tag', tag);
   return params;
 }
 
