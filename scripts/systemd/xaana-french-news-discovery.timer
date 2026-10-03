@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Xaana French news candidate discovery
+
+[Timer]
+OnCalendar=*-*-* 10:15:00 Europe/Paris
+Persistent=true
+Unit=xaana-french-news-discovery.service
+
+[Install]
+WantedBy=timers.target
