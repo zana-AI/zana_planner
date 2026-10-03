@@ -452,6 +452,23 @@
     "quickStartHabits": "عادت‌های آمادهٔ شروع"
   },
   "explore": {
+    "topicLabel": "موضوع",
+    "allTopics": "همهٔ موضوع‌ها",
+    "tags": {
+      "economy": "اقتصاد",
+      "society": "جامعه",
+      "technology": "فناوری",
+      "news": "اخبار",
+      "health": "سلامت",
+      "language_learning": "یادگیری زبان",
+      "travel": "سفر",
+      "politics": "سیاست",
+      "food": "غذا",
+      "culture": "فرهنگ",
+      "nature": "طبیعت",
+      "sport": "ورزش",
+      "science": "علم"
+    },
     "all": "همه",
     "open": "باز کردن",
     "add": "افزودن",

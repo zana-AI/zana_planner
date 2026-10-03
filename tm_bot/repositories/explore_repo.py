@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from sqlalchemy import bindparam, text
 
 from db.postgres_db import get_db_session
+from services.content_tags import normalize_content_tags
 
 
 def _youtube_video_id(content: dict) -> str | None:
@@ -79,6 +80,7 @@ def _add_explore_item(document: dict, content: dict, path: str, video_id: str | 
              "published": True, "native_ref": path, "content_id": content_id,
              "description": (content.get("description") or "")[:240] or None,
              "creator": content.get("author_channel"), "language": code or None, "level": level,
+             "tags": normalize_content_tags((content.get("metadata_json") or {}).get("tags")),
              "image": content.get("thumbnail_url") or (f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg" if video_id else None)}
     duration = float(content.get("duration_seconds") or 0)
     if video_id and math.isfinite(duration) and duration > 0:
@@ -183,7 +185,7 @@ class ExploreRepository:
             # Read only public-video metadata, never private user_content state.
             durations = session.execute(text("""
                 SELECT metadata_json->>'video_id' AS video_id, canonical_url, duration_seconds,
-                       language, metadata_json->>'level' AS level
+                       language, metadata_json->>'level' AS level, metadata_json->'tags' AS tags
                 FROM content WHERE visibility='public' AND (
                     metadata_json->>'video_id' IN :ids OR canonical_url IN :urls)
                 ORDER BY updated_at ASC
@@ -198,6 +200,8 @@ class ExploreRepository:
                         result[video_id]["language"] = row["language"]
                     if row["level"]:
                         result[video_id]["level"] = row["level"]
+                    if row["tags"] is not None:
+                        result[video_id]["tags"] = normalize_content_tags(row["tags"])
         return result
 
     def clubs(self, user_id: int) -> list[dict]:
