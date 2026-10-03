@@ -50,6 +50,12 @@ def propose(output: Path):
                 records.append({"id": f"catalog:{category['id']}:{topic['id']}:{entry['id']}",
                     "title": entry["title"], "description": (entry.get("description") or "")[:500],
                     "creator": entry.get("creator") or "", "news_source_headline": None})
+    # Repeated catalog subtitles are often channel-level editorial summaries,
+    # not evidence of the individual video's topic.
+    description_counts = Counter(r["description"] for r in records if r["description"])
+    for record in records:
+        if description_counts.get(record["description"], 0) >= 5:
+            record["description"] = ""
     proposals = []
     if output.exists():
         previous = json.loads(output.read_text(encoding="utf-8"))
@@ -76,6 +82,7 @@ def propose(output: Path):
                          "Tag the content topic, not the language, learner level, video format, creator identity, or assumed user interests. "
                          "language_learning means explicit language instruction. news means current events. "
                          "Classify EACH record independently. Different records in a batch can have very different topics. "
+                         "Prioritize specific themes in the title. Descriptions may be generic channel promotion; do not use vague mentions of food or travel to tag unrelated lessons. "
                          "If a language lesson has a concrete subject (cooking, travel, health, technology), include that subject alongside language_learning. "
                          "Culture means arts, literature, music or traditions; it is not a fallback for every French video. "
                          "Street interviews about relationships or lifestyle are society. Grammar lessons are language_learning. "
