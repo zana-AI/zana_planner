@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -50,11 +51,20 @@ def propose(output: Path):
                     "title": entry["title"], "description": (entry.get("description") or "")[:500],
                     "creator": entry.get("creator") or "", "news_source_headline": None})
     proposals = []
+    if output.exists():
+        previous = json.loads(output.read_text(encoding="utf-8"))
+        current = {r["id"]: r for r in records}
+        proposals = [i for i in previous.get("items", []) if i["id"] in current
+                     and i.get("title") == current[i["id"]]["title"]
+                     and i.get("tags") == normalize_content_tags(i.get("tags"))]
     with httpx.Client(timeout=90) as client:
         for offset in range(0, len(records), 12):
             batch = records[offset:offset + 12]
-            response = client.post("https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": "Bearer " + key}, json={
+            completed = {i["id"] for i in proposals}
+            batch = [r for r in batch if r["id"] not in completed]
+            if not batch:
+                continue
+            body = {
                     "model": os.getenv("CONTENT_TAG_MODEL", "openai/gpt-oss-120b"),
                     "temperature": 0, "reasoning_effort": "low",
                     "response_format": {"type": "json_object"},
@@ -75,9 +85,20 @@ def propose(output: Path):
                          "Do not tag something as science solely because it has the word learning or brain, or as politics solely because it mentions a country. "
                          "Give a short reason grounded in the title or description."},
                         {"role": "user", "content": json.dumps(batch, ensure_ascii=False)},
-                    ]})
+                    ]}
+            for attempt in range(3):
+                response = client.post("https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": "Bearer " + key}, json=body)
+                if response.status_code == 200:
+                    break
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
             if response.status_code != 200:
-                raise RuntimeError(f"Tag proposal service returned HTTP {response.status_code}")
+                try:
+                    detail = response.json().get("error", {}).get("message", "")
+                except ValueError:
+                    detail = ""
+                raise RuntimeError(f"Tag proposal service returned HTTP {response.status_code}: {detail[:180]}")
             items = json.loads(response.json()["choices"][0]["message"]["content"])["items"]
             if {i["id"] for i in items} != {i["id"] for i in batch} or len(items) != len(batch):
                 raise ValueError("Incomplete or duplicate proposal IDs")
